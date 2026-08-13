@@ -379,7 +379,19 @@ with uniform roughness. Trunk/root relief comes from the unified geometry and
 scene lighting, so no UV-dependent albedo, normal, roughness, or AO channel can
 reveal the branch-influence handoff across the implicit flare. Ordinary sweep
 UVs still duplicate the wrap seam and parallel-transport their tangent frame
-for future branch-space channels. Living oak and hazel cards are presets over
+for future branch-space channels. Near oak wood instead evaluates deterministic
+longitudinal fissures directly in branch space: irregular streamlines wander
+along each woody axis, a narrow inset groove is bordered by two raised lips,
+and smooth proximity weights blend the relief wherever root capsules join the
+trunk. The periodic angular calculation has no texture wrap, and only the
+extracted surface is displaced, avoiding microdetail evaluation throughout
+the bounded flare volume. Species bark recipes control fissure width/depth,
+lip and plate height, minimum mature radius, branch-order attenuation, and
+root-profile lobing. Oak therefore develops raised, transversely broken plates
+between asymmetrical crack lips on the old trunk and major limbs while young
+shoots fade toward smooth wood; hazel uses the same mesher with a restrained
+smooth-bark preset. Root-profile lobes align with generated buttress directions
+and fade with height. Living oak and hazel cards are presets over
 one structural leaf generator. Binary silhouettes and parameterized blade,
 petiole, midrib, lobe/tooth, and vein fields produce discrete front/back
 albedo, detailed normal and AO, and low-detail roughness while sharing a

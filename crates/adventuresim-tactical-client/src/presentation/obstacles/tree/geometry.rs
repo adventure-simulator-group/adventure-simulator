@@ -37,6 +37,40 @@ pub(in crate::presentation) const COMMON_HAZEL_PARAMETERS: WoodyPlantParameters 
     };
 
 #[derive(Clone, Copy, Debug)]
+pub(in crate::presentation) struct BarkRecipe {
+    pub(in crate::presentation) fissure_depth_metres: f32,
+    pub(in crate::presentation) fissure_width_metres: f32,
+    pub(in crate::presentation) lip_height_metres: f32,
+    pub(in crate::presentation) plate_height_metres: f32,
+    pub(in crate::presentation) mature_radius_metres: f32,
+    pub(in crate::presentation) minimum_radius_metres: f32,
+    pub(in crate::presentation) root_lobe_height_metres: f32,
+    pub(in crate::presentation) branch_depth_attenuation: [f32; 4],
+}
+
+pub(in crate::presentation) const ENGLISH_OAK_BARK: BarkRecipe = BarkRecipe {
+    fissure_depth_metres: 0.017,
+    fissure_width_metres: 0.013,
+    lip_height_metres: 0.016,
+    plate_height_metres: 0.014,
+    mature_radius_metres: 0.38,
+    minimum_radius_metres: 0.045,
+    root_lobe_height_metres: 0.038,
+    branch_depth_attenuation: [1.0, 0.62, 0.24, 0.06],
+};
+
+pub(in crate::presentation) const COMMON_HAZEL_BARK: BarkRecipe = BarkRecipe {
+    fissure_depth_metres: 0.0015,
+    fissure_width_metres: 0.006,
+    lip_height_metres: 0.001,
+    plate_height_metres: 0.001,
+    mature_radius_metres: 0.12,
+    minimum_radius_metres: 0.035,
+    root_lobe_height_metres: 0.0,
+    branch_depth_attenuation: [0.45, 0.2, 0.05, 0.0],
+};
+
+#[derive(Clone, Copy, Debug)]
 pub(in crate::presentation) struct TreeBranchSegment {
     pub(in crate::presentation) start: Vec3,
     pub(in crate::presentation) end: Vec3,
@@ -63,7 +97,7 @@ pub(in crate::presentation) use skeleton::{
     procedural_tree_skeleton, procedural_woody_plant_skeleton,
 };
 pub(in crate::presentation) use wood_mesh::{
-    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh,
+    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_woody_branch_mesh,
 };
 
 fn branch_frame(direction: Vec3) -> (Vec3, Vec3) {

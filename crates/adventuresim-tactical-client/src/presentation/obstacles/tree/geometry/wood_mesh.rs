@@ -5,17 +5,27 @@ use bevy::{
     prelude::Mesh,
 };
 
-use super::{TreeBranchSegment, branch_frame, transport_branch_frame};
+use super::{
+    BarkRecipe, ENGLISH_OAK_BARK, TreeBranchSegment, branch_frame, transport_branch_frame,
+};
 
 pub(in crate::presentation) fn procedural_tree_branch_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
 ) -> Mesh {
+    procedural_woody_branch_mesh(branches, maximum_depth, ENGLISH_OAK_BARK)
+}
+
+pub(in crate::presentation) fn procedural_woody_branch_mesh(
+    branches: &[TreeBranchSegment],
+    maximum_depth: u8,
+    bark: BarkRecipe,
+) -> Mesh {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     let mut uvs = Vec::new();
     let mut indices = Vec::new();
-    let flare = RootFlareField::from_branches(branches, maximum_depth);
+    let flare = RootFlareField::from_branches(branches, maximum_depth, bark);
     if let Some(flare) = &flare {
         append_root_flare_mesh(flare, &mut positions, &mut normals, &mut uvs, &mut indices);
     }
@@ -39,7 +49,12 @@ pub(in crate::presentation) fn procedural_tree_branch_mesh(
         let curve = &visible[curve_start..curve_end];
         append_branch_curve_tube(
             curve,
-            (8_u32.saturating_sub(u32::from(curve[0].depth))).max(4),
+            bark,
+            if curve[0].depth == 0 {
+                48
+            } else {
+                (8_u32.saturating_sub(u32::from(curve[0].depth))).max(4)
+            },
             &mut positions,
             &mut normals,
             &mut uvs,
@@ -67,10 +82,16 @@ struct RootFlareField {
     maximum: Vec3,
     cell: f32,
     blend: f32,
+    bark: BarkRecipe,
+    root_directions: Vec<Vec3>,
 }
 
 impl RootFlareField {
-    fn from_branches(branches: &[TreeBranchSegment], _maximum_depth: u8) -> Option<Self> {
+    fn from_branches(
+        branches: &[TreeBranchSegment],
+        _maximum_depth: u8,
+        bark: BarkRecipe,
+    ) -> Option<Self> {
         // Hybrid skeleton/sweep/implicit architecture adapted from:
         // https://gist.github.com/halbe/5613d15ecfa84e80c04a56f34a656456
         // Only the non-tubular root flare is contoured; ordinary woody runs
@@ -106,12 +127,21 @@ impl RootFlareField {
         }
         minimum.y = minimum.y.max(base - 0.42);
         maximum.y = maximum.y.min(cutoff + 0.16);
+        let root_directions = segments
+            .iter()
+            .filter_map(|segment| {
+                let axis = (segment.end - segment.start).xz();
+                (axis.length_squared() > 0.04).then(|| Vec3::new(axis.x, 0.0, axis.y).normalize())
+            })
+            .collect();
         Some(Self {
             segments,
             minimum,
             maximum,
             cell: 0.105,
             blend: 0.18,
+            bark,
+            root_directions,
         })
     }
 
@@ -121,10 +151,14 @@ impl RootFlareField {
             && segment.end.y <= self.maximum.y - self.cell
     }
 
-    fn distance(&self, point: Vec3) -> f32 {
+    fn macro_distance(&self, point: Vec3) -> f32 {
         self.segments.iter().fold(f32::INFINITY, |field, segment| {
             smooth_min(field, capsule_distance(point, segment), self.blend)
         })
+    }
+
+    fn distance(&self, point: Vec3) -> f32 {
+        self.macro_distance(point)
     }
 
     fn normal(&self, point: Vec3) -> Vec3 {
@@ -135,6 +169,31 @@ impl RootFlareField {
             self.distance(point + Vec3::Z * epsilon) - self.distance(point - Vec3::Z * epsilon),
         )
         .normalize_or_zero()
+    }
+
+    fn displaced_surface(&self, point: Vec3) -> (Vec3, Vec3) {
+        let outward = self.normal(point);
+        let lobed = point + outward * self.root_profile_relief(point, outward);
+        displaced_bark_surface(lobed, outward, &self.segments, self.bark)
+    }
+
+    fn root_profile_relief(&self, point: Vec3, outward: Vec3) -> f32 {
+        if self.bark.root_lobe_height_metres <= 0.0 {
+            return 0.0;
+        }
+        let horizontal = Vec3::new(outward.x, 0.0, outward.z).normalize_or_zero();
+        let alignment = self
+            .root_directions
+            .iter()
+            .map(|direction| horizontal.dot(*direction).max(0.0).powi(8))
+            .fold(0.0_f32, f32::max);
+        let base = self
+            .segments
+            .iter()
+            .map(|segment| segment.start.y)
+            .fold(f32::INFINITY, f32::min);
+        let height_fade = (1.0 - ((point.y - base) / 1.35).clamp(0.0, 1.0)).powi(2);
+        self.bark.root_lobe_height_metres * alignment * height_fade
     }
 
     fn uv(&self, point: Vec3) -> Vec2 {
@@ -155,6 +214,127 @@ impl RootFlareField {
         let theta = radial.dot(forward).atan2(radial.dot(right));
         Vec2::new(theta / core::f32::consts::TAU, (length * along) / 2.0)
     }
+}
+
+/// A longitudinal groove with raised lips, evaluated in branch space.
+///
+/// The angular signal is periodic rather than UV-based, so crossing the
+/// cylindrical wrap cannot create a discontinuity. The world-space warp makes
+/// the fissures wander without baking any colour variation into the material.
+fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe) -> f32 {
+    let axis = segment.end - segment.start;
+    let length_squared = axis.length_squared();
+    if length_squared <= 1.0e-6 {
+        return 0.0;
+    }
+    let along = ((point - segment.start).dot(axis) / length_squared).clamp(0.0, 1.0);
+    let tangent = axis.normalize();
+    let center = segment.start + axis * along;
+    let radius = segment
+        .start_radius
+        .lerp(segment.end_radius, along.powf(0.64));
+    let radial = (point - center).normalize_or_zero();
+    if radial.length_squared() < 0.5 {
+        return 0.0;
+    }
+    let (right, forward) = branch_frame(tangent);
+    let theta = radial.dot(forward).atan2(radial.dot(right));
+    const CRACK_PHASES: [f32; 13] = [
+        0.08, 0.55, 0.91, 1.53, 1.86, 2.44, 2.86, 3.27, 3.82, 4.17, 4.78, 5.31, 5.83,
+    ];
+    let mut nearest_crack = f32::INFINITY;
+    let mut signed_crack = 0.0;
+    for (index, base_phase) in CRACK_PHASES.into_iter().enumerate() {
+        let seed_phase = index as f32 * 1.618_034;
+        let drift = 0.11 * (point.dot(Vec3::new(0.17, 0.83, -0.29)) * 1.18 + seed_phase).sin()
+            + 0.045 * (point.dot(Vec3::new(-0.53, 0.24, 0.47)) * 2.37 - seed_phase * 0.7).sin();
+        let delta = (theta - base_phase - drift + core::f32::consts::PI)
+            .rem_euclid(core::f32::consts::TAU)
+            - core::f32::consts::PI;
+        let distance = delta.abs() * radius;
+        if distance < nearest_crack {
+            nearest_crack = distance;
+            signed_crack = delta * radius;
+        }
+    }
+    let arc_distance = nearest_crack;
+    let depth_index = usize::from(segment.depth.min(3));
+    let hierarchy = bark.branch_depth_attenuation[depth_index];
+    let maturity = ((radius - bark.minimum_radius_metres)
+        / (bark.mature_radius_metres - bark.minimum_radius_metres).max(1.0e-4))
+    .clamp(0.0, 1.0);
+    let strength = hierarchy * maturity * maturity * (3.0 - 2.0 * maturity);
+    if strength <= 1.0e-4 {
+        return 0.0;
+    }
+
+    let groove = (-bark.fissure_depth_metres
+        * (-0.5 * (arc_distance / bark.fissure_width_metres.max(1.0e-4)).powi(2)).exp())
+    .max(-radius * 0.035);
+    let lip_center = bark.fissure_width_metres * 2.25;
+    let lip_width = bark.fissure_width_metres * 1.15;
+    let lip_distance = (arc_distance - lip_center) / lip_width.max(1.0e-4);
+    let lip_asymmetry = 1.0 + 0.18 * (signed_crack / bark.fissure_width_metres.max(1.0e-4)).tanh();
+    let lips = (bark.lip_height_metres * lip_asymmetry * (-0.5 * lip_distance.powi(2)).exp())
+        .min(radius * 0.045);
+    let plate_t = (arc_distance / (radius * 0.24).max(0.035)).clamp(0.0, 1.0);
+    let plate_crown = bark.plate_height_metres * (core::f32::consts::PI * plate_t).sin().powi(2);
+    let transverse_breaks = 0.65
+        + 0.35
+            * (point.dot(Vec3::new(0.37, 1.23, -0.28)) * 3.1 + theta * 0.7)
+                .sin()
+                .abs();
+    let broad_warp = 0.27 * (point.dot(Vec3::new(0.21, 0.62, -0.37)) * 0.74).sin();
+    let broad_fold = 0.007 * (5.0 * theta + broad_warp).cos() * (radius / 0.7).clamp(0.2, 1.0);
+    (groove + lips + plate_crown * transverse_breaks + broad_fold) * strength
+}
+
+/// Blend branch-space relief with the same proximity semantics as the smooth
+/// implicit union. No nearest-segment switch is exposed at root junctions.
+fn blended_bark_relief(
+    point: Vec3,
+    segments: &[TreeBranchSegment],
+    blend: f32,
+    bark: BarkRecipe,
+) -> f32 {
+    let nearest = segments
+        .iter()
+        .map(|segment| capsule_distance(point, segment))
+        .fold(f32::INFINITY, f32::min);
+    let mut weighted = 0.0;
+    let mut total = 0.0;
+    for segment in segments {
+        let delta = (capsule_distance(point, segment) - nearest).max(0.0);
+        let weight = (-4.0 * delta / blend.max(1.0e-4)).exp();
+        if weight > 1.0e-4 {
+            weighted += bark_relief(point, segment, bark) * weight;
+            total += weight;
+        }
+    }
+    if total > 0.0 { weighted / total } else { 0.0 }
+}
+
+fn displaced_bark_surface(
+    point: Vec3,
+    outward: Vec3,
+    segments: &[TreeBranchSegment],
+    bark: BarkRecipe,
+) -> (Vec3, Vec3) {
+    const BLEND: f32 = 0.18;
+    const EPSILON: f32 = 0.006;
+    let relief = blended_bark_relief(point, segments, BLEND, bark);
+    let gradient = Vec3::new(
+        blended_bark_relief(point + Vec3::X * EPSILON, segments, BLEND, bark)
+            - blended_bark_relief(point - Vec3::X * EPSILON, segments, BLEND, bark),
+        blended_bark_relief(point + Vec3::Y * EPSILON, segments, BLEND, bark)
+            - blended_bark_relief(point - Vec3::Y * EPSILON, segments, BLEND, bark),
+        blended_bark_relief(point + Vec3::Z * EPSILON, segments, BLEND, bark)
+            - blended_bark_relief(point - Vec3::Z * EPSILON, segments, BLEND, bark),
+    ) / (2.0 * EPSILON);
+    (
+        point + outward * relief,
+        (outward - gradient).normalize_or_zero(),
+    )
 }
 
 fn capsule_distance(point: Vec3, segment: &TreeBranchSegment) -> f32 {
@@ -272,17 +452,55 @@ fn polygonize_tetrahedron(
     if triangles.is_empty() {
         return;
     }
-    for mut vertices in triangles {
-        let face = (vertices[1] - vertices[0]).cross(vertices[2] - vertices[0]);
-        let mean_normal = vertices
-            .iter()
-            .map(|point| field.normal(*point))
-            .sum::<Vec3>();
+    for vertices in triangles {
+        append_subdivided_flare_triangle(field, vertices, 1, positions, normals, uvs, indices);
+    }
+}
+
+fn append_subdivided_flare_triangle(
+    field: &RootFlareField,
+    vertices: [Vec3; 3],
+    subdivisions: u8,
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    indices: &mut Vec<u32>,
+) {
+    if subdivisions > 0 {
+        let midpoint = |left: Vec3, right: Vec3| {
+            let point = (left + right) * 0.5;
+            point - field.normal(point) * field.distance(point)
+        };
+        let ab = midpoint(vertices[0], vertices[1]);
+        let bc = midpoint(vertices[1], vertices[2]);
+        let ca = midpoint(vertices[2], vertices[0]);
+        for triangle in [
+            [vertices[0], ab, ca],
+            [ab, vertices[1], bc],
+            [ca, bc, vertices[2]],
+            [ab, bc, ca],
+        ] {
+            append_subdivided_flare_triangle(
+                field,
+                triangle,
+                subdivisions - 1,
+                positions,
+                normals,
+                uvs,
+                indices,
+            );
+        }
+    } else {
+        let mut displaced = vertices.map(|vertex| field.displaced_surface(vertex));
+        let positions_for_face = displaced.map(|(position, _)| position);
+        let face = (positions_for_face[1] - positions_for_face[0])
+            .cross(positions_for_face[2] - positions_for_face[0]);
+        let mean_normal = displaced.iter().map(|(_, normal)| *normal).sum::<Vec3>();
         if face.dot(mean_normal) < 0.0 {
-            vertices.swap(1, 2);
+            displaced.swap(1, 2);
         }
         let base = positions.len() as u32;
-        let mut triangle_uvs = vertices.map(|vertex| field.uv(vertex));
+        let mut triangle_uvs = displaced.map(|(vertex, _)| field.uv(vertex));
         let minimum_u = triangle_uvs
             .iter()
             .map(|uv| uv.x)
@@ -298,9 +516,9 @@ fn polygonize_tetrahedron(
                 }
             }
         }
-        for (vertex, uv) in vertices.into_iter().zip(triangle_uvs) {
+        for ((vertex, normal), uv) in displaced.into_iter().zip(triangle_uvs) {
             positions.push(vertex.to_array());
-            normals.push(field.normal(vertex).to_array());
+            normals.push(normal.to_array());
             uvs.push(uv.to_array());
         }
         indices.extend_from_slice(&[base, base + 1, base + 2]);
@@ -326,6 +544,7 @@ pub(in crate::presentation) fn procedural_tree_branch_group_mesh(
 
 fn append_branch_curve_tube(
     curve: &[TreeBranchSegment],
+    bark: BarkRecipe,
     sides: u32,
     positions: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
@@ -390,8 +609,10 @@ fn append_branch_curve_tube(
         for side in 0..=sides {
             let phase = side as f32 * core::f32::consts::TAU / sides as f32;
             let normal = right * phase.cos() + forward * phase.sin();
-            positions.push((center + normal * radius).to_array());
-            normals.push(normal.to_array());
+            let (position, surface_normal) =
+                displaced_bark_surface(center + normal * radius, normal, curve, bark);
+            positions.push(position.to_array());
+            normals.push(surface_normal.to_array());
             uvs.push([
                 side as f32 / sides as f32 * circumference_tiles,
                 accumulated_distance / BARK_TEXTURE_HEIGHT_METRES,
@@ -433,8 +654,10 @@ fn append_branch_curve_tube(
                 let phase = side as f32 * core::f32::consts::TAU / sides as f32;
                 let radial = right * phase.cos() + forward * phase.sin();
                 let normal = (radial * 0.75 + last_direction * 0.66).normalize();
-                positions.push((center + radial * radius).to_array());
-                normals.push(normal.to_array());
+                let (position, surface_normal) =
+                    displaced_bark_surface(center + radial * radius, normal, curve, bark);
+                positions.push(position.to_array());
+                normals.push(surface_normal.to_array());
                 uvs.push([
                     side as f32 / sides as f32 * circumference_tiles,
                     terminal_distance / BARK_TEXTURE_HEIGHT_METRES,
@@ -532,7 +755,8 @@ mod tests {
     #[test]
     fn root_flare_is_a_bounded_smooth_union_with_finite_surface_data() {
         let branches = procedural_tree_skeleton(42, 0.0);
-        let field = RootFlareField::from_branches(&branches, 0).expect("oak has a root flare");
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK)
+            .expect("oak has a root flare");
         assert!(field.maximum.x - field.minimum.x < 4.0);
         assert!(field.maximum.z - field.minimum.z < 4.0);
         assert!(field.maximum.y - field.minimum.y < 2.6);
@@ -565,5 +789,116 @@ mod tests {
                 .iter()
                 .all(|normal| { (Vec3::from_array(*normal).length() - 1.0).abs() < 1.0e-3 })
         );
+    }
+
+    #[test]
+    fn bark_relief_is_periodic_and_blends_at_root_influence_boundaries() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK)
+            .expect("oak has a root flare");
+        let trunk = field
+            .segments
+            .iter()
+            .find(|segment| (segment.end - segment.start).xz().length() < 0.1)
+            .expect("oak flare includes a vertical trunk segment");
+        let axis = trunk.end - trunk.start;
+        let center = trunk.start + axis * 0.35;
+        let tangent = axis.normalize();
+        let (right, forward) = branch_frame(tangent);
+        let radius = trunk
+            .start_radius
+            .lerp(trunk.end_radius, 0.35_f32.powf(0.64));
+        let epsilon = 1.0e-5_f32;
+        let before = center + (right * epsilon.cos() + forward * (-epsilon).sin()) * radius;
+        let after = center + (right * epsilon.cos() + forward * epsilon.sin()) * radius;
+        assert!(
+            (bark_relief(before, trunk, ENGLISH_OAK_BARK)
+                - bark_relief(after, trunk, ENGLISH_OAK_BARK))
+            .abs()
+                < 1.0e-3
+        );
+
+        let junction = field
+            .segments
+            .iter()
+            .filter(|segment| (segment.end - segment.start).xz().length() > 0.2)
+            .map(|segment| segment.start)
+            .next()
+            .expect("oak flare includes a root junction");
+        let left = blended_bark_relief(
+            junction - Vec3::X * 0.002,
+            &field.segments,
+            field.blend,
+            ENGLISH_OAK_BARK,
+        );
+        let right = blended_bark_relief(
+            junction + Vec3::X * 0.002,
+            &field.segments,
+            field.blend,
+            ENGLISH_OAK_BARK,
+        );
+        assert!(left.is_finite() && right.is_finite());
+        assert!((left - right).abs() < 0.01);
+    }
+
+    #[test]
+    fn oak_bark_matures_with_radius_and_fades_on_young_branch_orders() {
+        let sample = |radius: f32, depth: u8| {
+            let segment = TreeBranchSegment {
+                start: Vec3::ZERO,
+                end: Vec3::Y * 2.0,
+                start_radius: radius,
+                end_radius: radius,
+                depth,
+                primary_group: 0,
+                secondary_group: 0,
+                is_limb_tip: true,
+            };
+            (0..96)
+                .map(|index| {
+                    let phase = index as f32 * core::f32::consts::TAU / 96.0;
+                    let point = Vec3::new(phase.cos() * radius, 0.8, phase.sin() * radius);
+                    bark_relief(point, &segment, ENGLISH_OAK_BARK).abs()
+                })
+                .fold(0.0_f32, f32::max)
+        };
+        let mature_trunk = sample(0.6, 0);
+        assert!(mature_trunk > sample(0.09, 0) * 2.0);
+        assert!(mature_trunk > sample(0.6, 2) * 3.0);
+        assert!(sample(0.03, 3) < 1.0e-5);
+    }
+
+    #[test]
+    fn root_profile_lobes_follow_generated_root_directions_and_fade_upward() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK)
+            .expect("oak has a root flare");
+        let base = field
+            .segments
+            .iter()
+            .map(|segment| segment.start.y)
+            .fold(f32::INFINITY, f32::min);
+        let lobes = (0..128)
+            .map(|index| {
+                let phase = index as f32 * core::f32::consts::TAU / 128.0;
+                let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
+                (
+                    outward,
+                    field.root_profile_relief(Vec3::new(0.0, base + 0.15, 0.0), outward),
+                )
+            })
+            .collect::<Vec<_>>();
+        let (direction, aligned) = lobes
+            .iter()
+            .copied()
+            .max_by(|(_, left), (_, right)| left.total_cmp(right))
+            .unwrap();
+        let transverse = lobes
+            .iter()
+            .map(|(_, relief)| *relief)
+            .fold(f32::INFINITY, f32::min);
+        let high = field.root_profile_relief(Vec3::new(0.0, base + 1.6, 0.0), direction);
+        assert!(aligned > transverse + 0.015);
+        assert!(aligned > high * 4.0);
     }
 }
