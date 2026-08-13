@@ -332,6 +332,18 @@ tactical-tree-leaf-benchmark output="target/tactical-scene-captures/tree-leaf-be
 tactical-tree-lighting-benchmark output="target/tactical-scene-captures/tree-lighting-benchmark" frames="180":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --absolute-minute 340560 --tree-lighting-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
 
+# Attribute production real-world scene cost by tree family and forced LOD.
+# Input and output must identify one already generated coordinate scene and a
+# fresh results directory respectively.
+tactical-scene-performance-benchmark input output frames="120":
+    @cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(input) }} --scene-performance-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+
+# Collect the same matrix with DX12/Vulkan render-pass timestamp and pipeline
+# statistics instrumentation. This intentionally has more observer overhead
+# than the timing-only benchmark above.
+tactical-scene-render-diagnostics input output frames="60":
+    @set TACTICAL_BENCH_RENDER_DIAGNOSTICS=1 && cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(input) }} --scene-performance-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+
 # Capture both leaf representations from face-on through grazing review
 # azimuths under identical controlled daylight.
 tactical-tree-leaf-comparison output="target/tactical-scene-captures/tree-leaf-comparison" settle_frames="8" absolute_minute="340560":

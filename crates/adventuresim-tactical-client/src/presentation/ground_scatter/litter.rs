@@ -11,6 +11,7 @@ use bevy::{
         Vec3,
     },
 };
+use std::collections::BTreeMap;
 
 use crate::presentation::{bps, oak_leaf_material, splitmix64, unit_hash};
 
@@ -30,11 +31,14 @@ pub(super) struct Assets {
 
 pub(super) fn spawn(
     commands: &mut Commands,
+    meshes: &mut bevy::prelude::Assets<Mesh>,
     terrain: &SceneTerrain,
     ground: &SceneGround,
     base_seed: u64,
     assets: &Assets,
 ) {
+    const BATCH_CELL_METRES: f32 = 64.0;
+    let mut batches = BTreeMap::<(i32, i32), (Option<Mesh>, Option<Mesh>)>::new();
     for (index, sample) in ground.samples().iter().enumerate() {
         if sample.cover != GroundCover::LeafLitter {
             continue;
@@ -52,18 +56,18 @@ pub(super) fn spawn(
             if unit_hash(hash) >= density * 0.92 {
                 continue;
             }
-            spawn_forest_floor_leaf_patch(
-                commands,
-                terrain,
-                ground,
-                cell_origin,
-                hash,
-                "Tactical dry-leaf patch",
-                GroundScatterLayer::DryLeaves,
+            let Some(transform) =
+                forest_floor_patch_transform(terrain, ground, cell_origin, hash, 0.8, 0.001)
+            else {
+                continue;
+            };
+            append_litter_batch(
+                meshes,
                 &assets.dry_leaf_meshes[(hash % assets.dry_leaf_meshes.len() as u64) as usize],
-                &assets.dry_leaf_material,
-                0.8,
-                0.001,
+                transform,
+                BATCH_CELL_METRES,
+                &mut batches,
+                true,
             );
         }
         for pass in 0..TWIG_PASSES_PER_SAMPLE {
@@ -72,21 +76,81 @@ pub(super) fn spawn(
             if unit_hash(hash) >= density * 0.62 {
                 continue;
             }
-            spawn_forest_floor_patch(
-                commands,
-                terrain,
-                ground,
-                cell_origin,
-                hash,
-                "Tactical twig patch",
-                GroundScatterLayer::Twigs,
+            let Some(transform) =
+                forest_floor_patch_transform(terrain, ground, cell_origin, hash, 0.72, 0.006)
+            else {
+                continue;
+            };
+            append_litter_batch(
+                meshes,
                 &assets.twig_meshes[(hash % assets.twig_meshes.len() as u64) as usize],
-                &assets.twig_material,
-                0.72,
-                0.006,
-                VisibilityRange::abrupt(0.0, 24.0),
+                transform,
+                BATCH_CELL_METRES,
+                &mut batches,
+                false,
             );
         }
+    }
+    for ((cell_x, cell_z), (leaves, twigs)) in batches {
+        let transform = Transform::from_xyz(
+            cell_x as f32 * BATCH_CELL_METRES,
+            0.0,
+            cell_z as f32 * BATCH_CELL_METRES,
+        );
+        if let Some(mesh) = leaves {
+            commands.spawn((
+                Name::new("Batched tactical dry leaves"),
+                GroundScatterLayer::DryLeaves,
+                NotShadowCaster,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(assets.dry_leaf_material.clone()),
+                VisibilityRange::abrupt(0.0, 35.0),
+                transform,
+            ));
+        }
+        if let Some(mesh) = twigs {
+            commands.spawn((
+                Name::new("Batched tactical twigs"),
+                GroundScatterLayer::Twigs,
+                NotShadowCaster,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(assets.twig_material.clone()),
+                VisibilityRange::abrupt(0.0, 24.0),
+                transform,
+            ));
+        }
+    }
+}
+
+fn append_litter_batch(
+    meshes: &bevy::prelude::Assets<Mesh>,
+    source: &Handle<Mesh>,
+    mut transform: Transform,
+    cell_size: f32,
+    batches: &mut BTreeMap<(i32, i32), (Option<Mesh>, Option<Mesh>)>,
+    leaves: bool,
+) {
+    let cell = (
+        (transform.translation.x / cell_size).floor() as i32,
+        (transform.translation.z / cell_size).floor() as i32,
+    );
+    transform.translation.x -= cell.0 as f32 * cell_size;
+    transform.translation.z -= cell.1 as f32 * cell_size;
+    let Some(source) = meshes.get(source) else {
+        return;
+    };
+    let transformed = source.clone().transformed_by(transform);
+    let slot = if leaves {
+        &mut batches.entry(cell).or_default().0
+    } else {
+        &mut batches.entry(cell).or_default().1
+    };
+    if let Some(batch) = slot {
+        batch
+            .merge(&transformed)
+            .expect("litter variants share one vertex contract");
+    } else {
+        *slot = Some(transformed);
     }
 }
 
@@ -106,67 +170,6 @@ pub(super) fn forest_floor_leaf_material(
     material.physical_parameters.y = 0.00035;
     material.physical_parameters.z = 1.0;
     material
-}
-
-#[allow(clippy::too_many_arguments)]
-fn spawn_forest_floor_patch(
-    commands: &mut Commands,
-    terrain: &SceneTerrain,
-    ground: &SceneGround,
-    cell_origin: Vec2,
-    hash: u64,
-    name: &'static str,
-    layer: GroundScatterLayer,
-    mesh: &Handle<Mesh>,
-    material: &Handle<TacticalFoliageMaterial>,
-    scale: f32,
-    height_offset: f32,
-    visibility_range: VisibilityRange,
-) {
-    let Some(transform) =
-        forest_floor_patch_transform(terrain, ground, cell_origin, hash, scale, height_offset)
-    else {
-        return;
-    };
-    commands.spawn((
-        Name::new(name),
-        layer,
-        NotShadowCaster,
-        Mesh3d(mesh.clone()),
-        MeshMaterial3d(material.clone()),
-        visibility_range,
-        transform,
-    ));
-}
-
-#[allow(clippy::too_many_arguments)]
-fn spawn_forest_floor_leaf_patch(
-    commands: &mut Commands,
-    terrain: &SceneTerrain,
-    ground: &SceneGround,
-    cell_origin: Vec2,
-    hash: u64,
-    name: &'static str,
-    layer: GroundScatterLayer,
-    mesh: &Handle<Mesh>,
-    material: &Handle<TacticalTreeLeafCardMaterial>,
-    scale: f32,
-    height_offset: f32,
-) {
-    let Some(transform) =
-        forest_floor_patch_transform(terrain, ground, cell_origin, hash, scale, height_offset)
-    else {
-        return;
-    };
-    commands.spawn((
-        Name::new(name),
-        layer,
-        NotShadowCaster,
-        Mesh3d(mesh.clone()),
-        MeshMaterial3d(material.clone()),
-        VisibilityRange::abrupt(0.0, 35.0),
-        transform,
-    ));
 }
 
 fn forest_floor_patch_transform(

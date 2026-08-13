@@ -49,7 +49,6 @@ pub(in crate::presentation) struct TreeLodClusterBake {
     pub(in crate::presentation) primary_group: u8,
     pub(in crate::presentation) center: Vec3,
     pub(in crate::presentation) radius: f32,
-    pub(in crate::presentation) mesh: Mesh,
 }
 
 pub(in crate::presentation) fn validate_tree_bake_provenance(provenance: &TreeImpostorProvenance) {
@@ -82,7 +81,6 @@ pub(in crate::presentation) struct TreeBakeCard {
     primary_mask: u8,
     secondary_group: Option<u16>,
     source_group: u16,
-    primary_group: u8,
     minimum_branch_depth: u8,
 }
 
@@ -139,7 +137,6 @@ pub(in crate::presentation) fn bake_tree_lod(
     let mut indices = Vec::new();
     let source_geometry_hash = tree_source_geometry_hash(branches, leaves);
     let mut records = Vec::with_capacity(cards.len());
-    let mut card_uvs = Vec::with_capacity(cards.len());
 
     for (index, card) in cards.iter().copied().enumerate() {
         let tile_x = index as u32 % columns;
@@ -170,7 +167,6 @@ pub(in crate::presentation) fn bake_tree_lod(
             (tile_x + 1) as f32 * tile_size as f32 / atlas_width as f32,
             (tile_y + 1) as f32 * tile_size as f32 / atlas_height as f32,
         );
-        card_uvs.push((uv_min, uv_max));
         if lod != 4 || index == 0 {
             let (mesh_uv_min, mesh_uv_max) = if lod == 4 {
                 (Vec2::ZERO, Vec2::ONE)
@@ -243,7 +239,6 @@ pub(in crate::presentation) fn bake_tree_lod(
                     primary_group,
                     center,
                     radius,
-                    mesh: tree_cluster_card_mesh(&cards, &card_uvs, primary_group),
                 })
             })
             .collect()
@@ -277,45 +272,6 @@ pub(in crate::presentation) fn bake_tree_lod(
             records,
         },
     }
-}
-
-fn tree_cluster_card_mesh(
-    cards: &[TreeBakeCard],
-    card_uvs: &[(Vec2, Vec2)],
-    primary_group: u8,
-) -> Mesh {
-    let mut positions = Vec::new();
-    let mut normals = Vec::new();
-    let mut uvs = Vec::new();
-    let mut indices = Vec::new();
-    for (card, (uv_min, uv_max)) in cards
-        .iter()
-        .zip(card_uvs)
-        .filter(|(card, _)| card.primary_group == primary_group)
-    {
-        append_tree_card_with_uv(
-            card.center,
-            card.right,
-            card.up,
-            card.width,
-            card.height,
-            *uv_min,
-            *uv_max,
-            &mut positions,
-            &mut normals,
-            &mut uvs,
-            &mut indices,
-        );
-    }
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_indices(Indices::U32(indices));
-    mesh
 }
 
 fn tree_primary_group_sphere(
@@ -485,7 +441,6 @@ pub(in crate::presentation) fn tree_bake_cards(
                     primary_mask: 0,
                     secondary_group: None,
                     source_group: view,
-                    primary_group: u8::MAX,
                     minimum_branch_depth: 0,
                 });
             }
@@ -510,16 +465,6 @@ pub(in crate::presentation) fn fit_tree_bake_card(
     source_group: u16,
     minimum_branch_depth: u8,
 ) -> TreeBakeCard {
-    let primary_group = secondary_group.map_or_else(
-        || {
-            if primary_mask.count_ones() == 1 {
-                primary_mask.trailing_zeros() as u8
-            } else {
-                u8::MAX
-            }
-        },
-        |group| (group / TREE_SECONDARY_GROUP_STRIDE) as u8,
-    );
     let up = up.normalize();
     let right = (right - up * right.dot(up)).normalize_or_zero();
     let right = if right.length_squared() < 0.25 {
@@ -536,7 +481,6 @@ pub(in crate::presentation) fn fit_tree_bake_card(
         primary_mask,
         secondary_group,
         source_group,
-        primary_group,
         minimum_branch_depth,
     };
     let mut min = Vec2::splat(f32::INFINITY);
@@ -582,7 +526,6 @@ pub(in crate::presentation) fn fit_tree_bake_card(
         primary_mask,
         secondary_group,
         source_group,
-        primary_group,
         minimum_branch_depth,
     }
 }
@@ -651,7 +594,11 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
 ) -> VisibilityRange {
     let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
     let transition = |index: usize| {
-        let base = [22.0..26.0, 36.0..42.0, 56.0..64.0, 84.0..96.0][index].clone();
+        // Dense real-world forest profiling showed that the prior ranges kept
+        // tens of millions of live leaf vertices active after their detail
+        // was no longer readable. Preserve overlap, but hand off one botanical
+        // order earlier at every stage.
+        let base = [1.0..1.5, 1.5..2.5, 2.5..4.0, 50.0..60.0][index].clone();
         let spatial_scale = if index < 3 { cluster_scale } else { 1.0 };
         (base.start * focal_scale * spatial_scale)..(base.end * focal_scale * spatial_scale)
     };
@@ -676,8 +623,7 @@ pub(in crate::presentation) fn tree_leaf_visibility(
     cluster_radius: f32,
 ) -> VisibilityRange {
     let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
-    let leaf_transition =
-        (10.0 * focal_scale * cluster_scale)..(13.0 * focal_scale * cluster_scale);
+    let leaf_transition = (0.65 * focal_scale * cluster_scale)..(1.0 * focal_scale * cluster_scale);
     let aggregate_transition =
         tree_projected_lod_visibility(0, focal_scale, cluster_radius).end_margin;
     let (start_margin, end_margin) = match representation {
@@ -694,7 +640,7 @@ pub(in crate::presentation) fn tree_leaf_visibility(
 pub(in crate::presentation) fn tree_trunk_visibility() -> VisibilityRange {
     VisibilityRange {
         start_margin: 0.0..0.0,
-        end_margin: 84.0..96.0,
+        end_margin: 50.0..60.0,
         use_aabb: true,
     }
 }
@@ -799,6 +745,27 @@ mod tests {
             assert_eq!(current.end_margin, next.start_margin);
             assert!(!current.is_abrupt());
         }
+    }
+
+    #[test]
+    fn production_tree_lod_ranges_handoff_before_detail_is_subpixel() {
+        let expected = [
+            (0.0..0.0, 1.0..1.5),
+            (1.0..1.5, 1.5..2.5),
+            (1.5..2.5, 2.5..4.0),
+            (2.5..4.0, 50.0..60.0),
+            (50.0..60.0, 190.0..200.0),
+        ];
+        for (lod, (start, end)) in expected.into_iter().enumerate() {
+            let range = tree_lod_visibility(lod as u8);
+            assert_eq!(range.start_margin, start);
+            assert_eq!(range.end_margin, end);
+        }
+        assert_eq!(
+            tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5).end_margin,
+            0.65..1.0
+        );
+        assert_eq!(tree_trunk_visibility().end_margin, 50.0..60.0);
     }
 
     #[test]

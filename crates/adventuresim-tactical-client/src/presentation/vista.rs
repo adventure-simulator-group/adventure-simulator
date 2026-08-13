@@ -1,5 +1,9 @@
 use super::*;
 
+/// Marker for a distant tree billboard spawned as part of a vista ring.
+#[derive(Component)]
+pub(crate) struct VistaTreePresentation;
+
 pub(super) fn on_scene_vista_bundle(
     bundle: On<SceneVistaBundle>,
     mut commands: Commands,
@@ -166,6 +170,7 @@ fn spawn_vista_trees(
                 commands.spawn((
                     Name::new("Distant vista oak billboard"),
                     VistaTerrain(lod.level),
+                    VistaTreePresentation,
                     NoFrustumCulling,
                     NotShadowCaster,
                     Mesh3d(cached.mesh.clone()),

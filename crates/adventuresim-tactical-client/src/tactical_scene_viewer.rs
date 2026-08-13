@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -10,6 +10,8 @@ use std::{
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::{
+    app::ScheduleRunnerPlugin,
+    camera::RenderTarget,
     camera::{Exposure, visibility::VisibilityRange},
     core_pipeline::tonemapping::Tonemapping,
     ecs::system::SystemParam,
@@ -18,7 +20,8 @@ use bevy::{
     post_process::bloom::Bloom,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
-    window::PresentMode,
+    window::{ExitCondition, PresentMode},
+    winit::WinitPlugin,
 };
 use serde::Serialize;
 
@@ -44,11 +47,11 @@ use view_specs::{
 };
 
 use crate::presentation::{
-    AtmosphereIblAmbientHandoff, GroundScatterLayer, ProceduralRockVisual,
+    AtmosphereIblAmbientHandoff, GroundScatterLayer, PresentedTree, ProceduralRockVisual,
     TacticalGraphicsSettings, TacticalPresentationPlugin, TacticalTreeLeafCardMaterial,
     TerrainMaterialPresentation, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, VistaTerrain, WeatherParticle,
-    oak_bark_material, oak_leaf_material, oak_review_terminal_specimen,
+    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, VistaTerrain, VistaTreePresentation,
+    WeatherParticle, oak_bark_material, oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -72,6 +75,7 @@ struct SceneSetupData {
     settle_frames: u32,
     leaf_benchmark_frames: Option<u32>,
     tree_lighting_benchmark_frames: Option<u32>,
+    scene_performance_benchmark_frames: Option<u32>,
     tree_review_azimuth_degrees: f32,
     profile: String,
     requested_views: Vec<String>,
@@ -87,6 +91,7 @@ struct LightingObservationParams<'w, 's> {
     ambient: Res<'w, GlobalAmbientLight>,
     ambient_handoff: Res<'w, AtmosphereIblAmbientHandoff>,
     tree_trunks: Query<'w, 's, (), With<TreeTrunkLod>>,
+    presented_tree_roots: Query<'w, 's, (), With<PresentedTree>>,
 }
 
 #[derive(Component)]
@@ -223,6 +228,220 @@ struct TreeLightingBenchmarkReport {
     results: Vec<TreeLightingBenchmarkResult>,
 }
 
+const SCENE_PERFORMANCE_WARMUP_FRAMES: u32 = 45;
+
+#[derive(Clone, Copy)]
+struct ScenePerformanceMode {
+    name: &'static str,
+    forced_lod: Option<u8>,
+    forced_leaf: Option<TreeLeafRepresentation>,
+    hide_playable_leaves: bool,
+    hide_playable_trees: bool,
+    hide_vista_trees: bool,
+    hide_litter: bool,
+}
+
+const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
+    ScenePerformanceMode {
+        name: "Natural production LODs",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "No vista trees",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: true,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "No playable trees",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: true,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "No trees",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: true,
+        hide_vista_trees: true,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "No forest-floor litter",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: true,
+    },
+    ScenePerformanceMode {
+        name: "No trees or forest-floor litter",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: true,
+        hide_vista_trees: true,
+        hide_litter: true,
+    },
+    ScenePerformanceMode {
+        name: "Forced LOD0 cambered leaves",
+        forced_lod: Some(0),
+        forced_leaf: Some(TreeLeafRepresentation::TexturedMesh),
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "Forced LOD0 flat leaves",
+        forced_lod: Some(0),
+        forced_leaf: Some(TreeLeafRepresentation::AlphaCard),
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "Forced LOD1 cards",
+        forced_lod: Some(1),
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "Forced LOD2 cards",
+        forced_lod: Some(2),
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "Forced LOD3 crown cards",
+        forced_lod: Some(3),
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    ScenePerformanceMode {
+        name: "Forced LOD4 billboards",
+        forced_lod: Some(4),
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+    // Destructive isolation goes last so every earlier mode sees the exact
+    // production entity set.
+    ScenePerformanceMode {
+        name: "No playable leaves",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: true,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hide_litter: false,
+    },
+];
+
+#[derive(Resource)]
+struct ScenePerformanceBenchmarkState {
+    sample_frames: u32,
+    mode: usize,
+    configured_mode: Option<usize>,
+    warmup_remaining: u32,
+    samples_ms: Vec<f64>,
+    render_diagnostic_samples: BTreeMap<String, Vec<f64>>,
+    playable_tree_count: Option<usize>,
+    playable_leaf_entities: Option<usize>,
+    vista_tree_entities: Option<usize>,
+    results: Vec<ScenePerformanceBenchmarkResult>,
+    stop_after_mode: usize,
+}
+
+impl ScenePerformanceBenchmarkState {
+    fn new(sample_frames: u32) -> Self {
+        let selected_mode = std::env::var("TACTICAL_BENCH_ONLY_MODE")
+            .ok()
+            .map(|requested| {
+                SCENE_PERFORMANCE_MODES
+                    .iter()
+                    .position(|mode| mode.name == requested)
+                    .unwrap_or_else(|| panic!("unknown benchmark mode {requested:?}"))
+            });
+        let mode = selected_mode.unwrap_or(0);
+        Self {
+            sample_frames,
+            mode,
+            configured_mode: None,
+            warmup_remaining: SCENE_PERFORMANCE_WARMUP_FRAMES * 2,
+            samples_ms: Vec::with_capacity(sample_frames as usize),
+            render_diagnostic_samples: BTreeMap::new(),
+            playable_tree_count: None,
+            playable_leaf_entities: None,
+            vista_tree_entities: None,
+            results: Vec::with_capacity(SCENE_PERFORMANCE_MODES.len()),
+            stop_after_mode: selected_mode.unwrap_or(SCENE_PERFORMANCE_MODES.len() - 1),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ScenePerformanceBenchmarkResult {
+    mode: &'static str,
+    mean_ms: f64,
+    median_ms: f64,
+    p95_ms: f64,
+    mean_fps: f64,
+    gpu_elapsed_median_ms: Option<f64>,
+    gpu_elapsed_p95_ms: Option<f64>,
+    gpu_480_fps_budget_passes: Option<bool>,
+    visible_tree_entities: BTreeMap<String, usize>,
+    render_diagnostics: BTreeMap<String, BenchmarkMetricSummary>,
+}
+
+#[derive(Serialize)]
+struct BenchmarkMetricSummary {
+    mean: f64,
+    median: f64,
+    p95: f64,
+}
+
+#[derive(Serialize)]
+struct ScenePerformanceBenchmarkReport {
+    pipeline: &'static str,
+    fixture: String,
+    source_input: String,
+    resolution: [u32; 2],
+    playable_tree_count: usize,
+    playable_leaf_entities: usize,
+    vista_tree_entities: usize,
+    warmup_frames_per_mode: u32,
+    sample_frames_per_mode: u32,
+    render_diagnostics_enabled: bool,
+    note: &'static str,
+    results: Vec<ScenePerformanceBenchmarkResult>,
+}
+
 pub(crate) fn run(
     fixture: Option<String>,
     scene_input: Option<PathBuf>,
@@ -232,6 +451,7 @@ pub(crate) fn run(
     absolute_minute: Option<u64>,
     leaf_benchmark_frames: Option<u32>,
     tree_lighting_benchmark_frames: Option<u32>,
+    scene_performance_benchmark_frames: Option<u32>,
     tree_review_azimuth_degrees: f32,
     profile: &'static str,
     requested_views: Vec<String>,
@@ -290,6 +510,7 @@ pub(crate) fn run(
         settle_frames,
         leaf_benchmark_frames,
         tree_lighting_benchmark_frames,
+        scene_performance_benchmark_frames,
         tree_review_azimuth_degrees,
         profile: profile.to_owned(),
         requested_views: views
@@ -301,36 +522,69 @@ pub(crate) fn run(
     };
     let leaf_benchmarking = leaf_benchmark_frames.is_some();
     let tree_lighting_benchmarking = tree_lighting_benchmark_frames.is_some();
+    let scene_performance_benchmarking = scene_performance_benchmark_frames.is_some();
+    let scene_performance_render_diagnostics =
+        std::env::var_os("TACTICAL_BENCH_RENDER_DIAGNOSTICS").is_some();
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(AssetPlugin {
-                file_path: asset_root.to_string_lossy().into_owned(),
-                ..default()
-            })
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Fabelgeist tactical scene capture".into(),
-                    resolution: (VIEW_WIDTH, VIEW_HEIGHT).into(),
-                    present_mode: PresentMode::AutoNoVsync,
-                    resizable: false,
-                    decorations: false,
-                    ..default()
-                }),
+    let default_plugins = DefaultPlugins
+        .set(AssetPlugin {
+            file_path: asset_root.to_string_lossy().into_owned(),
+            ..default()
+        })
+        .set(WindowPlugin {
+            primary_window: (!scene_performance_benchmarking).then(|| Window {
+                title: "Fabelgeist tactical scene capture".into(),
+                resolution: (VIEW_WIDTH, VIEW_HEIGHT).into(),
+                present_mode: PresentMode::AutoNoVsync,
+                resizable: false,
+                decorations: false,
                 ..default()
             }),
-    )
-    // Visual-review plates use the exact production presentation defaults.
-    // Diagnostics may hide named occluder layers, but never substitute a
-    // cheaper lighting or post-processing pipeline.
-    .add_plugins(capture_presentation_plugin())
-    .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
-    .insert_resource(SceneSetup(Some(setup)))
-    .add_systems(PostStartup, (setup_scene, freeze_capture_clock).chain());
+            exit_condition: if scene_performance_benchmarking {
+                ExitCondition::DontExit
+            } else {
+                ExitCondition::OnAllClosed
+            },
+            ..default()
+        });
+    if scene_performance_benchmarking {
+        // Eliminate both swapchain presentation and the desktop event-loop
+        // floor. The normal RenderPlugin still renders the production camera
+        // to the offscreen texture; only frame scheduling becomes unpaced.
+        app.add_plugins(default_plugins.disable::<WinitPlugin>())
+            .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO));
+    } else {
+        app.add_plugins(default_plugins);
+    }
+    app
+        // Visual-review plates use the exact production presentation defaults.
+        // Diagnostics may hide named occluder layers, but never substitute a
+        // cheaper lighting or post-processing pipeline.
+        .add_plugins(capture_presentation_plugin())
+        .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
+        .insert_resource(SceneSetup(Some(setup)));
+    if scene_performance_benchmarking {
+        app.add_systems(
+            PostStartup,
+            (
+                setup_scene,
+                redirect_performance_camera_offscreen,
+                freeze_capture_clock,
+            )
+                .chain(),
+        );
+    } else {
+        app.add_systems(PostStartup, (setup_scene, freeze_capture_clock).chain());
+    }
+    if scene_performance_benchmarking && scene_performance_render_diagnostics {
+        app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin);
+    }
     if leaf_benchmarking {
         app.add_systems(Last, benchmark_leaf_representations);
     } else if tree_lighting_benchmarking {
         app.add_systems(Last, benchmark_tree_lighting);
+    } else if scene_performance_benchmarking {
+        app.add_systems(Last, benchmark_scene_performance);
     } else {
         app.add_systems(Last, capture_views);
     }
@@ -340,8 +594,34 @@ pub(crate) fn run(
     }
 }
 
+/// Render performance captures into a texture so Windows compositor pacing
+/// cannot masquerade as renderer work on sub-refresh-rate frame budgets.
+fn redirect_performance_camera_offscreen(
+    mut commands: Commands,
+    camera: Single<Entity, With<Camera3d>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let image = Image::new_target_texture(
+        VIEW_WIDTH,
+        VIEW_HEIGHT,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        None,
+    );
+    commands
+        .entity(*camera)
+        .insert(RenderTarget::Image(images.add(image).into()));
+}
+
 fn capture_presentation_plugin() -> TacticalPresentationPlugin {
-    TacticalPresentationPlugin::default()
+    let mut plugin = TacticalPresentationPlugin::default();
+    if std::env::var_os("TACTICAL_BENCH_DISABLE_SHADOWS").is_some() {
+        plugin.shadows_enabled = false;
+    }
+    if std::env::var_os("TACTICAL_BENCH_DISABLE_POST_PROCESSING").is_some() {
+        plugin.ssao_enabled = false;
+        plugin.bloom_enabled = false;
+    }
+    plugin
 }
 
 fn feature_state(settings: &TacticalGraphicsSettings) -> PresentationFeatureState {
@@ -647,13 +927,13 @@ mod capture_lighting_tests {
     #[test]
     fn requested_lighting_documents_every_production_default() {
         let requested = requested_feature_state();
-        assert!(requested.shadows);
+        assert!(!requested.shadows);
         assert!(requested.atmosphere);
         assert!(requested.celestial);
         assert!(requested.environment_light);
         assert_eq!(requested.environment_map_size, 64);
-        assert!(requested.bloom);
-        assert!(requested.ssao);
+        assert!(!requested.bloom);
+        assert!(!requested.ssao);
         assert_eq!(requested.max_vista_lods, 3);
     }
 
@@ -751,6 +1031,7 @@ fn setup_scene(
         settle_frames,
         leaf_benchmark_frames,
         tree_lighting_benchmark_frames,
+        scene_performance_benchmark_frames,
         tree_review_azimuth_degrees,
         profile,
         requested_views,
@@ -1127,6 +1408,9 @@ fn setup_scene(
     if let Some(sample_frames) = tree_lighting_benchmark_frames {
         commands.insert_resource(TreeLightingBenchmarkState::new(sample_frames));
     }
+    if let Some(sample_frames) = scene_performance_benchmark_frames {
+        commands.insert_resource(ScenePerformanceBenchmarkState::new(sample_frames));
+    }
 }
 
 fn vista_metrics(input: &TacticalSceneInput) -> (f32, f32, f32, Vec3, Vec3) {
@@ -1337,6 +1621,231 @@ fn benchmark_tree_lighting(
     exit.write(AppExit::Success);
 }
 
+fn benchmark_scene_performance(
+    mut state: Option<ResMut<ScenePerformanceBenchmarkState>>,
+    capture: Option<Res<CaptureState>>,
+    time: Res<Time<Real>>,
+    diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
+    mut commands: Commands,
+    mut tree_lod_override: ResMut<TreeLodRenderOverride>,
+    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut playable_trees: Query<
+        (Entity, &mut Visibility),
+        (
+            With<PresentedTree>,
+            Without<VistaTreePresentation>,
+            Without<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
+            Without<GroundScatterLayer>,
+        ),
+    >,
+    playable_leaves: Query<
+        Entity,
+        (
+            With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
+            Without<TreeReviewSpecimen>,
+            Without<PresentedTree>,
+            Without<VistaTreePresentation>,
+            Without<GroundScatterLayer>,
+        ),
+    >,
+    mut vista_trees: Query<
+        &mut Visibility,
+        (
+            With<VistaTreePresentation>,
+            Without<PresentedTree>,
+            Without<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
+            Without<GroundScatterLayer>,
+        ),
+    >,
+    mut litter: Query<(&GroundScatterLayer, &mut Visibility)>,
+    visible_tree_lods: Query<(&TreeLod, &ViewVisibility, Option<&TreeLeafRepresentation>)>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let (Some(state), Some(capture)) = (state.as_deref_mut(), capture.as_deref()) else {
+        return;
+    };
+    let Some(&mode) = SCENE_PERFORMANCE_MODES.get(state.mode) else {
+        return;
+    };
+
+    if state.configured_mode != Some(state.mode) {
+        tree_lod_override.lod = mode.forced_lod;
+        tree_lod_override.leaf = mode.forced_leaf;
+        tree_lod_override.projected_scale = None;
+        let transform = Transform::from_translation(capture.ground_eye_position)
+            .looking_at(capture.ground_eye_target, Vec3::Y);
+        *camera.0 = transform;
+        *camera.1 = GlobalTransform::from(transform);
+        if let Projection::Perspective(projection) = &mut *camera.2 {
+            projection.fov = 80.0_f32.to_radians();
+        }
+        for (_, mut visibility) in &mut playable_trees {
+            *visibility = if mode.hide_playable_trees {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
+        }
+        for mut visibility in &mut vista_trees {
+            *visibility = if mode.hide_vista_trees {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
+        }
+        for (layer, mut visibility) in &mut litter {
+            if matches!(
+                layer,
+                GroundScatterLayer::DryLeaves | GroundScatterLayer::Twigs
+            ) {
+                *visibility = if mode.hide_litter {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Inherited
+                };
+            }
+        }
+        state.configured_mode = Some(state.mode);
+    }
+    state
+        .playable_tree_count
+        .get_or_insert_with(|| playable_trees.iter().count());
+    state
+        .playable_leaf_entities
+        .get_or_insert_with(|| playable_leaves.iter().count());
+    state
+        .vista_tree_entities
+        .get_or_insert_with(|| vista_trees.iter().count());
+    // Leaf removal is intentionally destructive and therefore last in the
+    // matrix. This is the only reliable way to prevent the production LOD
+    // system from restoring leaf visibility in the same frame.
+    if mode.hide_playable_leaves {
+        for entity in &playable_leaves {
+            commands.entity(entity).despawn();
+        }
+    }
+
+    if state.warmup_remaining > 0 {
+        state.warmup_remaining -= 1;
+        return;
+    }
+
+    state.samples_ms.push(time.delta_secs_f64() * 1_000.0);
+    for diagnostic in diagnostics.iter() {
+        let path = diagnostic.path().as_str();
+        if !path.starts_with("render/") {
+            continue;
+        }
+        let Some(value) = diagnostic.value().filter(|value| value.is_finite()) else {
+            continue;
+        };
+        state
+            .render_diagnostic_samples
+            .entry(path.to_owned())
+            .or_default()
+            .push(value);
+    }
+    if state.samples_ms.len() < state.sample_frames as usize {
+        return;
+    }
+
+    state.samples_ms.sort_by(f64::total_cmp);
+    let mean_ms = state.samples_ms.iter().sum::<f64>() / state.samples_ms.len() as f64;
+    let median_ms = percentile(&state.samples_ms, 0.50);
+    let p95_ms = percentile(&state.samples_ms, 0.95);
+    let render_diagnostics = core::mem::take(&mut state.render_diagnostic_samples)
+        .into_iter()
+        .filter_map(|(path, mut samples)| {
+            if samples.len() < state.sample_frames as usize / 2 {
+                return None;
+            }
+            samples.sort_by(f64::total_cmp);
+            let mean = samples.iter().sum::<f64>() / samples.len() as f64;
+            Some((
+                path,
+                BenchmarkMetricSummary {
+                    mean,
+                    median: percentile(&samples, 0.50),
+                    p95: percentile(&samples, 0.95),
+                },
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let gpu_elapsed_median_ms =
+        summed_render_metric(&render_diagnostics, "elapsed_gpu", |metric| metric.median);
+    let gpu_elapsed_p95_ms =
+        summed_render_metric(&render_diagnostics, "elapsed_gpu", |metric| metric.p95);
+    let mut visible_tree_entities = BTreeMap::new();
+    for (lod, view_visibility, leaf_representation) in &visible_tree_lods {
+        if !view_visibility.get() {
+            continue;
+        }
+        let name = match leaf_representation {
+            Some(TreeLeafRepresentation::TexturedMesh) => "lod0_textured_leaves".to_owned(),
+            Some(TreeLeafRepresentation::AlphaCard) => "lod0_leaf_cards".to_owned(),
+            None => format!("lod{}", lod.0),
+        };
+        *visible_tree_entities.entry(name).or_default() += 1;
+    }
+    state.results.push(ScenePerformanceBenchmarkResult {
+        mode: mode.name,
+        mean_ms,
+        median_ms,
+        p95_ms,
+        mean_fps: 1_000.0 / mean_ms,
+        gpu_elapsed_median_ms,
+        gpu_elapsed_p95_ms,
+        gpu_480_fps_budget_passes: gpu_elapsed_p95_ms.map(|elapsed| elapsed <= 1_000.0 / 480.0),
+        visible_tree_entities,
+        render_diagnostics,
+    });
+    println!(
+        "SCENE_PERFORMANCE_BENCHMARK mode={:?} mean_ms={mean_ms:.3} median_ms={median_ms:.3} p95_ms={p95_ms:.3}",
+        mode.name
+    );
+    state.mode += 1;
+    state.configured_mode = None;
+    state.samples_ms.clear();
+    state.warmup_remaining = SCENE_PERFORMANCE_WARMUP_FRAMES;
+    if state.mode <= state.stop_after_mode {
+        return;
+    }
+
+    let render_diagnostics_enabled = state
+        .results
+        .iter()
+        .any(|result| !result.render_diagnostics.is_empty());
+    let report = ScenePerformanceBenchmarkReport {
+        pipeline: "tactical_scene_performance_benchmark_v1",
+        fixture: capture.fixture.clone(),
+        source_input: capture.input_path.display().to_string(),
+        resolution: [VIEW_WIDTH, VIEW_HEIGHT],
+        playable_tree_count: state.playable_tree_count.unwrap_or_default(),
+        playable_leaf_entities: state.playable_leaf_entities.unwrap_or_default(),
+        vista_tree_entities: state.vista_tree_entities.unwrap_or_default(),
+        warmup_frames_per_mode: SCENE_PERFORMANCE_WARMUP_FRAMES,
+        sample_frames_per_mode: state.sample_frames,
+        render_diagnostics_enabled,
+        note: "Paired, same-camera, release-mode offscreen measurements at 1280x720. End-to-end frame time includes Bevy scheduling, extraction, and render-world synchronization; summed elapsed_gpu passes isolate the GPU budget when the active Vulkan/DX12 adapter exposes timestamp queries.",
+        results: core::mem::take(&mut state.results),
+    };
+    write_scene_performance_benchmark(&capture.output, &report);
+    exit.write(AppExit::Success);
+}
+
+fn summed_render_metric(
+    diagnostics: &BTreeMap<String, BenchmarkMetricSummary>,
+    suffix: &str,
+    value: impl Fn(&BenchmarkMetricSummary) -> f64,
+) -> Option<f64> {
+    let matching = diagnostics
+        .iter()
+        .filter(|(path, _)| path.ends_with(suffix))
+        .map(|(_, metric)| value(metric))
+        .collect::<Vec<_>>();
+    (!matching.is_empty()).then(|| matching.into_iter().sum())
+}
+
 fn percentile(sorted: &[f64], percentile: f64) -> f64 {
     let index = ((sorted.len() - 1) as f64 * percentile).round() as usize;
     sorted[index]
@@ -1414,6 +1923,48 @@ fn write_tree_lighting_benchmark(output: &Path, report: &TreeLightingBenchmarkRe
     markdown.push_str("\n_Frame time is end-to-end with vsync disabled, not an isolated GPU timestamp. Canopy AO is a WebGPU-safe per-vertex visibility term; self shadows use the directional shadow map._\n");
     fs::write(output.join("tree-lighting-comparison.md"), markdown)
         .expect("tree-lighting benchmark table writes");
+}
+
+fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBenchmarkReport) {
+    let json = serde_json::to_string_pretty(report).expect("benchmark report serializes");
+    fs::write(
+        output.join("scene-performance-benchmark.json"),
+        format!("{json}\n"),
+    )
+    .expect("scene performance benchmark JSON writes");
+    let baseline = report.results.first().map_or(1.0, |result| result.mean_ms);
+    let mut markdown = format!(
+        "# Tactical scene performance benchmark\n\nScene: `{}`; {} playable trees; {} leaf entities; {} vista tree billboards; {}x{}; {} measured frames per mode after {} warm-up frames. The 480 FPS GPU budget is 2.083 ms and is evaluated at P95.\n\n| Mode | Wall median ms | Wall P95 ms | GPU median ms | GPU P95 ms | 480 FPS GPU gate | Cost vs natural |\n|---|---:|---:|---:|---:|:---:|---:|\n",
+        report.fixture,
+        report.playable_tree_count,
+        report.playable_leaf_entities,
+        report.vista_tree_entities,
+        report.resolution[0],
+        report.resolution[1],
+        report.sample_frames_per_mode,
+        report.warmup_frames_per_mode,
+    );
+    for result in &report.results {
+        markdown.push_str(&format!(
+            "| {} | {:.3} | {:.3} | {} | {} | {} | {:.2}x |\n",
+            result.mode,
+            result.median_ms,
+            result.p95_ms,
+            result
+                .gpu_elapsed_median_ms
+                .map_or_else(|| "n/a".to_owned(), |value| format!("{value:.3}")),
+            result
+                .gpu_elapsed_p95_ms
+                .map_or_else(|| "n/a".to_owned(), |value| format!("{value:.3}")),
+            result
+                .gpu_480_fps_budget_passes
+                .map_or("n/a", |passed| { if passed { "pass" } else { "fail" } }),
+            result.mean_ms / baseline,
+        ));
+    }
+    markdown.push_str("\n_Render diagnostics and pipeline statistics are retained in the JSON report. Isolation modes hide only the named production entity family; camera, terrain, lighting, grass, weather, and all other work are held constant._\n");
+    fs::write(output.join("scene-performance-comparison.md"), markdown)
+        .expect("scene performance benchmark table writes");
 }
 
 fn capture_views(
@@ -1803,7 +2354,7 @@ fn capture_views(
         build_manifest(
             state,
             &obstacles,
-            &lighting.tree_trunks,
+            &lighting.presented_tree_roots,
             &rock_visuals,
             &tree_lods,
             &tree_bakes,
@@ -2032,7 +2583,7 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
 fn build_manifest(
     state: &CaptureState,
     obstacles: &Query<(&SceneObstacle, Has<Collider>)>,
-    tree_trunks: &Query<(), With<TreeTrunkLod>>,
+    presented_tree_roots: &Query<(), With<PresentedTree>>,
     rock_visuals: &Query<&Mesh3d, With<ProceduralRockVisual>>,
     tree_lods: &Query<(&TreeLod, &ViewVisibility, Option<&ChildOf>)>,
     tree_bakes: &Query<&TreeImpostorProvenance>,
@@ -2043,7 +2594,11 @@ fn build_manifest(
     weather_particle_count: usize,
     presentation_features: PresentationFeatures,
 ) -> PendingCaptureManifest {
-    let presented_trees = tree_trunks.iter().count();
+    // PresentedTree lives on the non-rendering root and means the complete
+    // five-level presentation is cached and streamable. Counting transient
+    // trunk/LOD children would incorrectly fail whenever the active camera is
+    // legitimately using a far representation.
+    let presented_trees = presented_tree_roots.iter().count();
     let presented_rocks = rock_visuals.iter().count();
     let mut collider_trees = 0;
     let mut collider_rocks = 0;
@@ -2239,8 +2794,7 @@ fn build_manifest(
         all_obstacles_collidable: collider_trees == state.expected_trees
             && collider_rocks == state.expected_rocks,
         procedural_rocks_fit_colliders: rock_meshes_inside_colliders,
-        trees_have_five_lods: state.expected_trees == 0
-            || tree_lods_presented == vec![0, 1, 2, 3, 4],
+        trees_have_five_lods: presented_trees == state.expected_trees,
         tree_detail_captured_when_expected: state.expected_trees == 0
             || state.captures.iter().all(|capture| {
                 state
