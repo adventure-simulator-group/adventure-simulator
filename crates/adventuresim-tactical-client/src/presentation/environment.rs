@@ -1,5 +1,52 @@
 use super::*;
 
+/// Presentation-owned selector for the one playable tactical scene.
+///
+/// Scene data remains authoritative on its entity. This resource only makes
+/// the presentation-wide choice explicit: the most recently activated live
+/// scene entity wins, and removal deterministically falls back to the prior
+/// live scene.
+#[derive(Resource, Debug, Clone, Default)]
+pub(in crate::presentation) struct ActiveTacticalScene {
+    pub(in crate::presentation) entity: Option<Entity>,
+    activation_order: Vec<Entity>,
+}
+
+pub(in crate::presentation) fn activate_tactical_scene(
+    event: On<Add, SceneEnvironment>,
+    mut active: ResMut<ActiveTacticalScene>,
+) {
+    active
+        .activation_order
+        .retain(|entity| *entity != event.entity);
+    active.activation_order.push(event.entity);
+    active.entity = Some(event.entity);
+}
+
+pub(in crate::presentation) fn refresh_active_tactical_scene(
+    environments: Query<(), With<SceneEnvironment>>,
+    mut active: ResMut<ActiveTacticalScene>,
+) {
+    let selected = active
+        .activation_order
+        .iter()
+        .rev()
+        .copied()
+        .find(|entity| environments.contains(*entity));
+    if selected == active.entity
+        && active
+            .activation_order
+            .iter()
+            .all(|entity| environments.contains(*entity))
+    {
+        return;
+    }
+    active
+        .activation_order
+        .retain(|entity| environments.contains(*entity));
+    active.entity = selected;
+}
+
 pub(super) fn scene_sunlight_illuminance(
     environment: &SceneEnvironment,
     sun_altitude_degrees: f32,
@@ -161,14 +208,24 @@ pub(in crate::presentation) fn setup_tactical_presentation(
     }
 }
 
-pub(super) fn on_environment_added(
-    event: On<Add, SceneEnvironment>,
-    environments: Query<&SceneEnvironment>,
+pub(super) fn apply_active_environment_fog(
+    active: Res<ActiveTacticalScene>,
+    environments: Query<Ref<SceneEnvironment>>,
     mut fog: Single<&mut DistanceFog, With<Camera3d>>,
-) -> Result {
-    let environment = environments.get(event.entity)?;
-    **fog = scene_distance_fog(environment);
-    Ok(())
+) {
+    let Some(entity) = active.entity else {
+        if active.is_changed() {
+            **fog = scene_distance_fog(&legacy_scene_environment(&SceneId("default".into())));
+        }
+        return;
+    };
+    let Ok(environment) = environments.get(entity) else {
+        return;
+    };
+    if !active.is_changed() && !environment.is_changed() {
+        return;
+    }
+    **fog = scene_distance_fog(&environment);
 }
 
 #[cfg(test)]
@@ -279,5 +336,112 @@ mod tests {
         assert_eq!(day, 10_500.0);
         assert_eq!(moonless, 0.6);
         assert!((0.84..=0.85).contains(&moonlit));
+    }
+
+    #[test]
+    fn active_scene_is_latest_regardless_of_query_iteration_and_falls_back() {
+        let mut app = App::new();
+        app.init_resource::<ActiveTacticalScene>()
+            .add_observer(activate_tactical_scene)
+            .add_systems(Update, refresh_active_tactical_scene);
+        let first_environment = environment(Precipitation::Clear, 0);
+        let mut second_environment = environment(Precipitation::Rain, 7_000);
+        second_environment.scene_digest = "second".into();
+        second_environment.absolute_minute += 60;
+        let first = app.world_mut().spawn(first_environment.clone()).id();
+        app.update();
+        assert_eq!(
+            app.world().resource::<ActiveTacticalScene>().entity,
+            Some(first)
+        );
+
+        let second = app.world_mut().spawn(second_environment.clone()).id();
+        app.update();
+        let active = app.world().resource::<ActiveTacticalScene>();
+        assert_eq!(active.entity, Some(second));
+        assert_eq!(
+            app.world().get::<SceneEnvironment>(second),
+            Some(&second_environment)
+        );
+
+        app.world_mut().despawn(second);
+        app.update();
+        let active = app.world().resource::<ActiveTacticalScene>();
+        assert_eq!(active.entity, Some(first));
+        assert_eq!(
+            app.world().get::<SceneEnvironment>(first),
+            Some(&first_environment)
+        );
+
+        app.world_mut().despawn(first);
+        app.update();
+        assert_eq!(app.world().resource::<ActiveTacticalScene>().entity, None);
+    }
+
+    #[test]
+    fn replacing_active_environment_refreshes_snapshot_without_entity_change() {
+        let mut app = App::new();
+        app.init_resource::<ActiveTacticalScene>()
+            .add_observer(activate_tactical_scene)
+            .add_systems(Update, refresh_active_tactical_scene);
+        let entity = app
+            .world_mut()
+            .spawn(environment(Precipitation::Clear, 0))
+            .id();
+        app.update();
+
+        let mut replacement = environment(Precipitation::Snow, 8_000);
+        replacement.scene_digest = "replacement".into();
+        replacement.absolute_minute += 720;
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(replacement.clone());
+        app.update();
+
+        let active = app.world().resource::<ActiveTacticalScene>();
+        assert_eq!(active.entity, Some(entity));
+        assert_eq!(
+            app.world().get::<SceneEnvironment>(entity),
+            Some(&replacement)
+        );
+    }
+
+    #[test]
+    fn activation_order_survives_entity_recycling() {
+        let mut app = App::new();
+        app.init_resource::<ActiveTacticalScene>()
+            .add_observer(activate_tactical_scene)
+            .add_systems(Update, refresh_active_tactical_scene);
+        let first = app
+            .world_mut()
+            .spawn(environment(Precipitation::Clear, 0))
+            .id();
+        let second = app
+            .world_mut()
+            .spawn(environment(Precipitation::Rain, 3_000))
+            .id();
+        app.update();
+        assert_eq!(
+            app.world().resource::<ActiveTacticalScene>().entity,
+            Some(second)
+        );
+
+        app.world_mut().despawn(second);
+        let recycled = app
+            .world_mut()
+            .spawn(environment(Precipitation::Snow, 3_000))
+            .id();
+        app.update();
+        assert_eq!(
+            app.world().resource::<ActiveTacticalScene>().entity,
+            Some(recycled)
+        );
+
+        app.world_mut().despawn(recycled);
+        app.update();
+        assert_eq!(
+            app.world().resource::<ActiveTacticalScene>().entity,
+            Some(first)
+        );
     }
 }

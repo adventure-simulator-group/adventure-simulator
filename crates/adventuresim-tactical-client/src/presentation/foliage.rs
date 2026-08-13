@@ -118,35 +118,27 @@ pub(super) fn update_grass_interaction(
 }
 
 pub(super) fn update_celestial_material_lighting(
-    environments: Query<&SceneEnvironment>,
+    celestial: Res<PresentedCelestialLighting>,
     mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
 ) {
-    let Some(environment) = environments.iter().next() else {
+    if !celestial.is_changed() {
+        return;
+    }
+    let Some(celestial) = celestial.snapshot.as_ref() else {
         return;
     };
-    let celestial = celestial_directions(
-        environment.absolute_minute,
-        environment.latitude_microdegrees,
-        environment.longitude_microdegrees,
-    );
-    let sun_altitude = celestial.sun[1].asin().to_degrees();
-    let moon_altitude = celestial.moon[1].asin().to_degrees();
-    let light_factor =
-        scene_night_factor(sun_altitude, moon_altitude, celestial.lunar_illumination);
-    let (ambient_color, _) =
-        scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination);
-    let ambient_response =
-        scene_ambient_response(sun_altitude, moon_altitude, celestial.lunar_illumination);
-    let direction = if sun_altitude > -6.0 {
-        to_bevy_direction(celestial.sun)
-    } else if moon_altitude > -2.0 {
-        to_bevy_direction(celestial.moon)
+    let direction = if celestial.sun_altitude_degrees > -6.0 {
+        celestial.sun_direction
+    } else if celestial.moon_altitude_degrees > -2.0 {
+        celestial.moon_direction
     } else {
         Vec3::new(0.25, 0.92, 0.3).normalize()
     };
     for (_, material) in impostor_materials.iter_mut() {
-        material.lighting = direction.extend(light_factor);
-        material.ambient = ambient_color.extend(ambient_response);
+        material.lighting = direction.extend(celestial.material_light_factor);
+        material.ambient = celestial
+            .ambient_color
+            .extend(celestial.material_ambient_response);
     }
 }
 

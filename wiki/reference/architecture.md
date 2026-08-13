@@ -294,7 +294,22 @@ and conservative collision radius. Clients run bounded uniform-grid Surface
 Nets to derive each rock mesh, while the server creates only the recipe and
 sphere proxy. The same client-only mesher supplies shared non-colliding
 loose-stone variants. Trees likewise derive a seeded four-order skeleton on the
-client without receiving or simulating the collider. The immutable world-data canopy coverage continuously controls tree
+client without receiving or simulating the collider.
+
+The tactical presentation plugin explicitly owns which `SceneEnvironment`
+drives scene-wide presentation policy for lighting, fog, and weather particles.
+Under the one-playable-scene contract, the newest
+live scene entity is active; replacing its immutable environment refreshes the
+selection, and removing it deterministically falls back to the next live scene.
+The active environment produces one shared celestial-lighting snapshot containing
+Sun/Moon directions and altitudes, lunar illumination, exposure, and ambient
+candidates. Sky lights/discs, tree impostors, and ambient policy consume that
+same snapshot instead of depending on ECS query iteration order. Atmosphere-IBL
+allocation grace remains a sky-local presentation concern. Terrain materials,
+Ground scatter, weather, colliders, and recipes continue to read their own
+entity-local authoritative scene components.
+
+The immutable world-data canopy coverage continuously controls tree
 architecture without inspecting neighboring entities: low coverage produces a
 short clear bole and broad open-grown crown, while dense canopy produces a
 taller clear bole and narrower competitive crown, so tree generation remains

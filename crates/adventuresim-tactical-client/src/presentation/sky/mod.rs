@@ -162,9 +162,115 @@ pub(in crate::presentation) fn setup_tactical_sky(
     ));
 }
 
-pub(super) fn on_environment_added(
-    event: On<Add, SceneEnvironment>,
-    environments: Query<&SceneEnvironment>,
+#[derive(Debug, Clone)]
+pub(in crate::presentation) struct CelestialLightingSnapshot {
+    pub(in crate::presentation) scene: Entity,
+    pub(in crate::presentation) sun_direction: Vec3,
+    pub(in crate::presentation) moon_direction: Vec3,
+    pub(in crate::presentation) sun_altitude_degrees: f32,
+    pub(in crate::presentation) moon_altitude_degrees: f32,
+    pub(in crate::presentation) lunar_illumination: f32,
+    lunar_phase: f32,
+    weather_transmission: f32,
+    equatorial_to_world: Mat4,
+    exposure_ev100: f32,
+    pub(in crate::presentation) ambient_color: Vec3,
+    pub(in crate::presentation) ambient_brightness: f32,
+    pub(in crate::presentation) ibl_ambient_color: Vec3,
+    pub(in crate::presentation) ibl_ambient_brightness: f32,
+    pub(in crate::presentation) material_light_factor: f32,
+    pub(in crate::presentation) material_ambient_response: f32,
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+pub(in crate::presentation) struct PresentedCelestialLighting {
+    pub(in crate::presentation) snapshot: Option<CelestialLightingSnapshot>,
+}
+
+impl CelestialLightingSnapshot {
+    fn from_environment(scene: Entity, environment: &SceneEnvironment) -> Self {
+        let celestial = celestial_directions(
+            environment.absolute_minute,
+            environment.latitude_microdegrees,
+            environment.longitude_microdegrees,
+        );
+        let sun_direction = to_bevy_direction(celestial.sun);
+        let moon_direction = to_bevy_direction(celestial.moon);
+        let sun_altitude_degrees = sun_direction.y.asin().to_degrees();
+        let moon_altitude_degrees = moon_direction.y.asin().to_degrees();
+        let (ambient_color, ambient_brightness) = scene_ambient_light(
+            sun_altitude_degrees,
+            moon_altitude_degrees,
+            celestial.lunar_illumination,
+        );
+        let (ibl_ambient_color, ibl_ambient_brightness) = scene_ibl_visibility_floor(
+            sun_altitude_degrees,
+            moon_altitude_degrees,
+            celestial.lunar_illumination,
+        );
+        Self {
+            scene,
+            sun_direction,
+            moon_direction,
+            sun_altitude_degrees,
+            moon_altitude_degrees,
+            lunar_illumination: celestial.lunar_illumination,
+            lunar_phase: celestial.lunar_phase,
+            weather_transmission: sky_weather_transmission(environment),
+            equatorial_to_world: equatorial_to_world(
+                environment.absolute_minute,
+                environment.latitude_microdegrees,
+                environment.longitude_microdegrees,
+            ),
+            exposure_ev100: scene_exposure_ev100(
+                sun_altitude_degrees,
+                moon_altitude_degrees,
+                celestial.lunar_illumination,
+            ),
+            ambient_color,
+            ambient_brightness,
+            ibl_ambient_color,
+            ibl_ambient_brightness,
+            material_light_factor: scene_night_factor(
+                sun_altitude_degrees,
+                moon_altitude_degrees,
+                celestial.lunar_illumination,
+            ),
+            material_ambient_response: scene_ambient_response(
+                sun_altitude_degrees,
+                moon_altitude_degrees,
+                celestial.lunar_illumination,
+            ),
+        }
+    }
+}
+
+pub(in crate::presentation) fn update_presented_celestial_lighting(
+    active: Res<ActiveTacticalScene>,
+    environments: Query<Ref<SceneEnvironment>>,
+    mut presented: ResMut<PresentedCelestialLighting>,
+) {
+    let environment = active.entity.and_then(|entity| {
+        environments
+            .get(entity)
+            .ok()
+            .map(|environment| (entity, environment))
+    });
+    if !active.is_changed()
+        && environment
+            .as_ref()
+            .is_some_and(|(_, environment)| !environment.is_changed())
+    {
+        return;
+    }
+    presented.snapshot = environment.map(|(entity, environment)| {
+        CelestialLightingSnapshot::from_environment(entity, &environment)
+    });
+}
+
+pub(in crate::presentation) fn apply_presented_celestial_lighting(
+    active: Res<ActiveTacticalScene>,
+    celestial: Res<PresentedCelestialLighting>,
     settings: Res<TacticalGraphicsSettings>,
     sunlight: Single<(&mut DirectionalLight, &mut Transform), With<TacticalSunlight>>,
     moonlight: Single<
@@ -177,60 +283,72 @@ pub(super) fn on_environment_added(
     stars: Query<&MeshMaterial3d<TacticalStarMaterial>, With<TacticalStars>>,
     mut moon_materials: ResMut<Assets<TacticalMoonMaterial>>,
     mut star_materials: ResMut<Assets<TacticalStarMaterial>>,
-) -> Result {
-    let environment = environments.get(event.entity)?;
-    let celestial = celestial_directions(
-        environment.absolute_minute,
-        environment.latitude_microdegrees,
-        environment.longitude_microdegrees,
-    );
-    let sun_direction = to_bevy_direction(celestial.sun);
-    let moon_direction = to_bevy_direction(celestial.moon);
-    let sun_altitude = sun_direction.y.asin().to_degrees();
-    let moon_altitude = moon_direction.y.asin().to_degrees();
-    let weather_transmission = sky_weather_transmission(environment);
+    environments: Query<&SceneEnvironment>,
+) {
+    if !celestial.is_changed() && !settings.is_changed() {
+        return;
+    }
+    let Some(celestial) = celestial.snapshot.as_ref() else {
+        let (mut sun, _) = sunlight.into_inner();
+        sun.illuminance = 0.0;
+        sun.shadow_maps_enabled = false;
+        let (mut moon_light, _) = moonlight.into_inner();
+        moon_light.illuminance = 0.0;
+        moon_light.shadow_maps_enabled = false;
+        ambient.brightness = 0.0;
+        return;
+    };
+    let Some(environment) = active
+        .entity
+        .filter(|entity| *entity == celestial.scene)
+        .and_then(|entity| environments.get(entity).ok())
+    else {
+        return;
+    };
 
     let (mut sun, mut sun_transform) = sunlight.into_inner();
-    sun.illuminance =
-        selected_solar_illuminance(settings.atmosphere_enabled, environment, sun_altitude);
-    sun.shadow_maps_enabled = settings.shadows_enabled && sun_altitude > 0.0;
-    *sun_transform = light_transform(sun_direction);
+    sun.illuminance = selected_solar_illuminance(
+        settings.atmosphere_enabled,
+        environment,
+        celestial.sun_altitude_degrees,
+    );
+    sun.shadow_maps_enabled = settings.shadows_enabled && celestial.sun_altitude_degrees > 0.0;
+    *sun_transform = light_transform(celestial.sun_direction);
 
     let (mut moon_light, mut moon_transform) = moonlight.into_inner();
     moon_light.illuminance = 0.25
         * celestial.lunar_illumination
-        * smoothstep(-2.0, 4.0, moon_altitude)
-        * weather_transmission;
+        * smoothstep(-2.0, 4.0, celestial.moon_altitude_degrees)
+        * celestial.weather_transmission;
     moon_light.shadow_maps_enabled = settings.shadows_enabled
-        && sun_altitude <= -2.0
-        && moon_altitude > 0.0
+        && celestial.sun_altitude_degrees <= -2.0
+        && celestial.moon_altitude_degrees > 0.0
         && celestial.lunar_illumination > 0.15;
-    *moon_transform = light_transform(moon_direction);
+    *moon_transform = light_transform(celestial.moon_direction);
 
-    camera.into_inner().ev100 =
-        scene_exposure_ev100(sun_altitude, moon_altitude, celestial.lunar_illumination);
-    let (ambient_color, ambient_brightness) =
-        scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination);
-    ambient.color = Color::srgb(ambient_color.x, ambient_color.y, ambient_color.z);
-    ambient.brightness = ambient_brightness;
+    camera.into_inner().ev100 = celestial.exposure_ev100;
+    ambient.color = Color::srgb(
+        celestial.ambient_color.x,
+        celestial.ambient_color.y,
+        celestial.ambient_color.z,
+    );
+    ambient.brightness = celestial.ambient_brightness;
 
     if let Ok(handle) = moon.single()
         && let Some(mut material) = moon_materials.get_mut(&handle.0)
     {
-        material.light = sun_direction.extend(weather_transmission);
+        material.light = celestial
+            .sun_direction
+            .extend(celestial.weather_transmission);
         material.appearance.z = celestial.lunar_phase;
     }
     if let Ok(handle) = stars.single()
         && let Some(mut material) = star_materials.get_mut(&handle.0)
     {
-        material.equatorial_to_world = equatorial_to_world(
-            environment.absolute_minute,
-            environment.latitude_microdegrees,
-            environment.longitude_microdegrees,
-        );
-        material.settings.x = star_visibility(sun_altitude) * weather_transmission;
+        material.equatorial_to_world = celestial.equatorial_to_world;
+        material.settings.x =
+            star_visibility(celestial.sun_altitude_degrees) * celestial.weather_transmission;
     }
-    Ok(())
 }
 
 const ENVIRONMENT_MAP_ALLOCATION_GRACE_FRAMES: u8 = 4;
@@ -243,21 +361,17 @@ pub(crate) struct AtmosphereIblAmbientHandoff {
 
 pub(super) fn update_global_ambient_policy(
     settings: Res<TacticalGraphicsSettings>,
-    environments: Query<&SceneEnvironment>,
+    celestial: Res<PresentedCelestialLighting>,
     camera_environment: Single<Option<&EnvironmentMapLight>, With<Camera3d>>,
     mut handoff: ResMut<AtmosphereIblAmbientHandoff>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
-    let Some(environment) = environments.iter().next() else {
+    let Some(celestial) = celestial.snapshot.as_ref() else {
+        handoff.allocated_frames = 0;
+        handoff.active = false;
+        ambient.brightness = 0.0;
         return;
     };
-    let celestial = celestial_directions(
-        environment.absolute_minute,
-        environment.latitude_microdegrees,
-        environment.longitude_microdegrees,
-    );
-    let sun_altitude = celestial.sun[1].asin().to_degrees();
-    let moon_altitude = celestial.moon[1].asin().to_degrees();
     // EnvironmentMapLight is inserted with placeholder images before render-world
     // filtering is observable from the main world. Hold the full fallback for a
     // short bounded grace after allocation; deterministic captures additionally
@@ -272,9 +386,12 @@ pub(super) fn update_global_ambient_policy(
     };
     handoff.active = handoff.allocated_frames >= ENVIRONMENT_MAP_ALLOCATION_GRACE_FRAMES;
     let (color, brightness) = if handoff.active {
-        scene_ibl_visibility_floor(sun_altitude, moon_altitude, celestial.lunar_illumination)
+        (
+            celestial.ibl_ambient_color,
+            celestial.ibl_ambient_brightness,
+        )
     } else {
-        scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination)
+        (celestial.ambient_color, celestial.ambient_brightness)
     };
     ambient.color = Color::srgb(color.x, color.y, color.z);
     ambient.brightness = brightness;
@@ -320,23 +437,18 @@ fn selected_solar_illuminance(
 
 pub(in crate::presentation) fn keep_celestial_visuals_centered(
     camera: Single<&GlobalTransform, With<Camera3d>>,
-    environments: Query<&SceneEnvironment>,
+    celestial: Res<PresentedCelestialLighting>,
     mut moon: Query<&mut Transform, With<TacticalMoon>>,
 ) {
-    let Some(environment) = environments.iter().next() else {
+    let Some(celestial) = celestial.snapshot.as_ref() else {
         return;
     };
     let Ok(mut moon_transform) = moon.single_mut() else {
         return;
     };
-    let celestial = celestial_directions(
-        environment.absolute_minute,
-        environment.latitude_microdegrees,
-        environment.longitude_microdegrees,
-    );
     moon_transform.translation =
-        camera.translation() + to_bevy_direction(celestial.moon) * MOON_DISTANCE_METRES;
-    moon_transform.rotation = moon_near_side_rotation(to_bevy_direction(celestial.moon));
+        camera.translation() + celestial.moon_direction * MOON_DISTANCE_METRES;
+    moon_transform.rotation = moon_near_side_rotation(celestial.moon_direction);
 }
 
 /// Keeps the map's zero-longitude near side pointed at the observer while

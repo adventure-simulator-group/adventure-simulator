@@ -139,26 +139,35 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<GroundFoliagePresentationCache>()
         .init_resource::<TreePresentationCache>()
         .init_resource::<TreeLodRenderOverride>()
+        .init_resource::<ActiveTacticalScene>()
+        .init_resource::<PresentedCelestialLighting>()
         .init_resource::<AtmosphereIblAmbientHandoff>()
         .add_systems(
             Update,
             (
-                advance_weather_particles,
                 update_grass_interaction,
                 update_tree_leaf_wind,
-                update_celestial_material_lighting,
                 present_ground_scatter,
+                (
+                    refresh_active_tactical_scene,
+                    update_presented_celestial_lighting,
+                    apply_presented_celestial_lighting,
+                )
+                    .chain(),
+                update_celestial_material_lighting.after(update_presented_celestial_lighting),
                 (present_pending_trees, update_tree_projected_lod_ranges).chain(),
-                keep_celestial_visuals_centered,
-                update_global_ambient_policy,
+                keep_celestial_visuals_centered.after(update_presented_celestial_lighting),
+                update_global_ambient_policy.after(update_presented_celestial_lighting),
+                apply_active_environment_fog.after(refresh_active_tactical_scene),
+                (apply_active_scene_weather, advance_weather_particles)
+                    .chain()
+                    .after(refresh_active_tactical_scene),
             ),
         )
         .add_observer(on_game_scene_added)
-        .add_observer(environment::on_environment_added)
-        .add_observer(sky::on_environment_added)
+        .add_observer(activate_tactical_scene)
         .add_observer(terrain::on_environment_added)
         .add_observer(terrain::on_ground_added)
-        .add_observer(weather::on_environment_added)
         .add_observer(on_scene_obstacle_added)
         .add_observer(on_scene_vista_bundle);
     }
