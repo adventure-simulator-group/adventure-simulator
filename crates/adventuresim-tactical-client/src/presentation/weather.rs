@@ -71,20 +71,30 @@ pub(super) fn advance_weather_particles(
     }
 }
 
-pub(super) fn on_environment_added(
-    event: On<Add, SceneEnvironment>,
-    environments: Query<&SceneEnvironment>,
+pub(super) fn apply_active_scene_weather(
+    active: Res<ActiveTacticalScene>,
+    environments: Query<Ref<SceneEnvironment>>,
     particles: Query<Entity, With<WeatherParticle>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-) -> Result {
-    let environment = environments.get(event.entity)?;
+) {
+    let environment = active
+        .entity
+        .and_then(|entity| environments.get(entity).ok());
+    if !active.is_changed()
+        && environment
+            .as_ref()
+            .is_some_and(|environment| !environment.is_changed())
+    {
+        return;
+    }
     for entity in &particles {
         commands.entity(entity).despawn();
     }
-    spawn_weather_particles(&mut commands, &mut meshes, &mut materials, environment);
-    Ok(())
+    if let Some(environment) = environment {
+        spawn_weather_particles(&mut commands, &mut meshes, &mut materials, &environment);
+    }
 }
 
 pub(super) fn wrap_weather_coordinate(value: f32) -> f32 {

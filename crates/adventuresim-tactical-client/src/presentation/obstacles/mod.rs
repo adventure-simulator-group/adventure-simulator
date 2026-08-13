@@ -38,6 +38,7 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
 pub(in crate::presentation) fn present_pending_trees(
     mut commands: Commands,
     pending: Query<(Entity, &Transform), With<PendingTreePresentation>>,
+    active: Res<ActiveTacticalScene>,
     environments: Query<&SceneEnvironment>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -47,7 +48,10 @@ pub(in crate::presentation) fn present_pending_trees(
     mut tree_cache: ResMut<TreePresentationCache>,
     asset_server: Res<AssetServer>,
 ) {
-    let Some(environment) = environments.iter().next() else {
+    let Some(environment) = active
+        .entity
+        .and_then(|entity| environments.get(entity).ok())
+    else {
         return;
     };
     let competition = canopy_competition(environment.canopy_bps);
