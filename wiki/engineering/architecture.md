@@ -286,9 +286,13 @@ progressively coarser presentation-only vista samples. The server validates the
 document before opening any listener, deterministically upsamples coarse source
 grids to at most two-metre spacing, adds bounded seeded microrelief, builds its
 collider from those row-major heights, replicates the heightfield data, and logs
-the SHA-256 scene digest and generation version. Each client builds the playable
-render mesh from that replicated heightfield; the server never extracts or
-transmits render geometry. Gameplay-relevant generated trees and rocks are
+the SHA-256 scene digest and generation version. Each vista bundle also carries
+the authoritative playable half-extents. Clients split coarse boundary cells at
+that exact rectangle, so presentation-only vista triangles neither cover the
+collider terrain nor leave a magic-number gap when source spacing exceeds the
+playable area's size. Each client builds the playable render mesh from that
+replicated heightfield; the server never extracts or transmits render geometry.
+Gameplay-relevant generated trees and rocks are
 static server colliders with compact replicated recipes and transforms. A rock
 recipe contains a deterministic seed, broad archetype, lithology, dimensions,
 and conservative collision radius. Clients run bounded uniform-grid Surface
@@ -327,8 +331,12 @@ the normal projected-size visibility range still culls it by distance. The
 eight-view whole-tree atlas selects tiles by each bake card's outward normal,
 not its orthographic right-axis angle. A bounded bake-only exposure and card
 width calibration keep the single-card crown close to the preceding aggregate
-crown without adding runtime texture samples, geometry, or draws. The custom
-impostor fragment path executes Bevy's visibility-range dither, so the existing
+crown without adding runtime texture samples, geometry, or draws. The software
+bake treats leaf vertex color as semantic shade, self-shadow selection, and
+ambient visibility rather than RGB pigment. It uses a scan-matched oak pigment
+and the same unresolved-canopy visibility response as live foliage, avoiding a
+saturated color change across tree LODs. The custom impostor fragment path
+executes Bevy's visibility-range dither, so the existing
 overlapping projected-distance margins cross-fade rather than swapping the two
 representations abruptly. Those visual levels do not
 change the server-owned trunk collider. The near-tree skeleton also grows a

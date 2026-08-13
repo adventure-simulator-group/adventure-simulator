@@ -37,6 +37,9 @@ pub struct ReconnectCapability {
 #[derive(Debug, Clone, Event, Serialize, Deserialize)]
 pub struct SceneVistaBundle {
     pub scene_digest: String,
+    /// Half-width and half-depth of the authoritative playable heightfield.
+    /// Presentation-only vista rings clip exactly to this rectangle.
+    pub playable_half_extent_metres: Vec2,
     pub lods: Vec<VistaLod>,
 }
 

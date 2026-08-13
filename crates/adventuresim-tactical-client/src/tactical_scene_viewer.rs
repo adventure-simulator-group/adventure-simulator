@@ -1060,6 +1060,10 @@ fn setup_scene(
     ));
     commands.trigger(SceneVistaBundle {
         scene_digest: digest.clone(),
+        playable_half_extent_metres: Vec2::new(
+            terrain_summary.width_metres * 0.5,
+            terrain_summary.depth_metres * 0.5,
+        ),
         lods: input.vista.lods.clone(),
     });
     commands.insert_resource(CaptureState {
