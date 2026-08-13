@@ -3,9 +3,7 @@ pub(super) mod tree;
 
 use super::*;
 use rock::{TacticalRockMaterial, procedural_rock_mesh, rock_material};
-
-#[derive(Component)]
-pub(in crate::presentation) struct PendingTreePresentation;
+use tree::{PendingTreePresentation, canopy_competition};
 
 pub(in crate::presentation) fn on_scene_obstacle_added(
     event: On<Add, SceneObstacle>,
@@ -32,118 +30,6 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
         }
     }
     Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(in crate::presentation) fn present_pending_trees(
-    mut commands: Commands,
-    pending: Query<(Entity, &Transform), With<PendingTreePresentation>>,
-    active: Res<ActiveTacticalScene>,
-    environments: Query<&SceneEnvironment>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
-    mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
-    mut images: ResMut<Assets<Image>>,
-    mut tree_cache: ResMut<TreePresentationCache>,
-    asset_server: Res<AssetServer>,
-) {
-    let Some(environment) = active
-        .entity
-        .and_then(|entity| environments.get(entity).ok())
-    else {
-        return;
-    };
-    let competition = canopy_competition(environment.canopy_bps);
-    for (entity, transform) in &pending {
-        let seed = obstacle_seed(transform.translation);
-        let variant_seed = splitmix64(0x6f61_6b00 ^ (seed & 3));
-        let competition_key = (competition * 4095.0).round() as u64;
-        let cache_key = variant_seed ^ competition_key.rotate_left(32);
-        let cached = if let Some(cached) = tree_cache.variants.get(&cache_key) {
-            cached.clone()
-        } else {
-            let branches = procedural_tree_skeleton(variant_seed, competition);
-            let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
-            let bark_material = tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
-                let material = materials.add(oak_bark_material(&asset_server));
-                tree_cache.oak_bark_material = Some(material.clone());
-                material
-            });
-            let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
-            let bud_material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.36, 0.27, 0.1),
-                perceptual_roughness: 0.92,
-                ..default()
-            });
-            let baked_lods = (1..5)
-                .map(|lod| bake_tree_lod(variant_seed, &branches, &leaves, lod))
-                .collect::<Vec<_>>();
-            for bake in &baked_lods {
-                validate_tree_bake_provenance(&bake.provenance);
-            }
-            let clusters = (0..TREE_PRIMARY_GROUP_COUNT)
-                .map(|primary_group| {
-                    let source = baked_lods[0]
-                        .clusters
-                        .iter()
-                        .find(|cluster| cluster.primary_group == primary_group)
-                        .expect("every generated primary scaffold has a baked cluster");
-                    CachedTreeClusterPresentation {
-                        primary_group,
-                        center: source.center,
-                        radius: source.radius,
-                        branch_meshes: [3, 2, 1].map(|depth| {
-                            meshes.add(procedural_tree_branch_group_mesh(
-                                &branches,
-                                depth,
-                                primary_group,
-                            ))
-                        }),
-                        cambered_leaf_mesh: meshes.add(procedural_oak_textured_leaf_group_mesh(
-                            &leaves,
-                            primary_group,
-                        )),
-                        leaf_card_mesh: meshes
-                            .add(procedural_oak_leaf_card_group_mesh(&leaves, primary_group)),
-                        bud_mesh: meshes
-                            .add(procedural_oak_bud_group_mesh(&branches, primary_group)),
-                        card_meshes: core::array::from_fn(|index| {
-                            let cluster = baked_lods[index]
-                                .clusters
-                                .iter()
-                                .find(|cluster| cluster.primary_group == primary_group)
-                                .expect("every recursive LOD preserves primary scaffold identity");
-                            meshes.add(cluster.mesh.clone())
-                        }),
-                    }
-                })
-                .collect();
-            let cached = CachedTreePresentation {
-                trunk_mesh: meshes.add(procedural_tree_branch_mesh(&branches, 0)),
-                clusters,
-                whole_tree_card_mesh: meshes.add(baked_lods[3].mesh.clone()),
-                bark_material,
-                leaf_material,
-                bud_material,
-                card_materials: core::array::from_fn(|index| {
-                    let bake = &baked_lods[index];
-                    let texture = images.add(bake.image.clone());
-                    tree_materials.add(tree_impostor_material(variant_seed, bake.lod, texture))
-                }),
-                provenance: core::array::from_fn(|index| baked_lods[index].provenance.clone()),
-            };
-            tree_cache.variants.insert(cache_key, cached.clone());
-            cached
-        };
-        spawn_cached_tree(&mut commands, entity, &cached);
-        commands.entity(entity).remove::<PendingTreePresentation>();
-    }
-}
-
-fn canopy_competition(canopy_bps: u16) -> f32 {
-    let normalized = f32::from(canopy_bps) / 10_000.0;
-    normalized * normalized * (3.0 - 2.0 * normalized)
 }
 
 // The presentation facade is compiled into several binaries, while only the
