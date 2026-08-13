@@ -14,10 +14,11 @@ use bevy::{
 };
 
 use super::obstacles::tree::{
-    COMMON_HAZEL_PARAMETERS, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
-    TreeLeafRepresentation, hazel_leaf_material, procedural_tree_branch_mesh,
-    procedural_woody_cambered_leaf_mesh, procedural_woody_leaf_card_mesh,
-    procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, TacticalTreeImpostorMaterial,
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, hazel_leaf_material,
+    procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
+    procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
+    procedural_woody_plant_skeleton,
 };
 use super::{
     PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
@@ -381,7 +382,11 @@ fn ensure_hazel_presentation(
     let seed = 0xc0a1_5a2e_11_u64;
     let branches = procedural_woody_plant_skeleton(seed, 0.0, COMMON_HAZEL_PARAMETERS);
     let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, COMMON_HAZEL_PARAMETERS);
-    cache.branches = Some(meshes.add(procedural_tree_branch_mesh(&branches, 3)));
+    cache.branches = Some(meshes.add(procedural_woody_branch_mesh(
+        &branches,
+        3,
+        COMMON_HAZEL_BARK,
+    )));
     cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
     cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
     cache.bark = Some(materials.add(StandardMaterial {
