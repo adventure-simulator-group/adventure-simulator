@@ -1,9 +1,11 @@
 use super::super::super::*;
 use super::geometry::*;
 
-pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 4;
+pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 5;
 pub(in crate::presentation) const TREE_IMPOSTOR_RENDER_METHOD: &str =
     "deterministic software triangle render of exact production branch and leaf meshes";
+const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 0.95;
+const WHOLE_TREE_BAKE_EXPOSURE: f32 = 0.91;
 
 #[derive(Component, Clone, Debug)]
 pub(crate) struct TreeImpostorProvenance {
@@ -173,7 +175,12 @@ pub(in crate::presentation) fn bake_tree_lod(
                 card.center,
                 card.right,
                 card.up,
-                card.width,
+                card.width
+                    * if lod == 4 {
+                        WHOLE_TREE_RUNTIME_WIDTH_SCALE
+                    } else {
+                        1.0
+                    },
                 card.height,
                 mesh_uv_min,
                 mesh_uv_max,
@@ -199,6 +206,19 @@ pub(in crate::presentation) fn bake_tree_lod(
             opaque_pixel_count,
             silhouette_centroid,
         });
+    }
+
+    if lod == 4 {
+        // The aggregate crown has fewer overlapping depth layers than LOD3.
+        // A bounded bake-space exposure restores comparable interior depth
+        // without a runtime material multiplier or changing alpha coverage.
+        for pixel in pixels.chunks_exact_mut(4) {
+            if pixel[3] != 0 {
+                pixel[0] = (f32::from(pixel[0]) * WHOLE_TREE_BAKE_EXPOSURE) as u8;
+                pixel[1] = (f32::from(pixel[1]) * WHOLE_TREE_BAKE_EXPOSURE) as u8;
+                pixel[2] = (f32::from(pixel[2]) * WHOLE_TREE_BAKE_EXPOSURE) as u8;
+            }
+        }
     }
 
     let mut mesh = Mesh::new(
@@ -1126,6 +1146,56 @@ pub(in crate::presentation) fn tree_lod_name(lod: u8, cards: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn whole_tree_view_index(camera_direction: Vec2) -> usize {
+        let angle = camera_direction.y.atan2(camera_direction.x);
+        ((angle / core::f32::consts::TAU - 0.25).rem_euclid(1.0) * 8.0).round() as usize % 8
+    }
+
+    #[test]
+    fn whole_tree_atlas_selection_matches_baked_view_normals() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let cards = tree_bake_cards(42, &branches, &leaves, 4);
+
+        for step in 0..8 {
+            let angle = step as f32 * core::f32::consts::TAU / 8.0;
+            let camera_direction = Vec2::new(angle.cos(), angle.sin());
+            let index = whole_tree_view_index(camera_direction);
+            assert!(cards[index].normal().xz().dot(camera_direction) > 0.999);
+        }
+        assert_eq!(
+            whole_tree_view_index(Vec2::splat(core::f32::consts::FRAC_1_SQRT_2)),
+            7
+        );
+    }
+
+    #[test]
+    fn whole_tree_runtime_quad_stays_bounded_and_bake_is_deterministic() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let first = bake_tree_lod(42, &branches, &leaves, 4);
+        let second = bake_tree_lod(42, &branches, &leaves, 4);
+
+        assert_eq!(first.mesh.count_vertices(), 4);
+        assert_eq!(first.provenance.records.len(), 8);
+        assert_eq!(first.image.data, second.image.data);
+        assert!((WHOLE_TREE_RUNTIME_WIDTH_SCALE - 0.95).abs() < f32::EPSILON);
+        assert!((WHOLE_TREE_BAKE_EXPOSURE - 0.91).abs() < f32::EPSILON);
+        assert!(
+            first
+                .provenance
+                .records
+                .iter()
+                .all(|record| record.opaque_pixel_count > 0)
+        );
+
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_tree_impostor.wgsl"
+        ));
+        assert!(shader.contains("pbr_functions::visibility_range_dither("));
+    }
 
     #[test]
     fn tree_lods_collapse_one_botanical_order_at_a_time() {

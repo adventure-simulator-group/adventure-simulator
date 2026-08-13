@@ -34,9 +34,10 @@ const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 10;
+const CAPTURE_PROFILE_VERSION: u16 = 11;
 const CAMERA_VERSION: u16 = 7;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
+const TREE_BILLBOARD_TRANSITION_SCALES: [f32; 3] = [0.357, 0.345, 0.333];
 
 #[derive(Resource)]
 struct SceneSetup(Option<SceneSetupData>);
@@ -262,7 +263,7 @@ struct TreeLightingBenchmarkReport {
     results: Vec<TreeLightingBenchmarkResult>,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 26] = [
+const CAPTURE_VIEWS: [CaptureView; 29] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -376,6 +377,21 @@ const CAPTURE_VIEWS: [CaptureView; 26] = [
     CaptureView {
         slug: "tree-billboard-transition-fixed",
         label: "Fixed-camera billboard LOD transition control",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-billboard-transition-25",
+        label: "Natural crown-to-billboard transition 25% view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-billboard-transition-50",
+        label: "Natural crown-to-billboard transition 50% view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-billboard-transition-75",
+        label: "Natural crown-to-billboard transition 75% view",
         overlay: false,
     },
     CaptureView {
@@ -958,10 +974,10 @@ mod capture_lighting_tests {
     #[test]
     fn semantic_profile_records_lod_transition_controls() {
         let views = selected_capture_views("semantic", &[]).unwrap();
-        assert_eq!(views.len(), 26);
+        assert_eq!(views.len(), 29);
         assert_eq!(
             views.iter().filter(|view| view.slug != "warmup").count(),
-            25
+            28
         );
         assert!(
             views
@@ -973,6 +989,25 @@ mod capture_lighting_tests {
                 .iter()
                 .any(|view| view.slug == "tree-billboard-transition-fixed")
         );
+        for phase in ["25", "50", "75"] {
+            assert!(
+                views
+                    .iter()
+                    .any(|view| { view.slug == format!("tree-billboard-transition-{phase}") })
+            );
+        }
+        assert!(
+            TREE_BILLBOARD_TRANSITION_SCALES
+                .windows(2)
+                .all(|pair| pair[0] > pair[1])
+        );
+        let focal_ratio = (80.0_f32.to_radians() * 0.5).tan() / (20.0_f32.to_radians() * 0.5).tan();
+        let effective_scales = TREE_BILLBOARD_TRANSITION_SCALES.map(|scale| scale * focal_ratio);
+        // At the fixed ~143 m camera, these span the 84..96 m equivalent
+        // projected transition instead of collapsing onto one endpoint.
+        assert!((1.69..1.71).contains(&effective_scales[0]));
+        assert!((1.63..1.65).contains(&effective_scales[1]));
+        assert!((1.57..1.59).contains(&effective_scales[2]));
     }
 
     #[test]
@@ -1916,6 +1951,12 @@ fn capture_views(
             "tree-leaf-transition-25" => Some(0.60),
             "tree-leaf-transition-50" => Some(0.50),
             "tree-leaf-transition-75" => Some(0.40),
+            // The fixed transition camera sits about 143 m from the target.
+            // Counter the 20-degree focal scaling so that this same pose
+            // samples the natural 84..96 m crown-to-billboard overlap.
+            "tree-billboard-transition-25" => Some(TREE_BILLBOARD_TRANSITION_SCALES[0]),
+            "tree-billboard-transition-50" => Some(TREE_BILLBOARD_TRANSITION_SCALES[1]),
+            "tree-billboard-transition-75" => Some(TREE_BILLBOARD_TRANSITION_SCALES[2]),
             _ => None,
         };
         let specimen_representation = match view.slug {
@@ -2363,9 +2404,11 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
         "tree-small-branch-lod" => tree_lod_camera(state, 48.0),
         "tree-crown-lod" => tree_lod_camera(state, 72.0),
         "tree-billboard-lod" => tree_lod_camera(state, 118.0),
-        "tree-crown-transition-fixed" | "tree-billboard-transition-fixed" => {
-            tree_lod_camera(state, 92.0)
-        }
+        "tree-crown-transition-fixed"
+        | "tree-billboard-transition-fixed"
+        | "tree-billboard-transition-25"
+        | "tree-billboard-transition-50"
+        | "tree-billboard-transition-75" => tree_lod_camera(state, 92.0),
         "beauty-overhead" => (
             state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
             state.obstacle_focus,
@@ -2887,6 +2930,9 @@ fn minimum_foreground_bps(view: &str) -> u16 {
         | "tree-billboard-lod"
         | "tree-crown-transition-fixed"
         | "tree-billboard-transition-fixed"
+        | "tree-billboard-transition-25"
+        | "tree-billboard-transition-50"
+        | "tree-billboard-transition-75"
         | "tree-recursive-lod" => 200,
         _ => 1_000,
     }
@@ -2915,7 +2961,11 @@ fn capture_view_fov(view: &str) -> f32 {
         "tree-small-branch-lod" => 19.0,
         "tree-crown-lod" => 13.0,
         "tree-billboard-lod" => 8.0,
-        "tree-crown-transition-fixed" | "tree-billboard-transition-fixed" => 20.0,
+        "tree-crown-transition-fixed"
+        | "tree-billboard-transition-fixed"
+        | "tree-billboard-transition-25"
+        | "tree-billboard-transition-50"
+        | "tree-billboard-transition-75" => 20.0,
         _ => 65.0,
     }
 }
