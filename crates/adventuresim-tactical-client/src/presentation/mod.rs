@@ -5,7 +5,7 @@
 //! lighting, or post-processing setup.
 
 mod environment;
-mod foliage;
+mod ground_scatter;
 mod obstacles;
 mod procedural;
 mod sky;
@@ -15,9 +15,9 @@ mod volumetric;
 mod weather;
 
 use environment::*;
-use foliage::*;
+use ground_scatter::*;
 use obstacles::on_scene_obstacle_added;
-use obstacles::rock::{TacticalRockMaterial, procedural_rock_mesh, rock_color};
+use obstacles::rock::TacticalRockMaterial;
 use obstacles::tree::*;
 use procedural::*;
 use sky::*;
@@ -31,7 +31,7 @@ use weather::*;
 #[allow(unused_imports)]
 pub(crate) use environment::{scene_ambient_light, scene_ibl_visibility_floor};
 #[allow(unused_imports)]
-pub(crate) use foliage::{GrassInteractor, GroundScatterLayer};
+pub(crate) use ground_scatter::{GrassInteractor, GroundScatterLayer};
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
 #[allow(unused_imports)]
@@ -148,7 +148,7 @@ impl Plugin for TacticalPresentationPlugin {
             (
                 update_grass_interaction,
                 update_tree_leaf_wind,
-                present_ground_scatter,
+                (present_pending_terrain, present_ground_scatter).chain(),
                 (
                     refresh_active_tactical_scene,
                     update_presented_celestial_lighting,

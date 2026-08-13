@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2014)
+## Files (2019)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1393,7 +1393,12 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/presentation/environment.rs` — Rust source module.
-- `crates/adventuresim-tactical-client/src/presentation/foliage.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/ground_scatter/grass.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/ground_scatter/litter.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/ground_scatter/loose_stone.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/ground_scatter/mod.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/ground_scatter/tests.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/ground_scatter/understory.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/rock.rs` — Rust source module.
