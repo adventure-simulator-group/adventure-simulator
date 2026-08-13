@@ -163,6 +163,19 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                         ("tree-billboard-lod",), "source-id", "head",
                     )
 
+            leaf_lod = json.loads(json.dumps(forced))
+            leaf_lod["captures"][0]["view"] = "tree-textured-leaf-lod"
+            leaf_lod["requested_views"] = ["tree-textured-leaf-lod"]
+            leaf_lod["captures"][0]["forced_tree_lod"] = 0
+            leaf_lod["captures"][0]["focused_tree_lod_queued"] = True
+            (root / "tree-billboard-lod.png").unlink()
+            (root / "tree-textured-leaf-lod.png").write_bytes(b"x" * 65)
+            manifest_path.write_text(json.dumps(leaf_lod), encoding="utf-8")
+            MODULE.validated_child_manifest(
+                manifest_path, "steep-open-hillside", MODULE.NAMED_TIMES["grazing"],
+                ("tree-textured-leaf-lod",), "source-id", "head",
+            )
+
     def test_png_gate_rejects_extra_or_truncated_images(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
