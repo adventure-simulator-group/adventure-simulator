@@ -279,8 +279,14 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
     >,
     camera: Single<&mut Exposure, With<Camera3d>>,
     mut ambient: ResMut<GlobalAmbientLight>,
-    moon: Query<&MeshMaterial3d<TacticalMoonMaterial>, With<TacticalMoon>>,
-    stars: Query<&MeshMaterial3d<TacticalStarMaterial>, With<TacticalStars>>,
+    mut moon: Query<
+        (&MeshMaterial3d<TacticalMoonMaterial>, &mut Visibility),
+        (With<TacticalMoon>, Without<TacticalStars>),
+    >,
+    mut stars: Query<
+        (&MeshMaterial3d<TacticalStarMaterial>, &mut Visibility),
+        (With<TacticalStars>, Without<TacticalMoon>),
+    >,
     mut moon_materials: ResMut<Assets<TacticalMoonMaterial>>,
     mut star_materials: ResMut<Assets<TacticalStarMaterial>>,
     environments: Query<&SceneEnvironment>,
@@ -295,7 +301,20 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
         let (mut moon_light, _) = moonlight.into_inner();
         moon_light.illuminance = 0.0;
         moon_light.shadow_maps_enabled = false;
+        camera.into_inner().ev100 = Exposure::SUNLIGHT.ev100;
         ambient.brightness = 0.0;
+        if let Ok((handle, mut visibility)) = moon.single_mut() {
+            *visibility = Visibility::Hidden;
+            if let Some(mut material) = moon_materials.get_mut(&handle.0) {
+                material.light = Vec4::ZERO;
+            }
+        }
+        if let Ok((handle, mut visibility)) = stars.single_mut() {
+            *visibility = Visibility::Hidden;
+            if let Some(mut material) = star_materials.get_mut(&handle.0) {
+                material.settings.x = 0.0;
+            }
+        }
         return;
     };
     let Some(environment) = active
@@ -334,17 +353,19 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
     );
     ambient.brightness = celestial.ambient_brightness;
 
-    if let Ok(handle) = moon.single()
+    if let Ok((handle, mut visibility)) = moon.single_mut()
         && let Some(mut material) = moon_materials.get_mut(&handle.0)
     {
+        *visibility = Visibility::Inherited;
         material.light = celestial
             .sun_direction
             .extend(celestial.weather_transmission);
         material.appearance.z = celestial.lunar_phase;
     }
-    if let Ok(handle) = stars.single()
+    if let Ok((handle, mut visibility)) = stars.single_mut()
         && let Some(mut material) = star_materials.get_mut(&handle.0)
     {
+        *visibility = Visibility::Inherited;
         material.equatorial_to_world = celestial.equatorial_to_world;
         material.settings.x =
             star_visibility(celestial.sun_altitude_degrees) * celestial.weather_transmission;
@@ -366,6 +387,7 @@ pub(super) fn update_global_ambient_policy(
     mut handoff: ResMut<AtmosphereIblAmbientHandoff>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
+    let celestial_changed = celestial.is_changed();
     let Some(celestial) = celestial.snapshot.as_ref() else {
         handoff.allocated_frames = 0;
         handoff.active = false;
@@ -379,6 +401,9 @@ pub(super) fn update_global_ambient_policy(
     let allocated = settings.atmosphere_enabled
         && settings.environment_light_enabled
         && camera_environment.is_some();
+    if allocated && handoff.active && !settings.is_changed() && !celestial_changed {
+        return;
+    }
     handoff.allocated_frames = if allocated {
         handoff.allocated_frames.saturating_add(1)
     } else {
@@ -400,6 +425,132 @@ pub(super) fn update_global_ambient_policy(
 #[cfg(test)]
 mod ambient_handoff_tests {
     use super::*;
+
+    #[test]
+    fn missing_active_scene_clears_all_celestial_outputs() {
+        let mut app = App::new();
+        app.init_resource::<Assets<TacticalMoonMaterial>>()
+            .init_resource::<Assets<TacticalStarMaterial>>()
+            .init_resource::<ActiveTacticalScene>()
+            .init_resource::<PresentedCelestialLighting>()
+            .insert_resource(TacticalGraphicsSettings {
+                shadows_enabled: true,
+                atmosphere_enabled: true,
+                celestial_enabled: true,
+                environment_light_enabled: true,
+                environment_map_size: 64,
+                bloom_enabled: true,
+                ssao_enabled: true,
+                max_vista_lods: 3,
+            })
+            .insert_resource(GlobalAmbientLight {
+                brightness: 42.0,
+                ..default()
+            })
+            .add_systems(Update, apply_presented_celestial_lighting);
+        app.world_mut().spawn((
+            TacticalSunlight,
+            DirectionalLight {
+                illuminance: 10.0,
+                shadow_maps_enabled: true,
+                ..default()
+            },
+            Transform::default(),
+        ));
+        app.world_mut().spawn((
+            TacticalMoonlight,
+            DirectionalLight {
+                illuminance: 5.0,
+                shadow_maps_enabled: true,
+                ..default()
+            },
+            Transform::default(),
+        ));
+        app.world_mut()
+            .spawn((Camera3d::default(), Exposure { ev100: 2.0 }));
+        let moon = app
+            .world_mut()
+            .resource_mut::<Assets<TacticalMoonMaterial>>()
+            .add(TacticalMoonMaterial {
+                albedo: default(),
+                light: Vec4::ONE,
+                appearance: Vec4::new(0.025, 8.0, 0.5, 0.0),
+            });
+        app.world_mut().spawn((
+            TacticalMoon,
+            MeshMaterial3d(moon.clone()),
+            Visibility::Visible,
+        ));
+        let stars = app
+            .world_mut()
+            .resource_mut::<Assets<TacticalStarMaterial>>()
+            .add(TacticalStarMaterial {
+                equatorial_to_world: Mat4::IDENTITY,
+                settings: Vec4::ONE,
+            });
+        app.world_mut().spawn((
+            TacticalStars,
+            MeshMaterial3d(stars.clone()),
+            Visibility::Visible,
+        ));
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(world.resource::<GlobalAmbientLight>().brightness, 0.0);
+        assert_eq!(
+            world
+                .resource::<Assets<TacticalMoonMaterial>>()
+                .get(&moon)
+                .expect("moon material")
+                .light,
+            Vec4::ZERO
+        );
+        assert_eq!(
+            world
+                .resource::<Assets<TacticalMoonMaterial>>()
+                .get(&moon)
+                .expect("moon material")
+                .appearance
+                .y,
+            8.0
+        );
+        assert_eq!(
+            world
+                .resource::<Assets<TacticalStarMaterial>>()
+                .get(&stars)
+                .expect("star material")
+                .settings
+                .x,
+            0.0
+        );
+        assert_eq!(
+            world
+                .query_filtered::<&Visibility, With<TacticalMoon>>()
+                .single(world)
+                .expect("one moon"),
+            &Visibility::Hidden
+        );
+        assert_eq!(
+            world
+                .query_filtered::<&Visibility, With<TacticalStars>>()
+                .single(world)
+                .expect("one star field"),
+            &Visibility::Hidden
+        );
+        assert_eq!(
+            world
+                .query_filtered::<&Exposure, With<Camera3d>>()
+                .single(world)
+                .expect("one camera")
+                .ev100,
+            Exposure::SUNLIGHT.ev100
+        );
+        for light in world.query::<&DirectionalLight>().iter(world) {
+            assert_eq!(light.illuminance, 0.0);
+            assert!(!light.shadow_maps_enabled);
+        }
+    }
 
     #[test]
     fn allocation_grace_is_bounded_and_resets() {
