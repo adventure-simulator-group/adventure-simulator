@@ -4,6 +4,7 @@ pub(super) fn on_scene_vista_bundle(
     bundle: On<SceneVistaBundle>,
     mut commands: Commands,
     existing: Query<Entity, With<VistaTerrain>>,
+    playable_scenes: Query<(&SceneTerrain, &SceneEnvironment)>,
     settings: Res<TacticalGraphicsSettings>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -22,12 +23,23 @@ pub(super) fn on_scene_vista_bundle(
         metallic: 0.0,
         ..default()
     });
+    let playable_terrain = playable_scenes
+        .iter()
+        .find(|(_, environment)| environment.scene_digest == bundle.scene_digest)
+        .map(|(terrain, _)| terrain);
+    if playable_terrain.is_none() {
+        warn!(
+            scene_digest = %bundle.scene_digest,
+            "Tactical vista arrived before its authoritative playable terrain; edge stitching is unavailable"
+        );
+    }
     let mut inner_half_extent = bundle.playable_half_extent_metres;
     for (index, lod) in visible_lods.iter().copied().enumerate() {
         let meshes_for_lod = vista_lod_meshes_with_morph(
             lod,
             inner_half_extent,
             visible_lods.get(index + 1).copied(),
+            (index == 0).then_some(playable_terrain).flatten(),
         );
         if meshes_for_lod.is_empty() {
             warn!(level = lod.level, "Rejected malformed tactical vista LOD");
@@ -57,13 +69,14 @@ pub(super) fn on_scene_vista_bundle(
 
 #[cfg(test)]
 pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: Vec2) -> Vec<Mesh> {
-    vista_lod_meshes_with_morph(lod, inner_half_extent, None)
+    vista_lod_meshes_with_morph(lod, inner_half_extent, None, None)
 }
 
 fn vista_lod_meshes_with_morph(
     lod: &VistaLod,
     inner_half_extent: Vec2,
     coarser_lod: Option<&VistaLod>,
+    playable_terrain: Option<&SceneTerrain>,
 ) -> Vec<Mesh> {
     let width = usize::from(lod.width);
     let depth = usize::from(lod.depth);
@@ -105,8 +118,17 @@ fn vista_lod_meshes_with_morph(
                                     lod.origin_east_metres as f32,
                                     lod.origin_north_metres as f32,
                                 );
-                            let height = presented_height_at(lod, world, coarser_lod)
+                            let vista_height = presented_height_at(lod, world, coarser_lod)
                                 .expect("clipped vista vertex remains inside its source LOD");
+                            let height = playable_terrain.map_or(vista_height, |terrain| {
+                                stitch_vista_height_to_playable_edge(
+                                    terrain,
+                                    local,
+                                    inner_half_extent,
+                                    lod.spacing_metres,
+                                    vista_height,
+                                )
+                            });
                             (
                                 [local.x, height, local.y],
                                 presented_color_at(lod, world, coarser_lod)
@@ -147,6 +169,24 @@ fn vista_lod_meshes_with_morph(
         }
     }
     meshes
+}
+
+fn stitch_vista_height_to_playable_edge(
+    terrain: &SceneTerrain,
+    local: Vec2,
+    playable_half_extent: Vec2,
+    transition_width: f32,
+    vista_height: f32,
+) -> f32 {
+    let boundary = local.clamp(-playable_half_extent, playable_half_extent);
+    let Some(playable_height) = terrain.height_at(boundary) else {
+        return vista_height;
+    };
+    let outside_distance = (local.abs() - playable_half_extent)
+        .max(Vec2::ZERO)
+        .max_element();
+    let vista_weight = (outside_distance / transition_width.max(f32::EPSILON)).clamp(0.0, 1.0);
+    playable_height.lerp(vista_height, vista_weight)
 }
 
 fn cell_rectangles_outside_inner_rectangle(
@@ -482,6 +522,49 @@ mod tests {
         assert!(
             touches_boundary,
             "coarse cells must be split at the exact playable boundary"
+        );
+    }
+
+    #[test]
+    fn first_vista_ring_stitches_to_playable_height_then_blends_outward() {
+        let terrain = SceneTerrain::from_heightmap(
+            3,
+            3,
+            50.0,
+            vec![12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0],
+        )
+        .unwrap();
+        let half_extent = Vec2::splat(50.0);
+
+        assert_eq!(
+            stitch_vista_height_to_playable_edge(
+                &terrain,
+                Vec2::new(50.0, 10.0),
+                half_extent,
+                250.0,
+                112.0,
+            ),
+            12.0
+        );
+        assert_eq!(
+            stitch_vista_height_to_playable_edge(
+                &terrain,
+                Vec2::new(175.0, 10.0),
+                half_extent,
+                250.0,
+                112.0,
+            ),
+            62.0
+        );
+        assert_eq!(
+            stitch_vista_height_to_playable_edge(
+                &terrain,
+                Vec2::new(300.0, 10.0),
+                half_extent,
+                250.0,
+                112.0,
+            ),
+            112.0
         );
     }
 

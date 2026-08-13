@@ -290,7 +290,10 @@ the SHA-256 scene digest and generation version. Each vista bundle also carries
 the authoritative playable half-extents. Clients split coarse boundary cells at
 that exact rectangle, so presentation-only vista triangles neither cover the
 collider terrain nor leave a magic-number gap when source spacing exceeds the
-playable area's size. Each client builds the playable render mesh from that
+playable area's size. The first vista ring also samples the replicated playable
+heightfield at its inner edge, then blends back to regional elevation across one
+coarse cell; the render boundary therefore stays watertight even when those two
+height sources disagree. Each client builds the playable render mesh from that
 replicated heightfield; the server never extracts or transmits render geometry.
 Gameplay-relevant generated trees and rocks are
 static server colliders with compact replicated recipes and transforms. A rock
