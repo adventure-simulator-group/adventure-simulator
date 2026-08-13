@@ -27,6 +27,9 @@ pub(in crate::presentation) struct ScenePresentationOf(pub(in crate::presentatio
 #[derive(Component)]
 pub(crate) struct TerrainMaterialPresentation;
 
+#[derive(Component)]
+pub(in crate::presentation) struct PendingTerrainPresentation;
+
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalTerrainExtension {
     #[uniform(100)]
@@ -69,41 +72,68 @@ pub(in crate::presentation) type TacticalTerrainMaterial =
 pub(in crate::presentation) fn on_game_scene_added(
     event: On<Add, SceneId>,
     mut commands: Commands,
-    query: Query<(
-        &SceneId,
-        &SceneTerrain,
-        Option<&SceneEnvironment>,
-        Option<&SceneGround>,
+) {
+    commands
+        .entity(event.entity)
+        .insert(PendingTerrainPresentation);
+}
+
+pub(in crate::presentation) fn present_pending_terrain(
+    mut commands: Commands,
+    query: Query<
+        (
+            Entity,
+            &SceneId,
+            &SceneTerrain,
+            Option<&SceneEnvironment>,
+            Option<&SceneGround>,
+        ),
+        With<PendingTerrainPresentation>,
+    >,
+    presentations: Query<(
+        &ScenePresentationOf,
+        &MeshMaterial3d<TacticalTerrainMaterial>,
     )>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
     asset_server: Res<AssetServer>,
-) -> Result {
-    let (id, terrain, environment, ground) = query.get(event.entity)?;
-    info!(entity = ?event.entity, "Spawning a scene {id:?}");
-
-    let legacy_environment;
-    let environment = if let Some(environment) = environment {
-        environment
-    } else {
-        legacy_environment = legacy_scene_environment(id);
-        &legacy_environment
-    };
-
-    commands.spawn((
-        Name::new(format!("{} terrain mesh", id.0)),
-        ScenePresentationOf(event.entity),
-        TerrainMaterialPresentation,
-        Mesh3d(meshes.add(terrain.mesh())),
-        MeshMaterial3d(materials.add(terrain_material(
-            environment,
-            ground,
-            &mut images,
-            &asset_server,
-        ))),
-    ));
-    Ok(())
+) {
+    for (entity, id, terrain, environment, ground) in &query {
+        let legacy_environment;
+        let environment = if let Some(environment) = environment {
+            environment
+        } else {
+            legacy_environment = legacy_scene_environment(id);
+            &legacy_environment
+        };
+        let presented = if let Some((_, handle)) =
+            presentations.iter().find(|(source, _)| source.0 == entity)
+        {
+            if let Some(mut material) = materials.get_mut(&handle.0) {
+                *material = terrain_material(environment, ground, &mut images, &asset_server);
+                true
+            } else {
+                false
+            }
+        } else {
+            info!(?entity, "Spawning a scene {id:?}");
+            let material = terrain_material(environment, ground, &mut images, &asset_server);
+            commands.spawn((
+                Name::new(format!("{} terrain mesh", id.0)),
+                ScenePresentationOf(entity),
+                TerrainMaterialPresentation,
+                Mesh3d(meshes.add(terrain.mesh())),
+                MeshMaterial3d(materials.add(material)),
+            ));
+            true
+        };
+        if presented {
+            commands
+                .entity(entity)
+                .remove::<PendingTerrainPresentation>();
+        }
+    }
 }
 
 pub(in crate::presentation) fn terrain_material(
@@ -391,52 +421,16 @@ pub(in crate::presentation) fn legacy_scene_environment(id: &SceneId) -> SceneEn
     }
 }
 
-pub(super) fn on_environment_added(
-    event: On<Add, SceneEnvironment>,
-    environments: Query<&SceneEnvironment>,
-    presentations: Query<(
-        &ScenePresentationOf,
-        &MeshMaterial3d<TacticalTerrainMaterial>,
-    )>,
-    ground: Query<&SceneGround>,
-    mut terrain_materials: ResMut<Assets<TacticalTerrainMaterial>>,
-    mut images: ResMut<Assets<Image>>,
-    asset_server: Res<AssetServer>,
-) -> Result {
-    let environment = environments.get(event.entity)?;
-    let ground = ground.get(event.entity).ok();
-    for (source, material) in &presentations {
-        if source.0 == event.entity
-            && let Some(mut material) = terrain_materials.get_mut(&material.0)
-        {
-            *material = terrain_material(environment, ground, &mut images, &asset_server);
-        }
-    }
-    Ok(())
+pub(super) fn on_environment_added(event: On<Add, SceneEnvironment>, mut commands: Commands) {
+    commands
+        .entity(event.entity)
+        .insert(PendingTerrainPresentation);
 }
 
-pub(super) fn on_ground_added(
-    event: On<Add, SceneGround>,
-    grounds: Query<&SceneGround>,
-    environments: Query<&SceneEnvironment>,
-    presentations: Query<(
-        &ScenePresentationOf,
-        &MeshMaterial3d<TacticalTerrainMaterial>,
-    )>,
-    mut terrain_materials: ResMut<Assets<TacticalTerrainMaterial>>,
-    mut images: ResMut<Assets<Image>>,
-    asset_server: Res<AssetServer>,
-) -> Result {
-    let ground = grounds.get(event.entity)?;
-    let environment = environments.get(event.entity)?;
-    for (source, material) in &presentations {
-        if source.0 == event.entity
-            && let Some(mut material) = terrain_materials.get_mut(&material.0)
-        {
-            *material = terrain_material(environment, Some(ground), &mut images, &asset_server);
-        }
-    }
-    Ok(())
+pub(super) fn on_ground_added(event: On<Add, SceneGround>, mut commands: Commands) {
+    commands
+        .entity(event.entity)
+        .insert(PendingTerrainPresentation);
 }
 
 const TERRAIN_SHADER: &str = "shaders/tactical_terrain.wgsl";
@@ -446,6 +440,104 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use bevy::asset::{AssetApp, AssetPlugin};
+    use bevy::prelude::TaskPoolPlugin;
+
+    #[test]
+    fn terrain_presentation_remains_pending_until_terrain_arrives() {
+        let mut app = App::new();
+        app.add_observer(on_game_scene_added);
+        let scene = app.world_mut().spawn(SceneId("add-order".into())).id();
+        app.update();
+        assert!(
+            app.world()
+                .entity(scene)
+                .contains::<PendingTerrainPresentation>()
+        );
+
+        app.world_mut()
+            .entity_mut(scene)
+            .insert(SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).expect("valid terrain"));
+        app.update();
+        assert!(
+            app.world()
+                .entity(scene)
+                .contains::<PendingTerrainPresentation>()
+        );
+    }
+
+    #[test]
+    fn terrain_reconcile_updates_once_and_retries_a_stale_material_handle() {
+        let mut app = App::new();
+        app.add_plugins((TaskPoolPlugin::default(), AssetPlugin::default()));
+        app.init_asset::<Image>();
+        app.init_asset::<Mesh>();
+        app.init_asset::<TacticalTerrainMaterial>();
+        app.add_observer(on_game_scene_added);
+        app.add_observer(on_environment_added);
+        app.add_observer(on_ground_added);
+        app.add_systems(Update, present_pending_terrain);
+        let ground = SceneGround::from_samples(2, 2, 1.0, vec![GroundSurface::default(); 4])
+            .expect("valid ground");
+        let scene = app
+            .world_mut()
+            .spawn((
+                SceneId("lifecycle".into()),
+                SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).expect("valid terrain"),
+                legacy_scene_environment(&SceneId("lifecycle".into())),
+                ground,
+            ))
+            .id();
+        app.update();
+
+        assert!(
+            !app.world()
+                .entity(scene)
+                .contains::<PendingTerrainPresentation>()
+        );
+        let mut presentation_query = app.world_mut().query::<(
+            &ScenePresentationOf,
+            &MeshMaterial3d<TacticalTerrainMaterial>,
+        )>();
+        let presentations = presentation_query
+            .iter(app.world())
+            .filter(|(source, _)| source.0 == scene)
+            .map(|(_, handle)| handle.0.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(presentations.len(), 1);
+        let handle = presentations[0].clone();
+
+        app.world_mut()
+            .entity_mut(scene)
+            .insert(PendingTerrainPresentation);
+        app.update();
+        let mut presentation_query = app.world_mut().query::<(
+            &ScenePresentationOf,
+            &MeshMaterial3d<TacticalTerrainMaterial>,
+        )>();
+        let refreshed = presentation_query
+            .iter(app.world())
+            .filter(|(source, _)| source.0 == scene)
+            .map(|(_, material)| material.0.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(refreshed, vec![handle.clone()]);
+
+        app.world_mut()
+            .resource_mut::<Assets<TacticalTerrainMaterial>>()
+            .remove(&handle);
+        app.update();
+        let image_count = app.world().resource::<Assets<Image>>().len();
+        app.world_mut()
+            .entity_mut(scene)
+            .insert(PendingTerrainPresentation);
+        app.update();
+        assert!(
+            app.world()
+                .entity(scene)
+                .contains::<PendingTerrainPresentation>()
+        );
+        assert_eq!(app.world().resource::<Assets<Image>>().len(), image_count);
+    }
 
     #[test]
     fn presentation_ground_mask_is_deterministic_discrete_and_not_grid_aligned() {
