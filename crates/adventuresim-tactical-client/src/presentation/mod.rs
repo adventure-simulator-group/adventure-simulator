@@ -114,6 +114,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalRockMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
+            MaterialPlugin::<TacticalTreeBarkMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
             MaterialPlugin::<TacticalStarMaterial>::default(),

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2025)
+## Files (2026)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -68,6 +68,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/shaders/tactical_rock.wgsl` — Repository support file.
 - `assets/shaders/tactical_stars.wgsl` — Repository support file.
 - `assets/shaders/tactical_terrain.wgsl` — Repository support file.
+- `assets/shaders/tactical_tree_bark.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_impostor.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_leaf_card.wgsl` — Repository support file.
 - `assets/shaders/tactical_vista.wgsl` — Repository support file.

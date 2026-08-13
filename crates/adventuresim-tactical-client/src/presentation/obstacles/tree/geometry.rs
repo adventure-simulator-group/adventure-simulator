@@ -63,7 +63,8 @@ pub(in crate::presentation) use skeleton::{
     procedural_tree_skeleton, procedural_woody_plant_skeleton,
 };
 pub(in crate::presentation) use wood_mesh::{
-    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh,
+    procedural_tree_branch_mesh, procedural_tree_descendant_group_mesh,
+    procedural_tree_hero_branch_mesh,
 };
 
 fn branch_frame(direction: Vec3) -> (Vec3, Vec3) {

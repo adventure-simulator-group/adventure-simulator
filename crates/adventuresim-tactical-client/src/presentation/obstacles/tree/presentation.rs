@@ -3,12 +3,13 @@ use super::impostor::{
     tree_lod_name, tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
-    TREE_PRIMARY_GROUP_COUNT, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
-    procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
-    procedural_oak_textured_leaf_group_mesh, procedural_tree_branch_group_mesh,
-    procedural_tree_branch_mesh, procedural_tree_skeleton,
+    TREE_PRIMARY_GROUP_COUNT, TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial,
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_hero_bark_material,
+    oak_leaf_material, procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh,
+    procedural_oak_leaves, procedural_oak_textured_leaf_group_mesh, procedural_tree_branch_mesh,
+    procedural_tree_descendant_group_mesh, procedural_tree_hero_branch_mesh,
+    procedural_tree_skeleton,
 };
 use crate::presentation::{ActiveTacticalScene, SceneEnvironment, obstacle_seed, splitmix64};
 use bevy::{
@@ -24,6 +25,7 @@ pub(in crate::presentation) struct PendingTreePresentation;
 pub(in crate::presentation) struct TreePresentationCache {
     variants: std::collections::HashMap<u64, CachedTreePresentation>,
     oak_bark_material: Option<Handle<StandardMaterial>>,
+    oak_hero_bark_material: Option<Handle<TacticalTreeBarkMaterial>>,
 }
 
 #[derive(Resource, Default)]
@@ -41,11 +43,13 @@ pub(in crate::presentation) struct CachedVistaTreePresentation {
 #[derive(Clone)]
 struct CachedTreePresentation {
     trunk_mesh: Handle<Mesh>,
+    hero_trunk_mesh: Handle<Mesh>,
     clusters: Vec<CachedTreeClusterPresentation>,
     aggregate_branch_meshes: [Handle<Mesh>; 2],
     aggregate_card_meshes: [Handle<Mesh>; 3],
     whole_tree_card_mesh: Handle<Mesh>,
     bark_material: Handle<StandardMaterial>,
+    hero_bark_material: Handle<TacticalTreeBarkMaterial>,
     leaf_material: Handle<TacticalTreeLeafCardMaterial>,
     bud_material: Handle<StandardMaterial>,
     card_materials: [Handle<TacticalTreeImpostorMaterial>; 4],
@@ -105,14 +109,25 @@ fn spawn_streamed_tree_children(
         // at whole-tree LOD must not hide the camera-facing billboard sibling
         // through inherited parent visibility.
         if mask & 1 != 0 {
-            parent.spawn((
-                Name::new("English oak trunk"),
-                StreamedTreeChild,
-                TreeTrunkLod,
-                Mesh3d(cached.trunk_mesh.clone()),
-                MeshMaterial3d(cached.bark_material.clone()),
-                tree_trunk_visibility(),
-            ));
+            if mask & (1 << 1) != 0 {
+                parent.spawn((
+                    Name::new("English oak hero trunk"),
+                    StreamedTreeChild,
+                    TreeTrunkLod,
+                    Mesh3d(cached.hero_trunk_mesh.clone()),
+                    MeshMaterial3d(cached.hero_bark_material.clone()),
+                    tree_trunk_visibility(),
+                ));
+            } else {
+                parent.spawn((
+                    Name::new("English oak trunk"),
+                    StreamedTreeChild,
+                    TreeTrunkLod,
+                    Mesh3d(cached.trunk_mesh.clone()),
+                    MeshMaterial3d(cached.bark_material.clone()),
+                    tree_trunk_visibility(),
+                ));
+            }
         }
         if mask & (1 << 1) != 0 {
             for cluster in &cached.clusters {
@@ -177,7 +192,7 @@ fn spawn_streamed_tree_children(
                 ));
                 parent.spawn((
                     Name::new(format!(
-                        "English oak scaffold {} detailed wood",
+                        "English oak scaffold {} detailed descendant wood",
                         cluster.primary_group
                     )),
                     StreamedTreeChild,
@@ -324,6 +339,7 @@ pub(in crate::presentation) fn present_pending_trees(
     environments: Query<&SceneEnvironment>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
@@ -352,6 +368,15 @@ pub(in crate::presentation) fn present_pending_trees(
                 tree_cache.oak_bark_material = Some(material.clone());
                 material
             });
+            let hero_bark_material =
+                tree_cache
+                    .oak_hero_bark_material
+                    .clone()
+                    .unwrap_or_else(|| {
+                        let material = bark_materials.add(oak_hero_bark_material(&asset_server));
+                        tree_cache.oak_hero_bark_material = Some(material.clone());
+                        material
+                    });
             let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
             let bud_material = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.36, 0.27, 0.1),
@@ -364,35 +389,34 @@ pub(in crate::presentation) fn present_pending_trees(
             for bake in &baked_lods {
                 validate_tree_bake_provenance(&bake.provenance);
             }
-            let clusters = (0..TREE_PRIMARY_GROUP_COUNT)
-                .map(|primary_group| {
-                    let source = baked_lods[0]
-                        .clusters
-                        .iter()
-                        .find(|cluster| cluster.primary_group == primary_group)
-                        .expect("every generated primary scaffold has a baked cluster");
-                    CachedTreeClusterPresentation {
-                        primary_group,
-                        center: source.center,
-                        radius: source.radius,
-                        detailed_branch_mesh: meshes.add(procedural_tree_branch_group_mesh(
-                            &branches,
-                            3,
+            let clusters =
+                (0..TREE_PRIMARY_GROUP_COUNT)
+                    .map(|primary_group| {
+                        let source = baked_lods[0]
+                            .clusters
+                            .iter()
+                            .find(|cluster| cluster.primary_group == primary_group)
+                            .expect("every generated primary scaffold has a baked cluster");
+                        CachedTreeClusterPresentation {
                             primary_group,
-                        )),
-                        cambered_leaf_mesh: meshes.add(procedural_oak_textured_leaf_group_mesh(
-                            &leaves,
-                            primary_group,
-                        )),
-                        leaf_card_mesh: meshes
-                            .add(procedural_oak_leaf_card_group_mesh(&leaves, primary_group)),
-                        bud_mesh: meshes
-                            .add(procedural_oak_bud_group_mesh(&branches, primary_group)),
-                    }
-                })
-                .collect();
+                            center: source.center,
+                            radius: source.radius,
+                            detailed_branch_mesh: meshes.add(
+                                procedural_tree_descendant_group_mesh(&branches, 3, primary_group),
+                            ),
+                            cambered_leaf_mesh: meshes.add(
+                                procedural_oak_textured_leaf_group_mesh(&leaves, primary_group),
+                            ),
+                            leaf_card_mesh: meshes
+                                .add(procedural_oak_leaf_card_group_mesh(&leaves, primary_group)),
+                            bud_mesh: meshes
+                                .add(procedural_oak_bud_group_mesh(&branches, primary_group)),
+                        }
+                    })
+                    .collect();
             let cached = CachedTreePresentation {
                 trunk_mesh: meshes.add(procedural_tree_branch_mesh(&branches, 0)),
+                hero_trunk_mesh: meshes.add(procedural_tree_hero_branch_mesh(&branches, 1)),
                 clusters,
                 aggregate_branch_meshes: [2, 1]
                     .map(|depth| meshes.add(procedural_tree_branch_mesh(&branches, depth))),
@@ -401,6 +425,7 @@ pub(in crate::presentation) fn present_pending_trees(
                 }),
                 whole_tree_card_mesh: meshes.add(baked_lods[3].mesh.clone()),
                 bark_material,
+                hero_bark_material,
                 leaf_material,
                 bud_material,
                 card_materials: core::array::from_fn(|index| {

@@ -371,11 +371,29 @@ does not expand the server's cylindrical trunk collider. Oak and hazel branch
 recipes also cap each child base at 80% of its local parent-axis radius. The
 existing bounded basal ring therefore cannot become wider than its trunk or
 parent limb. Near woody meshes share one scanned oak-bark albedo, OpenGL
-normal, roughness, and ambient-occlusion material. Their cylindrical UVs use
-the scan's documented one-by-two-metre scale, duplicate the wrap seam, and
-parallel-transport the tangent frame along each axis; physical feature scale
-therefore stays consistent across trunks, roots, and branches without a
-tree-specific lighting adjustment. Living leaf cards retain their scanned
+normal, roughness, and ambient-occlusion set. Ordinary and distant branch
+sweeps use cylindrical UVs at the scan's documented one-by-two-metre scale,
+duplicate the wrap seam, and parallel-transport the tangent frame along each
+axis. The LOD0 major-wood material instead uses world-space triplanar
+projection so blended root saddles and oblique scaffold collars do not inherit
+cylindrical pinwheels or hard UV seams; its additional texture samples are
+confined to streamed hero wood. The closest wood representation derives an
+explicit axis topology from that same skeleton. It identifies the dominant
+trunk and each primary scaffold's
+nearest lower-order parent, then uses the parent tangent to shape a deeper,
+wider biological collar instead of treating the branch as an unrelated
+cylinder. The LOD0 trunk uses fourteen radial sides and a mildly eccentric,
+slowly rotating cross-section; primary limbs use ten. One combined major-wood
+mesh prevents those load-bearing limbs from being coupled to the thousands of
+secondary/twig segments without adding a woody draw. The extra geometry
+replaces the ordinary near trunk/primary sweeps and remains only in LOD0;
+aggregate wood, impostors, tree recipes, and the authoritative collider are
+unchanged. A bounded Surface Nets field replaces every depth-zero root's first
+span and the lowest trunk span, blending the buttress saddles into one surface.
+The ordinary sweeps resume inside that patch's overlap, so it is a localized
+replacement rather than a second visible bark shell; farther root spans retain
+their inexpensive axis tubes.
+Living leaf cards retain their scanned
 front/back albedo and normals while sharing a crown-size Beer--Lambert response
 for only the self-occlusion unresolved by explicit cards and screen-space AO.
 An empirically bounded 0.11-per-metre coefficient yields about 48% mature-oak

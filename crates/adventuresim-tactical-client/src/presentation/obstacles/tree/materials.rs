@@ -1,5 +1,5 @@
 use bevy::{
-    pbr::Material,
+    pbr::{ExtendedMaterial, Material, MaterialExtension},
     prelude::*,
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -11,6 +11,36 @@ use super::geometry::{COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS};
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
+const TREE_BARK_SHADER: &str = "shaders/tactical_tree_bark.wgsl";
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(in crate::presentation) struct TacticalTreeBarkExtension {
+    #[texture(100)]
+    #[sampler(101)]
+    diffuse: Handle<Image>,
+    #[texture(102)]
+    #[sampler(103)]
+    normal_gl: Handle<Image>,
+    #[texture(104)]
+    #[sampler(105)]
+    arm: Handle<Image>,
+    /// Horizontal tiles/metre, vertical tiles/metre, normal strength, blend sharpness.
+    #[uniform(106)]
+    projection: Vec4,
+}
+
+impl MaterialExtension for TacticalTreeBarkExtension {
+    fn fragment_shader() -> ShaderRef {
+        TREE_BARK_SHADER.into()
+    }
+
+    fn deferred_fragment_shader() -> ShaderRef {
+        TREE_BARK_SHADER.into()
+    }
+}
+
+pub(in crate::presentation) type TacticalTreeBarkMaterial =
+    ExtendedMaterial<StandardMaterial, TacticalTreeBarkExtension>;
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(crate) struct TacticalTreeLeafCardMaterial {
@@ -61,33 +91,20 @@ pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafC
 }
 
 pub(crate) fn oak_bark_material(asset_server: &AssetServer) -> StandardMaterial {
-    let image = |path, is_srgb| {
-        asset_server
-            .load_builder()
-            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
-                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
-                settings.is_srgb = is_srgb;
-                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-                    address_mode_u: ImageAddressMode::Repeat,
-                    address_mode_v: ImageAddressMode::Repeat,
-                    address_mode_w: ImageAddressMode::Repeat,
-                    anisotropy_clamp: 8,
-                    ..ImageSamplerDescriptor::linear()
-                });
-            })
-            .load(path)
-    };
-    let arm = image(
+    let arm = bark_image(
+        asset_server,
         "textures/trees/oak_bark/jolcham_oak_bark_01_arm_1k.jpg",
         false,
     );
     StandardMaterial {
         base_color: Color::WHITE,
-        base_color_texture: Some(image(
+        base_color_texture: Some(bark_image(
+            asset_server,
             "textures/trees/oak_bark/jolcham_oak_bark_01_diff_1k.jpg",
             true,
         )),
-        normal_map_texture: Some(image(
+        normal_map_texture: Some(bark_image(
+            asset_server,
             "textures/trees/oak_bark/jolcham_oak_bark_01_nor_gl_1k.jpg",
             false,
         )),
@@ -99,6 +116,54 @@ pub(crate) fn oak_bark_material(asset_server: &AssetServer) -> StandardMaterial 
         flip_normal_map_y: false,
         ..default()
     }
+}
+
+pub(in crate::presentation) fn oak_hero_bark_material(
+    asset_server: &AssetServer,
+) -> TacticalTreeBarkMaterial {
+    TacticalTreeBarkMaterial {
+        base: StandardMaterial {
+            base_color: Color::WHITE,
+            perceptual_roughness: 1.0,
+            metallic: 0.0,
+            ..default()
+        },
+        extension: TacticalTreeBarkExtension {
+            diffuse: bark_image(
+                asset_server,
+                "textures/trees/oak_bark/jolcham_oak_bark_01_diff_1k.jpg",
+                true,
+            ),
+            normal_gl: bark_image(
+                asset_server,
+                "textures/trees/oak_bark/jolcham_oak_bark_01_nor_gl_1k.jpg",
+                false,
+            ),
+            arm: bark_image(
+                asset_server,
+                "textures/trees/oak_bark/jolcham_oak_bark_01_arm_1k.jpg",
+                false,
+            ),
+            projection: Vec4::new(1.0, 0.5, 0.58, 4.0),
+        },
+    }
+}
+
+fn bark_image(asset_server: &AssetServer, path: &'static str, is_srgb: bool) -> Handle<Image> {
+    asset_server
+        .load_builder()
+        .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
+            use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+            settings.is_srgb = is_srgb;
+            settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                address_mode_u: ImageAddressMode::Repeat,
+                address_mode_v: ImageAddressMode::Repeat,
+                address_mode_w: ImageAddressMode::Repeat,
+                anisotropy_clamp: 8,
+                ..ImageSamplerDescriptor::linear()
+            });
+        })
+        .load(path)
 }
 
 pub(in crate::presentation) fn hazel_leaf_material(
@@ -291,6 +356,19 @@ mod tests {
         assert_eq!(bark.metallic, 0.0);
         assert_eq!(bark.perceptual_roughness, 1.0);
         assert!(!bark.flip_normal_map_y);
+    }
+
+    #[test]
+    fn hero_bark_uses_bounded_triplanar_pbr_only_for_close_wood() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_tree_bark.wgsl"
+        ));
+        assert_eq!(shader.matches("textureSample(").count(), 9);
+        assert!(shader.contains("projection_weights(macro_normal)"));
+        assert!(shader.contains("pbr_input.world_normal = composed_normal"));
+        assert!(shader.contains("pbr_input.material.perceptual_roughness"));
+        assert!(!shader.contains("discard;"));
     }
 
     #[test]
