@@ -19,6 +19,7 @@ SOURCE_PATHS = (
     Path("crates/adventuresim-tactical-client/Cargo.toml"),
     Path("crates/adventuresim-tactical-client/src/presentation"),
     Path("crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"),
+    Path("crates/adventuresim-tactical-client/src/tactical_scene_viewer"),
     Path("crates/adventuresim-tactical-server-dispatcher/Cargo.toml"),
     Path("crates/adventuresim-tactical-server-dispatcher/src/bin/materialize-real-world-scene.rs"),
     Path("crates/adventuresim-tactical-server-dispatcher/src/lib.rs"),
@@ -63,15 +64,19 @@ def materialize(args: argparse.Namespace) -> Path:
     return path
 
 
-def source_identity() -> str:
-    digest = hashlib.sha256()
+def source_files() -> list[Path]:
+    files: list[Path] = []
     for relative in SOURCE_PATHS:
         path = ROOT / relative
-        files = sorted(path.rglob("*") if path.is_dir() else (path,))
-        for file in files:
-            if file.is_file():
-                digest.update(file.relative_to(ROOT).as_posix().encode())
-                digest.update(file.read_bytes())
+        files.extend(path.rglob("*") if path.is_dir() else (path,))
+    return sorted(file for file in files if file.is_file())
+
+
+def source_identity() -> str:
+    digest = hashlib.sha256()
+    for file in source_files():
+        digest.update(file.relative_to(ROOT).as_posix().encode())
+        digest.update(file.read_bytes())
     revision = subprocess.run(
         ("git", "rev-parse", "HEAD"), cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE
     ).stdout.strip()

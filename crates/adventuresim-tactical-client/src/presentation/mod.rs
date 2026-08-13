@@ -158,7 +158,7 @@ impl Plugin for TacticalPresentationPlugin {
                 update_celestial_material_lighting.after(update_presented_celestial_lighting),
                 (present_pending_trees, update_tree_projected_lod_ranges).chain(),
                 keep_celestial_visuals_centered.after(update_presented_celestial_lighting),
-                update_global_ambient_policy.after(update_presented_celestial_lighting),
+                update_global_ambient_policy.after(apply_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
                 (apply_active_scene_weather, advance_weather_particles)
                     .chain()

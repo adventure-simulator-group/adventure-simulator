@@ -13,6 +13,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 class RealWorldTacticalTests(unittest.TestCase):
+    def test_source_identity_includes_all_viewer_modules(self):
+        viewer = Path("crates/adventuresim-tactical-client/src/tactical_scene_viewer")
+        self.assertIn(viewer, MODULE.SOURCE_PATHS)
+        included = {path.name for path in MODULE.source_files()}
+        self.assertIn("capture_state.rs", included)
+        self.assertIn("manifest.rs", included)
+
     def test_parser_accepts_signed_decimal_coordinates(self):
         args = MODULE.parser().parse_args(["capture", "51.3397", "-1.2345"])
         self.assertEqual((args.latitude, args.longitude), (51.3397, -1.2345))

@@ -54,7 +54,7 @@ SOURCE_PATHS = (
     "crates/adventuresim-tactical-client/Cargo.toml",
     "crates/adventuresim-tactical-client/src/presentation",
     "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs",
-    "crates/adventuresim-tactical-client/src/tactical_scene_viewer/view_specs.rs",
+    "crates/adventuresim-tactical-client/src/tactical_scene_viewer",
     "crates/adventuresim-tactical-client/src/tactical_scene_viewer_main.rs",
     "crates/adventuresim-tactical-client/src/tactical_sky_viewer.rs",
     "crates/adventuresim-tactical-client/src/tactical_sky_viewer_main.rs",
@@ -161,17 +161,21 @@ def run_child(parts: Sequence[str], source_identity: str) -> tuple[bool, str]:
     return result.returncode == 0 and not runtime_error, clean_log
 
 
+def source_files() -> list[Path]:
+    files: list[Path] = []
+    for relative in SOURCE_PATHS:
+        path = REPOSITORY_ROOT / relative
+        files.extend(path.rglob("*") if path.is_dir() else [path])
+    return sorted(path for path in files if path.is_file())
+
+
 def source_identity() -> dict:
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=REPOSITORY_ROOT, check=True,
         capture_output=True, text=True,
     ).stdout.strip()
     hasher = hashlib.sha256()
-    files: list[Path] = []
-    for relative in SOURCE_PATHS:
-        path = REPOSITORY_ROOT / relative
-        files.extend(path.rglob("*") if path.is_dir() else [path])
-    for path in sorted(path for path in files if path.is_file()):
+    for path in source_files():
         relative = path.relative_to(REPOSITORY_ROOT).as_posix()
         hasher.update(relative.encode())
         hasher.update(b"\0")

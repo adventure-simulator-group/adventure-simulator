@@ -16,6 +16,15 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CaptureTacticalScenesTests(unittest.TestCase):
+    def test_source_identity_includes_all_viewer_modules(self):
+        self.assertIn(
+            "crates/adventuresim-tactical-client/src/tactical_scene_viewer",
+            MODULE.SOURCE_PATHS,
+        )
+        included = {path.name for path in MODULE.source_files()}
+        self.assertIn("capture_state.rs", included)
+        self.assertIn("manifest.rs", included)
+
     def test_default_matrix_is_compact_and_environment_only(self):
         matrix = MODULE.selected_matrix(None, None)
         self.assertEqual(len(matrix), 12)
