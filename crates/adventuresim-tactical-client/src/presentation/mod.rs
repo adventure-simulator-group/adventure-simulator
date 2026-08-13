@@ -16,9 +16,9 @@ mod weather;
 
 use environment::*;
 use foliage::*;
+use obstacles::on_scene_obstacle_added;
 use obstacles::rock::{TacticalRockMaterial, procedural_rock_mesh, rock_color};
 use obstacles::tree::*;
-use obstacles::{on_scene_obstacle_added, present_pending_trees};
 use procedural::*;
 use sky::*;
 use terrain::*;
@@ -37,7 +37,7 @@ pub(crate) use obstacles::oak_review_terminal_specimen;
 #[allow(unused_imports)]
 pub(crate) use obstacles::rock::ProceduralRockVisual;
 #[allow(unused_imports)]
-pub(crate) use obstacles::tree::impostor::TreeImpostorProvenance;
+pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
     TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
@@ -55,6 +55,8 @@ pub(crate) use weather::WeatherParticle;
 
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
+#[cfg(test)]
+use bevy::mesh::VertexAttributeValues;
 use bevy::{
     asset::RenderAssetUsages,
     camera::{Exposure, visibility::VisibilityRange},
@@ -64,7 +66,7 @@ use bevy::{
         Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster,
         atmosphere::ScatteringMedium, light_consts::lux,
     },
-    mesh::{Indices, MeshVertexAttribute, PrimitiveTopology, VertexAttributeValues},
+    mesh::{Indices, MeshVertexAttribute, PrimitiveTopology},
     pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion},
     post_process::bloom::Bloom,
     prelude::*,
@@ -74,7 +76,6 @@ use bevy::{
     },
     shader::ShaderRef,
 };
-
 #[derive(Debug, Clone, Copy)]
 pub struct TacticalPresentationPlugin {
     pub shadows_enabled: bool,
