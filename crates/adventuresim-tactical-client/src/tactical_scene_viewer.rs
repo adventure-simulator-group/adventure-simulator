@@ -1969,31 +1969,57 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
             Vec3::Z,
         ),
         CapturePose::Horizon => {
-            let position = state.ground_eye_position + Vec3::Y * 12.0;
-            (position, state.peak_target, Vec3::Y)
+            let mut position = state.ground_eye_position + Vec3::Y * 12.0;
+            position.y = position.y.max(
+                state
+                    .terrain
+                    .maximum_height_metres
+                    .max(state.vista_peak_metres)
+                    + 12.0,
+            );
+            let direction = (state.peak_target.xz() - position.xz())
+                .try_normalize()
+                .unwrap_or(Vec2::X);
+            let target =
+                position + Vec3::new(direction.x, -0.08, direction.y) * (half * 10.0).max(200.0);
+            (position, target, Vec3::Y)
         }
         CapturePose::VistaPeak => {
             let direction = (state.peak_target.xz() - state.obstacle_focus.xz())
                 .try_normalize()
                 .unwrap_or(Vec2::X);
-            let position = state.obstacle_focus
+            let safe_height = state
+                .terrain
+                .maximum_height_metres
+                .max(state.vista_peak_metres)
+                + 18.0;
+            let mut position = state.obstacle_focus
                 - Vec3::new(direction.x, 0.0, direction.y) * (half * 0.62)
                 + Vec3::Y * 8.0;
-            let target = state.obstacle_focus
+            position.y = position.y.max(safe_height);
+            let mut target = state.obstacle_focus
                 + Vec3::new(direction.x, 0.0, direction.y) * (half * 5.0)
                 + Vec3::Y * 2.0;
+            target.y = target.y.clamp(position.y - 80.0, position.y - 8.0);
             (position, target, Vec3::Y)
         }
         CapturePose::VistaValley => {
             let direction = (state.valley_target.xz() - state.obstacle_focus.xz())
                 .try_normalize()
                 .unwrap_or(-Vec2::X);
-            let position = state.obstacle_focus
+            let safe_height = state
+                .terrain
+                .maximum_height_metres
+                .max(state.vista_peak_metres)
+                + 18.0;
+            let mut position = state.obstacle_focus
                 - Vec3::new(direction.x, 0.0, direction.y) * (half * 0.62)
                 + Vec3::Y * 8.0;
-            let target = state.obstacle_focus
+            position.y = position.y.max(safe_height);
+            let mut target = state.obstacle_focus
                 + Vec3::new(direction.x, 0.0, direction.y) * (half * 5.0)
                 + Vec3::Y * 2.0;
+            target.y = target.y.clamp(position.y - 80.0, position.y - 8.0);
             (position, target, Vec3::Y)
         }
     };

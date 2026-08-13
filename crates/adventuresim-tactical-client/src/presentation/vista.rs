@@ -7,7 +7,11 @@ pub(super) fn on_scene_vista_bundle(
     playable_scenes: Query<(&SceneTerrain, &SceneEnvironment)>,
     settings: Res<TacticalGraphicsSettings>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<TacticalVistaMaterial>>,
+    mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut vista_tree_cache: ResMut<VistaTreePresentationCache>,
+    asset_server: Res<AssetServer>,
 ) {
     for entity in &existing {
         commands.entity(entity).despawn();
@@ -17,17 +21,15 @@ pub(super) fn on_scene_vista_bundle(
         .iter()
         .take(settings.max_vista_lods)
         .collect::<Vec<_>>();
-    let material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        perceptual_roughness: 1.0,
-        metallic: 0.0,
-        ..default()
-    });
-    let playable_terrain = playable_scenes
+    let playable_scene = playable_scenes
         .iter()
-        .find(|(_, environment)| environment.scene_digest == bundle.scene_digest)
-        .map(|(terrain, _)| terrain);
-    if playable_terrain.is_none() {
+        .find(|(_, environment)| environment.scene_digest == bundle.scene_digest);
+    let playable_terrain = playable_scene.map(|(terrain, _)| terrain);
+    let weather = playable_scene
+        .map(|(_, environment)| environment.weather)
+        .unwrap_or_else(clear_vista_weather);
+    let material = materials.add(vista_material(&asset_server, weather));
+    if playable_scene.is_none() {
         warn!(
             scene_digest = %bundle.scene_digest,
             "Tactical vista arrived before its authoritative playable terrain; edge stitching is unavailable"
@@ -40,6 +42,7 @@ pub(super) fn on_scene_vista_bundle(
             inner_half_extent,
             visible_lods.get(index + 1).copied(),
             (index == 0).then_some(playable_terrain).flatten(),
+            weather,
         );
         if meshes_for_lod.is_empty() {
             warn!(level = lod.level, "Rejected malformed tactical vista LOD");
@@ -60,6 +63,19 @@ pub(super) fn on_scene_vista_bundle(
                 ),
             ));
         }
+        if index <= 1 {
+            spawn_vista_trees(
+                &mut commands,
+                lod,
+                visible_lods.get(index + 1).copied(),
+                inner_half_extent,
+                &bundle.scene_digest,
+                &mut meshes,
+                &mut tree_materials,
+                &mut images,
+                &mut vista_tree_cache,
+            );
+        }
         inner_half_extent = Vec2::new(
             half_extent,
             f32::from(lod.depth.saturating_sub(1)) * lod.spacing_metres * 0.5,
@@ -67,9 +83,109 @@ pub(super) fn on_scene_vista_bundle(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn spawn_vista_trees(
+    commands: &mut Commands,
+    lod: &VistaLod,
+    coarser_lod: Option<&VistaLod>,
+    playable_half_extent: Vec2,
+    scene_digest: &str,
+    meshes: &mut Assets<Mesh>,
+    tree_materials: &mut Assets<TacticalTreeImpostorMaterial>,
+    images: &mut Assets<Image>,
+    cache: &mut VistaTreePresentationCache,
+) {
+    let width = usize::from(lod.width);
+    let depth = usize::from(lod.depth);
+    let center = Vec2::new((width - 1) as f32, (depth - 1) as f32) * 0.5;
+    let scene_seed = stable_text_seed(scene_digest);
+    for z in 0..depth - 1 {
+        for x in 0..width - 1 {
+            let sample = lod.environment[z * width + x];
+            let canopy = bps(sample.canopy_bps)
+                * (1.0 - bps(sample.water_bps))
+                * (1.0 - bps(sample.cultivation_bps) * 0.85);
+            // A regional source cell represents a stand, not individual
+            // stems. Keep a physical-area-scaled silhouette sample; the
+            // terrain material carries the remaining aggregate canopy.
+            let cell_key = ((x as u64) << 32) | z as u64;
+            let candidate_count = vista_tree_candidate_count(
+                canopy,
+                lod.spacing_metres,
+                splitmix64(scene_seed ^ cell_key ^ 0x74c3_019d),
+            )
+            .min(if lod.spacing_metres <= 50.0 {
+                usize::MAX
+            } else {
+                3
+            });
+            if candidate_count == 0 {
+                continue;
+            }
+            let cell_min = (Vec2::new(x as f32, z as f32) - center) * lod.spacing_metres;
+            for candidate in 0..candidate_count {
+                let hash = splitmix64(
+                    scene_seed ^ cell_key ^ (candidate as u64).wrapping_mul(0x9e37_79b9),
+                );
+                let local = cell_min
+                    + Vec2::new(unit_hash(hash), unit_hash(splitmix64(hash ^ 0x51b7_2d8a)))
+                        * lod.spacing_metres;
+                if local.x.abs() <= playable_half_extent.x + 7.0
+                    && local.y.abs() <= playable_half_extent.y + 7.0
+                {
+                    continue;
+                }
+                let world = local
+                    + Vec2::new(
+                        lod.origin_east_metres as f32,
+                        lod.origin_north_metres as f32,
+                    );
+                let Some(height) = presented_height_at(lod, world, coarser_lod) else {
+                    continue;
+                };
+                // Vista stands share one calibrated whole-tree atlas. Scale,
+                // rotation-independent view selection, and placement still
+                // break repetition without baking during every source cell.
+                let variant_seed = splitmix64(0x6f61_6b00);
+                let cached = ensure_vista_tree_variant(
+                    variant_seed,
+                    0.5,
+                    meshes,
+                    tree_materials,
+                    images,
+                    cache,
+                );
+                // Each atlas represents the visible crown mass of a small
+                // stand at regional distance, not a survey-accurate stem.
+                let stand_scale = if lod.spacing_metres <= 50.0 {
+                    1.0
+                } else {
+                    1.65
+                };
+                let scale = (1.05 + unit_hash(splitmix64(hash ^ 0xa29c_413d)) * 0.75) * stand_scale;
+                commands.spawn((
+                    Name::new("Distant vista oak billboard"),
+                    VistaTerrain(lod.level),
+                    NoFrustumCulling,
+                    NotShadowCaster,
+                    Mesh3d(cached.mesh.clone()),
+                    MeshMaterial3d(cached.material.clone()),
+                    cached.provenance.clone(),
+                    Transform::from_xyz(local.x, height, local.y).with_scale(Vec3::splat(scale)),
+                ));
+            }
+        }
+    }
+}
+
+fn vista_tree_candidate_count(canopy: f32, spacing_metres: f32, seed: u64) -> usize {
+    let expected = canopy.clamp(0.0, 1.0) * spacing_metres * spacing_metres / 3_200.0;
+    expected.floor() as usize + usize::from(unit_hash(seed) < expected.fract())
+}
+
 #[cfg(test)]
 pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: Vec2) -> Vec<Mesh> {
-    vista_lod_meshes_with_morph(lod, inner_half_extent, None, None)
+    vista_lod_meshes_with_morph(lod, inner_half_extent, None, None, clear_vista_weather())
 }
 
 fn vista_lod_meshes_with_morph(
@@ -77,6 +193,7 @@ fn vista_lod_meshes_with_morph(
     inner_half_extent: Vec2,
     coarser_lod: Option<&VistaLod>,
     playable_terrain: Option<&SceneTerrain>,
+    weather: WeatherSnapshot,
 ) -> Vec<Mesh> {
     let width = usize::from(lod.width);
     let depth = usize::from(lod.depth);
@@ -96,6 +213,7 @@ fn vista_lod_meshes_with_morph(
     for chunk_z in (0..depth - 1).step_by(VISTA_CHUNK_CELLS) {
         for chunk_x in (0..width - 1).step_by(VISTA_CHUNK_CELLS) {
             let mut positions = Vec::new();
+            let mut normals = Vec::new();
             let mut colors = Vec::new();
             let mut indices = Vec::new();
             for z in chunk_z..(chunk_z + VISTA_CHUNK_CELLS).min(depth - 1) {
@@ -123,20 +241,41 @@ fn vista_lod_meshes_with_morph(
                                         lod.origin_east_metres as f32,
                                         lod.origin_north_metres as f32,
                                     );
-                                let vista_height = presented_height_at(lod, world, coarser_lod)
-                                    .expect("clipped vista vertex remains inside its source LOD");
-                                let height = playable_terrain.map_or(vista_height, |terrain| {
-                                    stitch_vista_height_to_playable_edge(
-                                        terrain,
-                                        local,
+                                let height = presented_vista_vertex_height(
+                                    lod,
+                                    coarser_lod,
+                                    playable_terrain,
+                                    local,
+                                    inner_half_extent,
+                                )
+                                .expect("clipped vista vertex remains inside its source LOD");
+                                let delta = lod.spacing_metres.min(100.0);
+                                let height_offset = |offset: Vec2| {
+                                    presented_vista_vertex_height(
+                                        lod,
+                                        coarser_lod,
+                                        playable_terrain,
+                                        local + offset,
                                         inner_half_extent,
-                                        lod.spacing_metres,
-                                        vista_height,
                                     )
-                                });
+                                    .unwrap_or(height)
+                                };
+                                let tangent_x = Vec3::new(
+                                    delta * 2.0,
+                                    height_offset(Vec2::X * delta)
+                                        - height_offset(-Vec2::X * delta),
+                                    0.0,
+                                );
+                                let tangent_z = Vec3::new(
+                                    0.0,
+                                    height_offset(Vec2::Y * delta)
+                                        - height_offset(-Vec2::Y * delta),
+                                    delta * 2.0,
+                                );
                                 (
                                     [local.x, height, local.y],
-                                    presented_color_at(lod, world, coarser_lod).expect(
+                                    tangent_z.cross(tangent_x).normalize().to_array(),
+                                    presented_color_at(lod, world, coarser_lod, weather).expect(
                                         "clipped vista color remains inside its source LOD",
                                     ),
                                 )
@@ -149,7 +288,8 @@ fn vista_lod_meshes_with_morph(
                                 vertex(Vec2::new(minimum_x, maximum_z)),
                             ];
                             positions.extend(vertices.map(|vertex| vertex.0));
-                            colors.extend(vertices.map(|vertex| vertex.1));
+                            normals.extend(vertices.map(|vertex| vertex.1));
+                            colors.extend(vertices.map(|vertex| vertex.2));
                             indices.extend_from_slice(&[
                                 base,
                                 base + 2,
@@ -170,12 +310,37 @@ fn vista_lod_meshes_with_morph(
                 RenderAssetUsages::RENDER_WORLD,
             );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
             mesh.insert_indices(Indices::U32(indices));
-            meshes.push(mesh.with_computed_area_weighted_normals());
+            meshes.push(mesh);
         }
     }
     meshes
+}
+
+fn presented_vista_vertex_height(
+    lod: &VistaLod,
+    coarser_lod: Option<&VistaLod>,
+    playable_terrain: Option<&SceneTerrain>,
+    local: Vec2,
+    playable_half_extent: Vec2,
+) -> Option<f32> {
+    let world = local
+        + Vec2::new(
+            lod.origin_east_metres as f32,
+            lod.origin_north_metres as f32,
+        );
+    let vista_height = presented_height_at(lod, world, coarser_lod)?;
+    Some(playable_terrain.map_or(vista_height, |terrain| {
+        stitch_vista_height_to_playable_edge(
+            terrain,
+            local,
+            playable_half_extent,
+            lod.spacing_metres,
+            vista_height,
+        )
+    }))
 }
 
 fn subdivide_playable_boundary_rectangle(
@@ -340,14 +505,7 @@ fn presented_height(
     let Some(coarser) = coarser_lod else {
         return own;
     };
-    let center = Vec2::new(
-        lod.origin_east_metres as f32,
-        lod.origin_north_metres as f32,
-    );
-    let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
-    let radius = (world - center).abs().max_element();
-    let weight =
-        ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
+    let weight = lod_transition_weight(lod, coarser, world);
     sample_vista_height(coarser, world)
         .map(|height| own.lerp(height, weight))
         .unwrap_or(own)
@@ -358,14 +516,7 @@ fn presented_height_at(lod: &VistaLod, world: Vec2, coarser_lod: Option<&VistaLo
     let Some(coarser) = coarser_lod else {
         return Some(own);
     };
-    let center = Vec2::new(
-        lod.origin_east_metres as f32,
-        lod.origin_north_metres as f32,
-    );
-    let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
-    let radius = (world - center).abs().max_element();
-    let weight =
-        ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
+    let weight = lod_transition_weight(lod, coarser, world);
     if weight <= 0.0 {
         return Some(own);
     }
@@ -383,20 +534,14 @@ fn presented_color(
     z: usize,
     world: Vec2,
     coarser_lod: Option<&VistaLod>,
+    weather: WeatherSnapshot,
 ) -> [f32; 4] {
-    let own = vista_sample_color(lod.environment[z * usize::from(lod.width) + x]);
+    let own = vista_sample_color(lod.environment[z * usize::from(lod.width) + x], weather);
     let Some(coarser) = coarser_lod else {
         return own.to_array();
     };
-    let center = Vec2::new(
-        lod.origin_east_metres as f32,
-        lod.origin_north_metres as f32,
-    );
-    let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
-    let radius = (world - center).abs().max_element();
-    let weight =
-        ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
-    sample_vista_color(coarser, world)
+    let weight = lod_transition_weight(lod, coarser, world);
+    sample_vista_color(coarser, world, weather)
         .map(|color| own.lerp(color, weight))
         .unwrap_or(own)
         .to_array()
@@ -406,25 +551,36 @@ fn presented_color_at(
     lod: &VistaLod,
     world: Vec2,
     coarser_lod: Option<&VistaLod>,
+    weather: WeatherSnapshot,
 ) -> Option<[f32; 4]> {
-    let own = sample_vista_color(lod, world)?;
+    let own = sample_vista_color(lod, world, weather)?;
     let Some(coarser) = coarser_lod else {
         return Some(own.to_array());
     };
+    let weight = lod_transition_weight(lod, coarser, world);
+    Some(
+        sample_vista_color(coarser, world, weather)
+            .map(|color| own.lerp(color, weight))
+            .unwrap_or(own)
+            .to_array(),
+    )
+}
+
+fn lod_transition_weight(lod: &VistaLod, coarser: &VistaLod, world: Vec2) -> f32 {
     let center = Vec2::new(
         lod.origin_east_metres as f32,
         lod.origin_north_metres as f32,
     );
     let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
+    // Begin morphing one coarse sample before the boundary. A one-fine-cell
+    // band still exposes the square footprint whenever adjacent LOD spacing
+    // grows rapidly (50 m -> 250 m -> 1 km).
+    let transition_width = coarser
+        .spacing_metres
+        .min(half_extent)
+        .max(lod.spacing_metres);
     let radius = (world - center).abs().max_element();
-    let weight =
-        ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
-    Some(
-        sample_vista_color(coarser, world)
-            .map(|color| own.lerp(color, weight))
-            .unwrap_or(own)
-            .to_array(),
-    )
+    ((radius - (half_extent - transition_width)) / transition_width).clamp(0.0, 1.0)
 }
 
 fn sample_vista_height(lod: &VistaLod, world: Vec2) -> Option<f32> {
@@ -453,7 +609,7 @@ fn sample_vista_height(lod: &VistaLod, world: Vec2) -> Option<f32> {
     Some(near.lerp(far, fraction.y))
 }
 
-fn vista_sample_color(sample: EnvironmentalSample) -> Vec4 {
+fn vista_sample_color(sample: EnvironmentalSample, weather: WeatherSnapshot) -> Vec4 {
     let environment = SceneEnvironment {
         scene_digest: String::new(),
         generation_version: TACTICAL_SCENE_GENERATION_VERSION,
@@ -461,17 +617,42 @@ fn vista_sample_color(sample: EnvironmentalSample) -> Vec4 {
         longitude_microdegrees: 10_000_000,
         absolute_minute: 12 * 60,
         absolute_elevation_metres: 20,
-        weather: clear_vista_weather(),
+        weather,
         canopy_bps: sample.canopy_bps,
         wetland_bps: sample.wetland_bps,
         cultivation_bps: sample.cultivation_bps,
         water_bps: sample.water_bps,
         hilly_bps: sample.hilly_bps,
     };
-    Vec4::from_array(scene_ground_color(&environment).to_linear().to_f32_array())
+    let mut color = Vec4::from_array(scene_ground_color(&environment).to_linear().to_f32_array());
+    let hills = bps(sample.hilly_bps);
+    let snow = bps(weather.snow_cover_bps);
+    let exposed_rock = hills
+        * (1.0 - bps(sample.water_bps))
+        * (1.0 - bps(sample.wetland_bps) * 0.8)
+        * (1.0 - bps(sample.canopy_bps) * 0.45)
+        * (1.0 - snow);
+    let rock = Color::srgb_u8(104, 101, 91).to_linear().to_f32_array();
+    color = color.lerp(Vec4::from_array(rock), exposed_rock * 0.62);
+    color.w = vista_sward_coverage(sample) * (1.0 - snow * 0.92);
+    color
 }
 
-fn sample_vista_color(lod: &VistaLod, world: Vec2) -> Option<Vec4> {
+fn vista_sward_coverage(sample: EnvironmentalSample) -> f32 {
+    let surface = match sample.surface {
+        TacticalSurface::Open | TacticalSurface::SparseWoods => 1.0,
+        TacticalSurface::DeepWoods => 0.28,
+        TacticalSurface::Wetland => 0.42,
+        TacticalSurface::Road | TacticalSurface::Water => 0.0,
+    };
+    (surface
+        * (1.0 - bps(sample.water_bps))
+        * (1.0 - bps(sample.cultivation_bps) * 0.72)
+        * (1.0 - bps(sample.hilly_bps) * 0.82))
+        .clamp(0.0, 1.0)
+}
+
+fn sample_vista_color(lod: &VistaLod, world: Vec2, weather: WeatherSnapshot) -> Option<Vec4> {
     let width = usize::from(lod.width);
     let depth = usize::from(lod.depth);
     let local = world
@@ -491,7 +672,9 @@ fn sample_vista_color(lod: &VistaLod, world: Vec2) -> Option<Vec4> {
     let lower = coordinate.floor().as_uvec2();
     let upper = (lower + UVec2::ONE).min(UVec2::new(width as u32 - 1, depth as u32 - 1));
     let fraction = coordinate.fract();
-    let at = |x: u32, z: u32| vista_sample_color(lod.environment[z as usize * width + x as usize]);
+    let at = |x: u32, z: u32| {
+        vista_sample_color(lod.environment[z as usize * width + x as usize], weather)
+    };
     let near = at(lower.x, lower.y).lerp(at(upper.x, lower.y), fraction.x);
     let far = at(lower.x, upper.y).lerp(at(upper.x, upper.y), fraction.x);
     Some(near.lerp(far, fraction.y))
@@ -515,6 +698,60 @@ fn clear_vista_weather() -> WeatherSnapshot {
 #[derive(Component)]
 #[allow(dead_code)]
 pub(crate) struct VistaTerrain(pub(crate) u8);
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(in crate::presentation) struct TacticalVistaExtension {
+    #[texture(100)]
+    #[sampler(101)]
+    rock_diffuse: Handle<Image>,
+    #[uniform(102)]
+    weather: Vec4,
+}
+
+impl MaterialExtension for TacticalVistaExtension {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/tactical_vista.wgsl".into()
+    }
+}
+
+pub(in crate::presentation) type TacticalVistaMaterial =
+    ExtendedMaterial<StandardMaterial, TacticalVistaExtension>;
+
+fn vista_material(asset_server: &AssetServer, weather: WeatherSnapshot) -> TacticalVistaMaterial {
+    let image = |path, is_srgb| {
+        asset_server
+            .load_builder()
+            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
+                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+                settings.is_srgb = is_srgb;
+                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                    address_mode_u: ImageAddressMode::Repeat,
+                    address_mode_v: ImageAddressMode::Repeat,
+                    address_mode_w: ImageAddressMode::Repeat,
+                    anisotropy_clamp: 8,
+                    ..ImageSamplerDescriptor::linear()
+                });
+            })
+            .load(path)
+    };
+    TacticalVistaMaterial {
+        base: StandardMaterial {
+            base_color: Color::WHITE,
+            perceptual_roughness: 0.94,
+            metallic: 0.0,
+            ..default()
+        },
+        extension: TacticalVistaExtension {
+            rock_diffuse: image("textures/rocks/rock_surface_diff_1k.jpg", true),
+            weather: Vec4::new(
+                bps(weather.ground_moisture_bps),
+                bps(weather.snow_cover_bps),
+                bps(weather.wind_speed_bps),
+                0.0,
+            ),
+        },
+    }
+}
 
 const VISTA_CHUNK_CELLS: usize = 8;
 
@@ -662,7 +899,13 @@ mod tests {
             environment: vec![EnvironmentalSample::default(); 9],
         };
         let half_extent = Vec2::splat(50.0);
-        let meshes = vista_lod_meshes_with_morph(&lod, half_extent, None, Some(&terrain));
+        let meshes = vista_lod_meshes_with_morph(
+            &lod,
+            half_extent,
+            None,
+            Some(&terrain),
+            clear_vista_weather(),
+        );
         let mut east_edge = Vec::new();
         for mesh in meshes {
             let Some(VertexAttributeValues::Float32x3(positions)) =
@@ -723,7 +966,7 @@ mod tests {
         );
         assert_eq!(
             presented_height(&finer, 3, 2, Vec2::new(15.0, 0.0), Some(&coarse)),
-            25.0
+            31.5
         );
     }
 
@@ -746,7 +989,10 @@ mod tests {
         })
         .to_linear()
         .to_f32_array();
-        assert_eq!(vista_sample_color(open).to_array(), expected);
+        assert_eq!(
+            vista_sample_color(open, clear_vista_weather()).to_array(),
+            expected
+        );
 
         let lod = VistaLod {
             level: 0,
@@ -763,6 +1009,56 @@ mod tests {
                 .iter()
                 .all(|mesh| mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some())
         );
+    }
+
+    #[test]
+    fn distant_sward_respects_surface_and_land_cover() {
+        let open = EnvironmentalSample::default();
+        let deep_woods = EnvironmentalSample {
+            surface: TacticalSurface::DeepWoods,
+            ..open
+        };
+        let mountain = EnvironmentalSample {
+            hilly_bps: 10_000,
+            ..open
+        };
+        let road = EnvironmentalSample {
+            surface: TacticalSurface::Road,
+            ..open
+        };
+        assert_eq!(vista_sward_coverage(open), 1.0);
+        assert!(vista_sward_coverage(deep_woods) < 0.3);
+        assert!(vista_sward_coverage(mountain) < 0.2);
+        assert_eq!(vista_sward_coverage(road), 0.0);
+    }
+
+    #[test]
+    fn snow_palette_carries_into_vista_and_suppresses_sward() {
+        let open = EnvironmentalSample::default();
+        let clear = vista_sample_color(open, clear_vista_weather());
+        let snow = vista_sample_color(
+            open,
+            WeatherSnapshot {
+                snow_cover_bps: 10_000,
+                precipitation: Precipitation::Snow,
+                ..clear_vista_weather()
+            },
+        );
+        assert!(snow.x > clear.x && snow.y > clear.y && snow.z > clear.z);
+        assert!(snow.w < 0.1);
+    }
+
+    #[test]
+    fn vista_tree_density_scales_with_physical_cell_area() {
+        let small = (0..64_u64)
+            .map(|seed| vista_tree_candidate_count(1.0, 50.0, splitmix64(seed)))
+            .sum::<usize>();
+        let large = (0..64_u64)
+            .map(|seed| vista_tree_candidate_count(1.0, 100.0, splitmix64(seed)))
+            .sum::<usize>();
+        assert!(small > 0);
+        assert!(large >= small * 3);
+        assert_eq!(vista_tree_candidate_count(0.0, 250.0, 0), 0);
     }
 
     #[test]
@@ -796,12 +1092,26 @@ mod tests {
             environment: vec![cultivated; 25],
         };
         assert_eq!(
-            presented_color(&finer, 4, 2, Vec2::new(20.0, 0.0), Some(&coarse)),
-            vista_sample_color(cultivated).to_array()
+            presented_color(
+                &finer,
+                4,
+                2,
+                Vec2::new(20.0, 0.0),
+                Some(&coarse),
+                clear_vista_weather(),
+            ),
+            vista_sample_color(cultivated, clear_vista_weather()).to_array()
         );
         assert_eq!(
-            presented_color(&finer, 2, 2, Vec2::ZERO, Some(&coarse)),
-            vista_sample_color(forest).to_array()
+            presented_color(
+                &finer,
+                2,
+                2,
+                Vec2::ZERO,
+                Some(&coarse),
+                clear_vista_weather(),
+            ),
+            vista_sample_color(forest, clear_vista_weather()).to_array()
         );
     }
 }

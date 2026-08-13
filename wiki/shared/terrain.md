@@ -118,7 +118,12 @@ and player displacement curve, and an edge-on ribbon turns partially toward
 the view so it retains useful screen width without becoming a full billboard.
 The geometric sward ends by 132 metres; beyond it, band-limited terrain colour
 and normal variation carries the far-field grass response without sub-pixel
-blade geometry. The locally controlled player's position and velocity flatten
+blade geometry. Regional vista vertices retain the same environmental samples,
+including an aggregate sward-coverage channel, so open terrain continues the
+grass response through every vista ring. Vista slopes use continuous
+height-gradient normals instead of per-cell face normals; sufficiently exposed
+hilly samples reuse the scanned rock surface through coarse-safe triplanar
+sampling. The locally controlled player's position and velocity flatten
 and push nearby grass as a presentation-only effect.
 
 Ordinary temperate understory shrubs use one shared procedural common-hazel
@@ -139,7 +144,12 @@ wetness/snow tint, bounded rain or snow particles, wind drift, sunlight
 transmission, and distance fog. Coarse vista samples preserve local peaks and
 render as seam-sharing rings of independently culled mesh chunks out to 50 km;
 coarser rings leave the playable and finer-ring interiors open rather than
-overdrawing them.
+overdrawing them. The 50-metre and 250-metre regional rings also
+deterministically scatter bounded samples of the production whole-tree
+impostor over canopy-bearing cells; the outer ring relies on aggregate canopy
+colour. Those presentation-only trees share one cached atlas family, have no
+gameplay collider, and are seated on the same morphed vista surface as the
+terrain.
 
 Near-tree PBR leaf cards participate in the horizon-aware directional shadow
 map, producing both cast shadows and leaf-on-leaf self shadow. Their vertex data

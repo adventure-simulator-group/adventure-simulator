@@ -813,6 +813,19 @@ just tactical-real-world-capture 51.7990 10.6170 target/tactical-real-world-capt
 just tactical-real-world-play 51.7990 10.6170
 ```
 
+For vista publication, prefer the curated coordinate matrix over adding more
+synthetic environment fixtures:
+
+```powershell
+just tactical-real-world-review
+```
+
+It captures a lower Harz forest and the Brocken summit through the production
+terrain pack, exercising distant tree canopy, aggregate grass response,
+rock/slope material, snow, relief, and all three regional LODs. Synthetic scene
+inputs remain useful for focused semantic and failure-mode tests, but they are
+no longer the primary vista-quality evidence.
+
 Both commands use `target/strategic-map/terrain-routing-v3.json` and its paired
 `.pack` by default; override the final two recipe arguments for another
 verified final pack. The materializer rejects coordinates outside that pack.

@@ -39,7 +39,10 @@ pub fn build_imported_scene(
         seed,
     )?;
     let vista = VistaSample {
-        lods: [(0, 250.0, 9), (1, 500.0, 21), (2, 1_000.0, 51)]
+        // The near regional ring needs enough spatial frequency to preserve
+        // forest boundaries, rolling ground, and the transition from geometric
+        // grass. Coarser rings then expand rapidly to the 50-km horizon.
+        lods: [(0, 50.0, 41), (1, 250.0, 17), (2, 1_000.0, 51)]
             .into_iter()
             .map(|(level, spacing, side)| {
                 let grid = sample_grid(
@@ -282,6 +285,8 @@ mod tests {
         assert_eq!(input.playable.heights_metres.len(), 101 * 101);
         assert_eq!(input.playable.environment.len(), 101 * 101);
         assert_eq!(input.vista.lods.len(), 3);
+        assert_eq!(input.vista.lods[0].spacing_metres, 50.0);
+        assert_eq!(input.vista.lods[0].width, 41);
         assert_eq!(input.vista.lods[2].spacing_metres, 1_000.0);
         assert_eq!(input.vista.lods[2].width, 51);
         assert!(

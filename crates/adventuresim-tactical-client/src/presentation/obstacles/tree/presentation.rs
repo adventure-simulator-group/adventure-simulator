@@ -25,6 +25,18 @@ pub(in crate::presentation) struct TreePresentationCache {
     oak_bark_material: Option<Handle<StandardMaterial>>,
 }
 
+#[derive(Resource, Default)]
+pub(in crate::presentation) struct VistaTreePresentationCache {
+    variants: std::collections::HashMap<u64, CachedVistaTreePresentation>,
+}
+
+#[derive(Clone)]
+pub(in crate::presentation) struct CachedVistaTreePresentation {
+    pub(in crate::presentation) mesh: Handle<Mesh>,
+    pub(in crate::presentation) material: Handle<TacticalTreeImpostorMaterial>,
+    pub(in crate::presentation) provenance: TreeImpostorProvenance,
+}
+
 #[derive(Clone)]
 struct CachedTreePresentation {
     trunk_mesh: Handle<Mesh>,
@@ -178,6 +190,34 @@ fn spawn_cached_tree(commands: &mut Commands, entity: Entity, cached: &CachedTre
 fn tree_cluster_aabb(center: Vec3, radius: f32) -> Aabb {
     let extent = Vec3::splat(radius.max(0.01));
     Aabb::from_min_max(center - extent, center + extent)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::presentation) fn ensure_vista_tree_variant(
+    variant_seed: u64,
+    competition: f32,
+    meshes: &mut Assets<Mesh>,
+    tree_materials: &mut Assets<TacticalTreeImpostorMaterial>,
+    images: &mut Assets<Image>,
+    cache: &mut VistaTreePresentationCache,
+) -> CachedVistaTreePresentation {
+    let competition_key = (competition * 4095.0).round() as u64;
+    let cache_key = variant_seed ^ competition_key.rotate_left(32);
+    if let Some(cached) = cache.variants.get(&cache_key) {
+        return cached.clone();
+    }
+    let branches = procedural_tree_skeleton(variant_seed, competition);
+    let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
+    let bake = bake_tree_lod(variant_seed, &branches, &leaves, 4);
+    validate_tree_bake_provenance(&bake.provenance);
+    let texture = images.add(bake.image.clone());
+    let cached = CachedVistaTreePresentation {
+        mesh: meshes.add(bake.mesh),
+        material: tree_materials.add(tree_impostor_material(variant_seed, 4, texture)),
+        provenance: bake.provenance,
+    };
+    cache.variants.insert(cache_key, cached.clone());
+    cached
 }
 
 #[allow(clippy::too_many_arguments)]

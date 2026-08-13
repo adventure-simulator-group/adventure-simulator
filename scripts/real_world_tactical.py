@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = Path("target/strategic-map/terrain-routing-v3.json")
 DEFAULT_PACK = Path("target/strategic-map/terrain-routing-v3.pack")
 DEFAULT_MINUTE = 340_320
+REVIEW_LOCATIONS = {
+    "harz-forest": (51.6500, 10.5000),
+    "brocken-summit": (51.7990, 10.6170),
+}
 SOURCE_PATHS = (
     Path("Cargo.lock"),
     Path("crates/adventuresim-tactical-client/Cargo.toml"),
@@ -43,6 +47,35 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--settle-frames", type=int, default=12)
     result.add_argument("--base-port", type=int, default=24920)
     return result
+
+
+def review_parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description="Capture curated real-world tactical vistas")
+    result.add_argument("--output", type=Path, default=Path("target/tactical-real-world-captures/review"))
+    result.add_argument("--absolute-minute", type=int, default=DEFAULT_MINUTE)
+    result.add_argument("--terrain-manifest", type=Path, default=DEFAULT_MANIFEST)
+    result.add_argument("--terrain-pack", type=Path, default=DEFAULT_PACK)
+    result.add_argument("--settle-frames", type=int, default=12)
+    return result
+
+
+def review(argv: list[str]) -> int:
+    args = review_parser().parse_args(argv)
+    if args.output.exists():
+        raise ValueError("real-world review output must be a fresh directory")
+    for name, (latitude, longitude) in REVIEW_LOCATIONS.items():
+        command = [
+            sys.executable, __file__, "capture", str(latitude), str(longitude),
+            "--absolute-minute", str(args.absolute_minute),
+            "--terrain-manifest", str(args.terrain_manifest),
+            "--terrain-pack", str(args.terrain_pack),
+            "--scene-output", str(args.output / "scenes" / name),
+            "--output", str(args.output / name),
+            "--settle-frames", str(args.settle_frames),
+        ]
+        if subprocess.run(command, cwd=ROOT, check=False).returncode != 0:
+            return 1
+    return 0
 
 
 def materialize(args: argparse.Namespace) -> Path:
@@ -88,6 +121,10 @@ def source_identity() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "review":
+        return review(argv[1:])
     args = parser().parse_args(argv)
     if args.absolute_minute < 0 or args.settle_frames < 1:
         raise ValueError("absolute-minute must be nonnegative and settle-frames must be positive")

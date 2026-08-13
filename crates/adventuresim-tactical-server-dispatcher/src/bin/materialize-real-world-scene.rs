@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use adventuresim_tactical_core::prelude::TACTICAL_SCENE_GENERATION_VERSION;
 use adventuresim_tactical_server_dispatcher::scene_input::{
     build_imported_scene, materialize_scene_input,
 };
@@ -50,7 +51,8 @@ fn main() -> Result<(), String> {
         return Err("real-world scenes require the final terrain pack".into());
     }
     let mission_id = format!(
-        "capture:{}:{latitude_e7}:{longitude_e7}:{}:{}",
+        "capture:v{}:{}:{latitude_e7}:{longitude_e7}:{}:{}",
+        TACTICAL_SCENE_GENERATION_VERSION,
         terrain.digest(),
         args.absolute_minute,
         args.scene_key

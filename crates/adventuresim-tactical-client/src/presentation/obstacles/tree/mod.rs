@@ -22,7 +22,8 @@ pub(in crate::presentation) use materials::{
     TacticalTreeImpostorMaterial, hazel_leaf_material, update_tree_leaf_wind,
 };
 pub(crate) use materials::{TacticalTreeLeafCardMaterial, oak_bark_material, oak_leaf_material};
-pub(in crate::presentation::obstacles) use presentation::canopy_competition;
+pub(in crate::presentation) use presentation::canopy_competition;
 pub(in crate::presentation) use presentation::{
-    PendingTreePresentation, TreePresentationCache, present_pending_trees,
+    PendingTreePresentation, TreePresentationCache, VistaTreePresentationCache,
+    ensure_vista_tree_variant, present_pending_trees,
 };
