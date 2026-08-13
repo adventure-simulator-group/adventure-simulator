@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2019)
+## Files (2022)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1403,6 +1403,9 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/rock.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/geometry.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/geometry/leaves.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/geometry/skeleton.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/geometry/wood_mesh.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/impostor.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/impostor/card_mesh.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/impostor/raster.rs` — Rust source module.
