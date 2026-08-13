@@ -22,6 +22,14 @@ use bevy::{
 };
 use serde::Serialize;
 
+mod view_specs;
+#[cfg(test)]
+use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
+use view_specs::{
+    CAPTURE_VIEWS, CapturePose, CaptureViewSpec, DetailRequirement, ENVIRONMENT_REVIEW_VIEWS,
+    TreeLightingModeId,
+};
+
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundScatterLayer, ProceduralRockVisual,
     TacticalGraphicsSettings, TacticalPresentationPlugin, TacticalTreeLeafCardMaterial,
@@ -37,7 +45,6 @@ const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
 const CAPTURE_PROFILE_VERSION: u16 = 11;
 const CAMERA_VERSION: u16 = 7;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
-const TREE_BILLBOARD_TRANSITION_SCALES: [f32; 3] = [0.357, 0.345, 0.333];
 
 #[derive(Resource)]
 struct SceneSetup(Option<SceneSetupData>);
@@ -55,7 +62,7 @@ struct SceneSetupData {
     tree_review_azimuth_degrees: f32,
     profile: String,
     requested_views: Vec<String>,
-    views: Vec<CaptureView>,
+    views: Vec<CaptureViewSpec>,
 }
 
 #[derive(Resource)]
@@ -101,7 +108,7 @@ struct CaptureState {
     tree_review_azimuth_degrees: f32,
     profile: String,
     requested_views: Vec<String>,
-    views: Vec<CaptureView>,
+    views: Vec<CaptureViewSpec>,
     view: usize,
     view_started: bool,
     prime_readbacks: u8,
@@ -128,13 +135,6 @@ struct TreeReviewBackdrop;
 
 #[derive(Component)]
 struct TreeReviewSpecimen;
-
-#[derive(Clone, Copy)]
-struct CaptureView {
-    slug: &'static str,
-    label: &'static str,
-    overlay: bool,
-}
 
 const LEAF_BENCHMARK_WARMUP_FRAMES: u32 = 60;
 const TREE_LIGHTING_BENCHMARK_WARMUP_FRAMES: u32 = 90;
@@ -263,217 +263,6 @@ struct TreeLightingBenchmarkReport {
     note: &'static str,
     results: Vec<TreeLightingBenchmarkResult>,
 }
-
-const CAPTURE_VIEWS: [CaptureView; 29] = [
-    CaptureView {
-        slug: "warmup",
-        label: "Render-pipeline warmup",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "beauty-ground",
-        label: "Ground-level beauty view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-detail",
-        label: "Whole-tree individual-leaf LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-lighting-baseline",
-        label: "Tree lighting baseline without canopy AO or shadows",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-lighting-ao",
-        label: "Tree lighting with WebGPU-safe canopy ambient occlusion",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-lighting-shadows",
-        label: "Tree lighting with directional leaf self shadows",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-lighting-combined",
-        label: "Tree lighting with canopy AO and directional self shadows",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-recursive-lod",
-        label: "Mixed recursive tree LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "ground-cover",
-        label: "Tree-canopy leaf-litter and grass boundary",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-silhouette",
-        label: "Neutral English oak silhouette plate",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-textured-leaf-detail",
-        label: "Eight-triangle cambered PBR terminal-shoot close-up",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-leaf-card-detail",
-        label: "Two-triangle textured terminal-shoot close-up",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-textured-leaf-lod",
-        label: "Rendered eight-triangle cambered leaf LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-leaf-card-lod",
-        label: "Rendered two-triangle leaf LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-leaf-transition-25",
-        label: "Cambered-to-flat leaf transition 25% view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-leaf-transition-50",
-        label: "Cambered-to-flat leaf transition 50% view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-leaf-transition-75",
-        label: "Cambered-to-flat leaf transition 75% view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-twig-lod",
-        label: "Leafed-twig tree LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-small-branch-lod",
-        label: "Small-branch tree LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-crown-lod",
-        label: "Crown-branch tree LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-billboard-lod",
-        label: "Whole-tree billboard LOD view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-crown-transition-fixed",
-        label: "Fixed-camera crown LOD transition control",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-billboard-transition-fixed",
-        label: "Fixed-camera billboard LOD transition control",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-billboard-transition-25",
-        label: "Natural crown-to-billboard transition 25% view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-billboard-transition-50",
-        label: "Natural crown-to-billboard transition 50% view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-billboard-transition-75",
-        label: "Natural crown-to-billboard transition 75% view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "beauty-overhead",
-        label: "Overhead distribution view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "horizon",
-        label: "Horizon and distant-vista view",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "collision-overlay",
-        label: "Obstacle collider overlay",
-        overlay: true,
-    },
-];
-
-const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 12] = [
-    CaptureView {
-        slug: "warmup",
-        label: "Render-pipeline warmup",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "beauty-ground",
-        label: "Ground-level environment context",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "beauty-overhead",
-        label: "Overhead playable-area and terrain composition",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-root-detail",
-        label: "Tree root flare and forest-floor detail",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "tree-branch-junction",
-        label: "Trunk and primary-branch junction detail",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "rock-detail",
-        label: "Procedural rock surface and ground contact detail",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "terrain-grazing-detail",
-        label: "Ground material under grazing light",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "grass-seam-detail",
-        label: "Grass macro-patch seam and density detail",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "forest-floor-debris-detail",
-        label: "Fallen oak leaves and twig geometry close-up",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "horizon",
-        label: "Horizon, Sun, Moon, and atmosphere context",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "vista-lod-oblique",
-        label: "Playable edge and distant terrain LOD composition",
-        overlay: false,
-    },
-    CaptureView {
-        slug: "vista-valley-oblique",
-        label: "Playable edge and lowest regional terrain composition",
-        overlay: false,
-    },
-];
 
 #[derive(Clone, Serialize)]
 struct CaptureRecord {
@@ -926,7 +715,10 @@ fn observed_presentation_features(
     }
 }
 
-fn selected_capture_views(profile: &str, requested: &[String]) -> Result<Vec<CaptureView>, String> {
+fn selected_capture_views(
+    profile: &str,
+    requested: &[String],
+) -> Result<Vec<CaptureViewSpec>, String> {
     let profile_views = match profile {
         "semantic" => CAPTURE_VIEWS.as_slice(),
         "environment-review" => ENVIRONMENT_REVIEW_VIEWS.as_slice(),
@@ -965,11 +757,17 @@ mod capture_lighting_tests {
 
     #[test]
     fn forced_tree_lod_views_map_exactly_and_fail_closed() {
-        assert_eq!(forced_tree_lod_for_view("tree-twig-lod"), Some(1));
-        assert_eq!(forced_tree_lod_for_view("tree-small-branch-lod"), Some(2));
-        assert_eq!(forced_tree_lod_for_view("tree-crown-lod"), Some(3));
-        assert_eq!(forced_tree_lod_for_view("tree-billboard-lod"), Some(4));
-        assert_eq!(forced_tree_lod_for_view("beauty-ground"), None);
+        let expected = [
+            ("tree-twig-lod", 1),
+            ("tree-small-branch-lod", 2),
+            ("tree-crown-lod", 3),
+            ("tree-billboard-lod", 4),
+        ];
+        for (slug, lod) in expected {
+            let spec = CAPTURE_VIEWS.iter().find(|spec| spec.slug == slug).unwrap();
+            assert_eq!(spec.validated_forced_lod, Some(lod));
+        }
+        assert_eq!(CAPTURE_VIEWS[1].validated_forced_lod, None);
     }
 
     #[test]
@@ -997,13 +795,17 @@ mod capture_lighting_tests {
                     .any(|view| { view.slug == format!("tree-billboard-transition-{phase}") })
             );
         }
-        assert!(
-            TREE_BILLBOARD_TRANSITION_SCALES
-                .windows(2)
-                .all(|pair| pair[0] > pair[1])
-        );
+        let transition_scales = ["25", "50", "75"].map(|phase| {
+            views
+                .iter()
+                .find(|view| view.slug == format!("tree-billboard-transition-{phase}"))
+                .and_then(|view| view.projected_scale)
+                .unwrap()
+        });
+        assert!(transition_scales.windows(2).all(|pair| pair[0] > pair[1]));
+        assert_eq!(transition_scales, TREE_BILLBOARD_TRANSITION_SCALES);
         let focal_ratio = (80.0_f32.to_radians() * 0.5).tan() / (20.0_f32.to_radians() * 0.5).tan();
-        let effective_scales = TREE_BILLBOARD_TRANSITION_SCALES.map(|scale| scale * focal_ratio);
+        let effective_scales = transition_scales.map(|scale| scale * focal_ratio);
         // At the fixed ~143 m camera, these span the 84..96 m equivalent
         // projected transition instead of collapsing onto one endpoint.
         assert!((1.69..1.71).contains(&effective_scales[0]));
@@ -1051,7 +853,14 @@ mod capture_lighting_tests {
         assert_eq!(up, Vec3::Y);
         assert!((camera.y - target.y - 0.36).abs() < 0.00001);
         assert!((camera.xz().distance(target.xz()) - 0.92).abs() < 0.00001);
-        assert_eq!(capture_view_fov("forest-floor-debris-detail"), 39.6);
+        assert_eq!(
+            views
+                .iter()
+                .find(|view| view.slug == "forest-floor-debris-detail")
+                .unwrap()
+                .fov_degrees,
+            39.6
+        );
 
         let leaves = [Vec3::new(4.0, 0.0, 3.0), Vec3::new(0.1, 0.0, 0.0)];
         let twigs = [Vec3::new(4.2, 0.0, 3.0), Vec3::new(0.4, 0.0, 0.0)];
@@ -1072,15 +881,33 @@ mod capture_lighting_tests {
 
     #[test]
     fn diagnostic_views_suppress_only_the_occluding_layer() {
+        let find = |slug| {
+            ENVIRONMENT_REVIEW_VIEWS
+                .iter()
+                .find(|view| view.slug == slug)
+                .unwrap()
+        };
         assert_eq!(
-            diagnostic_suppression("tree-branch-junction"),
+            (
+                find("tree-branch-junction").suppress_leaves,
+                find("tree-branch-junction").suppress_grass
+            ),
             (true, false)
         );
         assert_eq!(
-            diagnostic_suppression("terrain-grazing-detail"),
+            (
+                find("terrain-grazing-detail").suppress_leaves,
+                find("terrain-grazing-detail").suppress_grass
+            ),
             (false, true)
         );
-        assert_eq!(diagnostic_suppression("grass-seam-detail"), (false, false));
+        assert_eq!(
+            (
+                find("grass-seam-detail").suppress_leaves,
+                find("grass-seam-detail").suppress_grass
+            ),
+            (false, false)
+        );
     }
 
     #[test]
@@ -1107,8 +934,22 @@ mod capture_lighting_tests {
 
     #[test]
     fn overhead_plate_uses_its_detail_sentinel_for_uniform_terrain() {
-        assert_eq!(minimum_foreground_bps("beauty-overhead"), 1);
-        assert_eq!(minimum_foreground_bps("beauty-ground"), 1_000);
+        assert_eq!(
+            CAPTURE_VIEWS
+                .iter()
+                .find(|view| view.slug == "beauty-overhead")
+                .unwrap()
+                .minimum_foreground_bps,
+            1
+        );
+        assert_eq!(
+            CAPTURE_VIEWS
+                .iter()
+                .find(|view| view.slug == "beauty-ground")
+                .unwrap()
+                .minimum_foreground_bps,
+            1_000
+        );
     }
 
     #[test]
@@ -1923,11 +1764,11 @@ fn capture_views(
     }
     let view = state.views[state.view];
     if !state.view_started {
-        let lighting_mode = match view.slug {
-            "tree-lighting-baseline" => TREE_LIGHTING_MODES[0],
-            "tree-lighting-ao" => TREE_LIGHTING_MODES[1],
-            "tree-lighting-shadows" => TREE_LIGHTING_MODES[2],
-            _ => TREE_LIGHTING_MODES[3],
+        let lighting_mode = match view.lighting_mode {
+            TreeLightingModeId::Baseline => TREE_LIGHTING_MODES[0],
+            TreeLightingModeId::AmbientOcclusion => TREE_LIGHTING_MODES[1],
+            TreeLightingModeId::Shadows => TREE_LIGHTING_MODES[2],
+            TreeLightingModeId::Combined => TREE_LIGHTING_MODES[3],
         };
         for (_, material) in scene_visibility.p2().iter_mut() {
             material.surface_parameters.z = if material.physical_parameters.z > 0.5 {
@@ -1948,41 +1789,13 @@ fn capture_views(
                 commands.entity(entity).insert(NotShadowCaster);
             }
         }
-        tree_lod_override.lod = match view.slug {
-            "tree-textured-leaf-lod" | "tree-leaf-card-lod" => Some(0),
-            "tree-twig-lod" => Some(1),
-            "tree-small-branch-lod" => Some(2),
-            "tree-crown-lod" => Some(3),
-            "tree-billboard-lod" => Some(4),
-            "tree-crown-transition-fixed" => Some(3),
-            "tree-billboard-transition-fixed" => Some(4),
-            _ => None,
-        };
-        tree_lod_override.leaf = match view.slug {
-            "tree-textured-leaf-lod" => Some(TreeLeafRepresentation::TexturedMesh),
-            "tree-leaf-card-lod" => Some(TreeLeafRepresentation::AlphaCard),
-            _ => None,
-        };
-        tree_lod_override.projected_scale = match view.slug {
-            "tree-leaf-transition-25" => Some(0.60),
-            "tree-leaf-transition-50" => Some(0.50),
-            "tree-leaf-transition-75" => Some(0.40),
-            // The fixed transition camera sits about 143 m from the target.
-            // Counter the 20-degree focal scaling so that this same pose
-            // samples the natural 84..96 m crown-to-billboard overlap.
-            "tree-billboard-transition-25" => Some(TREE_BILLBOARD_TRANSITION_SCALES[0]),
-            "tree-billboard-transition-50" => Some(TREE_BILLBOARD_TRANSITION_SCALES[1]),
-            "tree-billboard-transition-75" => Some(TREE_BILLBOARD_TRANSITION_SCALES[2]),
-            _ => None,
-        };
-        let specimen_representation = match view.slug {
-            "tree-textured-leaf-detail" => Some(TreeLeafRepresentation::TexturedMesh),
-            "tree-leaf-card-detail" => Some(TreeLeafRepresentation::AlphaCard),
-            _ => None,
-        };
+        tree_lod_override.lod = view.render_lod_override;
+        tree_lod_override.leaf = view.leaf_lod_override;
+        tree_lod_override.projected_scale = view.projected_scale;
+        let specimen_representation = view.specimen_leaf;
         let specimen_view = specimen_representation.is_some();
-        let specimen_pipeline_warmup = view.slug == "warmup";
-        let (suppress_leaves, suppress_grass) = diagnostic_suppression(view.slug);
+        let specimen_pipeline_warmup = view.warmup;
+        let (suppress_leaves, suppress_grass) = (view.suppress_leaves, view.suppress_grass);
         let production_leaves = scene_visibility.p4().iter().collect::<Vec<_>>();
         for entity in production_leaves {
             commands.entity(entity).insert(if suppress_leaves {
@@ -1996,7 +1809,7 @@ fn capture_views(
             .iter()
             .map(|(entity, layer, transform)| (entity, *layer, transform.translation()))
             .collect::<Vec<_>>();
-        if view.slug == "forest-floor-debris-detail" {
+        if view.debris_target {
             let leaves = ground_scatter_entities
                 .iter()
                 .filter(|(_, layer, _)| *layer == GroundScatterLayer::DryLeaves)
@@ -2018,9 +1831,9 @@ fn capture_views(
             }
         }
         for (entity, layer, _) in ground_scatter_entities {
-            let hide_for_view = (layer == GroundScatterLayer::Grass && suppress_grass)
-                || view.slug == "vista-lod-oblique";
-            if layer == GroundScatterLayer::Grass || view.slug == "vista-lod-oblique" {
+            let hide_for_view =
+                (layer == GroundScatterLayer::Grass && suppress_grass) || view.hide_obstacles;
+            if layer == GroundScatterLayer::Grass || view.hide_obstacles {
                 commands.entity(entity).insert(if hide_for_view {
                     Visibility::Hidden
                 } else {
@@ -2029,7 +1842,7 @@ fn capture_views(
             }
         }
         for mut visibility in scene_visibility.p7().iter_mut() {
-            *visibility = if view.slug == "vista-lod-oblique" {
+            *visibility = if view.hide_obstacles {
                 Visibility::Hidden
             } else {
                 Visibility::Inherited
@@ -2060,11 +1873,11 @@ fn capture_views(
                 },
             );
         }
-        let (transform, target) = camera_for_view(view.slug, state);
+        let (transform, target) = camera_for_view(view.pose, state);
         *camera.1 = transform;
         *camera.2 = GlobalTransform::from(transform);
         if let Projection::Perspective(projection) = &mut *camera.3 {
-            projection.fov = capture_view_fov(view.slug).to_radians();
+            projection.fov = view.fov_degrees.to_radians();
         }
         for mut visibility in &mut overlays {
             *visibility = if view.overlay {
@@ -2074,22 +1887,14 @@ fn capture_views(
             };
         }
         for mut visibility in &mut scene_visibility.p1() {
-            *visibility = if matches!(
-                view.slug,
-                "warmup"
-                    | "beauty-ground"
-                    | "beauty-overhead"
-                    | "horizon"
-                    | "vista-lod-oblique"
-                    | "vista-valley-oblique"
-            ) {
+            *visibility = if view.vista_visible {
                 Visibility::Visible
             } else {
                 Visibility::Hidden
             };
         }
         for (mut visibility, mut backdrop) in &mut tree_backdrops {
-            *visibility = if view.slug == "tree-silhouette" || specimen_view {
+            *visibility = if view.show_tree_backdrop || specimen_view {
                 Visibility::Visible
             } else {
                 Visibility::Hidden
@@ -2104,7 +1909,7 @@ fn capture_views(
         }
         state.view_started = true;
         state.settled = 0;
-        if view.slug != "warmup" {
+        if !view.warmup {
             state.captures.push(CaptureRecord {
                 view: view.slug.to_owned(),
                 label: view.label.to_owned(),
@@ -2112,17 +1917,19 @@ fn capture_views(
                 camera_translation: camera.1.translation.to_array(),
                 camera_target: target.to_array(),
                 camera_up: camera.1.up().as_vec3().to_array(),
-                vertical_fov_degrees: capture_view_fov(view.slug),
+                vertical_fov_degrees: view.fov_degrees,
                 foreground_pixel_bps: 0,
                 detail_pixel_bps: 0,
                 forced_tree_lod: tree_lod_override.lod,
                 focused_tree_lod_queued: None,
                 diagnostic_leaf_suppression: suppress_leaves,
                 diagnostic_grass_suppression: suppress_grass,
-                debris_leaf_distance_metres: (view.slug == "forest-floor-debris-detail")
+                debris_leaf_distance_metres: view
+                    .debris_target
                     .then_some(state.debris_leaf_distance_metres)
                     .flatten(),
-                debris_twig_distance_metres: (view.slug == "forest-floor-debris-detail")
+                debris_twig_distance_metres: view
+                    .debris_target
                     .then_some(state.debris_twig_distance_metres)
                     .flatten(),
                 lighting_luminance_samples: Vec::new(),
@@ -2145,7 +1952,7 @@ fn capture_views(
         return;
     }
 
-    if view.slug == "tree-recursive-lod" {
+    if view.observe_recursive_lod {
         let camera_position = camera.1.translation;
         state.recursive_lods_observed.extend(
             tree_lod_clusters
@@ -2177,7 +1984,7 @@ fn capture_views(
         );
         return;
     }
-    if view.slug == "warmup" {
+    if view.warmup {
         state.in_flight = true;
         commands.spawn(Screenshot::primary_window()).observe(
             |_: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
@@ -2258,7 +2065,13 @@ fn capture_views(
                 manifest.captures.clone_from(&state.captures);
                 manifest.validation.all_views_render_content =
                     manifest.captures.iter().all(|capture| {
-                        capture.foreground_pixel_bps >= minimum_foreground_bps(&capture.view)
+                        state
+                            .views
+                            .iter()
+                            .find(|view| view.slug == capture.view)
+                            .is_some_and(|view| {
+                                capture.foreground_pixel_bps >= view.minimum_foreground_bps
+                            })
                     });
                 if manifest
                     .requested_views
@@ -2311,23 +2124,11 @@ fn focused_tree_lod_queued(
     })
 }
 
-fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
+fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3) {
     let half = state.terrain.width_metres.max(state.terrain.depth_metres) * 0.5;
-    let (position, target, up) = match slug {
-        "warmup" | "beauty-ground" | "collision-overlay" => {
-            (state.ground_eye_position, state.ground_eye_target, Vec3::Y)
-        }
-        "tree-detail"
-        | "tree-lighting-baseline"
-        | "tree-lighting-ao"
-        | "tree-lighting-shadows"
-        | "tree-lighting-combined"
-        | "tree-silhouette"
-        | "tree-textured-leaf-lod"
-        | "tree-leaf-card-lod"
-        | "tree-leaf-transition-25"
-        | "tree-leaf-transition-50"
-        | "tree-leaf-transition-75" => state.tree_focus.map_or(
+    let (position, target, up) = match pose {
+        CapturePose::Ground => (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+        CapturePose::TreeReview => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 let azimuth = state.tree_review_azimuth_degrees.to_radians();
@@ -2339,7 +2140,7 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "tree-recursive-lod" => state.tree_focus.map_or(
+        CapturePose::RecursiveTree => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
@@ -2349,7 +2150,7 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "tree-root-detail" => state.tree_focus.map_or(
+        CapturePose::Root => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 let root = tree - Vec3::Y * (TREE_TRUNK_HEIGHT_METRES * 0.5 - 0.22);
@@ -2361,7 +2162,7 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "tree-branch-junction" => state.tree_focus.map_or(
+        CapturePose::BranchJunction => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 let junction = tree + Vec3::Y * 0.15;
@@ -2373,7 +2174,7 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "rock-detail" => state.rock_focus.map_or(
+        CapturePose::Rock => state.rock_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |rock| {
                 let azimuth = state.tree_review_azimuth_degrees.to_radians();
@@ -2384,19 +2185,19 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "terrain-grazing-detail" => {
+        CapturePose::TerrainGrazing => {
             let target = state.obstacle_focus - Vec3::Y * 1.42;
             (target + Vec3::new(-5.5, 0.72, 4.5), target, Vec3::Y)
         }
-        "grass-seam-detail" => {
+        CapturePose::GrassSeam => {
             let target = state.obstacle_focus - Vec3::Y * 1.30;
             (target + Vec3::new(-3.4, 1.25, 3.4), target, Vec3::Y)
         }
-        "forest-floor-debris-detail" => state.debris_focus.map_or(
+        CapturePose::Debris => state.debris_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |target| debris_detail_camera(target, state.tree_review_azimuth_degrees),
         ),
-        "ground-cover" => state.tree_focus.map_or(
+        CapturePose::GroundCover => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
@@ -2406,7 +2207,7 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "tree-textured-leaf-detail" | "tree-leaf-card-detail" => state.tree_leaf_focus.map_or(
+        CapturePose::LeafSpecimen => state.tree_leaf_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |focus| {
                 (
@@ -2416,25 +2217,17 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "tree-twig-lod" => tree_lod_camera(state, 30.0),
-        "tree-small-branch-lod" => tree_lod_camera(state, 48.0),
-        "tree-crown-lod" => tree_lod_camera(state, 72.0),
-        "tree-billboard-lod" => tree_lod_camera(state, 118.0),
-        "tree-crown-transition-fixed"
-        | "tree-billboard-transition-fixed"
-        | "tree-billboard-transition-25"
-        | "tree-billboard-transition-50"
-        | "tree-billboard-transition-75" => tree_lod_camera(state, 92.0),
-        "beauty-overhead" => (
+        CapturePose::TreeLod { distance } => tree_lod_camera(state, distance),
+        CapturePose::Overhead => (
             state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
             state.obstacle_focus,
             Vec3::Z,
         ),
-        "horizon" => {
+        CapturePose::Horizon => {
             let position = state.ground_eye_position + Vec3::Y * 12.0;
             (position, state.peak_target, Vec3::Y)
         }
-        "vista-lod-oblique" => {
+        CapturePose::VistaPeak => {
             let direction = (state.peak_target.xz() - state.obstacle_focus.xz())
                 .try_normalize()
                 .unwrap_or(Vec2::X);
@@ -2446,7 +2239,7 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 + Vec3::Y * 2.0;
             (position, target, Vec3::Y)
         }
-        "vista-valley-oblique" => {
+        CapturePose::VistaValley => {
             let direction = (state.valley_target.xz() - state.obstacle_focus.xz())
                 .try_normalize()
                 .unwrap_or(-Vec2::X);
@@ -2458,7 +2251,6 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 + Vec3::Y * 2.0;
             (position, target, Vec3::Y)
         }
-        _ => unreachable!("capture view is fixed"),
     };
     (
         Transform::from_translation(position).looking_at(target, up),
@@ -2637,18 +2429,23 @@ fn build_manifest(
             == state.requested_views.len(),
         requested_detail_targets_available: state.requested_views.iter().all(|view| {
             let record = state.captures.iter().find(|capture| &capture.view == view);
-            match view.as_str() {
-                "tree-root-detail" => state.tree_focus.is_some(),
-                "tree-branch-junction" => {
+            let requirement = state
+                .views
+                .iter()
+                .find(|spec| spec.slug == view)
+                .map_or(DetailRequirement::None, |spec| spec.detail_requirement);
+            match requirement {
+                DetailRequirement::TreeFocus => state.tree_focus.is_some(),
+                DetailRequirement::BranchFocusWithLeafSuppression => {
                     state.tree_focus.is_some()
                         && record.is_some_and(|capture| capture.diagnostic_leaf_suppression)
                 }
-                "rock-detail" => state.rock_focus.is_some(),
-                "terrain-grazing-detail" => {
+                DetailRequirement::RockFocus => state.rock_focus.is_some(),
+                DetailRequirement::GrassSuppressed => {
                     record.is_some_and(|capture| capture.diagnostic_grass_suppression)
                 }
-                "grass-seam-detail" => state.expects_grass && grass_clumps > 0,
-                "forest-floor-debris-detail" => {
+                DetailRequirement::GrassPresent => state.expects_grass && grass_clumps > 0,
+                DetailRequirement::DebrisPair => {
                     state.debris_focus.is_some()
                         && state
                             .debris_leaf_distance_metres
@@ -2659,7 +2456,7 @@ fn build_manifest(
                         && dry_leaf_patches > 0
                         && twig_patches > 0
                 }
-                _ => true,
+                DetailRequirement::None => true,
             }
         }),
         production_lighting_parity: presentation_features.requested_matches_observed,
@@ -2675,10 +2472,16 @@ fn build_manifest(
             || tree_lods_presented == vec![0, 1, 2, 3, 4],
         tree_detail_captured_when_expected: state.expected_trees == 0
             || state.captures.iter().all(|capture| {
-                forced_tree_lod_for_view(&capture.view).is_none_or(|expected| {
-                    capture.forced_tree_lod == Some(expected)
-                        && capture.focused_tree_lod_queued == Some(true)
-                })
+                state
+                    .views
+                    .iter()
+                    .find(|spec| spec.slug == capture.view)
+                    .is_some_and(|spec| {
+                        spec.validated_forced_lod.is_none_or(|expected| {
+                            capture.forced_tree_lod == Some(expected)
+                                && capture.focused_tree_lod_queued == Some(true)
+                        })
+                    })
             }),
         recursive_tree_lod_observed: state.profile != "semantic"
             || state.expected_trees == 0
@@ -2819,25 +2622,6 @@ fn capture_celestial(
     }
 }
 
-fn diagnostic_suppression(view: &str) -> (bool, bool) {
-    (
-        view == "tree-branch-junction",
-        view == "terrain-grazing-detail",
-    )
-}
-
-fn forced_tree_lod_for_view(view: &str) -> Option<u8> {
-    match view {
-        "tree-twig-lod" => Some(1),
-        "tree-small-branch-lod" => Some(2),
-        "tree-crown-lod" => Some(3),
-        "tree-billboard-lod" => Some(4),
-        "tree-crown-transition-fixed" => Some(3),
-        "tree-billboard-transition-fixed" => Some(4),
-        _ => None,
-    }
-}
-
 fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {
     let Some(data) = data else {
         return 0;
@@ -2930,61 +2714,6 @@ fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
         .and_then(|value| value.checked_div(compared))
         .unwrap_or(0)
         .min(10_000) as u16
-}
-
-fn minimum_foreground_bps(view: &str) -> u16 {
-    match view {
-        "horizon" => 50,
-        // A valid overhead plate can be almost entirely covered by one
-        // continuous terrain surface, including the top-left reference pixel.
-        // Its separate foliage-detail sentinel protects against a blank frame.
-        "beauty-overhead" => 1,
-        "tree-root-detail" | "tree-branch-junction" | "rock-detail" => 350,
-        "forest-floor-debris-detail" => 500,
-        "tree-twig-lod"
-        | "tree-small-branch-lod"
-        | "tree-crown-lod"
-        | "tree-billboard-lod"
-        | "tree-crown-transition-fixed"
-        | "tree-billboard-transition-fixed"
-        | "tree-billboard-transition-25"
-        | "tree-billboard-transition-50"
-        | "tree-billboard-transition-75"
-        | "tree-recursive-lod" => 200,
-        _ => 1_000,
-    }
-}
-
-fn capture_view_fov(view: &str) -> f32 {
-    match view {
-        "horizon" => 15.0,
-        "tree-detail"
-        | "tree-lighting-baseline"
-        | "tree-lighting-ao"
-        | "tree-lighting-shadows"
-        | "tree-lighting-combined"
-        | "tree-silhouette"
-        | "tree-textured-leaf-lod"
-        | "tree-leaf-card-lod"
-        | "tree-leaf-transition-25"
-        | "tree-leaf-transition-50"
-        | "tree-leaf-transition-75" => 48.0,
-        "tree-recursive-lod" => 80.0,
-        "tree-textured-leaf-detail" | "tree-leaf-card-detail" => 30.0,
-        "tree-root-detail" | "tree-branch-junction" | "rock-detail" => 38.0,
-        "terrain-grazing-detail" | "grass-seam-detail" => 42.0,
-        "forest-floor-debris-detail" => 39.6,
-        "tree-twig-lod" => 30.0,
-        "tree-small-branch-lod" => 19.0,
-        "tree-crown-lod" => 13.0,
-        "tree-billboard-lod" => 8.0,
-        "tree-crown-transition-fixed"
-        | "tree-billboard-transition-fixed"
-        | "tree-billboard-transition-25"
-        | "tree-billboard-transition-50"
-        | "tree-billboard-transition-75" => 20.0,
-        _ => 65.0,
-    }
 }
 
 fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
@@ -3095,7 +2824,7 @@ fn capture_index(manifest: &CaptureManifest) -> String {
          main{{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:1.5rem}}\
          figure{{margin:0;background:#202a34;padding:1rem;border-radius:.5rem}}\
          img{{width:100%;height:auto}}a{{color:#8dd6ff}}</style>\
-         <h1>{fixture}</h1><p>Digest <code>{digest}</code> · <a href=\"manifest.json\">manifest</a> · \
+         <h1>{fixture}</h1><p>Digest <code>{digest}</code> Â· <a href=\"manifest.json\">manifest</a> Â· \
          validation: <strong>{passed}</strong></p><main>{cards}</main>",
         fixture = manifest.fixture,
         digest = manifest.scene_digest,

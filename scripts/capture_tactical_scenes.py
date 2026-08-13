@@ -54,6 +54,7 @@ SOURCE_PATHS = (
     "crates/adventuresim-tactical-client/Cargo.toml",
     "crates/adventuresim-tactical-client/src/presentation",
     "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs",
+    "crates/adventuresim-tactical-client/src/tactical_scene_viewer/view_specs.rs",
     "crates/adventuresim-tactical-client/src/tactical_scene_viewer_main.rs",
     "crates/adventuresim-tactical-client/src/tactical_sky_viewer.rs",
     "crates/adventuresim-tactical-client/src/tactical_sky_viewer_main.rs",
@@ -263,6 +264,8 @@ def validated_child_manifest(
     if not all(capture.get("lighting_ready") for capture in manifest.get("captures", [])):
         raise ValueError("one or more requested views lacked stable lighting readbacks")
     forced_lods = {
+        "tree-textured-leaf-lod": 0,
+        "tree-leaf-card-lod": 0,
         "tree-twig-lod": 1,
         "tree-small-branch-lod": 2,
         "tree-crown-lod": 3,
@@ -271,10 +274,18 @@ def validated_child_manifest(
         "tree-billboard-transition-fixed": 4,
     }
     for capture in manifest.get("captures", []):
+        forced_lod = capture.get("forced_tree_lod")
+        queued = capture.get("focused_tree_lod_queued")
         expected_lod = forced_lods.get(capture.get("view"))
-        if expected_lod is not None and not (
-            capture.get("forced_tree_lod") == expected_lod
-            and capture.get("focused_tree_lod_queued") is True
+        if forced_lod != expected_lod:
+            raise ValueError("tree LOD expectation differs from the capture contract")
+        if forced_lod is None and queued is not None:
+            raise ValueError("unforced tree view recorded a focused LOD queue result")
+        if forced_lod is not None and not (
+            isinstance(forced_lod, int)
+            and not isinstance(forced_lod, bool)
+            and 0 <= forced_lod <= 4
+            and queued is True
         ):
             raise ValueError("forced tree LOD did not match the focused visible tree")
     if "forest-floor-debris-detail" in expected_views:
