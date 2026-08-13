@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2025)
+## Files (2001)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -85,32 +85,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/sparse-woodland.json` — Repository support file.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
 - `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
-- `assets/textures/ground/README.md` — Component overview and usage notes.
-- `assets/textures/ground/dirt_arm_1k.jpg` — Repository support file.
-- `assets/textures/ground/dirt_diff_1k.jpg` — Repository support file.
-- `assets/textures/ground/dirt_nor_gl_1k.jpg` — Repository support file.
 - `assets/textures/moon/lroc_color_2k.jpg` — Repository support file.
-- `assets/textures/rocks/README.md` — Component overview and usage notes.
-- `assets/textures/rocks/rock_surface_arm_1k.jpg` — Repository support file.
-- `assets/textures/rocks/rock_surface_diff_1k.jpg` — Repository support file.
-- `assets/textures/rocks/rock_surface_nor_gl_1k.jpg` — Repository support file.
-- `assets/textures/shrubs/README.md` — Component overview and usage notes.
-- `assets/textures/shrubs/common_hazel_leaf_back_albedo.png` — Binary game or UI asset.
-- `assets/textures/shrubs/common_hazel_leaf_back_normal_dx.png` — Binary game or UI asset.
-- `assets/textures/shrubs/common_hazel_leaf_front_albedo.png` — Binary game or UI asset.
-- `assets/textures/shrubs/common_hazel_leaf_front_normal_dx.png` — Binary game or UI asset.
-- `assets/textures/shrubs/common_hazel_leaf_height.png` — Binary game or UI asset.
-- `assets/textures/shrubs/common_hazel_leaf_opacity.png` — Binary game or UI asset.
-- `assets/textures/shrubs/source/common_hazel_leaf_plate.png` — Binary game or UI asset.
-- `assets/textures/trees/oak_bark/README.md` — Component overview and usage notes.
-- `assets/textures/trees/oak_bark/jolcham_oak_bark_01_arm_1k.jpg` — Repository support file.
-- `assets/textures/trees/oak_bark/jolcham_oak_bark_01_diff_1k.jpg` — Repository support file.
-- `assets/textures/trees/oak_bark/jolcham_oak_bark_01_nor_gl_1k.jpg` — Repository support file.
-- `assets/textures/trees/oak_leaf_03_back_albedo.png` — Binary game or UI asset.
-- `assets/textures/trees/oak_leaf_03_back_normal_dx.png` — Binary game or UI asset.
-- `assets/textures/trees/oak_leaf_03_front_albedo.png` — Binary game or UI asset.
-- `assets/textures/trees/oak_leaf_03_front_normal_dx.png` — Binary game or UI asset.
-- `assets/textures/trees/oak_leaf_03_opacity.png` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
@@ -1415,6 +1390,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/presentation.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/procedural.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/procedural_assets/AGENTS.md` — Project documentation.
+- `crates/adventuresim-tactical-client/src/presentation/procedural_assets/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/sky/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/terrain.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/vista.rs` — Rust source module.
@@ -1914,7 +1891,6 @@ development, or other wiki document before changing a subsystem.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
 - `rust-toolchain.toml` — Tooling or build configuration.
-- `scripts/build_hazel_leaf_textures.ps1` — Repository support file.
 - `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/capture_tactical_scenes.py` — Development or documentation automation script.

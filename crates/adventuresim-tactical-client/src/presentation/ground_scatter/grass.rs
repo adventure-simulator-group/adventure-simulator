@@ -306,20 +306,24 @@ fn grass_ribbon_patch_mesh(
         let half_width = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * width_scale * 0.5;
         let normal = Vec3::Y.cross(half_width).normalize_or_zero().to_array();
         let blade_threshold = unit_hash(splitmix64(hash ^ 0x3d91_02ea_61b8_7c45));
-        let pigment = unit_hash(splitmix64(hash ^ 0x76b3_144d));
-        let warmth = unit_hash(splitmix64(hash ^ 0xa52d_98c7));
         let age = unit_hash(splitmix64(hash ^ 0x1b47_c95a_622d_41e3));
-        let mature_age = ((age - 0.68) / (0.94 - 0.68)).clamp(0.0, 1.0);
-        let mature_age = mature_age * mature_age * (3.0 - 2.0 * mature_age);
-        let brightness = 0.82 + pigment * 0.30;
+        // Each blade is one molded pigment. Variation is categorical rather
+        // than continuous noise, and senescent tips use a hard color region.
+        let pigment = splitmix64(hash ^ 0x76b3_144d) % 3;
+        let pigment_scale = match pigment {
+            0 => [0.82, 0.90, 0.78],
+            1 => [1.0, 1.0, 1.0],
+            _ => [1.08, 1.02, 0.82],
+        };
         let blade_color = [
-            (linear[0] * brightness * (0.94 + warmth * 0.12)).clamp(0.0, 1.0),
-            (linear[1] * brightness * (1.04 - warmth * 0.08)).clamp(0.0, 1.0),
-            (linear[2] * brightness * (0.88 + warmth * 0.10)).clamp(0.0, 1.0),
+            (linear[0] * pigment_scale[0]).clamp(0.0, 1.0),
+            (linear[1] * pigment_scale[1]).clamp(0.0, 1.0),
+            (linear[2] * pigment_scale[2]).clamp(0.0, 1.0),
             blade_threshold,
         ];
         let luminance = blade_color[0] * 0.2126 + blade_color[1] * 0.7152 + blade_color[2] * 0.0722;
         let straw_color = [luminance * 1.12, luminance * 0.88, luminance * 0.42];
+        let senescent = age > 0.82;
         let base = positions.len() as u32;
 
         for &height_fraction in rows {
@@ -330,26 +334,32 @@ fn grass_ribbon_patch_mesh(
             normals.extend_from_slice(&[normal; 2]);
             uvs.extend_from_slice(&[[0.0, height_fraction], [1.0, height_fraction]]);
             blade_roots.extend_from_slice(&[[offset_x, offset_z]; 2]);
-            let tip = ((height_fraction - 0.48) / (0.96 - 0.48)).clamp(0.0, 1.0);
-            let tip = tip * tip * (3.0 - 2.0 * tip) * mature_age * 0.72;
-            let row_color = [
-                blade_color[0] + (straw_color[0] - blade_color[0]) * tip,
-                blade_color[1] + (straw_color[1] - blade_color[1]) * tip,
-                blade_color[2] + (straw_color[2] - blade_color[2]) * tip,
-                blade_threshold,
-            ];
+            let row_color = if senescent && height_fraction >= 0.72 {
+                [
+                    straw_color[0],
+                    straw_color[1],
+                    straw_color[2],
+                    blade_threshold,
+                ]
+            } else {
+                blade_color
+            };
             colors.extend_from_slice(&[row_color; 2]);
         }
         positions.push((root + Vec3::Y * height * height_scale).to_array());
         normals.push(normal);
         uvs.push([0.5, 1.0]);
         blade_roots.push([offset_x, offset_z]);
-        colors.push([
-            blade_color[0] + (straw_color[0] - blade_color[0]) * mature_age * 0.72,
-            blade_color[1] + (straw_color[1] - blade_color[1]) * mature_age * 0.72,
-            blade_color[2] + (straw_color[2] - blade_color[2]) * mature_age * 0.72,
-            blade_threshold,
-        ]);
+        colors.push(if senescent {
+            [
+                straw_color[0],
+                straw_color[1],
+                straw_color[2],
+                blade_threshold,
+            ]
+        } else {
+            blade_color
+        });
 
         for row in 0..rows.len() - 1 {
             let lower = base + (row * 2) as u32;
@@ -488,7 +498,8 @@ mod tests {
             .iter()
             .map(|color| [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()])
             .collect::<BTreeSet<_>>();
-        assert!(distinct_pigments.len() > 100);
+        assert!(distinct_pigments.len() <= 6);
+        assert!(distinct_pigments.len() >= 3);
     }
 
     #[test]

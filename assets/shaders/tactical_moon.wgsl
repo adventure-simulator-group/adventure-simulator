@@ -46,7 +46,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // normalizing by representative lunar reflectance preserves the existing
     // shared disc-radiance scale without adding an asset-specific light.
     let lunar_reflectance = textureSample(moon_albedo, moon_albedo_sampler, in.uv).rgb;
-    let relative_albedo = lunar_reflectance / vec3<f32>(0.18);
+    let reference_luminance = dot(lunar_reflectance, vec3<f32>(0.2126, 0.7152, 0.0722));
+    // Preserve the LRO crater geography, but posterize its reflectance into a
+    // molded-material palette instead of reproducing photographic color noise.
+    let albedo_band = floor(clamp(reference_luminance / 0.18, 0.0, 1.999) * 4.0) / 3.0;
+    let relative_albedo = vec3<f32>(0.64 + albedo_band * 0.48);
     let to_viewer = normalize(view.world_position - in.world_position.xyz);
     let emission_cosine = clamp(dot(normal, to_viewer), 0.0, 1.0);
     // A restrained Lommel-Seeliger response avoids the plastic Lambert-sphere

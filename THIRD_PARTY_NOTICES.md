@@ -109,15 +109,6 @@ from Font Awesome Free 7.3.1 by Fonticons, Inc. They are licensed under
 - Sources: <https://fontawesome.com/icons/cross>, <https://fontawesome.com/icons/star-and-crescent>, and <https://fontawesome.com/icons/star-of-david>
 - License: <https://fontawesome.com/license/free>
 
-## cgbookcase Oak Leaf 03
-
-The oak-leaf opacity, front/back albedo, and front/back DirectX normal
-maps in `assets/textures/trees/` are the 1K metalness/roughness maps from
-[Oak Leaf 03](https://www.cgbookcase.com/textures/oak-leaf-03) by Dorian
-Zgraggen / cgbookcase. The source texture is dedicated to the public domain
-under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The files
-are redistributed without visual modification and use project-local names.
-
 ## NASA Scientific Visualization Studio CGI Moon Kit
 
 `assets/textures/moon/lroc_color_2k.jpg` is the unmodified 2048 x 1024 JPEG
@@ -137,38 +128,6 @@ NASA states that its imagery and 3D-rendering media, including texture maps,
 generally are not subject to copyright in the United States. This use follows
 NASA's media guidelines, acknowledges NASA as the source, and does not imply
 NASA endorsement: <https://www.nasa.gov/nasa-brand-center/images-and-media/>.
-
-## Poly Haven Rock Surface
-
-The 1K diffuse, OpenGL normal, and AO/roughness/metal maps in
-`assets/textures/rocks/` are the JPEG channels from
-[Rock Surface](https://polyhaven.com/a/rock_surface) by Amal Kumar / Poly
-Haven. Poly Haven documents the scanned surface as two metres wide and
-dedicates the asset to the public domain under
-[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The files are
-redistributed without visual modification under their upstream names. Their
-SHA-256 checksums are recorded in `assets/textures/rocks/README.md`.
-
-## Poly Haven Dirt
-
-The 1K diffuse, OpenGL normal, and AO/roughness/metal maps in
-`assets/textures/ground/` are the JPEG channels from
-[Dirt](https://polyhaven.com/a/dirt) by Charlotte Baglioni / Poly Haven. Poly
-Haven documents the scan as two metres wide and dedicates it to the public
-domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
-The files are redistributed without visual modification; checksums are in the
-adjacent README.
-
-## Poly Haven Jolcham Oak Bark 01
-
-The 1K x 2K diffuse, OpenGL normal, and AO/roughness/metal maps in
-`assets/textures/trees/oak_bark/` are the JPEG channels from
-[Jolcham Oak Bark 01](https://polyhaven.com/a/jolcham_oak_bark_01) by Charlotte
-Baglioni / Poly Haven. Poly Haven documents the scan as one metre wide by two
-metres tall and dedicates it to the public domain under
-[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The files are
-redistributed without visual modification; checksums are in the adjacent
-README.
 
 ### HYDE 3.5
 

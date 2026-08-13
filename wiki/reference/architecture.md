@@ -356,7 +356,7 @@ not its orthographic right-axis angle. A bounded bake-only exposure and card
 width calibration keep the single-card crown close to the preceding aggregate
 crown without adding runtime texture samples, geometry, or draws. The software
 bake treats leaf vertex color as semantic shade, self-shadow selection, and
-ambient visibility rather than RGB pigment. It uses a scan-matched oak pigment
+ambient visibility rather than RGB pigment. It uses the generated oak palette's representative pigment
 and the same unresolved-canopy visibility response as live foliage, avoiding a
 saturated color change across tree LODs. The custom impostor fragment path
 executes Bevy's visibility-range dither, so the existing
@@ -370,13 +370,17 @@ short lateral fork. This presentation detail remains capped at 22 segments and
 does not expand the server's cylindrical trunk collider. Oak and hazel branch
 recipes also cap each child base at 80% of its local parent-axis radius. The
 existing bounded basal ring therefore cannot become wider than its trunk or
-parent limb. Near woody meshes share one scanned oak-bark albedo, OpenGL
-normal, roughness, and ambient-occlusion material. Their cylindrical UVs use
-the scan's documented one-by-two-metre scale, duplicate the wrap seam, and
+parent limb. Near woody meshes share one parameterized oak-bark material
+generated at startup. Its albedo and roughness use two hard-bounded molded-
+material regions; fine furrows and plates remain in the generated OpenGL
+normal and ambient-occlusion channels. Cylindrical UVs duplicate the wrap seam and
 parallel-transport the tangent frame along each axis; physical feature scale
 therefore stays consistent across trunks, roots, and branches without a
-tree-specific lighting adjustment. Living leaf cards retain their scanned
-front/back albedo and normals while sharing a crown-size Beer--Lambert response
+tree-specific lighting adjustment. Living oak and hazel cards are presets over
+one structural leaf generator. Binary silhouettes and parameterized blade,
+petiole, midrib, lobe/tooth, and vein fields produce discrete front/back
+albedo, detailed normal and AO, and low-detail roughness while sharing a
+crown-size Beer--Lambert response
 for only the self-occlusion unresolved by explicit cards and screen-space AO.
 An empirically bounded 0.11-per-metre coefficient yields about 48% mature-oak
 and 16% hazel unresolved occlusion under the production atmosphere IBL. Oak
@@ -407,7 +411,7 @@ remain unit-scale and nearly gridded, with boundary blade rows constrained to
 wander outward to mitigate square seams on near-flat and ordinary sloped
 terrain. This is a continuity mitigation rather than a guarantee across sharp
 terrain-normal discontinuities. Within the unchanged topology,
-deterministic mixed-age height, independent width, clumping, pigment, lean, and
+deterministic mixed-age height, independent width, clumping, three-class pigment, lean, and
 curvature variation avoids a repeated vertical-curtain silhouette. A shared
 world-space meadow field keeps the full authored density within seven metres,
 then introduces short juvenile pockets and irregular occupancy before the
@@ -415,8 +419,10 @@ then introduces short juvenile pockets and irregular occupancy before the
 nonlinear feather, and surviving boundary blades shorten with coverage, so
 dirt and leaf-litter transitions do not terminate as a same-height wall. This
 composition also derives a stable age cohort from the existing per-blade LOD
-threshold: a bounded minority of mature blades develops a desaturated straw
-tip while juvenile cohorts remain green. Near and far LODs therefore preserve
+threshold: a bounded minority of mature blades develops one hard-edged,
+desaturated straw-tip region while juvenile cohorts retain one of three green
+pigments. Root shading and rib definition are occlusion responses rather than
+albedo gradients. Near and far LODs therefore preserve
 the same age identity without another vertex attribute, texture read,
 transcendental evaluation, mesh, entity, material, or draw. Beyond the geometric range, the
 terrain material retains only the band-limited aggregate colour and normal
@@ -435,10 +441,9 @@ not worth that overdraw. Each 24-leaf shared patch uses deterministic
 nine-vertex cambered, gently tilted, curled oak plates arranged into four
 loose, shallow layers plus scattered singles;
   every plate is seated by its lowest vertex slightly below the local patch
-  plane and has a bounded lift so it cannot become an upright card. The reused
-  oak maps are desaturated and multiplied by seeded tan/brown vertex pigment
-  for a dry-leaf albedo response rather than a lighting gain. These plates retain the
-leaf plates with the production oak opacity, front/back albedo, normal maps,
+  plane and has a bounded lift so it cannot become an upright card. A dry-oak
+  preset supplies bounded tan/brown blade and vein palettes. These plates retain the
+leaf plates with the production oak morphology, front/back albedo, normal and AO maps,
 and a dedicated dry PBR response with zero canopy AO, low transmission, higher
 roughness, and lower thickness; fallen-leaf wind is disabled. Each nine-twig shared
 patch uses bowed four-ring, five-to-six-sided segments with buried contact
@@ -494,19 +499,23 @@ Collider-bearing rocks remain compact authoritative `RockRecipe` values. The
 client's bounded 18-cubed Surface Nets field now applies archetype-specific
 faceting, cleavage, chipping, and asymmetric ground-contact flattening while
 remaining inside the unchanged conservative spherical proxy. A shared
-lithology-parameterized dielectric material applies bounded macro variation
-over one CC0, two-metre photographic rock scan. Its matched diffuse,
-OpenGL-normal, and packed AO/roughness/metal channels share a
+lithology-parameterized dielectric material uses one parameterized rock
+surface. Its two-region albedo and roughness preserve the molded-material
+style while detailed OpenGL-normal and AO channels share a
 0.5-tile-per-metre triplanar projection, avoiding UV seams while preserving
 physical scale across rock recipes. It adds no emissive response, collider
 detail, entity, draw call, displacement, or authoritative silhouette change.
 
-Near-field upward-facing tactical ground similarly uses one CC0, two-metre
-dirt scan for aligned diffuse, OpenGL-normal, and AO/roughness response. The
+Near-field upward-facing tactical ground similarly uses one parameterized soil
+recipe for aligned two-region albedo/roughness and detailed OpenGL-normal/AO response. The
 world-space top projection is blended beneath authoritative cover and weather
 colour, declines on steep faces, and fades from 42 to 96 metres before its
 detail becomes subpixel. It never displaces the authoritative heightfield and
 adds three bounded texture reads only within the presentation shader.
+
+The Moon is the deliberate procedural exception: its LRO reference map keeps
+real crater geography, while the Moon shader quantizes reflectance into four
+hard albedo bands before applying the physical phase response.
 
 Night exposure preserves the physical 0.25-lux full-moon directional light
 and a distinct dark moonless floor. A risen illuminated Moon lowers the shared

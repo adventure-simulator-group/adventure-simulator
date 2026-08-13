@@ -8,6 +8,9 @@ use bevy::{
 };
 
 use super::geometry::{COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS};
+#[cfg(test)]
+use crate::presentation::generate_procedural_environment_assets;
+use crate::presentation::{LeafTextureSet, ProceduralEnvironmentAssets};
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
@@ -29,30 +32,34 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     #[texture(8)]
     #[sampler(9)]
     pub(crate) back_normal: Handle<Image>,
+    #[texture(10)]
+    #[sampler(11)]
+    pub(crate) arm: Handle<Image>,
     /// Wind direction XZ, strength, and CPU-synchronized phase time.
-    #[uniform(10)]
+    #[uniform(12)]
     pub(crate) parameters: Vec4,
     /// Opacity cutoff, tangent-space normal strength, canopy AO strength, and
     /// diffuse transmission for the species' leaf thickness.
-    #[uniform(10)]
+    #[uniform(12)]
     pub(crate) surface_parameters: Vec4,
     /// Perceptual roughness, physical thickness in metres, and reserved.
-    #[uniform(10)]
+    #[uniform(12)]
     pub(crate) physical_parameters: Vec4,
 }
 
 const OAK_LEAF_DIFFUSE_TRANSMISSION: f32 = 0.40;
 /// Representative alpha-weighted oak pigment for software-baked impostors.
 ///
-/// The live material samples distinct front/back scans. The single-color
-/// impostor bake cannot retain those textures, so this bounded midpoint keeps
-/// its hue near the scan instead of using the former saturated lime surrogate.
+/// The live material samples distinct front/back procedural palettes. The
+/// single-color impostor bake uses this bounded midpoint so the far crown
+/// remains continuous with the generated material.
 pub(super) const OAK_LEAF_IMPOSTOR_BASE_SRGB: [f32; 3] = [96.0, 113.0, 76.0];
 
-pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
+pub(crate) fn oak_leaf_material(
+    assets: &ProceduralEnvironmentAssets,
+) -> TacticalTreeLeafCardMaterial {
     leaf_material(
-        asset_server,
-        "trees/oak_leaf_03",
+        &assets.oak_leaf,
         0.28,
         0.72,
         canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres),
@@ -60,37 +67,12 @@ pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafC
     )
 }
 
-pub(crate) fn oak_bark_material(asset_server: &AssetServer) -> StandardMaterial {
-    let image = |path, is_srgb| {
-        asset_server
-            .load_builder()
-            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
-                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
-                settings.is_srgb = is_srgb;
-                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-                    address_mode_u: ImageAddressMode::Repeat,
-                    address_mode_v: ImageAddressMode::Repeat,
-                    address_mode_w: ImageAddressMode::Repeat,
-                    anisotropy_clamp: 8,
-                    ..ImageSamplerDescriptor::linear()
-                });
-            })
-            .load(path)
-    };
-    let arm = image(
-        "textures/trees/oak_bark/jolcham_oak_bark_01_arm_1k.jpg",
-        false,
-    );
+pub(crate) fn oak_bark_material(assets: &ProceduralEnvironmentAssets) -> StandardMaterial {
+    let arm = assets.oak_bark.arm.clone();
     StandardMaterial {
         base_color: Color::WHITE,
-        base_color_texture: Some(image(
-            "textures/trees/oak_bark/jolcham_oak_bark_01_diff_1k.jpg",
-            true,
-        )),
-        normal_map_texture: Some(image(
-            "textures/trees/oak_bark/jolcham_oak_bark_01_nor_gl_1k.jpg",
-            false,
-        )),
+        base_color_texture: Some(assets.oak_bark.albedo.clone()),
+        normal_map_texture: Some(assets.oak_bark.normal_gl.clone()),
         metallic_roughness_texture: Some(arm.clone()),
         occlusion_texture: Some(arm),
         perceptual_roughness: 1.0,
@@ -102,11 +84,10 @@ pub(crate) fn oak_bark_material(asset_server: &AssetServer) -> StandardMaterial 
 }
 
 pub(in crate::presentation) fn hazel_leaf_material(
-    asset_server: &AssetServer,
+    assets: &ProceduralEnvironmentAssets,
 ) -> TacticalTreeLeafCardMaterial {
     leaf_material(
-        asset_server,
-        "shrubs/common_hazel_leaf",
+        &assets.hazel_leaf,
         0.32,
         0.68,
         canopy_ao_strength(COMMON_HAZEL_PARAMETERS.crown_radius_metres),
@@ -129,28 +110,20 @@ pub(super) fn canopy_ao_strength(crown_radius_metres: f32) -> f32 {
     1.0 - (-UNRESOLVED_FOLIAGE_EXTINCTION_PER_METRE * crown_radius_metres.max(0.0)).exp()
 }
 
-fn leaf_material(
-    asset_server: &AssetServer,
-    stem: &str,
+pub(in crate::presentation) fn leaf_material(
+    textures: &LeafTextureSet,
     alpha_cutoff: f32,
     normal_strength: f32,
     canopy_ao: f32,
     diffuse_transmission: f32,
 ) -> TacticalTreeLeafCardMaterial {
-    let linear_image = |path| {
-        asset_server
-            .load_builder()
-            .with_settings(|settings: &mut bevy::image::ImageLoaderSettings| {
-                settings.is_srgb = false
-            })
-            .load(path)
-    };
     TacticalTreeLeafCardMaterial {
-        opacity: linear_image(format!("textures/{stem}_opacity.png")),
-        front_albedo: asset_server.load(format!("textures/{stem}_front_albedo.png")),
-        back_albedo: asset_server.load(format!("textures/{stem}_back_albedo.png")),
-        front_normal: linear_image(format!("textures/{stem}_front_normal_dx.png")),
-        back_normal: linear_image(format!("textures/{stem}_back_normal_dx.png")),
+        opacity: textures.opacity.clone(),
+        front_albedo: textures.front_albedo.clone(),
+        back_albedo: textures.back_albedo.clone(),
+        front_normal: textures.front_normal.clone(),
+        back_normal: textures.back_normal.clone(),
+        arm: textures.arm.clone(),
         parameters: Vec4::new(0.74, 0.67, 0.035, 0.0),
         surface_parameters: Vec4::new(
             alpha_cutoff,
@@ -281,8 +254,10 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(AssetPlugin::default());
         app.init_asset::<Image>();
-        let asset_server = app.world().resource::<AssetServer>();
-        let bark = oak_bark_material(asset_server);
+        let assets = generate_procedural_environment_assets(
+            &mut app.world_mut().resource_mut::<Assets<Image>>(),
+        );
+        let bark = oak_bark_material(&assets);
 
         assert_eq!(bark.base_color, Color::WHITE);
         assert!(bark.base_color_texture.is_some());

@@ -47,11 +47,12 @@ use view_specs::{
 };
 
 use crate::presentation::{
-    AtmosphereIblAmbientHandoff, GroundScatterLayer, PresentedTree, ProceduralRockVisual,
-    TacticalGraphicsSettings, TacticalPresentationPlugin, TacticalTreeLeafCardMaterial,
-    TerrainMaterialPresentation, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, VistaTerrain, VistaTreePresentation,
-    WeatherParticle, oak_bark_material, oak_leaf_material, oak_review_terminal_specimen,
+    AtmosphereIblAmbientHandoff, GroundScatterLayer, PresentedTree, ProceduralEnvironmentAssets,
+    ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
+    TacticalTreeLeafCardMaterial, TerrainMaterialPresentation, TreeImpostorProvenance,
+    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
+    oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -1018,7 +1019,7 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
-    asset_server: Res<AssetServer>,
+    procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     let setup = setup.0.take().expect("scene setup runs exactly once");
     let SceneSetupData {
@@ -1250,8 +1251,8 @@ fn setup_scene(
             local_focus,
             camera_direction,
         ) = oak_review_terminal_specimen(tree, canopy_bps);
-        let bark_material = materials.add(oak_bark_material(&asset_server));
-        let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
+        let bark_material = materials.add(oak_bark_material(&procedural_assets));
+        let leaf_material = leaf_card_materials.add(oak_leaf_material(&procedural_assets));
         let bud_material = materials.add(StandardMaterial {
             base_color: Color::srgb(0.36, 0.27, 0.1),
             perceptual_roughness: 0.92,

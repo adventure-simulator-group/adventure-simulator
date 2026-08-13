@@ -8,6 +8,7 @@ mod environment;
 mod ground_scatter;
 mod obstacles;
 mod procedural;
+mod procedural_assets;
 mod sky;
 mod terrain;
 mod vista;
@@ -20,6 +21,9 @@ use obstacles::on_scene_obstacle_added;
 use obstacles::rock::TacticalRockMaterial;
 use obstacles::tree::*;
 use procedural::*;
+#[cfg(test)]
+use procedural_assets::generate_procedural_environment_assets;
+use procedural_assets::{LeafTextureSet, setup_procedural_environment_assets};
 use sky::*;
 use terrain::*;
 use vista::*;
@@ -43,6 +47,7 @@ pub(crate) use obstacles::tree::{
     PresentedTree, TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
     TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
 };
+pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
@@ -137,7 +142,12 @@ impl Plugin for TacticalPresentationPlugin {
         })
         .add_systems(
             Startup,
-            (setup_tactical_presentation, setup_tactical_sky).chain(),
+            (
+                setup_procedural_environment_assets,
+                setup_tactical_presentation,
+                setup_tactical_sky,
+            )
+                .chain(),
         )
         .init_resource::<GrassInteractionState>()
         .init_resource::<HazelPresentationCache>()

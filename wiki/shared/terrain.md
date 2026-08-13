@@ -44,7 +44,7 @@ The individual-leaf crown uses an 8-triangle cambered PBR card and a 30-triangle
 terminal bud. Once that camber falls below useful screen size, each leaf
 cross-fades to a two-triangle flat PBR
 card before terminal shoots collapse into twig cards. Both leaf stages use the
-same CC0 scanned-oak front/back albedo, DirectX normal maps, and opacity mask;
+same generated oak front/back albedo, DirectX normal maps, AO/roughness, and opacity mask;
 the cambered card supplies close depth and foreshortening while the mask preserves one
 lobed silhouette throughout the transition. Both stages retain the same
 biological attachment, two-sided shading, per-leaf shade variation, and
@@ -122,7 +122,7 @@ blade geometry. Regional vista vertices retain the same environmental samples,
 including an aggregate sward-coverage channel, so open terrain continues the
 grass response through every vista ring. Vista slopes use continuous
 height-gradient normals instead of per-cell face normals; sufficiently exposed
-hilly samples reuse the scanned rock surface through coarse-safe triplanar
+hilly samples reuse the generated two-color rock surface through coarse-safe triplanar
 sampling. The locally controlled player's position and velocity flatten
 and push nearby grass as a presentation-only effect.
 
@@ -131,13 +131,15 @@ Ordinary temperate understory shrubs use one shared procedural common-hazel
 multi-stem architecture and alternate broad leaves come from the same
 parameterized woody-plant generator used for the English oak, with shrub-scale
 height, crown, stem-count, shoot, and leaf parameters. Cambered near leaves and
-flat alpha-card far leaves share one aligned albedo/opacity/normal material and
+flat alpha-card far leaves share one generated, palette-constrained
+albedo/opacity/normal/AO/roughness material and
 the existing tree-leaf wind shader.
-Root self-shadow, broad colour variation, a darker centre rib, and softened
-upward normals keep the dense field readable without making individual cards
-look heavily lit. A procedural terrain material blends forest floor, dry
-ground, mud, cultivation, stone, wetness, and snow while adding small-scale
-colour and normal variation. Tree sampling follows canopy
+Root self-shadow and a darker centre rib are occlusion responses; a small
+solid-color palette and softened upward normals keep the dense field readable
+without making individual cards look heavily lit. A procedural terrain
+material selects hard-bounded forest floor, dry ground, mud, cultivation,
+stone, water, and snow albedo regions while retaining small-scale normal and
+AO variation. Tree sampling follows canopy
 coverage; rock sampling uses an independent deterministic roll scaled by hilly
 coverage, so the two features do not suppress one another. Weather affects ground
 wetness/snow tint, bounded rain or snow particles, wind drift, sunlight
