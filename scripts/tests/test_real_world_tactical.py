@@ -46,6 +46,19 @@ class RealWorldTacticalTests(unittest.TestCase):
             )
             self.assertEqual(run.call_args.kwargs["env"]["CAPTURE_SOURCE_IDENTITY"], "identity")
 
+    def test_review_uses_curated_coordinate_locations(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            MODULE.subprocess, "run", return_value=mock.Mock(returncode=0)
+        ) as run:
+            output = Path(directory) / "review"
+            self.assertEqual(MODULE.main(["review", "--output", str(output)]), 0)
+        self.assertEqual(run.call_count, len(MODULE.REVIEW_LOCATIONS))
+        commands = [call.args[0] for call in run.call_args_list]
+        for name, (latitude, longitude) in MODULE.REVIEW_LOCATIONS.items():
+            command = next(command for command in commands if str(output / name) in command)
+            self.assertIn(str(latitude), command)
+            self.assertIn(str(longitude), command)
+
 
 if __name__ == "__main__":
     unittest.main()

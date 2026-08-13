@@ -59,7 +59,10 @@ use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::mesh::VertexAttributeValues;
 use bevy::{
     asset::RenderAssetUsages,
-    camera::{Exposure, visibility::VisibilityRange},
+    camera::{
+        Exposure,
+        visibility::{NoFrustumCulling, VisibilityRange},
+    },
     core_pipeline::tonemapping::Tonemapping,
     image::ImageSampler,
     light::{
@@ -107,6 +110,7 @@ impl Plugin for TacticalPresentationPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             MaterialPlugin::<TacticalTerrainMaterial>::default(),
+            MaterialPlugin::<TacticalVistaMaterial>::default(),
             MaterialPlugin::<TacticalRockMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
@@ -139,6 +143,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<HazelPresentationCache>()
         .init_resource::<GroundFoliagePresentationCache>()
         .init_resource::<TreePresentationCache>()
+        .init_resource::<VistaTreePresentationCache>()
         .init_resource::<TreeLodRenderOverride>()
         .init_resource::<ActiveTacticalScene>()
         .init_resource::<PresentedCelestialLighting>()

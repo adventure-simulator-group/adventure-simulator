@@ -314,6 +314,10 @@ tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" abs
 tactical-real-world-capture latitude longitude output="" absolute_minute="340320" settle_frames="12" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack":
     @{{ python_bin }} scripts/real_world_tactical.py capture {{ quote(latitude) }} {{ quote(longitude) }} --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }} {{ if output != "" { "--output " + quote(output) } else { "" } }}
 
+# Capture the curated production vista matrix from real WGS84 locations.
+tactical-real-world-review output="target/tactical-real-world-captures/review" absolute_minute="340320" settle_frames="12" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack":
+    @{{ python_bin }} scripts/real_world_tactical.py review --output {{ quote(output) }} --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }}
+
 # Launch the animation demo on the same production coordinate-derived scene.
 tactical-real-world-play latitude longitude base_port="24920" absolute_minute="340320" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack": preflight verify-db-client
     @{{ python_bin }} scripts/real_world_tactical.py play {{ quote(latitude) }} {{ quote(longitude) }} --base-port {{ quote(base_port) }} --absolute-minute {{ quote(absolute_minute) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }}

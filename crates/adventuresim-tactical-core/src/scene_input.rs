@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 1;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 6;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 7;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
