@@ -856,6 +856,35 @@ occlusion, directional leaf self shadows, and both effects together. It writes
 a WebGPU-safe canopy-visibility term rather than native screen-space AO, which
 Bevy does not currently expose on WebGPU.
 
+For coordinate-derived demos, attribute production tree and LOD cost with:
+
+```powershell
+just tactical-scene-performance-benchmark <input.json> <fresh-output> 120
+```
+
+The release-mode timing pass compares the natural scene against hidden playable/vista
+trees, hidden playable leaves, and forced LOD0 through LOD4 at one locked
+camera. It writes `scene-performance-benchmark.json` and
+`scene-performance-comparison.md`. Performance runs use an unpaced headless
+schedule and render to an offscreen 1280x720 texture so desktop-compositor
+presentation cannot pin fast scenes to the monitor refresh interval. The
+reported end-to-end frame duration still
+includes Bevy scheduling, extraction, and render-world synchronization; it is
+not interchangeable with summed GPU timestamp duration. A 480 FPS renderer
+budget is 2.083 ms, so use the diagnostic `elapsed_gpu` pass sum for that GPU
+gate and retain wall time as a separate engine-loop metric. Run the opt-in
+`tactical-scene-render-diagnostics` recipe separately when DX12/Vulkan GPU-pass
+timestamps and shader invocation counters are needed; those queries add enough
+observer/synchronization overhead that their frame times must not be compared
+directly with the timing-only results.
+
+Use fresh output directories for before/after comparisons. A dense Harz scene
+is the representative tree stress case; a sparse summit such as Brocken is a
+counter-control for features whose setup cost can outweigh their benefit. The
+benchmark both classes after changing tree LOD ranges or render features. For
+clean single-mode attribution, set `TACTICAL_BENCH_ONLY_MODE` to the exact mode
+label (for example, `Natural production LODs`) and use a fresh process/output.
+
 The leaf comparison recipe renders the cambered and flat PBR foliage from 0,
 30, 60, and 80 degree review azimuths under a locked
 daylight minute. Use the oblique plates and each run's

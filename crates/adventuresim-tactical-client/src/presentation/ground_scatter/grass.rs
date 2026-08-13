@@ -66,6 +66,7 @@ pub(super) fn spawn(
             ));
             commands.spawn((
                 Name::new("Tactical grass far ribbons"),
+                GroundScatterLayer::Grass,
                 NotShadowCaster,
                 Mesh3d(assets.far_mesh.clone()),
                 MeshMaterial3d(assets.far_material.clone()),

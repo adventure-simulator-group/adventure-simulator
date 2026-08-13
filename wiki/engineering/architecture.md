@@ -317,6 +317,12 @@ allocation grace remains a sky-local presentation concern. Terrain materials,
 Ground scatter, weather, colliders, and recipes continue to read their own
 entity-local authoritative scene components.
 
+The production tactical preset prioritizes high-throughput gameplay: directional
+shadow maps, bloom, and SSAO are disabled by default, while the atmosphere IBL,
+material occlusion, baked tree-card depth, terrain normals, and direct celestial
+lighting retain the scene's primary depth cues. Review viewers can still enable
+individual lighting costs explicitly for controlled diagnostics.
+
 The immutable world-data canopy coverage continuously controls tree
 architecture without inspecting neighboring entities: low coverage produces a
 short clear bole and broad open-grown crown, while dense canopy produces a
@@ -328,6 +334,21 @@ descendant branch groups rather than an unrelated generic crown, preserving
 the generated tree's silhouette across levels. Renderable trunk geometry is a
 sibling of the aggregate levels beneath a non-rendering obstacle root, so
 disabling the trunk cannot hide its billboard through inherited visibility.
+LOD0 retains per-scaffold bounds so nearby forest aisles cull detailed leaves
+conservatively. LOD1 through LOD3 combine each tree's matching cards and wood
+into one or two aggregate entities, avoiding seven duplicate draw/extraction
+boundaries once scaffold detail is no longer readable. Each non-rendering tree
+root streams only the current LOD and its cross-fade neighbor into the ECS;
+inactive levels remain in the shared presentation cache instead of imposing
+extraction and visibility work on every frame. The projected handoffs are
+0.65--1 metre for cambered-to-flat leaves, then 1--1.5, 1.5--2.5, 2.5--4, and
+50--60 metres through the whole-tree billboard, scaled by focal length and
+cluster radius. The deliberately wider final interval keeps the screen-door
+dissolve outside the near forest while retaining the inexpensive crown cards.
+A measured dense-forest depth-prepass policy was removed after streamed LODs
+made its extra pass slower than ordinary rendering. These changes are
+presentation-only and leave collision, tree recipes, and vista-tree impostors
+unchanged.
 The camera-facing far card bypasses only CPU frustum culling because its final
 orientation is produced in the vertex shader from stale source-card bounds;
 the normal projected-size visibility range still culls it by distance. The
@@ -403,10 +424,11 @@ terrain material retains only the band-limited aggregate colour and normal
 response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
 GPU preprocessing, culling, and indirect batches when the adapter supports
 them, with its normal fallback on more limited browser devices.
-Forest-floor scatter retains its authoritative leaf-litter placement, patch
-count, and shared-mesh instancing. The four leaf meshes, three twig meshes,
-and their two materials are cached across scene loads rather than rebuilt per
-presentation. Detailed leaves now end at 35 metres, while subpixel twigs end
+Forest-floor scatter retains its authoritative leaf-litter placement and patch
+composition. Nearby patches are merged deterministically into 64-metre render
+batches, collapsing tens of thousands of dry-leaf and twig entities while
+preserving the four leaf variants, three twig variants, two materials, and
+authored transforms. Detailed leaves now end at 35 metres, while subpixel twigs end
 at 24 metres: the
 current visibility architecture cannot substitute a cheaper mesh without an
 extra entity/draw, and rendering alpha-tested cambered plates to 72 metres was

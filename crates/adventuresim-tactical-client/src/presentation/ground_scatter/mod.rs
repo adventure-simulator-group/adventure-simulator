@@ -280,6 +280,7 @@ pub(super) fn spawn_ground_foliage(
 
     litter::spawn(
         commands,
+        meshes,
         terrain,
         ground,
         base_seed,

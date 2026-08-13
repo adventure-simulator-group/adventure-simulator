@@ -40,7 +40,7 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
-    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    PresentedTree, TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
     TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
 };
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
@@ -49,7 +49,7 @@ pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSun
 #[allow(unused_imports)]
 pub(crate) use terrain::TerrainMaterialPresentation;
 #[allow(unused_imports)]
-pub(crate) use vista::VistaTerrain;
+pub(crate) use vista::{VistaTerrain, VistaTreePresentation};
 #[allow(unused_imports)]
 pub(crate) use weather::WeatherParticle;
 
@@ -94,13 +94,13 @@ pub struct TacticalPresentationPlugin {
 impl Default for TacticalPresentationPlugin {
     fn default() -> Self {
         Self {
-            shadows_enabled: true,
+            shadows_enabled: false,
             atmosphere_enabled: true,
             celestial_enabled: true,
             environment_light_enabled: true,
             environment_map_size: 64,
-            bloom_enabled: true,
-            ssao_enabled: true,
+            bloom_enabled: false,
+            ssao_enabled: false,
             max_vista_lods: 3,
         }
     }
@@ -161,7 +161,12 @@ impl Plugin for TacticalPresentationPlugin {
                 )
                     .chain(),
                 update_celestial_material_lighting.after(update_presented_celestial_lighting),
-                (present_pending_trees, update_tree_projected_lod_ranges).chain(),
+                (
+                    present_pending_trees,
+                    stream_tree_lod_children,
+                    update_tree_projected_lod_ranges,
+                )
+                    .chain(),
                 keep_celestial_visuals_centered.after(update_presented_celestial_lighting),
                 update_global_ambient_policy.after(apply_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
