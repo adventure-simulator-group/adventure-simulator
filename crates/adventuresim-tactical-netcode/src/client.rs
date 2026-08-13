@@ -35,7 +35,8 @@ pub struct WeaponGuardInputState {
 /// Optional input supplied by native diagnostic tooling. The request still
 /// crosses the ordinary client/server transport and authoritative controller;
 /// only the physical keyboard/gamepad sampling is replaced.
-#[derive(Resource, Debug, Clone, Copy, Default)]
+#[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
+#[reflect(Resource)]
 pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
 
 impl WeaponGuardInputState {

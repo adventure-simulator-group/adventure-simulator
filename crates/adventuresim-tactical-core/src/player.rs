@@ -11,6 +11,7 @@ pub type ControlledPlayer = Actions<Player>;
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
+#[reflect(Component)]
 #[require(
     CharacterId,
     Limbs,
@@ -30,6 +31,7 @@ pub struct Player {
 #[derive(
     Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq, Eq, Hash,
 )]
+#[reflect(Component)]
 #[component(immutable)]
 pub struct CharacterId(pub u64);
 
@@ -66,6 +68,7 @@ impl Default for BestiaryCategories {
 
 /// General player stats.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 pub struct Stats {
     pub calories_used: f32,
     pub focus: f32,
@@ -93,6 +96,7 @@ impl PlayerEssentials for Stats {
 /// Live, server-authoritative combat effects. This component is replicated for
 /// presentation but remains transient and is never written to SpacetimeDB.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 pub struct TacticalCombatState {
     pub starting_incapacitation: f32,
     pub starting_blood_fraction: f32,
@@ -134,6 +138,7 @@ impl TacticalCombatState {
 
 /// Limb health status.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 pub struct Limbs {
     pub body_weight_kg: f32,
     pub left_arm: f32,
@@ -241,6 +246,7 @@ impl Limbs {
 /// tactical-only and is not meant to be persisted strategically (see
 /// `adventuresim_core::morale`).
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq)]
+#[reflect(Component)]
 pub struct CombatState {
     /// Momentary stagger from unabsorbed attack force. Recovers continuously
     /// (see the tactical server's `recover_imbalance` system).
@@ -280,6 +286,7 @@ impl CombatState {
 
 /// Physical and mental skills of a [`Player`].
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 #[component(immutable)]
 pub struct Skills {
     pub polearm_hours: f32,
@@ -385,6 +392,7 @@ impl PlayerSkills for Skills {
 
 /// Genetic attributes of a [`Player`].
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 #[component(immutable)]
 pub struct Attributes {
     pub endurance: f32,

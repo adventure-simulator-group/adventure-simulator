@@ -613,6 +613,42 @@ def spacetime_auth_token() -> str:
     return tokens[0]
 
 
+def dev_bootstrap_token(root: Path = ROOT, state_root: Path | None = None) -> str:
+    """Return a stable per-worktree ADVENTURESIM_DEV_BOOTSTRAP_TOKEN, generating
+    and persisting one on first use.
+
+    This token is baked into the SpacetimeDB module at compile time via
+    `option_env!`, gating the dev-only seed reducers. Generating a fresh one
+    on every isolated run forces `spacetime publish` to fully recompile the
+    module each time (cargo correctly treats the changed env var as a cache
+    miss) - a real ~90s tax even when nothing in the module source changed.
+    Reusing one token per worktree keeps the compiled bytes stable across
+    restarts so the build cache actually helps, while keeping the token
+    off git and local to this machine.
+    """
+    fingerprint = worktree_fingerprint(root)
+    state_root = state_root or runtime_root()
+    token_dir = ensure_secure_directory(state_root / fingerprint, state_root)
+    token_path = token_dir / "dev-bootstrap-token"
+    if not token_path.is_symlink() and token_path.is_file():
+        existing = token_path.read_text(encoding="utf-8").strip()
+        if len(existing) == 64 and all(c in "0123456789abcdef" for c in existing):
+            return existing
+    token = secrets.token_hex(32)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    temporary = token_path.with_name(f".{token_path.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    fd = os.open(temporary, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(token)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, token_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return token
+
+
 def binding_differences(expected: Path, actual: Path) -> list[str]:
     expected_files = {p.name for p in expected.glob("*.rs")}
     # lib.rs is the crate's handwritten facade; SpacetimeDB owns mod.rs and
@@ -1207,7 +1243,7 @@ def run_profile(
                 lock=lifecycle,
                 listener=listener,
             )
-            bootstrap_token = secrets.token_hex(32)
+            bootstrap_token = dev_bootstrap_token()
             previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
             os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
             try:
@@ -1309,6 +1345,102 @@ def run_profile(
                     stop_recorded(run_dir / "spawner.identity.json", spawner_config)
             finally:
                 stop_spacetime(stdb_metadata, stdb_config)
+
+
+def live_spacetime_for_profile(name: str, base_port: int) -> dict[str, str] | None:
+    """Return {server, database} for an already-running, ownership-verified
+    isolated SpacetimeDB instance for this profile, or None if none is live.
+
+    Mirrors the config-match + identity_matches check `stop_spacetime` uses,
+    so this only ever "finds" an instance this same tooling started for this
+    exact profile - never an unrelated process that happens to hold the port.
+    """
+    values = profile_values(name, base_port)
+    run_dir = Path(str(values["profile_dir"])) / "run"
+    stdb_metadata = run_dir / "spacetime.identity.json"
+    if not stdb_metadata.exists():
+        return None
+    try:
+        metadata = json.loads(stdb_metadata.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    server = f"http://127.0.0.1:{values['spacetime_port']}"
+    database = str(values["database"])
+    expected_config = {
+        "role": "spacetimedb", "profile": name,
+        "worktree_fingerprint": values["worktree_fingerprint"], "server": server,
+        "database": database, "data_dir": str(values["data_dir"]),
+    }
+    if metadata.get("config") != expected_config or not identity_matches(metadata.get("process", {})):
+        return None
+    return {"server": server, "database": database}
+
+
+def reseed_tactical_mission(
+    profile: str,
+    base_port: int,
+    mission_id_prefix: str = "mission:test-mission",
+    scene_key: str = "hills",
+    character_id: int = 0,
+    enemy_count: int = 3,
+    if_live: bool = False,
+) -> int:
+    """Seed a fresh standalone tactical mission against an already-running
+    isolated SpacetimeDB instance, without rebuilding or republishing the
+    module.
+
+    `bootstrap_development_world` is idempotent (every fixture it seeds is
+    guarded by a find-before-insert check), so it's safe to call again on a
+    database that already has world data. `seed_standalone_tactical_mission`
+    is not safe to call twice with the same mission_id once a previous
+    mission has bound a tactical_server_authority row for it (it silently
+    no-ops rather than erroring, and a prior mission that never shut down
+    cleanly leaves that row orphaned forever) - so this always mints a fresh
+    randomized mission_id instead of reusing `mission_id_prefix` verbatim.
+
+    `if_live=True` (used when this is an automatic step ahead of `just
+    tactical`, not a standalone user-facing call) makes a missing live
+    instance a silent no-op (exit 0) instead of an error, so it doesn't
+    block plain `cargo run`-style usage against a non-isolated database.
+    """
+    live = live_spacetime_for_profile(profile, base_port)
+    if live is None:
+        if if_live:
+            return 0
+        print(
+            f"No live, verified SpacetimeDB instance found for profile {profile!r}.\n"
+            "Run `just tactical-isolated` first (once), then `just tactical-reseed` "
+            "to get a fresh mission against it without rebuilding/republishing the module.",
+            file=sys.stderr,
+        )
+        return 1
+    server, database = live["server"], live["database"]
+    bootstrap_token = dev_bootstrap_token()
+    code = seed(server, database, bootstrap_token)
+    if code:
+        return code
+    mission_id = f"{mission_id_prefix}-{secrets.token_hex(4)}"
+    tactical_claim = secrets.token_hex(32)
+    result = run_checked([
+        "spacetime", "call", "--server", server, database,
+        "seed_standalone_tactical_mission", bootstrap_token,
+        str(character_id), mission_id, scene_key, str(enemy_count), tactical_claim,
+    ])
+    write_console(result.stdout)
+    if result.returncode:
+        print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
+        return result.returncode
+    values = profile_values(profile, base_port)
+    write_tactical_env_file(
+        url=server, database=database, port=int(values["tactical_port"]),
+        mission_id=mission_id, scene_key=scene_key,
+        character_id=character_id, enemy_count=enemy_count,
+        tactical_claim=tactical_claim,
+    )
+    print("")
+    print(f"Reseeded tactical mission {mission_id!r} against the already-running isolated database.")
+    print("Run `just tactical` and `just client` in other terminals (no arguments needed).")
+    return 0
 
 
 def tactical_executable(package: str) -> Path:
@@ -2023,7 +2155,7 @@ def tactical_play(
             capability = ResetCapability(
                 profile, base_port, server_url, database, lifecycle, listener
             )
-            bootstrap_token = secrets.token_hex(32)
+            bootstrap_token = dev_bootstrap_token()
             previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
             os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
             try:
@@ -2389,10 +2521,37 @@ def create_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
+    reseeder = sub.add_parser("reseed-tactical-mission")
+    reseeder.add_argument("--mission-id-prefix", default="mission:test-mission")
+    reseeder.add_argument("--scene-key", default="hills")
+    reseeder.add_argument("--character-id", type=int, default=0)
+    reseeder.add_argument("--enemy-count", type=int, default=3)
+    reseeder.add_argument(
+        "--if-live", action="store_true",
+        help="Exit 0 without printing an error if no live instance is found, "
+             "instead of failing - for use as an automatic pre-step.",
+    )
+    reseeder.add_argument("name")
+    reseeder.add_argument("base_port", type=int)
     return parser
 
 
 def main() -> int:
+    if os.name != "nt":
+        # `run_profile`'s tactical branch and `tactical_play` both clean up
+        # (including `.env.tactical`, see `remove_tactical_env_file`) in a
+        # `finally` reached by letting `KeyboardInterrupt` propagate out of
+        # a blocking wait - which SIGINT already does by default. SIGTERM
+        # doesn't, so a `just`-recipe teardown (or any supervisor that sends
+        # SIGTERM instead of Ctrl+C) would otherwise skip that cleanup and
+        # leave a stale `.env.tactical` behind.
+        import signal
+
+        def _sigterm_as_keyboard_interrupt(signum: int, frame: object) -> None:
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGTERM, _sigterm_as_keyboard_interrupt)
+
     args = create_parser().parse_args()
     try:
         if args.command == "profile":
@@ -2429,6 +2588,12 @@ def main() -> int:
             return tactical_status()
         if args.command == "tactical-client":
             return tactical_client_relaunch()
+        if args.command == "reseed-tactical-mission":
+            return reseed_tactical_mission(
+                args.name, args.base_port, mission_id_prefix=args.mission_id_prefix,
+                scene_key=args.scene_key, character_id=args.character_id,
+                enemy_count=args.enemy_count, if_live=args.if_live,
+            )
     except (ValueError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

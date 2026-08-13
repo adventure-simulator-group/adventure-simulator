@@ -13,6 +13,7 @@
 - [Networking](networking.md)
 - [Architecture reference](reference/architecture.md)
 - [Development workflow](reference/developing.md)
+- [Tactical automated testing](reference/tactical-testing.md)
 - [Strategic read cache](reference/strategic-read-cache.md)
 - [Strategic NPC simulation](reference/strategic-simulation.md)
 - [Strategic place and fixture identities](reference/strategic-places.md)

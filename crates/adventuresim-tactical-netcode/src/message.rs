@@ -19,7 +19,7 @@ pub struct JoinRequest {
     pub character_id: CharacterId,
 }
 
-#[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
@@ -33,6 +33,13 @@ pub struct PlayerInputRequest {
 pub struct DebugGameTimeScaleRequest {
     pub quarter_speed: bool,
 }
+
+/// Debug-build request to serialize the server's entire world (every entity's
+/// reflected components, plus reflected resources) to a `.scn.ron` file for
+/// offline inspection or replay as a test fixture. Production servers
+/// intentionally do not install a handler for it.
+#[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
+pub struct DebugDumpWorldRequest;
 
 impl DebugGameTimeScaleRequest {
     pub const fn relative_speed(self) -> f32 {

@@ -94,6 +94,7 @@ pub(super) fn on_melee_action_request(
     event: On<FromClient<MeleeActionRequest>>,
     mut cmd: Commands,
     time: Res<Time<()>>,
+    viewer: TacticalPlayerViewer,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
 ) {
@@ -109,19 +110,25 @@ pub(super) fn on_melee_action_request(
             let Ok(mut authority) = authorities.get_mut(attacker) else {
                 return;
             };
+            // The same authored per-weapon value the client paces its own
+            // swing by, minus a delivery-jitter tolerance - see
+            // `WINDUP_JITTER_TOLERANCE`. An unarmed/viewless attacker gets
+            // zero, which `resolve_melee_attack`'s own weapon checks reject
+            // later anyway.
+            let windup = viewer
+                .get(attacker)
+                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .unwrap_or_default()
+                .saturating_sub(WINDUP_JITTER_TOLERANCE);
             authority.observe(
                 None,
                 CombatInstant::from_elapsed(&time),
-                CLIENT_MELEE_WINDUP,
+                windup,
                 MELEE_WINDUP_NETWORK_ALLOWANCE,
             );
             if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
                 let start = animation_tick(&time);
-                skeleton.begin_attack(
-                    AttackSpec::default(),
-                    start,
-                    start + duration_ticks(CLIENT_MELEE_WINDUP),
-                );
+                skeleton.begin_attack(AttackSpec::default(), start, start + duration_ticks(windup));
             }
         }
         MeleeActionRequest::Complete {
@@ -149,6 +156,7 @@ pub(super) fn on_ranged_action_request(
     event: On<FromClient<RangedActionRequest>>,
     mut cmd: Commands,
     time: Res<Time<()>>,
+    viewer: TacticalPlayerViewer,
     mut skeletons: Query<&mut SkeletonState>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
@@ -160,18 +168,21 @@ pub(super) fn on_ranged_action_request(
     };
     match **event {
         RangedActionRequest::Start => {
+            // Same per-weapon windup + jitter-tolerance treatment as the
+            // melee path - see `on_melee_action_request`.
+            let windup = viewer
+                .get(attacker)
+                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .unwrap_or_default()
+                .saturating_sub(WINDUP_JITTER_TOLERANCE);
             if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
                 let start = animation_tick(&time);
-                skeleton.begin_attack(
-                    AttackSpec::default(),
-                    start,
-                    start + duration_ticks(CLIENT_RANGED_WINDUP),
-                );
+                skeleton.begin_attack(AttackSpec::default(), start, start + duration_ticks(windup));
             }
             cmd.trigger(RangedAttackStartedIntent {
                 attacker,
                 target: None,
-                windup: CLIENT_RANGED_WINDUP,
+                windup,
             });
         }
         RangedActionRequest::CompleteMiss => {

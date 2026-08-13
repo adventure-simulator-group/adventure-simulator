@@ -3,13 +3,19 @@ name = "adventuresim-tactical-server"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "adventuresim_tactical_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "adventuresim-tactical-server"
 path = "src/main.rs"
 
 [features]
 default = []
-debug = ["bevy/debug"]
+debug = ["bevy/debug", "bevy/bevy_remote", "bevy/scene", "dep:ron", "dep:serde"]
+# See src/lib.rs - only used by crates/adventuresim-tactical-brp-generator.
+remote-types = ["debug"]
 
 [dependencies]
 rand.workspace = true
@@ -26,3 +32,7 @@ spacetimedb-sdk.workspace = true
 
 # CLI
 clap = { workspace = true }
+
+# Debug-only world dump loading
+ron = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }

@@ -725,6 +725,10 @@ The server remains connected for the bounded three-second presentation window
 and exits automatically. Stop the isolated profile with Ctrl+C in its first
 terminal when finished.
 
+For CLI-driven, headless control instead of a manual three-terminal session -
+including the pytest end-to-end suite - see
+[Tactical automated testing](tactical-testing.md).
+
 ## Troubleshooting
 
 - **SpacetimeDB not running:** `just status`, then `just spacetime-start`

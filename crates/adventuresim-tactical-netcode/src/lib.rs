@@ -18,8 +18,9 @@ pub mod prelude {
     #[cfg(feature = "client")]
     pub use crate::client::{AdventureSimulatorClient, PlayerInputOverride};
     pub use crate::message::{
-        DebugGameTimeScaleRequest, DefendRequest, JoinRequest, MeleeActionRequest,
-        PlayerInputRequest, RangedActionRequest, TacticalOutcome, TacticalOutcomeResponse,
+        DebugDumpWorldRequest, DebugGameTimeScaleRequest, DefendRequest, JoinRequest,
+        MeleeActionRequest, PlayerInputRequest, RangedActionRequest, TacticalOutcome,
+        TacticalOutcomeResponse,
     };
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;

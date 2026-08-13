@@ -14,7 +14,8 @@ members = [
     "crates/adventuresim-tactical-netcode",
     "crates/adventuresim-tactical-client",
     "crates/adventuresim-tactical-server",
-    "crates/adventuresim-tactical-server-dispatcher", 
+    "crates/adventuresim-tactical-server-dispatcher",
+    "crates/adventuresim-tactical-brp-generator",
     "crates/strategic-web",
 ]
 exclude = [
@@ -88,6 +89,7 @@ rusqlite = { version = "0.37.0", features = ["bundled"] }
 shapefile = { version = "0.9.0", features = ["geo-types"] }
 zip = { version = "3.0.0", default-features = false, features = ["deflate"] }
 flate2 = "1.1"
+ron = "0.12"
 wasm-bindgen = "=0.2.108"
 spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"

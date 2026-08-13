@@ -45,7 +45,6 @@ const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     ),
 ];
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
-const PRE_HIT_DELAY: f32 = 0.3;
 const HIT_PRECISION: f32 = 1.0;
 /// Seconds a dead bot's detached visual takes to fade to transparent. Purely
 /// a client-side presentation detail: the server despawns the authoritative
@@ -79,10 +78,12 @@ impl Plugin for PlayerPlugin {
 /// Identifies which replicated character receives local controls and the
 /// gameplay camera. Kept separate from transport CLI arguments so local
 /// presentation fixtures use the exact same player-spawn observer.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
+#[reflect(Resource)]
 pub struct LocalCharacterId(pub u64);
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(Component)]
 pub struct ClientPlayer;
 
 #[derive(EntityEvent)]
@@ -433,11 +434,12 @@ fn on_attack_fired_hook(
     if attacking {
         return;
     }
-    let Ok((reach, ranged, melee)) = viewer.get(event.context).map(|character| {
+    let Ok((reach, ranged, melee, windup_secs)) = viewer.get(event.context).map(|character| {
         (
             character.weapon_reach(),
             character.weapon_is_ranged(),
             character.weapon_is_melee(),
+            character.weapon_windup_secs(),
         )
     }) else {
         warn!("Trying to attack, but can't get weapon reach. Not holding any weapons ?");
@@ -449,7 +451,7 @@ fn on_attack_fired_hook(
         return;
     }
     cmd.entity(event.context)
-        .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
+        .insert(AttackState::new(windup_secs, reach, ranged));
     let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
     skeleton.begin_attack(AttackSpec::default(), start, start + 19);
     if ranged {

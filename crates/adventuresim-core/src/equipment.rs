@@ -566,6 +566,18 @@ pub trait PlayerEquipment {
     fn weapon_holding_side(&self) -> Option<BodySide>;
     fn weapon_is_precise(&self) -> bool;
     fn weapon_balance(&self) -> f32;
+    /// Real-time seconds between committing to a swing and the hit actually
+    /// landing - the authoritative source both the tactical client (to pace
+    /// its own local windup before raycasting) and the tactical server (to
+    /// validate that pacing, see `CLIENT_MELEE_WINDUP`/`CLIENT_RANGED_WINDUP`
+    /// in `adventuresim-tactical-server::combat`) read, so the two can never
+    /// independently drift out of sync the way two separately-hardcoded
+    /// constants can. Defaulted for implementations - autoresolve/strategic
+    /// combat has no real-time pacing concept at all - that don't drive
+    /// real-time tactical combat.
+    fn weapon_windup_secs(&self) -> f32 {
+        0.3
+    }
     /// Kinetic energy delivered by a projectile. Forty joules is a useful
     /// short-bow baseline; implementations with richer item data can override
     /// it per weapon.

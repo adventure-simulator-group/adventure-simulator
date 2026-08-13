@@ -22,12 +22,14 @@ use defense::{
     CountedEnemyDefeat, on_attack_started, on_tactical_combatant_defeated,
     on_targeted_attack_started, on_targeted_ranged_attack_started, tick_bot_reactions,
 };
+pub use defense::DefenseChances;
 pub use offense::OffensiveCombatAi;
 use offense::{compare_target, drive_offensive_combat_ai, ranged_weapon_needs_ammo_lookup};
 
 /// Marks a server-controlled bot filling in for a temporary (non-connected)
 /// mission character.
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct MissionEnemy;
 
 /// Real-time grace period between a bot dying and its ECS despawn. See
@@ -169,6 +171,7 @@ mod tests {
             blunt: false,
             slash: true,
             pierce: false,
+            windup_secs: 0.3,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         actor
@@ -205,6 +208,7 @@ mod tests {
             blunt: false,
             slash: false,
             pierce: true,
+            windup_secs: 0.3,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         let ammo = world

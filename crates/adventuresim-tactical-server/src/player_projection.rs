@@ -12,7 +12,7 @@ use bevy::time::Stopwatch;
 
 use crate::{
     Args,
-    bot::{MissionEnemy, OffensiveCombatAi},
+    bot::{DefenseChances, MissionEnemy, OffensiveCombatAi},
     combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
     mission::MissionState,
     stdb::{SpacetimeDb, SpacetimeDbReady},
@@ -108,7 +108,7 @@ fn spawn_connected_player(
     let entity = if player.mission_side == TacticalMissionSide::Enemy {
         let mut enemy = cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy));
         if enemy_combat_scale_bps > 0 {
-            enemy.insert(OffensiveCombatAi::default());
+            enemy.insert((OffensiveCombatAi::default(), DefenseChances::default()));
         }
         enemy.id()
     } else {
@@ -270,12 +270,6 @@ fn spawn_connected_player(
         .unwrap_or_default()
         + player_spawn_offset(&player_collider);
 
-    let tag = if player.character.temporary {
-        "Bot"
-    } else {
-        "Player"
-    };
-    let name = format!("{tag}#{} {}", player.character.id, player.character.name);
     let (starting_incapacitation, starting_blood_fraction) = derive_combat_starting_condition(
         player.strategic_incapacitation,
         player.strategic_pain,
@@ -287,14 +281,16 @@ fn spawn_connected_player(
     cmd.entity(entity).insert(MissionOpeningAwareness {
         party_has_surprise: player.party_has_surprise,
     });
+    // Only "core" character data goes here - the same data a world dump
+    // carries. Everything else that a character always needs regardless of
+    // where its core data came from (physics/controller bundle, replication
+    // marker, mid-action authority state) is added by `on_player_added`,
+    // triggered the moment `Player` lands on this entity below.
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
-        Name::new(name),
-        Replicated,
         Player {
             name: player.character.name.clone(),
         },
         CharacterId(player.character.id),
-        BestiaryCategories::default(),
         skills,
         limbs,
         attributes,
@@ -304,8 +300,6 @@ fn spawn_connected_player(
             starting_blood_fraction,
             ..default()
         },
-        MeleeAttackAuthority::default(),
-        RangedAttackAuthority::default(),
         if player.mission_side == TacticalMissionSide::Enemy {
             TacticalCombatSide::Enemy
         } else {
@@ -313,13 +307,6 @@ fn spawn_connected_player(
         },
         Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y)
             .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
-        (
-            player_collider.clone(),
-            CollisionMargin(0.01),
-            tactical_character_controller(),
-            CharacterLook::default(),
-            AuthoritativeMovementIntent::default(),
-        ),
     ));
 
     for item in &player.items {
@@ -388,6 +375,13 @@ fn spawn_connected_player(
                     blunt: item.item.blunt,
                     slash: item.item.slash,
                     pierce: item.item.pierce,
+                    // The strategic item schema (adventuresim-stdb-module)
+                    // doesn't author a per-weapon windup yet, unlike
+                    // accuracy/reach/balance/etc above - falls back to the
+                    // same default `PlayerEquipment::weapon_windup_secs`
+                    // uses. Extending the schema to author this per-weapon
+                    // is future work, not done here.
+                    windup_secs: 0.3,
                 });
             }
             ItemKind::Armor | ItemKind::Clothing => {}
@@ -466,6 +460,42 @@ pub(crate) fn on_join_request(
     });
     info!(
         "Character {} connected and entered mission, awaiting loading",
+        join.character_id.0
+    );
+    Ok(())
+}
+
+/// Standalone-mode counterpart to [`on_join_request`]: no SpacetimeDB
+/// authorization round-trip. [`bind_dumped_character_on_join`] is what turns
+/// the resulting [`LoadingPlayer`] into a real character, by matching it
+/// against an already-loaded world dump.
+#[cfg(feature = "debug")]
+pub(crate) fn on_join_request_standalone(
+    join: On<FromClient<JoinRequest>>,
+    mut commands: Commands,
+    mut state: ResMut<MissionState>,
+    loading_players: Query<(), With<LoadingPlayer>>,
+    players: Query<(), With<Player>>,
+) -> Result {
+    let Some(client) = join.client_id.entity() else {
+        return Ok(());
+    };
+    if loading_players.contains(client) || players.contains(client) {
+        return Ok(());
+    }
+    if !state.allows_party_join(join.character_id) {
+        warn!(
+            character_id = join.character_id.0,
+            "Rejected unseen Party join after enrollment sealed"
+        );
+        return Ok(());
+    }
+    state.begin_enrollment();
+    commands.entity(client).insert(LoadingPlayer {
+        requested_character: join.character_id,
+    });
+    info!(
+        "Character {} connected, awaiting binding to a dumped character",
         join.character_id.0
     );
     Ok(())
@@ -643,12 +673,320 @@ pub(crate) fn on_client_disconnected(
     Ok(())
 }
 
+/// Standalone-mode counterpart to [`on_client_disconnected`]: no SpacetimeDB
+/// `leave_mission` call.
+#[cfg(feature = "debug")]
+pub(crate) fn on_client_disconnected_standalone(
+    disconnected: On<Disconnected>,
+    query: Query<(Option<&CharacterId>, Option<&LoadingPlayer>)>,
+) -> Result {
+    let entity = disconnected.event_target();
+    let Ok((player_id, loading)) = query.get(entity) else {
+        return Ok(());
+    };
+    let Some(character_id) = player_id
+        .map(|id| id.0)
+        .or_else(|| loading.map(|id| id.requested_character.0))
+    else {
+        return Ok(());
+    };
+    match &disconnected.reason {
+        DisconnectReason::ByUser(reason) => {
+            info!("Character {character_id} disconnected by server request: {reason}")
+        }
+        DisconnectReason::ByPeer(reason) => {
+            info!("Character {character_id} disconnected by peer: {reason}")
+        }
+        DisconnectReason::ByError(error) => {
+            warn!("Character {character_id} disconnected due to error: {error:#}")
+        }
+    }
+    Ok(())
+}
+
 fn player_collider() -> Collider {
     Collider::cylinder(0.4, 1.9)
 }
 
 fn player_spawn_offset(collider: &Collider) -> f32 {
     -collider.aabb(default(), Rotation::default()).min.y
+}
+
+/// Fires whenever `Player` lands on any entity - via the normal
+/// SpacetimeDB-driven [`spawn_connected_player`], a loaded world dump
+/// (`load_world_dump`), or a dump-to-live-client merge
+/// (`bind_dumped_character_on_join`). Adds everything a character always
+/// needs that is never part of its actual data: mid-action authority/
+/// cooldown state (correctly starts neutral regardless of source), the
+/// physics/controller bundle (colliders aren't reflectable - see
+/// `avian3d::Collider`), and the replication marker. This is what lets both
+/// SpacetimeDB rows and world dumps carry only "core" reflectable character
+/// data (`Player`, `CharacterId`, `Skills`, `Limbs`, `Attributes`, `Stats`,
+/// `TacticalCombatState`, `TacticalCombatSide`, `Transform`) instead of a
+/// full component-for-component bundle.
+pub(crate) fn on_player_added(
+    event: On<Add, Player>,
+    mut commands: Commands,
+    query: Query<(&Player, &CharacterId)>,
+) -> Result {
+    let (player, character_id) = query.get(event.entity)?;
+    commands.entity(event.entity).insert((
+        Name::new(format!("Character#{} {}", character_id.0, player.name)),
+        Replicated,
+        BestiaryCategories::default(),
+        MeleeAttackAuthority::default(),
+        RangedAttackAuthority::default(),
+        player_collider(),
+        CollisionMargin(0.01),
+        tactical_character_controller(),
+        CharacterLook::default(),
+        AuthoritativeMovementIntent::default(),
+    ));
+    Ok(())
+}
+
+/// Marks every scene-written inventory item as [`Replicated`]. `Replicated`
+/// is deliberately outside the dump's core-data allowlist (a replication-
+/// transport concern, not character/level data - see
+/// `dump_request_excludes_reflected_components_outside_the_core_allowlist`),
+/// so a dump-loaded item never carries it - without this, such an item
+/// exists server-side but never replicates to any client. Called by the two
+/// scene-writing paths (`load_world_dump`, [`bind_dumped_character_on_join`])
+/// right where they already backfill the other things a dump deliberately
+/// omits (see `insert_fresh_combatant_extras`); the live SpacetimeDB spawn
+/// path inserts `Replicated` explicitly at spawn like everything else it
+/// spawns.
+#[cfg(feature = "debug")]
+pub(crate) fn mark_loaded_items_replicated<'a>(
+    world: &mut World,
+    loaded: impl Iterator<Item = &'a Entity>,
+) {
+    for &entity in loaded {
+        let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
+            continue;
+        };
+        if entity_mut.contains::<ItemOf>() {
+            entity_mut.insert(Replicated);
+        }
+    }
+}
+
+/// Standalone-mode-only: turns a [`LoadingPlayer`] into a real character by
+/// finding an existing entity with a matching [`CharacterId`] (the world
+/// dump's placeholder for that character) and transplanting its reflected
+/// components directly onto the joining client's connection entity, in one
+/// atomic operation - no other system observes a half-merged entity.
+///
+/// Reuses the same `DynamicSceneBuilder`/`EntityHashMap` trick as
+/// `load_world_dump`, just pre-seeding the map with `template -> client`
+/// instead of letting it allocate a fresh entity.
+#[cfg(feature = "debug")]
+pub(crate) fn bind_dumped_character_on_join(world: &mut World) {
+    let loading: Vec<(Entity, CharacterId)> = world
+        .query::<(Entity, &LoadingPlayer)>()
+        .iter(world)
+        .map(|(entity, loading)| (entity, loading.requested_character))
+        .collect();
+    if loading.is_empty() {
+        return;
+    }
+    let mut templates: Vec<(Entity, CharacterId)> = world
+        .query_filtered::<(Entity, &CharacterId), Without<LoadingPlayer>>()
+        .iter(world)
+        .map(|(entity, id)| (entity, *id))
+        .collect();
+
+    for (client_entity, character_id) in loading {
+        let Some(index) = templates.iter().position(|(_, id)| *id == character_id) else {
+            warn!(
+                character_id = character_id.0,
+                "No dumped character found for joining client; join stays pending"
+            );
+            continue;
+        };
+        let (template_entity, _) = templates.swap_remove(index);
+
+        // Inventory items are separate entities linked via `ItemOf`, not
+        // part of the character entity itself - they must be extracted
+        // alongside it or they're silently left behind.
+        let item_entities: Vec<Entity> = world
+            .query::<(Entity, &ItemOf)>()
+            .iter(world)
+            .filter_map(|(entity, item_of)| (item_of.0 == template_entity).then_some(entity))
+            .collect();
+
+        let scene = bevy::scene::DynamicSceneBuilder::from_world(world)
+            .extract_entities(core::iter::once(template_entity).chain(item_entities))
+            .build();
+        let mut entity_map = bevy::ecs::entity::EntityHashMap::default();
+        entity_map.insert(template_entity, client_entity);
+        match scene.write_to_world(world, &mut entity_map) {
+            Ok(()) => {
+                world.despawn(template_entity);
+                world.entity_mut(client_entity).remove::<LoadingPlayer>();
+                // `write_to_world` inserted `Player` directly (not via
+                // `Commands`), which still triggers `on_player_added`
+                // synchronously, but that observer's own `Commands` calls
+                // need an explicit flush to actually land before anything
+                // else in this same exclusive system reads the entity.
+                world.flush();
+                mark_loaded_items_replicated(world, entity_map.values());
+                info!(
+                    character_id = character_id.0,
+                    "Bound joining client to dumped character"
+                );
+            }
+            Err(error) => error!(
+                ?error,
+                character_id = character_id.0,
+                "Failed to bind dumped character to joining client"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "debug")]
+#[cfg(test)]
+mod standalone_join_tests {
+    use super::*;
+
+    #[test]
+    fn bind_dumped_character_on_join_transplants_reflected_state_and_leaves_bots_alone() {
+        let mut app = App::new();
+        app.add_observer(on_player_added);
+        let world = app.world_mut();
+
+        // The dump's placeholder for the connecting player: distinct
+        // Transform/TacticalCombatState from any fresh-join default.
+        let template = world
+            .spawn((
+                Player {
+                    name: "Dumped Party Member".to_string(),
+                },
+                CharacterId(7),
+                TacticalCombatSide::Party,
+                TacticalCombatState {
+                    imbalance: 0.42,
+                    ..default()
+                },
+                Transform::from_xyz(12.0, 0.0, -5.0),
+            ))
+            .id();
+
+        // A bot that should be left completely untouched.
+        let bot = world
+            .spawn((
+                Player {
+                    name: "Bandit".to_string(),
+                },
+                CharacterId(99),
+                MissionEnemy,
+                TacticalCombatSide::Enemy,
+                OffensiveCombatAi::default(),
+            ))
+            .id();
+
+        // An inventory item is a separate entity linked via `ItemOf`, not a
+        // component on the character itself - it must travel with the
+        // merge, with its `ItemOf` reference updated to the new owner. (The
+        // original entity id is not what to check afterward: `write_to_world`
+        // spawns a *new* entity for anything not pre-seeded in the entity
+        // map, same as it does for every other dump-loaded entity.)
+        // `ItemOf` first, then `EquipSlot`, matching every live equip path,
+        // so the equip hook derives the template's `holding_weapon`.
+        let sword = world
+            .spawn((
+                ItemOf(template),
+                ItemQuantity::default(),
+                ItemProperties {
+                    id: "sword".to_string(),
+                    weight: 1.2,
+                },
+                WeaponItem {
+                    skill_weights: [0.0; 9],
+                    accuracy: 1.0,
+                    penetration: 1.0,
+                    reach: 0.8,
+                    balance: 0.0,
+                    precise: false,
+                    melee: true,
+                    ranged: false,
+                    blunt: false,
+                    slash: true,
+                    pierce: false,
+                    windup_secs: 0.3,
+                },
+            ))
+            .id();
+        world.entity_mut(sword).insert(EquipSlot::HoldingRight);
+
+        // The joining client's connection entity.
+        let client_entity = world
+            .spawn(LoadingPlayer {
+                requested_character: CharacterId(7),
+            })
+            .id();
+
+        bind_dumped_character_on_join(world);
+
+        assert!(
+            world.get_entity(template).is_err(),
+            "the dump's placeholder should be despawned once merged"
+        );
+        assert!(!world.entity(client_entity).contains::<LoadingPlayer>());
+
+        let mut items = world.query::<(Entity, &ItemOf, &ItemProperties)>();
+        let (merged_sword, item_of, _) = items
+            .iter(world)
+            .find(|(_, _, properties)| properties.id == "sword")
+            .expect("the merged character's inventory item should still exist");
+        assert_eq!(
+            item_of.0, client_entity,
+            "the item's owner reference should be remapped to the joined client, not the despawned template"
+        );
+        assert!(
+            world.entity(merged_sword).contains::<Replicated>(),
+            "the merged item must be marked Replicated (dumps deliberately never carry the marker)"
+        );
+
+        let merged = world.entity(client_entity);
+        // The scene write carries the template's `InventoryItems` verbatim
+        // (relationship hooks are silenced during scene application, so
+        // nothing would rebuild it) - its refs must be remapped to the
+        // merged item entity.
+        let inventory = merged
+            .get::<InventoryItems>()
+            .expect("the merged character's InventoryItems should travel with the merge");
+        assert!(
+            inventory.iter().any(|item| item == merged_sword),
+            "the merged InventoryItems should reference the remapped item entity"
+        );
+        assert_eq!(
+            inventory.holding_weapon(),
+            Some(merged_sword),
+            "holding_weapon should be remapped to the merged item entity"
+        );
+        assert_eq!(merged.get::<Player>().unwrap().name, "Dumped Party Member");
+        assert_eq!(merged.get::<CharacterId>().unwrap().0, 7);
+        assert_eq!(
+            merged.get::<TacticalCombatSide>().unwrap(),
+            &TacticalCombatSide::Party
+        );
+        assert_eq!(merged.get::<TacticalCombatState>().unwrap().imbalance, 0.42);
+        assert_eq!(
+            merged.get::<Transform>().unwrap().translation,
+            Vec3::new(12.0, 0.0, -5.0)
+        );
+        assert!(
+            merged.contains::<MeleeAttackAuthority>(),
+            "merge should insert fresh combatant extras"
+        );
+
+        let bot_entity = world.entity(bot);
+        assert!(bot_entity.contains::<MissionEnemy>());
+        assert!(bot_entity.contains::<OffensiveCombatAi>());
+        assert_eq!(bot_entity.get::<CharacterId>().unwrap().0, 99);
+    }
 }
 
 #[cfg(test)]

@@ -72,8 +72,19 @@ pub(crate) struct TacticalConsequenceAccumulator {
 /// is still considered valid. A fresh press gives `input_reflex = 1.0`;
 /// a press older than this window is treated as no response.
 const MAX_REFLEX_WINDOW: Duration = Duration::from_millis(500);
-const CLIENT_MELEE_WINDUP: CombatDuration =
-    CombatDuration::from_duration(Duration::from_millis(300));
+/// Subtracted from the weapon's authored windup
+/// (`PlayerEquipment::weapon_windup_secs`, the same value the client paces
+/// its swing by) to form the server's minimum-windup threshold. The check
+/// must not compare against the exact authored value: `Start` and `Complete`
+/// are two independent messages that each pick up their own small,
+/// uncorrelated delivery jitter (OS/socket scheduling, not just raw network
+/// latency), so an attack the client genuinely timed correctly can measure
+/// as a few milliseconds short server-side - confirmed live, repeatedly, on
+/// a same-machine loopback connection with effectively zero network latency,
+/// where jitter is the *only* source of the gap. The tolerance absorbs
+/// ordinary jitter without meaningfully loosening the windup check.
+const WINDUP_JITTER_TOLERANCE: CombatDuration =
+    CombatDuration::from_duration(Duration::from_millis(50));
 const MELEE_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(300));
 /// Completion must arrive within this bounded ordered-network allowance after
 /// the windup becomes ready; old starts cannot authorize replayed completions.
@@ -82,8 +93,6 @@ const MELEE_WINDUP_NETWORK_ALLOWANCE: CombatDuration =
 /// Allows bounded movement between the authoritative physics snapshot and an
 /// ordered attack request arriving at the server.
 const MELEE_RANGE_LATENCY_TOLERANCE: f32 = 0.25;
-const CLIENT_RANGED_WINDUP: CombatDuration =
-    CombatDuration::from_duration(Duration::from_millis(300));
 const RANGED_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(600));
 const RANGED_NETWORK_ALLOWANCE: CombatDuration =
     CombatDuration::from_duration(Duration::from_secs(1));
@@ -714,9 +723,12 @@ mod tests {
             client_id: ClientId::Client(attacker),
             message: MeleeActionRequest::Start,
         });
+        // The bare test attacker has no equipped weapon, so its observed
+        // windup is zero and any positive advance clears it; 300ms mirrors
+        // the default `PlayerEquipment::weapon_windup_secs` pacing.
         app.world_mut()
             .resource_mut::<Time<()>>()
-            .advance_by(Duration::from_secs_f32(CLIENT_MELEE_WINDUP.as_secs_f32()));
+            .advance_by(Duration::from_millis(300));
         app.insert_resource(BatchedCompletions { attacker, target })
             .add_systems(Update, emit_batched_completions);
         app.update();

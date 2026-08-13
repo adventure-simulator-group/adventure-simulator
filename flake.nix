@@ -44,6 +44,13 @@
           pkg-config
         ];
 
+        pythonWithTestLibs = pkgs.python3.withPackages (
+          ps: with ps; [
+            pytest
+            requests
+          ]
+        );
+
         requiredLibsLinux = with pkgs; [
           libudev-zero
           alsa-lib
@@ -71,7 +78,7 @@
             clippy
             rust-analyzer-unwrapped
             just
-            python3
+            pythonWithTestLibs
             wasm-bindgen-cli_0_2_108
             binaryen
             tracy
