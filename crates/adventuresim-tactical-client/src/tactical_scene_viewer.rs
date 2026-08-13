@@ -22,7 +22,20 @@ use bevy::{
 };
 use serde::Serialize;
 
+mod capture_state;
+mod manifest;
 mod view_specs;
+use capture_state::{
+    CapturePhase, CaptureReadback, CaptureState, foliage_detail_pixel_bps, foreground_pixel_bps,
+    lighting_samples_stable, luminance_delta, mean_luminance,
+};
+use manifest::{
+    CaptureManifest, CaptureRecord, CelestialProvenance, FoliageSummary,
+    ObservedPresentationFeatures, ObstacleSummary, PendingCaptureManifest,
+    PresentationFeatureState, PresentationFeatures, RecursiveTreeLodSummary, RepairSummary,
+    TerrainSummary, TreeBakeCardSummary, TreeBakeSummary, ValidationSummary, VistaSummary,
+    validation_passes,
+};
 #[cfg(test)]
 use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
 use view_specs::{
@@ -63,60 +76,6 @@ struct SceneSetupData {
     profile: String,
     requested_views: Vec<String>,
     views: Vec<CaptureViewSpec>,
-}
-
-#[derive(Resource)]
-struct CaptureState {
-    fixture: String,
-    input_path: PathBuf,
-    output: PathBuf,
-    digest: String,
-    seed: u64,
-    absolute_minute: u64,
-    latitude_microdegrees: i32,
-    longitude_microdegrees: i32,
-    canopy_bps: u16,
-    generation_version: u16,
-    scene_source: SceneSource,
-    weather: WeatherSnapshot,
-    repairs: RepairSummary,
-    terrain: TerrainSummary,
-    expected_trees: usize,
-    expected_rocks: usize,
-    expects_grass: bool,
-    vista_lods_supplied: usize,
-    vista_diameter_metres: f32,
-    vista_minimum_metres: f32,
-    vista_peak_metres: f32,
-    vista_relief_metres: f32,
-    peak_target: Vec3,
-    valley_target: Vec3,
-    obstacle_focus: Vec3,
-    tree_focus: Option<Vec3>,
-    rock_focus: Option<Vec3>,
-    debris_focus: Option<Vec3>,
-    debris_leaf_distance_metres: Option<f32>,
-    debris_twig_distance_metres: Option<f32>,
-    tree_leaf_focus: Option<Vec3>,
-    tree_leaf_camera: Option<Vec3>,
-    tree_focus_entity: Option<Entity>,
-    tree_review_entities: Vec<Entity>,
-    tree_review_leaf_entities: Vec<(Entity, TreeLeafRepresentation)>,
-    ground_eye_position: Vec3,
-    ground_eye_target: Vec3,
-    settle_frames: u32,
-    tree_review_azimuth_degrees: f32,
-    profile: String,
-    requested_views: Vec<String>,
-    views: Vec<CaptureViewSpec>,
-    view: usize,
-    view_started: bool,
-    prime_readbacks: u8,
-    lighting_luminance_samples: Vec<f32>,
-    settled: u32,
-    in_flight: bool,
-    captures: Vec<CaptureRecord>,
-    recursive_lods_observed: BTreeSet<(u8, u8)>,
 }
 
 #[derive(Component)]
@@ -262,231 +221,6 @@ struct TreeLightingBenchmarkReport {
     sample_frames_per_mode: u32,
     note: &'static str,
     results: Vec<TreeLightingBenchmarkResult>,
-}
-
-#[derive(Clone, Serialize)]
-struct CaptureRecord {
-    view: String,
-    label: String,
-    screenshot: String,
-    camera_translation: [f32; 3],
-    camera_target: [f32; 3],
-    camera_up: [f32; 3],
-    vertical_fov_degrees: f32,
-    foreground_pixel_bps: u16,
-    detail_pixel_bps: u16,
-    forced_tree_lod: Option<u8>,
-    focused_tree_lod_queued: Option<bool>,
-    diagnostic_leaf_suppression: bool,
-    diagnostic_grass_suppression: bool,
-    debris_leaf_distance_metres: Option<f32>,
-    debris_twig_distance_metres: Option<f32>,
-    lighting_luminance_samples: Vec<f32>,
-    lighting_luminance_delta: f32,
-    lighting_ready: bool,
-}
-
-#[derive(Clone, Copy, Serialize)]
-struct RepairSummary {
-    upsampled_height_samples: u32,
-    microrelief_adjusted_samples: u32,
-    adjusted_height_samples: u32,
-    repaired_water_samples: u32,
-    removed_corridor_obstacles: u32,
-}
-
-#[derive(Clone, Copy, Serialize)]
-struct TerrainSummary {
-    width_metres: f32,
-    depth_metres: f32,
-    source_spacing_metres: f32,
-    spacing_metres: f32,
-    source_samples: usize,
-    generated_samples: usize,
-    minimum_height_metres: f32,
-    maximum_height_metres: f32,
-}
-
-#[derive(Serialize)]
-struct ObstacleSummary {
-    generated_trees: usize,
-    generated_rocks: usize,
-    presented_trees: usize,
-    presented_rocks: usize,
-    collider_trees: usize,
-    collider_rocks: usize,
-    procedural_rock_meshes: usize,
-    rock_meshes_inside_colliders: bool,
-    tree_lods_presented: Vec<u8>,
-}
-
-#[derive(Serialize)]
-struct FoliageSummary {
-    grass_clumps: usize,
-    understory_clumps: usize,
-    dry_leaf_patches: usize,
-    twig_patches: usize,
-    loose_stone_patches: usize,
-}
-
-#[derive(Serialize)]
-struct TreeBakeSummary {
-    seed: u64,
-    lod: u8,
-    bake_version: u32,
-    source_geometry_hash: String,
-    render_method: &'static str,
-    atlas_size: [u32; 2],
-    cards: Vec<TreeBakeCardSummary>,
-}
-
-#[derive(Serialize)]
-struct TreeBakeCardSummary {
-    source_group: u16,
-    source_leaf_count: u16,
-    source_branch_count: u16,
-    view_direction: [f32; 3],
-    projected_bounds: [f32; 4],
-    atlas_region: [u32; 4],
-    opaque_pixel_count: u32,
-    silhouette_centroid: [f32; 2],
-}
-
-#[derive(Serialize)]
-struct RecursiveTreeLodSummary {
-    primary_cluster_count: usize,
-    visible_group_lods: Vec<[u8; 2]>,
-    mixed_lods_observed: bool,
-}
-
-#[derive(Serialize)]
-struct VistaSummary {
-    supplied_lods: usize,
-    presented_lods: Vec<u8>,
-    presented_chunks: usize,
-    diameter_metres: f32,
-    minimum_height_metres: f32,
-    peak_height_metres: f32,
-    relief_metres: f32,
-    collider_count: usize,
-}
-
-#[derive(Serialize)]
-struct ValidationSummary {
-    all_views_captured: bool,
-    requested_views_captured_exactly_once: bool,
-    requested_detail_targets_available: bool,
-    production_lighting_parity: bool,
-    lighting_readiness: bool,
-    all_views_render_content: bool,
-    foliage_detail_present: bool,
-    all_obstacles_presented: bool,
-    all_obstacles_collidable: bool,
-    procedural_rocks_fit_colliders: bool,
-    trees_have_five_lods: bool,
-    tree_detail_captured_when_expected: bool,
-    recursive_tree_lod_observed: bool,
-    terrain_material_present: bool,
-    coarse_source_terrain_upsampled: bool,
-    microrelief_present: bool,
-    grass_present_when_expected: bool,
-    forest_floor_scatter_present_when_trees: bool,
-    understory_present_when_expected: bool,
-    loose_stone_scatter_present_when_expected: bool,
-    vista_has_three_lods: bool,
-    vista_reaches_fifty_kilometres: bool,
-    vista_has_no_colliders: bool,
-    precipitation_particles_present_when_expected: bool,
-    fixture_feature_expectation_met: bool,
-    passed: bool,
-    note: &'static str,
-}
-
-#[derive(Serialize)]
-struct CaptureManifest {
-    pipeline: &'static str,
-    fixture: String,
-    source_input: String,
-    scene_digest: String,
-    seed: u64,
-    absolute_minute: u64,
-    canopy_bps: u16,
-    generation_version: u16,
-    scene_source: SceneSource,
-    capture_profile: String,
-    capture_profile_version: u16,
-    camera_version: u16,
-    requested_views: Vec<String>,
-    settle_frames: u32,
-    resolution: [u32; 2],
-    review_azimuth_degrees: f32,
-    capture_clock_strategy: &'static str,
-    capture_clock_phase_seconds: f32,
-    renderer: &'static str,
-    executable_version: &'static str,
-    revision: String,
-    source_identity: String,
-    celestial: CelestialProvenance,
-    presentation_features: PresentationFeatures,
-    weather: WeatherSnapshot,
-    repairs: RepairSummary,
-    terrain: TerrainSummary,
-    obstacles: ObstacleSummary,
-    foliage: FoliageSummary,
-    tree_impostor_bakes: Vec<TreeBakeSummary>,
-    recursive_tree_lod: RecursiveTreeLodSummary,
-    vista: VistaSummary,
-    weather_particle_count: usize,
-    captures: Vec<CaptureRecord>,
-    validation: ValidationSummary,
-}
-
-#[derive(Serialize)]
-struct CelestialProvenance {
-    sun_altitude_degrees: f32,
-    moon_altitude_degrees: f32,
-    lunar_illumination: f32,
-}
-
-#[derive(Clone, Serialize)]
-struct PresentationFeatures {
-    requested: PresentationFeatureState,
-    observed: ObservedPresentationFeatures,
-    requested_matches_observed: bool,
-    weather_iteration_in_scope: bool,
-    water_iteration_in_scope: bool,
-    cloud_iteration_in_scope: bool,
-    cave_iteration_in_scope: bool,
-    characters_present: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-struct PresentationFeatureState {
-    shadows: bool,
-    atmosphere: bool,
-    celestial: bool,
-    environment_light: bool,
-    environment_map_size: u32,
-    bloom: bool,
-    ssao: bool,
-    max_vista_lods: usize,
-}
-
-#[derive(Clone, Serialize)]
-struct ObservedPresentationFeatures {
-    settings: PresentationFeatureState,
-    camera_environment_map: bool,
-    camera_environment_map_size: Option<[u32; 2]>,
-    camera_environment_map_allocated: bool,
-    camera_environment_map_intensity: Option<f32>,
-    camera_bloom: bool,
-    camera_ssao: bool,
-    camera_exposure_ev100: f32,
-    camera_tonemapping: String,
-    ambient_color: [f32; 4],
-    ambient_brightness: f32,
-    ambient_policy: &'static str,
-    expected_ambient_brightness: f32,
 }
 
 pub(crate) fn run(
@@ -1378,11 +1112,8 @@ fn setup_scene(
         requested_views,
         views,
         view: 0,
-        view_started: false,
-        prime_readbacks: 0,
+        phase: CapturePhase::Configure,
         lighting_luminance_samples: Vec::new(),
-        settled: 0,
-        in_flight: false,
         captures: Vec::new(),
         recursive_lods_observed: BTreeSet::new(),
     });
@@ -1759,11 +1490,11 @@ fn capture_views(
     let Some(state) = state.as_deref_mut() else {
         return;
     };
-    if state.in_flight || state.view >= state.views.len() {
+    if state.phase.readback_in_flight() || state.view >= state.views.len() {
         return;
     }
     let view = state.views[state.view];
-    if !state.view_started {
+    if state.phase == CapturePhase::Configure {
         let lighting_mode = match view.lighting_mode {
             TreeLightingModeId::Baseline => TREE_LIGHTING_MODES[0],
             TreeLightingModeId::AmbientOcclusion => TREE_LIGHTING_MODES[1],
@@ -1907,8 +1638,10 @@ fn capture_views(
                     .rotation;
             }
         }
-        state.view_started = true;
-        state.settled = 0;
+        state.phase = CapturePhase::Settling {
+            frames: 0,
+            prime_readbacks: 0,
+        };
         if !view.warmup {
             state.captures.push(CaptureRecord {
                 view: view.slug.to_owned(),
@@ -1947,8 +1680,14 @@ fn capture_views(
     } else {
         state.settle_frames
     };
-    if state.settled < settle_target {
-        state.settled += 1;
+    let Some((settled, prime_readbacks)) = state.phase.settling() else {
+        return;
+    };
+    if settled < settle_target {
+        state.phase = CapturePhase::Settling {
+            frames: settled + 1,
+            prime_readbacks,
+        };
         return;
     }
 
@@ -1970,29 +1709,57 @@ fn capture_views(
     // from before a camera transition. Prime one disposable readback per view,
     // then capture again without changing any scene or camera state.
     let required_prime_readbacks = 2;
-    if state.prime_readbacks < required_prime_readbacks {
-        state.in_flight = true;
+    if prime_readbacks < required_prime_readbacks {
+        state.phase = CapturePhase::Readback {
+            view: state.view,
+            prime_readbacks,
+            kind: CaptureReadback::Prime,
+        };
         commands.spawn(Screenshot::primary_window()).observe(
             |captured: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
-                state.prime_readbacks += 1;
+                let CapturePhase::Readback {
+                    view,
+                    prime_readbacks,
+                    kind: CaptureReadback::Prime,
+                } = state.phase
+                else {
+                    return;
+                };
+                if state.view != view {
+                    return;
+                }
                 state
                     .lighting_luminance_samples
                     .push(mean_luminance(captured.image.data.as_deref()));
-                state.settled = 0;
-                state.in_flight = false;
+                state.phase = CapturePhase::Settling {
+                    frames: 0,
+                    prime_readbacks: prime_readbacks + 1,
+                };
             },
         );
         return;
     }
     if view.warmup {
-        state.in_flight = true;
+        state.phase = CapturePhase::Readback {
+            view: state.view,
+            prime_readbacks,
+            kind: CaptureReadback::Warmup,
+        };
         commands.spawn(Screenshot::primary_window()).observe(
             |_: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
+                if !matches!(
+                    state.phase,
+                    CapturePhase::Readback {
+                        view,
+                        kind: CaptureReadback::Warmup,
+                        ..
+                    } if view == state.view
+                ) {
+                    return;
+                }
                 state.view += 1;
-                state.view_started = false;
-                state.prime_readbacks = 0;
                 state.lighting_luminance_samples.clear();
-                state.in_flight = false;
+                state.phase = CapturePhase::Configure;
             },
         );
         return;
@@ -2044,65 +1811,39 @@ fn capture_views(
             observed_presentation,
         )
     });
-    state.in_flight = true;
+    state.phase = CapturePhase::Readback {
+        view: state.view,
+        prime_readbacks,
+        kind: CaptureReadback::Screenshot,
+    };
     commands.spawn(Screenshot::primary_window()).observe(
         move |captured: On<ScreenshotCaptured>,
               mut state: ResMut<CaptureState>,
               mut exit: MessageWriter<AppExit>| {
             let foreground_pixel_bps = foreground_pixel_bps(captured.image.data.as_deref());
-            let detail_pixel_bps = foliage_detail_pixel_bps(captured.image.data.as_deref());
+            if !matches!(
+                state.phase,
+                CapturePhase::Readback {
+                    view,
+                    kind: CaptureReadback::Screenshot,
+                    ..
+                } if view == state.view
+            ) {
+                return;
+            }
+            let detail_pixel_bps =
+                foliage_detail_pixel_bps(captured.image.data.as_deref(), VIEW_WIDTH, VIEW_HEIGHT);
             save_to_disk(&path)(captured);
             if let Some(record) = state.captures.last_mut() {
                 record.foreground_pixel_bps = foreground_pixel_bps;
                 record.detail_pixel_bps = detail_pixel_bps;
             }
             state.view += 1;
-            state.view_started = false;
-            state.prime_readbacks = 0;
             state.lighting_luminance_samples.clear();
-            state.in_flight = false;
-            if let Some((mut manifest, _)) = final_data.take() {
-                manifest.captures.clone_from(&state.captures);
-                manifest.validation.all_views_render_content =
-                    manifest.captures.iter().all(|capture| {
-                        state
-                            .views
-                            .iter()
-                            .find(|view| view.slug == capture.view)
-                            .is_some_and(|view| {
-                                capture.foreground_pixel_bps >= view.minimum_foreground_bps
-                            })
-                    });
-                if manifest
-                    .requested_views
-                    .iter()
-                    .any(|view| view == "forest-floor-debris-detail")
-                {
-                    manifest.validation.requested_detail_targets_available &= manifest
-                        .captures
-                        .iter()
-                        .find(|capture| capture.view == "forest-floor-debris-detail")
-                        .is_some_and(|capture| capture.detail_pixel_bps >= 60);
-                }
-                // The flat fixture provides a stable image-space sentinel for
-                // the foliage material. Slopes, dark wetlands, and tree cover
-                // can legitimately hide the same fine overhead contrast.
-                manifest.validation.foliage_detail_present = manifest.capture_profile != "semantic"
-                    || manifest.fixture != "flat-dry-grassland"
-                    || manifest
-                        .captures
-                        .iter()
-                        .find(|capture| capture.view == "beauty-overhead")
-                        .is_some_and(|capture| capture.detail_pixel_bps >= 100);
-                if manifest.fixture == "narrow-peak-lod-boundary" {
-                    manifest.validation.fixture_feature_expectation_met &= manifest
-                        .captures
-                        .iter()
-                        .find(|capture| capture.view == "horizon")
-                        .is_some_and(|capture| capture.foreground_pixel_bps >= 200);
-                }
-                manifest.validation.passed = validation_passes(&manifest.validation);
-                let valid = manifest.validation.passed;
+            state.phase = CapturePhase::Configure;
+            if let Some(pending) = final_data.take() {
+                let (manifest, valid) =
+                    pending.finalize_after_screenshot(&state.captures, &state.views);
                 finish_capture(&state.output, &manifest, valid, &mut exit);
             }
         },
@@ -2271,7 +2012,7 @@ fn build_manifest(
     vistas: &Query<(&VistaTerrain, Has<Collider>)>,
     weather_particle_count: usize,
     presentation_features: PresentationFeatures,
-) -> (CaptureManifest, bool) {
+) -> PendingCaptureManifest {
     let presented_trees = tree_trunks.iter().count();
     let presented_rocks = rock_visuals.iter().count();
     let mut collider_trees = 0;
@@ -2512,80 +2253,48 @@ fn build_manifest(
         note: "Semantic gates are automatic; beauty, scale, composition, and visual artifacts require image inspection.",
     };
     validation.passed = validation_passes(&validation);
-    let passed = validation.passed;
-    (
-        CaptureManifest {
-            pipeline: "tactical_scene_native_capture_v6",
-            fixture: state.fixture.clone(),
-            source_input: state.input_path.display().to_string(),
-            scene_digest: state.digest.clone(),
-            seed: state.seed,
-            absolute_minute: state.absolute_minute,
-            canopy_bps: state.canopy_bps,
-            generation_version: state.generation_version,
-            scene_source: state.scene_source.clone(),
-            capture_profile: state.profile.clone(),
-            capture_profile_version: CAPTURE_PROFILE_VERSION,
-            camera_version: CAMERA_VERSION,
-            requested_views: state.requested_views.clone(),
-            settle_frames: state.settle_frames,
-            resolution: [VIEW_WIDTH, VIEW_HEIGHT],
-            review_azimuth_degrees: state.tree_review_azimuth_degrees,
-            capture_clock_strategy: "Bevy virtual clock advanced to a fixed phase after startup, then paused through settling and GPU readback",
-            capture_clock_phase_seconds: CAPTURE_CLOCK_PHASE_SECONDS,
-            renderer: "Bevy/wgpu production tactical presentation",
-            executable_version: env!("CARGO_PKG_VERSION"),
-            revision: capture_revision(),
-            source_identity: std::env::var("CAPTURE_SOURCE_IDENTITY")
-                .unwrap_or_else(|_| "standalone-unlabelled".into()),
-            celestial: capture_celestial(
-                state.absolute_minute,
-                state.latitude_microdegrees,
-                state.longitude_microdegrees,
-            ),
-            presentation_features,
-            weather: state.weather,
-            repairs: state.repairs,
-            terrain: state.terrain,
-            obstacles: obstacle_summary,
-            foliage: foliage_summary,
-            tree_impostor_bakes,
-            recursive_tree_lod,
-            vista: vista_summary,
-            weather_particle_count,
-            captures: state.captures.clone(),
-            validation,
-        },
-        passed,
-    )
-}
-
-fn validation_passes(validation: &ValidationSummary) -> bool {
-    validation.all_views_captured
-        && validation.requested_views_captured_exactly_once
-        && validation.requested_detail_targets_available
-        && validation.production_lighting_parity
-        && validation.lighting_readiness
-        && validation.all_views_render_content
-        && validation.foliage_detail_present
-        && validation.all_obstacles_presented
-        && validation.all_obstacles_collidable
-        && validation.procedural_rocks_fit_colliders
-        && validation.trees_have_five_lods
-        && validation.tree_detail_captured_when_expected
-        && validation.recursive_tree_lod_observed
-        && validation.terrain_material_present
-        && validation.coarse_source_terrain_upsampled
-        && validation.microrelief_present
-        && validation.grass_present_when_expected
-        && validation.forest_floor_scatter_present_when_trees
-        && validation.understory_present_when_expected
-        && validation.loose_stone_scatter_present_when_expected
-        && validation.vista_has_three_lods
-        && validation.vista_reaches_fifty_kilometres
-        && validation.vista_has_no_colliders
-        && validation.precipitation_particles_present_when_expected
-        && validation.fixture_feature_expectation_met
+    PendingCaptureManifest::new(CaptureManifest {
+        pipeline: "tactical_scene_native_capture_v6",
+        fixture: state.fixture.clone(),
+        source_input: state.input_path.display().to_string(),
+        scene_digest: state.digest.clone(),
+        seed: state.seed,
+        absolute_minute: state.absolute_minute,
+        canopy_bps: state.canopy_bps,
+        generation_version: state.generation_version,
+        scene_source: state.scene_source.clone(),
+        capture_profile: state.profile.clone(),
+        capture_profile_version: CAPTURE_PROFILE_VERSION,
+        camera_version: CAMERA_VERSION,
+        requested_views: state.requested_views.clone(),
+        settle_frames: state.settle_frames,
+        resolution: [VIEW_WIDTH, VIEW_HEIGHT],
+        review_azimuth_degrees: state.tree_review_azimuth_degrees,
+        capture_clock_strategy: "Bevy virtual clock advanced to a fixed phase after startup, then paused through settling and GPU readback",
+        capture_clock_phase_seconds: CAPTURE_CLOCK_PHASE_SECONDS,
+        renderer: "Bevy/wgpu production tactical presentation",
+        executable_version: env!("CARGO_PKG_VERSION"),
+        revision: capture_revision(),
+        source_identity: std::env::var("CAPTURE_SOURCE_IDENTITY")
+            .unwrap_or_else(|_| "standalone-unlabelled".into()),
+        celestial: capture_celestial(
+            state.absolute_minute,
+            state.latitude_microdegrees,
+            state.longitude_microdegrees,
+        ),
+        presentation_features,
+        weather: state.weather,
+        repairs: state.repairs,
+        terrain: state.terrain,
+        obstacles: obstacle_summary,
+        foliage: foliage_summary,
+        tree_impostor_bakes,
+        recursive_tree_lod,
+        vista: vista_summary,
+        weather_particle_count,
+        captures: state.captures.clone(),
+        validation,
+    })
 }
 
 fn capture_revision() -> String {
@@ -2620,100 +2329,6 @@ fn capture_celestial(
         moon_altitude_degrees: celestial.moon[1].asin().to_degrees(),
         lunar_illumination: celestial.lunar_illumination,
     }
-}
-
-fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {
-    let Some(data) = data else {
-        return 0;
-    };
-    let Some(background) = data.get(..4) else {
-        return 0;
-    };
-    let mut pixels = 0usize;
-    let mut foreground = 0usize;
-    for pixel in data.as_chunks::<4>().0 {
-        pixels += 1;
-        let difference = pixel[..3]
-            .iter()
-            .zip(&background[..3])
-            .map(|(left, right)| left.abs_diff(*right) as u16)
-            .sum::<u16>();
-        foreground += usize::from(difference >= 12);
-    }
-    foreground
-        .checked_mul(10_000)
-        .and_then(|value| value.checked_div(pixels))
-        .unwrap_or(0)
-        .min(10_000) as u16
-}
-
-fn mean_luminance(data: Option<&[u8]>) -> f32 {
-    let Some(data) = data else {
-        return f32::NAN;
-    };
-    let pixels = data.as_chunks::<4>().0;
-    if pixels.is_empty() {
-        return f32::NAN;
-    }
-    let total = pixels
-        .iter()
-        .map(|pixel| {
-            f64::from(pixel[0]) * 0.2126
-                + f64::from(pixel[1]) * 0.7152
-                + f64::from(pixel[2]) * 0.0722
-        })
-        .sum::<f64>();
-    (total / pixels.len() as f64) as f32
-}
-
-fn luminance_delta(samples: &[f32]) -> f32 {
-    samples
-        .windows(2)
-        .map(|pair| (pair[1] - pair[0]).abs())
-        .fold(0.0, f32::max)
-}
-
-fn lighting_samples_stable(samples: &[f32]) -> bool {
-    if samples.len() < 2 || samples.iter().any(|sample| !sample.is_finite()) {
-        return false;
-    }
-    let mean = samples.iter().sum::<f32>() / samples.len() as f32;
-    luminance_delta(samples) <= (mean * 0.02).max(1.5)
-}
-
-fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
-    let Some(data) = data else {
-        return 0;
-    };
-    let row_bytes = VIEW_WIDTH as usize * 4;
-    if data.len() < row_bytes * VIEW_HEIGHT as usize {
-        return 0;
-    }
-    let first_row = VIEW_HEIGHT as usize / 3;
-    let mut compared = 0usize;
-    let mut detailed = 0usize;
-    for y in first_row..VIEW_HEIGHT as usize {
-        let row = &data[y * row_bytes..(y + 1) * row_bytes];
-        for pair in row
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .zip(row[4..].as_chunks::<4>().0)
-        {
-            compared += 1;
-            let difference = pair.0[..3]
-                .iter()
-                .zip(&pair.1[..3])
-                .map(|(left, right)| left.abs_diff(*right) as u16)
-                .sum::<u16>();
-            detailed += usize::from(difference >= 4);
-        }
-    }
-    detailed
-        .checked_mul(10_000)
-        .and_then(|value| value.checked_div(compared))
-        .unwrap_or(0)
-        .min(10_000) as u16
 }
 
 fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
