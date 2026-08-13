@@ -367,16 +367,19 @@ bounded five-to-ten-root visual flare from the same tree seed. Unequal angular
 gaps, reach, radius, and burial break up radial repetition; two or three broader
 buttresses follow the main scaffold-load azimuths, and at most two roots add a
 short lateral fork. This presentation detail remains capped at 22 segments and
-does not expand the server's cylindrical trunk collider. Oak and hazel branch
+does not expand the server's cylindrical trunk collider. The lower trunk and
+proximal roots are converted into a bounded smooth-union capsule field and
+contoured as one watertight near-LOD flare; ordinary woody runs remain cheap
+generalized-cylinder sweeps. The same flare is retained across the pre-impostor
+wood LODs while successive upper branch orders collapse. Oak and hazel branch
 recipes also cap each child base at 80% of its local parent-axis radius. The
 existing bounded basal ring therefore cannot become wider than its trunk or
-parent limb. Near woody meshes share one parameterized oak-bark material
-generated at startup. Its albedo and roughness use two hard-bounded molded-
-material regions; fine furrows and plates remain in the generated OpenGL
-normal and ambient-occlusion channels. Cylindrical UVs duplicate the wrap seam and
-parallel-transport the tangent frame along each axis; physical feature scale
-therefore stays consistent across trunks, roots, and branches without a
-tree-specific lighting adjustment. Living oak and hazel cards are presets over
+parent limb. Near woody meshes use one solid molded-brown dielectric material
+with uniform roughness. Trunk/root relief comes from the unified geometry and
+scene lighting, so no UV-dependent albedo, normal, roughness, or AO channel can
+reveal the branch-influence handoff across the implicit flare. Ordinary sweep
+UVs still duplicate the wrap seam and parallel-transport their tangent frame
+for future branch-space channels. Living oak and hazel cards are presets over
 one structural leaf generator. Binary silhouettes and parameterized blade,
 petiole, midrib, lobe/tooth, and vein fields produce discrete front/back
 albedo, detailed normal and AO, and low-detail roughness while sharing a

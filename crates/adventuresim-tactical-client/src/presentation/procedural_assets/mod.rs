@@ -28,7 +28,6 @@ pub(crate) struct ProceduralEnvironmentAssets {
     pub(super) oak_leaf: LeafTextureSet,
     pub(super) dry_oak_leaf: LeafTextureSet,
     pub(super) hazel_leaf: LeafTextureSet,
-    pub(super) oak_bark: SurfaceTextureSet,
     pub(super) soil: SurfaceTextureSet,
     pub(super) rock: SurfaceTextureSet,
 }
@@ -113,7 +112,6 @@ pub(super) fn generate_procedural_environment_assets(
         oak_leaf: generate_leaf_textures(images, LeafRecipe::WHITE_OAK),
         dry_oak_leaf: generate_leaf_textures(images, LeafRecipe::DRY_WHITE_OAK),
         hazel_leaf: generate_leaf_textures(images, LeafRecipe::HAZEL),
-        oak_bark: generate_surface_textures(images, SurfaceRecipe::OakBark),
         soil: generate_surface_textures(images, SurfaceRecipe::Soil),
         rock: generate_surface_textures(images, SurfaceRecipe::Rock),
     }

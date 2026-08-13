@@ -67,18 +67,14 @@ pub(crate) fn oak_leaf_material(
     )
 }
 
-pub(crate) fn oak_bark_material(assets: &ProceduralEnvironmentAssets) -> StandardMaterial {
-    let arm = assets.oak_bark.arm.clone();
+pub(crate) fn oak_bark_material(_assets: &ProceduralEnvironmentAssets) -> StandardMaterial {
     StandardMaterial {
-        base_color: Color::WHITE,
-        base_color_texture: Some(assets.oak_bark.albedo.clone()),
-        normal_map_texture: Some(assets.oak_bark.normal_gl.clone()),
-        metallic_roughness_texture: Some(arm.clone()),
-        occlusion_texture: Some(arm),
-        perceptual_roughness: 1.0,
+        // The molded bark colour is uniform. Structural relief comes from the
+        // unified trunk/root mesh, so no UV-dependent channel can reveal the
+        // branch-influence handoff across the implicit flare.
+        base_color: Color::srgb_u8(70, 50, 30),
+        perceptual_roughness: 241.0 / 255.0,
         metallic: 0.0,
-        // Poly Haven distributes this channel in OpenGL/right-handed form.
-        flip_normal_map_y: false,
         ..default()
     }
 }
@@ -259,13 +255,13 @@ mod tests {
         );
         let bark = oak_bark_material(&assets);
 
-        assert_eq!(bark.base_color, Color::WHITE);
-        assert!(bark.base_color_texture.is_some());
-        assert!(bark.normal_map_texture.is_some());
-        assert_eq!(bark.metallic_roughness_texture, bark.occlusion_texture);
+        assert_eq!(bark.base_color, Color::srgb_u8(70, 50, 30));
+        assert!(bark.base_color_texture.is_none());
+        assert!(bark.normal_map_texture.is_none());
+        assert!(bark.metallic_roughness_texture.is_none());
+        assert!(bark.occlusion_texture.is_none());
         assert_eq!(bark.metallic, 0.0);
-        assert_eq!(bark.perceptual_roughness, 1.0);
-        assert!(!bark.flip_normal_map_y);
+        assert_eq!(bark.perceptual_roughness, 241.0 / 255.0);
     }
 
     #[test]
