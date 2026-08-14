@@ -151,7 +151,7 @@ impl Plugin for TacticalPresentationPlugin {
                 .chain(),
         )
         .init_resource::<GrassInteractionState>()
-        .init_resource::<HazelPresentationCache>()
+        .init_resource::<WoodyUnderstoryPresentationCache>()
         .init_resource::<GroundFoliagePresentationCache>()
         .init_resource::<TreePresentationCache>()
         .init_resource::<VistaTreePresentationCache>()

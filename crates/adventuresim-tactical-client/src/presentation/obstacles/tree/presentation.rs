@@ -1,14 +1,18 @@
+use super::geometry::BarkRecipe;
 use super::impostor::{
-    TreeImpostorProvenance, bake_tree_lod, tree_impostor_material, tree_leaf_visibility,
-    tree_lod_name, tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
+    OAK_TREE_BAKE_STYLE, TreeBakeStyle, TreeImpostorProvenance, bake_tree_lod,
+    bake_tree_lod_with_style, tree_impostor_material, tree_leaf_visibility, tree_lod_name,
+    tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
-    OAK_GNARLING_SHOWCASE, OakGnarlingParameters, TREE_PRIMARY_GROUP_COUNT,
-    TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
-    procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
+    COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, OAK_GNARLING_SHOWCASE, OakGnarlingParameters,
+    TREE_PRIMARY_GROUP_COUNT, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
+    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    beech_leaf_material, oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
+    procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
     procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
+    procedural_woody_branch_mesh, procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
 };
 use crate::presentation::{
     ActiveTacticalScene, ProceduralEnvironmentAssets, SceneEnvironment, obstacle_seed, splitmix64,
@@ -27,6 +31,7 @@ pub(in crate::presentation) struct PendingTreePresentation;
 pub(in crate::presentation) struct TreePresentationCache {
     variants: std::collections::HashMap<u64, CachedTreePresentation>,
     oak_bark_material: Option<Handle<StandardMaterial>>,
+    beech_bark_material: Option<Handle<StandardMaterial>>,
 }
 
 #[derive(Resource, Default)]
@@ -43,6 +48,7 @@ pub(in crate::presentation) struct CachedVistaTreePresentation {
 
 #[derive(Clone)]
 struct CachedTreePresentation {
+    species_name: &'static str,
     trunk_mesh: Handle<Mesh>,
     clusters: Vec<CachedTreeClusterPresentation>,
     aggregate_branch_meshes: [Handle<Mesh>; 2],
@@ -66,6 +72,85 @@ struct CachedTreeClusterPresentation {
     bud_mesh: Handle<Mesh>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum TreePresentationSpecies {
+    EnglishOak,
+    CommonBeech,
+}
+
+impl TreePresentationSpecies {
+    pub(in crate::presentation) fn name(self) -> &'static str {
+        match self {
+            Self::EnglishOak => "English oak",
+            Self::CommonBeech => "common beech",
+        }
+    }
+
+    fn cache_salt(self) -> u64 {
+        match self {
+            Self::EnglishOak => 0,
+            Self::CommonBeech => 0xbeec_5eed_0000_0001,
+        }
+    }
+
+    fn bake_style(self) -> TreeBakeStyle {
+        match self {
+            Self::EnglishOak => OAK_TREE_BAKE_STYLE,
+            Self::CommonBeech => TreeBakeStyle {
+                bark: COMMON_BEECH_BARK,
+                bark_srgb: [145.0, 145.0, 135.0],
+                leaf_srgb: [91.0, 119.0, 70.0],
+                crown_radius_metres: COMMON_BEECH_PARAMETERS.crown_radius_metres,
+            },
+        }
+    }
+}
+
+pub(in crate::presentation) fn tree_species_for_site(
+    position: Vec3,
+    environment: &SceneEnvironment,
+) -> TreePresentationSpecies {
+    let canopy = f32::from(environment.canopy_bps) / 10_000.0;
+    let moisture = f32::from(environment.weather.ground_moisture_bps) / 10_000.0;
+    let wetland = f32::from(environment.wetland_bps) / 10_000.0;
+    let cultivation = f32::from(environment.cultivation_bps) / 10_000.0;
+    // Beech is concentrated in mesic, closed-canopy communities. Using a
+    // 30-metre community key produces stands instead of tree-by-tree confetti
+    // and places it where the existing canopy mask already strongly suppresses
+    // grass. Species remains deterministic presentation data until the compact
+    // server tree recipe grows an explicit species field.
+    let probability =
+        (canopy * 0.62 + moisture * 0.26 - wetland * 0.38 - cultivation * 0.18 - 0.12)
+            .clamp(0.0, 0.68);
+    let community_x = (position.x / 30.0).floor() as i32;
+    let community_z = (position.z / 30.0).floor() as i32;
+    let community = ((community_x as u32 as u64) << 32) | community_z as u32 as u64;
+    let hash = splitmix64(oak_site_key(environment) ^ community ^ 0xbeec_7a1d);
+    if unit_hash(hash) < probability {
+        TreePresentationSpecies::CommonBeech
+    } else {
+        TreePresentationSpecies::EnglishOak
+    }
+}
+
+fn procedural_species_branch_group_mesh(
+    branches: &[super::TreeBranchSegment],
+    maximum_depth: u8,
+    primary_group: u8,
+    bark: BarkRecipe,
+) -> Mesh {
+    let group = branches
+        .iter()
+        .filter(|branch| {
+            branch.depth > 0
+                && branch.depth <= maximum_depth
+                && branch.primary_group == primary_group
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_woody_branch_mesh(&group, maximum_depth, bark)
+}
+
 /// Root marker for a fully presented playable tree.
 ///
 /// Capture benchmarks use this boundary to attribute tree cost without
@@ -85,7 +170,7 @@ pub(in crate::presentation) struct StreamedTreeChild;
 
 fn spawn_cached_tree(commands: &mut Commands, entity: Entity, cached: &CachedTreePresentation) {
     commands.entity(entity).insert((
-        Name::new("Presented mature English oak"),
+        Name::new(format!("Presented mature {}", cached.species_name)),
         PresentedTree,
         Visibility::Inherited,
         StreamedTreePresentation {
@@ -109,7 +194,7 @@ fn spawn_streamed_tree_children(
         // through inherited parent visibility.
         if mask & 1 != 0 {
             parent.spawn((
-                Name::new("English oak trunk"),
+                Name::new(format!("{} trunk", cached.species_name)),
                 StreamedTreeChild,
                 TreeTrunkLod,
                 Mesh3d(cached.trunk_mesh.clone()),
@@ -128,8 +213,8 @@ fn spawn_streamed_tree_children(
                 if selected_leaf != Some(TreeLeafRepresentation::AlphaCard) {
                     parent.spawn((
                         Name::new(format!(
-                            "English oak scaffold {} cambered PBR leaves",
-                            cluster.primary_group
+                            "{} scaffold {} cambered PBR leaves",
+                            cached.species_name, cluster.primary_group
                         )),
                         StreamedTreeChild,
                         TreeLod(0),
@@ -148,8 +233,8 @@ fn spawn_streamed_tree_children(
                 if selected_leaf != Some(TreeLeafRepresentation::TexturedMesh) {
                     parent.spawn((
                         Name::new(format!(
-                            "English oak scaffold {} PBR leaf cards",
-                            cluster.primary_group
+                            "{} scaffold {} PBR leaf cards",
+                            cached.species_name, cluster.primary_group
                         )),
                         StreamedTreeChild,
                         TreeLod(0),
@@ -167,8 +252,8 @@ fn spawn_streamed_tree_children(
                 }
                 parent.spawn((
                     Name::new(format!(
-                        "English oak scaffold {} terminal buds",
-                        cluster.primary_group
+                        "{} scaffold {} terminal buds",
+                        cached.species_name, cluster.primary_group
                     )),
                     StreamedTreeChild,
                     TreeLod(0),
@@ -180,8 +265,8 @@ fn spawn_streamed_tree_children(
                 ));
                 parent.spawn((
                     Name::new(format!(
-                        "English oak scaffold {} detailed wood",
-                        cluster.primary_group
+                        "{} scaffold {} detailed wood",
+                        cached.species_name, cluster.primary_group
                     )),
                     StreamedTreeChild,
                     TreeLod(0),
@@ -295,19 +380,40 @@ fn tree_cluster_aabb(center: Vec3, radius: f32) -> Aabb {
 pub(in crate::presentation) fn ensure_vista_tree_variant(
     variant_seed: u64,
     competition: f32,
+    species: TreePresentationSpecies,
     meshes: &mut Assets<Mesh>,
     tree_materials: &mut Assets<TacticalTreeImpostorMaterial>,
     images: &mut Assets<Image>,
     cache: &mut VistaTreePresentationCache,
 ) -> CachedVistaTreePresentation {
     let competition_key = (competition * 4095.0).round() as u64;
-    let cache_key = variant_seed ^ competition_key.rotate_left(32);
+    let cache_key = variant_seed ^ competition_key.rotate_left(32) ^ species.cache_salt();
     if let Some(cached) = cache.variants.get(&cache_key) {
         return cached.clone();
     }
-    let branches = procedural_tree_skeleton(variant_seed, competition);
-    let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
-    let bake = bake_tree_lod(variant_seed, &branches, &leaves, 4);
+    let (branches, leaves) = match species {
+        TreePresentationSpecies::EnglishOak => {
+            let branches = procedural_tree_skeleton(variant_seed, competition);
+            let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
+            (branches, leaves)
+        }
+        TreePresentationSpecies::CommonBeech => {
+            let branches =
+                procedural_woody_plant_skeleton(variant_seed, competition, COMMON_BEECH_PARAMETERS);
+            let leaves = procedural_woody_plant_leaves(
+                variant_seed,
+                &branches,
+                competition,
+                COMMON_BEECH_PARAMETERS,
+            );
+            (branches, leaves)
+        }
+    };
+    let bake = if species == TreePresentationSpecies::EnglishOak {
+        bake_tree_lod(variant_seed, &branches, &leaves, 4)
+    } else {
+        bake_tree_lod_with_style(variant_seed, &branches, &leaves, 4, species.bake_style())
+    };
     validate_tree_bake_provenance(&bake.provenance);
     let texture = images.add(bake.image.clone());
     let cached = CachedVistaTreePresentation {
@@ -343,34 +449,85 @@ pub(in crate::presentation) fn present_pending_trees(
     let site_key = oak_site_key(environment);
     for (entity, transform) in &pending {
         let seed = obstacle_seed(transform.translation);
+        let species = tree_species_for_site(transform.translation, environment);
         let variant_index = (seed & 3) as usize;
         let variant_seed = splitmix64(0x6f61_6b00 ^ variant_index as u64);
         let competition_key = (competition * 4095.0).round() as u64;
-        let cache_key = variant_seed ^ competition_key.rotate_left(32) ^ site_key.rotate_left(17);
+        let cache_key = variant_seed
+            ^ competition_key.rotate_left(32)
+            ^ site_key.rotate_left(17)
+            ^ species.cache_salt();
         let cached = if let Some(cached) = tree_cache.variants.get(&cache_key) {
             cached.clone()
         } else {
-            let gnarling = oak_gnarling_for_site(
-                OAK_GNARLING_SHOWCASE[variant_index],
-                environment,
-                variant_seed,
-            );
-            let branches =
-                procedural_oak_skeleton_with_gnarling(variant_seed, competition, gnarling);
-            let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
-            let bark_material = tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
-                let material = materials.add(oak_bark_material(&procedural_assets));
-                tree_cache.oak_bark_material = Some(material.clone());
-                material
+            let (branches, leaves) = match species {
+                TreePresentationSpecies::EnglishOak => {
+                    let gnarling = oak_gnarling_for_site(
+                        OAK_GNARLING_SHOWCASE[variant_index],
+                        environment,
+                        variant_seed,
+                    );
+                    let branches =
+                        procedural_oak_skeleton_with_gnarling(variant_seed, competition, gnarling);
+                    let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
+                    (branches, leaves)
+                }
+                TreePresentationSpecies::CommonBeech => {
+                    let branches = procedural_woody_plant_skeleton(
+                        variant_seed,
+                        competition,
+                        COMMON_BEECH_PARAMETERS,
+                    );
+                    let leaves = procedural_woody_plant_leaves(
+                        variant_seed,
+                        &branches,
+                        competition,
+                        COMMON_BEECH_PARAMETERS,
+                    );
+                    (branches, leaves)
+                }
+            };
+            let bark_material = match species {
+                TreePresentationSpecies::EnglishOak => {
+                    tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
+                        let material = materials.add(oak_bark_material(&procedural_assets));
+                        tree_cache.oak_bark_material = Some(material.clone());
+                        material
+                    })
+                }
+                TreePresentationSpecies::CommonBeech => {
+                    tree_cache.beech_bark_material.clone().unwrap_or_else(|| {
+                        let material = materials.add(StandardMaterial {
+                            base_color: Color::srgb_u8(145, 145, 135),
+                            perceptual_roughness: 0.9,
+                            ..default()
+                        });
+                        tree_cache.beech_bark_material = Some(material.clone());
+                        material
+                    })
+                }
+            };
+            let leaf_material = leaf_card_materials.add(match species {
+                TreePresentationSpecies::EnglishOak => oak_leaf_material(&procedural_assets),
+                TreePresentationSpecies::CommonBeech => beech_leaf_material(&procedural_assets),
             });
-            let leaf_material = leaf_card_materials.add(oak_leaf_material(&procedural_assets));
             let bud_material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.36, 0.27, 0.1),
+                base_color: match species {
+                    TreePresentationSpecies::EnglishOak => Color::srgb(0.36, 0.27, 0.1),
+                    TreePresentationSpecies::CommonBeech => Color::srgb_u8(112, 68, 43),
+                },
                 perceptual_roughness: 0.92,
                 ..default()
             });
+            let bake_style = species.bake_style();
             let baked_lods = (1..5)
-                .map(|lod| bake_tree_lod(variant_seed, &branches, &leaves, lod))
+                .map(|lod| {
+                    if species == TreePresentationSpecies::EnglishOak {
+                        bake_tree_lod(variant_seed, &branches, &leaves, lod)
+                    } else {
+                        bake_tree_lod_with_style(variant_seed, &branches, &leaves, lod, bake_style)
+                    }
+                })
                 .collect::<Vec<_>>();
             for bake in &baked_lods {
                 validate_tree_bake_provenance(&bake.provenance);
@@ -386,11 +543,19 @@ pub(in crate::presentation) fn present_pending_trees(
                         primary_group,
                         center: source.center,
                         radius: source.radius,
-                        detailed_branch_mesh: meshes.add(procedural_tree_branch_group_mesh(
-                            &branches,
-                            3,
-                            primary_group,
-                        )),
+                        detailed_branch_mesh: meshes.add(match species {
+                            TreePresentationSpecies::EnglishOak => {
+                                procedural_tree_branch_group_mesh(&branches, 3, primary_group)
+                            }
+                            TreePresentationSpecies::CommonBeech => {
+                                procedural_species_branch_group_mesh(
+                                    &branches,
+                                    3,
+                                    primary_group,
+                                    COMMON_BEECH_BARK,
+                                )
+                            }
+                        }),
                         cambered_leaf_mesh: meshes.add(procedural_oak_textured_leaf_group_mesh(
                             &leaves,
                             primary_group,
@@ -403,10 +568,26 @@ pub(in crate::presentation) fn present_pending_trees(
                 })
                 .collect();
             let cached = CachedTreePresentation {
-                trunk_mesh: meshes.add(procedural_tree_branch_mesh(&branches, 0)),
+                species_name: species.name(),
+                trunk_mesh: meshes.add(match species {
+                    TreePresentationSpecies::EnglishOak => {
+                        procedural_tree_branch_mesh(&branches, 0)
+                    }
+                    TreePresentationSpecies::CommonBeech => {
+                        procedural_woody_branch_mesh(&branches, 0, COMMON_BEECH_BARK)
+                    }
+                }),
                 clusters,
-                aggregate_branch_meshes: [2, 1]
-                    .map(|depth| meshes.add(procedural_tree_branch_mesh(&branches, depth))),
+                aggregate_branch_meshes: [2, 1].map(|depth| {
+                    meshes.add(match species {
+                        TreePresentationSpecies::EnglishOak => {
+                            procedural_tree_branch_mesh(&branches, depth)
+                        }
+                        TreePresentationSpecies::CommonBeech => {
+                            procedural_woody_branch_mesh(&branches, depth, COMMON_BEECH_BARK)
+                        }
+                    })
+                }),
                 aggregate_card_meshes: core::array::from_fn(|index| {
                     meshes.add(baked_lods[index].mesh.clone())
                 }),
@@ -570,5 +751,106 @@ mod tests {
         assert!(exposed_a.crown_asymmetry > sheltered.crown_asymmetry);
         assert!(exposed_a.root_spread > sheltered.root_spread);
         assert!(exposed_a.root_exposure > sheltered.root_exposure);
+    }
+
+    #[test]
+    fn beech_selection_is_clustered_and_favors_mesic_closed_canopy() {
+        let mut mesic = environment(9_000, 1_000, 0);
+        mesic.weather.ground_moisture_bps = 7_000;
+        let mut open = environment(1_000, 1_000, 0);
+        open.weather.ground_moisture_bps = 800;
+        let mesic_count = (-30..30)
+            .flat_map(|x| (-30..30).map(move |z| Vec3::new(x as f32 * 30.0, 0.0, z as f32 * 30.0)))
+            .filter(|position| {
+                tree_species_for_site(*position, &mesic) == TreePresentationSpecies::CommonBeech
+            })
+            .count();
+        let open_count = (-30..30)
+            .flat_map(|x| (-30..30).map(move |z| Vec3::new(x as f32 * 30.0, 0.0, z as f32 * 30.0)))
+            .filter(|position| {
+                tree_species_for_site(*position, &open) == TreePresentationSpecies::CommonBeech
+            })
+            .count();
+        assert!(mesic_count > open_count * 3);
+        let origin = tree_species_for_site(Vec3::new(1.0, 0.0, 1.0), &mesic);
+        assert_eq!(
+            origin,
+            tree_species_for_site(Vec3::new(29.0, 0.0, 29.0), &mesic)
+        );
+    }
+
+    #[test]
+    fn beech_whole_tree_billboard_uses_beech_geometry_and_palette() {
+        let branches = procedural_woody_plant_skeleton(42, 0.7, COMMON_BEECH_PARAMETERS);
+        let leaves = procedural_woody_plant_leaves(42, &branches, 0.7, COMMON_BEECH_PARAMETERS);
+        let bake = bake_tree_lod_with_style(
+            42,
+            &branches,
+            &leaves,
+            4,
+            TreePresentationSpecies::CommonBeech.bake_style(),
+        );
+        validate_tree_bake_provenance(&bake.provenance);
+        assert!(
+            bake.image
+                .data
+                .as_ref()
+                .is_some_and(|pixels| pixels.iter().any(|channel| *channel > 0))
+        );
+        assert_eq!(
+            bake.provenance.source_geometry_hash,
+            super::super::impostor::tree_source_geometry_hash(&branches, &leaves)
+                ^ u64::from(super::super::impostor::TREE_IMPOSTOR_BAKE_VERSION)
+        );
+    }
+
+    #[test]
+    fn forced_beech_vista_handoff_uses_beech_source_geometry_and_cache_identity() {
+        let variant_seed = splitmix64(0x6f61_6b00);
+        let competition = 0.5;
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<TacticalTreeImpostorMaterial>::default();
+        let mut images = Assets::<Image>::default();
+        let mut cache = VistaTreePresentationCache::default();
+        let beech = ensure_vista_tree_variant(
+            variant_seed,
+            competition,
+            TreePresentationSpecies::CommonBeech,
+            &mut meshes,
+            &mut materials,
+            &mut images,
+            &mut cache,
+        );
+        let oak = ensure_vista_tree_variant(
+            variant_seed,
+            competition,
+            TreePresentationSpecies::EnglishOak,
+            &mut meshes,
+            &mut materials,
+            &mut images,
+            &mut cache,
+        );
+        let branches =
+            procedural_woody_plant_skeleton(variant_seed, competition, COMMON_BEECH_PARAMETERS);
+        let leaves = procedural_woody_plant_leaves(
+            variant_seed,
+            &branches,
+            competition,
+            COMMON_BEECH_PARAMETERS,
+        );
+        assert_eq!(
+            beech.provenance.source_geometry_hash,
+            super::super::impostor::tree_source_geometry_hash(&branches, &leaves)
+                ^ u64::from(super::super::impostor::TREE_IMPOSTOR_BAKE_VERSION)
+        );
+        assert_ne!(
+            beech.provenance.source_geometry_hash,
+            oak.provenance.source_geometry_hash
+        );
+        assert_eq!(
+            cache.variants.len(),
+            2,
+            "oak and beech vista atlases must not alias"
+        );
     }
 }

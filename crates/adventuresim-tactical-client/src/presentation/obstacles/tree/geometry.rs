@@ -6,7 +6,8 @@ pub(in crate::presentation) const TREE_SECONDARY_GROUP_STRIDE: u16 = 20;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::presentation) enum WoodyPlantForm {
     MatureOak,
-    CommonHazel,
+    MatureBeech,
+    MultiStemShrub,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -16,6 +17,9 @@ pub(in crate::presentation) struct WoodyPlantParameters {
     pub(in crate::presentation) crown_radius_metres: f32,
     pub(in crate::presentation) basal_stems: u8,
     pub(in crate::presentation) leaves_per_shoot: u8,
+    pub(in crate::presentation) leaf_length_metres: [f32; 2],
+    pub(in crate::presentation) leaf_width_ratio: [f32; 2],
+    pub(in crate::presentation) petiole_length_metres: [f32; 2],
 }
 
 pub(in crate::presentation) const ENGLISH_OAK_PARAMETERS: WoodyPlantParameters =
@@ -25,15 +29,57 @@ pub(in crate::presentation) const ENGLISH_OAK_PARAMETERS: WoodyPlantParameters =
         crown_radius_metres: 6.0,
         basal_stems: 1,
         leaves_per_shoot: 16,
+        leaf_length_metres: [0.10, 0.16],
+        leaf_width_ratio: [0.65, 0.7],
+        petiole_length_metres: [0.003, 0.007],
     };
 
 pub(in crate::presentation) const COMMON_HAZEL_PARAMETERS: WoodyPlantParameters =
     WoodyPlantParameters {
-        form: WoodyPlantForm::CommonHazel,
+        form: WoodyPlantForm::MultiStemShrub,
         height_metres: 2.65,
         crown_radius_metres: 1.55,
         basal_stems: 9,
         leaves_per_shoot: 10,
+        leaf_length_metres: [0.082, 0.12],
+        leaf_width_ratio: [0.72, 0.84],
+        petiole_length_metres: [0.012, 0.023],
+    };
+
+pub(in crate::presentation) const COMMON_BEECH_PARAMETERS: WoodyPlantParameters =
+    WoodyPlantParameters {
+        form: WoodyPlantForm::MatureBeech,
+        height_metres: 16.0,
+        crown_radius_metres: 4.6,
+        basal_stems: 1,
+        leaves_per_shoot: 8,
+        leaf_length_metres: [0.055, 0.1],
+        leaf_width_ratio: [0.48, 0.66],
+        petiole_length_metres: [0.008, 0.018],
+    };
+
+pub(in crate::presentation) const BLACKTHORN_PARAMETERS: WoodyPlantParameters =
+    WoodyPlantParameters {
+        form: WoodyPlantForm::MultiStemShrub,
+        height_metres: 2.25,
+        crown_radius_metres: 1.35,
+        basal_stems: 11,
+        leaves_per_shoot: 9,
+        leaf_length_metres: [0.035, 0.064],
+        leaf_width_ratio: [0.46, 0.62],
+        petiole_length_metres: [0.004, 0.011],
+    };
+
+pub(in crate::presentation) const COMMON_HAWTHORN_PARAMETERS: WoodyPlantParameters =
+    WoodyPlantParameters {
+        form: WoodyPlantForm::MultiStemShrub,
+        height_metres: 3.15,
+        crown_radius_metres: 1.7,
+        basal_stems: 6,
+        leaves_per_shoot: 9,
+        leaf_length_metres: [0.04, 0.072],
+        leaf_width_ratio: [0.64, 0.82],
+        petiole_length_metres: [0.008, 0.018],
     };
 
 /// Independent, normalized controls for the growth history that makes an oak
@@ -191,6 +237,42 @@ pub(in crate::presentation) const COMMON_HAZEL_BARK: BarkRecipe = BarkRecipe {
     root_lobe_height_metres: 0.0,
     plate_length_metres: 0.34,
     branch_depth_attenuation: [0.45, 0.2, 0.05, 0.0],
+};
+
+pub(in crate::presentation) const COMMON_BEECH_BARK: BarkRecipe = BarkRecipe {
+    fissure_depth_metres: 0.00035,
+    fissure_width_metres: 0.009,
+    lip_height_metres: 0.0002,
+    plate_height_metres: 0.00015,
+    mature_radius_metres: 0.48,
+    minimum_radius_metres: 0.055,
+    root_lobe_height_metres: 0.003,
+    plate_length_metres: 1.2,
+    branch_depth_attenuation: [0.16, 0.06, 0.01, 0.0],
+};
+
+pub(in crate::presentation) const BLACKTHORN_BARK: BarkRecipe = BarkRecipe {
+    fissure_depth_metres: 0.0018,
+    fissure_width_metres: 0.004,
+    lip_height_metres: 0.0012,
+    plate_height_metres: 0.001,
+    mature_radius_metres: 0.09,
+    minimum_radius_metres: 0.025,
+    root_lobe_height_metres: 0.0,
+    plate_length_metres: 0.22,
+    branch_depth_attenuation: [0.5, 0.22, 0.05, 0.0],
+};
+
+pub(in crate::presentation) const COMMON_HAWTHORN_BARK: BarkRecipe = BarkRecipe {
+    fissure_depth_metres: 0.0028,
+    fissure_width_metres: 0.005,
+    lip_height_metres: 0.0018,
+    plate_height_metres: 0.0015,
+    mature_radius_metres: 0.1,
+    minimum_radius_metres: 0.03,
+    root_lobe_height_metres: 0.0,
+    plate_length_metres: 0.26,
+    branch_depth_attenuation: [0.62, 0.28, 0.06, 0.0],
 };
 
 #[derive(Clone, Copy, Debug)]

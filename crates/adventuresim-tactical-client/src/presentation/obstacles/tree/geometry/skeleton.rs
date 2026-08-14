@@ -38,8 +38,9 @@ struct OakRootSpec {
 mod tests {
     use super::*;
     use crate::presentation::obstacles::tree::geometry::{
-        COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS, procedural_oak_leaves,
-        procedural_woody_plant_leaves, tree_crown_bounds,
+        BLACKTHORN_PARAMETERS, COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS,
+        COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS,
+        procedural_oak_leaves, procedural_woody_plant_leaves, tree_crown_bounds,
     };
     use adventuresim_tactical_core::prelude::{TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES};
 
@@ -228,6 +229,82 @@ mod tests {
     }
 
     #[test]
+    fn central_german_shrub_presets_are_deterministic_and_morphologically_distinct() {
+        let presets = [
+            COMMON_HAZEL_PARAMETERS,
+            BLACKTHORN_PARAMETERS,
+            COMMON_HAWTHORN_PARAMETERS,
+        ];
+        let mut metrics = Vec::new();
+        for parameters in presets {
+            let first = procedural_woody_plant_skeleton(91, 0.0, parameters);
+            let repeated = procedural_woody_plant_skeleton(91, 0.0, parameters);
+            assert_eq!(first.len(), repeated.len());
+            assert!(
+                first
+                    .iter()
+                    .zip(&repeated)
+                    .all(|(a, b)| a.start == b.start && a.end == b.end)
+            );
+            let bounds = tree_crown_bounds(&first, |_| true);
+            let leaves = procedural_woody_plant_leaves(91, &first, 0.0, parameters);
+            assert!(leaves.iter().all(|leaf| {
+                (parameters.leaf_length_metres[0]..=parameters.leaf_length_metres[1])
+                    .contains(&leaf.length)
+                    && (parameters.leaf_width_ratio[0]..=parameters.leaf_width_ratio[1])
+                        .contains(&(leaf.width / leaf.length))
+            }));
+            metrics.push((
+                bounds.vertical_span(),
+                bounds.horizontal_span(),
+                leaves[0].length,
+            ));
+        }
+        assert!(metrics[1].0 < metrics[0].0 && metrics[0].0 < metrics[2].0);
+        assert!(metrics[1].2 < metrics[2].2 && metrics[2].2 < metrics[0].2);
+    }
+
+    #[test]
+    fn common_beech_has_a_straight_clear_bole_smooth_bark_and_ovate_leaves() {
+        let branches = procedural_woody_plant_skeleton(91, 0.65, COMMON_BEECH_PARAMETERS);
+        let repeated = procedural_woody_plant_skeleton(91, 0.65, COMMON_BEECH_PARAMETERS);
+        assert!(
+            branches
+                .iter()
+                .zip(&repeated)
+                .all(|(a, b)| a.start == b.start
+                    && a.end == b.end
+                    && a.start_radius == b.start_radius
+                    && a.end_radius == b.end_radius)
+        );
+        assert!(
+            branches
+                .iter()
+                .all(|branch| branch.start.y >= 0.0 && branch.end.y >= 0.0)
+        );
+        let trunk = branches
+            .iter()
+            .filter(|branch| branch.depth == 0)
+            .collect::<Vec<_>>();
+        assert_eq!(trunk.len(), 8);
+        assert!(trunk.iter().all(|segment| segment.end.xz().length() < 0.09));
+        let crown_base = branches
+            .iter()
+            .filter(|branch| branch.depth == 1)
+            .map(|branch| branch.start.y)
+            .fold(f32::INFINITY, f32::min);
+        assert!(crown_base > COMMON_BEECH_PARAMETERS.height_metres * 0.4);
+        assert!(COMMON_BEECH_BARK.fissure_depth_metres < 0.0005);
+        assert_eq!(COMMON_BEECH_BARK.root_lobe_height_metres, 0.003);
+        let leaves = procedural_woody_plant_leaves(91, &branches, 0.65, COMMON_BEECH_PARAMETERS);
+        assert!(!leaves.is_empty());
+        assert!(leaves.iter().all(|leaf| {
+            (0.055..=0.1).contains(&leaf.length)
+                && (0.48..=0.66).contains(&(leaf.width / leaf.length))
+        }));
+    }
+
+    #[test]
     fn every_live_axis_is_connected_and_terminates_in_descendants() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
@@ -362,7 +439,10 @@ pub(in crate::presentation) fn procedural_woody_plant_skeleton(
 ) -> Vec<TreeBranchSegment> {
     match parameters.form {
         WoodyPlantForm::MatureOak => procedural_oak_skeleton(seed, canopy_competition),
-        WoodyPlantForm::CommonHazel => procedural_hazel_skeleton(seed, parameters),
+        WoodyPlantForm::MatureBeech => {
+            procedural_beech_skeleton(seed, canopy_competition, parameters)
+        }
+        WoodyPlantForm::MultiStemShrub => procedural_multistem_shrub_skeleton(seed, parameters),
     }
 }
 
@@ -943,7 +1023,129 @@ fn append_oak_knots(
     }
 }
 
-fn procedural_hazel_skeleton(
+fn procedural_beech_skeleton(
+    seed: u64,
+    canopy_competition: f32,
+    parameters: WoodyPlantParameters,
+) -> Vec<TreeBranchSegment> {
+    let mut branches = Vec::new();
+    let competition = canopy_competition.clamp(0.0, 1.0);
+    let height = parameters.height_metres * (1.0 + competition * 0.16);
+    let crown_radius = parameters.crown_radius_metres * (1.0 - competition * 0.2);
+    let clear_bole = height * (0.34 + competition * 0.18);
+    let crown_phase = unit_hash(seed ^ 0xbeec_0001) * core::f32::consts::TAU;
+    let trunk_points = (0..=8)
+        .map(|index| {
+            let t = index as f32 / 8.0;
+            let sweep = (core::f32::consts::PI * t).sin() * 0.08;
+            Vec3::new(
+                crown_phase.cos() * sweep,
+                height * t,
+                crown_phase.sin() * sweep,
+            )
+        })
+        .collect::<Vec<_>>();
+    append_branch_curve(
+        &mut branches,
+        &trunk_points,
+        0.5,
+        0.055,
+        0,
+        u8::MAX,
+        u16::MAX,
+    );
+
+    for primary_index in 0..7_u64 {
+        let primary_seed = splitmix64(seed ^ 0xbeec_1000 ^ primary_index);
+        let height_fraction = clear_bole / height + primary_index as f32 * 0.075;
+        let start = sample_polyline(&trunk_points, height_fraction.min(0.88));
+        let phase = crown_phase
+            + primary_index as f32 * 2.399_963_1
+            + (unit_hash(primary_seed) - 0.5) * 0.3;
+        let radial = Vec3::new(phase.cos(), 0.0, phase.sin());
+        let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
+        let reach = crown_radius
+            * (0.72 + unit_hash(primary_seed ^ 1) * 0.28)
+            * (1.0 - primary_index as f32 * 0.045);
+        let primary_points = (0..=4)
+            .map(|index| {
+                let t = index as f32 / 4.0;
+                start
+                    + radial * reach * t
+                    + Vec3::Y * reach * (0.12 * t + 0.16 * t * t)
+                    + tangent
+                        * (unit_hash(primary_seed ^ 2) - 0.5)
+                        * 0.32
+                        * (core::f32::consts::PI * t).sin()
+            })
+            .collect::<Vec<_>>();
+        append_branch_curve(
+            &mut branches,
+            &primary_points,
+            0.22 - primary_index as f32 * 0.014,
+            0.025,
+            1,
+            primary_index as u8,
+            u16::MAX,
+        );
+
+        for secondary_index in 0..6_u64 {
+            let secondary_seed = splitmix64(primary_seed ^ 0xbeec_2000 ^ secondary_index);
+            let along = 0.2 + secondary_index as f32 * 0.13;
+            let secondary_start = sample_polyline(&primary_points, along);
+            let side = if secondary_index & 1 == 0 { 1.0 } else { -1.0 };
+            let direction = (radial * 0.42
+                + tangent * side * (0.65 + unit_hash(secondary_seed) * 0.18)
+                + Vec3::Y * (0.26 + unit_hash(secondary_seed ^ 1) * 0.18))
+                .normalize();
+            let length = crown_radius * (0.3 + unit_hash(secondary_seed ^ 2) * 0.16);
+            let secondary_points = [
+                secondary_start,
+                secondary_start + direction * length * 0.52 + Vec3::Y * 0.08,
+                secondary_start + direction * length + Vec3::Y * 0.2,
+            ];
+            let secondary_group = (primary_index * 8 + secondary_index) as u16;
+            append_branch_curve(
+                &mut branches,
+                &secondary_points,
+                0.052,
+                0.009,
+                2,
+                primary_index as u8,
+                secondary_group,
+            );
+            for twig_index in 0..7_u64 {
+                let twig_seed = splitmix64(secondary_seed ^ 0xbeec_3000 ^ twig_index);
+                let twig_start =
+                    sample_polyline(&secondary_points, 0.18 + twig_index as f32 * 0.12);
+                let (right, up) = branch_frame(direction);
+                let phase = twig_index as f32 * 2.399_963_1 + unit_hash(twig_seed);
+                let twig_direction = (direction * 0.38
+                    + right * phase.cos() * 0.54
+                    + up * phase.sin() * 0.38
+                    + Vec3::Y * 0.24)
+                    .normalize();
+                let twig_length = 0.34 + unit_hash(twig_seed ^ 1) * 0.24;
+                append_branch_curve(
+                    &mut branches,
+                    &[
+                        twig_start,
+                        twig_start + twig_direction * twig_length * 0.52,
+                        twig_start + twig_direction * twig_length,
+                    ],
+                    0.008,
+                    0.002,
+                    3,
+                    primary_index as u8,
+                    secondary_group,
+                );
+            }
+        }
+    }
+    branches
+}
+
+fn procedural_multistem_shrub_skeleton(
     seed: u64,
     parameters: WoodyPlantParameters,
 ) -> Vec<TreeBranchSegment> {

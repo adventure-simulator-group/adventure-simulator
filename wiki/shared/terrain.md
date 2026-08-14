@@ -103,10 +103,10 @@ meshes. Their server collision and ground-query contract must be designed
 without moving render-mesh extraction into the dispatcher or tactical server.
 
 Grass, shrubs, reeds, leaves, and twigs are deterministic shared-mesh foliage with no gameplay
-collider. Grass uses overlapping 3.2-metre shared macro patches containing 729 individually
+collider. Grass uses overlapping 3.2-metre shared macro patches containing 9,216 individually
 oriented ribbons: each nearby blade samples a cubic longitudinal curve with
-fifteen vertices, then cross-fades beyond 34 metres to a stable 144-blade
-subset using seven vertices per ribbon. The retained blades widen by the square
+fifteen vertices, then cross-fades to a stable 1,600-blade subset using seven
+vertices per ribbon. The retained blades widen by the square
 root of the density ratio, preserving aggregate coverage while eliminating
 the rejected blades before vertex shading. Internal blade spacing matches the
 former one-metre patch, so the larger footprint cuts grass render entities by
@@ -116,24 +116,70 @@ than opening macro-patch-sized holes.
 Both representations evaluate the same authored lean, layered spatial wind,
 and player displacement curve, and an edge-on ribbon turns partially toward
 the view so it retains useful screen width without becoming a full billboard.
-The geometric sward ends by 132 metres; beyond it, band-limited terrain colour
-and normal variation carries the far-field grass response without sub-pixel
-blade geometry. Regional vista vertices retain the same environmental samples,
-including an aggregate sward-coverage channel, so open terrain continues the
-grass response through every vista ring. Vista slopes use continuous
+Grass placement is not clipped to the authoritative playable heightfield. One
+globally aligned placement domain spans both playable terrain and the first
+presentation-only vista ring. Every eligible location owns the same overlapping
+camera-distance-selected near, far, and vista representations; the gameplay
+boundary only switches the source of height and environmental coverage data.
+Near ribbons fade into seven-vertex far ribbons, which fade into 6.4-metre
+patch impostors containing 576 broad, five-vertex tuft silhouettes. Regional
+coverage is applied per blade rather than by discarding entire macro patches,
+so ecological variation does not create square holes. These are materially
+different geometry rather than blades merely
+discarded in the vertex shader, following the high/low geometry and far-field
+impostor division described in Eric Wohllaib's GDC 2021
+[*Procedural Grass in Ghost of Tsushima*](https://gdcvault.com/play/1027033/)
+talk. They fade by 140 metres; beyond them, a hard-palette
+terrain response carries the field without sub-pixel geometry. Regional vista
+vertices retain the same environmental samples, including an aggregate
+sward-coverage channel, so open terrain continues the grass response through
+every vista ring. Vista slopes use continuous
 height-gradient normals instead of per-cell face normals; sufficiently exposed
 hilly samples reuse the generated two-color rock surface through coarse-safe triplanar
 sampling. The locally controlled player's position and velocity flatten
 and push nearby grass as a presentation-only effect.
 
-Ordinary temperate understory shrubs use one shared procedural common-hazel
-(`Corylus avellana`) specimen rather than a unique mesh per scatter point. Its
-multi-stem architecture and alternate broad leaves come from the same
-parameterized woody-plant generator used for the English oak, with shrub-scale
-height, crown, stem-count, shoot, and leaf parameters. Cambered near leaves and
-flat alpha-card far leaves share one generated, palette-constrained
-albedo/opacity/normal/AO/roughness material and
-the existing tree-leaf wind shader.
+Grass is organized into deterministic, roughly 24-metre coherent plant
+communities rather than selecting an unrelated species for every ribbon.
+Mesic lowland swards combine tall false oat-grass (`Arrhenatherum elatius`)
+with broader, clustered cocksfoot (`Dactylis glomerata`); lean or exposed
+swards combine fine red fescue (`Festuca rubra` aggregate) with airy common
+bent (`Agrostis capillaris`); damp openings combine tufted hair-grass
+(`Deschampsia cespitosa`) with Yorkshire fog (`Holcus lanatus`). Existing
+wetland, water, cultivation, hilliness, moisture, local vista samples, and
+stable low-frequency site fields are temporary habitat inputs until world data
+carries vegetation communities. Dry sites assign no token wet-tussock cells.
+Species presets change physical blade height, width, pigment region, and
+near-LOD panicle form: sparse lateral strokes distinguish open oat, bent, and
+hair-grass panicles from compact offset cocksfoot clusters. Far and vista LODs
+drop that sub-pixel geometry while preserving the same patch footprint and
+community identity.
+
+Ordinary temperate understory shrubs use shared procedural common-hazel
+(`Corylus avellana`), blackthorn (`Prunus spinosa`), and common-hawthorn
+(`Crataegus monogyna`) presets rather than unique meshes per scatter point.
+The reusable multi-stem shrub form parameterizes physical height, crown,
+stem-count, shoot, leaf dimensions, petiole, bark relief, and leaf material.
+Stable four-by-four scatter-cell communities create roughly 13-metre thickets:
+hazel is weighted toward mesic shade and remains eligible on woodland leaf
+litter, blackthorn toward bright dry scrub, and hawthorn toward open or
+cultivated edges and woodland gaps. Cambered near leaves and flat
+alpha-card far leaves share generated, palette-constrained
+albedo/opacity/normal/AO/roughness materials and the existing tree-leaf wind
+shader.
+Mature tree presentation additionally supports common beech (`Fagus
+sylvatica`). Its preset has a straight high-clear bole, compact ascending
+scaffolds, smooth gray bark relief, and ovate subtly wavy leaves instead of
+reusing oak roots, fissures, or gnarling. Stable 30-metre communities weight
+beech toward moist, closed-canopy woodland. The same local community selector
+retains only a sparse fraction of grass patches beneath beech, independently
+of the scene-wide canopy density. The species-specific bark and leaf palette is
+carried through playable and regional tree LODs, including the software-baked
+whole-tree billboard. For now the
+compact server obstacle remains the conservative generic `Tree` collider and
+the client derives oak versus beech deterministically from replicated scene
+environment and position; an explicit species field can replace that temporary
+selection rule without changing generator recipes.
 Root self-shadow and a darker centre rib are occlusion responses; a small
 solid-color palette and softened upward normals keep the dense field readable
 without making individual cards look heavily lit. A procedural terrain
@@ -152,7 +198,12 @@ deterministically scatter bounded samples of the production whole-tree
 impostor over canopy-bearing cells; the outer ring relies on aggregate canopy
 colour. Those presentation-only trees share one cached atlas family, have no
 gameplay collider, and are seated on the same morphed vista surface as the
-terrain.
+terrain. Tree stand sampling scales with physical cell area instead of capping
+the first 250-metre ring to three silhouettes. Exposed terrain likewise
+continues rocks beyond the playable rectangle: a shared procedural mesh hands
+off to a twelve-face silhouette mesh, then to the vista terrain's aggregate
+rock palette before either representation becomes subpixel. None of this vista
+scatter gains collision or server authority.
 
 Near-tree PBR leaf cards participate in the horizon-aware directional shadow
 map, producing both cast shadows and leaf-on-leaf self shadow. Their vertex data

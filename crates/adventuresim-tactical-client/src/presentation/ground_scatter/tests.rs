@@ -33,10 +33,11 @@ fn local_interactor_position_reaches_only_ground_foliage_materials() {
 
 #[test]
 fn understory_density_preserves_sparse_woods_and_caps_dense_biomes() {
-    assert!((understory_scatter_chance(0.35, 0.03) - 0.191).abs() < 0.000_01);
-    assert_eq!(understory_scatter_chance(0.9, 0.05), 0.24);
-    assert_eq!(understory_scatter_chance(0.1, 0.95), 0.24);
-    assert_eq!(understory_scatter_chance(0.0, 0.0), 0.0);
+    assert!((understory_scatter_chance(0.35, 0.03, 0.0) - 0.191).abs() < 0.000_01);
+    assert_eq!(understory_scatter_chance(0.9, 0.05, 0.0), 0.24);
+    assert_eq!(understory_scatter_chance(0.1, 0.95, 0.0), 0.24);
+    assert_eq!(understory_scatter_chance(0.0, 0.0, 0.0), 0.0);
+    assert_eq!(understory_scatter_chance(0.0, 0.0, 1.0), 0.08);
 }
 
 #[test]
