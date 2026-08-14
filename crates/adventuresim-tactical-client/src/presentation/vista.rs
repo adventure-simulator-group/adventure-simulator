@@ -25,6 +25,9 @@ pub(super) fn on_scene_vista_bundle(
     mut images: ResMut<Assets<Image>>,
     mut vista_tree_cache: ResMut<VistaTreePresentationCache>,
 ) {
+    let started = std::time::Instant::now();
+    let mut presented_chunk_count = 0_usize;
+    info!("Generating tactical vista presentation");
     for entity in &existing {
         commands.entity(entity).despawn();
     }
@@ -67,6 +70,7 @@ pub(super) fn on_scene_vista_bundle(
         }
         let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
         for (chunk, mesh) in meshes_for_lod.into_iter().enumerate() {
+            presented_chunk_count += 1;
             commands.spawn((
                 Name::new(format!("Tactical vista LOD {} chunk {chunk}", lod.level)),
                 VistaTerrain(lod.level),
@@ -117,6 +121,12 @@ pub(super) fn on_scene_vista_bundle(
             &mut images,
         );
     }
+    info!(
+        chunks = presented_chunk_count,
+        lods = visible_lods.len(),
+        elapsed_ms = started.elapsed().as_millis(),
+        "Generated tactical vista presentation"
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -774,15 +784,18 @@ fn vista_lod_meshes_with_morph(
     }
     let center_x = (width - 1) as f32 * 0.5;
     let center_z = (depth - 1) as f32 * 0.5;
+    // Keep at least two chunks across the longer axis of small coarse rings so
+    // they retain useful frustum-culling granularity.
+    let chunk_cells = VISTA_CHUNK_CELLS.min((width.max(depth) - 1).div_ceil(2).max(1));
     let mut meshes = Vec::new();
-    for chunk_z in (0..depth - 1).step_by(VISTA_CHUNK_CELLS) {
-        for chunk_x in (0..width - 1).step_by(VISTA_CHUNK_CELLS) {
+    for chunk_z in (0..depth - 1).step_by(chunk_cells) {
+        for chunk_x in (0..width - 1).step_by(chunk_cells) {
             let mut positions = Vec::new();
             let mut normals = Vec::new();
             let mut colors = Vec::new();
             let mut indices = Vec::new();
-            for z in chunk_z..(chunk_z + VISTA_CHUNK_CELLS).min(depth - 1) {
-                for x in chunk_x..(chunk_x + VISTA_CHUNK_CELLS).min(width - 1) {
+            for z in chunk_z..(chunk_z + chunk_cells).min(depth - 1) {
+                for x in chunk_x..(chunk_x + chunk_cells).min(width - 1) {
                     let cell_min = Vec2::new(
                         (x as f32 - center_x) * lod.spacing_metres,
                         (z as f32 - center_z) * lod.spacing_metres,
@@ -1354,7 +1367,10 @@ fn vista_material(weather: WeatherSnapshot, grass_color: Color) -> TacticalVista
     }
 }
 
-const VISTA_CHUNK_CELLS: usize = 8;
+// Chunking is a CPU/ECS submission boundary, not a visual tessellation
+// boundary. Thirty-two cells retains the exact terrain vertices while cutting
+// a 50 km three-ring vista to about one sixteenth as many render entities.
+const VISTA_CHUNK_CELLS: usize = 32;
 
 #[cfg(test)]
 mod tests {

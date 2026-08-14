@@ -39,7 +39,13 @@ whole-tree billboard. Each successive level collapses exactly one botanical
 order. Every aggregate card derives its position and extent from the actual
 seeded descendant twigs, so crown mass, asymmetry, and gaps remain recognizable
 through the transitions while retaining parallax longer than a direct
-crown-to-billboard swap.
+crown-to-billboard swap. Runtime atlas generation rasterizes low-sided woody
+silhouette tubes and progressively sampled, coverage-compensated leaves rather
+than rebuilding the multi-million-triangle production bark and leaf meshes for
+every card. The directly viewed near trunk, root flare, bark relief, and leaf
+cards remain the full production meshes. Intermediate crown wood excludes the
+depth-zero root flare because the separately streamed trunk remains resident,
+avoiding duplicate geometry and duplicate Surface Nets construction.
 The individual-leaf crown uses an 8-triangle cambered PBR card and a 30-triangle
 terminal bud. Once that camber falls below useful screen size, each leaf
 cross-fades to a two-triangle flat PBR
@@ -212,8 +218,11 @@ transmission, and distance fog. Clear weather retains a subtle kilometre-scale
 contrast haze beyond tactical gameplay range. At the playable boundary, the
 first vista ring reuses exact edge heights and eases the solid substrate
 pigment over several regional samples while preserving its independent
-geometric-sward coverage. Coarse vista samples preserve local peaks and
-render as seam-sharing rings of independently culled mesh chunks out to 50 km;
+geometric-sward coverage. Coarse vista samples preserve local peaks and render
+as seam-sharing rings of independently culled 32-by-32-cell mesh chunks out to
+50 km. Chunking changes only CPU/ECS submission and culling granularity, not
+regional sampling or visible tessellation, and avoids tens of thousands of
+startup-time entities;
 coarser rings leave the playable and finer-ring interiors open rather than
 overdrawing them. The 50-metre and 250-metre regional rings also
 deterministically scatter bounded samples of the production whole-tree

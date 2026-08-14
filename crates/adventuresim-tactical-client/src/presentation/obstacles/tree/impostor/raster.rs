@@ -2,7 +2,8 @@
 use super::OAK_TREE_BAKE_STYLE;
 use super::{TreeBakeCard, TreeBakeStyle};
 use crate::presentation::obstacles::tree::geometry::{
-    TreeBranchSegment, TreeLeaf, procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
+    TreeBranchSegment, TreeLeaf, procedural_woody_branch_bake_mesh,
+    procedural_woody_cambered_leaf_mesh,
 };
 use crate::presentation::obstacles::tree::materials::canopy_ao_strength;
 use bevy::{
@@ -15,6 +16,7 @@ pub(super) fn render_tree_card(
     card: TreeBakeCard,
     branches: &[TreeBranchSegment],
     leaves: &[TreeLeaf],
+    lod: u8,
     tile_size: u32,
     atlas_width: u32,
     atlas_height: u32,
@@ -29,7 +31,7 @@ pub(super) fn render_tree_card(
         .filter(|branch| card.includes_branch(branch))
         .copied()
         .collect::<Vec<_>>();
-    let branch_mesh = procedural_woody_branch_mesh(&source_branches, 3, style.bark);
+    let branch_mesh = procedural_woody_branch_bake_mesh(&source_branches);
     raster_source_mesh(
         card,
         &branch_mesh,
@@ -43,10 +45,21 @@ pub(super) fn render_tree_card(
         &mut depth,
         style,
     );
+    let leaf_stride = tree_bake_leaf_stride(lod);
+    let leaf_scale = (leaf_stride as f32).sqrt();
     let source_leaves = leaves
         .iter()
         .filter(|leaf| card.includes_leaf(leaf))
+        .step_by(leaf_stride)
         .copied()
+        .map(|mut leaf| {
+            // Aggregate cards need optical crown coverage rather than every
+            // sub-pixel production leaf. Preserve projected leaf area while
+            // reducing triangle setup and overdraw by up to sixteen times.
+            leaf.length *= leaf_scale;
+            leaf.width *= leaf_scale;
+            leaf
+        })
         .collect::<Vec<_>>();
     let leaf_mesh = procedural_woody_cambered_leaf_mesh(&source_leaves);
     raster_source_mesh(
@@ -62,6 +75,16 @@ pub(super) fn render_tree_card(
         &mut depth,
         style,
     );
+}
+
+fn tree_bake_leaf_stride(lod: u8) -> usize {
+    match lod {
+        1 => 2,
+        2 => 4,
+        3 => 8,
+        4 => 16,
+        _ => 1,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -230,6 +253,14 @@ pub(super) fn write_tree_pixel(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aggregate_tree_bakes_reduce_leaf_work_monotonically() {
+        assert_eq!(
+            (1..=4).map(tree_bake_leaf_stride).collect::<Vec<_>>(),
+            [2, 4, 8, 16]
+        );
+    }
 
     #[test]
     fn baked_leaf_color_uses_generated_palette_and_authored_canopy_visibility() {

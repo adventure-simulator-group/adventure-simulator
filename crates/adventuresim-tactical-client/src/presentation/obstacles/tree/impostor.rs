@@ -7,9 +7,9 @@ use raster::*;
 use super::super::super::*;
 use super::geometry::*;
 
-pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 8;
+pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 9;
 pub(in crate::presentation) const TREE_IMPOSTOR_RENDER_METHOD: &str =
-    "deterministic software triangle render of exact production branch and leaf meshes";
+    "deterministic software triangle render with coverage-preserving leaf proxies";
 const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 0.95;
 const WHOLE_TREE_BAKE_EXPOSURE: f32 = 0.91;
 
@@ -53,14 +53,12 @@ pub(in crate::presentation) struct TreeLodClusterBake {
 
 #[derive(Clone, Copy)]
 pub(in crate::presentation) struct TreeBakeStyle {
-    pub(in crate::presentation) bark: BarkRecipe,
     pub(in crate::presentation) bark_srgb: [f32; 3],
     pub(in crate::presentation) leaf_srgb: [f32; 3],
     pub(in crate::presentation) crown_radius_metres: f32,
 }
 
 pub(in crate::presentation) const OAK_TREE_BAKE_STYLE: TreeBakeStyle = TreeBakeStyle {
-    bark: ENGLISH_OAK_BARK,
     bark_srgb: [116.0, 103.0, 82.0],
     leaf_srgb: super::materials::OAK_LEAF_IMPOSTOR_BASE_SRGB,
     crown_radius_metres: ENGLISH_OAK_PARAMETERS.crown_radius_metres,
@@ -143,6 +141,7 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
     lod: u8,
     style: TreeBakeStyle,
 ) -> TreeLodBake {
+    let started = std::time::Instant::now();
     let cards = tree_bake_cards(seed, branches, leaves, lod);
     let tile_size = match lod {
         1 => 96,
@@ -170,6 +169,7 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
             card,
             branches,
             leaves,
+            lod,
             tile_size,
             atlas_width,
             atlas_height,
@@ -282,7 +282,7 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::RENDER_WORLD,
     );
-    TreeLodBake {
+    let bake = TreeLodBake {
         lod,
         mesh,
         clusters,
@@ -297,7 +297,16 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
             atlas_height,
             records,
         },
-    }
+    };
+    tracing::info!(
+        lod,
+        cards = bake.provenance.records.len(),
+        atlas_width,
+        atlas_height,
+        elapsed_ms = started.elapsed().as_millis(),
+        "Generated tactical tree impostor atlas"
+    );
+    bake
 }
 
 fn tree_primary_group_sphere(
@@ -727,7 +736,7 @@ mod tests {
 
         assert_eq!(first.mesh.count_vertices(), 4);
         assert_eq!(first.provenance.records.len(), 8);
-        assert_eq!(first.provenance.bake_version, 8);
+        assert_eq!(first.provenance.bake_version, TREE_IMPOSTOR_BAKE_VERSION);
         assert_eq!(first.image.data, second.image.data);
         assert!((WHOLE_TREE_RUNTIME_WIDTH_SCALE - 0.95).abs() < f32::EPSILON);
         assert!((WHOLE_TREE_BAKE_EXPOSURE - 0.91).abs() < f32::EPSILON);
@@ -744,6 +753,18 @@ mod tests {
             "/../../assets/shaders/tactical_tree_impostor.wgsl"
         ));
         assert!(shader.contains("pbr_functions::visibility_range_dither("));
+    }
+
+    #[test]
+    fn complete_runtime_tree_bake_suite_preserves_every_lod() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let bakes = (1..=4)
+            .map(|lod| bake_tree_lod(42, &branches, &leaves, lod))
+            .collect::<Vec<_>>();
+        assert_eq!(bakes.len(), 4);
+        assert!(bakes.iter().all(|bake| !bake.provenance.records.is_empty()));
+        assert!(bakes.windows(2).all(|pair| pair[0].lod < pair[1].lod));
     }
 
     #[test]

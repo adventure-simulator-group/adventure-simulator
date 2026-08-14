@@ -75,6 +75,83 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
     mesh
 }
 
+/// Cheap woody silhouette used only as input to the software impostor bake.
+///
+/// The production mesh's implicit root flare, bark displacement, tangents, and
+/// high radial tessellation are valuable when viewed directly but invisible
+/// after projection into a 96-320 px atlas. Rebuilding that mesh for every
+/// card dominated cold startup, so bake cards use independent low-sided tubes
+/// while the live near tree keeps the exact production geometry.
+pub(in crate::presentation) fn procedural_woody_branch_bake_mesh(
+    branches: &[TreeBranchSegment],
+) -> Mesh {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut indices = Vec::new();
+    for branch in branches {
+        let axis = branch.end - branch.start;
+        if axis.length_squared() <= 0.000_001 {
+            continue;
+        }
+        let direction = axis.normalize();
+        let (right, forward) = branch_frame(direction);
+        let sides = match branch.depth {
+            0 => 10_u32,
+            1 => 7,
+            2 => 5,
+            _ => 3,
+        };
+        let base = positions.len() as u32;
+        for (center, radius) in [
+            (branch.start, branch.start_radius),
+            (branch.end, branch.end_radius),
+        ] {
+            for side in 0..sides {
+                let angle = side as f32 * core::f32::consts::TAU / sides as f32;
+                let radial = right * angle.cos() + forward * angle.sin();
+                positions.push((center + radial * radius).to_array());
+                normals.push(radial.to_array());
+            }
+        }
+        for side in 0..sides {
+            let next = (side + 1) % sides;
+            indices.extend_from_slice(&[
+                base + side,
+                base + sides + side,
+                base + sides + next,
+                base + side,
+                base + sides + next,
+                base + next,
+            ]);
+        }
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+/// Aggregate crown wood excludes depth-zero trunk and root geometry because
+/// the independently streamed trunk remains resident through LOD2. Besides
+/// avoiding duplicate draw geometry, this prevents rebuilding the expensive
+/// implicit root flare for each intermediate crown LOD.
+pub(in crate::presentation) fn procedural_woody_crown_mesh(
+    branches: &[TreeBranchSegment],
+    maximum_depth: u8,
+    bark: BarkRecipe,
+) -> Mesh {
+    let crown = branches
+        .iter()
+        .filter(|branch| branch.depth > 0 && branch.depth <= maximum_depth)
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_woody_branch_mesh(&crown, maximum_depth, bark)
+}
+
 #[derive(Clone)]
 struct RootFlareField {
     segments: Vec<TreeBranchSegment>,

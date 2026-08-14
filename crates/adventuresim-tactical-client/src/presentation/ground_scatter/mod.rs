@@ -442,6 +442,8 @@ pub(super) fn present_ground_scatter(
     procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     for (entity, scene_id, terrain, ground, environment) in &scenes {
+        let started = std::time::Instant::now();
+        tracing::info!("Generating tactical ground scatter");
         spawn_ground_foliage(
             &mut commands,
             &mut meshes,
@@ -457,6 +459,10 @@ pub(super) fn present_ground_scatter(
             terrain,
             ground,
             environment,
+        );
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "Generated tactical ground scatter"
         );
         commands.entity(entity).insert(GroundScatterPresented);
     }
