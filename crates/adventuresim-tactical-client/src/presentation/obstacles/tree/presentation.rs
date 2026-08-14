@@ -3,15 +3,16 @@ use super::impostor::{
     tree_lod_name, tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
-    TREE_PRIMARY_GROUP_COUNT, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
-    procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
-    procedural_oak_textured_leaf_group_mesh, procedural_tree_branch_group_mesh,
-    procedural_tree_branch_mesh, procedural_tree_skeleton,
+    OAK_GNARLING_SHOWCASE, OakGnarlingParameters, TREE_PRIMARY_GROUP_COUNT,
+    TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod,
+    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
+    procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
+    procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
+    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
 };
 use crate::presentation::{
     ActiveTacticalScene, ProceduralEnvironmentAssets, SceneEnvironment, obstacle_seed, splitmix64,
+    unit_hash,
 };
 use bevy::{
     camera::{primitives::Aabb, visibility::NoFrustumCulling},
@@ -339,15 +340,23 @@ pub(in crate::presentation) fn present_pending_trees(
         return;
     };
     let competition = canopy_competition(environment.canopy_bps);
+    let site_key = oak_site_key(environment);
     for (entity, transform) in &pending {
         let seed = obstacle_seed(transform.translation);
-        let variant_seed = splitmix64(0x6f61_6b00 ^ (seed & 3));
+        let variant_index = (seed & 3) as usize;
+        let variant_seed = splitmix64(0x6f61_6b00 ^ variant_index as u64);
         let competition_key = (competition * 4095.0).round() as u64;
-        let cache_key = variant_seed ^ competition_key.rotate_left(32);
+        let cache_key = variant_seed ^ competition_key.rotate_left(32) ^ site_key.rotate_left(17);
         let cached = if let Some(cached) = tree_cache.variants.get(&cache_key) {
             cached.clone()
         } else {
-            let branches = procedural_tree_skeleton(variant_seed, competition);
+            let gnarling = oak_gnarling_for_site(
+                OAK_GNARLING_SHOWCASE[variant_index],
+                environment,
+                variant_seed,
+            );
+            let branches =
+                procedural_oak_skeleton_with_gnarling(variant_seed, competition, gnarling);
             let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
             let bark_material = tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
                 let material = materials.add(oak_bark_material(&procedural_assets));
@@ -423,4 +432,143 @@ pub(in crate::presentation) fn present_pending_trees(
 pub(in crate::presentation) fn canopy_competition(canopy_bps: u16) -> f32 {
     let normalized = f32::from(canopy_bps) / 10_000.0;
     normalized * normalized * (3.0 - 2.0 * normalized)
+}
+
+fn oak_site_key(environment: &SceneEnvironment) -> u64 {
+    let location = u64::from(environment.latitude_microdegrees as u32) << 32
+        | u64::from(environment.longitude_microdegrees as u32);
+    let terrain = u64::from(environment.hilly_bps)
+        | u64::from(environment.wetland_bps) << 14
+        | u64::from(environment.cultivation_bps) << 28
+        | u64::from(environment.canopy_bps) << 42;
+    splitmix64(
+        location ^ terrain ^ (environment.absolute_elevation_metres as i64 as u64).rotate_left(9),
+    )
+}
+
+fn oak_gnarling_for_site(
+    mut recipe: OakGnarlingParameters,
+    environment: &SceneEnvironment,
+    tree_seed: u64,
+) -> OakGnarlingParameters {
+    let canopy = f32::from(environment.canopy_bps) / 10_000.0;
+    let open_exposure = 1.0 - canopy;
+    let slope = f32::from(environment.hilly_bps) / 10_000.0;
+    let wetland = f32::from(environment.wetland_bps) / 10_000.0;
+    let cultivation = f32::from(environment.cultivation_bps) / 10_000.0;
+    let elevation =
+        ((f32::from(environment.absolute_elevation_metres) - 40.0) / 900.0).clamp(0.0, 1.0);
+    let susceptibility = 0.72 + unit_hash(splitmix64(tree_seed ^ 0x5355_5343)) * 0.28;
+    let wind_exposure =
+        (open_exposure * 0.46 + slope * 0.34 + elevation * 0.2).clamp(0.0, 1.0) * susceptibility;
+    let age_and_wounds = unit_hash(splitmix64(tree_seed ^ 0x4147_4557));
+    let location = u64::from(environment.latitude_microdegrees as u32) << 32
+        | u64::from(environment.longitude_microdegrees as u32);
+    recipe.stress_azimuth_radians =
+        unit_hash(splitmix64(location ^ 0x5749_4e44)) * core::f32::consts::TAU;
+    let add = |value: f32, stress: f32| (value + stress).clamp(0.0, 1.0);
+    recipe.root_spread = add(
+        recipe.root_spread,
+        slope * 0.34 + wetland * 0.24 + wind_exposure * 0.2,
+    );
+    recipe.root_meander = add(recipe.root_meander, slope * 0.28 + wetland * 0.18);
+    recipe.root_exposure = add(recipe.root_exposure, slope * 0.5 + open_exposure * 0.12);
+    recipe.root_forking = add(recipe.root_forking, slope * 0.2 + age_and_wounds * 0.12);
+    recipe.trunk_lean = add(recipe.trunk_lean, wind_exposure * 0.62 + wetland * 0.18);
+    recipe.trunk_sweep = add(recipe.trunk_sweep, wind_exposure * 0.7);
+    recipe.trunk_twist = add(
+        recipe.trunk_twist,
+        wind_exposure * 0.24 + age_and_wounds * 0.16,
+    );
+    recipe.trunk_crooks = add(
+        recipe.trunk_crooks,
+        cultivation * 0.3 + age_and_wounds * 0.16,
+    );
+    recipe.taper_irregularity = add(
+        recipe.taper_irregularity,
+        wetland * 0.18 + cultivation * 0.22 + age_and_wounds * 0.14,
+    );
+    recipe.knot_frequency = add(
+        recipe.knot_frequency,
+        cultivation * 0.38 + age_and_wounds * 0.24,
+    );
+    recipe.knot_scale = add(recipe.knot_scale, cultivation * 0.24 + age_and_wounds * 0.2);
+    recipe.burl_scale = add(recipe.burl_scale, wetland * 0.3 + age_and_wounds * 0.16);
+    recipe.scaffold_droop = add(
+        recipe.scaffold_droop,
+        age_and_wounds * 0.18 + wetland * 0.12,
+    );
+    recipe.scaffold_sweep = add(recipe.scaffold_sweep, wind_exposure * 0.76);
+    recipe.scaffold_contortion = add(
+        recipe.scaffold_contortion,
+        wind_exposure * 0.32 + age_and_wounds * 0.18,
+    );
+    recipe.crown_asymmetry = add(recipe.crown_asymmetry, wind_exposure * 0.82);
+    recipe
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use adventuresim_tactical_core::prelude::{Precipitation, WeatherSnapshot};
+
+    fn environment(canopy_bps: u16, hilly_bps: u16, wetland_bps: u16) -> SceneEnvironment {
+        SceneEnvironment {
+            scene_digest: "oak-site-test".into(),
+            generation_version: 7,
+            latitude_microdegrees: 53_500_000,
+            longitude_microdegrees: 10_000_000,
+            absolute_minute: 340_440,
+            absolute_elevation_metres: 420,
+            weather: WeatherSnapshot {
+                rules_version: 2,
+                interval_start_minute: 340_440,
+                cell_latitude: 214,
+                cell_longitude: 40,
+                temperature_deci_c: 120,
+                wind_speed_bps: 1_200,
+                precipitation: Precipitation::Clear,
+                intensity_bps: 0,
+                ground_moisture_bps: 100,
+                snow_cover_bps: 0,
+            },
+            canopy_bps,
+            wetland_bps,
+            cultivation_bps: 0,
+            water_bps: 0,
+            hilly_bps,
+        }
+    }
+
+    #[test]
+    fn stable_site_not_current_weather_drives_oak_growth_history() {
+        let site = environment(2_000, 8_000, 0);
+        let first = oak_gnarling_for_site(OAK_GNARLING_SHOWCASE[0], &site, 42);
+        let mut storm = site.clone();
+        storm.weather.wind_speed_bps = 10_000;
+        storm.weather.intensity_bps = 10_000;
+        assert_eq!(
+            first,
+            oak_gnarling_for_site(OAK_GNARLING_SHOWCASE[0], &storm, 42)
+        );
+        assert_eq!(oak_site_key(&site), oak_site_key(&storm));
+    }
+
+    #[test]
+    fn exposed_hilly_sites_share_wind_direction_and_gnarl_more_than_shelter() {
+        let exposed = environment(1_000, 9_000, 0);
+        let sheltered = environment(9_000, 0, 0);
+        let exposed_a = oak_gnarling_for_site(OAK_GNARLING_SHOWCASE[0], &exposed, 7);
+        let exposed_b = oak_gnarling_for_site(OAK_GNARLING_SHOWCASE[0], &exposed, 91);
+        let sheltered = oak_gnarling_for_site(OAK_GNARLING_SHOWCASE[0], &sheltered, 7);
+        assert_eq!(
+            exposed_a.stress_azimuth_radians,
+            exposed_b.stress_azimuth_radians
+        );
+        assert!(exposed_a.trunk_lean > sheltered.trunk_lean);
+        assert!(exposed_a.scaffold_sweep > sheltered.scaffold_sweep);
+        assert!(exposed_a.crown_asymmetry > sheltered.crown_asymmetry);
+        assert!(exposed_a.root_spread > sheltered.root_spread);
+        assert!(exposed_a.root_exposure > sheltered.root_exposure);
+    }
 }

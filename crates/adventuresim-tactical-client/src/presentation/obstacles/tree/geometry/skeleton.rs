@@ -4,8 +4,9 @@ use bevy::math::{FloatExt, Vec3, Vec3Swizzles};
 use crate::presentation::{splitmix64, unit_hash};
 
 use super::{
-    ENGLISH_OAK_PARAMETERS, TREE_PRIMARY_GROUP_COUNT, TREE_SECONDARY_GROUP_STRIDE,
-    TreeBranchSegment, WoodyPlantForm, WoodyPlantParameters, branch_frame,
+    ENGLISH_OAK_PARAMETERS, NATURAL_OAK_GNARLING, OakGnarlingParameters, TREE_PRIMARY_GROUP_COUNT,
+    TREE_SECONDARY_GROUP_STRIDE, TreeBranchSegment, WoodyPlantForm, WoodyPlantParameters,
+    branch_frame,
 };
 
 const OAK_ROOT_MIN_COUNT: usize = 5;
@@ -150,7 +151,7 @@ mod tests {
             let roots = procedural_oak_root_specs(seed, crown_phase);
             let root_points = roots
                 .iter()
-                .map(|root| oak_root_points(Vec3::ZERO, *root))
+                .map(|root| oak_root_points(Vec3::ZERO, *root, NATURAL_OAK_GNARLING))
                 .collect::<Vec<_>>();
             for (root, points) in roots.iter().zip(&root_points) {
                 if let Some(fork) = root.fork {
@@ -298,6 +299,48 @@ mod tests {
         assert!(metrics.windows(2).all(|pair| pair[1].2 > pair[0].2));
     }
 
+    #[test]
+    fn gnarling_recipe_is_deterministic_bounded_and_changes_every_growth_system() {
+        let baseline = procedural_oak_skeleton_with_gnarling(42, 0.0, NATURAL_OAK_GNARLING);
+        let extreme =
+            procedural_oak_skeleton_with_gnarling(42, 0.0, super::super::EXTREME_OAK_GNARLING);
+        let repeated =
+            procedural_oak_skeleton_with_gnarling(42, 0.0, super::super::EXTREME_OAK_GNARLING);
+        assert_eq!(extreme.len(), repeated.len());
+        assert!(
+            extreme
+                .iter()
+                .zip(&repeated)
+                .all(|(left, right)| left.start == right.start
+                    && left.end == right.end
+                    && left.start_radius == right.start_radius
+                    && left.end_radius == right.end_radius)
+        );
+        assert!(extreme.len() > baseline.len());
+        let root_span = |branches: &[TreeBranchSegment]| {
+            branches
+                .iter()
+                .filter(|branch| branch.depth == 0 && branch.end.y < -2.0)
+                .map(|branch| branch.end.xz().length())
+                .fold(0.0_f32, f32::max)
+        };
+        assert!(root_span(&extreme) > root_span(&baseline) * 1.7);
+        let trunk_horizontal_span = |branches: &[TreeBranchSegment]| {
+            branches
+                .iter()
+                .filter(|branch| branch.depth == 0 && branch.start.y > -2.1)
+                .map(|branch| branch.end.xz().length())
+                .fold(0.0_f32, f32::max)
+        };
+        assert!(trunk_horizontal_span(&extreme) > trunk_horizontal_span(&baseline) + 0.7);
+        assert!(extreme.iter().all(|branch| branch.start.is_finite()
+            && branch.end.is_finite()
+            && branch.start_radius.is_finite()
+            && branch.end_radius.is_finite()
+            && branch.start_radius > branch.end_radius
+            && branch.end_radius > 0.0));
+    }
+
     fn point_segment_distance(point: Vec3, start: Vec3, end: Vec3) -> f32 {
         let segment = end - start;
         let along = ((point - start).dot(segment) / segment.length_squared()).clamp(0.0, 1.0);
@@ -338,6 +381,14 @@ fn signed_angular_delta(from: f32, to: f32) -> f32 {
 }
 
 fn procedural_oak_root_specs(seed: u64, crown_phase: f32) -> Vec<OakRootSpec> {
+    procedural_oak_root_specs_with_gnarling(seed, crown_phase, NATURAL_OAK_GNARLING)
+}
+
+fn procedural_oak_root_specs_with_gnarling(
+    seed: u64,
+    crown_phase: f32,
+    gnarling: OakGnarlingParameters,
+) -> Vec<OakRootSpec> {
     let plan_seed = splitmix64(seed ^ 0x4f41_4b52_4f4f_5453);
     let root_count = OAK_ROOT_MIN_COUNT
         + (splitmix64(plan_seed ^ 0x01) as usize % (OAK_ROOT_MAX_COUNT - OAK_ROOT_MIN_COUNT + 1));
@@ -399,17 +450,19 @@ fn procedural_oak_root_specs(seed: u64, crown_phase: f32) -> Vec<OakRootSpec> {
         .map(|(index, angle)| {
             let root_seed = splitmix64(plan_seed ^ 0x300 ^ index as u64);
             let is_dominant = dominant[index];
-            let reach = if is_dominant {
+            let reach = (if is_dominant {
                 1.18 + unit_hash(root_seed ^ 0x01) * 0.3
             } else {
                 0.82 + unit_hash(root_seed ^ 0x01) * 0.4
-            };
+            }) * (1.0 + gnarling.root_spread.clamp(0.0, 1.0) * 1.15);
             let base_radius = if is_dominant {
                 0.34 + unit_hash(root_seed ^ 0x02) * 0.08
             } else {
                 0.25 + unit_hash(root_seed ^ 0x02) * 0.075
             };
-            let fork = (fork_count < OAK_ROOT_MAX_FORKS && unit_hash(root_seed ^ 0x06) > 0.72)
+            let fork_threshold = 0.82 - gnarling.root_forking.clamp(0.0, 1.0) * 0.72;
+            let fork = (fork_count < OAK_ROOT_MAX_FORKS
+                && unit_hash(root_seed ^ 0x06) > fork_threshold)
                 .then(|| {
                     fork_count += 1;
                     OakRootFork {
@@ -450,19 +503,27 @@ fn child_base_radius(authored: f32, parent_radius: f32) -> f32 {
     authored.min(parent_radius * 0.8)
 }
 
-fn oak_root_points(trunk_base: Vec3, root: OakRootSpec) -> [Vec3; 3] {
+fn oak_root_points(
+    trunk_base: Vec3,
+    root: OakRootSpec,
+    gnarling: OakGnarlingParameters,
+) -> [Vec3; 3] {
     let outward = Vec3::new(root.angle.cos(), 0.0, root.angle.sin());
     let tangent = Vec3::new(-root.angle.sin(), 0.0, root.angle.cos());
     let contact_radius = 0.48 + (root.base_radius - 0.25) * 0.35;
+    let meander = (gnarling.root_meander.clamp(0.0, 1.0) * root.reach * 0.32)
+        * (root.angle * 2.7 + root.reach * 3.1).sin();
+    let exposure = gnarling.root_exposure.clamp(0.0, 1.0);
     let contact =
         trunk_base + outward * contact_radius + tangent * (root.shoulder_lift - 0.0375) * 1.4;
     [
         contact,
         contact
             + outward * (0.19 + root.reach * 0.18)
-            + tangent * (root.tip_radius - 0.0525) * 2.2
-            + Vec3::Y * root.shoulder_lift,
-        trunk_base + outward * root.reach - Vec3::Y * root.burial,
+            + tangent * ((root.tip_radius - 0.0525) * 2.2 + meander)
+            + Vec3::Y * (root.shoulder_lift + exposure * 0.16),
+        trunk_base + outward * root.reach + tangent * meander * 0.42
+            - Vec3::Y * root.burial * (1.0 - exposure * 0.82),
     ]
 }
 
@@ -479,7 +540,11 @@ fn oak_root_fork_points(parent: &[Vec3; 3], root: OakRootSpec, fork: OakRootFork
     ]
 }
 
-fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranchSegment> {
+pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
+    seed: u64,
+    canopy_competition: f32,
+    gnarling: OakGnarlingParameters,
+) -> Vec<TreeBranchSegment> {
     let mut branches = Vec::new();
     let canopy_competition = canopy_competition.clamp(0.0, 1.0);
     let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
@@ -489,18 +554,45 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
     // dominance inside a broad crown instead of continuing as a conifer-like
     // central spear.
     let trunk_length = 5.4_f32.lerp(9.2, canopy_competition);
-    let trunk_points = (0..=6)
+    let individual_bias = (unit_hash(seed ^ 0x4c45_414e) - 0.5) * 0.34;
+    let lean_phase = gnarling.stress_azimuth_radians + individual_bias;
+    let lean_direction = Vec3::new(lean_phase.cos(), 0.0, lean_phase.sin());
+    let trunk_deformation =
+        gnarling.trunk_lean + gnarling.trunk_sweep + gnarling.trunk_twist + gnarling.trunk_crooks;
+    let trunk_steps = if trunk_deformation > 0.001 { 24 } else { 6 };
+    let trunk_points = (0..=trunk_steps)
         .map(|index| {
-            let t = index as f32 / 6.0;
+            let t = index as f32 / trunk_steps as f32;
+            let window = (core::f32::consts::PI * t).sin();
+            let sweep = lean_direction * (gnarling.trunk_lean.clamp(0.0, 1.0) * 2.6 * t.powf(1.25));
+            let crook = bend_direction
+                * (gnarling.trunk_crooks.clamp(0.0, 1.0)
+                    * 0.72
+                    * (t * core::f32::consts::TAU * 2.4 + crown_phase).sin()
+                    * window);
+            let helical = Vec3::new(
+                (crown_phase + t * core::f32::consts::TAU * 1.7).cos(),
+                0.0,
+                (crown_phase + t * core::f32::consts::TAU * 1.7).sin(),
+            ) * (gnarling.trunk_twist.clamp(0.0, 1.0) * 0.48 * window);
+            let lateral_sweep = Vec3::new(-lean_direction.z, 0.0, lean_direction.x)
+                * (gnarling.trunk_sweep.clamp(0.0, 1.0)
+                    * 0.8
+                    * (t * core::f32::consts::PI).sin().powi(2));
             Vec3::new(0.0, -TREE_TRUNK_HEIGHT_METRES * 0.5, 0.0)
                 + Vec3::Y * (trunk_length * t)
                 + bend_direction * (0.28 * t.powf(1.45))
+                + sweep
+                + crook
+                + helical
+                + lateral_sweep
         })
         .collect::<Vec<_>>();
     append_branch_curve(
         &mut branches,
         &trunk_points,
-        0.72_f32.lerp(0.56, canopy_competition),
+        0.72_f32.lerp(0.56, canopy_competition)
+            * (1.0 + gnarling.taper_irregularity.clamp(0.0, 1.0) * 0.16),
         0.045_f32.lerp(0.035, canopy_competition),
         0,
         u8::MAX,
@@ -511,10 +603,10 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
     // scaffold limbs without changing the authoritative collider. Their plan
     // is presentation-only: a bounded irregular partition avoids a radial
     // star, while the broadest buttresses share the major scaffold azimuths.
-    let root_specs = procedural_oak_root_specs(seed, crown_phase);
+    let root_specs = procedural_oak_root_specs_with_gnarling(seed, crown_phase, gnarling);
     debug_assert!(oak_root_segment_count(&root_specs) <= OAK_ROOT_MAX_SEGMENTS);
     for root in root_specs {
-        let points = oak_root_points(trunk_points[0] + Vec3::Y * 0.09, root);
+        let points = oak_root_points(trunk_points[0] + Vec3::Y * 0.09, root, gnarling);
         append_branch_curve(
             &mut branches,
             &points,
@@ -537,6 +629,8 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
             );
         }
     }
+
+    append_oak_knots(&mut branches, seed, &trunk_points, gnarling);
 
     // Seven crown sectors fill a low, wide, irregular dome. Four are heavy,
     // load-bearing scaffold axes; the other three are subordinate crown-fill
@@ -601,10 +695,13 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
             // competitive crown instead of growing a false central spear.
             (2.1 - rank * 0.1, 2.15 + rank * 0.08)
         };
-        let reach = isolated_reach.lerp(competitive_reach, canopy_competition);
+        let asymmetry =
+            1.0 + gnarling.crown_asymmetry.clamp(0.0, 1.0) * 0.38 * (phase - lean_phase).cos();
+        let reach = isolated_reach.lerp(competitive_reach, canopy_competition) * asymmetry;
         let lift = isolated_lift.lerp(competitive_lift, canopy_competition);
         let sag = isolated_sag.lerp(0.32, canopy_competition);
-        let lateral = (unit_hash(primary_seed ^ 3) - 0.5) * 1.25;
+        let lateral = (unit_hash(primary_seed ^ 3) - 0.5)
+            * (1.25 + gnarling.scaffold_sweep.clamp(0.0, 1.0) * 2.8);
         let torsion_phase = unit_hash(primary_seed ^ 0x71) * core::f32::consts::TAU;
         let primary_points = (0..=10)
             .map(|point_index| {
@@ -614,11 +711,15 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
                     + outward * reach * eased
                     + tangent * lateral * (core::f32::consts::PI * t).sin()
                     + tangent
-                        * 0.22
+                        * (0.22 + gnarling.scaffold_contortion.clamp(0.0, 1.0) * 0.62)
                         * (core::f32::consts::TAU * t + torsion_phase).sin()
                         * (core::f32::consts::PI * t).sin()
                     + Vec3::Y
                         * (-sag * (core::f32::consts::PI * t).sin()
+                            - gnarling.scaffold_droop.clamp(0.0, 1.0)
+                                * reach
+                                * 0.16
+                                * (core::f32::consts::PI * t).sin().powi(2)
                             + lift * t.powf(1.85)
                             + 0.16
                                 * (core::f32::consts::TAU * t + torsion_phase * 0.7).sin()
@@ -779,6 +880,67 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
         }
     }
     branches
+}
+
+fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranchSegment> {
+    procedural_oak_skeleton_with_gnarling(seed, canopy_competition, NATURAL_OAK_GNARLING)
+}
+
+pub(in crate::presentation) fn oak_gnarling_from_seed(seed: u64) -> OakGnarlingParameters {
+    let h = |salt| unit_hash(splitmix64(seed ^ salt));
+    OakGnarlingParameters {
+        stress_azimuth_radians: h(0x00) * core::f32::consts::TAU,
+        root_spread: h(0x01),
+        root_meander: h(0x02),
+        root_exposure: h(0x03),
+        root_forking: h(0x04),
+        trunk_lean: h(0x05),
+        trunk_sweep: h(0x06),
+        trunk_twist: h(0x07),
+        trunk_crooks: h(0x08),
+        taper_irregularity: h(0x09),
+        knot_frequency: h(0x0a),
+        knot_scale: h(0x0b),
+        burl_scale: h(0x0c),
+        scaffold_droop: h(0x0d),
+        scaffold_sweep: h(0x0e),
+        scaffold_contortion: h(0x0f),
+        crown_asymmetry: h(0x10),
+    }
+}
+
+fn append_oak_knots(
+    branches: &mut Vec<TreeBranchSegment>,
+    seed: u64,
+    trunk: &[Vec3],
+    gnarling: OakGnarlingParameters,
+) {
+    let count = (gnarling.knot_frequency.clamp(0.0, 1.0) * 6.0).round() as u64;
+    for index in 0..count {
+        let knot_seed = splitmix64(seed ^ 0x4b4e_4f54 ^ index);
+        let attach = 0.1 + unit_hash(knot_seed) * 0.68;
+        let center = sample_polyline(trunk, attach);
+        let axis = polyline_tangent(trunk, attach);
+        let (right, forward) = branch_frame(axis);
+        let phase = unit_hash(knot_seed ^ 1) * core::f32::consts::TAU;
+        let radial = right * phase.cos() + forward * phase.sin();
+        let scale = 0.055
+            + gnarling.knot_scale.clamp(0.0, 1.0) * 0.18
+            + gnarling.burl_scale.clamp(0.0, 1.0) * unit_hash(knot_seed ^ 2) * 0.24;
+        append_branch_curve(
+            branches,
+            &[
+                center,
+                center + radial * scale * 0.75,
+                center + radial * scale + axis * scale * 0.18,
+            ],
+            scale,
+            scale * 0.38,
+            0,
+            u8::MAX,
+            u16::MAX,
+        );
+    }
 }
 
 fn procedural_hazel_skeleton(

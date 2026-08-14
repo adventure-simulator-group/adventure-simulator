@@ -36,6 +36,124 @@ pub(in crate::presentation) const COMMON_HAZEL_PARAMETERS: WoodyPlantParameters 
         leaves_per_shoot: 10,
     };
 
+/// Independent, normalized controls for the growth history that makes an oak
+/// read as gnarled. Keeping these causes separate lets authored presets express
+/// a wind-shaped tree, an ancient pollard, or a root-bound veteran without one
+/// overloaded "gnarliness" slider.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::presentation) struct OakGnarlingParameters {
+    /// Shared direction of persistent asymmetric loading, normally prevailing
+    /// wind, in world-space radians from +X toward +Z.
+    pub(in crate::presentation) stress_azimuth_radians: f32,
+    pub(in crate::presentation) root_spread: f32,
+    pub(in crate::presentation) root_meander: f32,
+    pub(in crate::presentation) root_exposure: f32,
+    pub(in crate::presentation) root_forking: f32,
+    pub(in crate::presentation) trunk_lean: f32,
+    pub(in crate::presentation) trunk_sweep: f32,
+    pub(in crate::presentation) trunk_twist: f32,
+    pub(in crate::presentation) trunk_crooks: f32,
+    pub(in crate::presentation) taper_irregularity: f32,
+    pub(in crate::presentation) knot_frequency: f32,
+    pub(in crate::presentation) knot_scale: f32,
+    pub(in crate::presentation) burl_scale: f32,
+    pub(in crate::presentation) scaffold_droop: f32,
+    pub(in crate::presentation) scaffold_sweep: f32,
+    pub(in crate::presentation) scaffold_contortion: f32,
+    pub(in crate::presentation) crown_asymmetry: f32,
+}
+
+pub(in crate::presentation) const NATURAL_OAK_GNARLING: OakGnarlingParameters =
+    OakGnarlingParameters {
+        stress_azimuth_radians: 0.0,
+        root_spread: 0.0,
+        root_meander: 0.0,
+        root_exposure: 0.0,
+        root_forking: 0.0,
+        trunk_lean: 0.0,
+        trunk_sweep: 0.0,
+        trunk_twist: 0.0,
+        trunk_crooks: 0.0,
+        taper_irregularity: 0.0,
+        knot_frequency: 0.0,
+        knot_scale: 0.0,
+        burl_scale: 0.0,
+        scaffold_droop: 0.0,
+        scaffold_sweep: 0.0,
+        scaffold_contortion: 0.0,
+        crown_asymmetry: 0.0,
+    };
+
+pub(in crate::presentation) const WIND_SHAPED_OAK_GNARLING: OakGnarlingParameters =
+    OakGnarlingParameters {
+        stress_azimuth_radians: 0.0,
+        root_spread: 0.48,
+        root_meander: 0.36,
+        root_exposure: 0.3,
+        root_forking: 0.36,
+        trunk_lean: 0.72,
+        trunk_sweep: 0.68,
+        trunk_twist: 0.34,
+        trunk_crooks: 0.3,
+        taper_irregularity: 0.34,
+        knot_frequency: 0.3,
+        knot_scale: 0.28,
+        burl_scale: 0.12,
+        scaffold_droop: 0.48,
+        scaffold_sweep: 0.82,
+        scaffold_contortion: 0.46,
+        crown_asymmetry: 0.86,
+    };
+
+pub(in crate::presentation) const ANCIENT_OAK_GNARLING: OakGnarlingParameters =
+    OakGnarlingParameters {
+        stress_azimuth_radians: 0.0,
+        root_spread: 0.86,
+        root_meander: 0.72,
+        root_exposure: 0.8,
+        root_forking: 0.72,
+        trunk_lean: 0.28,
+        trunk_sweep: 0.46,
+        trunk_twist: 0.62,
+        trunk_crooks: 0.68,
+        taper_irregularity: 0.74,
+        knot_frequency: 0.82,
+        knot_scale: 0.7,
+        burl_scale: 0.76,
+        scaffold_droop: 0.78,
+        scaffold_sweep: 0.58,
+        scaffold_contortion: 0.72,
+        crown_asymmetry: 0.54,
+    };
+
+pub(in crate::presentation) const EXTREME_OAK_GNARLING: OakGnarlingParameters =
+    OakGnarlingParameters {
+        stress_azimuth_radians: 0.0,
+        root_spread: 1.0,
+        root_meander: 1.0,
+        root_exposure: 1.0,
+        root_forking: 1.0,
+        trunk_lean: 0.7,
+        trunk_sweep: 1.0,
+        trunk_twist: 1.0,
+        trunk_crooks: 1.0,
+        taper_irregularity: 1.0,
+        knot_frequency: 1.0,
+        knot_scale: 1.0,
+        burl_scale: 1.0,
+        scaffold_droop: 1.0,
+        scaffold_sweep: 1.0,
+        scaffold_contortion: 1.0,
+        crown_asymmetry: 1.0,
+    };
+
+pub(in crate::presentation) const OAK_GNARLING_SHOWCASE: [OakGnarlingParameters; 4] = [
+    NATURAL_OAK_GNARLING,
+    WIND_SHAPED_OAK_GNARLING,
+    ANCIENT_OAK_GNARLING,
+    EXTREME_OAK_GNARLING,
+];
+
 #[derive(Clone, Copy, Debug)]
 pub(in crate::presentation) struct BarkRecipe {
     pub(in crate::presentation) fissure_depth_metres: f32,
@@ -99,7 +217,8 @@ pub(in crate::presentation) use leaves::{
     procedural_woody_plant_leaves,
 };
 pub(in crate::presentation) use skeleton::{
-    procedural_tree_skeleton, procedural_woody_plant_skeleton,
+    procedural_oak_skeleton_with_gnarling, procedural_tree_skeleton,
+    procedural_woody_plant_skeleton,
 };
 pub(in crate::presentation) use wood_mesh::{
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_woody_branch_mesh,
