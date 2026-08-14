@@ -1,5 +1,6 @@
 #import bevy_pbr::{
     mesh_functions,
+    pbr_functions::visibility_range_dither,
     view_transformations::position_world_to_clip,
 }
 
@@ -147,6 +148,9 @@ fn discard_transparent_leaf(uv: vec2<f32>) -> f32 {
 #ifdef PREPASS_FRAGMENT
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+#ifdef VISIBILITY_RANGE_DITHER
+    visibility_range_dither(in.position, in.visibility_range_dither);
+#endif
     discard_transparent_leaf(in.uv);
     var out: FragmentOutput;
 #ifdef NORMAL_PREPASS
@@ -164,6 +168,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 #else
 @fragment
 fn fragment(in: VertexOutput) {
+#ifdef VISIBILITY_RANGE_DITHER
+    visibility_range_dither(in.position, in.visibility_range_dither);
+#endif
     discard_transparent_leaf(in.uv);
     // Thin whole terminal shoots, rather than high-frequency pixels, so
     // overlapping alpha cards leave coherent sun flecks on the forest floor.
@@ -175,6 +182,9 @@ fn fragment(in: VertexOutput) {
 #else
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+#ifdef VISIBILITY_RANGE_DITHER
+    visibility_range_dither(in.position, in.visibility_range_dither);
+#endif
     let opacity = discard_transparent_leaf(in.uv);
     let position_dx = dpdx(in.world_position.xyz);
     let position_dy = dpdy(in.world_position.xyz);

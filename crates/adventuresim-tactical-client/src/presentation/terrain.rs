@@ -35,6 +35,8 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     #[uniform(100)]
     base_color: Vec4,
     #[uniform(100)]
+    grass_color: Vec4,
+    #[uniform(100)]
     cover: Vec4,
     #[uniform(100)]
     weather: Vec4,
@@ -138,6 +140,9 @@ pub(in crate::presentation) fn terrain_material(
         },
         extension: TacticalTerrainExtension {
             base_color: color_vec4(scene_ground_color(environment)),
+            // Match the rendered optical average of the sward rather than its
+            // brighter pre-lighting blade pigment.
+            grass_color: color_vec4(grass_terminal_pigment(environment)),
             cover: Vec4::new(
                 bps(environment.canopy_bps),
                 bps(environment.wetland_bps),
@@ -246,7 +251,7 @@ pub(super) fn organic_ground_pixels(ground: &SceneGround, seed: u64) -> (u32, u3
     (width as u32, depth as u32, pixels)
 }
 
-pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
+pub(super) fn grass_cover_mask_pixels(ground: &SceneGround, seed: u64) -> (u32, u32, Vec<u8>) {
     let (width, height, ground_pixels) = organic_ground_pixels(ground, seed);
     let mut mask = vec![0_u8; width as usize * height as usize];
     let radius = GROUND_PRESENTATION_SAMPLES_PER_CELL * 7 / 2;
@@ -257,12 +262,10 @@ pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
         for x in 0..width_usize {
             let index = z * width_usize + x;
             let cover = ground_pixels[index * 4];
-            if cover != GroundCover::TallGrass as u8
-                || x == 0
-                || z == 0
-                || x + 1 == width_usize
-                || z + 1 == height_usize
-            {
+            // The playable rectangle is a data-authority boundary, not a
+            // vegetation boundary. Do not manufacture a grass-free frame at
+            // the image edge; exterior coverage is stitched by the vista mask.
+            if cover != GroundCover::TallGrass as u8 {
                 distance[index] = 0;
             }
         }
@@ -309,6 +312,11 @@ pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
             mask[z * width as usize + x] = (f32::from(density) * feather) as u8;
         }
     }
+    (width, height, mask)
+}
+
+pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
+    let (width, height, mask) = grass_cover_mask_pixels(ground, seed);
     let mut image = Image::new(
         Extent3d {
             width,
@@ -412,6 +420,13 @@ mod tests {
         ));
         assert!(shader.contains("var ground_map: texture_2d<f32>"));
         assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(color, 1.0)"));
+        assert!(shader.contains("distance(position, view.lod_view_world_position.xyz)"));
+        assert!(!shader.contains("distance(position.xz, view.lod_view_world_position.xz)"));
+        assert!(shader.contains("color = terrain.grass_color.rgb"));
+        assert!(shader.contains("let sward_color = terrain.grass_color.rgb"));
+        assert!(!shader.contains("sward_color = color *"));
+        assert!(shader.contains("sward_dither < sward_amount"));
+        assert!(!shader.contains("sward_amount >= 0.5"));
         for forbidden in [
             "dirt_diffuse",
             "dirt_normal_gl",
@@ -599,5 +614,6 @@ mod tests {
             values.iter().any(|value| (1..255).contains(value)),
             "grass-side boundary must be progressively sparse"
         );
+        assert!(values[0] > 200 && values[values.len() - 1] > 200);
     }
 }

@@ -13,9 +13,7 @@ use bevy::{
     },
 };
 
-use crate::presentation::{
-    TreePresentationSpecies, bps, splitmix64, tree_species_for_site, unit_hash,
-};
+use crate::presentation::{bps, splitmix64, unit_hash};
 
 use super::{GroundScatterLayer, TacticalFoliageMaterial, foliage_material};
 
@@ -164,7 +162,6 @@ pub(super) fn spawn(
     commands: &mut Commands,
     terrain: &SceneTerrain,
     ground: &SceneGround,
-    environment: &SceneEnvironment,
     base_seed: u64,
     profile: GrassCommunityProfile,
     assets: &Assets,
@@ -183,13 +180,6 @@ pub(super) fn spawn(
             let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
             let eligibility_world_x = (x as f32 + jitter_x * 0.24) * GRASS_PATCH_SPACING;
             let eligibility_world_z = (z as f32 + jitter_z * 0.24) * GRASS_PATCH_SPACING;
-            if !grass_patch_survives_canopy(
-                hash,
-                Vec2::new(eligibility_world_x, eligibility_world_z),
-                environment,
-            ) {
-                continue;
-            }
             let world_x = (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
             let world_z = (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
             let Some(transform) = grass_patch_placement(
@@ -255,16 +245,6 @@ pub(super) fn spawn(
     }
 }
 
-fn grass_patch_survives_canopy(hash: u64, point: Vec2, environment: &SceneEnvironment) -> bool {
-    let species = tree_species_for_site(Vec3::new(point.x, 0.0, point.y), environment);
-    grass_patch_survives_tree_species(hash, species)
-}
-
-fn grass_patch_survives_tree_species(hash: u64, species: TreePresentationSpecies) -> bool {
-    species != TreePresentationSpecies::CommonBeech
-        || unit_hash(splitmix64(hash ^ 0xbeec_6a55_5f66_6c72)) < 0.12
-}
-
 // A 96 x 96 grid preserves the established macro-patch footprint while
 // approaching the shoot density of a mature meadow. Density lives inside the
 // shared mesh rather than in more ECS entities, so extraction and visibility
@@ -310,6 +290,7 @@ pub(in crate::presentation) fn vista_grass_material(
     wind_scale: f32,
     grass_dryness: f32,
     ground_mask: Handle<Image>,
+    ground_mask_transform: Vec4,
     lod: GrassMeshLod,
 ) -> TacticalFoliageMaterial {
     let mut material = foliage_material(wind_scale, true);
@@ -323,10 +304,7 @@ pub(in crate::presentation) fn vista_grass_material(
         }
         GrassMeshLod::Vista => Vec4::new(1.0, 0.94, 0.055, lod.width_compensation(1.0)),
     };
-    // Placement has already evaluated regional cover. Sample a one-pixel
-    // white mask so coordinates beyond the playable map are not clamped back
-    // onto its boundary cells by the shared foliage shader.
-    material.ground_mask_transform = Vec4::new(0.0, 0.0, 0.5, 0.5);
+    material.ground_mask_transform = ground_mask_transform;
     material.ground_mask = Some(ground_mask);
     material
 }
@@ -524,6 +502,17 @@ struct GrassBlade {
     species: GrassSpecies,
 }
 
+#[derive(Clone, Copy)]
+struct GrassInflorescence {
+    root: Vec3,
+    angle: f32,
+    total_height: f32,
+    species: GrassSpecies,
+    normal: [f32; 3],
+    color: [f32; 4],
+    blade_root: [f32; 2],
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GrassSpecies {
     FalseOatGrass,
@@ -552,6 +541,14 @@ impl GrassSpecies {
             Self::FalseOatGrass => 2,
             Self::Cocksfoot => 3,
             Self::CommonBent | Self::TuftedHairGrass => 4,
+            Self::RedFescue | Self::YorkshireFog => 0,
+        }
+    }
+
+    fn spikelets_per_branch(self) -> usize {
+        match self {
+            Self::Cocksfoot | Self::TuftedHairGrass => 3,
+            Self::FalseOatGrass | Self::CommonBent => 2,
             Self::RedFescue | Self::YorkshireFog => 0,
         }
     }
@@ -726,23 +723,53 @@ fn grass_ribbon_patch_mesh(
             && unit_hash(splitmix64(hash ^ 0x7061_6e69_636c_65)) < 0.125
         {
             let total_height = height * height_scale * species.height_scale();
-            let compact = species == GrassSpecies::Cocksfoot;
-            inflorescences.push((
+            inflorescences.push(GrassInflorescence {
                 root,
                 angle,
                 total_height,
-                compact,
-                branch_count,
+                species,
                 normal,
-                blade_color,
-                [offset_x, offset_z],
-            ));
+                color: blade_color,
+                blade_root: [offset_x, offset_z],
+            });
         }
     }
 
-    for (root, angle, total_height, compact, branch_count, normal, blade_color, blade_root) in
-        inflorescences
+    for GrassInflorescence {
+        root,
+        angle,
+        total_height,
+        species,
+        normal,
+        color,
+        blade_root,
+    } in inflorescences
     {
+        let compact = species == GrassSpecies::Cocksfoot;
+        let branch_count = species.inflorescence_branch_count();
+        let stem_side = Vec3::new(angle.cos(), 0.0, angle.sin()) * 0.0025;
+        for (start_fraction, end_fraction) in [(0.62, 0.82), (0.82, 1.03)] {
+            let start = root + Vec3::Y * total_height * start_fraction;
+            let end = root + Vec3::Y * total_height * end_fraction;
+            append_attached_quad(
+                &mut positions,
+                &mut normals,
+                &mut uvs,
+                &mut blade_roots,
+                &mut colors,
+                &mut indices,
+                start - stem_side,
+                start + stem_side,
+                end - stem_side * 0.62,
+                end + stem_side * 0.62,
+                normal,
+                color,
+                blade_root,
+                start.y,
+                start_fraction,
+            );
+        }
+
         for branch in 0..branch_count {
             let fraction = branch as f32 / branch_count as f32;
             let side_sign = if branch % 2 == 0 { 1.0 } else { -1.0 };
@@ -766,25 +793,49 @@ fn grass_ribbon_patch_mesh(
                 + direction * length
                 + Vec3::Y * total_height * if compact { 0.018 } else { 0.045 };
             let side = Vec3::new(-direction.z, 0.0, direction.x) * thickness;
-            let branch_base = positions.len() as u32;
-            positions.extend_from_slice(&[
-                (start - side).to_array(),
-                (start + side).to_array(),
-                (end - side * 0.55).to_array(),
-                (end + side * 0.55).to_array(),
-            ]);
-            normals.extend_from_slice(&[normal; 4]);
-            uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]);
-            blade_roots.extend_from_slice(&[blade_root; 4]);
-            colors.extend_from_slice(&[blade_color; 4]);
-            indices.extend_from_slice(&[
-                branch_base,
-                branch_base + 1,
-                branch_base + 3,
-                branch_base,
-                branch_base + 3,
-                branch_base + 2,
-            ]);
+            let attachment_fraction = start.y / total_height;
+            append_attached_quad(
+                &mut positions,
+                &mut normals,
+                &mut uvs,
+                &mut blade_roots,
+                &mut colors,
+                &mut indices,
+                start - side,
+                start + side,
+                end - side * 0.55,
+                end + side * 0.55,
+                normal,
+                color,
+                blade_root,
+                start.y,
+                attachment_fraction,
+            );
+
+            for spikelet in 0..species.spikelets_per_branch() {
+                let along = if compact {
+                    0.52 + spikelet as f32 * 0.18
+                } else {
+                    0.64 + spikelet as f32 * 0.27
+                };
+                let centre = start.lerp(end, along.min(1.0));
+                append_crossed_spikelet(
+                    &mut positions,
+                    &mut normals,
+                    &mut uvs,
+                    &mut blade_roots,
+                    &mut colors,
+                    &mut indices,
+                    centre,
+                    direction,
+                    if compact { 0.008 } else { 0.005 },
+                    if compact { 0.014 } else { 0.010 },
+                    color,
+                    blade_root,
+                    start.y,
+                    attachment_fraction,
+                );
+            }
         }
     }
 
@@ -799,6 +850,83 @@ fn grass_ribbon_patch_mesh(
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.insert_indices(Indices::U32(indices));
     mesh
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_attached_quad(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    blade_roots: &mut Vec<[f32; 2]>,
+    colors: &mut Vec<[f32; 4]>,
+    indices: &mut Vec<u32>,
+    lower_left: Vec3,
+    lower_right: Vec3,
+    upper_left: Vec3,
+    upper_right: Vec3,
+    normal: [f32; 3],
+    color: [f32; 4],
+    blade_root: [f32; 2],
+    attachment_height: f32,
+    attachment_fraction: f32,
+) {
+    let base = positions.len() as u32;
+    positions.extend_from_slice(&[
+        lower_left.to_array(),
+        lower_right.to_array(),
+        upper_left.to_array(),
+        upper_right.to_array(),
+    ]);
+    normals.extend_from_slice(&[normal; 4]);
+    // Negative V identifies rigid seed-head geometry. U carries its authored
+    // stalk attachment height so the shader can preserve the mesh while
+    // inheriting the parent shoot's deformation.
+    uvs.extend_from_slice(&[[attachment_height, -attachment_fraction]; 4]);
+    blade_roots.extend_from_slice(&[blade_root; 4]);
+    colors.extend_from_slice(&[color; 4]);
+    indices.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_crossed_spikelet(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    blade_roots: &mut Vec<[f32; 2]>,
+    colors: &mut Vec<[f32; 4]>,
+    indices: &mut Vec<u32>,
+    centre: Vec3,
+    branch_direction: Vec3,
+    half_width: f32,
+    half_height: f32,
+    color: [f32; 4],
+    blade_root: [f32; 2],
+    attachment_height: f32,
+    attachment_fraction: f32,
+) {
+    let horizontal =
+        Vec3::new(-branch_direction.z, 0.0, branch_direction.x).normalize_or_zero() * half_width;
+    let along = branch_direction.normalize_or_zero() * half_width;
+    for side in [horizontal, along] {
+        let normal = Vec3::Y.cross(side).normalize_or_zero().to_array();
+        append_attached_quad(
+            positions,
+            normals,
+            uvs,
+            blade_roots,
+            colors,
+            indices,
+            centre - Vec3::Y * half_height,
+            centre - side,
+            centre + side,
+            centre + Vec3::Y * half_height,
+            normal,
+            color,
+            blade_root,
+            attachment_height,
+            attachment_fraction,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -882,22 +1010,6 @@ mod tests {
     }
 
     #[test]
-    fn beech_community_suppresses_grass_relative_to_oak() {
-        let oak_survivors = (0..4_096_u64)
-            .filter(|hash| {
-                grass_patch_survives_tree_species(*hash, TreePresentationSpecies::EnglishOak)
-            })
-            .count();
-        let beech_survivors = (0..4_096_u64)
-            .filter(|hash| {
-                grass_patch_survives_tree_species(*hash, TreePresentationSpecies::CommonBeech)
-            })
-            .count();
-        assert_eq!(oak_survivors, 4_096);
-        assert!(beech_survivors < oak_survivors / 5);
-    }
-
-    #[test]
     fn grass_species_have_distinct_near_morphology_and_diagnostic_seed_heads() {
         let mesic = grass_patch_mesh(
             Color::WHITE,
@@ -926,6 +1038,50 @@ mod tests {
             GrassSpecies::CommonBent.inflorescence_branch_count()
                 > GrassSpecies::FalseOatGrass.inflorescence_branch_count()
         );
+    }
+
+    #[test]
+    fn near_seed_heads_are_crossed_clusters_with_rigid_attachment_metadata() {
+        let mesh = (0..4_096)
+            .find_map(|seed| {
+                let mesh = grass_ribbon_patch_mesh(
+                    0.026,
+                    0.82,
+                    Color::WHITE,
+                    GrassMeshLod::Near,
+                    &[GrassBlade {
+                        offset_x: 0.0,
+                        offset_z: 0.0,
+                        height_scale: 1.0,
+                        width_scale: 1.0,
+                        seed,
+                        species: GrassSpecies::Cocksfoot,
+                    }],
+                );
+                (mesh.count_vertices() > 15).then_some(mesh)
+            })
+            .expect("the bounded seed search should find a flowering cocksfoot shoot");
+
+        let positions = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .expect("seed heads should retain authored positions");
+        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("seed heads should carry attachment metadata");
+        };
+        let seed_head_positions = &positions[15..];
+        let seed_head_uvs = &uvs[15..];
+
+        assert!(seed_head_positions.len() >= 92);
+        assert!(seed_head_uvs.iter().all(|uv| uv[0] > 0.0 && uv[1] < 0.0));
+        assert!(
+            seed_head_positions
+                .iter()
+                .any(|position| position[0].abs().max(position[2].abs()) > 0.03),
+            "the nearest seed head must contain authored lateral branches"
+        );
+        assert_eq!(seed_head_positions.len() % 4, 0);
     }
 
     #[test]
@@ -1192,6 +1348,11 @@ mod tests {
         assert!(!shader.contains("let tip_age"));
         assert!(shader.contains("* mix(1.0, 0.94, mature_age)"));
         assert!(shader.contains("lean_amount + 0.012 * mature_age"));
+        assert!(shader.contains("let is_inflorescence = vertex.uv.y < 0.0"));
+        assert!(shader.contains("let bent_offset = rotate_between"));
+        assert!(shader.contains("abs(f32(in.visibility_range_dither)) / 16.0"));
+        assert!(!shader.contains("visibility_range_dither(in.position"));
+        assert!(shader.contains("vec4<f32>(root_world, 1.0)"));
 
         let near = grass_patch_mesh(
             Color::WHITE,

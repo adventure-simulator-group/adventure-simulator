@@ -624,7 +624,7 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
         // tens of millions of live leaf vertices active after their detail
         // was no longer readable. Preserve overlap, but hand off one botanical
         // order earlier at every stage.
-        let base = [1.0..1.5, 1.5..2.5, 2.5..4.0, 50.0..60.0][index].clone();
+        let base = [6.0..8.0, 12.0..16.0, 24.0..32.0, 50.0..60.0][index].clone();
         let spatial_scale = if index < 3 { cluster_scale } else { 1.0 };
         (base.start * focal_scale * spatial_scale)..(base.end * focal_scale * spatial_scale)
     };
@@ -639,7 +639,12 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
     VisibilityRange {
         start_margin: start,
         end_margin: end,
-        use_aabb: true,
+        // Every representation must measure from the same anchor. Using each
+        // mesh AABB made a camera beside the trunk appear close to an
+        // aggregate whole-tree mesh but far from every crown cluster. The
+        // aggregate then hid before the detailed leaves became eligible,
+        // producing a leafless tree. All tree LODs share the obstacle origin.
+        use_aabb: false,
     }
 }
 
@@ -649,7 +654,7 @@ pub(in crate::presentation) fn tree_leaf_visibility(
     cluster_radius: f32,
 ) -> VisibilityRange {
     let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
-    let leaf_transition = (0.65 * focal_scale * cluster_scale)..(1.0 * focal_scale * cluster_scale);
+    let leaf_transition = (3.5 * focal_scale * cluster_scale)..(5.0 * focal_scale * cluster_scale);
     let aggregate_transition =
         tree_projected_lod_visibility(0, focal_scale, cluster_radius).end_margin;
     let (start_margin, end_margin) = match representation {
@@ -659,7 +664,7 @@ pub(in crate::presentation) fn tree_leaf_visibility(
     VisibilityRange {
         start_margin,
         end_margin,
-        use_aabb: true,
+        use_aabb: false,
     }
 }
 
@@ -667,7 +672,7 @@ pub(in crate::presentation) fn tree_trunk_visibility() -> VisibilityRange {
     VisibilityRange {
         start_margin: 0.0..0.0,
         end_margin: 50.0..60.0,
-        use_aabb: true,
+        use_aabb: false,
     }
 }
 
@@ -776,10 +781,10 @@ mod tests {
     #[test]
     fn production_tree_lod_ranges_handoff_before_detail_is_subpixel() {
         let expected = [
-            (0.0..0.0, 1.0..1.5),
-            (1.0..1.5, 1.5..2.5),
-            (1.5..2.5, 2.5..4.0),
-            (2.5..4.0, 50.0..60.0),
+            (0.0..0.0, 6.0..8.0),
+            (6.0..8.0, 12.0..16.0),
+            (12.0..16.0, 24.0..32.0),
+            (24.0..32.0, 50.0..60.0),
             (50.0..60.0, 190.0..200.0),
         ];
         for (lod, (start, end)) in expected.into_iter().enumerate() {
@@ -789,7 +794,7 @@ mod tests {
         }
         assert_eq!(
             tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5).end_margin,
-            0.65..1.0
+            3.5..5.0
         );
         assert_eq!(tree_trunk_visibility().end_margin, 50.0..60.0);
     }
@@ -802,7 +807,7 @@ mod tests {
                     let current = tree_projected_lod_visibility(lod, focal_scale, radius);
                     let next = tree_projected_lod_visibility(lod + 1, focal_scale, radius);
                     assert_eq!(current.end_margin, next.start_margin);
-                    assert!(current.use_aabb && next.use_aabb);
+                    assert!(!current.use_aabb && !next.use_aabb);
                 }
             }
         }

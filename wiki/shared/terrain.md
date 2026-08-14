@@ -121,19 +121,29 @@ globally aligned placement domain spans both playable terrain and the first
 presentation-only vista ring. Every eligible location owns the same overlapping
 camera-distance-selected near, far, and vista representations; the gameplay
 boundary only switches the source of height and environmental coverage data.
+LOD fade distance is evaluated at each blade root and complementary dithering
+is applied in the foliage fragment shader, so a 3.2-metre patch cannot switch
+as one visible square. A single continuous coverage mask copies authoritative
+playable detail, then blends over twelve metres into regional sward coverage;
+the playable rectangle itself is never baked in as a grass-free border.
 Near ribbons fade into seven-vertex far ribbons, which fade into 6.4-metre
 patch impostors containing 576 broad, five-vertex tuft silhouettes. Regional
-coverage is applied per blade rather than by discarding entire macro patches,
+coverage is sampled continuously per blade rather than quantized into four
+patch-wide density levels or used to discard entire macro patches,
 so ecological variation does not create square holes. These are materially
 different geometry rather than blades merely
 discarded in the vertex shader, following the high/low geometry and far-field
 impostor division described in Eric Wohllaib's GDC 2021
 [*Procedural Grass in Ghost of Tsushima*](https://gdcvault.com/play/1027033/)
-talk. They fade by 140 metres; beyond them, a hard-palette
-terrain response carries the field without sub-pixel geometry. Regional vista
+talk. They fade by 140 metres; beneath and beyond them, tall-grass terrain uses
+an optical-average molded-plastic pigment derived from the same environmental
+grass palette. It compensates for the species/cohort darkening, blade
+occlusion, and thin-foliage lighting that act after the blade input color.
+This solid terminal LOD carries the field without sub-pixel geometry
+or exposing a differently colored silhouette when the last blades disappear. Regional vista
 vertices retain the same environmental samples, including an aggregate
-sward-coverage channel, so open terrain continues the grass response through
-every vista ring. Vista slopes use continuous
+sward-coverage channel, and hard world-space coverage dithering selects that
+same calibrated pigment through every vista ring. Vista slopes use continuous
 height-gradient normals instead of per-cell face normals; sufficiently exposed
 hilly samples reuse the generated two-color rock surface through coarse-safe triplanar
 sampling. The locally controlled player's position and velocity flatten
@@ -150,10 +160,13 @@ wetland, water, cultivation, hilliness, moisture, local vista samples, and
 stable low-frequency site fields are temporary habitat inputs until world data
 carries vegetation communities. Dry sites assign no token wet-tussock cells.
 Species presets change physical blade height, width, pigment region, and
-near-LOD panicle form: sparse lateral strokes distinguish open oat, bent, and
-hair-grass panicles from compact offset cocksfoot clusters. Far and vista LODs
-drop that sub-pixel geometry while preserving the same patch footprint and
-community identity.
+near-LOD panicle form. Articulated rachis and branch ribbons carry crossed
+two-plane spikelets, distinguishing open oat, bent, and hair-grass panicles
+from denser cocksfoot clusters. These rigid seed-head clusters inherit the
+parent stalk's wind and player-interaction bend at their attachment point
+without being reconstructed as blade ribbons. Far and vista LODs drop that
+sub-pixel geometry while preserving the same patch footprint and community
+identity.
 
 Ordinary temperate understory shrubs use shared procedural common-hazel
 (`Corylus avellana`), blackthorn (`Prunus spinosa`), and common-hawthorn
@@ -163,7 +176,10 @@ stem-count, shoot, leaf dimensions, petiole, bark relief, and leaf material.
 Stable four-by-four scatter-cell communities create roughly 13-metre thickets:
 hazel is weighted toward mesic shade and remains eligible on woodland leaf
 litter, blackthorn toward bright dry scrub, and hawthorn toward open or
-cultivated edges and woodland gaps. Cambered near leaves and flat
+cultivated edges and woodland gaps. Community-scale density structure groups
+the same approximate shrub population into dense cores, loose margins, and
+open relief instead of distributing every specimen at a uniform cadence.
+Cambered near leaves and flat
 alpha-card far leaves share generated, palette-constrained
 albedo/opacity/normal/AO/roughness materials and the existing tree-leaf wind
 shader.
@@ -172,8 +188,10 @@ sylvatica`). Its preset has a straight high-clear bole, compact ascending
 scaffolds, smooth gray bark relief, and ovate subtly wavy leaves instead of
 reusing oak roots, fissures, or gnarling. Stable 30-metre communities weight
 beech toward moist, closed-canopy woodland. The same local community selector
-retains only a sparse fraction of grass patches beneath beech, independently
-of the scene-wide canopy density. The species-specific bark and leaf palette is
+does not delete grass macro patches: actual overlapping crown-litter
+footprints and the scene-wide canopy density suppress the forest floor,
+avoiding square holes in otherwise unoccupied habitat cells. The
+species-specific bark and leaf palette is
 carried through playable and regional tree LODs, including the software-baked
 whole-tree billboard. For now the
 compact server obstacle remains the conservative generic `Tree` collider and
@@ -190,7 +208,11 @@ uses terrain-geometry normals only. Tree sampling follows canopy
 coverage; rock sampling uses an independent deterministic roll scaled by hilly
 coverage, so the two features do not suppress one another. Weather affects ground
 wetness/snow tint, bounded rain or snow particles, wind drift, sunlight
-transmission, and distance fog. Coarse vista samples preserve local peaks and
+transmission, and distance fog. Clear weather retains a subtle kilometre-scale
+contrast haze beyond tactical gameplay range. At the playable boundary, the
+first vista ring reuses exact edge heights and eases the solid substrate
+pigment over several regional samples while preserving its independent
+geometric-sward coverage. Coarse vista samples preserve local peaks and
 render as seam-sharing rings of independently culled mesh chunks out to 50 km;
 coarser rings leave the playable and finer-ring interiors open rather than
 overdrawing them. The 50-metre and 250-metre regional rings also

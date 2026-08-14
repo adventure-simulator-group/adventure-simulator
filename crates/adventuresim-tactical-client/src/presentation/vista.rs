@@ -15,7 +15,7 @@ pub(super) fn on_scene_vista_bundle(
     bundle: On<SceneVistaBundle>,
     mut commands: Commands,
     existing: Query<Entity, With<VistaTerrain>>,
-    playable_scenes: Query<(&SceneTerrain, &SceneEnvironment)>,
+    playable_scenes: Query<(&SceneTerrain, &SceneGround, &SceneEnvironment)>,
     settings: Res<TacticalGraphicsSettings>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalVistaMaterial>>,
@@ -35,12 +35,16 @@ pub(super) fn on_scene_vista_bundle(
         .collect::<Vec<_>>();
     let playable_scene = playable_scenes
         .iter()
-        .find(|(_, environment)| environment.scene_digest == bundle.scene_digest);
-    let playable_terrain = playable_scene.map(|(terrain, _)| terrain);
+        .find(|(_, _, environment)| environment.scene_digest == bundle.scene_digest);
+    let playable_terrain = playable_scene.map(|(terrain, _, _)| terrain);
+    let playable_environment = playable_scene.map(|(_, _, environment)| environment);
     let weather = playable_scene
-        .map(|(_, environment)| environment.weather)
+        .map(|(_, _, environment)| environment.weather)
         .unwrap_or_else(clear_vista_weather);
-    let material = materials.add(vista_material(weather));
+    let vista_grass_color = playable_environment
+        .map(grass_terminal_pigment)
+        .unwrap_or(Color::srgb_u8(37, 61, 4));
+    let material = materials.add(vista_material(weather, vista_grass_color));
     if playable_scene.is_none() {
         warn!(
             scene_digest = %bundle.scene_digest,
@@ -54,6 +58,7 @@ pub(super) fn on_scene_vista_bundle(
             inner_half_extent,
             visible_lods.get(index + 1).copied(),
             (index == 0).then_some(playable_terrain).flatten(),
+            (index == 0).then_some(playable_environment).flatten(),
             weather,
         );
         if meshes_for_lod.is_empty() {
@@ -82,7 +87,7 @@ pub(super) fn on_scene_vista_bundle(
                 visible_lods.get(index + 1).copied(),
                 inner_half_extent,
                 &bundle.scene_digest,
-                playable_scene.map(|(_, environment)| environment),
+                playable_scene.map(|(_, _, environment)| environment),
                 &mut meshes,
                 &mut tree_materials,
                 &mut images,
@@ -95,7 +100,7 @@ pub(super) fn on_scene_vista_bundle(
         );
     }
 
-    if let (Some(lod), Some((playable_terrain, environment))) =
+    if let (Some(lod), Some((playable_terrain, playable_ground, environment))) =
         (visible_lods.first().copied(), playable_scene)
     {
         spawn_near_vista_scatter(
@@ -104,6 +109,7 @@ pub(super) fn on_scene_vista_bundle(
             visible_lods.get(1).copied(),
             bundle.playable_half_extent_metres,
             playable_terrain,
+            playable_ground,
             environment,
             &mut meshes,
             &mut foliage_materials,
@@ -120,6 +126,7 @@ fn spawn_near_vista_scatter(
     coarser_lod: Option<&VistaLod>,
     playable_half_extent: Vec2,
     playable_terrain: &SceneTerrain,
+    playable_ground: &SceneGround,
     environment: &SceneEnvironment,
     meshes: &mut Assets<Mesh>,
     foliage_materials: &mut Assets<TacticalFoliageMaterial>,
@@ -131,6 +138,14 @@ fn spawn_near_vista_scatter(
     let wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
     let grass_seed = scene_seed ^ 0x6772_6173_735f_6c6f;
     let grass_profile = GrassCommunityProfile::from_environment(environment);
+    let (coverage_mask, coverage_transform) = vista_grass_cover_mask_image(
+        lod,
+        playable_half_extent,
+        playable_ground,
+        scene_seed,
+        150.0,
+    );
+    let coverage_mask = images.add(coverage_mask);
 
     // The playable boundary selects the height/cover data source, never the
     // representation. The same globally aligned lattice and distance ranges
@@ -139,13 +154,13 @@ fn spawn_near_vista_scatter(
     for grass_lod in [GrassMeshLod::Near, GrassMeshLod::Far] {
         let community_meshes = GrassCommunity::ALL
             .map(|community| meshes.add(grass_patch_mesh(grass_color, grass_lod, 1.0, community)));
-        let materials = vista_grass_materials(
+        let material = foliage_materials.add(vista_grass_material(
             wind_scale,
             grass_dryness,
+            coverage_mask.clone(),
+            coverage_transform,
             grass_lod,
-            images,
-            foliage_materials,
-        );
+        ));
         spawn_vista_grass_lattice(
             commands,
             lod,
@@ -158,7 +173,7 @@ fn spawn_near_vista_scatter(
             80.0,
             &community_meshes,
             grass_profile,
-            &materials,
+            &material,
             grass_lod_visibility(grass_lod),
         );
     }
@@ -171,13 +186,13 @@ fn spawn_near_vista_scatter(
             community,
         ))
     });
-    let vista_materials = vista_grass_materials(
+    let vista_material = foliage_materials.add(vista_grass_material(
         wind_scale,
         grass_dryness,
+        coverage_mask,
+        coverage_transform,
         GrassMeshLod::Vista,
-        images,
-        foliage_materials,
-    );
+    ));
     spawn_vista_grass_lattice(
         commands,
         lod,
@@ -190,7 +205,7 @@ fn spawn_near_vista_scatter(
         150.0,
         &vista_meshes,
         grass_profile,
-        &vista_materials,
+        &vista_material,
         grass_lod_visibility(GrassMeshLod::Vista),
     );
 
@@ -206,38 +221,127 @@ fn spawn_near_vista_scatter(
     );
 }
 
-fn vista_grass_materials(
-    wind_scale: f32,
-    grass_dryness: f32,
-    lod: GrassMeshLod,
-    images: &mut Assets<Image>,
-    materials: &mut Assets<TacticalFoliageMaterial>,
-) -> [Handle<TacticalFoliageMaterial>; 4] {
-    [64_u8, 128, 191, 255].map(|coverage| {
-        let mut mask = Image::new(
-            Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            vec![coverage],
-            TextureFormat::R8Unorm,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        mask.sampler = ImageSampler::linear();
-        let mask = images.add(mask);
-        materials.add(vista_grass_material(wind_scale, grass_dryness, mask, lod))
-    })
+const VISTA_GRASS_MASK_TEXEL_METRES: f32 = 1.0;
+const VISTA_GRASS_BOUNDARY_STITCH_METRES: f32 = 12.0;
+
+fn vista_grass_cover_mask_image(
+    lod: &VistaLod,
+    playable_half_extent: Vec2,
+    playable_ground: &SceneGround,
+    seed: u64,
+    outer_collar: f32,
+) -> (Image, Vec4) {
+    let (playable_width, playable_depth, playable_mask) =
+        grass_cover_mask_pixels(playable_ground, seed);
+    let requested_outer = playable_half_extent + Vec2::splat(outer_collar);
+    let width =
+        ((requested_outer.x * 2.0 / VISTA_GRASS_MASK_TEXEL_METRES).ceil() as u32 + 1).max(2);
+    let depth =
+        ((requested_outer.y * 2.0 / VISTA_GRASS_MASK_TEXEL_METRES).ceil() as u32 + 1).max(2);
+    let span = Vec2::new(
+        (width - 1) as f32 * VISTA_GRASS_MASK_TEXEL_METRES,
+        (depth - 1) as f32 * VISTA_GRASS_MASK_TEXEL_METRES,
+    );
+    let outer = span * 0.5;
+    let mut pixels = Vec::with_capacity(width as usize * depth as usize);
+    for z in 0..depth {
+        for x in 0..width {
+            let point = Vec2::new(
+                x as f32 * VISTA_GRASS_MASK_TEXEL_METRES - outer.x,
+                z as f32 * VISTA_GRASS_MASK_TEXEL_METRES - outer.y,
+            );
+            let coverage = stitched_vista_grass_coverage(
+                lod,
+                playable_half_extent,
+                playable_ground,
+                &playable_mask,
+                playable_width,
+                playable_depth,
+                point,
+            );
+            pixels.push((coverage.clamp(0.0, 1.0) * 255.0).round() as u8);
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width,
+            height: depth,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels,
+        TextureFormat::R8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::linear();
+    (image, Vec4::new(1.0 / span.x, 1.0 / span.y, 0.5, 0.5))
 }
 
-fn vista_grass_coverage_bucket(coverage: f32) -> usize {
-    match coverage {
-        coverage if coverage < 0.375 => 0,
-        coverage if coverage < 0.625 => 1,
-        coverage if coverage < 0.875 => 2,
-        _ => 3,
+#[allow(clippy::too_many_arguments)]
+fn stitched_vista_grass_coverage(
+    lod: &VistaLod,
+    playable_half_extent: Vec2,
+    playable_ground: &SceneGround,
+    playable_mask: &[u8],
+    playable_width: u32,
+    playable_depth: u32,
+    point: Vec2,
+) -> f32 {
+    let boundary = point.clamp(-playable_half_extent, playable_half_extent);
+    let playable_coverage = sample_playable_grass_mask(
+        playable_mask,
+        playable_width,
+        playable_depth,
+        playable_ground,
+        boundary,
+    );
+    let outside = (point.abs() - playable_half_extent)
+        .max(Vec2::ZERO)
+        .max_element();
+    if outside <= 0.0 {
+        return playable_coverage;
     }
+    let vista_coverage = sample_vista_environment(lod, point)
+        .map(vista_sward_coverage)
+        .unwrap_or(0.0);
+    let blend = smoothstep01(outside / VISTA_GRASS_BOUNDARY_STITCH_METRES);
+    playable_coverage.lerp(vista_coverage, blend)
+}
+
+fn sample_playable_grass_mask(
+    mask: &[u8],
+    width: u32,
+    depth: u32,
+    ground: &SceneGround,
+    point: Vec2,
+) -> f32 {
+    let maximum_coordinate = Vec2::new((width - 1) as f32, (depth - 1) as f32);
+    let coordinate = (Vec2::new(
+        point.x / ground.width().max(f32::EPSILON) + 0.5,
+        point.y / ground.depth().max(f32::EPSILON) + 0.5,
+    ) * maximum_coordinate)
+        .clamp(Vec2::ZERO, maximum_coordinate);
+    let minimum = coordinate.floor().max(Vec2::ZERO);
+    let maximum = (minimum + Vec2::ONE).min(maximum_coordinate);
+    let fraction = coordinate - minimum;
+    let sample = |x: f32, z: f32| f32::from(mask[z as usize * width as usize + x as usize]) / 255.0;
+    let bottom = sample(minimum.x, minimum.y).lerp(sample(maximum.x, minimum.y), fraction.x);
+    let top = sample(minimum.x, maximum.y).lerp(sample(maximum.x, maximum.y), fraction.x);
+    bottom.lerp(top, fraction.y)
+}
+
+fn smoothstep01(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
+
+fn vista_allows_grass_patch(lod: &VistaLod, centre: Vec2, half_extent: f32) -> bool {
+    [-1.0, 0.0, 1.0].into_iter().any(|z| {
+        [-1.0, 0.0, 1.0].into_iter().any(|x| {
+            sample_vista_environment(lod, centre + Vec2::new(x, z) * half_extent)
+                .is_some_and(|sample| vista_sward_coverage(sample) > 0.0)
+        })
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -253,7 +357,7 @@ fn spawn_vista_grass_lattice(
     outer_collar: f32,
     meshes: &[Handle<Mesh>; 3],
     profile: GrassCommunityProfile,
-    materials: &[Handle<TacticalFoliageMaterial>; 4],
+    material: &Handle<TacticalFoliageMaterial>,
     visibility: VisibilityRange,
 ) {
     let outer = playable_half_extent + Vec2::splat(outer_collar);
@@ -275,11 +379,9 @@ fn spawn_vista_grass_lattice(
             let Some(sample) = sample_vista_environment(lod, point) else {
                 continue;
             };
-            let coverage = vista_sward_coverage(sample);
-            if coverage <= 0.0 {
+            if !vista_allows_grass_patch(lod, point, spacing * 0.58) {
                 continue;
             }
-            let material = &materials[vista_grass_coverage_bucket(coverage)];
             let local_profile = profile.localized(sample);
             let mesh = &meshes[grass_community_at(point, community_seed, local_profile) as usize];
             let Some(transform) = vista_scatter_transform(
@@ -640,7 +742,14 @@ fn vista_tree_candidate_count(canopy: f32, spacing_metres: f32, seed: u64) -> us
 
 #[cfg(test)]
 pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: Vec2) -> Vec<Mesh> {
-    vista_lod_meshes_with_morph(lod, inner_half_extent, None, None, clear_vista_weather())
+    vista_lod_meshes_with_morph(
+        lod,
+        inner_half_extent,
+        None,
+        None,
+        None,
+        clear_vista_weather(),
+    )
 }
 
 fn vista_lod_meshes_with_morph(
@@ -648,6 +757,7 @@ fn vista_lod_meshes_with_morph(
     inner_half_extent: Vec2,
     coarser_lod: Option<&VistaLod>,
     playable_terrain: Option<&SceneTerrain>,
+    playable_environment: Option<&SceneEnvironment>,
     weather: WeatherSnapshot,
 ) -> Vec<Mesh> {
     let width = usize::from(lod.width);
@@ -691,11 +801,6 @@ fn vista_lod_meshes_with_morph(
                             )
                         {
                             let vertex = |local: Vec2| {
-                                let world = local
-                                    + Vec2::new(
-                                        lod.origin_east_metres as f32,
-                                        lod.origin_north_metres as f32,
-                                    );
                                 let height = presented_vista_vertex_height(
                                     lod,
                                     coarser_lod,
@@ -730,9 +835,15 @@ fn vista_lod_meshes_with_morph(
                                 (
                                     [local.x, height, local.y],
                                     tangent_z.cross(tangent_x).normalize().to_array(),
-                                    presented_color_at(lod, world, coarser_lod, weather).expect(
-                                        "clipped vista color remains inside its source LOD",
-                                    ),
+                                    presented_vista_vertex_color(
+                                        lod,
+                                        coarser_lod,
+                                        playable_environment,
+                                        local,
+                                        inner_half_extent,
+                                        weather,
+                                    )
+                                    .expect("clipped vista color remains inside its source LOD"),
                                 )
                             };
                             let base = positions.len() as u32;
@@ -772,6 +883,40 @@ fn vista_lod_meshes_with_morph(
         }
     }
     meshes
+}
+
+fn presented_vista_vertex_color(
+    lod: &VistaLod,
+    coarser_lod: Option<&VistaLod>,
+    playable_environment: Option<&SceneEnvironment>,
+    local: Vec2,
+    playable_half_extent: Vec2,
+    weather: WeatherSnapshot,
+) -> Option<[f32; 4]> {
+    let world = local
+        + Vec2::new(
+            lod.origin_east_metres as f32,
+            lod.origin_north_metres as f32,
+        );
+    let vista_color = Vec4::from_array(presented_color_at(lod, world, coarser_lod, weather)?);
+    Some(
+        playable_environment
+            .map(|environment| {
+                stitch_vista_color_to_playable_edge(
+                    local,
+                    playable_half_extent,
+                    // Ground-cover proportions summarize a wider ecological
+                    // patch than height samples. Ease pigment over several
+                    // vista cells so the playable rectangle cannot read as a
+                    // terrain tile from an overhead or grazing camera.
+                    lod.spacing_metres * 4.0,
+                    vista_color,
+                    Vec4::from_array(scene_ground_color(environment).to_linear().to_f32_array()),
+                )
+            })
+            .unwrap_or(vista_color)
+            .to_array(),
+    )
 }
 
 fn presented_vista_vertex_height(
@@ -884,6 +1029,24 @@ fn stitch_vista_height_to_playable_edge(
         .max_element();
     let vista_weight = (outside_distance / transition_width.max(f32::EPSILON)).clamp(0.0, 1.0);
     playable_height.lerp(vista_height, vista_weight)
+}
+
+fn stitch_vista_color_to_playable_edge(
+    local: Vec2,
+    playable_half_extent: Vec2,
+    transition_width: f32,
+    vista_color: Vec4,
+    playable_color: Vec4,
+) -> Vec4 {
+    let outside_distance = (local.abs() - playable_half_extent)
+        .max(Vec2::ZERO)
+        .max_element();
+    let vista_weight = (outside_distance / transition_width.max(f32::EPSILON)).clamp(0.0, 1.0);
+    let mut stitched = playable_color.lerp(vista_color, vista_weight);
+    // Alpha carries distant geometric-sward coverage, not material opacity.
+    // Preserve it while blending only the molded substrate pigment.
+    stitched.w = vista_color.w;
+    stitched
 }
 
 fn cell_rectangles_outside_inner_rectangle(
@@ -1158,6 +1321,8 @@ pub(crate) struct VistaTerrain(pub(crate) u8);
 pub(in crate::presentation) struct TacticalVistaExtension {
     #[uniform(100)]
     weather: Vec4,
+    #[uniform(100)]
+    grass_color: Vec4,
 }
 
 impl MaterialExtension for TacticalVistaExtension {
@@ -1169,7 +1334,7 @@ impl MaterialExtension for TacticalVistaExtension {
 pub(in crate::presentation) type TacticalVistaMaterial =
     ExtendedMaterial<StandardMaterial, TacticalVistaExtension>;
 
-fn vista_material(weather: WeatherSnapshot) -> TacticalVistaMaterial {
+fn vista_material(weather: WeatherSnapshot, grass_color: Color) -> TacticalVistaMaterial {
     TacticalVistaMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -1184,6 +1349,7 @@ fn vista_material(weather: WeatherSnapshot) -> TacticalVistaMaterial {
                 bps(weather.wind_speed_bps),
                 0.0,
             ),
+            grass_color: color_vec4(grass_color),
         },
     }
 }
@@ -1205,7 +1371,17 @@ mod tests {
         assert!(!shader.contains("texture_2d"));
         assert!(!shader.contains("textureSample"));
         assert!(!shader.contains("composed_normal"));
+        assert!(shader.contains("let sward_color = vista.grass_color.rgb"));
+        assert!(shader.contains("sward_dither < sward"));
+        assert!(!shader.contains("sward_color = color *"));
         assert!(shader.contains("let molded_rock = vec3<f32>(0.31, 0.30, 0.275)"));
+    }
+
+    #[test]
+    fn vista_terminal_sward_uses_the_optically_compensated_grass_pigment() {
+        let pigment = Color::srgb_u8(91, 126, 47);
+        let material = vista_material(clear_vista_weather(), pigment);
+        assert_eq!(material.extension.grass_color, color_vec4(pigment));
     }
 
     #[test]
@@ -1345,6 +1521,42 @@ mod tests {
     }
 
     #[test]
+    fn first_vista_ring_stitches_substrate_color_without_changing_sward_coverage() {
+        let playable = Vec4::new(0.08, 0.12, 0.04, 1.0);
+        let vista = Vec4::new(0.24, 0.31, 0.14, 0.37);
+        let half_extent = Vec2::splat(50.0);
+
+        let boundary = stitch_vista_color_to_playable_edge(
+            Vec2::new(50.0, 10.0),
+            half_extent,
+            250.0,
+            vista,
+            playable,
+        );
+        let midpoint = stitch_vista_color_to_playable_edge(
+            Vec2::new(175.0, 10.0),
+            half_extent,
+            250.0,
+            vista,
+            playable,
+        );
+        let outside = stitch_vista_color_to_playable_edge(
+            Vec2::new(300.0, 10.0),
+            half_extent,
+            250.0,
+            vista,
+            playable,
+        );
+
+        assert_eq!(boundary.truncate(), playable.truncate());
+        assert_eq!(midpoint.truncate(), playable.lerp(vista, 0.5).truncate());
+        assert_eq!(outside.truncate(), vista.truncate());
+        assert_eq!(boundary.w, vista.w);
+        assert_eq!(midpoint.w, vista.w);
+        assert_eq!(outside.w, vista.w);
+    }
+
+    #[test]
     fn first_vista_ring_reuses_every_playable_boundary_sample() {
         let heights = (0..5)
             .flat_map(|z| (0..5).map(move |_| z as f32 * 7.0))
@@ -1366,6 +1578,7 @@ mod tests {
             half_extent,
             None,
             Some(&terrain),
+            None,
             clear_vista_weather(),
         );
         let mut east_edge = Vec::new();
@@ -1495,11 +1708,56 @@ mod tests {
     }
 
     #[test]
-    fn distant_sward_coverage_reduces_blades_without_dropping_patches() {
-        assert_eq!(vista_grass_coverage_bucket(0.01), 0);
-        assert_eq!(vista_grass_coverage_bucket(0.40), 1);
-        assert_eq!(vista_grass_coverage_bucket(0.70), 2);
-        assert_eq!(vista_grass_coverage_bucket(1.0), 3);
+    fn grass_coverage_stitches_continuously_across_the_playable_boundary() {
+        let ground = SceneGround::from_samples(
+            3,
+            3,
+            10.0,
+            vec![
+                GroundSurface {
+                    cover: GroundCover::TallGrass,
+                    cover_density_bps: 10_000,
+                    cover_height_cm: 82,
+                    ..default()
+                };
+                9
+            ],
+        )
+        .unwrap();
+        let deep_woods = EnvironmentalSample {
+            surface: TacticalSurface::DeepWoods,
+            ..default()
+        };
+        let lod = VistaLod {
+            level: 0,
+            spacing_metres: 10.0,
+            width: 7,
+            depth: 7,
+            origin_east_metres: 0.0,
+            origin_north_metres: 0.0,
+            heights_metres: vec![0.0; 49],
+            environment: vec![deep_woods; 49],
+        };
+        let (width, depth, mask) = grass_cover_mask_pixels(&ground, 42);
+        let coverage = |x| {
+            stitched_vista_grass_coverage(
+                &lod,
+                Vec2::splat(10.0),
+                &ground,
+                &mask,
+                width,
+                depth,
+                Vec2::new(x, 0.0),
+            )
+        };
+        let boundary = coverage(10.0);
+        let just_outside = coverage(10.5);
+        let midpoint = coverage(16.0);
+        let vista = coverage(22.0);
+        assert!(boundary > 0.99);
+        assert!((boundary - just_outside).abs() < 0.02);
+        assert!(just_outside > midpoint && midpoint > vista);
+        assert!((vista - vista_sward_coverage(deep_woods)).abs() < 0.01);
     }
 
     #[test]

@@ -342,12 +342,7 @@ pub(in crate::presentation) fn stream_tree_lod_children(
             (1 << (lod + 1)) | u8::from(lod < 4)
         } else {
             let scaled = distance / focal_scale.max(0.25);
-            u8::from(scaled < 60.0)
-                | (u8::from(scaled < 1.5) << 1)
-                | (u8::from((1.0..2.5).contains(&scaled)) << 2)
-                | (u8::from((1.5..4.0).contains(&scaled)) << 3)
-                | (u8::from((2.5..60.0).contains(&scaled)) << 4)
-                | (u8::from((50.0..200.0).contains(&scaled)) << 5)
+            tree_streaming_mask(scaled)
         };
         if presentation.active_mask == mask && presentation.active_leaf == lod_override.leaf {
             continue;
@@ -369,6 +364,20 @@ pub(in crate::presentation) fn stream_tree_lod_children(
         presentation.active_mask = mask;
         presentation.active_leaf = lod_override.leaf;
     }
+}
+
+fn tree_streaming_mask(scaled_distance: f32) -> u8 {
+    // Residency is intentionally more conservative than visibility. Camera
+    // focal scaling, command deferral, and transition dithering are evaluated
+    // in separate systems; keeping both neighbouring tiers resident prevents
+    // a one-frame or persistent leafless gap without drawing either tier
+    // outside its VisibilityRange.
+    u8::from(scaled_distance < 75.0)
+        | (u8::from(scaled_distance < 12.0) << 1)
+        | (u8::from((3.0..24.0).contains(&scaled_distance)) << 2)
+        | (u8::from((8.0..44.0).contains(&scaled_distance)) << 3)
+        | (u8::from((18.0..75.0).contains(&scaled_distance)) << 4)
+        | (u8::from((40.0..220.0).contains(&scaled_distance)) << 5)
 }
 
 fn tree_cluster_aabb(center: Vec3, radius: f32) -> Aabb {
@@ -733,6 +742,18 @@ mod tests {
             oak_gnarling_for_site(OAK_GNARLING_SHOWCASE[0], &storm, 42)
         );
         assert_eq!(oak_site_key(&site), oak_site_key(&storm));
+    }
+
+    #[test]
+    fn streaming_keeps_adjacent_tree_lods_resident_through_every_handoff() {
+        for (distance, required_bits) in [
+            (7.0, (1 << 1) | (1 << 2)),
+            (14.0, (1 << 2) | (1 << 3)),
+            (28.0, (1 << 3) | (1 << 4)),
+            (55.0, (1 << 4) | (1 << 5)),
+        ] {
+            assert_eq!(tree_streaming_mask(distance) & required_bits, required_bits);
+        }
     }
 
     #[test]

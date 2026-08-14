@@ -61,6 +61,20 @@ fn community_hash(base_seed: u64, x: i32, z: i32) -> u64 {
     splitmix64(base_seed ^ cell ^ 0xc011_00d5_7a1d)
 }
 
+fn community_density_multiplier(hash: u64) -> f32 {
+    // Concentrate the same approximate population into legible thickets.
+    // Dense cores, loose margins, and mostly open cells keep shrubs from
+    // reading as evenly-spaced miniature trees across the whole landscape.
+    let structure = unit_hash(splitmix64(hash ^ 0x7a11_c1ed_5eed));
+    if structure < 0.25 {
+        2.5
+    } else if structure < 0.60 {
+        1.0
+    } else {
+        0.15
+    }
+}
+
 fn ground_allows_species(surface: GroundSurface, species: UnderstorySpecies) -> bool {
     if surface.substrate == GroundSubstrate::Water || surface.cover == GroundCover::Reeds {
         return false;
@@ -93,14 +107,16 @@ pub(super) fn spawn(
         for x in 0..count_x {
             let cell = ((x as u32 as u64) << 32) | z as u32 as u64;
             let hash = splitmix64(base_seed ^ cell ^ 0xa04f_63d2_719b_e850);
-            if unit_hash(hash) >= chance {
+            let community = community_hash(base_seed, x, z);
+            let local_chance = (chance * community_density_multiplier(community)).min(0.82);
+            if unit_hash(hash) >= local_chance {
                 continue;
             }
             let jitter_x = unit_hash(splitmix64(hash ^ 0x39bd_7f21)) - 0.5;
             let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
             let world_x = -half_x + (x as f32 + 0.5 + jitter_x * 0.72) * spacing;
             let world_z = -half_z + (z as f32 + 0.5 + jitter_z * 0.72) * spacing;
-            let species = select_species(community_hash(base_seed, x, z), habitat);
+            let species = select_species(community, habitat);
             if ground
                 .ground_at(Vec2::new(world_x, world_z))
                 .is_none_or(|sample| !ground_allows_species(sample, species))
@@ -177,6 +193,23 @@ mod tests {
             }
         }
         assert_ne!(community_hash(seed, 0, 0), community_hash(seed, 4, 0));
+    }
+
+    #[test]
+    fn shrub_communities_include_dense_thickets_and_open_relief() {
+        let mut dense = 0;
+        let mut open = 0;
+        let mut mean = 0.0;
+        for cell in 0..4_096_u64 {
+            let multiplier = community_density_multiplier(splitmix64(cell));
+            dense += usize::from(multiplier > 2.0);
+            open += usize::from(multiplier < 0.2);
+            mean += multiplier;
+        }
+        mean /= 4_096.0;
+        assert!(dense > 800);
+        assert!(open > 1_300);
+        assert!((mean - 1.0).abs() < 0.08);
     }
 
     #[test]

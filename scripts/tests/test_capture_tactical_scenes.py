@@ -80,7 +80,6 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                         "camera_environment_map_allocated": True,
                         "camera_environment_map_intensity": 1.0,
                         "camera_bloom": True,
-                        "camera_ssao": True,
                         "camera_exposure_ev100": 14.7,
                         "camera_tonemapping": "AcesFitted",
                         "ambient_color": [1.0, 1.0, 1.0, 1.0],
@@ -114,7 +113,7 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                                   ("generation_version", 99),
                                   ("scene_source", {"kind": "synthetic_fixture", "id": "wrong"}),
                                  ("resolution", [1, 1]),
-                                 ("presentation_features", {"ssao": False})):
+                                 ("presentation_features", {"bloom": False})):
                 broken = dict(manifest)
                 broken[field] = wrong
                 manifest_path.write_text(json.dumps(broken), encoding="utf-8")

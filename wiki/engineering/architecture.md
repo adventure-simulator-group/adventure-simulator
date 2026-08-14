@@ -318,10 +318,12 @@ Ground scatter, weather, colliders, and recipes continue to read their own
 entity-local authoritative scene components.
 
 The production tactical preset prioritizes high-throughput gameplay: directional
-shadow maps, bloom, and SSAO are disabled by default, while the atmosphere IBL,
+shadow maps and bloom are disabled by default, while four-sample MSAA, atmosphere IBL,
 material occlusion, baked tree-card depth, terrain normals, and direct celestial
-lighting retain the scene's primary depth cues. Review viewers can still enable
-individual lighting costs explicitly for controlled diagnostics.
+lighting retain the scene's primary depth cues. Effects unsupported by WebGPU,
+including Bevy 0.19 SSAO, are excluded rather than retained as native-only paths.
+Review viewers can still enable compatible individual lighting costs explicitly
+for controlled diagnostics.
 
 The immutable world-data canopy coverage continuously controls tree
 architecture without inspecting neighboring entities: low coverage produces a
@@ -427,7 +429,7 @@ leaf topology, alpha coverage, entity count, draw count, exposure, or global
 lighting.
 Non-colliding grass and understory use automatically instanced shared meshes,
 layered shader wind, and root-to-tip shading. Grass cross-fades from a
-2,916-blade, fifteen-vertex near-field macro patch to a stable 144-blade,
+9,216-blade, fifteen-vertex near-field macro patch to a stable 1,600-blade,
 seven-vertex subset at distance; rejected blades are absent from the far mesh
 rather than collapsed after vertex shading. The 3.2-metre patch spacing cuts
 grass render entities by roughly an order of magnitude while retaining the
@@ -438,10 +440,19 @@ original far topology over 18--26 metres rather than paying four times the
 vertex cost throughout the former 34--44 metre high-detail radius. A
 deterministic scalar mask derived from
 the same authoritative ground-cover contour as the terrain rejects blades on
-dirt and leaf litter and progressively thins the grass-side boundary. Boundary
+dirt and leaf litter and progressively thins the grass-side boundary. Tree
+crowns guarantee a compact litter core at the trunk, then use a deterministic
+radially tapered litter mosaic beneath the outer crown. Overlapping crowns
+therefore accumulate a closed forest floor while sparse woodland keeps dappled
+grass instead of stamping one grass-free disc per tree. Boundary
 macro patches remain present, while patches fully inside non-grass cover are
 omitted. Near and far LODs use the same stable per-blade thresholds, so the
-organic edge does not change at the cross-fade. Macro patches
+organic edge does not change at the cross-fade. The visibility-range lookup
+uses each blade's world-space root and the foliage fragment stage applies the
+complementary dither, preventing a whole macro patch from changing as a square.
+At the playable edge, one continuous mask preserves authoritative cover then
+blends for twelve metres into regional vista coverage; map bounds are not
+treated as non-grass and exterior coverage is not quantized per patch. Macro patches
 remain unit-scale and nearly gridded, with boundary blade rows constrained to
 wander outward to mitigate square seams on near-flat and ordinary sloped
 terrain. This is a continuity mitigation rather than a guarantee across sharp
@@ -459,9 +470,16 @@ desaturated straw-tip region while juvenile cohorts retain one of three green
 pigments. Root shading and rib definition are occlusion responses rather than
 albedo gradients. Near and far LODs therefore preserve
 the same age identity without another vertex attribute, texture read,
-transcendental evaluation, mesh, entity, material, or draw. Beyond the geometric range, the
-terrain material retains only the band-limited aggregate colour and normal
-response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
+transcendental evaluation, mesh, entity, material, or draw. Beneath and beyond
+the geometric range, tall-grass terrain uses an optical-average solid albedo
+derived from the same environment pigment as the blades. The compensation
+accounts for categorical blade darkening, occlusion, and thin-foliage lighting;
+copying the brighter pre-lighting pigment to upward-facing ground would retain
+a visible boundary. The ground therefore acts as the terminal sward LOD.
+Ordinary tactical gameplay uses WebGPU-compatible fixed-function four-sample
+MSAA for thin grass, branch, and character silhouettes. SSAO is excluded from
+the tactical renderer because Bevy 0.19 does not support its SSAO implementation
+on WebGPU. Bevy's standard mesh path supplies WebGPU-compatible
 GPU preprocessing, culling, and indirect batches when the adapter supports
 them, with its normal fallback on more limited browser devices.
 Forest-floor scatter retains its authoritative leaf-litter placement and patch

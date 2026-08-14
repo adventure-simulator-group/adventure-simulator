@@ -17,6 +17,7 @@
 
 struct TacticalTerrainMaterial {
     base_color: vec4<f32>,
+    grass_color: vec4<f32>,
     cover: vec4<f32>,
     weather: vec4<f32>,
     far_sward: vec4<f32>,
@@ -54,13 +55,23 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     if canopy >= 0.5 { color = vec3<f32>(0.105, 0.175, 0.072); }
     if cultivation >= 0.4 { color = vec3<f32>(0.33, 0.285, 0.105); }
     if wetland >= 0.4 || substrate_kind == 3.0 { color = vec3<f32>(0.18, 0.16, 0.105); }
+
+    // Tall-grass ground and blades share one albedo pigment. Applying it
+    // before exposed rock, litter, and water preserves those authoritative
+    // surface types while hiding the final blade-geometry fade.
+    if tall_grass > 0.5 {
+        color = terrain.grass_color.rgb;
+    }
     if substrate_kind == 1.0 || substrate_kind == 2.0 || slope >= 0.5 {
         color = vec3<f32>(0.31, 0.30, 0.275);
     }
     if leaf_litter > 0.5 { color = vec3<f32>(0.255, 0.16, 0.065); }
     if water >= 0.5 || substrate_kind == 5.0 { color = vec3<f32>(0.09, 0.18, 0.22); }
 
-    let camera_distance = distance(position.xz, view.lod_view_world_position.xz);
+    // Use the same true camera distance that drives mesh visibility. Horizontal
+    // distance alone left an overhead camera with culled blades but no
+    // aggregate sward, revealing the playable terrain as a bare square.
+    let camera_distance = distance(position, view.lod_view_world_position.xyz);
 
     // Past the geometric LOD, represent the aggregate colour and normal
     // response of a sward directly on the terrain. Frequencies stay low enough
@@ -71,8 +82,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         * tall_grass
         * (1.0 - water)
         * (1.0 - slope * 0.72);
-    let sward_color = color * vec3<f32>(0.82, 1.035, 0.72);
-    color = select(color, sward_color, sward_amount >= 0.5);
+    let sward_color = terrain.grass_color.rgb;
+    // A stable world-space screen-door transition preserves discrete molded
+    // colors while avoiding a circular hard band around the camera.
+    let sward_cell = floor(position.xz * 2.0);
+    let sward_dither = fract(sin(dot(sward_cell, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+    color = select(color, sward_color, sward_dither < sward_amount);
 
     let snow_mask = snow * smoothstep(0.3, 0.86, normal.y);
     color = select(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask >= 0.5);

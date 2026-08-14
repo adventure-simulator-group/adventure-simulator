@@ -22,6 +22,9 @@ pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
 /// Conservative ground footprint of the generated English-oak crown.
 pub const TREE_CANOPY_GROUND_RADIUS_METRES: f32 = 5.75;
+/// The trunk base is reliably leaf-covered; the outer crown uses a tapered
+/// mosaic so sparse woodland does not stamp grass-free canopy discs.
+const TREE_DENSE_LEAF_LITTER_RADIUS_METRES: f32 = 2.25;
 pub const ROCK_RADIUS_METRES: f32 = 0.75;
 const MAX_PLAYABLE_SIDE: usize = 601;
 const MAX_VISTA_LEVELS: usize = 8;
@@ -446,7 +449,6 @@ fn build_scene_ground(
         .collect::<Vec<_>>();
     let half_width = terrain.width() * 0.5;
     let half_depth = terrain.depth() * 0.5;
-    let canopy_radius_squared = TREE_CANOPY_GROUND_RADIUS_METRES.powi(2);
     for obstacle in obstacles {
         let GeneratedObstacle::Tree { x, z } = *obstacle else {
             continue;
@@ -461,14 +463,26 @@ fn build_scene_ground(
                     sample_x as f32 * spacing - half_width,
                     sample_z as f32 * spacing - half_depth,
                 );
-                if position.distance_squared(tree) > canopy_radius_squared {
+                let distance = position.distance(tree);
+                if distance > TREE_CANOPY_GROUND_RADIUS_METRES {
                     continue;
                 }
                 let sample = &mut samples[sample_z * width + sample_x];
-                if !matches!(
+                if matches!(
                     sample.substrate,
                     GroundSubstrate::Water | GroundSubstrate::Road
                 ) {
+                    continue;
+                }
+                let coordinate = ((u64::from(x)) << 48)
+                    ^ ((u64::from(z)) << 32)
+                    ^ ((sample_x as u64) << 16)
+                    ^ sample_z as u64;
+                let litter_roll =
+                    (splitmix64(coordinate ^ 0x1eaf_1177_e2) % 10_000) as f32 / 10_000.0;
+                if distance <= TREE_DENSE_LEAF_LITTER_RADIUS_METRES
+                    || litter_roll < tree_leaf_litter_probability(distance)
+                {
                     sample.cover = GroundCover::LeafLitter;
                     sample.cover_density_bps = 9_200;
                     sample.cover_height_cm = 6;
@@ -479,6 +493,16 @@ fn build_scene_ground(
     SceneGround::from_samples(width, depth, spacing, samples).ok_or_else(|| {
         SceneInputError::Validation("generated ground-surface grid is invalid".into())
     })
+}
+
+fn tree_leaf_litter_probability(distance_metres: f32) -> f32 {
+    if distance_metres <= TREE_DENSE_LEAF_LITTER_RADIUS_METRES {
+        return 1.0;
+    }
+    let crown_fraction = ((distance_metres - TREE_DENSE_LEAF_LITTER_RADIUS_METRES)
+        / (TREE_CANOPY_GROUND_RADIUS_METRES - TREE_DENSE_LEAF_LITTER_RADIUS_METRES))
+        .clamp(0.0, 1.0);
+    0.12 + (1.0 - crown_fraction).powf(1.5) * 0.60
 }
 
 fn base_ground_surface(sample: EnvironmentalSample) -> GroundSurface {
@@ -1064,6 +1088,25 @@ mod tests {
             );
         }
         assert!(sparse.ground.cover_count(GroundCover::LeafLitter) > 0);
+        assert!(
+            sparse.ground.cover_count(GroundCover::TallGrass)
+                > sparse.ground.cover_count(GroundCover::LeafLitter),
+            "sparse crowns should retain a dappled grass matrix"
+        );
+    }
+
+    #[test]
+    fn tree_leaf_litter_tapers_from_a_dense_trunk_core() {
+        assert_eq!(tree_leaf_litter_probability(0.0), 1.0);
+        assert_eq!(
+            tree_leaf_litter_probability(TREE_DENSE_LEAF_LITTER_RADIUS_METRES),
+            1.0
+        );
+        let inner = tree_leaf_litter_probability(3.0);
+        let middle = tree_leaf_litter_probability(4.0);
+        let edge = tree_leaf_litter_probability(TREE_CANOPY_GROUND_RADIUS_METRES);
+        assert!(1.0 > inner && inner > middle && middle > edge);
+        assert!((edge - 0.12).abs() < f32::EPSILON);
     }
 
     #[test]
