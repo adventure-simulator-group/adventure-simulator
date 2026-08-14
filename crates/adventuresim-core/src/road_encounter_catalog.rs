@@ -185,7 +185,7 @@ pub enum EncounterTransition {
     StartCombat {
         archetype: RoadCombatArchetype,
         count: u16,
-        outcomes: CombatOutcomeSet,
+        outcomes: Box<CombatOutcomeSet>,
     },
     TravelDelay {
         minutes: u16,

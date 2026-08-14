@@ -589,7 +589,7 @@ pub(crate) fn record_evidence_knowledge(
         .db
         .investigation_evidence_authority()
         .id()
-        .find(&evidence_id.to_string())
+        .find(evidence_id.to_string())
         .ok_or("Evidence does not exist")?;
     if evidence.case_id != case_id {
         return Err("Evidence belongs to another case".into());
@@ -1120,9 +1120,9 @@ pub(crate) fn set_character_case_site(
     case_site_id: Option<String>,
 ) -> Result<(), String> {
     let case_site_id = match case_site_id {
-        Some(value) => match CaseSiteId::try_new(value) {
-            Ok(value) => Some(value),
-            Err(error) => return Err(error),
+        Some(value) => {
+            let value = CaseSiteId::try_new(value)?;
+            Some(value)
         },
         None => None,
     };

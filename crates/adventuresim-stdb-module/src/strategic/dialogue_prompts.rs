@@ -510,13 +510,14 @@ pub fn answer_dialogue_prompt(
                     None,
                 )?;
             }
-            let mut sequence = ctx
+            let sequence_start = ctx
                 .db
                 .dialogue_event()
                 .session_id()
                 .filter(&session.id)
                 .count() as u32;
             for (turn_index, turn) in choice.result_turns.iter().enumerate() {
+                let sequence = sequence_start.saturating_add(turn_index as u32);
                 let source_refs: Vec<_> = turn
                     .fragments
                     .iter()
@@ -562,7 +563,6 @@ pub fn answer_dialogue_prompt(
                         .map_err(|_| "Could not encode dialogue result sources")?,
                     created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
                 });
-                sequence += 1;
             }
         }
         let mut prompt = prompt;

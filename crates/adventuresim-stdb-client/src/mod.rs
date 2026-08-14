@@ -291,6 +291,7 @@ pub mod courtship_status_type;
 pub mod courtship_terminal_reason_type;
 pub mod courtship_type;
 pub mod create_character_reducer;
+pub mod create_default_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
 pub mod create_recruitment_role_reducer;
@@ -1225,6 +1226,7 @@ pub use courtship_status_type::CourtshipStatus;
 pub use courtship_terminal_reason_type::CourtshipTerminalReason;
 pub use courtship_type::Courtship;
 pub use create_character_reducer::create_character;
+pub use create_default_character_reducer::create_default_character;
 pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
 pub use create_recruitment_role_reducer::create_recruitment_role;
@@ -2088,6 +2090,9 @@ pub enum Reducer {
     CreateCharacter {
         id: u64,
     },
+    CreateDefaultCharacter {
+        owner_key: String,
+    },
     CreateNamedCharacter {
         name: String,
     },
@@ -2884,6 +2889,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ContactContextCharacter { .. } => "contact_context_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
             Reducer::CreateCharacter { .. } => "create_character",
+            Reducer::CreateDefaultCharacter { .. } => "create_default_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
             Reducer::CreateRecruitmentRole { .. } => "create_recruitment_role",
@@ -3419,6 +3425,11 @@ Reducer::BeginFormalCourtship{
                 id,
 }             => __sats::bsatn::to_vec(&create_character_reducer::CreateCharacterArgs {
                 id: id.clone(),
+}),
+            Reducer::CreateDefaultCharacter{
+                owner_key,
+}             => __sats::bsatn::to_vec(&create_default_character_reducer::CreateDefaultCharacterArgs {
+                owner_key: owner_key.clone(),
 }),
             Reducer::CreateNamedCharacter{
                 name,

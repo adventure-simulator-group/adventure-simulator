@@ -1024,7 +1024,7 @@ pub enum MaterialRetryDecision<
     O: DomainMaterialReceipt,
 > {
     Apply,
-    IdempotentReplay(MaterialTransformationReceipt<P, C, X, D, O>),
+    IdempotentReplay(Box<MaterialTransformationReceipt<P, C, X, D, O>>),
     ProvenanceCollision,
 }
 
@@ -1047,7 +1047,7 @@ pub fn classify_material_retry<
                 && prior.input_digest == proposed_digest
                 && exact_sources_equal(&prior.sources, proposed_sources) =>
         {
-            MaterialRetryDecision::IdempotentReplay(prior.clone())
+            MaterialRetryDecision::IdempotentReplay(Box::new(prior.clone()))
         }
         Some(_) => MaterialRetryDecision::ProvenanceCollision,
     }
@@ -1481,7 +1481,7 @@ mod tests {
         );
         assert_eq!(
             classify_material_retry(action, &[second.clone(), first.clone()], Some(&receipt)),
-            MaterialRetryDecision::IdempotentReplay(receipt.clone())
+            MaterialRetryDecision::IdempotentReplay(Box::new(receipt.clone()))
         );
         let changed_revision_snapshot = snapshot(1, 11, measure(100, 0), 5, 2, 8);
         let changed_revision_source = full_source(&changed_revision_snapshot);

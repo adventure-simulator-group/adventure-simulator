@@ -1,6 +1,11 @@
 //! Deterministic native animation capture utility.
 
+// This binary reuses the full gameplay presentation modules while installing
+// only the deterministic capture path.
+#![allow(dead_code)]
+
 mod animation;
+mod animation_graph_nodes;
 mod animation_viewer;
 mod camera;
 mod player;

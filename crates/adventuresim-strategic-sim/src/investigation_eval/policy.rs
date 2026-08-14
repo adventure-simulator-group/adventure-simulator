@@ -71,7 +71,7 @@ impl QuestPolicy for ScriptedPolicy {
                     .iter()
                     .filter(|choice| choice.kind == *kind);
                 if self.prefer_alternate_route && *kind == ChoiceKind::Investigate {
-                    matching.last()
+                    matching.next_back()
                 } else {
                     matching.next()
                 }

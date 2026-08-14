@@ -10,7 +10,7 @@ use bevy::{
 };
 use noiz::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::hash::{BuildHasher, Hasher};
+use std::hash::BuildHasher;
 
 /// Terrain generator shared by the authoritative server and deterministic
 /// presentation fixtures. Keeping the implementation here prevents animation
@@ -32,9 +32,7 @@ impl TerrainGenerator {
     }
 
     pub fn from_hash(hash: impl std::hash::Hash) -> Self {
-        let mut hasher = RandomState::default().build_hasher();
-        hash.hash(&mut hasher);
-        Self::new(hasher.finish() as u32)
+        Self::new(RandomState::default().hash_one(&hash) as u32)
     }
 
     pub fn generate(self, width: usize, height: usize, depth: usize) -> SceneTerrain {
@@ -112,6 +110,14 @@ impl SceneTerrain {
     }
 
     pub fn height_at(&self, pos: Vec2) -> Option<f32> {
+        self.surface_at(pos).map(|sample| sample.0)
+    }
+
+    /// Samples the same triangle surface used by the rendered mesh and
+    /// authoritative collider. Returning the triangle normal alongside the
+    /// height keeps terrain IK from fitting a foot to a different, bilinear
+    /// surface than the one visible beneath it.
+    fn surface_at(&self, pos: Vec2) -> Option<(f32, Vec3)> {
         if self.scale <= 0.0 || self.grid_width() < 2 || self.grid_depth() < 2 {
             return None;
         }
@@ -136,22 +142,28 @@ impl SceneTerrain {
         let x0y1 = *self.heightmap.get(min_x + (min_y + 1) * self.width)?;
         let x1y1 = *self.heightmap.get(min_x + 1 + (min_y + 1) * self.width)?;
 
-        let y0 = x0y0.lerp(x1y0, fraction.x);
-        let y1 = x0y1.lerp(x1y1, fraction.x);
-
-        let height = y0.lerp(y1, fraction.y);
-        Some(height)
+        let (height, tangent_x, tangent_z) = if fraction.x >= fraction.y {
+            // Matches [x0y0, x1y1, x1y0] in `mesh_components`.
+            (
+                x0y0 + (x1y0 - x0y0) * fraction.x + (x1y1 - x1y0) * fraction.y,
+                Vec3::new(self.scale, x1y0 - x0y0, 0.0),
+                Vec3::new(0.0, x1y1 - x1y0, self.scale),
+            )
+        } else {
+            // Matches [x0y0, x0y1, x1y1] in `mesh_components`.
+            (
+                x0y0 + (x1y1 - x0y1) * fraction.x + (x0y1 - x0y0) * fraction.y,
+                Vec3::new(self.scale, x1y1 - x0y1, 0.0),
+                Vec3::new(0.0, x0y1 - x0y0, self.scale),
+            )
+        };
+        let normal = tangent_z.cross(tangent_x).try_normalize()?;
+        Some((height, normal))
     }
 
-    /// Returns a finite, normalized terrain normal using bounded samples.
+    /// Returns the finite, normalized normal of the rendered/collided triangle.
     pub fn normal_at(&self, pos: Vec2) -> Option<Vec3> {
-        let radius = self.scale.max(0.001);
-        let center = self.height_at(pos)?;
-        let left = self.height_at(pos - Vec2::X * radius).unwrap_or(center);
-        let right = self.height_at(pos + Vec2::X * radius).unwrap_or(center);
-        let back = self.height_at(pos - Vec2::Y * radius).unwrap_or(center);
-        let forward = self.height_at(pos + Vec2::Y * radius).unwrap_or(center);
-        Vec3::new(left - right, 2.0 * radius, back - forward).try_normalize()
+        self.surface_at(pos).map(|sample| sample.1)
     }
 
     pub fn collider(&self) -> Collider {
@@ -233,6 +245,24 @@ mod tests {
         let terrain = SceneTerrain::new(2, 2, 2.0, |point| point.x + point.y * 2.0);
         assert!((terrain.height_at(Vec2::new(-1.0, -1.0)).unwrap() - 1.5).abs() < 0.0001);
         assert_eq!(terrain.height_at(Vec2::new(-3.0, 0.0)), None);
+    }
+
+    #[test]
+    fn height_sampling_matches_each_mesh_triangle() {
+        let terrain = SceneTerrain::new(
+            1,
+            1,
+            1.0,
+            |point| {
+                if point == Vec2::ONE { 1.0 } else { 0.0 }
+            },
+        );
+
+        // The diagonal high vertex affects both triangles linearly, not as the
+        // bilinear saddle that used to diverge from mesh and collider height.
+        assert!((terrain.height_at(Vec2::new(0.25, -0.25)).unwrap() - 0.25).abs() < 0.0001);
+        assert!((terrain.height_at(Vec2::new(-0.25, 0.25)).unwrap() - 0.25).abs() < 0.0001);
+        assert_eq!(terrain.height_at(Vec2::ZERO).unwrap(), 0.5);
     }
 
     #[test]

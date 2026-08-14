@@ -1639,17 +1639,21 @@ fn equipment_control(
                         "{}: {}{}{}",
                         placement.id,
                         anchor_or_parent,
-                        (!protection.is_empty())
-                            .then(|| {
+                        if !protection.is_empty() {
+                            {
                                 format!(
                                     "; protects {protection} ({:.0}% coverage)",
                                     definition.coverage * 100.0
                                 )
-                            })
-                            .unwrap_or_default(),
-                        (!conflicts.is_empty())
-                            .then(|| format!("; conflict with {}", conflicts.join(", ")))
-                            .unwrap_or_default()
+                            }
+                        } else {
+                            Default::default()
+                        },
+                        if !conflicts.is_empty() {
+                            format!("; conflict with {}", conflicts.join(", "))
+                        } else {
+                            Default::default()
+                        }
                     )
                 })
                 .collect::<Vec<_>>()
@@ -2098,12 +2102,16 @@ fn item_name_with_display_quality(
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
             data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
+            data-item-melee=[definition.map(|item| item.melee)]
+            data-item-ranged=[definition.map(|item| item.ranged)]
             data-item-group=[alcohol_group]
             data-group-name=[alcohol_group.map(|_| "Alcohol")]
             data-food-lot=[adventuresim_core::food::definition(item_id).map(|_| "true")]
             data-container-capacity-ml=[definition.and_then(|item| (item.container_capacity_ml > 0).then_some(item.container_capacity_ml))]
             data-exterior-volume-ml=[definition.map(|item| item.exterior_volume_ml)]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
+            data-stat-swing-precision=[definition.map(|item| weight_display(item.swing_precision))]
+            data-stat-stab-precision=[definition.map(|item| weight_display(item.stab_precision))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
             data-stat-penetration=[definition.map(|item| weight_display(item.penetration))]
             data-stat-damage=[damage_types]

@@ -1,7 +1,5 @@
-# _Adventure Simulator_
-_Adventure Simulator_[^0] is an open source browser game using novel technologies to revive the golden age of pseudo-MMOs.
-
-[^0]: Working title.
+# _Fabelgeist_
+_Fabelgeist_ is an open source browser game using novel technologies to revive the golden age of pseudo-MMOs.
 
 ## A web-first pseudo-MMO
 The mid-2000s yielded a number of highly successful "pseudo-MMO" browser games, like _Neopets_ and _Club Penguin_,[^1] whose markets have since been captured by mobile apps and native desktop games. However, new technologies like [Wasm](https://webassembly.org/), [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API), and [Datastar](https://Datastar.dev/) allow us to make a new kind of browser game, one with near-feature and performance parity with native applications: a kind of game that has been impossible to build until very recently.
@@ -25,15 +23,15 @@ This is all to say that we aren't building a "normal" web game that uses Wasm an
 
 Strategic balance and core-loop regression testing are supported by the NPC
 simulator documented in the
-[strategic simulation reference](wiki/reference/strategic-simulation.md).
+[strategic simulation reference](wiki/engineering/strategic-simulation.md).
 Its live mode drives the same party, quest, travel, autoresolve, loot, trade,
 and equipment reducers as players, against an explicitly disposable local
 database.
 The nearest games for inspiration are [*Mount and Blade*](https://www.taleworlds.com/en/games/mountandblade), [*Battle Brothers*](https://battlebrothersgame.com/), [*Jagged Alliance*](https://store.steampowered.com/app/1084160/Jagged_Alliance_3/), [*Starsector*](https://fractalsoftworks.com/), and to some extent [*Kenshi*](https://lofigames.com/).
 
-Like the former three, the world of _Adventure Simulator_ is separated between the "tactical" layer (a real-time simulation) and the "strategic" layer (which advances in discrete chunks of time, generally after fast travel or resting). We have the same basic gameplay formula where the player recruits a party to adventure with, defeats enemies in randomly generated missions, and uses their hard-earned rewards to buy equipment for future missions.
+Like the former three, the world of _Fabelgeist_ is separated between the "tactical" layer (a real-time simulation) and the "strategic" layer (which advances in discrete chunks of time, generally after fast travel or resting). We have the same basic gameplay formula where the player recruits a party to adventure with, defeats enemies in randomly generated missions, and uses their hard-earned rewards to buy equipment for future missions.
 
-Like in _Kenshi_, _Battle Brothers_, and _Jagged Alliance_, players can control multiple characters, though in _Adventure Simulator_, characters can be either mortal or immortal. Mortal characters offer a more roguelike/"extraction" experience, with fast progression and frequent deaths; when one dies, their personal inventory passes to their eldest living direct child, otherwise their living spouse, once the heir's personal date reaches the death. Immortal characters offer a more conventional RPG/MMO experience, which emulates the cost of mortal characters with costly respawns and slow healing.[^5]
+Like in _Kenshi_, _Battle Brothers_, and _Jagged Alliance_, players can control multiple characters, though in _Fabelgeist_, characters can be either mortal or immortal. Mortal characters offer a more roguelike/"extraction" experience, with fast progression and frequent deaths; when one dies, their personal inventory passes to their eldest living direct child, otherwise their living spouse, once the heir's personal date reaches the death. Immortal characters offer a more conventional RPG/MMO experience, which emulates the cost of mortal characters with costly respawns and slow healing.[^5]
 
 If there's any design choice in particular that makes our approach unique, it is specifically that we relinquish the vision of a continuous, immersive world. _Kenshi_ clings to that vision, despite all the systems of the game going against it,[^6] and most MMOs try to reach that ideal before networking gets in the way. We take our inspiration from singleplayer games like _Starsector_, _Jagged Alliance_, and _Mount and Blade_ which all *chose* to have a strategic layer, not because they had to for networking, but because their gameplay loop would be really boring without one. You can actually walk around cities in _Warband_ and _Bannerlord_, but zero players actually do this outside of sieges because walking around is boring. Thus, we take those games' basic design and combine it with the one infamous problem it incidentally solves: MMO networking.
 
@@ -63,10 +61,20 @@ persisted or replayed. Native speech is treated as upbringing identity;
 written literacy is earned inside the simulated student or institutional
 curriculum under the ordinary Intelligence learning rate and cap.
 
+When no character is selected, the game provisions the shared default test
+character, **John Fabelgeist**. John is a 20-year-old man with neutral
+personality axes, Strength, Agility, and Endurance 4; Intelligence, Gut,
+Immunity, and Instinct 3; broad age-scaled training with heavy combat practice
+and rank-3 Insight and Command; and the standard adventuring supplies. His
+loadout is a longsword in a right-hip scabbard, a rondel dagger in a left-hip
+scabbard, morion, breastplate, paired vambraces, and leather boots. The same
+canonical build backs new strategic browser sessions, standalone tactical
+missions, combat fixtures, and animation fixtures.
+
 [^6]: Even at 4x speed, which most computers can barely handle simulating, you're still spending most of your time watching your characters travel or rest.
 
 ## Setting
-The world of _Adventure Simulator_ is a [historical fantasy](https://en.wikipedia.org/wiki/Historical_fantasy) version of Earth. Players of _Warhammer Fantasy_ or readers of [pre-Tolkien fantasy](https://www.gutenberg.org/ebooks/60184) will be familiar with the concept: the setting is a real-world historical period with generic fantasy elements inexplicably sprinkled throughout.
+The world of _Fabelgeist_ is a [historical fantasy](https://en.wikipedia.org/wiki/Historical_fantasy) version of Earth. Players of _Warhammer Fantasy_ or readers of [pre-Tolkien fantasy](https://www.gutenberg.org/ebooks/60184) will be familiar with the concept: the setting is a real-world historical period with generic fantasy elements inexplicably sprinkled throughout.
 
 > Science fiction historian Brian Stableford has defined "historical fantasy" as "a term applied to fantasies in which the actual history of the primary world is conscientiously reproduced, save for limited infusions of working magic located within a 'secret history.'"
 
@@ -79,21 +87,21 @@ As for the historical elements, the year is approximately [1544 AD](https://en.w
 [^8]: Thanks to [the Hansa](https://en.wikipedia.org/wiki/Hanseatic_League) keeping very detailed maps of its trade routes, we have [Viabundus](https://www.landesgeschichte.uni-goettingen.de/handelsstrassen/map.php): an extremely high-quality CC-BY-SA data source for northern Europe's roads, terrain, and settlements. Presently, only the Hanseatic trade zone is in scope for Viabundus, but the project is gradually expanding into greater Europe. We thank the University of Göttingen for maintaining Viabundus.
 
 ## Philosophy
-Below are some guiding principles for _Adventure Simulator_ development.
+Below are some guiding principles for _Fabelgeist_ development.
 
 ### Open source software
 We tentatively intend to keep everything [AGPLv3](https://www.gnu.org/licenses/agpl-3.0.en.html), but we're willing to hear out the case for other licenses.
 
-The AGPL applies to Adventure Simulator software unless a file or artifact says
+The AGPL applies to Fabelgeist software unless a file or artifact says
 otherwise. Generated strategic map tiles and terrain-routing packs are data
 artifacts with a separate licence boundary: project-owned contributions are
 offered under CC BY-SA 4.0 and underlying datasets retain their own terms. See
 [MAP_DATA_LICENSE.md](MAP_DATA_LICENSE.md) before distributing or hosting those
 artifacts.
 
-It's clear to us that _Adventure Simulator_ is very much the kind of project which will benefit from collaboration and indefinite iteration, which makes open source the obvious choice by a country mile. For instance, though our MVP for _Adventure Simulator_ is (deliberately)[^9] generic historical fantasy, we don't intend or hope for it to stay that way. The project's open source nature will allow modders to come in and take it in all sorts of unexpected directions in the future; they may create [total conversions](https://en.wikipedia.org/wiki/Total_conversion) to other fantasy settings, sci-fi settings, or... [something else entirely](https://fxtwitter.com/warlockracy/status/1489001741337169926).
+It's clear to us that _Fabelgeist_ is very much the kind of project which will benefit from collaboration and indefinite iteration, which makes open source the obvious choice by a country mile. For instance, though our MVP for _Fabelgeist_ is (deliberately)[^9] generic historical fantasy, we don't intend or hope for it to stay that way. The project's open source nature will allow modders to come in and take it in all sorts of unexpected directions in the future; they may create [total conversions](https://en.wikipedia.org/wiki/Total_conversion) to other fantasy settings, sci-fi settings, or... [something else entirely](https://fxtwitter.com/warlockracy/status/1489001741337169926).
 
-[^9]: Think of this as a high-effort tech demo in the spirit of Valve (cf. *Half-Life*). We really enjoy "weird fiction" like *Morrowind* and *Dune*, but at least for *Adventure Simulator*'s first iteration, the goal is to innovate in tech, not aesthetic. For now, our aesthetic is what has been proven to work.
+[^9]: Think of this as a high-effort tech demo in the spirit of Valve (cf. *Half-Life*). We really enjoy "weird fiction" like *Morrowind* and *Dune*, but at least for *Fabelgeist*'s first iteration, the goal is to innovate in tech, not aesthetic. For now, our aesthetic is what has been proven to work.
 
 ### Procedural assets
 

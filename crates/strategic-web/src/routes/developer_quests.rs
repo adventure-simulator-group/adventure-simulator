@@ -213,7 +213,7 @@ async fn active_context(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
+    candidates.sort_by_key(|left| left.resident_character_id);
     let context = GenerationContext {
         seed,
         observer_entropy_hi: seed.rotate_left(17),

@@ -467,7 +467,7 @@ fn exact_hostile_negotiation_authority(
         .db
         .hostile_group_authority()
         .case_site_id_key()
-        .find(&case_site_id.to_string())
+        .find(case_site_id.to_string())
         .filter(|group| group.disposition == HostileGroupDisposition::Active)
         .ok_or("Active hostile group is unavailable")?;
     if bound_mission(ctx, &party.id, &group.id) {
@@ -477,7 +477,7 @@ fn exact_hostile_negotiation_authority(
         .db
         .case_site_authority()
         .id_key()
-        .find(&case_site_id.to_string())
+        .find(case_site_id.to_string())
         .filter(|site| site.id == group.case_site_id)
         .ok_or("Hostile case-site authority is unavailable")?;
     let minute = ctx

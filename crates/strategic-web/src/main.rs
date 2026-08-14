@@ -1,6 +1,6 @@
 //! Strategic Layer Web Server
 //!
-//! An SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
+//! An SSR, HATEOAS-style web UI for the Fabelgeist strategic layer.
 //! Uses Axum + Maud + Datastar with SpacetimeDB as the backend.
 
 mod config;
@@ -429,9 +429,7 @@ fn apply_strategic_navigation_metadata(
                 .headers()
                 .get(header::LOCATION)
                 .cloned()
-                .unwrap_or_else(|| {
-                    HeaderValue::from_str(&canonical).expect("request URI is valid")
-                });
+                .unwrap_or_else(|| HeaderValue::from_str(canonical).expect("request URI is valid"));
             *response.status_mut() = StatusCode::NO_CONTENT;
             response.headers_mut().remove(header::LOCATION);
             response.headers_mut().insert(
@@ -446,7 +444,7 @@ fn apply_strategic_navigation_metadata(
         } else {
             response.headers_mut().insert(
                 HeaderName::from_static("x-strategic-canonical-url"),
-                HeaderValue::from_str(&canonical).expect("request URI is a valid header value"),
+                HeaderValue::from_str(canonical).expect("request URI is a valid header value"),
             );
         }
         if let Some(response_kind) = response_kind {

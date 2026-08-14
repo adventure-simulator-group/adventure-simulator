@@ -105,10 +105,11 @@ pub(crate) fn case_resolution_participant_ids(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let living_fallback = battle_character_ids
-        .is_empty()
-        .then(|| crate::strategic::living_party_member_ids(ctx, party_id))
-        .unwrap_or_default();
+    let living_fallback = if battle_character_ids.is_empty() {
+        crate::strategic::living_party_member_ids(ctx, party_id)
+    } else {
+        Default::default()
+    };
     adventuresim_core::world_event::canonical_case_resolution_participants(
         battle_character_ids,
         living_fallback,
@@ -268,7 +269,7 @@ pub fn record_event(
         .db
         .settlement()
         .id()
-        .find(&origin_settlement_id.to_owned())
+        .find(origin_settlement_id.to_owned())
         .is_none()
     {
         return Err("Reputation origin settlement not found".into());

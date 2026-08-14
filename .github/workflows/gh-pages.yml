@@ -4,9 +4,36 @@ on:
   push:
     branches: ["main"]
     paths:
-      - 'wiki/**'
-      - 'README.md'
-      - '.github/workflows/gh-pages.yml'
+      - "wiki/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "book.toml"
+      - "justfile"
+      - "package.json"
+      - "package-lock.json"
+      - ".prettierrc.json"
+      - ".prettierignore"
+      - "scripts/format_wiki_markdown.py"
+      - "scripts/test_format_wiki_markdown.py"
+      - "scripts/test_update_wiki_summary.py"
+      - "scripts/update_wiki_summary.py"
+      - ".github/workflows/gh-pages.yml"
+  pull_request:
+    paths:
+      - "wiki/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "book.toml"
+      - "justfile"
+      - "package.json"
+      - "package-lock.json"
+      - ".prettierrc.json"
+      - ".prettierignore"
+      - "scripts/format_wiki_markdown.py"
+      - "scripts/test_format_wiki_markdown.py"
+      - "scripts/test_update_wiki_summary.py"
+      - "scripts/update_wiki_summary.py"
+      - ".github/workflows/gh-pages.yml"
   workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
@@ -23,29 +50,71 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v2
+      - uses: actions/checkout@v7
         with:
-          mdbook-version: '0.4.52'
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install repository tooling
+        run: npm ci
+      - name: Check repository tooling format
+        run: npm run check:wiki-tooling-format
+      - name: Check generated wiki navigation
+        run: python3 scripts/update_wiki_summary.py --check
+      - name: Check generated project map
+        run: python3 scripts/update_project_map.py --check
+      - name: Test wiki tooling
+        run: >-
+          python3 -B -m unittest
+          scripts.test_format_wiki_markdown
+          scripts.test_update_wiki_summary -v
+      - name: Check changed wiki prose wrapping
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+          fi
+          if [ -n "$base_sha" ] && [ "$base_sha" != "0000000000000000000000000000000000000000" ]; then
+            python3 scripts/format_wiki_markdown.py --check --changed-from "$base_sha"
+          fi
+      - name: Setup mdBook
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
+        with:
+          repo: rust-lang/mdBook
+          tag: v0.4.52
+          cache: enable
+      - name: Setup mdBook table of contents
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
+        with:
+          repo: badboy/mdbook-toc
+          tag: 0.14.2
+          cache: enable
+          chmod: 0755
       - name: Setup mdBook Link Check
-        uses: jaxxstorm/action-install-gh-release@v1.10.0
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
         with:
           repo: Michael-F-Bryan/mdbook-linkcheck
           tag: v0.7.7
-          cache: true
+          cache: enable
           chmod: 0755
       - name: Setup Pages
         id: pages
-        uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
       - name: Build with mdBook
         run: mdbook build
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./book/html
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -54,5 +123,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
-
+        uses: actions/deploy-pages@v5

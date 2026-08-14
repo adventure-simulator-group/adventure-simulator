@@ -58,9 +58,9 @@ pub(crate) fn ensure_instance(
         ) {
             return Err("This organization kind cannot be settlement-scoped".into());
         }
-        let id = settlement_organization_instance_id(definition_id, settlement_id)
-            .ok_or("Only local social templates may be settlement-scoped")?;
-        id
+
+        settlement_organization_instance_id(definition_id, settlement_id)
+            .ok_or("Only local social templates may be settlement-scoped")?
     } else {
         if settlement_organization_instance_id(definition_id, "").is_some() {
             return Err("Local social templates require a settlement".into());
@@ -107,7 +107,7 @@ fn assigned_role(
         .db
         .social_organization_instance()
         .id()
-        .find(&instance_id.to_owned())
+        .find(instance_id.to_owned())
         .ok_or("Unknown organization instance")?;
     let definition = organization::organization(&instance.definition_id)
         .ok_or("Organization instance references an unknown definition")?;

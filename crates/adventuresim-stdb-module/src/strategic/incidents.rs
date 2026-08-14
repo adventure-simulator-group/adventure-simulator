@@ -126,7 +126,7 @@ fn create_strategic_incident(
     spec: IncidentSpec<'_>,
 ) -> Result<Option<IncidentId>, String> {
     parse_threat(spec.enemy_type)?;
-    let Some(mut party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
+    let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string()) else {
         return Ok(None);
     };
     let at_expected_location = current_case_site_id.map_or_else(

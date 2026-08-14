@@ -19,7 +19,17 @@ def test_movement_input_moves_player(tactical_client: tactical_brp.BrpClient) ->
 
     tactical_client.insert_resource(
         tactical_brp.PlayerInputOverride(
-            value=tactical_brp.PlayerInputRequest(movement=[0.0, 1.0], look=[0.0, 0.0], jump=False, weapon_guard="Lowered")
+            value=tactical_brp.PlayerInputRequest(
+                movement=[0.0, 1.0],
+                look=[0.0, 0.0],
+                jump=tactical_brp.JumpCommand(sequence=0),
+                crouch=False,
+                jump_charge=False,
+                downed_align=False,
+                posture=tactical_brp.PostureCommand(sequence=0, action=None),
+                pace="Walk",
+                weapon_guard="Lowered",
+            )
         )
     )
     try:

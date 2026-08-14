@@ -1092,7 +1092,6 @@ fn case_site_duration_bounds_fatigue_expanded_round_trip_and_cycle16_shape() {
         Some(7_680)
     );
     assert_eq!(1_503 * JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR, 6_012);
-    assert!(1_503 * JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR > 3_461);
     assert_eq!(projected_case_site_journey_minutes(20_000, 0), None);
     assert_eq!(projected_case_site_journey_minutes(0, 480), None);
 }

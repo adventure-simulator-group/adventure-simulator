@@ -225,6 +225,9 @@ pub struct CombatWeapon {
     pub slash: bool,
     pub pierce: bool,
     pub accuracy: f32,
+    pub swing_precision: f32,
+    pub stab_precision: f32,
+    pub preferred_melee_style: crate::equipment::MeleeAttackStyle,
     pub weight: f32,
     pub penetration: f32,
     pub melee_reach: f32,
@@ -324,6 +327,18 @@ impl PlayerEquipment for CombatEquipment {
     }
     fn weapon_accuracy(&self) -> f32 {
         self.weapon.map_or(0.0, |weapon| weapon.accuracy)
+    }
+    fn weapon_swing_precision(&self) -> f32 {
+        self.weapon.map_or(0.0, |weapon| weapon.swing_precision)
+    }
+    fn weapon_stab_precision(&self) -> f32 {
+        self.weapon.map_or(0.0, |weapon| weapon.stab_precision)
+    }
+    fn weapon_preferred_melee_style(&self) -> crate::equipment::MeleeAttackStyle {
+        self.weapon
+            .map_or(crate::equipment::MeleeAttackStyle::Swing, |weapon| {
+                weapon.preferred_melee_style
+            })
     }
     fn weapon_weight(&self) -> f32 {
         self.weapon.map_or(0.0, |weapon| weapon.weight)
@@ -727,6 +742,21 @@ pub fn authored_threat_combatant(
         slash,
         pierce,
         accuracy: 0.8 + profile.precision_bonus,
+        swing_precision: if profile.ranged {
+            0.0
+        } else {
+            0.8 + profile.precision_bonus
+        },
+        stab_precision: if profile.ranged {
+            0.0
+        } else {
+            0.8 + profile.precision_bonus
+        },
+        preferred_melee_style: if pierce && !slash {
+            crate::equipment::MeleeAttackStyle::Stab
+        } else {
+            crate::equipment::MeleeAttackStyle::Swing
+        },
         weight: if profile.rig == RigTopology::Quadruped {
             1.0
         } else {
@@ -1578,6 +1608,7 @@ fn melee_exchange(
     let defender_view = defender.view_with_equipment(&defender.equipment);
     attacker_view.resolve_melee_attack(
         attacker.equipment.holding_side,
+        attacker_equipment.weapon_preferred_melee_style(),
         &defender_view,
         &defender.bestiary_categories,
         response,
@@ -1784,6 +1815,9 @@ mod tests {
             slash: !ranged,
             pierce: ranged,
             accuracy: 1.5,
+            swing_precision: if ranged { 0.0 } else { 1.5 },
+            stab_precision: if ranged { 0.0 } else { 1.5 },
+            preferred_melee_style: crate::equipment::MeleeAttackStyle::Swing,
             weight: 1.5,
             penetration: 1.0,
             melee_reach: if ranged { 0.0 } else { 1.0 },
@@ -1917,6 +1951,9 @@ mod tests {
         };
         weapon.melee = true;
         weapon.accuracy = 1.5;
+        weapon.swing_precision = 1.5;
+        weapon.stab_precision = 1.5;
+        weapon.preferred_melee_style = crate::equipment::MeleeAttackStyle::Swing;
         weapon.weight = 1.5;
         weapon.melee_reach = 1.0;
         weapon.attack_interval_seconds = 1.0;

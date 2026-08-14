@@ -1,5 +1,22 @@
 # Character
 
+## Default character
+
+Callers that require a character without specifying one use one canonical
+build: **John Fabelgeist**. New browser sessions receive their own durable John
+with an owner-scoped ID, while tactical fixtures project the same gameplay
+values without persisting tactical state.
+
+John is a 20-year-old man. Strength, Agility, and Endurance are 4;
+Intelligence, Gut, Immunity, and Instinct are 3; eyesight and hearing use the
+neutral value 3. All personality trait axes are neutral. His age-scaled
+training gives him substantial practice across every combat skill, some
+practice in every other skill, and effective Insight and Command ranks of 3.0.
+
+His durable equipment is a longsword in a right-hip scabbard, a rondel dagger
+in a left-hip scabbard, a morion, breastplate, paired vambraces, paired leather
+boots, a torch, three bandages, and the ordinary 100-unit starting purse.
+
 Literacy is not universal. A character whose authoritative organization role
 authors a creation-literacy entitlement spends part of the simulated
 student-age phase learning that written language through the normal
@@ -417,7 +434,7 @@ Inspired by their Tolkien/*Warhammer* depiction. A proud, stubborn, greedy, ~~sh
 
 Dwarves who shame their kin by dishonoring the ancestors, breaking oaths, or engaging with prissy Elven nonsense like magic may be exiled at best, at worst compelled to redeem their honor by undertaking various suicide missions to retake an ancestral realm.
 
-As the race needs a lot of Dwarf-specific assets, Dwarves will not be included in the [MVP](../roadmap.md) or tentatively even the next phase.
+As the race needs a lot of Dwarf-specific assets, Dwarves will not be included in the MVP or tentatively even the next phase.
 ### Halflings
 Inspired by their Tolkien/*Warhammer* depiction. A small, jovial, provincial people generally unconcerned with the matters of the "big people." Would be found in small idyllic villages here and there. Not important enough for the MVP.
 ### Orcs/Goblins
@@ -435,7 +452,7 @@ Respawning an immortal character requires a [favor](../shared/magic.md) cost equ
 
 [^2]: Albeit with drastically diminishing returns.
 
-Immortality is based on race, not an abstract per-character flag. All immortal races are said to have "fey blood." In the current [roadmap](../roadmap.md), Elves are the only immortal race planned.
+Immortality is based on race, not an abstract per-character flag. All immortal races are said to have "fey blood." In the current roadmap, Elves are the only immortal race planned.
 ### Elves
 Inspired by their Tolkien/*Warhammer* depiction. Tall, beautiful, and haughty, Elves live in either deep forests or fictitious islands. They are generally morally good. Exceptions include the evil "Dark Elves" and the somewhat more neutral, ecoterroristic "Wood Elves."
 ### Dragons

@@ -9,24 +9,6 @@ pub(in crate::animation::procedural) fn plant_is_continuous(
         && plant.distance(current_foot) <= MAX_PLANT_DISCONTINUITY
 }
 
-pub(in crate::animation::procedural) fn advance_foot_target(
-    previous: Option<Vec3>,
-    desired: Vec3,
-    delta_seconds: f32,
-) -> Vec3 {
-    let Some(previous) = previous.filter(|position| position.is_finite()) else {
-        return desired;
-    };
-    if !desired.is_finite() {
-        return previous;
-    }
-    if previous.distance(desired) > MAX_PLANT_DISCONTINUITY {
-        return desired;
-    }
-    let maximum_step = (MAX_FOOT_TARGET_SPEED * delta_seconds.max(0.0)).min(MAX_FOOT_TARGET_STEP);
-    previous + (desired - previous).clamp_length_max(maximum_step)
-}
-
 pub(in crate::animation::procedural) fn advance_pelvis_shift(
     current: f32,
     desired: f32,
@@ -131,7 +113,10 @@ pub(in crate::animation::procedural) fn solve_landing_two_bone(
             root.distance(current_end),
             compression,
         ),
-        true,
+        // Landing supplies a foot-facing-constrained leg pole. Reblending the
+        // authored knee here would occur after that constraint and could
+        // recreate an anatomically impossible sideways bend.
+        false,
     )
 }
 
@@ -156,6 +141,22 @@ pub(in crate::animation::procedural) fn solve_two_bone_with_reach(
         maximum_target_reach,
         false,
     )
+}
+
+pub(in crate::animation::procedural) fn advance_foot_target_at_speed(
+    previous: Option<Vec3>,
+    desired: Vec3,
+    delta_seconds: f32,
+    maximum_speed: f32,
+) -> Vec3 {
+    let Some(previous) = previous.filter(|position| position.is_finite()) else {
+        return desired;
+    };
+    if !desired.is_finite() {
+        return previous;
+    }
+    let maximum_step = maximum_speed.max(0.0) * delta_seconds.max(0.0);
+    previous + (desired - previous).clamp_length_max(maximum_step)
 }
 
 fn solve_two_bone_internal(
@@ -271,7 +272,7 @@ pub(in crate::animation::procedural) fn apply_two_bone_solution(
     parents: &Query<&ChildOf>,
     transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
 ) {
-    let Some((upper_before, lower_before, _)) =
+    let Some((upper_before, lower_before, end_before)) =
         snapshot_chain(upper, lower, end, parents, &transforms.p0())
     else {
         return;
@@ -303,5 +304,19 @@ pub(in crate::animation::procedural) fn apply_two_bone_solution(
     };
     if let Ok(mut transform) = transforms.p1().get_mut(lower_after.entity) {
         transform.rotation = rotation;
+    }
+
+    // The analytic solve owns joint positions, not an airborne foot's authored
+    // facing. Recompute through the newly rotated parent hierarchy and restore
+    // the end bone's pre-solve world orientation. Contact slope alignment runs
+    // after this seam and intentionally overrides it when the sole is loaded.
+    let Some(end_after) = snapshot(end, parents, &transforms.p0()) else {
+        return;
+    };
+    let local = end_after.parent_rotation.inverse() * end_before.global.rotation();
+    if local.is_finite()
+        && let Ok(mut transform) = transforms.p1().get_mut(end)
+    {
+        transform.rotation = local.normalize();
     }
 }

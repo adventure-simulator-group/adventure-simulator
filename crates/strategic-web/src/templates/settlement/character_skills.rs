@@ -2459,7 +2459,7 @@ fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup 
 
 fn schedule_icon(label: &str, icon: &str, actionable: bool, activity: &str) -> Markup {
     let unavailable_reason = (!actionable)
-        .then(|| match activity {
+        .then_some(match activity {
             "carousing_minutes" => Some(adventuresim_core::activity::CAROUSING_UNAVAILABLE_REASON),
             "thievery_minutes" => Some(adventuresim_core::activity::THIEVERY_UNAVAILABLE_REASON),
             "raiding_minutes" => Some(adventuresim_core::activity::RAIDING_UNAVAILABLE_REASON),

@@ -10,7 +10,7 @@ pub type ControlledPlayer = Actions<Player>;
 
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
-#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq, Eq)]
 #[reflect(Component)]
 #[require(
     CharacterId,
@@ -18,12 +18,23 @@ pub type ControlledPlayer = Actions<Player>;
     Skills,
     Attributes,
     Stats,
-    CombatState,
     crate::animation::SkeletonState
 )]
 #[component(immutable)]
 pub struct Player {
     pub name: String,
+}
+
+pub fn default_tactical_character_id() -> u64 {
+    adventuresim_core::starting_character::default_character("tactical").id
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            name: adventuresim_core::starting_character::DEFAULT_CHARACTER_NAME.into(),
+        }
+    }
 }
 
 /// Strategic character identity projected into the transient tactical world.
@@ -100,7 +111,13 @@ impl PlayerEssentials for Stats {
 pub struct TacticalCombatState {
     pub starting_incapacitation: f32,
     pub starting_blood_fraction: f32,
+    pub starting_fear: f32,
+    pub starting_fatigue: f32,
+    pub starting_hunger: f32,
+    pub starting_thirst: f32,
+    pub starting_thermal: f32,
     pub blood_loss_fraction: f32,
+    pub exhaustion: f32,
     pub imbalance: f32,
     pub incapacitation: f32,
 }
@@ -110,7 +127,13 @@ impl Default for TacticalCombatState {
         Self {
             starting_incapacitation: 0.0,
             starting_blood_fraction: 1.0,
+            starting_fear: 0.0,
+            starting_fatigue: 0.0,
+            starting_hunger: 0.0,
+            starting_thirst: 0.0,
+            starting_thermal: 0.0,
             blood_loss_fraction: 0.0,
+            exhaustion: 0.0,
             imbalance: 0.0,
             incapacitation: 0.0,
         }
@@ -118,6 +141,29 @@ impl Default for TacticalCombatState {
 }
 
 impl TacticalCombatState {
+    /// Returns the source values represented by the tactical incapacitation
+    /// wheel. Pain and blood loss are recomputed live in combat; the remaining
+    /// strategic sources retain their enrollment-time breakdown.
+    pub fn incapacitation_sources(
+        &self,
+        total_limb_damage: f32,
+        will_check: f32,
+    ) -> TacticalIncapacitationSources {
+        let remaining_blood =
+            (self.starting_blood_fraction - self.blood_loss_fraction).clamp(0.0, 1.0);
+        TacticalIncapacitationSources {
+            pain: pain_incapacitation(total_limb_damage, will_check),
+            blood_loss: blood_loss_incapacitation(remaining_blood, 1.0),
+            fear: self.starting_fear.max(0.0),
+            fatigue: self.starting_fatigue.max(0.0),
+            hunger: self.starting_hunger.max(0.0),
+            thirst: self.starting_thirst.max(0.0),
+            thermal: self.starting_thermal.max(0.0),
+            exhaustion: self.exhaustion.max(0.0),
+            imbalance: self.imbalance.max(0.0),
+        }
+    }
+
     /// Derives readiness from the one replicated incapacitation value.
     ///
     /// Readiness is intentionally not stored separately: clients, authority
@@ -133,6 +179,33 @@ impl TacticalCombatState {
 
     pub fn is_incapacitated(&self) -> bool {
         self.incapacitation_status() == IncapacitationStatus::Incapacitated
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TacticalIncapacitationSources {
+    pub pain: f32,
+    pub blood_loss: f32,
+    pub fear: f32,
+    pub fatigue: f32,
+    pub hunger: f32,
+    pub thirst: f32,
+    pub thermal: f32,
+    pub exhaustion: f32,
+    pub imbalance: f32,
+}
+
+impl TacticalIncapacitationSources {
+    pub fn total(self) -> f32 {
+        self.pain
+            + self.blood_loss
+            + self.fear
+            + self.fatigue
+            + self.hunger
+            + self.thirst
+            + self.thermal
+            + self.exhaustion
+            + self.imbalance
     }
 }
 
@@ -222,7 +295,7 @@ impl Limbs {
     }
 
     /// Aggregate health deficit across all body parts, used as the `pain`
-    /// input in [`CombatState::recompute`].
+    /// input to [`TacticalCombatState::incapacitation_sources`].
     pub fn total_damage(&self) -> f32 {
         [
             self.left_arm,
@@ -239,53 +312,8 @@ impl Limbs {
     }
 }
 
-/// Short-lived tactical combat state: the imbalance and blood-loss inputs to
-/// [`combat.md`'s incapacitation model](../../../../wiki/tactical/combat.md),
-/// tracked in real time instead of the abstract per-round battle resolved by
-/// `adventuresim_core::autoresolve`. Unlike [`Limbs`] wounds, this state is
-/// tactical-only and is not meant to be persisted strategically (see
-/// `adventuresim_core::morale`).
-#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq)]
-#[reflect(Component)]
-pub struct CombatState {
-    /// Momentary stagger from unabsorbed attack force. Recovers continuously
-    /// (see the tactical server's `recover_imbalance` system).
-    pub imbalance: f32,
-    /// Fraction of blood volume lost so far this session.
-    pub blood_loss_fraction: f32,
-    /// Cached `pain_incapacitation` output, refreshed whenever damage lands.
-    pub pain: f32,
-    /// Cached `blood_loss_incapacitation` output, refreshed whenever damage lands.
-    pub blood_loss: f32,
-}
-
-impl CombatState {
-    /// Refreshes the cached `pain`/`blood_loss` incapacitation terms from the
-    /// current aggregate body damage and a Will skill check.
-    pub fn recompute(&mut self, total_damage: f32, will_check: f32) {
-        self.pain = pain_incapacitation(total_damage, will_check);
-        let remaining_blood = (1.0 - self.blood_loss_fraction).clamp(0.0, 1.0);
-        self.blood_loss = blood_loss_incapacitation(remaining_blood, 1.0);
-    }
-
-    /// Total incapacitation, matching `Combatant::incapacitation` in
-    /// `adventuresim_core::autoresolve` (without a strategic carryover term,
-    /// since there is none at the tactical layer).
-    pub fn incapacitation(&self) -> f32 {
-        self.pain + self.blood_loss + self.imbalance
-    }
-
-    pub fn status(&self) -> IncapacitationStatus {
-        match self.incapacitation() {
-            total if total >= 1.0 => IncapacitationStatus::Incapacitated,
-            total if total > 0.5 => IncapacitationStatus::Staggered,
-            _ => IncapacitationStatus::Ready,
-        }
-    }
-}
-
 /// Physical and mental skills of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
 #[reflect(Component)]
 #[component(immutable)]
 pub struct Skills {
@@ -325,6 +353,61 @@ pub struct Skills {
     pub balance_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
+}
+
+impl Default for Skills {
+    fn default() -> Self {
+        let default = adventuresim_core::starting_character::default_character("tactical");
+        let skills = default.skills;
+        Self {
+            polearm_hours: skills.polearm,
+            axe_hours: skills.axe,
+            bludgeon_hours: skills.bludgeon,
+            sword_hours: skills.sword,
+            knife_hours: skills.knife,
+            dodge_hours: skills.dodge,
+            block_hours: skills.block,
+            bow_hours: skills.bow,
+            crossbow_hours: skills.crossbow,
+            firearm_hours: skills.firearm,
+            throw_hours: skills.throw,
+            will_hours: skills.will,
+            insight_hours: skills.insight,
+            charm_hours: skills.charm,
+            command_hours: skills.command,
+            deception_hours: skills.deception,
+            physiology_hours: skills.physiology,
+            religion_hours: [
+                skills.religion.roman_catholic,
+                skills.religion.lutheran,
+                skills.religion.reformed,
+                skills.religion.anglican,
+                skills.religion.eastern_orthodox,
+                skills.religion.islamic,
+                skills.religion.judaism,
+            ]
+            .into_iter()
+            .sum(),
+            bestiary_beast_hours: skills.bestiary.beast,
+            bestiary_undead_hours: skills.bestiary.undead,
+            bestiary_human_hours: skills.bestiary.human,
+            bestiary_werekin_hours: skills.bestiary.werekin,
+            bestiary_elf_hours: skills.bestiary.elf,
+            bestiary_dwarf_hours: skills.bestiary.dwarf,
+            bestiary_fey_hours: skills.bestiary.fey,
+            bestiary_spirit_hours: skills.bestiary.spirit,
+            bestiary_greenskin_hours: skills.bestiary.greenskin,
+            bestiary_insectoid_hours: skills.bestiary.insectoid,
+            bestiary_draconid_hours: skills.bestiary.draconid,
+            bestiary_construct_hours: skills.bestiary.construct,
+            bestiary_wildmen_hours: skills.bestiary.wildmen,
+            surgery_hours: skills.surgery,
+            stealth_hours: skills.stealth,
+            balance_hours: skills.balance,
+            tailoring_hours: skills.tailoring,
+            smithing_hours: skills.smithing,
+        }
+    }
 }
 
 impl Skills {
@@ -391,7 +474,7 @@ impl PlayerSkills for Skills {
 }
 
 /// Genetic attributes of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
 #[reflect(Component)]
 #[component(immutable)]
 pub struct Attributes {
@@ -410,6 +493,30 @@ pub struct Attributes {
     pub right_arm_agility: f32,
     pub left_leg_agility: f32,
     pub right_leg_agility: f32,
+}
+
+impl Default for Attributes {
+    fn default() -> Self {
+        let default = adventuresim_core::starting_character::default_character("tactical");
+        let attributes = default.attributes;
+        Self {
+            endurance: attributes.endurance,
+            immunity: attributes.immunity,
+            gut: attributes.gut,
+            intelligence: attributes.intelligence,
+            instinct: attributes.instinct,
+            eyesight: attributes.eyesight,
+            hearing: attributes.hearing,
+            left_arm_strength: attributes.strength,
+            right_arm_strength: attributes.strength,
+            left_leg_strength: attributes.strength,
+            right_leg_strength: attributes.strength,
+            left_arm_agility: attributes.agility,
+            right_arm_agility: attributes.agility,
+            left_leg_agility: attributes.agility,
+            right_leg_agility: attributes.agility,
+        }
+    }
 }
 
 impl PlayerAttributes for Attributes {
@@ -468,5 +575,74 @@ impl TacticalPlayerViewer<'_, '_> {
             .with_essentials(stats)
             .with_equipment(inventory)
             .with_skills(skills))
+    }
+}
+
+#[cfg(test)]
+mod tactical_combat_state_tests {
+    use super::*;
+
+    #[test]
+    fn component_defaults_project_john_fabelgeist() {
+        let player = Player::default();
+        let attributes = Attributes::default();
+        let skills = Skills::default();
+        assert_eq!(player.name, "John Fabelgeist");
+        assert_eq!(attributes.endurance, 4.0);
+        assert_eq!(attributes.left_arm_strength, 4.0);
+        assert_eq!(attributes.right_leg_agility, 4.0);
+        assert_eq!(attributes.intelligence, 3.0);
+        assert_eq!(attributes.instinct, 3.0);
+        assert_eq!(
+            Skill::Insight.capped_training_rank(skills.insight_hours, &attributes),
+            3.0
+        );
+        assert_eq!(
+            Skill::Command.capped_training_rank(skills.command_hours, &attributes),
+            3.0
+        );
+    }
+
+    #[test]
+    fn wheel_sources_preserve_strategic_breakdown_and_recompute_live_values() {
+        let state = TacticalCombatState {
+            starting_incapacitation: 0.35,
+            starting_blood_fraction: 0.85,
+            starting_fear: 0.1,
+            starting_fatigue: 0.05,
+            starting_hunger: 0.08,
+            starting_thirst: 0.07,
+            starting_thermal: 0.05,
+            blood_loss_fraction: 0.15,
+            exhaustion: 0.12,
+            imbalance: 0.2,
+            ..default()
+        };
+
+        let sources = state.incapacitation_sources(0.0, 4.0);
+        assert_eq!(sources.pain, 0.0);
+        assert!((sources.blood_loss - 1.0).abs() < 0.0001);
+        assert_eq!(sources.fear, 0.1);
+        assert_eq!(sources.fatigue, 0.05);
+        assert_eq!(sources.hunger, 0.08);
+        assert_eq!(sources.thirst, 0.07);
+        assert_eq!(sources.thermal, 0.05);
+        assert_eq!(sources.exhaustion, 0.12);
+        assert_eq!(sources.imbalance, 0.2);
+        assert!((sources.total() - 1.67).abs() < 0.0001);
+        assert!(
+            (sources.total()
+                - combat_incapacitation(
+                    state.starting_incapacitation,
+                    state.starting_blood_fraction,
+                    state.blood_loss_fraction,
+                    0.0,
+                    4.0,
+                    state.imbalance,
+                )
+                - state.exhaustion)
+                .abs()
+                < 0.0001
+        );
     }
 }

@@ -388,6 +388,8 @@ fn starting_slot_label(slot: StartingSlot) -> &'static str {
         StartingSlot::RightArm => "right arm",
         StartingSlot::LeftLeg => "left leg",
         StartingSlot::RightLeg => "right leg",
+        StartingSlot::LeftFoot => "left foot",
+        StartingSlot::RightFoot => "right foot",
         StartingSlot::Head => "head",
         StartingSlot::Chest => "chest",
         StartingSlot::Stomach => "stomach",

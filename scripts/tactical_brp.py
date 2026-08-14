@@ -149,7 +149,19 @@ def smoke_test_command(args: argparse.Namespace) -> int:
 
     print("Driving forward movement via PlayerInputOverride...")
     client.insert_resource(
-        PlayerInputOverride(value=PlayerInputRequest(movement=[0.0, 1.0], look=[0.0, 0.0], jump=False, weapon_guard="Lowered"))
+        PlayerInputOverride(
+            value=PlayerInputRequest(
+                movement=[0.0, 1.0],
+                look=[0.0, 0.0],
+                jump=JumpCommand(sequence=0),
+                crouch=False,
+                jump_charge=False,
+                downed_align=False,
+                posture=PostureCommand(sequence=0, action=None),
+                pace="Walk",
+                weapon_guard="Lowered",
+            )
+        )
     )
 
     deadline = time.monotonic() + args.timeout

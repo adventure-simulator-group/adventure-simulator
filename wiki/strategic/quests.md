@@ -5,13 +5,13 @@ organizes a knightly journey around a chivalric purpose and ordered trials.
 Combat, social, temptation, and puzzle trials share the frame without becoming
 investigation template families. Puzzle rules are independent of the witch,
 fey, inscription, book, or mechanism presenting them. See
-[Errantry and modular challenges](../reference/errantry-and-challenges.md).
+[Errantry and modular challenges](errantry-and-challenges.md).
 
 Outbreak quests give sanitation, behavior, environmental, and monster-vector
 causes the same early symptom: ill locals. They support physical and social
 investigation routes and complete only after the exact source is remediated;
 diagnosis alone is not completion. See
-[Outbreak investigations](../reference/outbreaks.md).
+[Outbreak investigations](outbreaks.md).
 
 Quests begin as problems in the world, not tasks waiting for a player to
 activate them. A settlement may already be suffering thefts, disappearances,
@@ -142,12 +142,12 @@ contract's reporting flow.
 The implementation deliberately separates player-visible knowledge from hidden
 world authority:
 
-- [Quest generation and investigation](../reference/quest-generation-and-investigation.md)
+- [Quest generation and investigation](quest-generation-and-investigation.md)
   covers authored content, deterministic generation, testimony, evidence, and
   observer knowledge.
-- [Quest authority](../reference/quest-authority.md) covers cases, contracts,
+- [Quest authority](quest-authority.md) covers cases, contracts,
   objectives, missions, outcomes, local problems, recruitment, and incidents.
-- [Bestiary authority](../reference/bestiary.md) covers stable threat identity,
+- [Bestiary authority](../shared/bestiary.md) covers stable threat identity,
   physical knowledge, and preparation information.
-- [Strategic simulation](../reference/strategic-simulation.md) covers automated
+- [Strategic simulation](../engineering/strategic-simulation.md) covers automated
   balance and regression evaluation.

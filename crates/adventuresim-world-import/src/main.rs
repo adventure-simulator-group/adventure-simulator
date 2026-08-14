@@ -30,7 +30,7 @@ const WORLD_YEAR: i32 = 1544;
 const MAX_REDUCER_REQUEST_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Parser)]
-#[command(about = "Compile source datasets into the Adventure Simulator strategic world")]
+#[command(about = "Compile source datasets into the Fabelgeist strategic world")]
 struct Args {
     #[arg(long, alias = "raw-dir", default_value_os_t = default_viabundus_directory())]
     viabundus_dir: PathBuf,

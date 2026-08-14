@@ -22,12 +22,15 @@ pub(super) fn on_defender_response(
         return;
     }
 
-    if let Ok(mut skeleton) = skeletons.get_mut(entity) {
-        let start = animation_tick(&time);
-        match **event {
-            DefendRequest::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, start + 8),
-            DefendRequest::Parry => skeleton.begin_block(BlockSpec::default(), start, start + 8),
-        }
+    let Ok(mut skeleton) = skeletons.get_mut(entity) else {
+        return;
+    };
+    let start = animation_tick(&time);
+    match **event {
+        DefendRequest::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, start + 8),
+        DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
+        DefendRequest::Roll => {}
+        DefendRequest::Parry => skeleton.begin_block(BlockSpec::default(), start, start + 8),
     }
 
     cmd.entity(entity).insert(PendingDefenderResponse {
@@ -53,11 +56,12 @@ pub(super) fn on_melee_attack_started(
     );
     if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
         let start = animation_tick(&time);
-        skeleton.begin_attack(
-            AttackSpec::default(),
-            start,
-            start + duration_ticks(event.windup),
+        let attack = AttackSpec::melee_from_local_velocity_and_style(
+            skeleton.local_velocity,
+            event.strike_family,
+            event.footwork,
         );
+        skeleton.begin_attack(attack, start, start + duration_ticks(event.windup));
     }
 }
 
@@ -80,6 +84,9 @@ pub(super) fn resolve_defender_response(
 
     match pending.choice {
         DefendRequest::Dodge => DefenderResponse::Dodge { input_reflex },
+        DefendRequest::Roll => DefenderResponse::Dodge {
+            input_reflex: roll_dodge_reflex(input_reflex),
+        },
         DefendRequest::Parry => {
             if defender_view.shield_block_bonus() > 0.0 {
                 DefenderResponse::Parry { input_reflex }
@@ -87,6 +94,40 @@ pub(super) fn resolve_defender_response(
                 DefenderResponse::None
             }
         }
+    }
+}
+
+const ROLL_DODGE_EFFECTIVENESS: f32 = 0.35;
+
+fn roll_dodge_reflex(input_reflex: f32) -> f32 {
+    input_reflex.clamp(0.0, 1.0) * ROLL_DODGE_EFFECTIVENESS
+}
+
+fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
+    skeleton.body().is_downed()
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod roll_tests {
+    use super::*;
+
+    #[test]
+    fn roll_is_a_bounded_fraction_of_an_ordinary_dodge() {
+        assert!((roll_dodge_reflex(1.0) - 0.35).abs() < f32::EPSILON);
+        assert_eq!(roll_dodge_reflex(-1.0), 0.0);
+        assert_eq!(roll_dodge_reflex(2.0), 0.35);
+    }
+
+    #[test]
+    fn roll_defense_is_restricted_to_prone_and_supine() {
+        assert!(!accepts_roll_dodge(&SkeletonState::default()));
+        assert!(accepts_roll_dodge(
+            &SkeletonState::default().with_body_state(BodyState::Prone)
+        ));
+        assert!(accepts_roll_dodge(
+            &SkeletonState::default().with_body_state(BodyState::Supine)
+        ));
     }
 }
 
@@ -106,7 +147,10 @@ pub(super) fn on_melee_action_request(
         return;
     };
     match **event {
-        MeleeActionRequest::Start => {
+        MeleeActionRequest::Start {
+            strike_family,
+            footwork,
+        } => {
             let Ok(mut authority) = authorities.get_mut(attacker) else {
                 return;
             };
@@ -128,7 +172,12 @@ pub(super) fn on_melee_action_request(
             );
             if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
                 let start = animation_tick(&time);
-                skeleton.begin_attack(AttackSpec::default(), start, start + duration_ticks(windup));
+                let attack = AttackSpec::melee_from_local_velocity_and_style(
+                    skeleton.local_velocity,
+                    strike_family,
+                    footwork,
+                );
+                skeleton.begin_attack(attack, start, start + duration_ticks(windup));
             }
         }
         MeleeActionRequest::Complete {
@@ -142,11 +191,16 @@ pub(super) fn on_melee_action_request(
             };
             // Finite precision is intentionally accepted as reported. Full
             // animation and secondary physics remain client-owned.
+            let strike_family = skeletons
+                .get_mut(attacker)
+                .map(|skeleton| skeleton.strike_family())
+                .unwrap_or(StrikeFamily::Thrust);
             cmd.trigger(MeleeAttackIntent {
                 attacker,
                 target,
                 body_part,
                 reported_precision,
+                strike_family,
             });
         }
     }
@@ -250,6 +304,7 @@ fn duration_ticks(duration: CombatDuration) -> u64 {
 
 pub(super) fn authoritative_line_of_sight(
     spatial: &SpatialQuery,
+    scene_items: &Query<Entity, With<TacticalSceneItem>>,
     attacker: Entity,
     target: Entity,
     origin: Vec3,
@@ -260,7 +315,8 @@ pub(super) fn authoritative_line_of_sight(
     let Ok(direction) = Dir3::new(offset) else {
         return false;
     };
-    let filter = SpatialQueryFilter::from_excluded_entities([attacker]);
+    let excluded: Vec<_> = scene_items.iter().chain([attacker]).collect();
+    let filter = SpatialQueryFilter::from_excluded_entities(excluded);
     spatial
         .cast_ray(origin, direction, distance, true, &filter)
         .is_some_and(|hit| hit.entity == target)

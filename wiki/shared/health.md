@@ -1,10 +1,10 @@
 # Health
 
 Durable post-mortem anatomy is a bounded strategic outcome rather than tactical
-tick state. See [Autopsies](../reference/autopsies.md) for custody,
+tick state. See [Autopsies](../strategic/autopsies.md) for custody,
 decomposition, permission, and medical skill boundaries.
 
-Adventure Simulator uses durable injuries, blood loss, disease, pain, and
+Fabelgeist uses durable injuries, blood loss, disease, pain, and
 recovery rather than a single rapidly refilling combat-health pool. The
 strategic/tactical split keeps that depth playable: immediate danger happens in
 combat, while treatment and long recovery can advance through strategic time.
@@ -82,7 +82,7 @@ disease they magically cure. Treatment may improve or worsen the evidence
 available to an observer, but never reveals hidden truth directly.
 
 The detailed privacy, meter, Humour, and notebook contract lives in
-[Physiology](../reference/physiology.md).
+[Physiology](physiology.md).
 
 ## Treatment
 
@@ -141,7 +141,7 @@ meters, routes, deterministic curves, phenotype variation, and generic
 interventions. Four starter diseases deliberately project to the four
 element/Humour correspondences used by Paracelsian scholars, but the underlying
 causes remain organisms, toxins, and environmental exposure rather than
-Humours. See [Fantastic diseases](../reference/fantastic-diseases.md).
+Humours. See [Fantastic diseases](fantastic-diseases.md).
 
 The ordinary limb-treatment reducer accepts any co-present full Character, not
 only party members, when the patient explicitly consents or is incapacitated.

@@ -361,7 +361,7 @@ struct EditSource {
 
 fn edit_source(source: adventuresim_dialogue::SourceRef) -> Option<EditSource> {
     let edit_url = adventuresim_dialogue::github_edit_url(
-        "adventure-simulator-group/adventure-simulator",
+        "adventure-simulator-group/fabelgeist",
         option_env!("ADVENTURESIM_SOURCE_REF").unwrap_or("main"),
         &source,
     )?;
@@ -966,11 +966,7 @@ async fn npc_social_view(
         ]);
     }
     let courtship_kind = courting_this_npc
-        .then(|| {
-            status
-                .as_ref()
-                .and_then(|status| status.courtship_kind.clone())
-        })
+        .then(|| status.as_ref().and_then(|status| status.courtship_kind))
         .flatten();
     let courtship_exposed = courting_this_npc
         && status

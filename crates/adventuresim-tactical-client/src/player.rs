@@ -1,6 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
+    client::DirectControlState,
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest},
 };
 use bevy::prelude::*;
@@ -59,7 +60,8 @@ impl Plugin for PlayerPlugin {
         // Replication supplies Transform but not a render hierarchy root.
         // Require visibility before Add<Player> observers attach mesh children
         // so authored rigs cannot inherit from a component-less parent.
-        app.register_required_components_with::<Player, _>(|| Visibility::Inherited)
+        app.init_resource::<DirectControlState>()
+            .register_required_components_with::<Player, _>(|| Visibility::Inherited)
             .add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
             .add_observer(on_dodge_fired)
@@ -67,6 +69,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(
                 Update,
                 (
+                    apply_direct_combat_controls,
                     update_attack_state_system.run_if(any_with_component::<AttackState>),
                     start_fade_on_incapacitation,
                     tick_fade_out.run_if(any_with_component::<FadingOut>),
@@ -100,7 +103,7 @@ pub struct LimbHitbox(pub BodyPart);
 /// A standalone, client-only entity holding a dead player/bot's detached body
 /// meshes, fading them to transparent over [`ENEMY_DEATH_FADE_SECONDS`] before
 /// despawning itself. Spawned by [`start_fade_on_incapacitation`] the moment
-/// [`CombatState`] is seen to be `Incapacitated`, since by that point the
+/// [`TacticalCombatState`] is seen to be `Incapacitated`, since by that point the
 /// server may despawn (and replication may remove) the real player entity at
 /// any time — this entity has no server counterpart and outlives it on
 /// purpose so the fade has something to animate.
@@ -163,10 +166,6 @@ fn on_new_player_added_hook(
                     ))
                 ),
                 (
-                    Action::<input::Jump>::new(),
-                    bindings![KeyCode::Space, GamepadButton::South],
-                ),
-                (
                     Action::<input::RotateCamera>::new(),
                     Bindings::spawn((
                         Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
@@ -175,14 +174,6 @@ fn on_new_player_added_hook(
                             DeadZone::default(),
                         )),
                     ))
-                ),
-                (
-                    Action::<Attack>::new(),
-                    bindings![MouseButton::Left],
-                ),
-                (
-                    Action::<Dodge>::new(),
-                    bindings![KeyCode::KeyF],
                 ),
                 (
                     Action::<Parry>::new(),
@@ -228,20 +219,23 @@ fn on_new_player_added_hook(
 }
 
 /// Detaches another player/bot's body meshes onto a standalone [`FadingOut`]
-/// corpse entity the first time their replicated [`CombatState`] is seen to
-/// be `Incapacitated`. The server despawns the real entity immediately on
-/// death with no fade delay of its own (see the tactical server's
+/// corpse entity the first time their replicated [`TacticalCombatState`] is
+/// seen to be `Incapacitated`. The server despawns the real entity immediately
+/// on death with no fade delay of its own (see the tactical server's
 /// `bot::on_authoritative_enemy_death`), so the meshes have to be moved off
 /// of it before that despawn — which recursively despawns children — can take
 /// them with it. Excludes the locally controlled player, which never spawns
 /// any body meshes to fade (see [`on_new_player_added_hook`]).
 fn start_fade_on_incapacitation(
     mut commands: Commands,
-    q: Query<(&CombatState, &Transform, &Children), (Changed<CombatState>, Without<ClientPlayer>)>,
+    q: Query<
+        (&TacticalCombatState, &Transform, &Children),
+        (Changed<TacticalCombatState>, Without<ClientPlayer>),
+    >,
     q_mesh: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
 ) {
     for (state, transform, children) in &q {
-        if state.status() != IncapacitationStatus::Incapacitated {
+        if state.incapacitation_status() != IncapacitationStatus::Incapacitated {
             continue;
         }
 
@@ -250,8 +244,9 @@ fn start_fade_on_incapacitation(
             .filter(|&child| q_mesh.contains(child))
             .collect();
         if meshes.is_empty() {
-            // Already detached by an earlier `CombatState` change (e.g. the
-            // continuing imbalance-recovery ticks), or nothing to fade.
+            // Already detached by an earlier `TacticalCombatState` change
+            // (e.g. the continuing imbalance-recovery ticks), or nothing to
+            // fade.
             continue;
         }
 
@@ -290,7 +285,7 @@ fn tick_fade_out(
             let Ok(material_handle) = q_material.get(child) else {
                 continue;
             };
-            if let Some(material) = materials.get_mut(&material_handle.0) {
+            if let Some(mut material) = materials.get_mut(&material_handle.0) {
                 material.alpha_mode = AlphaMode::Blend;
                 material.base_color = material.base_color.with_alpha(alpha);
             }
@@ -315,6 +310,7 @@ fn update_attack_state_system(
     )>,
     q_camera: Query<&Transform>,
     q_collider: Query<(&ColliderOf, &LimbHitbox)>,
+    q_scene_items: Query<Entity, With<TacticalSceneItem>>,
 ) {
     for (attacker, attacker_transform, mut state, camera) in &mut q_attacker {
         state.pre_hit_timer.tick(time.delta());
@@ -372,7 +368,8 @@ fn update_attack_state_system(
         };
         let delta = intended_point - origin;
         let direction = Dir3::new(delta).unwrap_or(camera_direction);
-        let obstruction_filter = SpatialQueryFilter::from_excluded_entities([attacker]);
+        let excluded: Vec<_> = q_scene_items.iter().chain([attacker]).collect();
+        let obstruction_filter = SpatialQueryFilter::from_excluded_entities(excluded);
         let obstruction = spatial.cast_ray(
             origin,
             direction,
@@ -425,21 +422,43 @@ fn on_attack_fired_hook(
     event: On<Fire<Attack>>,
     mut cmd: Commands,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
+    q_leg_ik: Query<&crate::animation::LegIkState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
-    let Ok((attacking, mut skeleton)) = q_character.get_mut(event.context) else {
+    try_start_attack(
+        event.context,
+        false,
+        &mut cmd,
+        &mut q_character,
+        &q_leg_ik,
+        &viewer,
+        &time,
+    );
+}
+
+fn try_start_attack(
+    entity: Entity,
+    alternate_attack: bool,
+    cmd: &mut Commands,
+    q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
+    q_leg_ik: &Query<&crate::animation::LegIkState>,
+    viewer: &TacticalPlayerViewer,
+    time: &Time,
+) {
+    let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
     if attacking {
         return;
     }
-    let Ok((reach, ranged, melee, windup_secs)) = viewer.get(event.context).map(|character| {
+    let Ok((reach, ranged, melee, windup_secs, preferred_style)) = viewer.get(entity).map(|character| {
         (
             character.weapon_reach(),
             character.weapon_is_ranged(),
             character.weapon_is_melee(),
             character.weapon_windup_secs(),
+            character.weapon_preferred_melee_style(),
         )
     }) else {
         warn!("Trying to attack, but can't get weapon reach. Not holding any weapons ?");
@@ -450,14 +469,90 @@ fn on_attack_fired_hook(
         warn!("Trying to attack without a usable equipped weapon");
         return;
     }
-    cmd.entity(event.context)
+    cmd.entity(entity)
         .insert(AttackState::new(windup_secs, reach, ranged));
     let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-    skeleton.begin_attack(AttackSpec::default(), start, start + 19);
+    let predicted = if ranged {
+        AttackSpec::default()
+    } else {
+        // Predict only from the last physical velocity already present in the
+        // replicated skeleton. The authority repeats the same typed
+        // classification from its observation; no input vector crosses the
+        // reliable action boundary.
+        let preferred_family = StrikeFamily::from_melee_style(preferred_style);
+        let strike_family = if alternate_attack {
+            match preferred_family {
+                StrikeFamily::Slash => StrikeFamily::Thrust,
+                StrikeFamily::Thrust => StrikeFamily::Slash,
+            }
+        } else {
+            preferred_family
+        };
+        let moving = skeleton.local_velocity.xz().length() > 0.05;
+        let feet_close = q_leg_ik
+            .get(entity)
+            .ok()
+            .and_then(crate::animation::LegIkState::feet_are_close_for_attack)
+            .unwrap_or(false);
+        let footwork = if moving {
+            if feet_close {
+                Footwork::Stay
+            } else {
+                Footwork::Switch
+            }
+        } else if strike_family == StrikeFamily::Slash {
+            Footwork::Switch
+        } else {
+            Footwork::Stay
+        };
+        AttackSpec::melee_from_local_velocity_and_style(
+            skeleton.local_velocity,
+            strike_family,
+            footwork,
+        )
+    };
+    skeleton.begin_attack(predicted, start, start + 19);
     if ranged {
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
-        cmd.client_trigger(MeleeActionRequest::Start);
+        cmd.client_trigger(MeleeActionRequest::Start {
+            strike_family: predicted.strike_family,
+            footwork: predicted.footwork,
+        });
+    }
+}
+
+fn apply_direct_combat_controls(
+    controls: Res<DirectControlState>,
+    mut cmd: Commands,
+    players: Query<Entity, With<ControlledPlayer>>,
+    mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
+    q_leg_ik: Query<&crate::animation::LegIkState>,
+    viewer: TacticalPlayerViewer,
+    time: Res<Time>,
+) {
+    for entity in &players {
+        if controls.attack_just_pressed {
+            try_start_attack(
+                entity,
+                controls.alternate_attack,
+                &mut cmd,
+                &mut q_character,
+                &q_leg_ik,
+                &viewer,
+                &time,
+            );
+        }
+        if controls.dodge_just_pressed {
+            if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
+                let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+                skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
+            }
+            cmd.client_trigger(DefendRequest::Dodge);
+        }
+        if controls.roll_just_pressed {
+            cmd.client_trigger(DefendRequest::Roll);
+        }
     }
 }
 

@@ -38,8 +38,8 @@ without a remove-first step. Empty identical vessels may stack; opening or
 filling splits exactly one stable instance, and nonempty vessels stay quantity
 one.
 
-See [Measured inventory](../reference/measured-inventory.md) for the durable
-amount model and [Food and cooking](../reference/food-and-cooking.md) for food
+See [Measured inventory](measured-inventory.md) for the durable amount model
+and [Food and cooking](food-and-cooking.md) for food
 lot and cooking behavior.
 
 ## Equipment sets

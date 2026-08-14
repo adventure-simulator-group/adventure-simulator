@@ -8,17 +8,101 @@ use super::{AnimationPlayback, AuthoredBindTransform, ImpactReaction, PresentedS
 mod rig;
 pub(crate) use rig::*;
 
-/// Procedural facing is an additive post-FK layer. Animation evaluation writes
-/// these local transforms again on the next frame, so the offsets do not drift.
-pub(super) fn apply_head_and_torso_look(
-    owners: Query<(&CharacterLook, &PresentedSkeleton)>,
-    mut bones: Query<(&HumanoidBone, &mut Transform)>,
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct ProceduralLookState {
+    base_rotation: Quat,
+    applied_rotation: Quat,
+    evaluation_tick: u64,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct ProceduralCrouchState {
+    base: Transform,
+    applied: Transform,
+    amount: f32,
+    evaluation_tick: u64,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(super) struct FixedTickPoseCache {
+    tick: Option<u64>,
+    bones: BTreeMap<Entity, Transform>,
+}
+
+/// Tools can render gameplay, side, and front views from one logical sample.
+/// Preserve the first complete post-procedural local pose for that fixed tick
+/// and restore it before propagation on every repeated render. Live gameplay
+/// leaves the fixed clock unset and never enters this path.
+pub(super) fn stabilize_repeated_fixed_tick_pose(
+    clock: Res<ProceduralAnimationClock>,
+    mut cache: ResMut<FixedTickPoseCache>,
+    mut bones: Query<(Entity, &mut Transform), With<HumanoidBone>>,
 ) {
-    for (bone, mut transform) in &mut bones {
-        let Ok((look, skeleton)) = owners.get(bone.owner) else {
+    let Some((tick, _)) = clock.fixed_step() else {
+        cache.tick = None;
+        cache.bones.clear();
+        return;
+    };
+    if cache.tick != Some(tick) {
+        cache.tick = Some(tick);
+        cache.bones.clear();
+        cache.bones.extend(
+            bones
+                .iter_mut()
+                .map(|(entity, transform)| (entity, *transform)),
+        );
+        return;
+    }
+    for (entity, mut transform) in &mut bones {
+        if let Some(cached) = cache.bones.get(&entity) {
+            *transform = *cached;
+        }
+    }
+}
+
+fn additive_look_rotation(
+    current: Quat,
+    previous: Option<ProceduralLookState>,
+    evaluation_tick: u64,
+    offset: Quat,
+) -> (Quat, ProceduralLookState) {
+    let base_rotation = previous.map_or(current, |previous| {
+        if previous.evaluation_tick == evaluation_tick
+            || current.angle_between(previous.applied_rotation) <= 0.000_01
+        {
+            previous.base_rotation
+        } else {
+            current
+        }
+    });
+    let applied_rotation = (base_rotation * offset).normalize();
+    (
+        applied_rotation,
+        ProceduralLookState {
+            base_rotation,
+            applied_rotation,
+            evaluation_tick,
+        },
+    )
+}
+
+/// Procedural facing is an additive post-FK layer. Sparse authored clips do not
+/// necessarily rewrite every torso bone, so retain the pre-look local rotation
+/// and reuse it when the same logical pose reaches this pass again.
+pub(super) fn apply_head_and_torso_look(
+    mut commands: Commands,
+    owners: Query<(&CharacterLook, &PresentedSkeleton, &GlobalTransform)>,
+    mut bones: Query<(
+        Entity,
+        &HumanoidBone,
+        &mut Transform,
+        Option<&mut ProceduralLookState>,
+    )>,
+) {
+    for (entity, bone, mut transform, state) in &mut bones {
+        let Ok((look, skeleton, owner_transform)) = owners.get(bone.owner) else {
             continue;
         };
-        let pitch = look.pitch.clamp(-0.65, 0.65);
         let directional_yaw = skeleton.action_direction().x.clamp(-1.0, 1.0) * 0.35;
         let weight = match bone.role {
             BoneRole::StomachOne => 0.08,
@@ -29,10 +113,135 @@ pub(super) fn apply_head_and_torso_look(
             BoneRole::Head => 0.26,
             _ => continue,
         };
+        let aim = guarded_camera_look(look, owner_transform.rotation(), skeleton.weapon_guard());
+        let aim_offset = match (aim, bone.role) {
+            (Some(offset), BoneRole::NeckOne | BoneRole::NeckTwo | BoneRole::Head) => offset,
+            _ => Vec2::ZERO,
+        };
         // Owner yaw is already on the character transform. Only the bounded
-        // local action offset and vertical look are distributed here.
-        transform.rotation *=
-            Quat::from_euler(EulerRot::YXZ, directional_yaw * weight, pitch * weight, 0.0);
+        // residual camera direction and local action offset are distributed
+        // here. Camera pitch belongs exclusively to held aim/block; ordinary
+        // camera look must not nod the presented head and neck.
+        let offset = Quat::from_euler(
+            EulerRot::YXZ,
+            directional_yaw * weight + aim_offset.x,
+            aim_offset.y,
+            0.0,
+        );
+        let previous = state.as_deref().copied();
+        let (rotation, next) = additive_look_rotation(
+            transform.rotation,
+            previous,
+            skeleton.locomotion_sample_tick,
+            offset,
+        );
+        transform.rotation = rotation;
+        if let Some(mut state) = state {
+            *state = next;
+        } else {
+            commands.entity(entity).insert(next);
+        }
+    }
+}
+
+fn guarded_camera_look(
+    look: &CharacterLook,
+    owner_rotation: Quat,
+    weapon_guard: WeaponGuardState,
+) -> Option<Vec2> {
+    (weapon_guard == WeaponGuardState::Raised)
+        .then(|| constrained_camera_look(look, owner_rotation))
+}
+
+fn constrained_camera_look(look: &CharacterLook, owner_rotation: Quat) -> Vec2 {
+    const JOINT_LIMIT: f32 = std::f32::consts::PI / 8.0;
+    const JOINT_COUNT: f32 = 3.0;
+    let camera_forward = Quat::from_euler(EulerRot::YXZ, look.yaw, look.pitch, 0.0) * Vec3::NEG_Z;
+    let local = owner_rotation.inverse() * camera_forward;
+    let yaw = local.x.atan2(local.z);
+    let pitch = local.y.atan2(local.xz().length().max(f32::EPSILON));
+    Vec2::new(
+        (yaw / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
+        (pitch / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
+    )
+}
+
+/// Space begins an upright jump with a small procedural anticipation rather
+/// than launching on the press edge. FK remains authored; this layer lowers
+/// the pelvis and shares a modest forward fold across the spine.
+pub(super) fn apply_jump_charge_crouch(
+    mut commands: Commands,
+    owners: Query<&PresentedSkeleton>,
+    mut bones: Query<(
+        Entity,
+        &HumanoidBone,
+        &mut Transform,
+        Option<&mut ProceduralCrouchState>,
+    )>,
+) {
+    for (entity, bone, mut transform, state) in &mut bones {
+        let Ok(skeleton) = owners.get(bone.owner) else {
+            continue;
+        };
+        let crouched = skeleton.jump_anticipation() == JumpAnticipation::Charging;
+        let previous = state.as_deref().copied();
+        let base = previous.map_or(*transform, |previous| {
+            if previous.evaluation_tick == skeleton.locomotion_sample_tick
+                || transform
+                    .translation
+                    .abs_diff_eq(previous.applied.translation, 0.000_01)
+                    && transform.rotation.angle_between(previous.applied.rotation) <= 0.000_01
+            {
+                previous.base
+            } else {
+                *transform
+            }
+        });
+        let previous_amount = previous.map_or(0.0, |previous| previous.amount);
+        let amount = if previous
+            .is_some_and(|previous| previous.evaluation_tick == skeleton.locomotion_sample_tick)
+        {
+            previous_amount
+        } else {
+            let target = if crouched { 1.0 } else { 0.0 };
+            previous_amount + (target - previous_amount).clamp(-0.125, 0.125)
+        };
+        let mut applied = base;
+        if amount > f32::EPSILON {
+            match bone.role {
+                BoneRole::Pelvis => applied.translation.y -= 0.12 * amount,
+                BoneRole::StomachOne => {
+                    applied.rotation =
+                        (applied.rotation * Quat::from_rotation_x(0.09 * amount)).normalize()
+                }
+                BoneRole::StomachTwo => {
+                    applied.rotation =
+                        (applied.rotation * Quat::from_rotation_x(0.075 * amount)).normalize()
+                }
+                BoneRole::Chest => {
+                    applied.rotation =
+                        (applied.rotation * Quat::from_rotation_x(0.06 * amount)).normalize()
+                }
+                _ => continue,
+            }
+        } else if !matches!(
+            bone.role,
+            BoneRole::Pelvis | BoneRole::StomachOne | BoneRole::StomachTwo | BoneRole::Chest
+        ) {
+            continue;
+        }
+        *transform = applied;
+        let next = ProceduralCrouchState {
+            base,
+            applied,
+            amount,
+            evaluation_tick: skeleton.locomotion_sample_tick,
+        };
+        if let Some(mut state) = state {
+            *state = next;
+        } else {
+            commands.entity(entity).insert(next);
+        }
     }
 }
 
@@ -173,9 +382,6 @@ pub(super) fn apply_pose_mirroring(
 const HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND: f32 = 0.4;
 const LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND: f32 = 0.8;
 const NORMALIZATION_TRANSITION_PER_SECOND: f32 = 8.0;
-const SUPPORT_GROUNDING_TRANSITION_METRES_PER_SECOND: f32 = 0.8;
-const MINIMUM_SUPPORT_GROUNDING_OFFSET_METRES: f32 = -0.18;
-const MAXIMUM_SUPPORT_GROUNDING_OFFSET_METRES: f32 = 0.08;
 // The upright lowered-guard humanoid_unarmed root/pelvis rotations lift its
 // pelvis by about 33 mm at passing even after local Y is normalized. This is a
 // measured state-and-pack calibration, not a safe assumption elsewhere.
@@ -204,18 +410,6 @@ pub(crate) struct LocomotionHeightState {
     evaluation_tick: Option<u64>,
 }
 
-/// Presentation-only vertical calibration sampled at authoritative contacts.
-/// The correction moves the complete authored rig and never reconstructs a
-/// knee or changes the server-owned controller transform.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub(crate) struct SupportFootGroundingState {
-    initialized: bool,
-    current_offset_metres: f32,
-    target_offset_metres: f32,
-    contact_sequence: u64,
-    evaluation_tick: Option<u64>,
-}
-
 /// One phase-owned vertical waveform with contacts at 0/.5 and passing or
 /// flight peaks at .25/.75. This is presentation-only and is never applied to
 /// the authoritative owner/controller transform.
@@ -237,7 +431,10 @@ pub(crate) struct LocomotionBodyResponseState {
 }
 
 pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
-    if !skeleton.is_grounded() || skeleton.action_kind() != SkeletonAction::None {
+    if !skeleton.is_grounded()
+        || skeleton.is_posture_transitioning()
+        || skeleton.action_kind() != SkeletonAction::None
+    {
         return 0.0;
     }
     let speed = skeleton.animation_speed();
@@ -251,7 +448,7 @@ pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
         return grounded * moving_weight;
     }
     let half_step = (skeleton.gait_phase.rem_euclid(0.5) * 2.0).clamp(0.0, 1.0);
-    let flight = 4.0 * half_step * (1.0 - half_step) * profile.flight_apex_metres;
+    let flight = (half_step * std::f32::consts::PI).sin().powi(2) * profile.flight_apex_metres;
     (grounded + flight) * moving_weight
 }
 
@@ -269,6 +466,7 @@ fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
 
 fn locomotion_normalization_target(skeleton: &SkeletonState) -> f32 {
     (skeleton.is_grounded()
+        && !skeleton.is_posture_transitioning()
         && skeleton.action_kind() == SkeletonAction::None
         && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
         && skeleton.animation_speed() > 0.05) as u8 as f32
@@ -357,12 +555,20 @@ pub(super) fn stabilize_locomotion_torso(
             next.last_landing_sequence = skeleton.landing_sequence;
         }
         if landed {
-            next.landing_compression = landing_compression_for_impact(
-                locomotion_profile(skeleton),
-                skeleton.landing_impact_speed,
-            );
-            next.landing_recovery_metres_per_second =
-                next.landing_compression / locomotion_profile(skeleton).landing.recovery_seconds;
+            if skeleton.is_posture_transitioning() {
+                // Authored dive/get-up recovery owns the complete skeleton.
+                // Do not retain airborne feet or layer ordinary upright
+                // landing compression over its terrain-timed contact blend.
+                next.landing_compression = 0.0;
+                next.landing_recovery_metres_per_second = 0.0;
+            } else {
+                next.landing_compression = landing_compression_for_impact(
+                    locomotion_profile(skeleton),
+                    skeleton.landing_impact_speed,
+                );
+                next.landing_recovery_metres_per_second = next.landing_compression
+                    / locomotion_profile(skeleton).landing.recovery_seconds;
+            }
             next.landing_left_foot_target = None;
             next.landing_right_foot_target = None;
             next.landing_plant_owner_position = None;
@@ -377,6 +583,7 @@ pub(super) fn stabilize_locomotion_torso(
             );
         }
         if !skeleton.is_grounded()
+            || skeleton.is_posture_transitioning()
             || skeleton.action_kind() != SkeletonAction::None
             || next.landing_compression <= 0.001
         {
@@ -448,110 +655,6 @@ pub(super) fn stabilize_locomotion_torso(
     }
 }
 
-fn ordinary_support_grounding_is_active(skeleton: &SkeletonState) -> bool {
-    skeleton.is_grounded()
-        && skeleton.action_kind() == SkeletonAction::None
-        && skeleton.weapon_guard() == WeaponGuardState::Lowered
-        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
-        && skeleton.animation_speed() > 0.05
-}
-
-fn support_grounding_target(foot_height: f32, floor_height: f32, sole_offset: f32) -> f32 {
-    (floor_height + sole_offset - foot_height).clamp(
-        MINIMUM_SUPPORT_GROUNDING_OFFSET_METRES,
-        MAXIMUM_SUPPORT_GROUNDING_OFFSET_METRES,
-    )
-}
-
-/// Grounds ordinary locomotion by translating the complete visual rig from
-/// its supported sole. The correction is acquired only at a contact edge and
-/// held through swing/flight, preserving authored leg geometry and the shared
-/// phase-owned height curve without enabling analytic leg IK.
-pub(super) fn apply_support_foot_grounding(
-    mut commands: Commands,
-    mut owners: Query<(&PresentedSkeleton, Option<&mut SupportFootGroundingState>)>,
-    rigs: Query<(Entity, &HumanoidRig)>,
-    parents: Query<&ChildOf>,
-    mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
-) {
-    for (owner, rig) in &rigs {
-        let Ok((skeleton, state)) = owners.get_mut(owner) else {
-            continue;
-        };
-        let Some(&root) = rig.get(&BoneRole::Root) else {
-            continue;
-        };
-        let active = ordinary_support_grounding_is_active(skeleton);
-        let mut next = state.as_deref().copied().unwrap_or_default();
-        let tick_delta =
-            presentation_tick_delta(next.evaluation_tick, skeleton.locomotion_sample_tick)
-                .unwrap_or_default();
-        let new_contact = !next.initialized || next.contact_sequence != skeleton.contact_sequence;
-        if active && new_contact {
-            let foot_role = match skeleton.contact_foot {
-                LeadFoot::Left => BoneRole::FootLeft,
-                LeadFoot::Right => BoneRole::FootRight,
-            };
-            if let (Some(&foot), Some(scene_root)) = (rig.get(&foot_role), rig.rig_scene()) {
-                let foot_global = transforms.p0().compute_global_transform(foot).ok();
-                let scene_global = transforms.p0().compute_global_transform(scene_root).ok();
-                if let (Some(foot_global), Some(scene_global)) = (foot_global, scene_global) {
-                    next.target_offset_metres = support_grounding_target(
-                        foot_global.translation().y,
-                        scene_global.translation().y,
-                        MEASURED_ANKLE_SOLE_OFFSET_METRES,
-                    );
-                    next.contact_sequence = skeleton.contact_sequence;
-                    if !next.initialized {
-                        next.current_offset_metres = next.target_offset_metres;
-                    }
-                }
-            }
-        } else if !active {
-            next.target_offset_metres = 0.0;
-        }
-        next.initialized = true;
-        next.evaluation_tick = Some(skeleton.locomotion_sample_tick);
-        if tick_delta > 0 {
-            next.current_offset_metres = advance_towards(
-                next.current_offset_metres,
-                next.target_offset_metres,
-                SUPPORT_GROUNDING_TRANSITION_METRES_PER_SECOND * tick_delta as f32
-                    / LOCOMOTION_SAMPLE_HZ,
-            );
-        }
-
-        if next.current_offset_metres.abs() > 0.0001 {
-            let local_delta = parents
-                .get(root)
-                .ok()
-                .and_then(|parent| {
-                    transforms
-                        .p0()
-                        .compute_global_transform(parent.parent())
-                        .ok()
-                })
-                .map(|parent| {
-                    parent
-                        .affine()
-                        .inverse()
-                        .transform_vector3(Vec3::Y * next.current_offset_metres)
-                })
-                .unwrap_or(Vec3::Y * next.current_offset_metres);
-            if local_delta.is_finite()
-                && let Ok(mut transform) = transforms.p1().get_mut(root)
-            {
-                transform.translation += local_delta;
-            }
-        }
-        if let Some(mut state) = state {
-            *state = next;
-        } else {
-            commands.entity(owner).insert(next);
-        }
-    }
-}
-
 /// Preserves both world-space feet during the short landing-only pelvis
 /// compression by flexing the actual hip/knee chains. This is independent of
 /// the opt-in terrain solver and never translates or stretches thigh roots.
@@ -578,6 +681,7 @@ pub(super) fn apply_landing_leg_compression(
             continue;
         };
         if !skeleton.is_grounded()
+            || skeleton.is_posture_transitioning()
             || skeleton.action_kind() != SkeletonAction::None
             || height.landing_compression <= 0.001
         {
@@ -673,6 +777,16 @@ pub(super) fn apply_landing_leg_compression(
             };
             let side = if left { -1.0 } else { 1.0 };
             let pole = owner_transform.rotation() * canonical_knee_pole(side);
+            let pole = constrain_rendered_leg_pole(
+                rig,
+                left,
+                upper_snapshot.global.translation(),
+                foot_snapshot.global.translation(),
+                target,
+                pole,
+                &parents,
+                &transforms.p0(),
+            );
             if let Some(solution) = solve_landing_two_bone(
                 upper_snapshot.global.translation(),
                 lower_snapshot.global.translation(),
@@ -777,25 +891,31 @@ struct BoneSnapshot {
 
 mod ik;
 pub(crate) use ik::{
-    ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkState,
-    ProceduralAnimationClock, RaisedFootworkState, locomotion_support_weights,
+    ArmIkState, AttackFootworkState, HandIkTarget, HandSide, HeldWeaponConstraint,
+    HumanoidIkTargets, LegIkDiagnostics, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES,
+    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
+    locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
-    FOOT_TRACK_INNER, FOOT_TRACK_OUTER, GUARD_TARGET_INTER_FOOT_SEPARATION, MAX_FOOT_TARGET_STEP,
-    MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution, advance_foot_target,
-    advance_pelvis_shift, body_response_target, constrain_foot_to_track,
+    FOOT_TRACK_INNER, FOOT_TRACK_OUTER, GUARD_TARGET_INTER_FOOT_SEPARATION,
+    MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution,
+    advance_foot_target_at_speed, advance_pelvis_shift, authored_knee_pole_world,
+    balance_recovery_direction, body_response_target, constrain_foot_to_track,
     constrain_guard_swing_to_live_corridor, constrain_target_to_reach, guard_step_sequence_delta,
-    landing_maximum_reach, maximum_reach, plan_guard_step_endpoint, plant_is_continuous,
-    raised_footwork_posture_is_valid, secondary_grip_world, solve_two_bone,
-    terrain_conformed_guard_target, terrain_leg_has_support,
-};
-use ik::{
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, apply_two_bone_solution, canonical_knee_pole,
-    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
+    landing_maximum_reach, maximum_reach, plan_guard_step_endpoint, plan_settle_landing,
+    plant_is_continuous, projected_capture_point, raised_footwork_posture_is_valid,
+    retained_plant_requires_release, secondary_grip_world, settle_swing_side, settle_swing_target,
+    slope_aligned_world_rotation, sole_is_at_contact, solve_two_bone,
+    terrain_conformed_guard_target, terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
 pub(super) use ik::{
-    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_terrain_leg_ik,
+    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_ordinary_locomotion_ik,
+    apply_terrain_leg_ik, enforce_anatomical_knee_yaw, refresh_raised_support_after_propagation,
+};
+use ik::{
+    apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
+    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
 };
 
 #[cfg(test)]
@@ -803,15 +923,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn measured_sole_offset_is_shared_by_grounding_and_ik() {
-        const GROUNDING_TOLERANCE_METRES: f32 = 0.000_001;
-
+    fn measured_sole_offset_matches_the_authored_rig() {
         assert!((MEASURED_ANKLE_SOLE_OFFSET_METRES - 0.085).abs() < f32::EPSILON);
-        let target = support_grounding_target(1.135, 1.0, MEASURED_ANKLE_SOLE_OFFSET_METRES);
-        assert!(
-            (target - -0.05).abs() <= GROUNDING_TOLERANCE_METRES,
-            "grounding target {target} differed from the expected offset"
-        );
     }
 
     #[test]
@@ -833,16 +946,17 @@ mod legacy_tests {
         apply_two_bone_solution(upper, lower, end, solution, &parents, &mut transforms);
     }
 
-    fn test_joint_positions(
+    fn test_joint_pose(
         In((lower, end)): In<(Entity, Entity)>,
         helper: TransformHelper,
-    ) -> (Vec3, Vec3) {
+    ) -> (Vec3, Vec3, Quat) {
         (
             helper
                 .compute_global_transform(lower)
                 .unwrap()
                 .translation(),
             helper.compute_global_transform(end).unwrap().translation(),
+            helper.compute_global_transform(end).unwrap().rotation(),
         )
     }
 
@@ -937,6 +1051,38 @@ mod legacy_tests {
         }
         assert_eq!(BoneRole::from_name("weapon"), None);
         assert_eq!(BoneRole::from_name("Cylinder"), None);
+    }
+
+    #[test]
+    fn raised_camera_look_is_shared_across_three_heavily_limited_joints() {
+        let look = CharacterLook {
+            yaw: std::f32::consts::FRAC_PI_2,
+            pitch: 1.2,
+        };
+        let per_joint = constrained_camera_look(&look, Quat::IDENTITY);
+        assert!(per_joint.x.abs() <= std::f32::consts::PI / 8.0 + 0.000_01);
+        assert!(per_joint.y.abs() <= std::f32::consts::PI / 8.0 + 0.000_01);
+        assert!(per_joint.x.abs() > 0.3);
+        assert!(per_joint.y.abs() > 0.3);
+    }
+
+    #[test]
+    fn camera_pitch_reaches_head_and_neck_only_while_guard_is_raised() {
+        let look = CharacterLook {
+            yaw: 0.0,
+            pitch: 0.6,
+        };
+        assert_eq!(
+            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Lowered),
+            None
+        );
+        assert!(
+            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Raised)
+                .unwrap()
+                .y
+                .abs()
+                > 0.1
+        );
     }
 
     #[test]
@@ -1056,44 +1202,6 @@ mod legacy_tests {
     }
 
     #[test]
-    fn support_grounding_places_the_sole_on_the_visual_floor() {
-        assert!((support_grounding_target(1.135, 1.0, 0.085) + 0.05).abs() < 0.0001);
-        assert_eq!(
-            support_grounding_target(2.0, 1.0, 0.085),
-            MINIMUM_SUPPORT_GROUNDING_OFFSET_METRES
-        );
-        assert_eq!(
-            support_grounding_target(0.5, 1.0, 0.085),
-            MAXIMUM_SUPPORT_GROUNDING_OFFSET_METRES
-        );
-    }
-
-    #[test]
-    fn support_grounding_is_limited_to_ordinary_grounded_locomotion() {
-        let moving = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
-        assert!(ordinary_support_grounding_is_active(&moving));
-        assert!(!ordinary_support_grounding_is_active(
-            &moving.clone().with_weapon_guard(WeaponGuardState::Raised)
-        ));
-        let mut airborne = moving.clone();
-        project_skeleton_locomotion(
-            &mut airborne,
-            SkeletonLocomotionInput {
-                orientation: Quat::IDENTITY,
-                linear_velocity: Vec3::NEG_Z * 2.0,
-                grounded: false,
-                crouching: false,
-                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
-                tick: 1,
-            },
-        );
-        assert!(!ordinary_support_grounding_is_active(&airborne));
-        let mut action = moving;
-        action.begin_attack(AttackSpec::default(), 0, 1);
-        assert!(!ordinary_support_grounding_is_active(&action));
-    }
-
-    #[test]
     fn central_height_normalization_applies_only_during_active_locomotion() {
         let moving = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
         assert_eq!(locomotion_normalization_target(&moving), 1.0);
@@ -1135,6 +1243,23 @@ mod legacy_tests {
         assert_eq!(presentation_tick_delta(Some(10), 14), Some(4));
         assert_eq!(presentation_tick_delta(Some(14), 2), None);
         assert_eq!(presentation_tick_delta(Some(2), 40), None);
+    }
+
+    #[test]
+    fn repeated_look_evaluation_reuses_the_pre_look_rotation() {
+        let base = Quat::from_rotation_z(0.17);
+        let offset = Quat::from_rotation_x(0.2 * 0.16);
+        let (first, state) = additive_look_rotation(base, None, 41, offset);
+        let (repeated, repeated_state) = additive_look_rotation(first, Some(state), 41, offset);
+        assert!(first.angle_between(repeated) <= 0.000_001);
+
+        // A sparse clip can also leave the bone untouched on the next tick.
+        let (next_tick, _) = additive_look_rotation(repeated, Some(repeated_state), 42, offset);
+        assert!(first.angle_between(next_tick) <= 0.000_001);
+
+        let authored_next = Quat::from_rotation_z(0.24);
+        let (updated, _) = additive_look_rotation(authored_next, Some(repeated_state), 42, offset);
+        assert!((authored_next * offset).angle_between(updated) <= 0.000_001);
     }
 
     #[test]
@@ -1267,7 +1392,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn ordinary_idle_and_stopping_restore_symmetric_terrain_support() {
+    fn ordinary_swing_support_is_not_filled_in_by_low_speed() {
         let idle = SkeletonState::default().with_gait_phase(0.25);
         assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
 
@@ -1277,17 +1402,125 @@ mod legacy_tests {
         let (left, right) = locomotion_support_weights(&stopping);
         let (raw_left, raw_right) =
             gait_support_weights(locomotion_profile(&stopping), stopping.gait_phase);
-        assert!(left > raw_left && right > raw_right);
-        assert!(left > 0.5 && right > 0.5);
+        assert!(left <= raw_left && right <= raw_right);
+        assert!(left <= 0.05 || right <= 0.05);
     }
 
     #[test]
-    fn actions_and_zero_weight_swing_legs_preserve_authored_fk() {
-        let mut action = SkeletonState::default()
+    fn settle_landing_is_ahead_of_the_capture_point() {
+        let com = Vec3::new(0.0, 1.0, 0.0);
+        let velocity = Vec3::new(0.8, 0.0, -2.0);
+        let direction = velocity.normalize();
+        let capture = projected_capture_point(com, velocity, 1.0);
+        let landing = plan_settle_landing(Vec3::ZERO, Quat::IDENTITY, capture, direction, -1.0);
+        assert!((landing - capture).dot(direction) >= 0.119);
+        assert!(landing.is_finite());
+    }
+
+    #[test]
+    fn settle_swing_leaves_and_returns_to_ground_only_at_contact() {
+        let start = Vec3::new(-0.12, 0.085, 0.25);
+        let landing = Vec3::new(-0.12, 0.085, -0.35);
+        assert_eq!(settle_swing_target(start, landing, 0.0), start);
+        assert!(settle_swing_target(start, landing, 0.5).y > start.y + 0.09);
+        assert!(settle_swing_target(start, landing, 0.75).z < start.z);
+        assert!(settle_swing_target(start, landing, 1.0).abs_diff_eq(landing, 0.0001));
+    }
+
+    #[test]
+    fn airborne_release_is_bounded_to_fifty_three_millimetres_per_tick() {
+        let previous = Vec3::ZERO;
+        let desired = Vec3::Z;
+        let next = advance_foot_target_at_speed(Some(previous), desired, 1.0 / 64.0, 3.4);
+        assert!(next.distance(previous) <= 0.053_126);
+        assert!(next.distance(desired) < previous.distance(desired));
+        assert_eq!(
+            advance_foot_target_at_speed(None, desired, 1.0 / 64.0, 3.4),
+            desired
+        );
+        assert_eq!(
+            advance_foot_target_at_speed(Some(previous), Vec3::NAN, 1.0 / 64.0, 3.4),
+            previous
+        );
+    }
+
+    #[test]
+    fn rendered_sole_contact_uses_the_shared_hierarchy_tolerance() {
+        let terrain_height = 2.0;
+        let exact_ankle = terrain_height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+        assert!(sole_is_at_contact(exact_ankle, terrain_height));
+        assert!(sole_is_at_contact(
+            exact_ankle + SOLE_CONTACT_TOLERANCE_METRES - 0.00001,
+            terrain_height
+        ));
+        assert!(!sole_is_at_contact(
+            exact_ankle + SOLE_CONTACT_TOLERANCE_METRES + 0.0001,
+            terrain_height
+        ));
+    }
+
+    #[test]
+    fn settle_landing_retains_the_actual_swing_track() {
+        let origin = Vec3::new(2.0, 0.0, -3.0);
+        let rotation = Quat::from_rotation_y(0.7);
+        for local_x in [-0.14_f32, 0.14_f32] {
+            let swing_start = origin + rotation * Vec3::new(local_x, 0.085, 0.2);
+            let side = settle_swing_side(origin, rotation, swing_start, -local_x.signum());
+            assert_eq!(side, local_x.signum());
+            let capture = origin + rotation * Vec3::NEG_Z * 0.2;
+            let landing =
+                plan_settle_landing(origin, rotation, capture, rotation * Vec3::NEG_Z, side);
+            let landing_local = rotation.inverse() * (landing - origin);
+            assert!(landing_local.x * local_x.signum() >= FOOT_TRACK_INNER);
+        }
+    }
+
+    #[test]
+    fn unsupported_idle_recovers_from_feet_toward_projected_com() {
+        let com = Vec3::new(0.0, 1.0, -0.45);
+        let left = Vec3::new(-0.12, 0.085, 0.0);
+        let right = Vec3::new(0.12, 0.085, 0.1);
+        let direction = balance_recovery_direction(com, Some(left), Some(right), Vec3::Z);
+        assert!(direction.dot(Vec3::NEG_Z) > 0.95);
+        let landing = plan_settle_landing(Vec3::ZERO, Quat::IDENTITY, com, direction, -1.0);
+        assert!((landing - com).dot(direction) >= 0.119);
+    }
+
+    #[test]
+    fn exhausted_support_releases_before_the_plant_can_skate() {
+        let plant = Vec3::new(0.1, 0.085, -0.4);
+        assert!(!retained_plant_requires_release(
+            plant,
+            plant + Vec3::X * 0.014
+        ));
+        assert!(retained_plant_requires_release(
+            plant,
+            plant + Vec3::Z * 0.016
+        ));
+    }
+
+    #[test]
+    fn first_support_solve_seeds_the_authored_knee_in_the_canonical_hemisphere() {
+        let hip = Vec3::ZERO;
+        let target = Vec3::NEG_Y * 1.8;
+        let authored_knee = Vec3::new(0.0, -0.9, 0.2);
+        let seeded = authored_knee_pole_world(hip, authored_knee, target, Vec3::Z)
+            .expect("authored bend shares the canonical hemisphere");
+        assert!(seeded.dot(Vec3::Z) > 0.99);
+        assert!(authored_knee_pole_world(hip, authored_knee, target, Vec3::NEG_Z).is_none());
+    }
+
+    #[test]
+    fn stay_attacks_plant_both_feet_while_unsupported_actions_preserve_authored_fk() {
+        let mut attack = SkeletonState::default()
             .with_local_velocity(Vec3::NEG_Z * 5.5)
             .with_gait_phase(0.0);
-        action.begin_attack(AttackSpec::default(), 0, 1);
-        assert_eq!(locomotion_support_weights(&action), (0.0, 0.0));
+        attack.begin_attack(AttackSpec::default(), 0, 1);
+        assert_eq!(locomotion_support_weights(&attack), (1.0, 1.0));
+
+        let mut dodge = SkeletonState::default();
+        dodge.begin_dodge(DodgeSpec::default(), 0, 1);
+        assert_eq!(locomotion_support_weights(&dodge), (0.0, 0.0));
         assert!(!terrain_leg_has_support(0.0));
         assert!(!terrain_leg_has_support(0.01));
         assert!(terrain_leg_has_support(0.1));
@@ -1393,6 +1626,30 @@ mod legacy_tests {
     }
 
     #[test]
+    fn slope_alignment_is_idempotent_across_repeated_evaluation() {
+        let bind = Quat::from_xyzw(0.8856122, 0.00000032, 0.00000032, 0.46442544).normalize();
+        let sole_up = sole_up_axis_from_bind(bind).normalize();
+        let current = Quat::from_rotation_y(0.7) * bind;
+        let steep_normal = Vec3::new(0.8, 0.3, -0.4).normalize();
+
+        let once = slope_aligned_world_rotation(current, sole_up, steep_normal).unwrap();
+        let twice = slope_aligned_world_rotation(once, sole_up, steep_normal).unwrap();
+
+        assert!(once.angle_between(twice).to_degrees() < 0.0001);
+        assert!((once * sole_up).angle_between(Vec3::Y).to_degrees() <= 28.0001);
+    }
+
+    #[test]
+    fn terrain_ik_accepts_grounded_crouch_but_not_airborne() {
+        let crouched = SkeletonState::default()
+            .with_body_state(BodyState::Grounded(GroundedPosture::Crouched));
+        assert!(terrain_ik_posture_is_valid(&crouched));
+
+        let airborne = SkeletonState::default().with_body_state(BodyState::Airborne);
+        assert!(!terrain_ik_posture_is_valid(&airborne));
+    }
+
+    #[test]
     fn remembered_pole_follows_owner_yaw() {
         let original_yaw = Quat::from_rotation_y(0.3);
         let owner_local = Vec3::new(0.2, -0.1, -0.97).normalize();
@@ -1424,13 +1681,19 @@ mod legacy_tests {
         let upper_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
         let lower = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
         let lower_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
-        let end = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let authored_foot_rotation = Quat::from_euler(EulerRot::YXZ, 0.35, -0.45, 0.2).normalize();
+        let end = world
+            .spawn(Transform::from_xyz(0.0, -0.5, 0.0).with_rotation(authored_foot_rotation))
+            .id();
         world.entity_mut(upper).add_child(upper_twist);
         world.entity_mut(upper_twist).add_child(lower);
         world.entity_mut(lower).add_child(lower_twist);
         world.entity_mut(lower_twist).add_child(end);
         let upper_twist_bind = *world.get::<Transform>(upper_twist).unwrap();
         let lower_twist_bind = *world.get::<Transform>(lower_twist).unwrap();
+        let (_, _, authored_foot_world_rotation) = world
+            .run_system_cached_with(test_joint_pose, (lower, end))
+            .unwrap();
         let solution = solve_two_bone(
             Vec3::ZERO,
             Vec3::NEG_Y,
@@ -1444,11 +1707,17 @@ mod legacy_tests {
         world
             .run_system_cached_with(apply_test_two_bone, (upper, lower, end, solution))
             .unwrap();
-        let (knee, ankle) = world
-            .run_system_cached_with(test_joint_positions, (lower, end))
+        let (knee, ankle, solved_foot_world_rotation) = world
+            .run_system_cached_with(test_joint_pose, (lower, end))
             .unwrap();
         assert!(knee.abs_diff_eq(solution.knee, 0.0002));
         assert!(ankle.abs_diff_eq(solution.end, 0.0002));
+        assert!(
+            authored_foot_world_rotation
+                .angle_between(solved_foot_world_rotation)
+                .to_degrees()
+                < 0.0001
+        );
         assert_eq!(
             *world.get::<Transform>(upper_twist).unwrap(),
             upper_twist_bind
@@ -1499,21 +1768,6 @@ mod legacy_tests {
     }
 
     #[test]
-    fn sparse_swing_targets_advance_at_a_bounded_speed() {
-        let previous = Vec3::ZERO;
-        let desired = Vec3::X;
-        let advanced = advance_foot_target(Some(previous), desired, 1.0 / 64.0);
-        assert!((advanced.length() - 0.1875).abs() < 0.0001);
-        let hitch_advanced = advance_foot_target(Some(previous), desired, 1.0);
-        assert!((hitch_advanced.length() - MAX_FOOT_TARGET_STEP).abs() < 0.0001);
-        assert_eq!(advance_foot_target(None, desired, 1.0 / 64.0), desired);
-        assert_eq!(
-            advance_foot_target(Some(previous), Vec3::NAN, 1.0 / 64.0),
-            previous
-        );
-    }
-
-    #[test]
     fn pelvis_smoothing_depends_on_elapsed_time_not_evaluation_count() {
         fn simulate(step_seconds: f32, evaluations: usize) -> f32 {
             (0..evaluations).fold(0.0, |current, _| {
@@ -1524,7 +1778,7 @@ mod legacy_tests {
         let at_64_hz = simulate(1.0 / 64.0, 16);
         let at_128_hz = simulate(1.0 / 128.0, 32);
         assert!((at_64_hz - at_128_hz).abs() < 0.0001);
-        assert!((at_64_hz + 0.4).abs() < 0.0001);
+        assert!((at_64_hz + 0.3).abs() < 0.0001);
 
         let after_hitch = advance_pelvis_shift(0.0, -1.0, 1.0);
         assert!((after_hitch + MAX_PELVIS_CORRECTION_STEP).abs() < 0.0001);
@@ -1548,6 +1802,19 @@ mod legacy_tests {
             .reject_from_normalized(solved.end_direction)
             .normalize();
         assert!(bend.dot(pole) > 0.0);
+    }
+
+    #[test]
+    fn standing_knee_yaw_constraint_preserves_downed_and_transition_poses() {
+        assert!(ik::anatomical_knee_yaw_posture_is_valid(
+            &SkeletonState::default()
+        ));
+        assert!(!ik::anatomical_knee_yaw_posture_is_valid(
+            &SkeletonState::default().with_body_state(BodyState::Prone)
+        ));
+        let mut transition = SkeletonState::default();
+        assert!(transition.begin_posture_transition(PostureTransitionKind::UprightToProne, 0, 10,));
+        assert!(!ik::anatomical_knee_yaw_posture_is_valid(&transition));
     }
 
     #[test]

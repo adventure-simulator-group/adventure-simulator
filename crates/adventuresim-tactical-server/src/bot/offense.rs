@@ -125,16 +125,17 @@ pub(super) fn drive_offensive_combat_ai(
         if distance > f32::EPSILON {
             look.yaw = (-offset.x).atan2(-offset.y);
         }
-        let (weapon_reach, weapon_is_melee, weapon_is_ranged) = viewer
+        let (weapon_reach, weapon_is_melee, weapon_is_ranged, strike_family) = viewer
             .get(entity)
             .map(|view| {
                 (
                     view.weapon_reach(),
                     view.weapon_is_melee(),
                     view.weapon_is_ranged(),
+                    StrikeFamily::from_melee_style(view.weapon_preferred_melee_style()),
                 )
             })
-            .unwrap_or_default();
+            .unwrap_or((0.0, false, false, StrikeFamily::Thrust));
         let has_ammo = ranged_weapon_needs_ammo_lookup(weapon_is_ranged, weapon_reach)
             && viewer.inventory.get(entity).has_item_id(ARROW_ID);
         let use_ranged = weapon_is_ranged && weapon_reach > 0.0 && has_ammo;
@@ -184,6 +185,8 @@ pub(super) fn drive_offensive_combat_ai(
                     attacker: entity,
                     target,
                     windup: CombatDuration::from_duration(std::time::Duration::from_millis(500)),
+                    strike_family,
+                    footwork: Footwork::Switch,
                 });
                 controller.phase = OffensiveCombatPhase::MeleeWindup(Timer::from_seconds(
                     AI_WINDUP_SECS,
@@ -203,6 +206,7 @@ pub(super) fn drive_offensive_combat_ai(
                         body_part: AI_BODY_PART,
                         reported_precision: ReportedPrecision::new(AI_HIT_PRECISION)
                             .expect("AI precision is finite"),
+                        strike_family,
                     });
                     controller.phase = OffensiveCombatPhase::Cooldown(Timer::from_seconds(
                         AI_COOLDOWN_SECS,

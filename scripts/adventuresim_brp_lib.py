@@ -42,6 +42,19 @@ class BevyResource:
 # Components
 
 @dataclass
+class DebugDumpWorldTrigger(BevyComponent):
+    """`adventuresim_tactical_client::debug::DebugDumpWorldTrigger`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_client::debug::DebugDumpWorldTrigger"
+    value: bool
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DebugDumpWorldTrigger":
+        return cls(value=value)
+
+@dataclass
 class ClientPlayer(BevyComponent):
     """`adventuresim_tactical_client::player::ClientPlayer`"""
     type_path: ClassVar[str] = "adventuresim_tactical_client::player::ClientPlayer"
@@ -56,6 +69,19 @@ class ClientPlayer(BevyComponent):
         assert isinstance(data, dict)
         return cls(
         )
+
+@dataclass
+class LocalCharacterId(BevyComponent):
+    """`adventuresim_tactical_client::player::LocalCharacterId`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_client::player::LocalCharacterId"
+    value: int
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "LocalCharacterId":
+        return cls(value=value)
 
 @dataclass
 class ArmorItem(BevyComponent):
@@ -205,6 +231,9 @@ class WeaponItem(BevyComponent):
     type_path: ClassVar[str] = "adventuresim_tactical_core::inventory::WeaponItem"
     skill_weights: list[float]  # len 9
     accuracy: float
+    swing_precision: float
+    stab_precision: float
+    prefers_stab: bool
     penetration: float
     reach: float
     balance: float
@@ -220,6 +249,9 @@ class WeaponItem(BevyComponent):
         return {
             "skill_weights": list(self.skill_weights),
             "accuracy": self.accuracy,
+            "swing_precision": self.swing_precision,
+            "stab_precision": self.stab_precision,
+            "prefers_stab": self.prefers_stab,
             "penetration": self.penetration,
             "reach": self.reach,
             "balance": self.balance,
@@ -239,6 +271,9 @@ class WeaponItem(BevyComponent):
         return cls(
             skill_weights=list(data["skill_weights"]),
             accuracy=data["accuracy"],
+            swing_precision=data["swing_precision"],
+            stab_precision=data["stab_precision"],
+            prefers_stab=data["prefers_stab"],
             penetration=data["penetration"],
             reach=data["reach"],
             balance=data["balance"],
@@ -324,34 +359,6 @@ class CharacterId(BevyComponent):
     @classmethod
     def from_brp(cls, value: object) -> "CharacterId":
         return cls(value=value)
-
-@dataclass
-class CombatState(BevyComponent):
-    """`adventuresim_tactical_core::player::CombatState`"""
-    type_path: ClassVar[str] = "adventuresim_tactical_core::player::CombatState"
-    imbalance: float
-    blood_loss_fraction: float
-    pain: float
-    blood_loss: float
-
-    def to_brp(self) -> object:
-        return {
-            "imbalance": self.imbalance,
-            "blood_loss_fraction": self.blood_loss_fraction,
-            "pain": self.pain,
-            "blood_loss": self.blood_loss,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "CombatState":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            imbalance=data["imbalance"],
-            blood_loss_fraction=data["blood_loss_fraction"],
-            pain=data["pain"],
-            blood_loss=data["blood_loss"],
-        )
 
 @dataclass
 class Limbs(BevyComponent):
@@ -564,7 +571,13 @@ class TacticalCombatState(BevyComponent):
     type_path: ClassVar[str] = "adventuresim_tactical_core::player::TacticalCombatState"
     starting_incapacitation: float
     starting_blood_fraction: float
+    starting_fear: float
+    starting_fatigue: float
+    starting_hunger: float
+    starting_thirst: float
+    starting_thermal: float
     blood_loss_fraction: float
+    exhaustion: float
     imbalance: float
     incapacitation: float
 
@@ -572,7 +585,13 @@ class TacticalCombatState(BevyComponent):
         return {
             "starting_incapacitation": self.starting_incapacitation,
             "starting_blood_fraction": self.starting_blood_fraction,
+            "starting_fear": self.starting_fear,
+            "starting_fatigue": self.starting_fatigue,
+            "starting_hunger": self.starting_hunger,
+            "starting_thirst": self.starting_thirst,
+            "starting_thermal": self.starting_thermal,
             "blood_loss_fraction": self.blood_loss_fraction,
+            "exhaustion": self.exhaustion,
             "imbalance": self.imbalance,
             "incapacitation": self.incapacitation,
         }
@@ -584,7 +603,13 @@ class TacticalCombatState(BevyComponent):
         return cls(
             starting_incapacitation=data["starting_incapacitation"],
             starting_blood_fraction=data["starting_blood_fraction"],
+            starting_fear=data["starting_fear"],
+            starting_fatigue=data["starting_fatigue"],
+            starting_hunger=data["starting_hunger"],
+            starting_thirst=data["starting_thirst"],
+            starting_thermal=data["starting_thermal"],
             blood_loss_fraction=data["blood_loss_fraction"],
+            exhaustion=data["exhaustion"],
             imbalance=data["imbalance"],
             incapacitation=data["incapacitation"],
         )
@@ -626,6 +651,99 @@ class SceneTerrain(BevyComponent):
             width=data["width"],
             scale=data["scale"],
         )
+
+@dataclass
+class DebugForceAttackTrigger(BevyComponent):
+    """`adventuresim_tactical_netcode::client::DebugForceAttackTrigger`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_netcode::client::DebugForceAttackTrigger"
+    value: bool
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DebugForceAttackTrigger":
+        return cls(value=value)
+
+@dataclass
+class DirectControlState(BevyComponent):
+    """`adventuresim_tactical_netcode::client::DirectControlState`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_netcode::client::DirectControlState"
+    pace: Literal["Walk", "Jog", "Sprint"]
+    crouch: bool
+    jump_charge: bool
+    attack_just_pressed: bool
+    alternate_attack: bool
+    dodge_just_pressed: bool
+    roll_just_pressed: bool
+    downed_align: bool
+    caps_jog: bool
+    sprint: SprintInputState
+    reserved_throw_chord: bool
+    posture_command: PostureCommand
+    posture_control_armed: bool
+    posture_control_consumed: bool
+    gamepad_roll_latched: bool
+    space_jump_armed: bool
+    jump_command: JumpCommand
+
+    def to_brp(self) -> object:
+        return {
+            "pace": self.pace,
+            "crouch": self.crouch,
+            "jump_charge": self.jump_charge,
+            "attack_just_pressed": self.attack_just_pressed,
+            "alternate_attack": self.alternate_attack,
+            "dodge_just_pressed": self.dodge_just_pressed,
+            "roll_just_pressed": self.roll_just_pressed,
+            "downed_align": self.downed_align,
+            "caps_jog": self.caps_jog,
+            "sprint": self.sprint.to_brp(),
+            "reserved_throw_chord": self.reserved_throw_chord,
+            "posture_command": self.posture_command.to_brp(),
+            "posture_control_armed": self.posture_control_armed,
+            "posture_control_consumed": self.posture_control_consumed,
+            "gamepad_roll_latched": self.gamepad_roll_latched,
+            "space_jump_armed": self.space_jump_armed,
+            "jump_command": self.jump_command.to_brp(),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DirectControlState":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            pace=data["pace"],
+            crouch=data["crouch"],
+            jump_charge=data["jump_charge"],
+            attack_just_pressed=data["attack_just_pressed"],
+            alternate_attack=data["alternate_attack"],
+            dodge_just_pressed=data["dodge_just_pressed"],
+            roll_just_pressed=data["roll_just_pressed"],
+            downed_align=data["downed_align"],
+            caps_jog=data["caps_jog"],
+            sprint=SprintInputState.from_brp(data["sprint"]),
+            reserved_throw_chord=data["reserved_throw_chord"],
+            posture_command=PostureCommand.from_brp(data["posture_command"]),
+            posture_control_armed=data["posture_control_armed"],
+            posture_control_consumed=data["posture_control_consumed"],
+            gamepad_roll_latched=data["gamepad_roll_latched"],
+            space_jump_armed=data["space_jump_armed"],
+            jump_command=JumpCommand.from_brp(data["jump_command"]),
+        )
+
+@dataclass
+class PlayerInputOverride(BevyComponent):
+    """`adventuresim_tactical_netcode::client::PlayerInputOverride`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_netcode::client::PlayerInputOverride"
+    value: PlayerInputRequest | None
+
+    def to_brp(self) -> object:
+        return ((v0.to_brp()) if (v0 := self.value) is not None else None)
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PlayerInputOverride":
+        return cls(value=((PlayerInputRequest.from_brp(v0)) if (v0 := value) is not None else None))
 
 @dataclass
 class MissionEnemy(BevyComponent):
@@ -745,6 +863,22 @@ class SessionEndpoint(BevyComponent):
         )
 
 @dataclass
+class NoClearBuffers(BevyComponent):
+    """`aeronet_io::packet::NoClearBuffers`"""
+    type_path: ClassVar[str] = "aeronet_io::packet::NoClearBuffers"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "NoClearBuffers":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
 class PacketRtt(BevyComponent):
     """`aeronet_io::packet::PacketRtt`"""
     type_path: ClassVar[str] = "aeronet_io::packet::PacketRtt"
@@ -831,6 +965,28 @@ class TransportConfig(BevyComponent):
             max_memory_usage=data["max_memory_usage"],
             tx_bytes_per_sec=data["tx_bytes_per_sec"],
             packet_lost_threshold_factor=data["packet_lost_threshold_factor"],
+        )
+
+@dataclass
+class ColliderTreeDiagnostics(BevyComponent):
+    """`avian3d::collider_tree::diagnostics::ColliderTreeDiagnostics`"""
+    type_path: ClassVar[str] = "avian3d::collider_tree::diagnostics::ColliderTreeDiagnostics"
+    optimize: Any  # unresolved: core::time::Duration
+    update: Any  # unresolved: core::time::Duration
+
+    def to_brp(self) -> object:
+        return {
+            "optimize": self.optimize,
+            "update": self.update,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ColliderTreeDiagnostics":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            optimize=data["optimize"],
+            update=data["update"],
         )
 
 @dataclass
@@ -1079,6 +1235,56 @@ class CollisionEventsEnabled(BevyComponent):
         )
 
 @dataclass
+class CollisionDiagnostics(BevyComponent):
+    """`avian3d::collision::diagnostics::CollisionDiagnostics`"""
+    type_path: ClassVar[str] = "avian3d::collision::diagnostics::CollisionDiagnostics"
+    broad_phase: Any  # unresolved: core::time::Duration
+    narrow_phase: Any  # unresolved: core::time::Duration
+    contact_count: int
+
+    def to_brp(self) -> object:
+        return {
+            "broad_phase": self.broad_phase,
+            "narrow_phase": self.narrow_phase,
+            "contact_count": self.contact_count,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "CollisionDiagnostics":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            broad_phase=data["broad_phase"],
+            narrow_phase=data["narrow_phase"],
+            contact_count=data["contact_count"],
+        )
+
+@dataclass
+class NarrowPhaseConfig(BevyComponent):
+    """`avian3d::collision::narrow_phase::NarrowPhaseConfig`"""
+    type_path: ClassVar[str] = "avian3d::collision::narrow_phase::NarrowPhaseConfig"
+    default_speculative_margin: float
+    contact_tolerance: float
+    match_contacts: bool
+
+    def to_brp(self) -> object:
+        return {
+            "default_speculative_margin": self.default_speculative_margin,
+            "contact_tolerance": self.contact_tolerance,
+            "match_contacts": self.match_contacts,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "NarrowPhaseConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            default_speculative_margin=data["default_speculative_margin"],
+            contact_tolerance=data["contact_tolerance"],
+            match_contacts=data["match_contacts"],
+        )
+
+@dataclass
 class DebugRender(BevyComponent):
     """`avian3d::debug_render::configuration::DebugRender`"""
     type_path: ClassVar[str] = "avian3d::debug_render::configuration::DebugRender"
@@ -1181,6 +1387,19 @@ class CustomVelocityIntegration(BevyComponent):
         assert isinstance(data, dict)
         return cls(
         )
+
+@dataclass
+class Gravity(BevyComponent):
+    """`avian3d::dynamics::integrator::Gravity`"""
+    type_path: ClassVar[str] = "avian3d::dynamics::integrator::Gravity"
+    value: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return list(self.value)
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Gravity":
+        return cls(value=list(value))
 
 @dataclass
 class VelocityIntegrationData(BevyComponent):
@@ -2055,6 +2274,140 @@ class SleepingDisabled(BevyComponent):
         )
 
 @dataclass
+class SolverDiagnostics(BevyComponent):
+    """`avian3d::dynamics::solver::diagnostics::SolverDiagnostics`"""
+    type_path: ClassVar[str] = "avian3d::dynamics::solver::diagnostics::SolverDiagnostics"
+    prepare_constraints: Any  # unresolved: core::time::Duration
+    update_velocity_increments: Any  # unresolved: core::time::Duration
+    integrate_velocities: Any  # unresolved: core::time::Duration
+    warm_start: Any  # unresolved: core::time::Duration
+    solve_constraints: Any  # unresolved: core::time::Duration
+    integrate_positions: Any  # unresolved: core::time::Duration
+    relax_velocities: Any  # unresolved: core::time::Duration
+    apply_restitution: Any  # unresolved: core::time::Duration
+    finalize: Any  # unresolved: core::time::Duration
+    store_impulses: Any  # unresolved: core::time::Duration
+    swept_ccd: Any  # unresolved: core::time::Duration
+    contact_constraint_count: int
+
+    def to_brp(self) -> object:
+        return {
+            "prepare_constraints": self.prepare_constraints,
+            "update_velocity_increments": self.update_velocity_increments,
+            "integrate_velocities": self.integrate_velocities,
+            "warm_start": self.warm_start,
+            "solve_constraints": self.solve_constraints,
+            "integrate_positions": self.integrate_positions,
+            "relax_velocities": self.relax_velocities,
+            "apply_restitution": self.apply_restitution,
+            "finalize": self.finalize,
+            "store_impulses": self.store_impulses,
+            "swept_ccd": self.swept_ccd,
+            "contact_constraint_count": self.contact_constraint_count,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SolverDiagnostics":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            prepare_constraints=data["prepare_constraints"],
+            update_velocity_increments=data["update_velocity_increments"],
+            integrate_velocities=data["integrate_velocities"],
+            warm_start=data["warm_start"],
+            solve_constraints=data["solve_constraints"],
+            integrate_positions=data["integrate_positions"],
+            relax_velocities=data["relax_velocities"],
+            apply_restitution=data["apply_restitution"],
+            finalize=data["finalize"],
+            store_impulses=data["store_impulses"],
+            swept_ccd=data["swept_ccd"],
+            contact_constraint_count=data["contact_constraint_count"],
+        )
+
+@dataclass
+class ContactSoftnessCoefficients(BevyComponent):
+    """`avian3d::dynamics::solver::plugin::ContactSoftnessCoefficients`"""
+    type_path: ClassVar[str] = "avian3d::dynamics::solver::plugin::ContactSoftnessCoefficients"
+    dynamic: SoftnessCoefficients
+    non_dynamic: SoftnessCoefficients
+
+    def to_brp(self) -> object:
+        return {
+            "dynamic": self.dynamic.to_brp(),
+            "non_dynamic": self.non_dynamic.to_brp(),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ContactSoftnessCoefficients":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            dynamic=SoftnessCoefficients.from_brp(data["dynamic"]),
+            non_dynamic=SoftnessCoefficients.from_brp(data["non_dynamic"]),
+        )
+
+@dataclass
+class PhysicsLengthUnit(BevyComponent):
+    """`avian3d::dynamics::solver::plugin::PhysicsLengthUnit`"""
+    type_path: ClassVar[str] = "avian3d::dynamics::solver::plugin::PhysicsLengthUnit"
+    value: float
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PhysicsLengthUnit":
+        return cls(value=value)
+
+@dataclass
+class SolverConfig(BevyComponent):
+    """`avian3d::dynamics::solver::plugin::SolverConfig`"""
+    type_path: ClassVar[str] = "avian3d::dynamics::solver::plugin::SolverConfig"
+    contact_damping_ratio: float
+    contact_frequency_factor: float
+    max_overlap_solve_speed: float
+    warm_start_coefficient: float
+    restitution_threshold: float
+    restitution_iterations: int
+
+    def to_brp(self) -> object:
+        return {
+            "contact_damping_ratio": self.contact_damping_ratio,
+            "contact_frequency_factor": self.contact_frequency_factor,
+            "max_overlap_solve_speed": self.max_overlap_solve_speed,
+            "warm_start_coefficient": self.warm_start_coefficient,
+            "restitution_threshold": self.restitution_threshold,
+            "restitution_iterations": self.restitution_iterations,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SolverConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            contact_damping_ratio=data["contact_damping_ratio"],
+            contact_frequency_factor=data["contact_frequency_factor"],
+            max_overlap_solve_speed=data["max_overlap_solve_speed"],
+            warm_start_coefficient=data["warm_start_coefficient"],
+            restitution_threshold=data["restitution_threshold"],
+            restitution_iterations=data["restitution_iterations"],
+        )
+
+@dataclass
+class SubstepCount(BevyComponent):
+    """`avian3d::dynamics::solver::schedule::SubstepCount`"""
+    type_path: ClassVar[str] = "avian3d::dynamics::solver::schedule::SubstepCount"
+    value: int
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SubstepCount":
+        return cls(value=value)
+
+@dataclass
 class SolverBody(BevyComponent):
     """`avian3d::dynamics::solver::solver_body::SolverBody`"""
     type_path: ClassVar[str] = "avian3d::dynamics::solver::solver_body::SolverBody"
@@ -2114,6 +2467,34 @@ class SolverBodyInertia(BevyComponent):
         )
 
 @dataclass
+class PhysicsTransformConfig(BevyComponent):
+    """`avian3d::physics_transform::PhysicsTransformConfig`"""
+    type_path: ClassVar[str] = "avian3d::physics_transform::PhysicsTransformConfig"
+    propagate_before_physics: bool
+    transform_to_position: bool
+    position_to_transform: bool
+    transform_to_collider_scale: bool
+
+    def to_brp(self) -> object:
+        return {
+            "propagate_before_physics": self.propagate_before_physics,
+            "transform_to_position": self.transform_to_position,
+            "position_to_transform": self.position_to_transform,
+            "transform_to_collider_scale": self.transform_to_collider_scale,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PhysicsTransformConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            propagate_before_physics=data["propagate_before_physics"],
+            transform_to_position=data["transform_to_position"],
+            position_to_transform=data["position_to_transform"],
+            transform_to_collider_scale=data["transform_to_collider_scale"],
+        )
+
+@dataclass
 class Position(BevyComponent):
     """`avian3d::physics_transform::transform::Position`"""
     type_path: ClassVar[str] = "avian3d::physics_transform::transform::Position"
@@ -2164,6 +2545,41 @@ class Rotation(BevyComponent):
     @classmethod
     def from_brp(cls, value: object) -> "Rotation":
         return cls(value=list(value))
+
+@dataclass
+class LastPhysicsTick(BevyComponent):
+    """`avian3d::schedule::LastPhysicsTick`"""
+    type_path: ClassVar[str] = "avian3d::schedule::LastPhysicsTick"
+    value: Tick
+
+    def to_brp(self) -> object:
+        return self.value.to_brp()
+
+    @classmethod
+    def from_brp(cls, value: object) -> "LastPhysicsTick":
+        return cls(value=Tick.from_brp(value))
+
+@dataclass
+class SpatialQueryDiagnostics(BevyComponent):
+    """`avian3d::spatial_query::diagnostics::SpatialQueryDiagnostics`"""
+    type_path: ClassVar[str] = "avian3d::spatial_query::diagnostics::SpatialQueryDiagnostics"
+    update_ray_casters: Any  # unresolved: core::time::Duration
+    update_shape_casters: Any  # unresolved: core::time::Duration
+
+    def to_brp(self) -> object:
+        return {
+            "update_ray_casters": self.update_ray_casters,
+            "update_shape_casters": self.update_shape_casters,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SpatialQueryDiagnostics":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            update_ray_casters=data["update_ray_casters"],
+            update_shape_casters=data["update_shape_casters"],
+        )
 
 @dataclass
 class RayCaster(BevyComponent):
@@ -2296,6 +2712,32 @@ class ShapeHits(BevyComponent):
         return cls(value=[ShapeHitData.from_brp(v0) for v0 in value])
 
 @dataclass
+class AccessibilityRequested(BevyComponent):
+    """`bevy_a11y::AccessibilityRequested`"""
+    type_path: ClassVar[str] = "bevy_a11y::AccessibilityRequested"
+    value: Any  # unresolved: bevy_platform::sync::Arc<core::sync::atomic::AtomicBool>
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AccessibilityRequested":
+        return cls(value=value)
+
+@dataclass
+class ManageAccessibilityUpdates(BevyComponent):
+    """`bevy_a11y::ManageAccessibilityUpdates`"""
+    type_path: ClassVar[str] = "bevy_a11y::ManageAccessibilityUpdates"
+    value: bool
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ManageAccessibilityUpdates":
+        return cls(value=value)
+
+@dataclass
 class CharacterController(BevyComponent):
     """`bevy_ahoy::CharacterController`"""
     type_path: ClassVar[str] = "bevy_ahoy::CharacterController"
@@ -2307,6 +2749,7 @@ class CharacterController(BevyComponent):
     step_down_detection_distance: float
     min_walk_cos: float
     stop_speed: float
+    air_friction: Friction
     friction_hz: float
     acceleration_hz: float
     air_acceleration_hz: float
@@ -2361,6 +2804,7 @@ class CharacterController(BevyComponent):
             "step_down_detection_distance": self.step_down_detection_distance,
             "min_walk_cos": self.min_walk_cos,
             "stop_speed": self.stop_speed,
+            "air_friction": self.air_friction.to_brp(),
             "friction_hz": self.friction_hz,
             "acceleration_hz": self.acceleration_hz,
             "air_acceleration_hz": self.air_acceleration_hz,
@@ -2419,6 +2863,7 @@ class CharacterController(BevyComponent):
             step_down_detection_distance=data["step_down_detection_distance"],
             min_walk_cos=data["min_walk_cos"],
             stop_speed=data["stop_speed"],
+            air_friction=Friction.from_brp(data["air_friction"]),
             friction_hz=data["friction_hz"],
             acceleration_hz=data["acceleration_hz"],
             air_acceleration_hz=data["air_acceleration_hz"],
@@ -2722,6 +3167,70 @@ class AnimationTransitions(BevyComponent):
         )
 
 @dataclass
+class AnimationGraphPlayer(BevyComponent):
+    """`bevy_animation_graph_core::animation_graph_player::AnimationGraphPlayer`"""
+    type_path: ClassVar[str] = "bevy_animation_graph_core::animation_graph_player::AnimationGraphPlayer"
+    playback_state: Literal["Paused", "Play", "PlayOneFrame"]
+    animation: Any  # unresolved: bevy_animation_graph_core::animation_graph_player::AnimationSource
+    skeleton: Any  # unresolved: bevy_asset::handle::Handle<bevy_animation_graph_core::skeleton::Skeleton>
+    ragdoll: Any | None  # unresolved: bevy_asset::handle::Handle<bevy_animation_graph_core::ragdoll::definition::Ragdoll>
+    ragdoll_bone_map: Any | None  # unresolved: bevy_asset::handle::Handle<bevy_animation_graph_core::ragdoll::bone_mapping::RagdollBoneMap>
+    spawned_ragdoll: SpawnedRagdoll | None
+    context_arena: GraphContextArena | None
+    elapsed: float
+    pending_update: Any  # unresolved: bevy_animation_graph_core::animation_graph::TimeUpdate
+    deferred_gizmos: DeferredGizmos
+    debug_draw_bones: list[Any]  # unresolved: (bevy_animation_graph_core::id::BoneId, bevy_color::color::Color, bool)
+    entity_map: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::id::BoneId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
+    queued_events: EventQueue
+    outputs: Any  # unresolved: bevy_platform::collections::HashMap<alloc::string::String, bevy_animation_graph_core::edge_data::DataValue, bevy_platform::hash::FixedHasher>
+    io_overrides: IoOverrides
+    global_input_data: Any  # unresolved: bevy_platform::collections::HashMap<alloc::string::String, bevy_animation_graph_core::edge_data::DataValue, bevy_platform::hash::FixedHasher>
+
+    def to_brp(self) -> object:
+        return {
+            "playback_state": self.playback_state,
+            "animation": self.animation,
+            "skeleton": self.skeleton,
+            "ragdoll": self.ragdoll,
+            "ragdoll_bone_map": self.ragdoll_bone_map,
+            "spawned_ragdoll": ((v0.to_brp()) if (v0 := self.spawned_ragdoll) is not None else None),
+            "context_arena": ((v0.to_brp()) if (v0 := self.context_arena) is not None else None),
+            "elapsed": self.elapsed,
+            "pending_update": self.pending_update,
+            "deferred_gizmos": self.deferred_gizmos.to_brp(),
+            "debug_draw_bones": list(self.debug_draw_bones),
+            "entity_map": self.entity_map,
+            "queued_events": self.queued_events.to_brp(),
+            "outputs": self.outputs,
+            "io_overrides": self.io_overrides.to_brp(),
+            "global_input_data": self.global_input_data,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AnimationGraphPlayer":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            playback_state=data["playback_state"],
+            animation=data["animation"],
+            skeleton=data["skeleton"],
+            ragdoll=data["ragdoll"],
+            ragdoll_bone_map=data["ragdoll_bone_map"],
+            spawned_ragdoll=((SpawnedRagdoll.from_brp(v0)) if (v0 := data["spawned_ragdoll"]) is not None else None),
+            context_arena=((GraphContextArena.from_brp(v0)) if (v0 := data["context_arena"]) is not None else None),
+            elapsed=data["elapsed"],
+            pending_update=data["pending_update"],
+            deferred_gizmos=DeferredGizmos.from_brp(data["deferred_gizmos"]),
+            debug_draw_bones=list(data["debug_draw_bones"]),
+            entity_map=data["entity_map"],
+            queued_events=EventQueue.from_brp(data["queued_events"]),
+            outputs=data["outputs"],
+            io_overrides=IoOverrides.from_brp(data["io_overrides"]),
+            global_input_data=data["global_input_data"],
+        )
+
+@dataclass
 class ContrastAdaptiveSharpening(BevyComponent):
     """`bevy_anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening`"""
     type_path: ClassVar[str] = "bevy_anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening"
@@ -2823,6 +3332,19 @@ class TemporalAntiAliasing(BevyComponent):
         )
 
 @dataclass
+class DefaultSpatialScale(BevyComponent):
+    """`bevy_audio::audio::DefaultSpatialScale`"""
+    type_path: ClassVar[str] = "bevy_audio::audio::DefaultSpatialScale"
+    value: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return list(self.value)
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DefaultSpatialScale":
+        return cls(value=list(value))
+
+@dataclass
 class PlaybackSettings(BevyComponent):
     """`bevy_audio::audio::PlaybackSettings`"""
     type_path: ClassVar[str] = "bevy_audio::audio::PlaybackSettings"
@@ -2888,12 +3410,32 @@ class SpatialListener(BevyComponent):
         )
 
 @dataclass
+class GlobalVolume(BevyComponent):
+    """`bevy_audio::volume::GlobalVolume`"""
+    type_path: ClassVar[str] = "bevy_audio::volume::GlobalVolume"
+    volume: Any  # unresolved: bevy_audio::volume::Volume
+
+    def to_brp(self) -> object:
+        return {
+            "volume": self.volume,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GlobalVolume":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            volume=data["volume"],
+        )
+
+@dataclass
 class Camera(BevyComponent):
     """`bevy_camera::camera::Camera`"""
     type_path: ClassVar[str] = "bevy_camera::camera::Camera"
     viewport: Viewport | None
     order: int
     is_active: bool
+    computed: ComputedCameraValues
     output_mode: Any  # unresolved: bevy_camera::camera::CameraOutputMode
     msaa_writeback: Literal["Off", "Auto", "Always"]
     clear_color: Any  # unresolved: bevy_camera::clear_color::ClearColorConfig
@@ -2905,6 +3447,7 @@ class Camera(BevyComponent):
             "viewport": ((v0.to_brp()) if (v0 := self.viewport) is not None else None),
             "order": self.order,
             "is_active": self.is_active,
+            "computed": self.computed.to_brp(),
             "output_mode": self.output_mode,
             "msaa_writeback": self.msaa_writeback,
             "clear_color": self.clear_color,
@@ -2920,6 +3463,7 @@ class Camera(BevyComponent):
             viewport=((Viewport.from_brp(v0)) if (v0 := data["viewport"]) is not None else None),
             order=data["order"],
             is_active=data["is_active"],
+            computed=ComputedCameraValues.from_brp(data["computed"]),
             output_mode=data["output_mode"],
             msaa_writeback=data["msaa_writeback"],
             clear_color=data["clear_color"],
@@ -2993,6 +3537,35 @@ class RenderTarget(BevyComponent):
         return cls(value=value)
 
 @dataclass
+class ShadowLodOrigin(BevyComponent):
+    """`bevy_camera::camera::ShadowLodOrigin`"""
+    type_path: ClassVar[str] = "bevy_camera::camera::ShadowLodOrigin"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ShadowLodOrigin":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class ClearColor(BevyComponent):
+    """`bevy_camera::clear_color::ClearColor`"""
+    type_path: ClassVar[str] = "bevy_camera::clear_color::ClearColor"
+    value: Any  # unresolved: bevy_color::color::Color
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ClearColor":
+        return cls(value=value)
+
+@dataclass
 class Camera2d(BevyComponent):
     """`bevy_camera::components::Camera2d`"""
     type_path: ClassVar[str] = "bevy_camera::components::Camera2d"
@@ -3014,15 +3587,11 @@ class Camera3d(BevyComponent):
     type_path: ClassVar[str] = "bevy_camera::components::Camera3d"
     depth_load_op: Any  # unresolved: bevy_camera::components::Camera3dDepthLoadOp
     depth_texture_usages: int
-    screen_space_specular_transmission_steps: int
-    screen_space_specular_transmission_quality: Literal["Low", "Medium", "High", "Ultra"]
 
     def to_brp(self) -> object:
         return {
             "depth_load_op": self.depth_load_op,
             "depth_texture_usages": self.depth_texture_usages,
-            "screen_space_specular_transmission_steps": self.screen_space_specular_transmission_steps,
-            "screen_space_specular_transmission_quality": self.screen_space_specular_transmission_quality,
         }
 
     @classmethod
@@ -3032,8 +3601,35 @@ class Camera3d(BevyComponent):
         return cls(
             depth_load_op=data["depth_load_op"],
             depth_texture_usages=data["depth_texture_usages"],
-            screen_space_specular_transmission_steps=data["screen_space_specular_transmission_steps"],
-            screen_space_specular_transmission_quality=data["screen_space_specular_transmission_quality"],
+        )
+
+@dataclass
+class CompositingSpace(BevyComponent):
+    """`bevy_camera::components::CompositingSpace`"""
+    type_path: ClassVar[str] = "bevy_camera::components::CompositingSpace"
+    value: Literal["Srgb", "Linear", "Oklab"]
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "CompositingSpace":
+        return cls(value=value)
+
+@dataclass
+class Hdr(BevyComponent):
+    """`bevy_camera::components::Hdr`"""
+    type_path: ClassVar[str] = "bevy_camera::components::Hdr"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Hdr":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
         )
 
 @dataclass
@@ -3062,9 +3658,11 @@ class Aabb(BevyComponent):
 class CascadesFrusta(BevyComponent):
     """`bevy_camera::primitives::CascadesFrusta`"""
     type_path: ClassVar[str] = "bevy_camera::primitives::CascadesFrusta"
+    frusta: Any  # unresolved: bevy_platform::collections::HashMap<bevy_ecs::entity::Entity, alloc::vec::Vec<bevy_camera::primitives::Frustum>, bevy_ecs::entity::hash::EntityHash>
 
     def to_brp(self) -> object:
         return {
+            "frusta": self.frusta,
         }
 
     @classmethod
@@ -3072,15 +3670,18 @@ class CascadesFrusta(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
+            frusta=data["frusta"],
         )
 
 @dataclass
 class CubemapFrusta(BevyComponent):
     """`bevy_camera::primitives::CubemapFrusta`"""
     type_path: ClassVar[str] = "bevy_camera::primitives::CubemapFrusta"
+    frusta: list[ViewFrustum]  # len 6
 
     def to_brp(self) -> object:
         return {
+            "frusta": [v0.to_brp() for v0 in self.frusta],
         }
 
     @classmethod
@@ -3088,22 +3689,42 @@ class CubemapFrusta(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
+            frusta=[ViewFrustum.from_brp(v0) for v0 in data["frusta"]],
         )
 
 @dataclass
 class Frustum(BevyComponent):
     """`bevy_camera::primitives::Frustum`"""
     type_path: ClassVar[str] = "bevy_camera::primitives::Frustum"
+    value: ViewFrustum
 
     def to_brp(self) -> object:
-        return {
-        }
+        return self.value.to_brp()
 
     @classmethod
     def from_brp(cls, value: object) -> "Frustum":
+        return cls(value=ViewFrustum.from_brp(value))
+
+@dataclass
+class Sphere(BevyComponent):
+    """`bevy_camera::primitives::Sphere`"""
+    type_path: ClassVar[str] = "bevy_camera::primitives::Sphere"
+    center: list[float]  # len 3
+    radius: float
+
+    def to_brp(self) -> object:
+        return {
+            "center": list(self.center),
+            "radius": self.radius,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Sphere":
         data = value
         assert isinstance(data, dict)
         return cls(
+            center=list(data["center"]),
+            radius=data["radius"],
         )
 
 @dataclass
@@ -3146,6 +3767,22 @@ class CubemapVisibleEntities(BevyComponent):
 
     @classmethod
     def from_brp(cls, value: object) -> "CubemapVisibleEntities":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class DynamicSkinnedMeshBounds(BevyComponent):
+    """`bevy_camera::visibility::DynamicSkinnedMeshBounds`"""
+    type_path: ClassVar[str] = "bevy_camera::visibility::DynamicSkinnedMeshBounds"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DynamicSkinnedMeshBounds":
         data = value
         assert isinstance(data, dict)
         return cls(
@@ -3386,29 +4023,33 @@ class NormalPrepass(BevyComponent):
         )
 
 @dataclass
-class Skybox(BevyComponent):
-    """`bevy_core_pipeline::skybox::Skybox`"""
-    type_path: ClassVar[str] = "bevy_core_pipeline::skybox::Skybox"
-    image: Any  # unresolved: bevy_asset::handle::Handle<bevy_image::image::Image>
-    brightness: float
-    rotation: list[float]  # len 4
+class NoBackgroundMotionVectors(BevyComponent):
+    """`bevy_core_pipeline::prepass::background_motion_vectors::NoBackgroundMotionVectors`"""
+    type_path: ClassVar[str] = "bevy_core_pipeline::prepass::background_motion_vectors::NoBackgroundMotionVectors"
 
     def to_brp(self) -> object:
         return {
-            "image": self.image,
-            "brightness": self.brightness,
-            "rotation": list(self.rotation),
         }
 
     @classmethod
-    def from_brp(cls, value: object) -> "Skybox":
+    def from_brp(cls, value: object) -> "NoBackgroundMotionVectors":
         data = value
         assert isinstance(data, dict)
         return cls(
-            image=data["image"],
-            brightness=data["brightness"],
-            rotation=list(data["rotation"]),
         )
+
+@dataclass
+class RootNonCameraView(BevyComponent):
+    """`bevy_core_pipeline::schedule::RootNonCameraView`"""
+    type_path: ClassVar[str] = "bevy_core_pipeline::schedule::RootNonCameraView"
+    value: Any  # unresolved: bevy_core_pipeline::schedule::RootNonCameraView
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RootNonCameraView":
+        return cls(value=value)
 
 @dataclass
 class DebandDither(BevyComponent):
@@ -3427,7 +4068,7 @@ class DebandDither(BevyComponent):
 class Tonemapping(BevyComponent):
     """`bevy_core_pipeline::tonemapping::Tonemapping`"""
     type_path: ClassVar[str] = "bevy_core_pipeline::tonemapping::Tonemapping"
-    value: Literal["None", "Reinhard", "ReinhardLuminance", "AcesFitted", "AgX", "SomewhatBoringDisplayTransform", "TonyMcMapface", "BlenderFilmic"]
+    value: Literal["None", "Reinhard", "ReinhardLuminance", "AcesFitted", "AgX", "SomewhatBoringDisplayTransform", "TonyMcMapface", "BlenderFilmic", "KhronosPbrNeutral"]
 
     def to_brp(self) -> object:
         return self.value
@@ -3435,6 +4076,159 @@ class Tonemapping(BevyComponent):
     @classmethod
     def from_brp(cls, value: object) -> "Tonemapping":
         return cls(value=value)
+
+@dataclass
+class FpsOverlayConfig(BevyComponent):
+    """`bevy_dev_tools::fps_overlay::FpsOverlayConfig`"""
+    type_path: ClassVar[str] = "bevy_dev_tools::fps_overlay::FpsOverlayConfig"
+    text_config: TextFont
+    text_color: Any  # unresolved: bevy_color::color::Color
+    enabled: bool
+    refresh_interval: Any  # unresolved: core::time::Duration
+    frame_time_graph_config: FrameTimeGraphConfig
+
+    def to_brp(self) -> object:
+        return {
+            "text_config": self.text_config.to_brp(),
+            "text_color": self.text_color,
+            "enabled": self.enabled,
+            "refresh_interval": self.refresh_interval,
+            "frame_time_graph_config": self.frame_time_graph_config.to_brp(),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "FpsOverlayConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            text_config=TextFont.from_brp(data["text_config"]),
+            text_color=data["text_color"],
+            enabled=data["enabled"],
+            refresh_interval=data["refresh_interval"],
+            frame_time_graph_config=FrameTimeGraphConfig.from_brp(data["frame_time_graph_config"]),
+        )
+
+@dataclass
+class InfiniteGrid(BevyComponent):
+    """`bevy_dev_tools::infinite_grid::InfiniteGrid`"""
+    type_path: ClassVar[str] = "bevy_dev_tools::infinite_grid::InfiniteGrid"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "InfiniteGrid":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class InfiniteGridSettings(BevyComponent):
+    """`bevy_dev_tools::infinite_grid::InfiniteGridSettings`"""
+    type_path: ClassVar[str] = "bevy_dev_tools::infinite_grid::InfiniteGridSettings"
+    x_axis_color: Any  # unresolved: bevy_color::color::Color
+    z_axis_color: Any  # unresolved: bevy_color::color::Color
+    minor_line_color: Any  # unresolved: bevy_color::color::Color
+    major_line_color: Any  # unresolved: bevy_color::color::Color
+    fadeout_distance: float
+    dot_fadeout_strength: float
+    scale: float
+
+    def to_brp(self) -> object:
+        return {
+            "x_axis_color": self.x_axis_color,
+            "z_axis_color": self.z_axis_color,
+            "minor_line_color": self.minor_line_color,
+            "major_line_color": self.major_line_color,
+            "fadeout_distance": self.fadeout_distance,
+            "dot_fadeout_strength": self.dot_fadeout_strength,
+            "scale": self.scale,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "InfiniteGridSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            x_axis_color=data["x_axis_color"],
+            z_axis_color=data["z_axis_color"],
+            minor_line_color=data["minor_line_color"],
+            major_line_color=data["major_line_color"],
+            fadeout_distance=data["fadeout_distance"],
+            dot_fadeout_strength=data["dot_fadeout_strength"],
+            scale=data["scale"],
+        )
+
+@dataclass
+class GlobalRenderDebugOverlay(BevyComponent):
+    """`bevy_dev_tools::render_debug::GlobalRenderDebugOverlay`"""
+    type_path: ClassVar[str] = "bevy_dev_tools::render_debug::GlobalRenderDebugOverlay"
+    enabled: bool
+    mode: Any  # unresolved: bevy_dev_tools::render_debug::RenderDebugMode
+    opacity: float
+
+    def to_brp(self) -> object:
+        return {
+            "enabled": self.enabled,
+            "mode": self.mode,
+            "opacity": self.opacity,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GlobalRenderDebugOverlay":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            enabled=data["enabled"],
+            mode=data["mode"],
+            opacity=data["opacity"],
+        )
+
+@dataclass
+class RenderDebugOverlay(BevyComponent):
+    """`bevy_dev_tools::render_debug::RenderDebugOverlay`"""
+    type_path: ClassVar[str] = "bevy_dev_tools::render_debug::RenderDebugOverlay"
+    enabled: bool
+    mode: Any  # unresolved: bevy_dev_tools::render_debug::RenderDebugMode
+    opacity: float
+
+    def to_brp(self) -> object:
+        return {
+            "enabled": self.enabled,
+            "mode": self.mode,
+            "opacity": self.opacity,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RenderDebugOverlay":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            enabled=data["enabled"],
+            mode=data["mode"],
+            opacity=data["opacity"],
+        )
+
+@dataclass
+class DefaultQueryFilters(BevyComponent):
+    """`bevy_ecs::entity_disabling::DefaultQueryFilters`"""
+    type_path: ClassVar[str] = "bevy_ecs::entity_disabling::DefaultQueryFilters"
+    disabling: list[int]
+
+    def to_brp(self) -> object:
+        return {
+            "disabling": list(self.disabling),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DefaultQueryFilters":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            disabling=list(data["disabling"]),
+        )
 
 @dataclass
 class Disabled(BevyComponent):
@@ -3482,23 +4276,14 @@ class Children(BevyComponent):
 class Name(BevyComponent):
     """`bevy_ecs::name::Name`"""
     type_path: ClassVar[str] = "bevy_ecs::name::Name"
-    hash: int
-    name: Any  # unresolved: alloc::borrow::Cow<str>
+    value: Any  # unresolved: bevy_platform::hash::Hashed<alloc::borrow::Cow<str>, bevy_platform::hash::FixedHasher>
 
     def to_brp(self) -> object:
-        return {
-            "hash": self.hash,
-            "name": self.name,
-        }
+        return self.value
 
     @classmethod
     def from_brp(cls, value: object) -> "Name":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            hash=data["hash"],
-            name=data["name"],
-        )
+        return cls(value=value)
 
 @dataclass
 class ObservedBy(BevyComponent):
@@ -3512,6 +4297,92 @@ class ObservedBy(BevyComponent):
     @classmethod
     def from_brp(cls, value: object) -> "ObservedBy":
         return cls(value=list(value))
+
+@dataclass
+class IsResource(BevyComponent):
+    """`bevy_ecs::resource::IsResource`"""
+    type_path: ClassVar[str] = "bevy_ecs::resource::IsResource"
+    value: int
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "IsResource":
+        return cls(value=value)
+
+@dataclass
+class ActionSettings(BevyComponent):
+    """`bevy_enhanced_input::action::ActionSettings`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::action::ActionSettings"
+    accumulation: Literal["Cumulative", "MaxAbs"]
+    require_reset: bool
+    consume_input: bool
+
+    def to_brp(self) -> object:
+        return {
+            "accumulation": self.accumulation,
+            "require_reset": self.require_reset,
+            "consume_input": self.consume_input,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ActionSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            accumulation=data["accumulation"],
+            require_reset=data["require_reset"],
+            consume_input=data["consume_input"],
+        )
+
+@dataclass
+class ActionTime(BevyComponent):
+    """`bevy_enhanced_input::action::ActionTime`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::action::ActionTime"
+    elapsed_secs: float
+    fired_secs: float
+
+    def to_brp(self) -> object:
+        return {
+            "elapsed_secs": self.elapsed_secs,
+            "fired_secs": self.fired_secs,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ActionTime":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            elapsed_secs=data["elapsed_secs"],
+            fired_secs=data["fired_secs"],
+        )
+
+@dataclass
+class TriggerState(BevyComponent):
+    """`bevy_enhanced_input::action::TriggerState`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::action::TriggerState"
+    value: Literal["None", "Ongoing", "Fired"]
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TriggerState":
+        return cls(value=value)
+
+@dataclass
+class ActionEvents(BevyComponent):
+    """`bevy_enhanced_input::action::events::ActionEvents`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::action::events::ActionEvents"
+    value: int
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ActionEvents":
+        return cls(value=value)
 
 @dataclass
 class ActionMock(BevyComponent):
@@ -3542,7 +4413,7 @@ class ActionMock(BevyComponent):
         )
 
 @dataclass
-class ActionsPlayer(BevyComponent):
+class ActionsadventuresimtacticalcoreplayerPlayer(BevyComponent):
     """`bevy_enhanced_input::action::relationship::Actions<adventuresim_tactical_core::player::Player>`"""
     type_path: ClassVar[str] = "bevy_enhanced_input::action::relationship::Actions<adventuresim_tactical_core::player::Player>"
     entities: list[int]
@@ -3553,12 +4424,668 @@ class ActionsPlayer(BevyComponent):
         }
 
     @classmethod
-    def from_brp(cls, value: object) -> "ActionsPlayer":
+    def from_brp(cls, value: object) -> "ActionsadventuresimtacticalcoreplayerPlayer":
         data = value
         assert isinstance(data, dict)
         return cls(
             entities=list(data["entities"]),
         )
+
+@dataclass
+class ActionValue(BevyComponent):
+    """`bevy_enhanced_input::action::value::ActionValue`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::action::value::ActionValue"
+    value: Any  # unresolved: bevy_enhanced_input::action::value::ActionValue
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ActionValue":
+        return cls(value=value)
+
+@dataclass
+class Binding(BevyComponent):
+    """`bevy_enhanced_input::binding::Binding`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::binding::Binding"
+    value: Any  # unresolved: bevy_enhanced_input::binding::Binding
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Binding":
+        return cls(value=value)
+
+@dataclass
+class BindingOf(BevyComponent):
+    """`bevy_enhanced_input::binding::relationship::BindingOf`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::binding::relationship::BindingOf"
+    value: int
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "BindingOf":
+        return cls(value=value)
+
+@dataclass
+class Bindings(BevyComponent):
+    """`bevy_enhanced_input::binding::relationship::Bindings`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::binding::relationship::Bindings"
+    value: list[int]
+
+    def to_brp(self) -> object:
+        return list(self.value)
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Bindings":
+        return cls(value=list(value))
+
+@dataclass
+class BlockBy(BevyComponent):
+    """`bevy_enhanced_input::condition::block_by::BlockBy`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::block_by::BlockBy"
+    actions: list[int]
+
+    def to_brp(self) -> object:
+        return {
+            "actions": list(self.actions),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "BlockBy":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actions=list(data["actions"]),
+        )
+
+@dataclass
+class Chord(BevyComponent):
+    """`bevy_enhanced_input::condition::chord::Chord`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::chord::Chord"
+    actions: list[int]
+    ongoing: bool
+
+    def to_brp(self) -> object:
+        return {
+            "actions": list(self.actions),
+            "ongoing": self.ongoing,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Chord":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actions=list(data["actions"]),
+            ongoing=data["ongoing"],
+        )
+
+@dataclass
+class Combo(BevyComponent):
+    """`bevy_enhanced_input::condition::combo::Combo`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::combo::Combo"
+    steps: list[ComboStep]
+    cancel_actions: list[CancelAction]
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    step_index: int
+    timer: Timer
+
+    def to_brp(self) -> object:
+        return {
+            "steps": [v0.to_brp() for v0 in self.steps],
+            "cancel_actions": [v0.to_brp() for v0 in self.cancel_actions],
+            "time_kind": self.time_kind,
+            "step_index": self.step_index,
+            "timer": self.timer.to_brp(),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Combo":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            steps=[ComboStep.from_brp(v0) for v0 in data["steps"]],
+            cancel_actions=[CancelAction.from_brp(v0) for v0 in data["cancel_actions"]],
+            time_kind=data["time_kind"],
+            step_index=data["step_index"],
+            timer=Timer.from_brp(data["timer"]),
+        )
+
+@dataclass
+class Cooldown(BevyComponent):
+    """`bevy_enhanced_input::condition::cooldown::Cooldown`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::cooldown::Cooldown"
+    actuation: float
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    timer: Timer
+    actuated: bool
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+            "time_kind": self.time_kind,
+            "timer": self.timer.to_brp(),
+            "actuated": self.actuated,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Cooldown":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+            time_kind=data["time_kind"],
+            timer=Timer.from_brp(data["timer"]),
+            actuated=data["actuated"],
+        )
+
+@dataclass
+class Down(BevyComponent):
+    """`bevy_enhanced_input::condition::down::Down`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::down::Down"
+    actuation: float
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Down":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+        )
+
+@dataclass
+class Flick(BevyComponent):
+    """`bevy_enhanced_input::condition::flick::Flick`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::flick::Flick"
+    actuation: float
+    rest_threshold: float
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    timer: Timer
+    fired: bool
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+            "rest_threshold": self.rest_threshold,
+            "time_kind": self.time_kind,
+            "timer": self.timer.to_brp(),
+            "fired": self.fired,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Flick":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+            rest_threshold=data["rest_threshold"],
+            time_kind=data["time_kind"],
+            timer=Timer.from_brp(data["timer"]),
+            fired=data["fired"],
+        )
+
+@dataclass
+class Hold(BevyComponent):
+    """`bevy_enhanced_input::condition::hold::Hold`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::hold::Hold"
+    one_shot: bool
+    actuation: float
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    timer: Timer
+
+    def to_brp(self) -> object:
+        return {
+            "one_shot": self.one_shot,
+            "actuation": self.actuation,
+            "time_kind": self.time_kind,
+            "timer": self.timer.to_brp(),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Hold":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            one_shot=data["one_shot"],
+            actuation=data["actuation"],
+            time_kind=data["time_kind"],
+            timer=Timer.from_brp(data["timer"]),
+        )
+
+@dataclass
+class HoldAndRelease(BevyComponent):
+    """`bevy_enhanced_input::condition::hold_and_release::HoldAndRelease`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::hold_and_release::HoldAndRelease"
+    actuation: float
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    timer: Timer
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+            "time_kind": self.time_kind,
+            "timer": self.timer.to_brp(),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "HoldAndRelease":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+            time_kind=data["time_kind"],
+            timer=Timer.from_brp(data["timer"]),
+        )
+
+@dataclass
+class Press(BevyComponent):
+    """`bevy_enhanced_input::condition::press::Press`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::press::Press"
+    actuation: float
+    actuated: bool
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+            "actuated": self.actuated,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Press":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+            actuated=data["actuated"],
+        )
+
+@dataclass
+class Pulse(BevyComponent):
+    """`bevy_enhanced_input::condition::pulse::Pulse`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::pulse::Pulse"
+    trigger_limit: int
+    trigger_on_start: bool
+    actuation: float
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    initial_delay: float | None
+    interval: float
+    timer: Timer
+    trigger_count: int
+    started_actuation: bool
+
+    def to_brp(self) -> object:
+        return {
+            "trigger_limit": self.trigger_limit,
+            "trigger_on_start": self.trigger_on_start,
+            "actuation": self.actuation,
+            "time_kind": self.time_kind,
+            "initial_delay": self.initial_delay,
+            "interval": self.interval,
+            "timer": self.timer.to_brp(),
+            "trigger_count": self.trigger_count,
+            "started_actuation": self.started_actuation,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Pulse":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            trigger_limit=data["trigger_limit"],
+            trigger_on_start=data["trigger_on_start"],
+            actuation=data["actuation"],
+            time_kind=data["time_kind"],
+            initial_delay=data["initial_delay"],
+            interval=data["interval"],
+            timer=Timer.from_brp(data["timer"]),
+            trigger_count=data["trigger_count"],
+            started_actuation=data["started_actuation"],
+        )
+
+@dataclass
+class Release(BevyComponent):
+    """`bevy_enhanced_input::condition::release::Release`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::release::Release"
+    actuation: float
+    actuated: bool
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+            "actuated": self.actuated,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Release":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+            actuated=data["actuated"],
+        )
+
+@dataclass
+class Tap(BevyComponent):
+    """`bevy_enhanced_input::condition::tap::Tap`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::tap::Tap"
+    actuation: float
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    timer: Timer
+    actuated: bool
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+            "time_kind": self.time_kind,
+            "timer": self.timer.to_brp(),
+            "actuated": self.actuated,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Tap":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+            time_kind=data["time_kind"],
+            timer=Timer.from_brp(data["timer"]),
+            actuated=data["actuated"],
+        )
+
+@dataclass
+class Toggle(BevyComponent):
+    """`bevy_enhanced_input::condition::toggle::Toggle`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::condition::toggle::Toggle"
+    actuation: float
+    toggled: bool
+    actuated: bool
+
+    def to_brp(self) -> object:
+        return {
+            "actuation": self.actuation,
+            "toggled": self.toggled,
+            "actuated": self.actuated,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Toggle":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            actuation=data["actuation"],
+            toggled=data["toggled"],
+            actuated=data["actuated"],
+        )
+
+@dataclass
+class GamepadDevice(BevyComponent):
+    """`bevy_enhanced_input::context::GamepadDevice`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::context::GamepadDevice"
+    value: Any  # unresolved: bevy_enhanced_input::context::GamepadDevice
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GamepadDevice":
+        return cls(value=value)
+
+@dataclass
+class ActionSources(BevyComponent):
+    """`bevy_enhanced_input::context::input_reader::ActionSources`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::context::input_reader::ActionSources"
+    keyboard: bool
+    mouse_buttons: bool
+    mouse_motion: bool
+    mouse_wheel: bool
+    gamepad_button: bool
+    gamepad_axis: bool
+
+    def to_brp(self) -> object:
+        return {
+            "keyboard": self.keyboard,
+            "mouse_buttons": self.mouse_buttons,
+            "mouse_motion": self.mouse_motion,
+            "mouse_wheel": self.mouse_wheel,
+            "gamepad_button": self.gamepad_button,
+            "gamepad_axis": self.gamepad_axis,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ActionSources":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            keyboard=data["keyboard"],
+            mouse_buttons=data["mouse_buttons"],
+            mouse_motion=data["mouse_motion"],
+            mouse_wheel=data["mouse_wheel"],
+            gamepad_button=data["gamepad_button"],
+            gamepad_axis=data["gamepad_axis"],
+        )
+
+@dataclass
+class AccumulateBy(BevyComponent):
+    """`bevy_enhanced_input::modifier::accumulate_by::AccumulateBy`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::accumulate_by::AccumulateBy"
+    action: int
+    value: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return {
+            "action": self.action,
+            "value": list(self.value),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AccumulateBy":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            action=data["action"],
+            value=list(data["value"]),
+        )
+
+@dataclass
+class Clamp(BevyComponent):
+    """`bevy_enhanced_input::modifier::clamp::Clamp`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::clamp::Clamp"
+    min: list[float]  # len 3
+    max: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return {
+            "min": list(self.min),
+            "max": list(self.max),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Clamp":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            min=list(data["min"]),
+            max=list(data["max"]),
+        )
+
+@dataclass
+class DeadZone(BevyComponent):
+    """`bevy_enhanced_input::modifier::dead_zone::DeadZone`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::dead_zone::DeadZone"
+    kind: Literal["Radial", "Axial"]
+    lower_threshold: float
+    upper_threshold: float
+
+    def to_brp(self) -> object:
+        return {
+            "kind": self.kind,
+            "lower_threshold": self.lower_threshold,
+            "upper_threshold": self.upper_threshold,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DeadZone":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            kind=data["kind"],
+            lower_threshold=data["lower_threshold"],
+            upper_threshold=data["upper_threshold"],
+        )
+
+@dataclass
+class DeltaScale(BevyComponent):
+    """`bevy_enhanced_input::modifier::delta_scale::DeltaScale`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::delta_scale::DeltaScale"
+    time_kind: Literal["Real", "Auto", "Virtual"]
+
+    def to_brp(self) -> object:
+        return {
+            "time_kind": self.time_kind,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DeltaScale":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            time_kind=data["time_kind"],
+        )
+
+@dataclass
+class ExponentialCurve(BevyComponent):
+    """`bevy_enhanced_input::modifier::exponential_curve::ExponentialCurve`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::exponential_curve::ExponentialCurve"
+    exp: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return {
+            "exp": list(self.exp),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ExponentialCurve":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            exp=list(data["exp"]),
+        )
+
+@dataclass
+class LinearStep(BevyComponent):
+    """`bevy_enhanced_input::modifier::linear_step::LinearStep`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::linear_step::LinearStep"
+    accel_step_rate: float
+    decel_step_rate: float
+    current_value: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return {
+            "accel_step_rate": self.accel_step_rate,
+            "decel_step_rate": self.decel_step_rate,
+            "current_value": list(self.current_value),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "LinearStep":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            accel_step_rate=data["accel_step_rate"],
+            decel_step_rate=data["decel_step_rate"],
+            current_value=list(data["current_value"]),
+        )
+
+@dataclass
+class Negate(BevyComponent):
+    """`bevy_enhanced_input::modifier::negate::Negate`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::negate::Negate"
+    x: bool
+    y: bool
+    z: bool
+
+    def to_brp(self) -> object:
+        return {
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Negate":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            x=data["x"],
+            y=data["y"],
+            z=data["z"],
+        )
+
+@dataclass
+class Scale(BevyComponent):
+    """`bevy_enhanced_input::modifier::scale::Scale`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::scale::Scale"
+    factor: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return {
+            "factor": list(self.factor),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Scale":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            factor=list(data["factor"]),
+        )
+
+@dataclass
+class SmoothNudge(BevyComponent):
+    """`bevy_enhanced_input::modifier::smooth_nudge::SmoothNudge`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::smooth_nudge::SmoothNudge"
+    decay_rate: float
+    time_kind: Literal["Real", "Auto", "Virtual"]
+    current_value: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return {
+            "decay_rate": self.decay_rate,
+            "time_kind": self.time_kind,
+            "current_value": list(self.current_value),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SmoothNudge":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            decay_rate=data["decay_rate"],
+            time_kind=data["time_kind"],
+            current_value=list(data["current_value"]),
+        )
+
+@dataclass
+class SwizzleAxis(BevyComponent):
+    """`bevy_enhanced_input::modifier::swizzle_axis::SwizzleAxis`"""
+    type_path: ClassVar[str] = "bevy_enhanced_input::modifier::swizzle_axis::SwizzleAxis"
+    value: Literal["YXZ", "ZYX", "XZY", "YZX", "ZXY", "XXY", "XXZ", "YYX", "YYZ", "ZZX", "ZZY", "XXX", "YYY", "ZZZ"]
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SwizzleAxis":
+        return cls(value=value)
 
 @dataclass
 class ShowAabbGizmo(BevyComponent):
@@ -3580,10 +5107,26 @@ class ShowAabbGizmo(BevyComponent):
         )
 
 @dataclass
-class ShowLightGizmo(BevyComponent):
-    """`bevy_gizmos::light::ShowLightGizmo`"""
-    type_path: ClassVar[str] = "bevy_gizmos::light::ShowLightGizmo"
-    color: Any | None  # unresolved: bevy_gizmos::light::LightGizmoColor
+class GizmoConfigStore(BevyComponent):
+    """`bevy_gizmos::config::GizmoConfigStore`"""
+    type_path: ClassVar[str] = "bevy_gizmos::config::GizmoConfigStore"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GizmoConfigStore":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class ShowFrustumGizmo(BevyComponent):
+    """`bevy_gizmos::frustum::ShowFrustumGizmo`"""
+    type_path: ClassVar[str] = "bevy_gizmos::frustum::ShowFrustumGizmo"
+    color: Any | None  # unresolved: bevy_color::color::Color
 
     def to_brp(self) -> object:
         return {
@@ -3591,7 +5134,7 @@ class ShowLightGizmo(BevyComponent):
         }
 
     @classmethod
-    def from_brp(cls, value: object) -> "ShowLightGizmo":
+    def from_brp(cls, value: object) -> "ShowFrustumGizmo":
         data = value
         assert isinstance(data, dict)
         return cls(
@@ -3621,6 +5164,165 @@ class Gizmo(BevyComponent):
             handle=data["handle"],
             line_config=GizmoLineConfig.from_brp(data["line_config"]),
             depth_bias=data["depth_bias"],
+        )
+
+@dataclass
+class ShowSkinnedMeshBoundsGizmo(BevyComponent):
+    """`bevy_gizmos::skinned_mesh_bounds::ShowSkinnedMeshBoundsGizmo`"""
+    type_path: ClassVar[str] = "bevy_gizmos::skinned_mesh_bounds::ShowSkinnedMeshBoundsGizmo"
+    color: Any | None  # unresolved: bevy_color::color::Color
+
+    def to_brp(self) -> object:
+        return {
+            "color": self.color,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ShowSkinnedMeshBoundsGizmo":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            color=data["color"],
+        )
+
+@dataclass
+class TransformGizmoCamera(BevyComponent):
+    """`bevy_gizmos::transform_gizmo::TransformGizmoCamera`"""
+    type_path: ClassVar[str] = "bevy_gizmos::transform_gizmo::TransformGizmoCamera"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TransformGizmoCamera":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class TransformGizmoFocus(BevyComponent):
+    """`bevy_gizmos::transform_gizmo::TransformGizmoFocus`"""
+    type_path: ClassVar[str] = "bevy_gizmos::transform_gizmo::TransformGizmoFocus"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TransformGizmoFocus":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class TransformGizmoSettings(BevyComponent):
+    """`bevy_gizmos::transform_gizmo::TransformGizmoSettings`"""
+    type_path: ClassVar[str] = "bevy_gizmos::transform_gizmo::TransformGizmoSettings"
+    mode: Literal["Translate", "Rotate", "Scale"]
+    space: Literal["World", "Local"]
+    axis_length: float
+    rotate_ring_radius: float
+    axis_hit_distance: float
+    snap_translate: float | None
+    snap_rotate: float | None
+    snap_scale: float | None
+    confine_cursor: bool
+    screen_scale_factor: float
+
+    def to_brp(self) -> object:
+        return {
+            "mode": self.mode,
+            "space": self.space,
+            "axis_length": self.axis_length,
+            "rotate_ring_radius": self.rotate_ring_radius,
+            "axis_hit_distance": self.axis_hit_distance,
+            "snap_translate": self.snap_translate,
+            "snap_rotate": self.snap_rotate,
+            "snap_scale": self.snap_scale,
+            "confine_cursor": self.confine_cursor,
+            "screen_scale_factor": self.screen_scale_factor,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TransformGizmoSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            mode=data["mode"],
+            space=data["space"],
+            axis_length=data["axis_length"],
+            rotate_ring_radius=data["rotate_ring_radius"],
+            axis_hit_distance=data["axis_hit_distance"],
+            snap_translate=data["snap_translate"],
+            snap_rotate=data["snap_rotate"],
+            snap_scale=data["snap_scale"],
+            confine_cursor=data["confine_cursor"],
+            screen_scale_factor=data["screen_scale_factor"],
+        )
+
+@dataclass
+class TransformGizmoState(BevyComponent):
+    """`bevy_gizmos::transform_gizmo::TransformGizmoState`"""
+    type_path: ClassVar[str] = "bevy_gizmos::transform_gizmo::TransformGizmoState"
+    hovered_axis: Literal["X", "Y", "Z", "View"] | None
+    active: bool
+    axis: Literal["X", "Y", "Z", "View"] | None
+    start_transform: Transform
+    entity: int | None
+    drag_start_world: list[float]  # len 3
+    gizmo_origin: list[float]  # len 3
+
+    def to_brp(self) -> object:
+        return {
+            "hovered_axis": self.hovered_axis,
+            "active": self.active,
+            "axis": self.axis,
+            "start_transform": self.start_transform.to_brp(),
+            "entity": self.entity,
+            "drag_start_world": list(self.drag_start_world),
+            "gizmo_origin": list(self.gizmo_origin),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TransformGizmoState":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            hovered_axis=data["hovered_axis"],
+            active=data["active"],
+            axis=data["axis"],
+            start_transform=Transform.from_brp(data["start_transform"]),
+            entity=data["entity"],
+            drag_start_world=list(data["drag_start_world"]),
+            gizmo_origin=list(data["gizmo_origin"]),
+        )
+
+@dataclass
+class LineGizmoEntities(BevyComponent):
+    """`bevy_gizmos_render::LineGizmoEntities`"""
+    type_path: ClassVar[str] = "bevy_gizmos_render::LineGizmoEntities"
+    line_gizmo_renderer: int
+    line_strip_gizmo_renderer: int
+    line_joint_gizmo_renderer: int
+
+    def to_brp(self) -> object:
+        return {
+            "line_gizmo_renderer": self.line_gizmo_renderer,
+            "line_strip_gizmo_renderer": self.line_strip_gizmo_renderer,
+            "line_joint_gizmo_renderer": self.line_joint_gizmo_renderer,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "LineGizmoEntities":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            line_gizmo_renderer=data["line_gizmo_renderer"],
+            line_strip_gizmo_renderer=data["line_strip_gizmo_renderer"],
+            line_joint_gizmo_renderer=data["line_joint_gizmo_renderer"],
         )
 
 @dataclass
@@ -3726,6 +5428,44 @@ class GltfSceneExtras(BevyComponent):
         )
 
 @dataclass
+class GltfSceneName(BevyComponent):
+    """`bevy_gltf::assets::GltfSceneName`"""
+    type_path: ClassVar[str] = "bevy_gltf::assets::GltfSceneName"
+    value: str
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GltfSceneName":
+        return cls(value=value)
+
+@dataclass
+class ButtonInputGamepadButton(BevyComponent):
+    """`bevy_input::button_input::ButtonInput<bevy_input::gamepad::GamepadButton>`"""
+    type_path: ClassVar[str] = "bevy_input::button_input::ButtonInput<bevy_input::gamepad::GamepadButton>"
+    pressed: Any  # unresolved: bevy_platform::collections::HashSet<bevy_input::gamepad::GamepadButton, bevy_platform::hash::FixedHasher>
+    just_pressed: Any  # unresolved: bevy_platform::collections::HashSet<bevy_input::gamepad::GamepadButton, bevy_platform::hash::FixedHasher>
+    just_released: Any  # unresolved: bevy_platform::collections::HashSet<bevy_input::gamepad::GamepadButton, bevy_platform::hash::FixedHasher>
+
+    def to_brp(self) -> object:
+        return {
+            "pressed": self.pressed,
+            "just_pressed": self.just_pressed,
+            "just_released": self.just_released,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ButtonInputGamepadButton":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            pressed=data["pressed"],
+            just_pressed=data["just_pressed"],
+            just_released=data["just_released"],
+        )
+
+@dataclass
 class Gamepad(BevyComponent):
     """`bevy_input::gamepad::Gamepad`"""
     type_path: ClassVar[str] = "bevy_input::gamepad::Gamepad"
@@ -3788,6 +5528,85 @@ class GamepadSettings(BevyComponent):
         )
 
 @dataclass
+class AccumulatedMouseMotion(BevyComponent):
+    """`bevy_input::mouse::AccumulatedMouseMotion`"""
+    type_path: ClassVar[str] = "bevy_input::mouse::AccumulatedMouseMotion"
+    delta: list[float]  # len 2
+
+    def to_brp(self) -> object:
+        return {
+            "delta": list(self.delta),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AccumulatedMouseMotion":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            delta=list(data["delta"]),
+        )
+
+@dataclass
+class AccumulatedMouseScroll(BevyComponent):
+    """`bevy_input::mouse::AccumulatedMouseScroll`"""
+    type_path: ClassVar[str] = "bevy_input::mouse::AccumulatedMouseScroll"
+    unit: Literal["Line", "Pixel"]
+    delta: list[float]  # len 2
+
+    def to_brp(self) -> object:
+        return {
+            "unit": self.unit,
+            "delta": list(self.delta),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AccumulatedMouseScroll":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            unit=data["unit"],
+            delta=list(data["delta"]),
+        )
+
+@dataclass
+class InputFocus(BevyComponent):
+    """`bevy_input_focus::InputFocus`"""
+    type_path: ClassVar[str] = "bevy_input_focus::InputFocus"
+    current_focus: int | None
+    recorded_changes: list[Any | None]
+    original_focus: int | None
+
+    def to_brp(self) -> object:
+        return {
+            "current_focus": self.current_focus,
+            "recorded_changes": list(self.recorded_changes),
+            "original_focus": self.original_focus,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "InputFocus":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            current_focus=data["current_focus"],
+            recorded_changes=list(data["recorded_changes"]),
+            original_focus=data["original_focus"],
+        )
+
+@dataclass
+class InputFocusVisible(BevyComponent):
+    """`bevy_input_focus::InputFocusVisible`"""
+    type_path: ClassVar[str] = "bevy_input_focus::InputFocusVisible"
+    value: bool
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "InputFocusVisible":
+        return cls(value=value)
+
+@dataclass
 class AutoFocus(BevyComponent):
     """`bevy_input_focus::autofocus::AutoFocus`"""
     type_path: ClassVar[str] = "bevy_input_focus::autofocus::AutoFocus"
@@ -3801,6 +5620,50 @@ class AutoFocus(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
+        )
+
+@dataclass
+class AutoNavigationConfig(BevyComponent):
+    """`bevy_input_focus::directional_navigation::AutoNavigationConfig`"""
+    type_path: ClassVar[str] = "bevy_input_focus::directional_navigation::AutoNavigationConfig"
+    min_alignment_factor: float
+    max_search_distance: float | None
+    prefer_aligned: bool
+
+    def to_brp(self) -> object:
+        return {
+            "min_alignment_factor": self.min_alignment_factor,
+            "max_search_distance": self.max_search_distance,
+            "prefer_aligned": self.prefer_aligned,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AutoNavigationConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            min_alignment_factor=data["min_alignment_factor"],
+            max_search_distance=data["max_search_distance"],
+            prefer_aligned=data["prefer_aligned"],
+        )
+
+@dataclass
+class DirectionalNavigationMap(BevyComponent):
+    """`bevy_input_focus::directional_navigation::DirectionalNavigationMap`"""
+    type_path: ClassVar[str] = "bevy_input_focus::directional_navigation::DirectionalNavigationMap"
+    neighbors: Any  # unresolved: bevy_platform::collections::HashMap<bevy_ecs::entity::Entity, bevy_input_focus::directional_navigation::NavNeighbors, bevy_ecs::entity::hash::EntityHash>
+
+    def to_brp(self) -> object:
+        return {
+            "neighbors": self.neighbors,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DirectionalNavigationMap":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            neighbors=data["neighbors"],
         )
 
 @dataclass
@@ -3925,6 +5788,31 @@ class AmbientLight(BevyComponent):
         )
 
 @dataclass
+class GlobalAmbientLight(BevyComponent):
+    """`bevy_light::ambient_light::GlobalAmbientLight`"""
+    type_path: ClassVar[str] = "bevy_light::ambient_light::GlobalAmbientLight"
+    color: Any  # unresolved: bevy_color::color::Color
+    brightness: float
+    affects_lightmapped_meshes: bool
+
+    def to_brp(self) -> object:
+        return {
+            "color": self.color,
+            "brightness": self.brightness,
+            "affects_lightmapped_meshes": self.affects_lightmapped_meshes,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GlobalAmbientLight":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            color=data["color"],
+            brightness=data["brightness"],
+            affects_lightmapped_meshes=data["affects_lightmapped_meshes"],
+        )
+
+@dataclass
 class CascadeShadowConfig(BevyComponent):
     """`bevy_light::cascade::CascadeShadowConfig`"""
     type_path: ClassVar[str] = "bevy_light::cascade::CascadeShadowConfig"
@@ -4018,7 +5906,8 @@ class DirectionalLight(BevyComponent):
     type_path: ClassVar[str] = "bevy_light::directional_light::DirectionalLight"
     color: Any  # unresolved: bevy_color::color::Color
     illuminance: float
-    shadows_enabled: bool
+    shadow_maps_enabled: bool
+    contact_shadows_enabled: bool
     affects_lightmapped_mesh_diffuse: bool
     shadow_depth_bias: float
     shadow_normal_bias: float
@@ -4027,7 +5916,8 @@ class DirectionalLight(BevyComponent):
         return {
             "color": self.color,
             "illuminance": self.illuminance,
-            "shadows_enabled": self.shadows_enabled,
+            "shadow_maps_enabled": self.shadow_maps_enabled,
+            "contact_shadows_enabled": self.contact_shadows_enabled,
             "affects_lightmapped_mesh_diffuse": self.affects_lightmapped_mesh_diffuse,
             "shadow_depth_bias": self.shadow_depth_bias,
             "shadow_normal_bias": self.shadow_normal_bias,
@@ -4040,10 +5930,30 @@ class DirectionalLight(BevyComponent):
         return cls(
             color=data["color"],
             illuminance=data["illuminance"],
-            shadows_enabled=data["shadows_enabled"],
+            shadow_maps_enabled=data["shadow_maps_enabled"],
+            contact_shadows_enabled=data["contact_shadows_enabled"],
             affects_lightmapped_mesh_diffuse=data["affects_lightmapped_mesh_diffuse"],
             shadow_depth_bias=data["shadow_depth_bias"],
             shadow_normal_bias=data["shadow_normal_bias"],
+        )
+
+@dataclass
+class DirectionalLightShadowMap(BevyComponent):
+    """`bevy_light::directional_light::DirectionalLightShadowMap`"""
+    type_path: ClassVar[str] = "bevy_light::directional_light::DirectionalLightShadowMap"
+    size: int
+
+    def to_brp(self) -> object:
+        return {
+            "size": self.size,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DirectionalLightShadowMap":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            size=data["size"],
         )
 
 @dataclass
@@ -4069,6 +5979,25 @@ class DirectionalLightTexture(BevyComponent):
         )
 
 @dataclass
+class ShowLightGizmo(BevyComponent):
+    """`bevy_light::gizmos::ShowLightGizmo`"""
+    type_path: ClassVar[str] = "bevy_light::gizmos::ShowLightGizmo"
+    color: Any | None  # unresolved: bevy_light::gizmos::LightGizmoColor
+
+    def to_brp(self) -> object:
+        return {
+            "color": self.color,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ShowLightGizmo":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            color=data["color"],
+        )
+
+@dataclass
 class PointLight(BevyComponent):
     """`bevy_light::point_light::PointLight`"""
     type_path: ClassVar[str] = "bevy_light::point_light::PointLight"
@@ -4076,7 +6005,8 @@ class PointLight(BevyComponent):
     intensity: float
     range: float
     radius: float
-    shadows_enabled: bool
+    shadow_maps_enabled: bool
+    contact_shadows_enabled: bool
     affects_lightmapped_mesh_diffuse: bool
     shadow_depth_bias: float
     shadow_normal_bias: float
@@ -4088,7 +6018,8 @@ class PointLight(BevyComponent):
             "intensity": self.intensity,
             "range": self.range,
             "radius": self.radius,
-            "shadows_enabled": self.shadows_enabled,
+            "shadow_maps_enabled": self.shadow_maps_enabled,
+            "contact_shadows_enabled": self.contact_shadows_enabled,
             "affects_lightmapped_mesh_diffuse": self.affects_lightmapped_mesh_diffuse,
             "shadow_depth_bias": self.shadow_depth_bias,
             "shadow_normal_bias": self.shadow_normal_bias,
@@ -4104,11 +6035,31 @@ class PointLight(BevyComponent):
             intensity=data["intensity"],
             range=data["range"],
             radius=data["radius"],
-            shadows_enabled=data["shadows_enabled"],
+            shadow_maps_enabled=data["shadow_maps_enabled"],
+            contact_shadows_enabled=data["contact_shadows_enabled"],
             affects_lightmapped_mesh_diffuse=data["affects_lightmapped_mesh_diffuse"],
             shadow_depth_bias=data["shadow_depth_bias"],
             shadow_normal_bias=data["shadow_normal_bias"],
             shadow_map_near_z=data["shadow_map_near_z"],
+        )
+
+@dataclass
+class PointLightShadowMap(BevyComponent):
+    """`bevy_light::point_light::PointLightShadowMap`"""
+    type_path: ClassVar[str] = "bevy_light::point_light::PointLightShadowMap"
+    size: int
+
+    def to_brp(self) -> object:
+        return {
+            "size": self.size,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PointLightShadowMap":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            size=data["size"],
         )
 
 @dataclass
@@ -4221,9 +6172,11 @@ class IrradianceVolume(BevyComponent):
 class LightProbe(BevyComponent):
     """`bevy_light::probe::LightProbe`"""
     type_path: ClassVar[str] = "bevy_light::probe::LightProbe"
+    falloff: list[float]  # len 3
 
     def to_brp(self) -> object:
         return {
+            "falloff": list(self.falloff),
         }
 
     @classmethod
@@ -4231,6 +6184,76 @@ class LightProbe(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
+            falloff=list(data["falloff"]),
+        )
+
+@dataclass
+class ParallaxCorrection(BevyComponent):
+    """`bevy_light::probe::ParallaxCorrection`"""
+    type_path: ClassVar[str] = "bevy_light::probe::ParallaxCorrection"
+    value: Any  # unresolved: bevy_light::probe::ParallaxCorrection
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ParallaxCorrection":
+        return cls(value=value)
+
+@dataclass
+class Skybox(BevyComponent):
+    """`bevy_light::probe::Skybox`"""
+    type_path: ClassVar[str] = "bevy_light::probe::Skybox"
+    image: Any | None  # unresolved: bevy_asset::handle::Handle<bevy_image::image::Image>
+    brightness: float
+    rotation: list[float]  # len 4
+
+    def to_brp(self) -> object:
+        return {
+            "image": self.image,
+            "brightness": self.brightness,
+            "rotation": list(self.rotation),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Skybox":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            image=data["image"],
+            brightness=data["brightness"],
+            rotation=list(data["rotation"]),
+        )
+
+@dataclass
+class RectLight(BevyComponent):
+    """`bevy_light::rect_light::RectLight`"""
+    type_path: ClassVar[str] = "bevy_light::rect_light::RectLight"
+    color: Any  # unresolved: bevy_color::color::Color
+    intensity: float
+    range: float
+    width: float
+    height: float
+
+    def to_brp(self) -> object:
+        return {
+            "color": self.color,
+            "intensity": self.intensity,
+            "range": self.range,
+            "width": self.width,
+            "height": self.height,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RectLight":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            color=data["color"],
+            intensity=data["intensity"],
+            range=data["range"],
+            width=data["width"],
+            height=data["height"],
         )
 
 @dataclass
@@ -4241,7 +6264,8 @@ class SpotLight(BevyComponent):
     intensity: float
     range: float
     radius: float
-    shadows_enabled: bool
+    shadow_maps_enabled: bool
+    contact_shadows_enabled: bool
     affects_lightmapped_mesh_diffuse: bool
     shadow_depth_bias: float
     shadow_normal_bias: float
@@ -4255,7 +6279,8 @@ class SpotLight(BevyComponent):
             "intensity": self.intensity,
             "range": self.range,
             "radius": self.radius,
-            "shadows_enabled": self.shadows_enabled,
+            "shadow_maps_enabled": self.shadow_maps_enabled,
+            "contact_shadows_enabled": self.contact_shadows_enabled,
             "affects_lightmapped_mesh_diffuse": self.affects_lightmapped_mesh_diffuse,
             "shadow_depth_bias": self.shadow_depth_bias,
             "shadow_normal_bias": self.shadow_normal_bias,
@@ -4273,7 +6298,8 @@ class SpotLight(BevyComponent):
             intensity=data["intensity"],
             range=data["range"],
             radius=data["radius"],
-            shadows_enabled=data["shadows_enabled"],
+            shadow_maps_enabled=data["shadow_maps_enabled"],
+            contact_shadows_enabled=data["contact_shadows_enabled"],
             affects_lightmapped_mesh_diffuse=data["affects_lightmapped_mesh_diffuse"],
             shadow_depth_bias=data["shadow_depth_bias"],
             shadow_normal_bias=data["shadow_normal_bias"],
@@ -4431,20 +6457,14 @@ class MeshTag(BevyComponent):
 class MeshMorphWeights(BevyComponent):
     """`bevy_mesh::morph::MeshMorphWeights`"""
     type_path: ClassVar[str] = "bevy_mesh::morph::MeshMorphWeights"
-    weights: list[float]
+    value: Any  # unresolved: bevy_mesh::morph::MeshMorphWeights
 
     def to_brp(self) -> object:
-        return {
-            "weights": list(self.weights),
-        }
+        return self.value
 
     @classmethod
     def from_brp(cls, value: object) -> "MeshMorphWeights":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            weights=list(data["weights"]),
-        )
+        return cls(value=value)
 
 @dataclass
 class MorphWeights(BevyComponent):
@@ -4491,51 +6511,28 @@ class SkinnedMesh(BevyComponent):
         )
 
 @dataclass
-class RenderCascadesVisibleEntities(BevyComponent):
-    """`bevy_pbr::components::RenderCascadesVisibleEntities`"""
-    type_path: ClassVar[str] = "bevy_pbr::components::RenderCascadesVisibleEntities"
+class ContactShadows(BevyComponent):
+    """`bevy_pbr::contact_shadows::ContactShadows`"""
+    type_path: ClassVar[str] = "bevy_pbr::contact_shadows::ContactShadows"
+    linear_steps: int
+    thickness: float
+    length: float
 
     def to_brp(self) -> object:
         return {
+            "linear_steps": self.linear_steps,
+            "thickness": self.thickness,
+            "length": self.length,
         }
 
     @classmethod
-    def from_brp(cls, value: object) -> "RenderCascadesVisibleEntities":
+    def from_brp(cls, value: object) -> "ContactShadows":
         data = value
         assert isinstance(data, dict)
         return cls(
-        )
-
-@dataclass
-class RenderCubemapVisibleEntities(BevyComponent):
-    """`bevy_pbr::components::RenderCubemapVisibleEntities`"""
-    type_path: ClassVar[str] = "bevy_pbr::components::RenderCubemapVisibleEntities"
-
-    def to_brp(self) -> object:
-        return {
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "RenderCubemapVisibleEntities":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-        )
-
-@dataclass
-class RenderVisibleMeshEntities(BevyComponent):
-    """`bevy_pbr::components::RenderVisibleMeshEntities`"""
-    type_path: ClassVar[str] = "bevy_pbr::components::RenderVisibleMeshEntities"
-
-    def to_brp(self) -> object:
-        return {
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "RenderVisibleMeshEntities":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
+            linear_steps=data["linear_steps"],
+            thickness=data["thickness"],
+            length=data["length"],
         )
 
 @dataclass
@@ -4592,6 +6589,19 @@ class Lightmap(BevyComponent):
         )
 
 @dataclass
+class DefaultOpaqueRendererMethod(BevyComponent):
+    """`bevy_pbr::material::DefaultOpaqueRendererMethod`"""
+    type_path: ClassVar[str] = "bevy_pbr::material::DefaultOpaqueRendererMethod"
+    value: Literal["Forward", "Deferred", "Auto"]
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DefaultOpaqueRendererMethod":
+        return cls(value=value)
+
+@dataclass
 class ScreenSpaceAmbientOcclusion(BevyComponent):
     """`bevy_pbr::ssao::ScreenSpaceAmbientOcclusion`"""
     type_path: ClassVar[str] = "bevy_pbr::ssao::ScreenSpaceAmbientOcclusion"
@@ -4617,19 +6627,23 @@ class ScreenSpaceAmbientOcclusion(BevyComponent):
 class ScreenSpaceReflections(BevyComponent):
     """`bevy_pbr::ssr::ScreenSpaceReflections`"""
     type_path: ClassVar[str] = "bevy_pbr::ssr::ScreenSpaceReflections"
-    perceptual_roughness_threshold: float
+    min_perceptual_roughness: Any  # unresolved: core::ops::Range<f32>
+    max_perceptual_roughness: Any  # unresolved: core::ops::Range<f32>
     thickness: float
     linear_steps: int
     linear_march_exponent: float
+    edge_fadeout: Any  # unresolved: core::ops::Range<f32>
     bisection_steps: int
     use_secant: bool
 
     def to_brp(self) -> object:
         return {
-            "perceptual_roughness_threshold": self.perceptual_roughness_threshold,
+            "min_perceptual_roughness": self.min_perceptual_roughness,
+            "max_perceptual_roughness": self.max_perceptual_roughness,
             "thickness": self.thickness,
             "linear_steps": self.linear_steps,
             "linear_march_exponent": self.linear_march_exponent,
+            "edge_fadeout": self.edge_fadeout,
             "bisection_steps": self.bisection_steps,
             "use_secant": self.use_secant,
         }
@@ -4639,12 +6653,36 @@ class ScreenSpaceReflections(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
-            perceptual_roughness_threshold=data["perceptual_roughness_threshold"],
+            min_perceptual_roughness=data["min_perceptual_roughness"],
+            max_perceptual_roughness=data["max_perceptual_roughness"],
             thickness=data["thickness"],
             linear_steps=data["linear_steps"],
             linear_march_exponent=data["linear_march_exponent"],
+            edge_fadeout=data["edge_fadeout"],
             bisection_steps=data["bisection_steps"],
             use_secant=data["use_secant"],
+        )
+
+@dataclass
+class ScreenSpaceTransmission(BevyComponent):
+    """`bevy_pbr::transmission::ScreenSpaceTransmission`"""
+    type_path: ClassVar[str] = "bevy_pbr::transmission::ScreenSpaceTransmission"
+    steps: int
+    quality: Literal["Low", "Medium", "High", "Ultra"]
+
+    def to_brp(self) -> object:
+        return {
+            "steps": self.steps,
+            "quality": self.quality,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ScreenSpaceTransmission":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            steps=data["steps"],
+            quality=data["quality"],
         )
 
 @dataclass
@@ -4712,6 +6750,66 @@ class WireframeColor(BevyComponent):
         )
 
 @dataclass
+class WireframeConfig(BevyComponent):
+    """`bevy_pbr::wireframe::WireframeConfig`"""
+    type_path: ClassVar[str] = "bevy_pbr::wireframe::WireframeConfig"
+    global_: bool
+    default_color: Any  # unresolved: bevy_color::color::Color
+    default_line_width: float
+    default_topology: Literal["Triangles", "Quads"]
+
+    def to_brp(self) -> object:
+        return {
+            "global": self.global_,
+            "default_color": self.default_color,
+            "default_line_width": self.default_line_width,
+            "default_topology": self.default_topology,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "WireframeConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            global_=data["global"],
+            default_color=data["default_color"],
+            default_line_width=data["default_line_width"],
+            default_topology=data["default_topology"],
+        )
+
+@dataclass
+class WireframeLineWidth(BevyComponent):
+    """`bevy_pbr::wireframe::WireframeLineWidth`"""
+    type_path: ClassVar[str] = "bevy_pbr::wireframe::WireframeLineWidth"
+    width: float
+
+    def to_brp(self) -> object:
+        return {
+            "width": self.width,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "WireframeLineWidth":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            width=data["width"],
+        )
+
+@dataclass
+class WireframeTopology(BevyComponent):
+    """`bevy_pbr::wireframe::WireframeTopology`"""
+    type_path: ClassVar[str] = "bevy_pbr::wireframe::WireframeTopology"
+    value: Literal["Triangles", "Quads"]
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "WireframeTopology":
+        return cls(value=value)
+
+@dataclass
 class Pickable(BevyComponent):
     """`bevy_picking::Pickable`"""
     type_path: ClassVar[str] = "bevy_picking::Pickable"
@@ -4731,6 +6829,37 @@ class Pickable(BevyComponent):
         return cls(
             should_block_lower=data["should_block_lower"],
             is_hoverable=data["is_hoverable"],
+        )
+
+@dataclass
+class PickingSettings(BevyComponent):
+    """`bevy_picking::PickingSettings`"""
+    type_path: ClassVar[str] = "bevy_picking::PickingSettings"
+    is_enabled: bool
+    is_input_enabled: bool
+    is_hover_enabled: bool
+    is_window_picking_enabled: bool
+    multi_click_interval: Any  # unresolved: core::time::Duration
+
+    def to_brp(self) -> object:
+        return {
+            "is_enabled": self.is_enabled,
+            "is_input_enabled": self.is_input_enabled,
+            "is_hover_enabled": self.is_hover_enabled,
+            "is_window_picking_enabled": self.is_window_picking_enabled,
+            "multi_click_interval": self.multi_click_interval,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PickingSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            is_enabled=data["is_enabled"],
+            is_input_enabled=data["is_input_enabled"],
+            is_hover_enabled=data["is_hover_enabled"],
+            is_window_picking_enabled=data["is_window_picking_enabled"],
+            multi_click_interval=data["multi_click_interval"],
         )
 
 @dataclass
@@ -4773,6 +6902,28 @@ class PickingInteraction(BevyComponent):
         return cls(value=value)
 
 @dataclass
+class PointerInputSettings(BevyComponent):
+    """`bevy_picking::input::PointerInputSettings`"""
+    type_path: ClassVar[str] = "bevy_picking::input::PointerInputSettings"
+    is_touch_enabled: bool
+    is_mouse_enabled: bool
+
+    def to_brp(self) -> object:
+        return {
+            "is_touch_enabled": self.is_touch_enabled,
+            "is_mouse_enabled": self.is_mouse_enabled,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PointerInputSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            is_touch_enabled=data["is_touch_enabled"],
+            is_mouse_enabled=data["is_mouse_enabled"],
+        )
+
+@dataclass
 class MeshPickingCamera(BevyComponent):
     """`bevy_picking::mesh_picking::MeshPickingCamera`"""
     type_path: ClassVar[str] = "bevy_picking::mesh_picking::MeshPickingCamera"
@@ -4786,6 +6937,28 @@ class MeshPickingCamera(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
+        )
+
+@dataclass
+class MeshPickingSettings(BevyComponent):
+    """`bevy_picking::mesh_picking::MeshPickingSettings`"""
+    type_path: ClassVar[str] = "bevy_picking::mesh_picking::MeshPickingSettings"
+    require_markers: bool
+    ray_cast_visibility: Literal["Any", "Visible", "VisibleInView"]
+
+    def to_brp(self) -> object:
+        return {
+            "require_markers": self.require_markers,
+            "ray_cast_visibility": self.ray_cast_visibility,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "MeshPickingSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            require_markers=data["require_markers"],
+            ray_cast_visibility=data["ray_cast_visibility"],
         )
 
 @dataclass
@@ -5003,8 +7176,8 @@ class DepthOfField(BevyComponent):
 
 @dataclass
 class ChromaticAberration(BevyComponent):
-    """`bevy_post_process::effect_stack::ChromaticAberration`"""
-    type_path: ClassVar[str] = "bevy_post_process::effect_stack::ChromaticAberration"
+    """`bevy_post_process::effect_stack::chromatic_aberration::ChromaticAberration`"""
+    type_path: ClassVar[str] = "bevy_post_process::effect_stack::chromatic_aberration::ChromaticAberration"
     color_lut: Any | None  # unresolved: bevy_asset::handle::Handle<bevy_image::image::Image>
     intensity: float
     max_samples: int
@@ -5027,6 +7200,43 @@ class ChromaticAberration(BevyComponent):
         )
 
 @dataclass
+class Vignette(BevyComponent):
+    """`bevy_post_process::effect_stack::vignette::Vignette`"""
+    type_path: ClassVar[str] = "bevy_post_process::effect_stack::vignette::Vignette"
+    intensity: float
+    radius: float
+    smoothness: float
+    roundness: float
+    center: list[float]  # len 2
+    edge_compensation: float
+    color: Any  # unresolved: bevy_color::color::Color
+
+    def to_brp(self) -> object:
+        return {
+            "intensity": self.intensity,
+            "radius": self.radius,
+            "smoothness": self.smoothness,
+            "roundness": self.roundness,
+            "center": list(self.center),
+            "edge_compensation": self.edge_compensation,
+            "color": self.color,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Vignette":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            intensity=data["intensity"],
+            radius=data["radius"],
+            smoothness=data["smoothness"],
+            roundness=data["roundness"],
+            center=list(data["center"]),
+            edge_compensation=data["edge_compensation"],
+            color=data["color"],
+        )
+
+@dataclass
 class MotionBlur(BevyComponent):
     """`bevy_post_process::motion_blur::MotionBlur`"""
     type_path: ClassVar[str] = "bevy_post_process::motion_blur::MotionBlur"
@@ -5046,6 +7256,25 @@ class MotionBlur(BevyComponent):
         return cls(
             shutter_angle=data["shutter_angle"],
             samples=data["samples"],
+        )
+
+@dataclass
+class SchemaTypesMetadata(BevyComponent):
+    """`bevy_remote::schemas::SchemaTypesMetadata`"""
+    type_path: ClassVar[str] = "bevy_remote::schemas::SchemaTypesMetadata"
+    type_data_map: Any  # unresolved: bevy_platform::collections::HashMap<core::any::TypeId, alloc::string::String, bevy_platform::hash::FixedHasher>
+
+    def to_brp(self) -> object:
+        return {
+            "type_data_map": self.type_data_map,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SchemaTypesMetadata":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            type_data_map=data["type_data_map"],
         )
 
 @dataclass
@@ -5094,9 +7323,34 @@ class TemporalJitter(BevyComponent):
         )
 
 @dataclass
+class GlobalsUniform(BevyComponent):
+    """`bevy_render::globals::GlobalsUniform`"""
+    type_path: ClassVar[str] = "bevy_render::globals::GlobalsUniform"
+    time: float
+    delta_time: float
+    frame_count: int
+
+    def to_brp(self) -> object:
+        return {
+            "time": self.time,
+            "delta_time": self.delta_time,
+            "frame_count": self.frame_count,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GlobalsUniform":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            time=data["time"],
+            delta_time=data["delta_time"],
+            frame_count=data["frame_count"],
+        )
+
+@dataclass
 class OcclusionCulling(BevyComponent):
-    """`bevy_render::experimental::occlusion_culling::OcclusionCulling`"""
-    type_path: ClassVar[str] = "bevy_render::experimental::occlusion_culling::OcclusionCulling"
+    """`bevy_render::occlusion_culling::OcclusionCulling`"""
+    type_path: ClassVar[str] = "bevy_render::occlusion_culling::OcclusionCulling"
 
     def to_brp(self) -> object:
         return {
@@ -5196,22 +7450,6 @@ class ColorGrading(BevyComponent):
         )
 
 @dataclass
-class Hdr(BevyComponent):
-    """`bevy_render::view::Hdr`"""
-    type_path: ClassVar[str] = "bevy_render::view::Hdr"
-
-    def to_brp(self) -> object:
-        return {
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "Hdr":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-        )
-
-@dataclass
 class Msaa(BevyComponent):
     """`bevy_render::view::Msaa`"""
     type_path: ClassVar[str] = "bevy_render::view::Msaa"
@@ -5225,16 +7463,16 @@ class Msaa(BevyComponent):
         return cls(value=value)
 
 @dataclass
-class RenderVisibleEntities(BevyComponent):
-    """`bevy_render::view::visibility::RenderVisibleEntities`"""
-    type_path: ClassVar[str] = "bevy_render::view::visibility::RenderVisibleEntities"
+class RenderShadowMapVisibleEntities(BevyComponent):
+    """`bevy_render::view::visibility::RenderShadowMapVisibleEntities`"""
+    type_path: ClassVar[str] = "bevy_render::view::visibility::RenderShadowMapVisibleEntities"
 
     def to_brp(self) -> object:
         return {
         }
 
     @classmethod
-    def from_brp(cls, value: object) -> "RenderVisibleEntities":
+    def from_brp(cls, value: object) -> "RenderShadowMapVisibleEntities":
         data = value
         assert isinstance(data, dict)
         return cls(
@@ -5286,30 +7524,26 @@ class Replicated(BevyComponent):
         )
 
 @dataclass
-class DynamicSceneRoot(BevyComponent):
-    """`bevy_scene::components::DynamicSceneRoot`"""
-    type_path: ClassVar[str] = "bevy_scene::components::DynamicSceneRoot"
-    value: Any  # unresolved: bevy_asset::handle::Handle<bevy_scene::dynamic_scene::DynamicScene>
+class SceneComponentInfo(BevyComponent):
+    """`bevy_scene::scene_component::SceneComponentInfo`"""
+    type_path: ClassVar[str] = "bevy_scene::scene_component::SceneComponentInfo"
+    spawned_from_scene: bool
+    component_name: Any  # unresolved: &str
 
     def to_brp(self) -> object:
-        return self.value
+        return {
+            "spawned_from_scene": self.spawned_from_scene,
+            "component_name": self.component_name,
+        }
 
     @classmethod
-    def from_brp(cls, value: object) -> "DynamicSceneRoot":
-        return cls(value=value)
-
-@dataclass
-class SceneRoot(BevyComponent):
-    """`bevy_scene::components::SceneRoot`"""
-    type_path: ClassVar[str] = "bevy_scene::components::SceneRoot"
-    value: Any  # unresolved: bevy_asset::handle::Handle<bevy_scene::scene::Scene>
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SceneRoot":
-        return cls(value=value)
+    def from_brp(cls, value: object) -> "SceneComponentInfo":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            spawned_from_scene=data["spawned_from_scene"],
+            component_name=data["component_name"],
+        )
 
 @dataclass
 class SpritePickingCamera(BevyComponent):
@@ -5325,6 +7559,28 @@ class SpritePickingCamera(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
+        )
+
+@dataclass
+class SpritePickingSettings(BevyComponent):
+    """`bevy_sprite::picking_backend::SpritePickingSettings`"""
+    type_path: ClassVar[str] = "bevy_sprite::picking_backend::SpritePickingSettings"
+    require_markers: bool
+    picking_mode: Any  # unresolved: bevy_sprite::picking_backend::SpritePickingMode
+
+    def to_brp(self) -> object:
+        return {
+            "require_markers": self.require_markers,
+            "picking_mode": self.picking_mode,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SpritePickingSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            require_markers=data["require_markers"],
+            picking_mode=data["picking_mode"],
         )
 
 @dataclass
@@ -5378,6 +7634,49 @@ class Sprite(BevyComponent):
             custom_size=((list(v0)) if (v0 := data["custom_size"]) is not None else None),
             rect=((Rect.from_brp(v0)) if (v0 := data["rect"]) is not None else None),
             image_mode=data["image_mode"],
+        )
+
+@dataclass
+class SpriteMesh(BevyComponent):
+    """`bevy_sprite::sprite_mesh::SpriteMesh`"""
+    type_path: ClassVar[str] = "bevy_sprite::sprite_mesh::SpriteMesh"
+    image: Any  # unresolved: bevy_asset::handle::Handle<bevy_image::image::Image>
+    texture_atlas: TextureAtlas | None
+    color: Any  # unresolved: bevy_color::color::Color
+    flip_x: bool
+    flip_y: bool
+    custom_size: list[float] | None  # len 2
+    rect: Rect | None
+    image_mode: Any  # unresolved: bevy_sprite::sprite::SpriteImageMode
+    alpha_mode: Any  # unresolved: bevy_sprite::sprite_mesh::SpriteAlphaMode
+
+    def to_brp(self) -> object:
+        return {
+            "image": self.image,
+            "texture_atlas": ((v0.to_brp()) if (v0 := self.texture_atlas) is not None else None),
+            "color": self.color,
+            "flip_x": self.flip_x,
+            "flip_y": self.flip_y,
+            "custom_size": ((list(v0)) if (v0 := self.custom_size) is not None else None),
+            "rect": ((v0.to_brp()) if (v0 := self.rect) is not None else None),
+            "image_mode": self.image_mode,
+            "alpha_mode": self.alpha_mode,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SpriteMesh":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            image=data["image"],
+            texture_atlas=((TextureAtlas.from_brp(v0)) if (v0 := data["texture_atlas"]) is not None else None),
+            color=data["color"],
+            flip_x=data["flip_x"],
+            flip_y=data["flip_y"],
+            custom_size=((list(v0)) if (v0 := data["custom_size"]) is not None else None),
+            rect=((Rect.from_brp(v0)) if (v0 := data["rect"]) is not None else None),
+            image_mode=data["image_mode"],
+            alpha_mode=data["alpha_mode"],
         )
 
 @dataclass
@@ -5480,6 +7779,28 @@ class Wireframe2dColor(BevyComponent):
         )
 
 @dataclass
+class Wireframe2dConfig(BevyComponent):
+    """`bevy_sprite_render::mesh2d::wireframe2d::Wireframe2dConfig`"""
+    type_path: ClassVar[str] = "bevy_sprite_render::mesh2d::wireframe2d::Wireframe2dConfig"
+    global_: bool
+    default_color: Any  # unresolved: bevy_color::color::Color
+
+    def to_brp(self) -> object:
+        return {
+            "global": self.global_,
+            "default_color": self.default_color,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Wireframe2dConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            global_=data["global"],
+            default_color=data["default_color"],
+        )
+
+@dataclass
 class TilemapChunk(BevyComponent):
     """`bevy_sprite_render::tilemap_chunk::TilemapChunk`"""
     type_path: ClassVar[str] = "bevy_sprite_render::tilemap_chunk::TilemapChunk"
@@ -5506,6 +7827,19 @@ class TilemapChunk(BevyComponent):
             tileset=data["tileset"],
             alpha_mode=data["alpha_mode"],
         )
+
+@dataclass
+class TilemapChunkMeshCache(BevyComponent):
+    """`bevy_sprite_render::tilemap_chunk::TilemapChunkMeshCache`"""
+    type_path: ClassVar[str] = "bevy_sprite_render::tilemap_chunk::TilemapChunkMeshCache"
+    value: Any  # unresolved: bevy_platform::collections::HashMap<glam::UVec2, bevy_asset::handle::Handle<bevy_mesh::mesh::Mesh>, bevy_platform::hash::FixedHasher>
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TilemapChunkMeshCache":
+        return cls(value=value)
 
 @dataclass
 class TilemapChunkTileData(BevyComponent):
@@ -5550,6 +7884,9 @@ class TextLayoutInfo(BevyComponent):
     glyphs: list[PositionedGlyph]
     run_geometry: list[RunGeometry]
     size: list[float]  # len 2
+    cursor: Any | None  # unresolved: (bool, bevy_math::rects::rect::Rect)
+    selection_rects: list[Rect]
+    preedit_underline_rects: list[Rect]
 
     def to_brp(self) -> object:
         return {
@@ -5557,6 +7894,9 @@ class TextLayoutInfo(BevyComponent):
             "glyphs": [v0.to_brp() for v0 in self.glyphs],
             "run_geometry": [v0.to_brp() for v0 in self.run_geometry],
             "size": list(self.size),
+            "cursor": self.cursor,
+            "selection_rects": [v0.to_brp() for v0 in self.selection_rects],
+            "preedit_underline_rects": [v0.to_brp() for v0 in self.preedit_underline_rects],
         }
 
     @classmethod
@@ -5568,6 +7908,9 @@ class TextLayoutInfo(BevyComponent):
             glyphs=[PositionedGlyph.from_brp(v0) for v0 in data["glyphs"]],
             run_geometry=[RunGeometry.from_brp(v0) for v0 in data["run_geometry"]],
             size=list(data["size"]),
+            cursor=data["cursor"],
+            selection_rects=[Rect.from_brp(v0) for v0 in data["selection_rects"]],
+            preedit_underline_rects=[Rect.from_brp(v0) for v0 in data["preedit_underline_rects"]],
         )
 
 @dataclass
@@ -5576,11 +7919,15 @@ class ComputedTextBlock(BevyComponent):
     type_path: ClassVar[str] = "bevy_text::text::ComputedTextBlock"
     entities: list[TextEntity]
     needs_rerender: bool
+    uses_viewport_sizes: bool
+    uses_rem_sizes: bool
 
     def to_brp(self) -> object:
         return {
             "entities": [v0.to_brp() for v0 in self.entities],
             "needs_rerender": self.needs_rerender,
+            "uses_viewport_sizes": self.uses_viewport_sizes,
+            "uses_rem_sizes": self.uses_rem_sizes,
         }
 
     @classmethod
@@ -5590,6 +7937,8 @@ class ComputedTextBlock(BevyComponent):
         return cls(
             entities=[TextEntity.from_brp(v0) for v0 in data["entities"]],
             needs_rerender=data["needs_rerender"],
+            uses_viewport_sizes=data["uses_viewport_sizes"],
+            uses_rem_sizes=data["uses_rem_sizes"],
         )
 
 @dataclass
@@ -5603,6 +7952,19 @@ class FontHinting(BevyComponent):
 
     @classmethod
     def from_brp(cls, value: object) -> "FontHinting":
+        return cls(value=value)
+
+@dataclass
+class LetterSpacing(BevyComponent):
+    """`bevy_text::text::LetterSpacing`"""
+    type_path: ClassVar[str] = "bevy_text::text::LetterSpacing"
+    value: Any  # unresolved: bevy_text::text::LetterSpacing
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "LetterSpacing":
         return cls(value=value)
 
 @dataclass
@@ -5661,19 +8023,25 @@ class TextColor(BevyComponent):
 class TextFont(BevyComponent):
     """`bevy_text::text::TextFont`"""
     type_path: ClassVar[str] = "bevy_text::text::TextFont"
-    font: Any  # unresolved: bevy_asset::handle::Handle<bevy_text::font::Font>
-    font_size: float
+    font: Any  # unresolved: bevy_text::text::FontSource
+    font_size: Any  # unresolved: bevy_text::text::FontSize
     weight: int
+    width: float
+    style: Any  # unresolved: bevy_text::text::FontStyle
     font_smoothing: Literal["None", "AntiAliased"]
     font_features: FontFeatures
+    font_variations: FontVariations
 
     def to_brp(self) -> object:
         return {
             "font": self.font,
             "font_size": self.font_size,
             "weight": self.weight,
+            "width": self.width,
+            "style": self.style,
             "font_smoothing": self.font_smoothing,
             "font_features": self.font_features.to_brp(),
+            "font_variations": self.font_variations.to_brp(),
         }
 
     @classmethod
@@ -5684,15 +8052,18 @@ class TextFont(BevyComponent):
             font=data["font"],
             font_size=data["font_size"],
             weight=data["weight"],
+            width=data["width"],
+            style=data["style"],
             font_smoothing=data["font_smoothing"],
             font_features=FontFeatures.from_brp(data["font_features"]),
+            font_variations=FontVariations.from_brp(data["font_variations"]),
         )
 
 @dataclass
 class TextLayout(BevyComponent):
     """`bevy_text::text::TextLayout`"""
     type_path: ClassVar[str] = "bevy_text::text::TextLayout"
-    justify: Literal["Left", "Center", "Right", "Justified"]
+    justify: Literal["Left", "Center", "Right", "Justified", "Start", "End"]
     linebreak: Literal["WordBoundary", "AnyCharacter", "WordOrCharacter", "NoWrap"]
 
     def to_brp(self) -> object:
@@ -5735,6 +8106,25 @@ class UnderlineColor(BevyComponent):
     @classmethod
     def from_brp(cls, value: object) -> "UnderlineColor":
         return cls(value=value)
+
+@dataclass
+class DelayedCommandQueue(BevyComponent):
+    """`bevy_time::delayed_commands::DelayedCommandQueue`"""
+    type_path: ClassVar[str] = "bevy_time::delayed_commands::DelayedCommandQueue"
+    submit_at: Any  # unresolved: core::time::Duration
+
+    def to_brp(self) -> object:
+        return {
+            "submit_at": self.submit_at,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DelayedCommandQueue":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            submit_at=data["submit_at"],
+        )
 
 @dataclass
 class GlobalTransform(BevyComponent):
@@ -6113,6 +8503,32 @@ class TranslationInterpolation(BevyComponent):
         )
 
 @dataclass
+class UiScale(BevyComponent):
+    """`bevy_ui::UiScale`"""
+    type_path: ClassVar[str] = "bevy_ui::UiScale"
+    value: float
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "UiScale":
+        return cls(value=value)
+
+@dataclass
+class AccessibleLabel(BevyComponent):
+    """`bevy_ui::accessibility::AccessibleLabel`"""
+    type_path: ClassVar[str] = "bevy_ui::accessibility::AccessibleLabel"
+    value: str
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AccessibleLabel":
+        return cls(value=value)
+
+@dataclass
 class AutoDirectionalNavigation(BevyComponent):
     """`bevy_ui::auto_directional_navigation::AutoDirectionalNavigation`"""
     type_path: ClassVar[str] = "bevy_ui::auto_directional_navigation::AutoDirectionalNavigation"
@@ -6206,6 +8622,70 @@ class BorderGradient(BevyComponent):
         return cls(value=list(value))
 
 @dataclass
+class Checkable(BevyComponent):
+    """`bevy_ui::interaction_states::Checkable`"""
+    type_path: ClassVar[str] = "bevy_ui::interaction_states::Checkable"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Checkable":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class Checked(BevyComponent):
+    """`bevy_ui::interaction_states::Checked`"""
+    type_path: ClassVar[str] = "bevy_ui::interaction_states::Checked"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Checked":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class InteractionDisabled(BevyComponent):
+    """`bevy_ui::interaction_states::InteractionDisabled`"""
+    type_path: ClassVar[str] = "bevy_ui::interaction_states::InteractionDisabled"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "InteractionDisabled":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class Pressed(BevyComponent):
+    """`bevy_ui::interaction_states::Pressed`"""
+    type_path: ClassVar[str] = "bevy_ui::interaction_states::Pressed"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Pressed":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
 class ContentSize(BevyComponent):
     """`bevy_ui::measurement::ContentSize`"""
     type_path: ClassVar[str] = "bevy_ui::measurement::ContentSize"
@@ -6235,6 +8715,60 @@ class UiPickingCamera(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
+        )
+
+@dataclass
+class UiPickingSettings(BevyComponent):
+    """`bevy_ui::picking_backend::UiPickingSettings`"""
+    type_path: ClassVar[str] = "bevy_ui::picking_backend::UiPickingSettings"
+    require_markers: bool
+
+    def to_brp(self) -> object:
+        return {
+            "require_markers": self.require_markers,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "UiPickingSettings":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            require_markers=data["require_markers"],
+        )
+
+@dataclass
+class ComputedStackIndex(BevyComponent):
+    """`bevy_ui::stack::ComputedStackIndex`"""
+    type_path: ClassVar[str] = "bevy_ui::stack::ComputedStackIndex"
+    value: int
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ComputedStackIndex":
+        return cls(value=value)
+
+@dataclass
+class UiStack(BevyComponent):
+    """`bevy_ui::stack::UiStack`"""
+    type_path: ClassVar[str] = "bevy_ui::stack::UiStack"
+    partition: list[Any]  # unresolved: core::ops::Range<usize>
+    uinodes: list[int]
+
+    def to_brp(self) -> object:
+        return {
+            "partition": list(self.partition),
+            "uinodes": list(self.uinodes),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "UiStack":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            partition=list(data["partition"]),
+            uinodes=list(data["uinodes"]),
         )
 
 @dataclass
@@ -6314,7 +8848,6 @@ class CalculatedClip(BevyComponent):
 class ComputedNode(BevyComponent):
     """`bevy_ui::ui_node::ComputedNode`"""
     type_path: ClassVar[str] = "bevy_ui::ui_node::ComputedNode"
-    stack_index: int
     size: list[float]  # len 2
     content_size: list[float]  # len 2
     scrollbar_size: list[float]  # len 2
@@ -6329,7 +8862,6 @@ class ComputedNode(BevyComponent):
 
     def to_brp(self) -> object:
         return {
-            "stack_index": self.stack_index,
             "size": list(self.size),
             "content_size": list(self.content_size),
             "scrollbar_size": list(self.scrollbar_size),
@@ -6348,7 +8880,6 @@ class ComputedNode(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
-            stack_index=data["stack_index"],
             size=list(data["size"]),
             content_size=list(data["content_size"]),
             scrollbar_size=list(data["scrollbar_size"]),
@@ -6430,6 +8961,22 @@ class IgnoreScroll(BevyComponent):
         return cls(value=BVec2.from_brp(value))
 
 @dataclass
+class IsDefaultUiCamera(BevyComponent):
+    """`bevy_ui::ui_node::IsDefaultUiCamera`"""
+    type_path: ClassVar[str] = "bevy_ui::ui_node::IsDefaultUiCamera"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "IsDefaultUiCamera":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
 class LayoutConfig(BevyComponent):
     """`bevy_ui::ui_node::LayoutConfig`"""
     type_path: ClassVar[str] = "bevy_ui::ui_node::LayoutConfig"
@@ -6475,6 +9022,7 @@ class Node(BevyComponent):
     justify_self: Literal["Auto", "Start", "End", "Center", "Baseline", "Stretch"]
     align_content: Literal["Default", "Start", "End", "FlexStart", "FlexEnd", "Center", "Stretch", "SpaceBetween", "SpaceEvenly", "SpaceAround"]
     justify_content: Literal["Default", "Start", "End", "FlexStart", "FlexEnd", "Center", "Stretch", "SpaceBetween", "SpaceEvenly", "SpaceAround"]
+    direction: Literal["Ltr", "Rtl"]
     margin: UiRect
     padding: UiRect
     border: UiRect
@@ -6519,6 +9067,7 @@ class Node(BevyComponent):
             "justify_self": self.justify_self,
             "align_content": self.align_content,
             "justify_content": self.justify_content,
+            "direction": self.direction,
             "margin": self.margin.to_brp(),
             "padding": self.padding.to_brp(),
             "border": self.border.to_brp(),
@@ -6567,6 +9116,7 @@ class Node(BevyComponent):
             justify_self=data["justify_self"],
             align_content=data["align_content"],
             justify_content=data["justify_content"],
+            direction=data["direction"],
             margin=UiRect.from_brp(data["margin"]),
             padding=UiRect.from_brp(data["padding"]),
             border=UiRect.from_brp(data["border"]),
@@ -6586,6 +9136,19 @@ class Node(BevyComponent):
             grid_row=GridPlacement.from_brp(data["grid_row"]),
             grid_column=GridPlacement.from_brp(data["grid_column"]),
         )
+
+@dataclass
+class OuterColor(BevyComponent):
+    """`bevy_ui::ui_node::OuterColor`"""
+    type_path: ClassVar[str] = "bevy_ui::ui_node::OuterColor"
+    value: Any  # unresolved: bevy_color::color::Color
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "OuterColor":
+        return cls(value=value)
 
 @dataclass
 class Outline(BevyComponent):
@@ -6610,6 +9173,22 @@ class Outline(BevyComponent):
             width=data["width"],
             offset=data["offset"],
             color=data["color"],
+        )
+
+@dataclass
+class OverrideClip(BevyComponent):
+    """`bevy_ui::ui_node::OverrideClip`"""
+    type_path: ClassVar[str] = "bevy_ui::ui_node::OverrideClip"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "OverrideClip":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
         )
 
 @dataclass
@@ -6716,6 +9295,7 @@ class ImageNode(BevyComponent):
     flip_y: bool
     rect: Rect | None
     image_mode: Any  # unresolved: bevy_ui::widget::image::NodeImageMode
+    visual_box: Literal["ContentBox", "PaddingBox", "BorderBox"]
 
     def to_brp(self) -> object:
         return {
@@ -6726,6 +9306,7 @@ class ImageNode(BevyComponent):
             "flip_y": self.flip_y,
             "rect": ((v0.to_brp()) if (v0 := self.rect) is not None else None),
             "image_mode": self.image_mode,
+            "visual_box": self.visual_box,
         }
 
     @classmethod
@@ -6740,6 +9321,7 @@ class ImageNode(BevyComponent):
             flip_y=data["flip_y"],
             rect=((Rect.from_brp(v0)) if (v0 := data["rect"]) is not None else None),
             image_mode=data["image_mode"],
+            visual_box=data["visual_box"],
         )
 
 @dataclass
@@ -6835,10 +9417,23 @@ class TextShadow(BevyComponent):
         )
 
 @dataclass
+class TextScroll(BevyComponent):
+    """`bevy_ui::widget::text_input_layout::TextScroll`"""
+    type_path: ClassVar[str] = "bevy_ui::widget::text_input_layout::TextScroll"
+    value: list[float]  # len 2
+
+    def to_brp(self) -> object:
+        return list(self.value)
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TextScroll":
+        return cls(value=list(value))
+
+@dataclass
 class ViewportNode(BevyComponent):
     """`bevy_ui::widget::viewport::ViewportNode`"""
     type_path: ClassVar[str] = "bevy_ui::widget::viewport::ViewportNode"
-    camera: int
+    camera: int | None
 
     def to_brp(self) -> object:
         return {
@@ -6878,6 +9473,528 @@ class UiAntiAlias(BevyComponent):
     @classmethod
     def from_brp(cls, value: object) -> "UiAntiAlias":
         return cls(value=value)
+
+@dataclass
+class GlobalUiDebugOptions(BevyComponent):
+    """`bevy_ui_render::debug_overlay::GlobalUiDebugOptions`"""
+    type_path: ClassVar[str] = "bevy_ui_render::debug_overlay::GlobalUiDebugOptions"
+    enabled: bool
+    outline_border_box: bool
+    outline_padding_box: bool
+    outline_content_box: bool
+    outline_scrollbars: bool
+    line_width: float
+    line_color_override: LinearRgba | None
+    show_hidden: bool
+    show_clipped: bool
+    ignore_border_radius: bool
+
+    def to_brp(self) -> object:
+        return {
+            "enabled": self.enabled,
+            "outline_border_box": self.outline_border_box,
+            "outline_padding_box": self.outline_padding_box,
+            "outline_content_box": self.outline_content_box,
+            "outline_scrollbars": self.outline_scrollbars,
+            "line_width": self.line_width,
+            "line_color_override": ((v0.to_brp()) if (v0 := self.line_color_override) is not None else None),
+            "show_hidden": self.show_hidden,
+            "show_clipped": self.show_clipped,
+            "ignore_border_radius": self.ignore_border_radius,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GlobalUiDebugOptions":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            enabled=data["enabled"],
+            outline_border_box=data["outline_border_box"],
+            outline_padding_box=data["outline_padding_box"],
+            outline_content_box=data["outline_content_box"],
+            outline_scrollbars=data["outline_scrollbars"],
+            line_width=data["line_width"],
+            line_color_override=((LinearRgba.from_brp(v0)) if (v0 := data["line_color_override"]) is not None else None),
+            show_hidden=data["show_hidden"],
+            show_clipped=data["show_clipped"],
+            ignore_border_radius=data["ignore_border_radius"],
+        )
+
+@dataclass
+class UiDebugOptions(BevyComponent):
+    """`bevy_ui_render::debug_overlay::UiDebugOptions`"""
+    type_path: ClassVar[str] = "bevy_ui_render::debug_overlay::UiDebugOptions"
+    enabled: bool
+    outline_border_box: bool
+    outline_padding_box: bool
+    outline_content_box: bool
+    outline_scrollbars: bool
+    line_width: float
+    line_color_override: LinearRgba | None
+    show_hidden: bool
+    show_clipped: bool
+    ignore_border_radius: bool
+
+    def to_brp(self) -> object:
+        return {
+            "enabled": self.enabled,
+            "outline_border_box": self.outline_border_box,
+            "outline_padding_box": self.outline_padding_box,
+            "outline_content_box": self.outline_content_box,
+            "outline_scrollbars": self.outline_scrollbars,
+            "line_width": self.line_width,
+            "line_color_override": ((v0.to_brp()) if (v0 := self.line_color_override) is not None else None),
+            "show_hidden": self.show_hidden,
+            "show_clipped": self.show_clipped,
+            "ignore_border_radius": self.ignore_border_radius,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "UiDebugOptions":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            enabled=data["enabled"],
+            outline_border_box=data["outline_border_box"],
+            outline_padding_box=data["outline_padding_box"],
+            outline_content_box=data["outline_content_box"],
+            outline_scrollbars=data["outline_scrollbars"],
+            line_width=data["line_width"],
+            line_color_override=((LinearRgba.from_brp(v0)) if (v0 := data["line_color_override"]) is not None else None),
+            show_hidden=data["show_hidden"],
+            show_clipped=data["show_clipped"],
+            ignore_border_radius=data["ignore_border_radius"],
+        )
+
+@dataclass
+class ActivateOnPress(BevyComponent):
+    """`bevy_ui_widgets::button::ActivateOnPress`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::button::ActivateOnPress"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ActivateOnPress":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class Button2(BevyComponent):
+    """`bevy_ui_widgets::button::Button`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::button::Button"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Button2":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class Checkbox(BevyComponent):
+    """`bevy_ui_widgets::checkbox::Checkbox`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::checkbox::Checkbox"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Checkbox":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class ActiveDescendant(BevyComponent):
+    """`bevy_ui_widgets::list::ActiveDescendant`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::list::ActiveDescendant"
+    value: int | None
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ActiveDescendant":
+        return cls(value=value)
+
+@dataclass
+class ListItem(BevyComponent):
+    """`bevy_ui_widgets::list::ListItem`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::list::ListItem"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ListItem":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class MenuButton(BevyComponent):
+    """`bevy_ui_widgets::menu::MenuButton`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::menu::MenuButton"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "MenuButton":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class MenuFocusState(BevyComponent):
+    """`bevy_ui_widgets::menu::MenuFocusState`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::menu::MenuFocusState"
+    value: Any  # unresolved: bevy_ui_widgets::menu::MenuFocusState
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "MenuFocusState":
+        return cls(value=value)
+
+@dataclass
+class MenuItem(BevyComponent):
+    """`bevy_ui_widgets::menu::MenuItem`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::menu::MenuItem"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "MenuItem":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class MenuPopup(BevyComponent):
+    """`bevy_ui_widgets::menu::MenuPopup`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::menu::MenuPopup"
+    layout: Literal["Column", "Row", "Grid"]
+
+    def to_brp(self) -> object:
+        return {
+            "layout": self.layout,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "MenuPopup":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            layout=data["layout"],
+        )
+
+@dataclass
+class Popover(BevyComponent):
+    """`bevy_ui_widgets::popover::Popover`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::popover::Popover"
+    positions: list[PopoverPlacement]
+    window_margin: float
+
+    def to_brp(self) -> object:
+        return {
+            "positions": [v0.to_brp() for v0 in self.positions],
+            "window_margin": self.window_margin,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Popover":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            positions=[PopoverPlacement.from_brp(v0) for v0 in data["positions"]],
+            window_margin=data["window_margin"],
+        )
+
+@dataclass
+class RadioButton(BevyComponent):
+    """`bevy_ui_widgets::radio::RadioButton`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::radio::RadioButton"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RadioButton":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class RadioGroup(BevyComponent):
+    """`bevy_ui_widgets::radio::RadioGroup`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::radio::RadioGroup"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RadioGroup":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class ScrollArea(BevyComponent):
+    """`bevy_ui_widgets::scrollarea::ScrollArea`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::scrollarea::ScrollArea"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ScrollArea":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class Scrollbar(BevyComponent):
+    """`bevy_ui_widgets::scrollbar::Scrollbar`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::scrollbar::Scrollbar"
+    target: int
+    orientation: Literal["Horizontal", "Vertical"]
+    min_thumb_length: float
+
+    def to_brp(self) -> object:
+        return {
+            "target": self.target,
+            "orientation": self.orientation,
+            "min_thumb_length": self.min_thumb_length,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Scrollbar":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            target=data["target"],
+            orientation=data["orientation"],
+            min_thumb_length=data["min_thumb_length"],
+        )
+
+@dataclass
+class ScrollbarDragState(BevyComponent):
+    """`bevy_ui_widgets::scrollbar::ScrollbarDragState`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::scrollbar::ScrollbarDragState"
+    dragging: bool
+    drag_origin: float
+
+    def to_brp(self) -> object:
+        return {
+            "dragging": self.dragging,
+            "drag_origin": self.drag_origin,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ScrollbarDragState":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            dragging=data["dragging"],
+            drag_origin=data["drag_origin"],
+        )
+
+@dataclass
+class ScrollbarThumb(BevyComponent):
+    """`bevy_ui_widgets::scrollbar::ScrollbarThumb`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::scrollbar::ScrollbarThumb"
+    border_radius: BorderRadius
+    border: UiRect
+
+    def to_brp(self) -> object:
+        return {
+            "border_radius": self.border_radius.to_brp(),
+            "border": self.border.to_brp(),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ScrollbarThumb":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            border_radius=BorderRadius.from_brp(data["border_radius"]),
+            border=UiRect.from_brp(data["border"]),
+        )
+
+@dataclass
+class Slider(BevyComponent):
+    """`bevy_ui_widgets::slider::Slider`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::slider::Slider"
+    track_click: Literal["Drag", "Step", "Snap"]
+    orientation: Literal["Auto", "Horizontal", "Vertical"]
+
+    def to_brp(self) -> object:
+        return {
+            "track_click": self.track_click,
+            "orientation": self.orientation,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Slider":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            track_click=data["track_click"],
+            orientation=data["orientation"],
+        )
+
+@dataclass
+class SliderDragState(BevyComponent):
+    """`bevy_ui_widgets::slider::SliderDragState`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::slider::SliderDragState"
+    dragging: bool
+    offset: float
+
+    def to_brp(self) -> object:
+        return {
+            "dragging": self.dragging,
+            "offset": self.offset,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SliderDragState":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            dragging=data["dragging"],
+            offset=data["offset"],
+        )
+
+@dataclass
+class SliderPrecision(BevyComponent):
+    """`bevy_ui_widgets::slider::SliderPrecision`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::slider::SliderPrecision"
+    value: int
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SliderPrecision":
+        return cls(value=value)
+
+@dataclass
+class SliderRange(BevyComponent):
+    """`bevy_ui_widgets::slider::SliderRange`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::slider::SliderRange"
+    start: float
+    end: float
+
+    def to_brp(self) -> object:
+        return {
+            "start": self.start,
+            "end": self.end,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SliderRange":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            start=data["start"],
+            end=data["end"],
+        )
+
+@dataclass
+class SliderStep(BevyComponent):
+    """`bevy_ui_widgets::slider::SliderStep`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::slider::SliderStep"
+    value: float
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SliderStep":
+        return cls(value=value)
+
+@dataclass
+class SliderThumb(BevyComponent):
+    """`bevy_ui_widgets::slider::SliderThumb`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::slider::SliderThumb"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SliderThumb":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class SliderValue(BevyComponent):
+    """`bevy_ui_widgets::slider::SliderValue`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::slider::SliderValue"
+    value: float
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SliderValue":
+        return cls(value=value)
+
+@dataclass
+class QueuedSelectAll(BevyComponent):
+    """`bevy_ui_widgets::text_input::QueuedSelectAll`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::text_input::QueuedSelectAll"
+    value: int | None
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "QueuedSelectAll":
+        return cls(value=value)
+
+@dataclass
+class SelectAllOnFocus(BevyComponent):
+    """`bevy_ui_widgets::text_input::SelectAllOnFocus`"""
+    type_path: ClassVar[str] = "bevy_ui_widgets::text_input::SelectAllOnFocus"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SelectAllOnFocus":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
 
 @dataclass
 class CursorIcon(BevyComponent):
@@ -7026,6 +10143,7 @@ class Window(BevyComponent):
     titlebar_transparent: bool
     titlebar_show_title: bool
     titlebar_show_buttons: bool
+    borderless_game: bool
     prefers_home_indicator_hidden: bool
     prefers_status_bar_hidden: bool
     preferred_screen_edges_deferring_system_gestures: Literal["None", "Top", "Left", "Bottom", "Right", "All"]
@@ -7068,6 +10186,7 @@ class Window(BevyComponent):
             "titlebar_transparent": self.titlebar_transparent,
             "titlebar_show_title": self.titlebar_show_title,
             "titlebar_show_buttons": self.titlebar_show_buttons,
+            "borderless_game": self.borderless_game,
             "prefers_home_indicator_hidden": self.prefers_home_indicator_hidden,
             "prefers_status_bar_hidden": self.prefers_status_bar_hidden,
             "preferred_screen_edges_deferring_system_gestures": self.preferred_screen_edges_deferring_system_gestures,
@@ -7114,947 +10233,110 @@ class Window(BevyComponent):
             titlebar_transparent=data["titlebar_transparent"],
             titlebar_show_title=data["titlebar_show_title"],
             titlebar_show_buttons=data["titlebar_show_buttons"],
+            borderless_game=data["borderless_game"],
             prefers_home_indicator_hidden=data["prefers_home_indicator_hidden"],
             prefers_status_bar_hidden=data["prefers_status_bar_hidden"],
             preferred_screen_edges_deferring_system_gestures=data["preferred_screen_edges_deferring_system_gestures"],
         )
 
+@dataclass
+class DynamicWorldRoot(BevyComponent):
+    """`bevy_world_serialization::components::DynamicWorldRoot`"""
+    type_path: ClassVar[str] = "bevy_world_serialization::components::DynamicWorldRoot"
+    value: Any  # unresolved: bevy_asset::handle::Handle<bevy_world_serialization::dynamic_world::DynamicWorld>
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DynamicWorldRoot":
+        return cls(value=value)
+
+@dataclass
+class WorldAssetRoot(BevyComponent):
+    """`bevy_world_serialization::components::WorldAssetRoot`"""
+    type_path: ClassVar[str] = "bevy_world_serialization::components::WorldAssetRoot"
+    value: Any  # unresolved: bevy_asset::handle::Handle<bevy_world_serialization::world_asset::WorldAsset>
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "WorldAssetRoot":
+        return cls(value=value)
+
 # Resources
 
-@dataclass
-class DebugDumpWorldTrigger(BevyResource):
-    """`adventuresim_tactical_client::debug::DebugDumpWorldTrigger`"""
-    type_path: ClassVar[str] = "adventuresim_tactical_client::debug::DebugDumpWorldTrigger"
-    value: bool
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "DebugDumpWorldTrigger":
-        return cls(value=value)
-
-@dataclass
-class LocalCharacterId(BevyResource):
-    """`adventuresim_tactical_client::player::LocalCharacterId`"""
-    type_path: ClassVar[str] = "adventuresim_tactical_client::player::LocalCharacterId"
-    value: int
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "LocalCharacterId":
-        return cls(value=value)
-
-@dataclass
-class PlayerInputOverride(BevyResource):
-    """`adventuresim_tactical_netcode::client::PlayerInputOverride`"""
-    type_path: ClassVar[str] = "adventuresim_tactical_netcode::client::PlayerInputOverride"
-    value: PlayerInputRequest | None
-
-    def to_brp(self) -> object:
-        return ((v0.to_brp()) if (v0 := self.value) is not None else None)
-
-    @classmethod
-    def from_brp(cls, value: object) -> "PlayerInputOverride":
-        return cls(value=((PlayerInputRequest.from_brp(v0)) if (v0 := value) is not None else None))
-
-@dataclass
-class NoClearBuffers(BevyResource):
-    """`aeronet_io::packet::NoClearBuffers`"""
-    type_path: ClassVar[str] = "aeronet_io::packet::NoClearBuffers"
-
-    def to_brp(self) -> object:
-        return {
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "NoClearBuffers":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-        )
-
-@dataclass
-class ColliderTreeDiagnostics(BevyResource):
-    """`avian3d::collider_tree::diagnostics::ColliderTreeDiagnostics`"""
-    type_path: ClassVar[str] = "avian3d::collider_tree::diagnostics::ColliderTreeDiagnostics"
-    optimize: Any  # unresolved: core::time::Duration
-    update: Any  # unresolved: core::time::Duration
-
-    def to_brp(self) -> object:
-        return {
-            "optimize": self.optimize,
-            "update": self.update,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "ColliderTreeDiagnostics":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            optimize=data["optimize"],
-            update=data["update"],
-        )
-
-@dataclass
-class CollisionDiagnostics(BevyResource):
-    """`avian3d::collision::diagnostics::CollisionDiagnostics`"""
-    type_path: ClassVar[str] = "avian3d::collision::diagnostics::CollisionDiagnostics"
-    broad_phase: Any  # unresolved: core::time::Duration
-    narrow_phase: Any  # unresolved: core::time::Duration
-    contact_count: int
-
-    def to_brp(self) -> object:
-        return {
-            "broad_phase": self.broad_phase,
-            "narrow_phase": self.narrow_phase,
-            "contact_count": self.contact_count,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "CollisionDiagnostics":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            broad_phase=data["broad_phase"],
-            narrow_phase=data["narrow_phase"],
-            contact_count=data["contact_count"],
-        )
-
-@dataclass
-class NarrowPhaseConfig(BevyResource):
-    """`avian3d::collision::narrow_phase::NarrowPhaseConfig`"""
-    type_path: ClassVar[str] = "avian3d::collision::narrow_phase::NarrowPhaseConfig"
-    default_speculative_margin: float
-    contact_tolerance: float
-    match_contacts: bool
-
-    def to_brp(self) -> object:
-        return {
-            "default_speculative_margin": self.default_speculative_margin,
-            "contact_tolerance": self.contact_tolerance,
-            "match_contacts": self.match_contacts,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "NarrowPhaseConfig":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            default_speculative_margin=data["default_speculative_margin"],
-            contact_tolerance=data["contact_tolerance"],
-            match_contacts=data["match_contacts"],
-        )
-
-@dataclass
-class PhysicsDebugRenderConfig(BevyResource):
-    """`avian3d::debug_render::configuration::PhysicsDebugRenderConfig`"""
-    type_path: ClassVar[str] = "avian3d::debug_render::configuration::PhysicsDebugRenderConfig"
-    enable_axes: bool
-    enable_aabb: bool
-    enable_bvh: bool
-    enable_colliders: bool
-    enable_contacts: bool
-    enable_joints: bool
-    enable_raycasts: bool
-    enable_shapecasts: bool
-    enable_islands: bool
-
-    def to_brp(self) -> object:
-        return {
-            "enable_axes": self.enable_axes,
-            "enable_aabb": self.enable_aabb,
-            "enable_bvh": self.enable_bvh,
-            "enable_colliders": self.enable_colliders,
-            "enable_contacts": self.enable_contacts,
-            "enable_joints": self.enable_joints,
-            "enable_raycasts": self.enable_raycasts,
-            "enable_shapecasts": self.enable_shapecasts,
-            "enable_islands": self.enable_islands,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "PhysicsDebugRenderConfig":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            enable_axes=data["enable_axes"],
-            enable_aabb=data["enable_aabb"],
-            enable_bvh=data["enable_bvh"],
-            enable_colliders=data["enable_colliders"],
-            enable_contacts=data["enable_contacts"],
-            enable_joints=data["enable_joints"],
-            enable_raycasts=data["enable_raycasts"],
-            enable_shapecasts=data["enable_shapecasts"],
-            enable_islands=data["enable_islands"],
-        )
-
-@dataclass
-class Gravity(BevyResource):
-    """`avian3d::dynamics::integrator::Gravity`"""
-    type_path: ClassVar[str] = "avian3d::dynamics::integrator::Gravity"
-    value: list[float]  # len 3
-
-    def to_brp(self) -> object:
-        return list(self.value)
-
-    @classmethod
-    def from_brp(cls, value: object) -> "Gravity":
-        return cls(value=list(value))
-
-@dataclass
-class SolverDiagnostics(BevyResource):
-    """`avian3d::dynamics::solver::diagnostics::SolverDiagnostics`"""
-    type_path: ClassVar[str] = "avian3d::dynamics::solver::diagnostics::SolverDiagnostics"
-    prepare_constraints: Any  # unresolved: core::time::Duration
-    update_velocity_increments: Any  # unresolved: core::time::Duration
-    integrate_velocities: Any  # unresolved: core::time::Duration
-    warm_start: Any  # unresolved: core::time::Duration
-    solve_constraints: Any  # unresolved: core::time::Duration
-    integrate_positions: Any  # unresolved: core::time::Duration
-    relax_velocities: Any  # unresolved: core::time::Duration
-    apply_restitution: Any  # unresolved: core::time::Duration
-    finalize: Any  # unresolved: core::time::Duration
-    store_impulses: Any  # unresolved: core::time::Duration
-    swept_ccd: Any  # unresolved: core::time::Duration
-    contact_constraint_count: int
-
-    def to_brp(self) -> object:
-        return {
-            "prepare_constraints": self.prepare_constraints,
-            "update_velocity_increments": self.update_velocity_increments,
-            "integrate_velocities": self.integrate_velocities,
-            "warm_start": self.warm_start,
-            "solve_constraints": self.solve_constraints,
-            "integrate_positions": self.integrate_positions,
-            "relax_velocities": self.relax_velocities,
-            "apply_restitution": self.apply_restitution,
-            "finalize": self.finalize,
-            "store_impulses": self.store_impulses,
-            "swept_ccd": self.swept_ccd,
-            "contact_constraint_count": self.contact_constraint_count,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SolverDiagnostics":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            prepare_constraints=data["prepare_constraints"],
-            update_velocity_increments=data["update_velocity_increments"],
-            integrate_velocities=data["integrate_velocities"],
-            warm_start=data["warm_start"],
-            solve_constraints=data["solve_constraints"],
-            integrate_positions=data["integrate_positions"],
-            relax_velocities=data["relax_velocities"],
-            apply_restitution=data["apply_restitution"],
-            finalize=data["finalize"],
-            store_impulses=data["store_impulses"],
-            swept_ccd=data["swept_ccd"],
-            contact_constraint_count=data["contact_constraint_count"],
-        )
-
-@dataclass
-class ContactSoftnessCoefficients(BevyResource):
-    """`avian3d::dynamics::solver::plugin::ContactSoftnessCoefficients`"""
-    type_path: ClassVar[str] = "avian3d::dynamics::solver::plugin::ContactSoftnessCoefficients"
-    dynamic: SoftnessCoefficients
-    non_dynamic: SoftnessCoefficients
-
-    def to_brp(self) -> object:
-        return {
-            "dynamic": self.dynamic.to_brp(),
-            "non_dynamic": self.non_dynamic.to_brp(),
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "ContactSoftnessCoefficients":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            dynamic=SoftnessCoefficients.from_brp(data["dynamic"]),
-            non_dynamic=SoftnessCoefficients.from_brp(data["non_dynamic"]),
-        )
-
-@dataclass
-class PhysicsLengthUnit(BevyResource):
-    """`avian3d::dynamics::solver::plugin::PhysicsLengthUnit`"""
-    type_path: ClassVar[str] = "avian3d::dynamics::solver::plugin::PhysicsLengthUnit"
-    value: float
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "PhysicsLengthUnit":
-        return cls(value=value)
-
-@dataclass
-class SolverConfig(BevyResource):
-    """`avian3d::dynamics::solver::plugin::SolverConfig`"""
-    type_path: ClassVar[str] = "avian3d::dynamics::solver::plugin::SolverConfig"
-    contact_damping_ratio: float
-    contact_frequency_factor: float
-    max_overlap_solve_speed: float
-    warm_start_coefficient: float
-    restitution_threshold: float
-    restitution_iterations: int
-
-    def to_brp(self) -> object:
-        return {
-            "contact_damping_ratio": self.contact_damping_ratio,
-            "contact_frequency_factor": self.contact_frequency_factor,
-            "max_overlap_solve_speed": self.max_overlap_solve_speed,
-            "warm_start_coefficient": self.warm_start_coefficient,
-            "restitution_threshold": self.restitution_threshold,
-            "restitution_iterations": self.restitution_iterations,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SolverConfig":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            contact_damping_ratio=data["contact_damping_ratio"],
-            contact_frequency_factor=data["contact_frequency_factor"],
-            max_overlap_solve_speed=data["max_overlap_solve_speed"],
-            warm_start_coefficient=data["warm_start_coefficient"],
-            restitution_threshold=data["restitution_threshold"],
-            restitution_iterations=data["restitution_iterations"],
-        )
-
-@dataclass
-class SubstepCount(BevyResource):
-    """`avian3d::dynamics::solver::schedule::SubstepCount`"""
-    type_path: ClassVar[str] = "avian3d::dynamics::solver::schedule::SubstepCount"
-    value: int
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SubstepCount":
-        return cls(value=value)
-
-@dataclass
-class PhysicsTransformConfig(BevyResource):
-    """`avian3d::physics_transform::PhysicsTransformConfig`"""
-    type_path: ClassVar[str] = "avian3d::physics_transform::PhysicsTransformConfig"
-    propagate_before_physics: bool
-    transform_to_position: bool
-    position_to_transform: bool
-    transform_to_collider_scale: bool
-
-    def to_brp(self) -> object:
-        return {
-            "propagate_before_physics": self.propagate_before_physics,
-            "transform_to_position": self.transform_to_position,
-            "position_to_transform": self.position_to_transform,
-            "transform_to_collider_scale": self.transform_to_collider_scale,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "PhysicsTransformConfig":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            propagate_before_physics=data["propagate_before_physics"],
-            transform_to_position=data["transform_to_position"],
-            position_to_transform=data["position_to_transform"],
-            transform_to_collider_scale=data["transform_to_collider_scale"],
-        )
-
-@dataclass
-class LastPhysicsTick(BevyResource):
-    """`avian3d::schedule::LastPhysicsTick`"""
-    type_path: ClassVar[str] = "avian3d::schedule::LastPhysicsTick"
-    value: Tick
-
-    def to_brp(self) -> object:
-        return self.value.to_brp()
-
-    @classmethod
-    def from_brp(cls, value: object) -> "LastPhysicsTick":
-        return cls(value=Tick.from_brp(value))
-
-@dataclass
-class SpatialQueryDiagnostics(BevyResource):
-    """`avian3d::spatial_query::diagnostics::SpatialQueryDiagnostics`"""
-    type_path: ClassVar[str] = "avian3d::spatial_query::diagnostics::SpatialQueryDiagnostics"
-    update_ray_casters: Any  # unresolved: core::time::Duration
-    update_shape_casters: Any  # unresolved: core::time::Duration
-
-    def to_brp(self) -> object:
-        return {
-            "update_ray_casters": self.update_ray_casters,
-            "update_shape_casters": self.update_shape_casters,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SpatialQueryDiagnostics":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            update_ray_casters=data["update_ray_casters"],
-            update_shape_casters=data["update_shape_casters"],
-        )
-
-@dataclass
-class AccessibilityRequested(BevyResource):
-    """`bevy_a11y::AccessibilityRequested`"""
-    type_path: ClassVar[str] = "bevy_a11y::AccessibilityRequested"
-    value: Any  # unresolved: bevy_platform::sync::Arc<core::sync::atomic::AtomicBool>
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "AccessibilityRequested":
-        return cls(value=value)
-
-@dataclass
-class ManageAccessibilityUpdates(BevyResource):
-    """`bevy_a11y::ManageAccessibilityUpdates`"""
-    type_path: ClassVar[str] = "bevy_a11y::ManageAccessibilityUpdates"
-    value: bool
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "ManageAccessibilityUpdates":
-        return cls(value=value)
-
-@dataclass
-class DefaultSpatialScale(BevyResource):
-    """`bevy_audio::audio::DefaultSpatialScale`"""
-    type_path: ClassVar[str] = "bevy_audio::audio::DefaultSpatialScale"
-    value: list[float]  # len 3
-
-    def to_brp(self) -> object:
-        return list(self.value)
-
-    @classmethod
-    def from_brp(cls, value: object) -> "DefaultSpatialScale":
-        return cls(value=list(value))
-
-@dataclass
-class GlobalVolume(BevyResource):
-    """`bevy_audio::volume::GlobalVolume`"""
-    type_path: ClassVar[str] = "bevy_audio::volume::GlobalVolume"
-    volume: Any  # unresolved: bevy_audio::volume::Volume
-
-    def to_brp(self) -> object:
-        return {
-            "volume": self.volume,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "GlobalVolume":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            volume=data["volume"],
-        )
-
-@dataclass
-class ClearColor(BevyResource):
-    """`bevy_camera::clear_color::ClearColor`"""
-    type_path: ClassVar[str] = "bevy_camera::clear_color::ClearColor"
-    value: Any  # unresolved: bevy_color::color::Color
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "ClearColor":
-        return cls(value=value)
-
-@dataclass
-class ScreenSpaceTransmissionQuality(BevyResource):
-    """`bevy_camera::components::ScreenSpaceTransmissionQuality`"""
-    type_path: ClassVar[str] = "bevy_camera::components::ScreenSpaceTransmissionQuality"
-    value: Literal["Low", "Medium", "High", "Ultra"]
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "ScreenSpaceTransmissionQuality":
-        return cls(value=value)
-
-@dataclass
-class GizmoConfigStore(BevyResource):
-    """`bevy_gizmos::config::GizmoConfigStore`"""
-    type_path: ClassVar[str] = "bevy_gizmos::config::GizmoConfigStore"
-
-    def to_brp(self) -> object:
-        return {
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "GizmoConfigStore":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-        )
-
-@dataclass
-class ButtonInputGamepadButton(BevyResource):
-    """`bevy_input::button_input::ButtonInput<bevy_input::gamepad::GamepadButton>`"""
-    type_path: ClassVar[str] = "bevy_input::button_input::ButtonInput<bevy_input::gamepad::GamepadButton>"
-    pressed: Any  # unresolved: bevy_platform::collections::HashSet<bevy_input::gamepad::GamepadButton, bevy_platform::hash::FixedHasher>
-    just_pressed: Any  # unresolved: bevy_platform::collections::HashSet<bevy_input::gamepad::GamepadButton, bevy_platform::hash::FixedHasher>
-    just_released: Any  # unresolved: bevy_platform::collections::HashSet<bevy_input::gamepad::GamepadButton, bevy_platform::hash::FixedHasher>
-
-    def to_brp(self) -> object:
-        return {
-            "pressed": self.pressed,
-            "just_pressed": self.just_pressed,
-            "just_released": self.just_released,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "ButtonInputGamepadButton":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            pressed=data["pressed"],
-            just_pressed=data["just_pressed"],
-            just_released=data["just_released"],
-        )
-
-@dataclass
-class AccumulatedMouseMotion(BevyResource):
-    """`bevy_input::mouse::AccumulatedMouseMotion`"""
-    type_path: ClassVar[str] = "bevy_input::mouse::AccumulatedMouseMotion"
-    delta: list[float]  # len 2
-
-    def to_brp(self) -> object:
-        return {
-            "delta": list(self.delta),
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "AccumulatedMouseMotion":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            delta=list(data["delta"]),
-        )
-
-@dataclass
-class AccumulatedMouseScroll(BevyResource):
-    """`bevy_input::mouse::AccumulatedMouseScroll`"""
-    type_path: ClassVar[str] = "bevy_input::mouse::AccumulatedMouseScroll"
-    unit: Literal["Line", "Pixel"]
-    delta: list[float]  # len 2
-
-    def to_brp(self) -> object:
-        return {
-            "unit": self.unit,
-            "delta": list(self.delta),
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "AccumulatedMouseScroll":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            unit=data["unit"],
-            delta=list(data["delta"]),
-        )
-
-@dataclass
-class InputFocus(BevyResource):
-    """`bevy_input_focus::InputFocus`"""
-    type_path: ClassVar[str] = "bevy_input_focus::InputFocus"
-    value: int | None
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "InputFocus":
-        return cls(value=value)
-
-@dataclass
-class InputFocusVisible(BevyResource):
-    """`bevy_input_focus::InputFocusVisible`"""
-    type_path: ClassVar[str] = "bevy_input_focus::InputFocusVisible"
-    value: bool
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "InputFocusVisible":
-        return cls(value=value)
-
-@dataclass
-class AutoNavigationConfig(BevyResource):
-    """`bevy_input_focus::directional_navigation::AutoNavigationConfig`"""
-    type_path: ClassVar[str] = "bevy_input_focus::directional_navigation::AutoNavigationConfig"
-    min_alignment_factor: float
-    max_search_distance: float | None
-    prefer_aligned: bool
-
-    def to_brp(self) -> object:
-        return {
-            "min_alignment_factor": self.min_alignment_factor,
-            "max_search_distance": self.max_search_distance,
-            "prefer_aligned": self.prefer_aligned,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "AutoNavigationConfig":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            min_alignment_factor=data["min_alignment_factor"],
-            max_search_distance=data["max_search_distance"],
-            prefer_aligned=data["prefer_aligned"],
-        )
-
-@dataclass
-class DirectionalNavigationMap(BevyResource):
-    """`bevy_input_focus::directional_navigation::DirectionalNavigationMap`"""
-    type_path: ClassVar[str] = "bevy_input_focus::directional_navigation::DirectionalNavigationMap"
-    neighbors: Any  # unresolved: bevy_platform::collections::HashMap<bevy_ecs::entity::Entity, bevy_input_focus::directional_navigation::NavNeighbors, bevy_ecs::entity::hash::EntityHash>
-
-    def to_brp(self) -> object:
-        return {
-            "neighbors": self.neighbors,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "DirectionalNavigationMap":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            neighbors=data["neighbors"],
-        )
-
-@dataclass
-class GlobalAmbientLight(BevyResource):
-    """`bevy_light::ambient_light::GlobalAmbientLight`"""
-    type_path: ClassVar[str] = "bevy_light::ambient_light::GlobalAmbientLight"
-    color: Any  # unresolved: bevy_color::color::Color
-    brightness: float
-    affects_lightmapped_meshes: bool
-
-    def to_brp(self) -> object:
-        return {
-            "color": self.color,
-            "brightness": self.brightness,
-            "affects_lightmapped_meshes": self.affects_lightmapped_meshes,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "GlobalAmbientLight":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            color=data["color"],
-            brightness=data["brightness"],
-            affects_lightmapped_meshes=data["affects_lightmapped_meshes"],
-        )
-
-@dataclass
-class DirectionalLightShadowMap(BevyResource):
-    """`bevy_light::directional_light::DirectionalLightShadowMap`"""
-    type_path: ClassVar[str] = "bevy_light::directional_light::DirectionalLightShadowMap"
-    size: int
-
-    def to_brp(self) -> object:
-        return {
-            "size": self.size,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "DirectionalLightShadowMap":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            size=data["size"],
-        )
-
-@dataclass
-class PointLightShadowMap(BevyResource):
-    """`bevy_light::point_light::PointLightShadowMap`"""
-    type_path: ClassVar[str] = "bevy_light::point_light::PointLightShadowMap"
-    size: int
-
-    def to_brp(self) -> object:
-        return {
-            "size": self.size,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "PointLightShadowMap":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            size=data["size"],
-        )
-
-@dataclass
-class DefaultOpaqueRendererMethod(BevyResource):
-    """`bevy_pbr::material::DefaultOpaqueRendererMethod`"""
-    type_path: ClassVar[str] = "bevy_pbr::material::DefaultOpaqueRendererMethod"
-    value: Literal["Forward", "Deferred", "Auto"]
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "DefaultOpaqueRendererMethod":
-        return cls(value=value)
-
-@dataclass
-class WireframeConfig(BevyResource):
-    """`bevy_pbr::wireframe::WireframeConfig`"""
-    type_path: ClassVar[str] = "bevy_pbr::wireframe::WireframeConfig"
-    global_: bool
-    default_color: Any  # unresolved: bevy_color::color::Color
-
-    def to_brp(self) -> object:
-        return {
-            "global": self.global_,
-            "default_color": self.default_color,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "WireframeConfig":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            global_=data["global"],
-            default_color=data["default_color"],
-        )
-
-@dataclass
-class PickingSettings(BevyResource):
-    """`bevy_picking::PickingSettings`"""
-    type_path: ClassVar[str] = "bevy_picking::PickingSettings"
-    is_enabled: bool
-    is_input_enabled: bool
-    is_hover_enabled: bool
-    is_window_picking_enabled: bool
-
-    def to_brp(self) -> object:
-        return {
-            "is_enabled": self.is_enabled,
-            "is_input_enabled": self.is_input_enabled,
-            "is_hover_enabled": self.is_hover_enabled,
-            "is_window_picking_enabled": self.is_window_picking_enabled,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "PickingSettings":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            is_enabled=data["is_enabled"],
-            is_input_enabled=data["is_input_enabled"],
-            is_hover_enabled=data["is_hover_enabled"],
-            is_window_picking_enabled=data["is_window_picking_enabled"],
-        )
-
-@dataclass
-class PointerInputSettings(BevyResource):
-    """`bevy_picking::input::PointerInputSettings`"""
-    type_path: ClassVar[str] = "bevy_picking::input::PointerInputSettings"
-    is_touch_enabled: bool
-    is_mouse_enabled: bool
-
-    def to_brp(self) -> object:
-        return {
-            "is_touch_enabled": self.is_touch_enabled,
-            "is_mouse_enabled": self.is_mouse_enabled,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "PointerInputSettings":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            is_touch_enabled=data["is_touch_enabled"],
-            is_mouse_enabled=data["is_mouse_enabled"],
-        )
-
-@dataclass
-class MeshPickingSettings(BevyResource):
-    """`bevy_picking::mesh_picking::MeshPickingSettings`"""
-    type_path: ClassVar[str] = "bevy_picking::mesh_picking::MeshPickingSettings"
-    require_markers: bool
-    ray_cast_visibility: Literal["Any", "Visible", "VisibleInView"]
-
-    def to_brp(self) -> object:
-        return {
-            "require_markers": self.require_markers,
-            "ray_cast_visibility": self.ray_cast_visibility,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "MeshPickingSettings":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            require_markers=data["require_markers"],
-            ray_cast_visibility=data["ray_cast_visibility"],
-        )
-
-@dataclass
-class SchemaTypesMetadata(BevyResource):
-    """`bevy_remote::schemas::SchemaTypesMetadata`"""
-    type_path: ClassVar[str] = "bevy_remote::schemas::SchemaTypesMetadata"
-    type_data_map: Any  # unresolved: bevy_platform::collections::HashMap<core::any::TypeId, alloc::string::String, bevy_platform::hash::FixedHasher>
-
-    def to_brp(self) -> object:
-        return {
-            "type_data_map": self.type_data_map,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SchemaTypesMetadata":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            type_data_map=data["type_data_map"],
-        )
-
-@dataclass
-class GlobalsUniform(BevyResource):
-    """`bevy_render::globals::GlobalsUniform`"""
-    type_path: ClassVar[str] = "bevy_render::globals::GlobalsUniform"
-    time: float
-    delta_time: float
-    frame_count: int
-
-    def to_brp(self) -> object:
-        return {
-            "time": self.time,
-            "delta_time": self.delta_time,
-            "frame_count": self.frame_count,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "GlobalsUniform":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            time=data["time"],
-            delta_time=data["delta_time"],
-            frame_count=data["frame_count"],
-        )
-
-@dataclass
-class SpritePickingSettings(BevyResource):
-    """`bevy_sprite::picking_backend::SpritePickingSettings`"""
-    type_path: ClassVar[str] = "bevy_sprite::picking_backend::SpritePickingSettings"
-    require_markers: bool
-    picking_mode: Any  # unresolved: bevy_sprite::picking_backend::SpritePickingMode
-
-    def to_brp(self) -> object:
-        return {
-            "require_markers": self.require_markers,
-            "picking_mode": self.picking_mode,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SpritePickingSettings":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            require_markers=data["require_markers"],
-            picking_mode=data["picking_mode"],
-        )
-
-@dataclass
-class Wireframe2dConfig(BevyResource):
-    """`bevy_sprite_render::mesh2d::wireframe2d::Wireframe2dConfig`"""
-    type_path: ClassVar[str] = "bevy_sprite_render::mesh2d::wireframe2d::Wireframe2dConfig"
-    global_: bool
-    default_color: Any  # unresolved: bevy_color::color::Color
-
-    def to_brp(self) -> object:
-        return {
-            "global": self.global_,
-            "default_color": self.default_color,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "Wireframe2dConfig":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            global_=data["global"],
-            default_color=data["default_color"],
-        )
-
-@dataclass
-class TilemapChunkMeshCache(BevyResource):
-    """`bevy_sprite_render::tilemap_chunk::TilemapChunkMeshCache`"""
-    type_path: ClassVar[str] = "bevy_sprite_render::tilemap_chunk::TilemapChunkMeshCache"
-    value: Any  # unresolved: bevy_platform::collections::HashMap<glam::UVec2, bevy_asset::handle::Handle<bevy_mesh::mesh::Mesh>, bevy_platform::hash::FixedHasher>
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "TilemapChunkMeshCache":
-        return cls(value=value)
-
-@dataclass
-class UiScale(BevyResource):
-    """`bevy_ui::UiScale`"""
-    type_path: ClassVar[str] = "bevy_ui::UiScale"
-    value: float
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "UiScale":
-        return cls(value=value)
-
-@dataclass
-class UiPickingSettings(BevyResource):
-    """`bevy_ui::picking_backend::UiPickingSettings`"""
-    type_path: ClassVar[str] = "bevy_ui::picking_backend::UiPickingSettings"
-    require_markers: bool
-
-    def to_brp(self) -> object:
-        return {
-            "require_markers": self.require_markers,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "UiPickingSettings":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            require_markers=data["require_markers"],
-        )
-
 # Nested/helper types
+
+@dataclass
+class SprintInputState:
+    """`adventuresim_tactical_netcode::client::SprintInputState`"""
+    active: bool
+    shift_down: bool
+    held_seconds: float
+    deactivating_press: bool
+
+    def to_brp(self) -> object:
+        return {
+            "active": self.active,
+            "shift_down": self.shift_down,
+            "held_seconds": self.held_seconds,
+            "deactivating_press": self.deactivating_press,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SprintInputState":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            active=data["active"],
+            shift_down=data["shift_down"],
+            held_seconds=data["held_seconds"],
+            deactivating_press=data["deactivating_press"],
+        )
+
+@dataclass
+class JumpCommand:
+    """`adventuresim_tactical_netcode::message::JumpCommand`"""
+    sequence: int
+
+    def to_brp(self) -> object:
+        return {
+            "sequence": self.sequence,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "JumpCommand":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            sequence=data["sequence"],
+        )
 
 @dataclass
 class PlayerInputRequest:
     """`adventuresim_tactical_netcode::message::PlayerInputRequest`"""
     movement: list[float] | None  # len 2
     look: list[float]  # len 2
-    jump: bool
+    jump: JumpCommand
+    crouch: bool
+    jump_charge: bool
+    downed_align: bool
+    posture: PostureCommand
+    pace: Literal["Walk", "Jog", "Sprint"]
     weapon_guard: Literal["Lowered", "Raised"]
 
     def to_brp(self) -> object:
         return {
             "movement": ((list(v0)) if (v0 := self.movement) is not None else None),
             "look": list(self.look),
-            "jump": self.jump,
+            "jump": self.jump.to_brp(),
+            "crouch": self.crouch,
+            "jump_charge": self.jump_charge,
+            "downed_align": self.downed_align,
+            "posture": self.posture.to_brp(),
+            "pace": self.pace,
             "weapon_guard": self.weapon_guard,
         }
 
@@ -8065,8 +10347,34 @@ class PlayerInputRequest:
         return cls(
             movement=((list(v0)) if (v0 := data["movement"]) is not None else None),
             look=list(data["look"]),
-            jump=data["jump"],
+            jump=JumpCommand.from_brp(data["jump"]),
+            crouch=data["crouch"],
+            jump_charge=data["jump_charge"],
+            downed_align=data["downed_align"],
+            posture=PostureCommand.from_brp(data["posture"]),
+            pace=data["pace"],
             weapon_guard=data["weapon_guard"],
+        )
+
+@dataclass
+class PostureCommand:
+    """`adventuresim_tactical_netcode::message::PostureCommand`"""
+    sequence: int
+    action: Any | None  # unresolved: adventuresim_tactical_netcode::message::PostureActionRequest
+
+    def to_brp(self) -> object:
+        return {
+            "sequence": self.sequence,
+            "action": self.action,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PostureCommand":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            sequence=data["sequence"],
+            action=data["action"],
         )
 
 @dataclass
@@ -8499,6 +10807,252 @@ class AnimationTransition:
         )
 
 @dataclass
+class DeferredGizmos:
+    """`bevy_animation_graph_core::context::deferred_gizmos::DeferredGizmos`"""
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "DeferredGizmos":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class GraphState:
+    """`bevy_animation_graph_core::context::graph_context::GraphState`"""
+    node_states: NodeStates
+    node_caches: NodeCaches
+    query_output_time: Any  # unresolved: bevy_animation_graph_core::context::graph_context::QueryOutputTime
+    graph_id: Any  # unresolved: bevy_asset::id::AssetId<bevy_animation_graph_core::animation_graph::AnimationGraph>
+
+    def to_brp(self) -> object:
+        return {
+            "node_states": self.node_states.to_brp(),
+            "node_caches": self.node_caches.to_brp(),
+            "query_output_time": self.query_output_time,
+            "graph_id": self.graph_id,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GraphState":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            node_states=NodeStates.from_brp(data["node_states"]),
+            node_caches=NodeCaches.from_brp(data["node_caches"]),
+            query_output_time=data["query_output_time"],
+            graph_id=data["graph_id"],
+        )
+
+@dataclass
+class GraphContextArena:
+    """`bevy_animation_graph_core::context::graph_context_arena::GraphContextArena`"""
+    contexts: list[GraphState]
+    hierarchy: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::context::graph_context_arena::SubContextId, bevy_animation_graph_core::context::graph_context_arena::GraphContextId, bevy_platform::hash::FixedHasher>
+    top_level_context: int
+
+    def to_brp(self) -> object:
+        return {
+            "contexts": [v0.to_brp() for v0 in self.contexts],
+            "hierarchy": self.hierarchy,
+            "top_level_context": self.top_level_context,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "GraphContextArena":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            contexts=[GraphState.from_brp(v0) for v0 in data["contexts"]],
+            hierarchy=data["hierarchy"],
+            top_level_context=data["top_level_context"],
+        )
+
+@dataclass
+class IoOverrides:
+    """`bevy_animation_graph_core::context::io_env::IoOverrides`"""
+    data: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::GraphInputPin, bevy_animation_graph_core::edge_data::DataValue, bevy_platform::hash::FixedHasher>
+    duration: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::GraphInputPin, core::option::Option<f32>, bevy_platform::hash::FixedHasher>
+    time: Any | None  # unresolved: bevy_animation_graph_core::animation_graph::TimeUpdate
+
+    def to_brp(self) -> object:
+        return {
+            "data": self.data,
+            "duration": self.duration,
+            "time": self.time,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "IoOverrides":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            data=data["data"],
+            duration=data["duration"],
+            time=data["time"],
+        )
+
+@dataclass
+class NodeCaches:
+    """`bevy_animation_graph_core::context::node_caches::NodeCaches`"""
+    caches: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::NodeId, bevy_animation_graph_core::context::node_caches::NodeCache, bevy_platform::hash::FixedHasher>
+
+    def to_brp(self) -> object:
+        return {
+            "caches": self.caches,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "NodeCaches":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            caches=data["caches"],
+        )
+
+@dataclass
+class NodeStates:
+    """`bevy_animation_graph_core::context::node_states::NodeStates`"""
+    states: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::NodeId, bevy_animation_graph_core::context::node_states::NodeState, bevy_platform::hash::FixedHasher>
+
+    def to_brp(self) -> object:
+        return {
+            "states": self.states,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "NodeStates":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            states=data["states"],
+        )
+
+@dataclass
+class EventQueue:
+    """`bevy_animation_graph_core::edge_data::events::EventQueue`"""
+    events: list[SampledEvent]
+
+    def to_brp(self) -> object:
+        return {
+            "events": [v0.to_brp() for v0 in self.events],
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "EventQueue":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            events=[SampledEvent.from_brp(v0) for v0 in data["events"]],
+        )
+
+@dataclass
+class SampledEvent:
+    """`bevy_animation_graph_core::edge_data::events::SampledEvent`"""
+    event: Any  # unresolved: bevy_animation_graph_core::edge_data::events::AnimationEvent
+    weight: float
+    percentage: float
+    track: str | None
+
+    def to_brp(self) -> object:
+        return {
+            "event": self.event,
+            "weight": self.weight,
+            "percentage": self.percentage,
+            "track": self.track,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SampledEvent":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            event=data["event"],
+            weight=data["weight"],
+            percentage=data["percentage"],
+            track=data["track"],
+        )
+
+@dataclass
+class SpawnedRagdoll:
+    """`bevy_animation_graph_core::ragdoll::spawning::SpawnedRagdoll`"""
+    root: int
+    bodies: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::ragdoll::definition::BodyId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
+    colliders: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::ragdoll::definition::ColliderId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
+    joints: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::ragdoll::definition::JointId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
+
+    def to_brp(self) -> object:
+        return {
+            "root": self.root,
+            "bodies": self.bodies,
+            "colliders": self.colliders,
+            "joints": self.joints,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "SpawnedRagdoll":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            root=data["root"],
+            bodies=data["bodies"],
+            colliders=data["colliders"],
+            joints=data["joints"],
+        )
+
+@dataclass
+class ComputedCameraValues:
+    """`bevy_camera::camera::ComputedCameraValues`"""
+    clip_from_view: Mat4
+    target_info: RenderTargetInfo | None
+    old_viewport_size: list[int] | None  # len 2
+    old_sub_camera_view: SubCameraView | None
+
+    def to_brp(self) -> object:
+        return {
+            "clip_from_view": self.clip_from_view.to_brp(),
+            "target_info": ((v0.to_brp()) if (v0 := self.target_info) is not None else None),
+            "old_viewport_size": ((list(v0)) if (v0 := self.old_viewport_size) is not None else None),
+            "old_sub_camera_view": ((v0.to_brp()) if (v0 := self.old_sub_camera_view) is not None else None),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ComputedCameraValues":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            clip_from_view=Mat4.from_brp(data["clip_from_view"]),
+            target_info=((RenderTargetInfo.from_brp(v0)) if (v0 := data["target_info"]) is not None else None),
+            old_viewport_size=((list(v0)) if (v0 := data["old_viewport_size"]) is not None else None),
+            old_sub_camera_view=((SubCameraView.from_brp(v0)) if (v0 := data["old_sub_camera_view"]) is not None else None),
+        )
+
+@dataclass
+class RenderTargetInfo:
+    """`bevy_camera::camera::RenderTargetInfo`"""
+    physical_size: list[int]  # len 2
+    scale_factor: float
+
+    def to_brp(self) -> object:
+        return {
+            "physical_size": list(self.physical_size),
+            "scale_factor": self.scale_factor,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RenderTargetInfo":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            physical_size=list(data["physical_size"]),
+            scale_factor=data["scale_factor"],
+        )
+
+@dataclass
 class SubCameraView:
     """`bevy_camera::camera::SubCameraView`"""
     full_size: list[int]  # len 2
@@ -8547,6 +11101,57 @@ class Viewport:
         )
 
 @dataclass
+class LinearRgba:
+    """`bevy_color::linear_rgba::LinearRgba`"""
+    red: float
+    green: float
+    blue: float
+    alpha: float
+
+    def to_brp(self) -> object:
+        return {
+            "red": self.red,
+            "green": self.green,
+            "blue": self.blue,
+            "alpha": self.alpha,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "LinearRgba":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            red=data["red"],
+            green=data["green"],
+            blue=data["blue"],
+            alpha=data["alpha"],
+        )
+
+@dataclass
+class FrameTimeGraphConfig:
+    """`bevy_dev_tools::fps_overlay::FrameTimeGraphConfig`"""
+    enabled: bool
+    min_fps: float
+    target_fps: float
+
+    def to_brp(self) -> object:
+        return {
+            "enabled": self.enabled,
+            "min_fps": self.min_fps,
+            "target_fps": self.target_fps,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "FrameTimeGraphConfig":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            enabled=data["enabled"],
+            min_fps=data["min_fps"],
+            target_fps=data["target_fps"],
+        )
+
+@dataclass
 class Tick:
     """`bevy_ecs::change_detection::tick::Tick`"""
     tick: int
@@ -8562,6 +11167,51 @@ class Tick:
         assert isinstance(data, dict)
         return cls(
             tick=data["tick"],
+        )
+
+@dataclass
+class CancelAction:
+    """`bevy_enhanced_input::condition::combo::CancelAction`"""
+    action: int
+    events: int
+
+    def to_brp(self) -> object:
+        return {
+            "action": self.action,
+            "events": self.events,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "CancelAction":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            action=data["action"],
+            events=data["events"],
+        )
+
+@dataclass
+class ComboStep:
+    """`bevy_enhanced_input::condition::combo::ComboStep`"""
+    action: int
+    events: int
+    timeout: float
+
+    def to_brp(self) -> object:
+        return {
+            "action": self.action,
+            "events": self.events,
+            "timeout": self.timeout,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ComboStep":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            action=data["action"],
+            events=data["events"],
+            timeout=data["timeout"],
         )
 
 @dataclass
@@ -8751,6 +11401,42 @@ class Cuboid:
         )
 
 @dataclass
+class HalfSpace:
+    """`bevy_math::primitives::half_space::HalfSpace`"""
+    normal_d: list[float]  # len 4
+
+    def to_brp(self) -> object:
+        return {
+            "normal_d": list(self.normal_d),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "HalfSpace":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            normal_d=list(data["normal_d"]),
+        )
+
+@dataclass
+class ViewFrustum:
+    """`bevy_math::primitives::view_frustum::ViewFrustum`"""
+    half_spaces: list[HalfSpace]  # len 6
+
+    def to_brp(self) -> object:
+        return {
+            "half_spaces": [v0.to_brp() for v0 in self.half_spaces],
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ViewFrustum":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            half_spaces=[HalfSpace.from_brp(v0) for v0 in data["half_spaces"]],
+        )
+
+@dataclass
 class Rect:
     """`bevy_math::rects::rect::Rect`"""
     min: list[float]  # len 2
@@ -8903,12 +11589,14 @@ class TileData:
     tileset_index: int
     color: Any  # unresolved: bevy_color::color::Color
     visible: bool
+    orientation: Literal["Default", "Rotate90", "Rotate180", "Rotate270", "MirrorH", "MirrorHRotate90", "MirrorHRotate180", "MirrorHRotate270"]
 
     def to_brp(self) -> object:
         return {
             "tileset_index": self.tileset_index,
             "color": self.color,
             "visible": self.visible,
+            "orientation": self.orientation,
         }
 
     @classmethod
@@ -8919,20 +11607,23 @@ class TileData:
             tileset_index=data["tileset_index"],
             color=data["color"],
             visible=data["visible"],
+            orientation=data["orientation"],
         )
 
 @dataclass
 class GlyphAtlasInfo:
     """`bevy_text::glyph::GlyphAtlasInfo`"""
     texture: Any  # unresolved: bevy_asset::id::AssetId<bevy_image::image::Image>
-    texture_atlas: Any  # unresolved: bevy_asset::id::AssetId<bevy_image::texture_atlas::TextureAtlasLayout>
-    location: GlyphAtlasLocation
+    rect: Rect
+    offset: list[float]  # len 2
+    is_alpha_mask: bool
 
     def to_brp(self) -> object:
         return {
             "texture": self.texture,
-            "texture_atlas": self.texture_atlas,
-            "location": self.location.to_brp(),
+            "rect": self.rect.to_brp(),
+            "offset": list(self.offset),
+            "is_alpha_mask": self.is_alpha_mask,
         }
 
     @classmethod
@@ -8941,51 +11632,25 @@ class GlyphAtlasInfo:
         assert isinstance(data, dict)
         return cls(
             texture=data["texture"],
-            texture_atlas=data["texture_atlas"],
-            location=GlyphAtlasLocation.from_brp(data["location"]),
-        )
-
-@dataclass
-class GlyphAtlasLocation:
-    """`bevy_text::glyph::GlyphAtlasLocation`"""
-    glyph_index: int
-    offset: list[int]  # len 2
-
-    def to_brp(self) -> object:
-        return {
-            "glyph_index": self.glyph_index,
-            "offset": list(self.offset),
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "GlyphAtlasLocation":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            glyph_index=data["glyph_index"],
+            rect=Rect.from_brp(data["rect"]),
             offset=list(data["offset"]),
+            is_alpha_mask=data["is_alpha_mask"],
         )
 
 @dataclass
 class PositionedGlyph:
     """`bevy_text::glyph::PositionedGlyph`"""
     position: list[float]  # len 2
-    size: list[float]  # len 2
     atlas_info: GlyphAtlasInfo
-    span_index: int
+    section_index: int
     line_index: int
-    byte_index: int
-    byte_length: int
 
     def to_brp(self) -> object:
         return {
             "position": list(self.position),
-            "size": list(self.size),
             "atlas_info": self.atlas_info.to_brp(),
-            "span_index": self.span_index,
+            "section_index": self.section_index,
             "line_index": self.line_index,
-            "byte_index": self.byte_index,
-            "byte_length": self.byte_length,
         }
 
     @classmethod
@@ -8994,18 +11659,15 @@ class PositionedGlyph:
         assert isinstance(data, dict)
         return cls(
             position=list(data["position"]),
-            size=list(data["size"]),
             atlas_info=GlyphAtlasInfo.from_brp(data["atlas_info"]),
-            span_index=data["span_index"],
+            section_index=data["section_index"],
             line_index=data["line_index"],
-            byte_index=data["byte_index"],
-            byte_length=data["byte_length"],
         )
 
 @dataclass
 class RunGeometry:
     """`bevy_text::pipeline::RunGeometry`"""
-    span_index: int
+    section_index: int
     bounds: Rect
     strikethrough_y: float
     strikethrough_thickness: float
@@ -9014,7 +11676,7 @@ class RunGeometry:
 
     def to_brp(self) -> object:
         return {
-            "span_index": self.span_index,
+            "section_index": self.section_index,
             "bounds": self.bounds.to_brp(),
             "strikethrough_y": self.strikethrough_y,
             "strikethrough_thickness": self.strikethrough_thickness,
@@ -9027,7 +11689,7 @@ class RunGeometry:
         data = value
         assert isinstance(data, dict)
         return cls(
-            span_index=data["span_index"],
+            section_index=data["section_index"],
             bounds=Rect.from_brp(data["bounds"]),
             strikethrough_y=data["strikethrough_y"],
             strikethrough_thickness=data["strikethrough_thickness"],
@@ -9054,15 +11716,35 @@ class FontFeatures:
         )
 
 @dataclass
+class FontVariations:
+    """`bevy_text::text::FontVariations`"""
+    variations: list[Any]  # unresolved: (bevy_text::text::FontVariationTag, f32)
+
+    def to_brp(self) -> object:
+        return {
+            "variations": list(self.variations),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "FontVariations":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            variations=list(data["variations"]),
+        )
+
+@dataclass
 class TextEntity:
     """`bevy_text::text::TextEntity`"""
     entity: int
     depth: int
+    font_smoothing: Literal["None", "AntiAliased"]
 
     def to_brp(self) -> object:
         return {
             "entity": self.entity,
             "depth": self.depth,
+            "font_smoothing": self.font_smoothing,
         }
 
     @classmethod
@@ -9072,6 +11754,7 @@ class TextEntity:
         return cls(
             entity=data["entity"],
             depth=data["depth"],
+            font_smoothing=data["font_smoothing"],
         )
 
 @dataclass
@@ -9093,6 +11776,36 @@ class Stopwatch:
         return cls(
             elapsed=data["elapsed"],
             is_paused=data["is_paused"],
+        )
+
+@dataclass
+class Timer:
+    """`bevy_time::timer::Timer`"""
+    stopwatch: Stopwatch
+    duration: Any  # unresolved: core::time::Duration
+    mode: Literal["Once", "Repeating"]
+    finished: bool
+    times_finished_this_tick: int
+
+    def to_brp(self) -> object:
+        return {
+            "stopwatch": self.stopwatch.to_brp(),
+            "duration": self.duration,
+            "mode": self.mode,
+            "finished": self.finished,
+            "times_finished_this_tick": self.times_finished_this_tick,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Timer":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            stopwatch=Stopwatch.from_brp(data["stopwatch"]),
+            duration=data["duration"],
+            mode=data["mode"],
+            finished=data["finished"],
+            times_finished_this_tick=data["times_finished_this_tick"],
         )
 
 @dataclass
@@ -9333,6 +12046,30 @@ class Val2:
         return cls(
             x=data["x"],
             y=data["y"],
+        )
+
+@dataclass
+class PopoverPlacement:
+    """`bevy_ui_widgets::popover::PopoverPlacement`"""
+    side: Literal["Top", "Bottom", "Left", "Right"]
+    align: Literal["Start", "Center", "End"]
+    gap: float
+
+    def to_brp(self) -> object:
+        return {
+            "side": self.side,
+            "align": self.align,
+            "gap": self.gap,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "PopoverPlacement":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            side=data["side"],
+            align=data["align"],
+            gap=data["gap"],
         )
 
 @dataclass
@@ -9594,6 +12331,33 @@ class Mat3A:
             x_axis=list(data["x_axis"]),
             y_axis=list(data["y_axis"]),
             z_axis=list(data["z_axis"]),
+        )
+
+@dataclass
+class Mat4:
+    """`glam::Mat4`"""
+    x_axis: list[float]  # len 4
+    y_axis: list[float]  # len 4
+    z_axis: list[float]  # len 4
+    w_axis: list[float]  # len 4
+
+    def to_brp(self) -> object:
+        return {
+            "x_axis": list(self.x_axis),
+            "y_axis": list(self.y_axis),
+            "z_axis": list(self.z_axis),
+            "w_axis": list(self.w_axis),
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "Mat4":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            x_axis=list(data["x_axis"]),
+            y_axis=list(data["y_axis"]),
+            z_axis=list(data["z_axis"]),
+            w_axis=list(data["w_axis"]),
         )
 
 @dataclass

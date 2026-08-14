@@ -751,6 +751,7 @@ pub struct BackendCharacterResidenceStatus {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Complete backend projection shape; not every field is rendered yet.
 pub struct BackendCharacterRelationshipStatus {
     pub character_id: u64,
     pub spouse_id: Option<u64>,
@@ -782,6 +783,7 @@ pub struct BackendFamilyChild {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Reserved backend projection for the courtship discovery UI.
 pub struct BackendCourtshipDiscoveryStatus {
     pub observer_character_id: u64,
     pub first_character_id: u64,
@@ -1601,6 +1603,7 @@ impl CharacterEquipmentGraph {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Backend equipment rows retain authority fields used by other consumers.
 pub struct CharacterEquippedItem {
     pub inventory_item_id: u64,
     pub character_id: u64,
@@ -1621,6 +1624,7 @@ pub struct EquipmentAttachmentTarget {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Full selection identity is preserved even when only labels are rendered.
 pub struct EquipmentAttachmentTargetSelection {
     pub requirement_index: u16,
     pub parent_inventory_item_id: u64,
@@ -1628,6 +1632,7 @@ pub struct EquipmentAttachmentTargetSelection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Complete backend occupancy shape; views use only placement fields.
 pub struct EquipmentOccupancy {
     pub id: String,
     pub character_id: u64,
@@ -1668,6 +1673,12 @@ pub struct ItemDefinition {
     pub repairable: bool,
     #[serde(default)]
     pub accuracy: f32,
+    #[serde(default)]
+    pub swing_precision: f32,
+    #[serde(default)]
+    pub stab_precision: f32,
+    #[serde(default)]
+    pub prefers_stab: bool,
     #[serde(default)]
     pub reach: f32,
     #[serde(default)]
@@ -1877,6 +1888,9 @@ impl Default for ItemDefinition {
             attachment_points: Vec::new(),
             repairable: false,
             accuracy: 0.0,
+            swing_precision: 0.0,
+            stab_precision: 0.0,
+            prefers_stab: false,
             reach: 0.0,
             block: 0.0,
             coverage: 0.0,
@@ -2297,6 +2311,7 @@ pub struct CharacterCondition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)] // Reserved projection for environmental exposure presentation.
 pub struct CharacterExposure {
     pub character_id: u64,
     pub wetness_bps: u16,

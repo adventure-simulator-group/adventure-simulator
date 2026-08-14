@@ -362,10 +362,7 @@ pub fn backend_settlement_resident_relationships(
                 .map_or(affinity.anchor_minute, |time| time.minutes);
             let shared_minutes = canonical_pair(affinity.subject_id, affinity.actor_id)
                 .and_then(|(low, high)| {
-                    ctx.db
-                        .character_familiarity()
-                        .id()
-                        .find(&pair_id(low, high))
+                    ctx.db.character_familiarity().id().find(pair_id(low, high))
                 })
                 .map_or(0, |row| row.shared_minutes);
             let morale = ctx
@@ -547,7 +544,7 @@ fn chat_replayed(
         .db
         .social_chat_receipt()
         .id()
-        .find(&chat_receipt_id(actor_id, action_id))
+        .find(chat_receipt_id(actor_id, action_id))
     else {
         return Ok(false);
     };
@@ -728,12 +725,7 @@ pub fn spend_time_with_settlement_resident(
     );
     let affinity = current_affinity(ctx, resident_character_id, actor_id);
     let familiarity = canonical_pair(actor_id, resident_character_id)
-        .and_then(|(low, high)| {
-            ctx.db
-                .character_familiarity()
-                .id()
-                .find(&pair_id(low, high))
-        })
+        .and_then(|(low, high)| ctx.db.character_familiarity().id().find(pair_id(low, high)))
         .map_or(0.0, |row| row.shared_minutes as f32 / 60.0);
     let language =
         crate::character::shared_language_coefficient(ctx, actor_id, resident_character_id);
@@ -846,12 +838,7 @@ pub fn chat_with_party_member(
     let target_disposition = character_chat_disposition(&target_personality);
     let affinity = current_affinity(ctx, target_id, actor_id);
     let familiarity = canonical_pair(actor_id, target_id)
-        .and_then(|(low, high)| {
-            ctx.db
-                .character_familiarity()
-                .id()
-                .find(&pair_id(low, high))
-        })
+        .and_then(|(low, high)| ctx.db.character_familiarity().id().find(pair_id(low, high)))
         .map_or(0.0, |row| row.shared_minutes as f32 / 60.0);
     let language = crate::character::shared_language_coefficient(ctx, actor_id, target_id);
     let charm_check = adventuresim_world_schema::language_scaled_effect(
@@ -1020,7 +1007,7 @@ pub(crate) fn passively_assess_dialogue_witness(
         .db
         .dialogue_witness_capability()
         .id()
-        .find(&format!("{session_id}:{observer_character_id}"))
+        .find(format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
     let claims = crate::strategic::referred_testimony_claims(
         ctx,
@@ -1133,13 +1120,13 @@ fn require_witness_social_action(
         .db
         .dialogue_witness_capability()
         .id()
-        .find(&format!("{session_id}:{observer_character_id}"))
+        .find(format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
     let claim = ctx
         .db
         .dialogue_witness_claim()
         .challenge_token()
-        .find(&challenge_token.to_owned())
+        .find(challenge_token.to_owned())
         .ok_or("Witness claim challenge is unavailable")?;
     if claim.session_id != session_id
         || claim.observer_character_id != observer_character_id
@@ -1272,12 +1259,7 @@ pub fn approach_dialogue_witness(
         .ok_or("Witness NPC not found")?;
     let familiarity_minutes =
         canonical_pair(observer_character_id, capability.resident_character_id)
-            .and_then(|(low, high)| {
-                ctx.db
-                    .character_familiarity()
-                    .id()
-                    .find(&pair_id(low, high))
-            })
+            .and_then(|(low, high)| ctx.db.character_familiarity().id().find(pair_id(low, high)))
             .map_or(0, |value| value.shared_minutes);
     let familiarity_bps =
         ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
@@ -1571,7 +1553,7 @@ fn source_addressed(ctx: &ReducerContext, actor_id: u64, target_id: u64, source_
     ctx.db
         .social_address()
         .id()
-        .find(&social_address_id(actor_id, target_id, source_id))
+        .find(social_address_id(actor_id, target_id, source_id))
         .is_some()
 }
 
@@ -1666,7 +1648,7 @@ pub fn current_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64) ->
     ctx.db
         .character_affinity()
         .id()
-        .find(&affinity_id(subject_id, actor_id))
+        .find(affinity_id(subject_id, actor_id))
         .map_or(0.0, |row| {
             settle_affinity(row.anchor, now.saturating_sub(row.anchor_minute))
         })
@@ -2436,13 +2418,7 @@ fn sensitivity(ctx: &ReducerContext, target_id: u64, topic: SocialTopic) -> f32 
                 0.35
             }
         }
-        SocialTopic::Injury => {
-            if p.self_regard == crate::personality::SelfRegard::Proud {
-                0.8
-            } else {
-                0.4
-            }
-        }
+        SocialTopic::Injury if p.self_regard == crate::personality::SelfRegard::Proud => 0.8,
         _ => 0.4,
     }
 }
@@ -2856,7 +2832,7 @@ fn perform_social_action_authoritative(
     }
 
     let familiarity = canonical_pair(actor_id, target_id)
-        .and_then(|(l, h)| ctx.db.character_familiarity().id().find(&pair_id(l, h)))
+        .and_then(|(l, h)| ctx.db.character_familiarity().id().find(pair_id(l, h)))
         .map_or(0.0, |v| v.shared_minutes as f32 / 60.0);
     let affinity = if is_self {
         0.0
@@ -2908,7 +2884,7 @@ fn perform_social_action_authoritative(
         ctx.db
             .social_belief()
             .id()
-            .find(&format!("{actor_id}:{target_id}:{}", axis.slug()))
+            .find(format!("{actor_id}:{target_id}:{}", axis.slug()))
             .and_then(|belief| {
                 (belief.axis.core() == axis
                     && axis.legal_values().contains(&belief.perceived_value))

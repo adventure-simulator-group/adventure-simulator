@@ -2,11 +2,11 @@
 party-member "template" character facing one enemy bot at melee range - see
 `fixtures/combat_scenario.scn.ron`) in standalone mode (no SpacetimeDB at
 all, see `--world-dump`), connects a client, mocks a real melee attack via
-`bevy_enhanced_input`'s own `ActionMock` (see
-`adventuresim_tactical_client::debug::register_input_mock_types` - this
-drives the actual input-processing pipeline, `Fire<Attack>` and all, not a
-debug bypass of it), and checks whether the bot's `DefenseChances`
-(mutated via BRP) affects whether it takes damage.
+`DebugForceAttackTrigger` (see
+`adventuresim_tactical_netcode::client::update_direct_control_input` - this
+drives the actual input-processing pipeline, `apply_direct_combat_controls`
+and all, not a debug bypass of it), and checks whether the bot's
+`DefenseChances` (mutated via BRP) affects whether it takes damage.
 
 The fixture was captured from a real, normally-seeded mission: one bot given
 `OffensiveCombatAi`/`DefenseChances` and positioned at melee range facing the
@@ -42,16 +42,6 @@ COMBAT_PORTS = {
     "combat-no-defense": ("23901", 15708, 15709),
 }
 
-# The fixture positions the bot at +X from the template's position, same Z
-# (see fixtures/combat_scenario.scn.ron - template ~(-5.59, ..., 0.51), bot
-# ~(-3.09, ..., 0.51)), so a fixed yaw always faces it. Bevy's `Quat` yaw
-# convention turns out to point *away* from +X as the angle increases from
-# identity (identity itself looks down -Z) - confirmed live by reading back
-# `Camera3d`'s own forward vector over BRP after applying candidate yaws -
-# so this is negative, not the "positive turns toward +X" a naive right-hand
-# derivation from identity=-Z would suggest.
-CAMERA_YAW_TO_FACE_BOT = -math.pi / 2
-
 # The fixture's captured ~2.5m separation is within camera/selection range
 # but past actual melee contact range (`HANDS_REACH` (1.5) + weapon reach
 # (0.8 for the katzbalger both characters spawn with) = 2.3, checked
@@ -75,15 +65,8 @@ BOT_LIMB_HEALTH = 1000.0
 # not as the primary mechanism.
 ATTACK_ATTEMPTS = 20
 
-# See player.rs's `actions!(Player[Movement, Jump, RotateCamera, Attack,
-# Dodge, Parry])` - `Actions<Player>.entities` preserves spawn order, and
-# `Action<Attack>` itself can't be queried directly over BRP (it's a
-# generic external type with no `Reflect` impl), so this index is the only
-# way to find the right action entity. Keep in sync with that binding list.
-ATTACK_ACTION_INDEX = 3
-
 # From client join to a scripted attack actually landing (or missing): mock
-# processed -> Fire<Attack> -> AttackState inserted, MeleeActionRequest::Start
+# processed -> attack_just_pressed -> AttackState inserted, MeleeActionRequest::Start
 # sent -> ~0.3s client-side windup (the weapon's `windup_secs`) -> camera
 # raycast picks the target -> MeleeActionRequest::Complete -> server
 # validates the windup and resolves the hit. Divided across
@@ -109,7 +92,7 @@ def _client_brp_reachable(client_brp: tactical_brp.BrpClient) -> bool:
         return False
 
 
-def _face_bot(client_brp: tactical_brp.BrpClient) -> None:
+def _face_bot(client_brp: tactical_brp.BrpClient, player_entity: int, bot_entity: int, *, required: bool = True) -> None:
     """Rotates the local player's follow camera to face the bot.
 
     `PlayerInputOverride.look` only substitutes what gets sent to the
@@ -123,12 +106,47 @@ def _face_bot(client_brp: tactical_brp.BrpClient) -> None:
     its rotation directly over BRP sticks (verified live), since
     `copy_character_look_to_camera` just re-derives the same rotation from
     the `CharacterLook` that was itself just derived from this new rotation.
+
+    The yaw is computed from each character's *actual* current position
+    rather than a fixed constant baked in from the fixture capture: joining
+    a dumped character inserts a fresh, un-round-tripped `Collider`
+    (`on_player_added` - avian3d geometry is a documented world-dump
+    limitation), and physics settling that collider against the terrain can
+    nudge the character measurably off its captured transform - confirmed
+    live, consistently several tenths of a meter on this fixture. A fixed
+    yaw tuned for the fixture's captured geometry stops pointing at the bot
+    once that happens, and the raycast this facing feeds silently finds
+    nothing to hit. Bevy's `Quat` yaw convention points *away* from +X as
+    the angle increases from identity (identity itself looks down -Z) -
+    confirmed live by reading back `Camera3d`'s own forward vector over BRP
+    after applying candidate yaws - hence the negated `atan2` below.
+
+    `required=False` (used for the per-attempt re-aim inside the retry loop,
+    as opposed to the initial one-time call) tolerates the bot's client-side
+    entity transiently not existing: a landed hit can incapacitate it into
+    its 0.3s despawn grace window before `_toughen_bot` catches up (see the
+    retry loop's own comment), and the client's replicated view lags the
+    server's despawn/respawn by a frame either way. Skipping this attempt's
+    re-aim and reusing the last-known facing is harmless - it's only ever
+    stale by whatever the bot moved in one attempt's worth of time.
     """
     cameras = client_brp.query(with_=[tactical_brp.Camera3d])
     assert len(cameras) == 1, f"expected exactly 1 local camera, found {cameras}"
     camera_entity = cameras[0]["entity"]
+
+    try:
+        player_pos = client_brp.get_components(player_entity, [tactical_brp.Transform])[tactical_brp.Transform].translation
+        bot_pos = client_brp.get_components(bot_entity, [tactical_brp.Transform])[tactical_brp.Transform].translation
+    except tactical_brp.BrpError:
+        if required:
+            raise
+        return
+    dx = bot_pos[0] - player_pos[0]
+    dz = bot_pos[2] - player_pos[2]
+    yaw = math.atan2(-dx, -dz)
+
     transform = client_brp.get_components(camera_entity, [tactical_brp.Transform])[tactical_brp.Transform]
-    half_yaw = CAMERA_YAW_TO_FACE_BOT / 2.0
+    half_yaw = yaw / 2.0
     transform.rotation = [0.0, math.sin(half_yaw), 0.0, math.cos(half_yaw)]
     client_brp.call("world.insert_components", {"entity": camera_entity, "components": {tactical_brp.Transform.type_path: transform.to_brp()}})
 
@@ -172,7 +190,17 @@ def _toughen_bot(server_brp: tactical_brp.BrpClient, bot_entity: int) -> None:
             "entity": bot_entity,
             "components": {
                 tactical_brp.TacticalCombatState.type_path: tactical_brp.TacticalCombatState(
-                    starting_incapacitation=0.0, starting_blood_fraction=1.0, blood_loss_fraction=0.0, imbalance=0.0, incapacitation=0.0
+                    starting_incapacitation=0.0,
+                    starting_blood_fraction=1.0,
+                    starting_fear=0.0,
+                    starting_fatigue=0.0,
+                    starting_hunger=0.0,
+                    starting_thirst=0.0,
+                    starting_thermal=0.0,
+                    blood_loss_fraction=0.0,
+                    exhaustion=0.0,
+                    imbalance=0.0,
+                    incapacitation=0.0,
                 ).to_brp()
             },
         },
@@ -204,17 +232,15 @@ def _disarm_bot(server_brp: tactical_brp.BrpClient, bot_entity: int) -> None:
         server_brp.call("world.remove_components", {"entity": entry["entity"], "components": [tactical_brp.EquipSlot.type_path]})
 
 
-def _mock_attack(client_brp: tactical_brp.BrpClient, player_entity: int) -> None:
-    """Inserts `ActionMock` on the client's Attack action entity, exactly as
-    `bevy_enhanced_input::action::mock` documents for automated testing -
-    the framework processes it for real (`Fire<Attack>` fires, drives the
-    same code a mouse click would), it just skips reading the actual input
+def _mock_attack(client_brp: tactical_brp.BrpClient) -> None:
+    """Sets `DebugForceAttackTrigger` for one frame - `update_direct_control_input`
+    (`adventuresim-tactical-netcode/src/client.rs`) ORs it into
+    `attack_just_pressed` alongside the real mouse/gamepad checks and clears
+    it right after, so this drives the actual `apply_direct_combat_controls`
+    input path a real click would, it just skips reading the actual input
     device.
     """
-    actions = client_brp.get_components(player_entity, [tactical_brp.ActionsPlayer])[tactical_brp.ActionsPlayer]
-    attack_entity = actions.entities[ATTACK_ACTION_INDEX]
-    mock = tactical_brp.ActionMock(state="Fired", value={"Axis1D": 1.0}, span={"Updates": 3}, enabled=True)
-    client_brp.call("world.insert_components", {"entity": attack_entity, "components": {tactical_brp.ActionMock.type_path: mock.to_brp()}})
+    client_brp.insert_resource(tactical_brp.DebugForceAttackTrigger(value=True))
 
 
 class _AttackOutcome:
@@ -300,15 +326,33 @@ def _run_scripted_attack(
             client_brp = tactical_brp.BrpClient(client_brp_port)
             wait_for(client, CLIENT_TIMEOUT, ready=lambda: _client_brp_reachable(client_brp), what="the client BRP endpoint to come up")
             player_entity_client = tactical_brp.wait_for_entity_with_component(client_brp, tactical_brp.ClientPlayer, CLIENT_TIMEOUT)
+            # `MissionEnemy` is server-only (not replicated), so the bot's
+            # local entity can't be found the same way `_find_bot` finds it
+            # server-side - it's the only other `CharacterId` the client
+            # knows about, since the fixture is exactly one party member and
+            # one bot.
+            character_entities = client_brp.query(with_=[tactical_brp.CharacterId])
+            bot_candidates = [entry["entity"] for entry in character_entities if entry["entity"] != player_entity_client]
+            assert len(bot_candidates) == 1, f"expected exactly 1 other character (the bot), found {bot_candidates}"
+            bot_entity_client = bot_candidates[0]
 
-            _face_bot(client_brp)
+            _face_bot(client_brp, player_entity_client, bot_entity_client)
             time.sleep(0.3)
 
             resolved = False
             bot_after = bot_before
             for _attempt in range(ATTACK_ATTEMPTS):
+                # Re-aimed every attempt, not just once before the loop: the
+                # bot's own captured `OffensiveCombatAi` keeps it attacking
+                # autonomously throughout (`--enemy-combat-scale-bps` only
+                # gates freshly-spawned bots, not dump-loaded ones), and its
+                # attacks impart balance/stagger physics on the party
+                # character even when they land for zero damage - enough to
+                # measurably drift the fixed initial facing off-target over
+                # several retries (confirmed live).
+                _face_bot(client_brp, player_entity_client, bot_entity_client, required=False)
                 log_offset = len(server.log_text())
-                _mock_attack(client_brp, player_entity_client)
+                _mock_attack(client_brp)
 
                 # A single attempt (windup + resolution) takes well under a
                 # second; this is a per-attempt budget, not the overall test

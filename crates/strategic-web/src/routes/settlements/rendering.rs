@@ -59,7 +59,7 @@ pub(super) async fn merchant_shop(
             .into_string(),
         );
     };
-    let condition_sql = format!("SELECT * FROM item_condition");
+    let condition_sql = "SELECT * FROM item_condition".to_string();
     let smith_sql =
         format!("SELECT * FROM settlement_smith WHERE settlement_id = {settlement_literal}");
     let order_sql = format!(
@@ -100,7 +100,6 @@ pub(super) async fn merchant_shop(
             .query::<BackendLocalProblemTradeEffect>(&consequence_sql),
     );
     let items = items.unwrap_or_default();
-    let equip = equip;
     let (personal_targets, party_targets, pooled) = trade_context;
     let encumbrance = inventory_encumbrance_summaries(
         &state,

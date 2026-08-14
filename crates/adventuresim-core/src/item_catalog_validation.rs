@@ -252,6 +252,7 @@ fn validate_item(
             "equipment",
             "kind",
             "slot",
+            "carry",
             "block",
             "coverage",
             "resistance",
@@ -259,6 +260,9 @@ fn validate_item(
             "flexibility",
             "range_of_motion",
             "accuracy",
+            "preferred_attack",
+            "swing_precision",
+            "stab_precision",
             "reach_m",
             "penetration",
             "balance",
@@ -340,12 +344,12 @@ fn validate_item(
                 &format!("{path}.presentation"),
                 errors,
             );
-            if let Some(icon) = presentation.get("icon").and_then(Value::as_str) {
-                if !valid_icon_slug(icon) {
-                    errors.push(format!(
-                        "{file}: {path}.presentation.icon: must be a safe lowercase icon slug"
-                    ));
-                }
+            if let Some(icon) = presentation.get("icon").and_then(Value::as_str)
+                && !valid_icon_slug(icon)
+            {
+                errors.push(format!(
+                    "{file}: {path}.presentation.icon: must be a safe lowercase icon slug"
+                ));
             }
         }
         None => errors.push(format!("{file}: {path}.presentation: required object")),
@@ -380,9 +384,18 @@ fn validate_item(
     }
     if kind == "weapon" {
         validate_weapon(item, file, &path, errors);
+        validate_weapon_carry(item, file, &path, errors);
     } else {
+        if item.contains_key("carry") {
+            errors.push(format!(
+                "{file}: {path}.carry: field is only valid for weapon"
+            ));
+        }
         for field in [
             "accuracy",
+            "preferred_attack",
+            "swing_precision",
+            "stab_precision",
             "reach_m",
             "penetration",
             "balance",
@@ -449,6 +462,94 @@ fn validate_item(
     }
 }
 
+fn validate_weapon_carry(
+    item: &Map<String, Value>,
+    file: &str,
+    path: &str,
+    errors: &mut Vec<String>,
+) {
+    let carry = item.get("carry").and_then(Value::as_str).unwrap_or("");
+    if !matches!(carry, "sheathable" | "hand_only") {
+        errors.push(format!(
+            "{file}: {path}.carry: weapon requires sheathable or hand_only"
+        ));
+        return;
+    }
+    let Some(equipment) = item.get("equipment").and_then(Value::as_object) else {
+        errors.push(format!(
+            "{file}: {path}.equipment: weapon requires explicit hand placements"
+        ));
+        return;
+    };
+    let placements = equipment
+        .get("placements")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let has_parent_placement = placements.iter().any(|placement| {
+        placement
+            .get("parents")
+            .and_then(Value::as_array)
+            .is_some_and(|parents| !parents.is_empty())
+    });
+    let has_sheath_placement = placements.iter().any(|placement| {
+        placement
+            .get("parents")
+            .and_then(Value::as_array)
+            .is_some_and(|parents| {
+                parents.len() == 1
+                    && parents[0].get("channel").and_then(Value::as_str) == Some("containment")
+                    && match parents[0].get("order") {
+                        None => true,
+                        Some(order) => order.as_u64() == Some(0),
+                    }
+            })
+    });
+    let hand_only_placements_are_held_roots = placements.iter().all(|placement| {
+        let parents_are_empty = match placement.get("parents") {
+            None => true,
+            Some(parents) => parents.as_array().is_some_and(Vec::is_empty),
+        };
+        let Some(occupancy) = placement.get("occupancy").and_then(Value::as_array) else {
+            return false;
+        };
+        parents_are_empty
+            && occupancy.len() == 1
+            && occupancy[0]
+                .get("location")
+                .and_then(Value::as_str)
+                .is_some_and(|location| matches!(location, "left_hand" | "right_hand"))
+            && occupancy[0].get("channel").and_then(Value::as_str) == Some("held")
+            && match occupancy[0].get("order") {
+                None => true,
+                Some(order) => order.as_u64() == Some(0),
+            }
+    });
+    let has_sheathable_tag = equipment
+        .get("attachment_tags")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|tag| tag.as_str() == Some("sheathable_weapon"));
+    match carry {
+        "sheathable" => {
+            if !has_sheath_placement || !has_sheathable_tag {
+                errors.push(format!(
+                    "{file}: {path}: sheathable weapon requires an explicitly compatible single order-zero containment parent placement and sheathable_weapon attachment tag"
+                ));
+            }
+        }
+        "hand_only" => {
+            if has_parent_placement || has_sheathable_tag || !hand_only_placements_are_held_roots {
+                errors.push(format!(
+                    "{file}: {path}: hand_only weapon placements must each be exactly one left/right hand held root, with no parent placements or sheathable_weapon attachment tag"
+                ));
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn validate_equipment(
     value: &Value,
     file: &str,
@@ -464,6 +565,7 @@ fn validate_equipment(
     reject_unknown(
         equipment,
         &[
+            "physical",
             "attachment_tags",
             "placements",
             "protection",
@@ -473,6 +575,51 @@ fn validate_equipment(
         &path,
         errors,
     );
+    match equipment.get("physical").and_then(Value::as_object) {
+        Some(physical) => {
+            reject_unknown(
+                physical,
+                &["dimensions_m", "grip_to_tip_m", "anchor_offset_m"],
+                file,
+                &format!("{path}.physical"),
+                errors,
+            );
+            match physical.get("dimensions_m").and_then(Value::as_array) {
+                Some(values)
+                    if values.len() == 3
+                        && values.iter().all(|value| {
+                            value
+                                .as_f64()
+                                .is_some_and(|value| value.is_finite() && value > 0.0)
+                        }) => {}
+                _ => errors.push(format!(
+                    "{file}: {path}.physical.dimensions_m: expected three finite positive metres"
+                )),
+            }
+            let grip_to_tip = physical
+                .get("grip_to_tip_m")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            if !grip_to_tip.is_finite() || grip_to_tip < 0.0 {
+                errors.push(format!(
+                    "{file}: {path}.physical.grip_to_tip_m: expected a finite non-negative distance"
+                ));
+            }
+            if physical.get("anchor_offset_m").is_some_and(|offset| {
+                offset.as_array().is_none_or(|values| {
+                    values.len() != 3
+                        || values
+                            .iter()
+                            .any(|value| value.as_f64().is_none_or(|value| !value.is_finite()))
+                })
+            }) {
+                errors.push(format!(
+                    "{file}: {path}.physical.anchor_offset_m: expected three finite metres"
+                ));
+            }
+        }
+        None => errors.push(format!("{file}: {path}.physical: required object")),
+    }
     let valid_locations: BTreeSet<_> = [
         "head",
         "face",
@@ -806,6 +953,28 @@ fn validate_weapon(item: &Map<String, Value>, file: &str, path: &str, errors: &m
     }
     let melee = item.get("melee").and_then(Value::as_bool).unwrap_or(false);
     let ranged = item.get("ranged").and_then(Value::as_bool).unwrap_or(false);
+    if melee {
+        for field in ["swing_precision", "stab_precision"] {
+            finite_in(item, field, 0.0, 10_000.0, file, path, errors);
+            if item
+                .get(field)
+                .and_then(Value::as_f64)
+                .is_none_or(|value| value <= 0.0)
+            {
+                errors.push(format!(
+                    "{file}: {path}.{field}: melee weapons require an explicit positive value"
+                ));
+            }
+        }
+        if !matches!(
+            item.get("preferred_attack").and_then(Value::as_str),
+            Some("swing" | "stab")
+        ) {
+            errors.push(format!(
+                "{file}: {path}.preferred_attack: expected swing or stab"
+            ));
+        }
+    }
     if !melee && !ranged {
         errors.push(format!(
             "{file}: {path}: weapon must be melee and/or ranged"
@@ -1424,6 +1593,11 @@ mod tests {
             (
                 "equipment".into(),
                 json!({
+                    "physical": {
+                        "dimensions_m": [0.3, 0.6, 0.1],
+                        "grip_to_tip_m": 0.0,
+                        "anchor_offset_m": [0.0, 0.0, 0.0]
+                    },
                     "placements": [
                         {
                             "id": "left",
@@ -1469,6 +1643,11 @@ mod tests {
             (
                 "equipment".into(),
                 json!({
+                    "physical": {
+                        "dimensions_m": [0.3, 0.6, 0.1],
+                        "grip_to_tip_m": 0.0,
+                        "anchor_offset_m": [0.0, 0.0, 0.0]
+                    },
                     "placements": [{
                         "id": "worn",
                         "occupancy": [{
@@ -1498,5 +1677,105 @@ mod tests {
         let error =
             validate_documents(&[document(vec![item])], &["equipment.yaml".into()]).unwrap_err();
         assert!(error.contains("singleton channel requires order 0"));
+    }
+
+    #[test]
+    fn weapon_carry_contract_rejects_hand_only_parent_placements() {
+        let mut weapon = json!({
+            "carry": "hand_only",
+            "equipment": {
+                "attachment_tags": ["weapon"],
+                "placements": [{"id": "contained", "parents": [{"channel": "containment"}]}]
+            }
+        });
+        let mut errors = Vec::new();
+        validate_weapon_carry(
+            weapon.as_object().unwrap(),
+            "weapons.yaml",
+            "items.0",
+            &mut errors,
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("hand_only weapon placements must"))
+        );
+
+        weapon["carry"] = json!("sheathable");
+        weapon["equipment"]["attachment_tags"] = json!(["weapon", "sheathable_weapon"]);
+        errors.clear();
+        validate_weapon_carry(
+            weapon.as_object().unwrap(),
+            "weapons.yaml",
+            "items.0",
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:#?}");
+    }
+
+    #[test]
+    fn weapon_carry_contract_rejects_non_hand_held_hand_only_roots() {
+        for occupancy in [
+            json!([{"location": "chest", "channel": "held"}]),
+            json!([{"location": "left_hand", "channel": "accessory"}]),
+            json!([
+                {"location": "left_hand", "channel": "held"},
+                {"location": "right_hand", "channel": "held"}
+            ]),
+        ] {
+            let weapon = json!({
+                "carry": "hand_only",
+                "equipment": {
+                    "attachment_tags": ["weapon"],
+                    "placements": [{"id": "invalid", "occupancy": occupancy}]
+                }
+            });
+            let mut errors = Vec::new();
+            validate_weapon_carry(
+                weapon.as_object().unwrap(),
+                "weapons.yaml",
+                "items.0",
+                &mut errors,
+            );
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.contains("exactly one left/right hand held root")),
+                "{errors:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sheathable_contract_requires_single_containment_parent_placement() {
+        for parents in [
+            json!([{"channel": "mount"}]),
+            json!([{"channel": "containment", "order": 1}]),
+            json!([
+                {"channel": "containment"},
+                {"channel": "containment"}
+            ]),
+        ] {
+            let weapon = json!({
+                "carry": "sheathable",
+                "equipment": {
+                    "attachment_tags": ["weapon", "sheathable_weapon"],
+                    "placements": [{"id": "invalid", "parents": parents}]
+                }
+            });
+            let mut errors = Vec::new();
+            validate_weapon_carry(
+                weapon.as_object().unwrap(),
+                "weapons.yaml",
+                "items.0",
+                &mut errors,
+            );
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.contains("single order-zero containment parent placement")),
+                "{errors:#?}"
+            );
+        }
     }
 }

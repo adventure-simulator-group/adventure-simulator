@@ -30,7 +30,7 @@ fn off_settlement_recovery_is_bounded_public_and_precedes_quest_selection() {
         }
     ));
     assert_eq!(MAX_EXPEDITION_RECOVERY_RESTS, 2);
-    assert!(!expedition_party_can_resume(&[recovering.clone()]));
+    assert!(!expedition_party_can_resume(std::slice::from_ref(&recovering)));
     assert!(expedition_party_can_resume(&[
         ExpeditionMemberObservation {
             condition_status: "ready".into(),
@@ -43,7 +43,7 @@ fn off_settlement_recovery_is_bounded_public_and_precedes_quest_selection() {
         portable_water_ml: adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
     };
     assert!(expedition_supplies_cover_one_rest_day(
-        &[recovering.clone()],
+        std::slice::from_ref(&recovering),
         one_day
     ));
     assert!(!expedition_supplies_cover_one_rest_day(
@@ -464,11 +464,11 @@ fn generated_case_tracking_is_owner_scoped_and_intake_drives_attempts() {
         ("party".to_owned(), 7_u64, "same-case".to_owned()),
         (12_u64, 3_u64),
     );
-    assert!(
-        finance_blocks
-            .get(&("party".to_owned(), 8_u64, "same-case".to_owned()))
-            .is_none()
-    );
+    assert!(!finance_blocks.contains_key(&(
+        "party".to_owned(),
+        8_u64,
+        "same-case".to_owned()
+    )));
 
     let source = LIVE_CORE_SOURCE;
     let production = source.split("#[cfg(test)]").next().unwrap();
@@ -674,7 +674,6 @@ fn generated_event_fields_are_single_line_and_bounded() {
 
 #[test]
 fn generated_case_state_machine_is_bounded_and_precedes_direct_contracts() {
-    assert!(MAX_GENERATED_CASE_STEPS_PER_CYCLE <= 32);
     let source = LIVE_CORE_SOURCE;
     let loop_start = source.find("let quest_path = if").unwrap();
     let decision =

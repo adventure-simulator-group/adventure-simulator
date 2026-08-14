@@ -1,15 +1,19 @@
 [book]
-title = "Adventure Simulator"
+title = "Fabelgeist"
 src = "wiki"
 
 [build]
 create-missing = false
 
+[preprocessor.toc]
+command = "mdbook-toc"
+renderer = ["html"]
+
 [output.html]
 mathjax-support = true
 admonitions = true
 site-url = "https://adventuresim.org"
-git-repository-url = "https://github.com/adventure-simulator-group/adventure-simulator"
+git-repository-url = "https://github.com/adventure-simulator-group/fabelgeist"
 
 [output.linkcheck]
 exclude = [ '.+@.+\..+' ] # exclude emails

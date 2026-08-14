@@ -509,11 +509,7 @@ pub fn run_lifecycle_acceptance(seed: u64) -> Result<LifecycleBundle, String> {
     };
     let mut findings = audit_json(&whole).map_err(|error| error.to_string())?;
     findings.extend(audit_json(&daily).map_err(|error| error.to_string())?);
-    findings.extend(
-        audit_json(&comparison)
-            .map_err(|error| error.to_string())?
-            .into_iter(),
-    );
+    findings.extend(audit_json(&comparison).map_err(|error| error.to_string())?);
     let projected =
         serde_json::to_string(&(&whole, &daily, &comparison)).map_err(|error| error.to_string())?;
     comparison.privacy_canary_absent = !projected.contains(PRIVATE_SCENARIO_CANARY)

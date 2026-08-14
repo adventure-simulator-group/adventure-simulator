@@ -27,7 +27,7 @@ impl Default for HumanoidRig {
 }
 
 impl HumanoidRig {
-    pub(super) fn get(&self, role: &BoneRole) -> Option<&Entity> {
+    pub(crate) fn get(&self, role: &BoneRole) -> Option<&Entity> {
         self.bones[role.index()].as_ref()
     }
 
@@ -118,7 +118,7 @@ impl BoneRole {
         Self::WeaponRight,
     ];
 
-    pub(super) fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self as usize
     }
 
@@ -254,22 +254,27 @@ pub(crate) fn cache_humanoid_rigs(
 pub(in crate::animation) struct SoleAxisCaptured;
 
 /// Captures the foot's bind-space sole normal from the authored global bind
-/// transform. The Cascadeur rig's local +Y points ankle-to-toe, so assuming a
-/// cardinal local up axis would pitch the feet even on flat terrain.
+/// transform. The Cascadeur rig has no cardinal local sole-up axis, so the
+/// authored flat bind pose defines it explicitly.
 pub(crate) fn capture_humanoid_rig_axes(
     mut commands: Commands,
-    feet: Query<(Entity, &HumanoidBone), (Added<HumanoidBone>, Without<SoleAxisCaptured>)>,
+    feet: Query<(Entity, &HumanoidBone, &AuthoredBindTransform), Without<SoleAxisCaptured>>,
+    bind_nodes: Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
     mut rigs: Query<&mut HumanoidRig>,
-    helper: TransformHelper,
 ) {
-    for (entity, bone) in &feet {
+    for (entity, bone, _) in &feet {
         if !matches!(bone.role, BoneRole::FootLeft | BoneRole::FootRight) {
             continue;
         }
-        let Ok(global) = helper.compute_global_transform(entity) else {
+        let Some(bind_global) = authored_bind_global(entity, bone.owner, &bind_nodes) else {
             continue;
         };
-        let axis = sole_up_axis_from_bind(global.rotation());
+        // Never infer the sole plane from the ankle-to-toe joint vector. That
+        // vector slopes down through a normally planted foot; forcing it
+        // horizontal raises the visible forefoot and produces the toe-up IK
+        // pose. Sampling the live FK rotation is likewise invalid because it
+        // permanently calibrates the sole from an arbitrary gait frame.
+        let axis = sole_up_axis_from_bind(bind_global.rotation());
         if let Some(axis) = axis.try_normalize() {
             commands.entity(entity).insert(SoleAxisCaptured);
             if let Ok(mut rig) = rigs.get_mut(bone.owner) {
@@ -278,6 +283,36 @@ pub(crate) fn capture_humanoid_rig_axes(
             }
         }
     }
+}
+
+fn authored_bind_global(
+    entity: Entity,
+    owner: Entity,
+    bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
+) -> Option<GlobalTransform> {
+    let mut current = entity;
+    let mut locals = Vec::new();
+    for _ in 0..64 {
+        let Ok((bind, parent)) = bind_nodes.get(current) else {
+            break;
+        };
+        if bind.owner != owner {
+            break;
+        }
+        locals.push(bind.local);
+        let Some(parent) = parent else {
+            break;
+        };
+        current = parent.parent();
+    }
+    (!locals.is_empty()).then(|| {
+        locals
+            .into_iter()
+            .rev()
+            .fold(GlobalTransform::IDENTITY, |global, local| {
+                global.mul_transform(local)
+            })
+    })
 }
 
 pub(super) fn sole_up_axis_from_bind(bind_world_rotation: Quat) -> Vec3 {
@@ -316,5 +351,67 @@ mod tests {
         retain_stable_role(&mut rig.bones, BoneRole::Head, Entity::from_bits(7));
         assert_eq!(rig.get(&BoneRole::Head), Some(&Entity::from_bits(7)));
         assert_eq!(rig.get(&BoneRole::NeckOne), None);
+    }
+
+    #[test]
+    fn sole_axis_is_calibrated_from_authored_bind_not_live_fk() {
+        let mut world = World::new();
+        let owner = world.spawn(HumanoidRig::default()).id();
+        let bind_root_rotation = Quat::from_rotation_y(0.7);
+        let rig_root = world
+            .spawn(AuthoredBindTransform {
+                owner,
+                local: Transform::from_rotation(bind_root_rotation),
+            })
+            .id();
+        let bind_foot_rotation = Quat::from_rotation_x(-0.6);
+        let foot = world
+            .spawn((
+                HumanoidBone {
+                    owner,
+                    role: BoneRole::FootLeft,
+                },
+                AuthoredBindTransform {
+                    owner,
+                    local: Transform::from_rotation(bind_foot_rotation),
+                },
+                // This deliberately disagrees with the authored bind. A live
+                // gait sample must have no effect on one-shot calibration.
+                Transform::from_rotation(Quat::from_rotation_x(1.2)),
+            ))
+            .id();
+        let toe = world
+            .spawn((
+                HumanoidBone {
+                    owner,
+                    role: BoneRole::ToeLeft,
+                },
+                AuthoredBindTransform {
+                    owner,
+                    local: Transform::from_translation(Vec3::Y * 0.14),
+                },
+                Transform::from_translation(Vec3::NEG_Z * 0.14),
+            ))
+            .id();
+        world.entity_mut(rig_root).add_child(foot);
+        world.entity_mut(foot).add_child(toe);
+        {
+            let mut rig = world.get_mut::<HumanoidRig>(owner).unwrap();
+            rig.bones[BoneRole::FootLeft.index()] = Some(foot);
+            rig.bones[BoneRole::ToeLeft.index()] = Some(toe);
+        }
+
+        world.run_system_cached(capture_humanoid_rig_axes).unwrap();
+
+        let bind_world_rotation = bind_root_rotation * bind_foot_rotation;
+        let raw_axis = sole_up_axis_from_bind(bind_world_rotation);
+        let expected = raw_axis.normalize_or_zero();
+        let actual = world
+            .get::<HumanoidRig>(owner)
+            .unwrap()
+            .sole_axis(true)
+            .unwrap();
+        assert!(actual.dot(expected) > 0.9999);
+        assert!(world.get::<SoleAxisCaptured>(foot).is_some());
     }
 }

@@ -4,6 +4,9 @@ debug
 target
 /.codex-target-*/
 
+# Root JavaScript tooling dependencies
+/node_modules/
+
 # Local credentials and other developer-only environment settings.
 .env
 .env.*

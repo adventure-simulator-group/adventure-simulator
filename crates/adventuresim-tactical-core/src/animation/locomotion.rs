@@ -59,6 +59,9 @@ pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     step_distance: 1.78,
     support_phase_radius: 0.175,
     bounce_metres: 0.0,
+    // The authored ordinary passing rise contributes about 3.3 cm and is
+    // normalized out by presentation. Nine centimetres here therefore leaves
+    // a grounded visual flight response near the intended six centimetres.
     flight_apex_metres: 0.09,
     landing: HUMANOID_LANDING_PROFILE,
 };
@@ -80,9 +83,32 @@ pub const RAISED_GUARD_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile
     flight_apex_metres: 0.0,
     landing: HUMANOID_LANDING_PROFILE,
 };
+pub const PRONE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::Crouch,
+    reference_speed: 1.0,
+    step_distance: 1.06,
+    support_phase_radius: 0.30,
+    bounce_metres: 0.0,
+    flight_apex_metres: 0.0,
+    landing: HUMANOID_LANDING_PROFILE,
+};
+pub const SUPINE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::Crouch,
+    reference_speed: 0.8,
+    step_distance: 1.028,
+    support_phase_radius: 0.30,
+    bounce_metres: 0.0,
+    flight_apex_metres: 0.0,
+    landing: HUMANOID_LANDING_PROFILE,
+};
 
 pub fn locomotion_profile(state: &SkeletonState) -> LocomotionProfile {
     let speed = state.animation_speed();
+    match state.body() {
+        BodyState::Prone => return PRONE_LOCOMOTION_PROFILE,
+        BodyState::Supine => return SUPINE_LOCOMOTION_PROFILE,
+        _ => {}
+    }
     if state.posture() == Posture::Crouched {
         return CROUCH_LOCOMOTION_PROFILE;
     }

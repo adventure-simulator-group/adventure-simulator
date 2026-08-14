@@ -140,7 +140,7 @@ fn case_site_presentation_view(
             ctx.db
                 .hostile_group_authority()
                 .id()
-                .find(&group_id.to_string())
+                .find(group_id.to_string())
         })
         .into_iter()
         .collect();
@@ -401,7 +401,7 @@ pub(crate) fn exact_case_site_for_observer_at(
         .db
         .case_site_authority()
         .id_key()
-        .find(&case_site_id.to_string())?;
+        .find(case_site_id.to_string())?;
     if site.id.to_place()? != requested_place {
         return None;
     }

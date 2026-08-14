@@ -1,4 +1,4 @@
-//! Adventure Simulator - WASM Tactical Client
+//! Fabelgeist - WASM Tactical Client
 //!
 //! A Bevy-based 3D game client that runs in the browser (WASM).
 //! Features:
@@ -10,8 +10,8 @@
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
+use bevy::image::BevyDefault;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
-use bevy::input_focus::InputDispatchPlugin;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
@@ -26,12 +26,17 @@ use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+#[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
+mod animation_graph_nodes;
+#[allow(dead_code)] // Viewer-only camera diagnostics are compiled into this binary.
 mod camera;
 #[cfg(feature = "debug")]
 mod debug;
 #[cfg(not(target_family = "wasm"))]
 mod diagnostics;
+mod equipment;
+#[allow(dead_code)] // Viewer-only input diagnostics are compiled into this binary.
 mod player;
 mod presentation;
 mod ui;
@@ -167,7 +172,7 @@ fn run(args: Args) {
     } else {
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Adventure Simulator - Tactical".into(),
+                title: "Fabelgeist - Tactical".into(),
                 canvas: Some("#game-canvas".into()),
                 fit_canvas_to_parent: true,
                 prevent_default_event_handling: true,
@@ -182,7 +187,6 @@ fn run(args: Args) {
         default_plugins,
         FrameTimeDiagnosticsPlugin::default(),
         EnhancedInputPlugin,
-        InputDispatchPlugin,
     ))
     .add_plugins((
         AdventureSimulatorCorePlugins
@@ -196,6 +200,7 @@ fn run(args: Args) {
     .add_plugins((
         ui::UiPlugin,
         player::PlayerPlugin,
+        equipment::TacticalEquipmentPlugin,
         animation::TacticalAnimationPlugin,
         camera::TacticalCameraPlugin,
         // Headless runs have no window/swapchain, and some render features
@@ -215,10 +220,11 @@ fn run(args: Args) {
         (
             capture_cursor.run_if(
                 input_just_pressed(MouseButton::Left)
-                    .and(any_with_component::<CharacterController>),
+                    .and_then(any_with_component::<CharacterController>),
             ),
             release_cursor.run_if(
-                input_just_pressed(KeyCode::Escape).and(any_with_component::<CharacterController>),
+                input_just_pressed(KeyCode::Escape)
+                    .and_then(any_with_component::<CharacterController>),
             ),
         ),
     )
@@ -292,7 +298,6 @@ fn setup_client(mut commands: Commands, args: Res<Args>) {
     commands.spawn(AdventureSimulatorClient {
         player_id: args.id,
         server_url: args.server_addr.clone(),
-        ..default()
     });
 }
 

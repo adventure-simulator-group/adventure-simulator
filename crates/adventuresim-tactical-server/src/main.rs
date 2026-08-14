@@ -2,6 +2,7 @@
 
 mod bot;
 mod combat;
+mod equipment;
 mod mission;
 mod player_projection;
 mod stdb;
@@ -23,7 +24,7 @@ use adventuresim_tactical_netcode::{
 use bevy::ecs::schedule::ApplyDeferred;
 use bevy::prelude::*;
 #[cfg(feature = "debug")]
-use bevy::scene::DynamicSceneBuilder;
+use bevy::world_serialization::DynamicWorldBuilder;
 use clap::{ArgAction, Parser};
 
 use crate::{
@@ -34,9 +35,9 @@ use crate::{
         process_terminal_submission_results,
     },
     player_projection::{
-        PlayerProjectionSet, on_client_disconnected, on_join_request, on_player_added,
-        on_player_input, restore_authoritative_movement_intent, spawn_connected_players,
-        update_skeleton_locomotion,
+        PlayerProjectionSet, expire_disconnected_players, on_client_disconnected, on_join_request,
+        on_player_added, on_player_input, restore_authoritative_movement_intent,
+        spawn_connected_players, update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
@@ -51,7 +52,7 @@ const TERRAIN_SIZE: usize = 100;
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
-#[command(about = "Tactical mission server for Adventure Simulator")]
+#[command(about = "Tactical mission server for Fabelgeist")]
 struct Args {
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,
@@ -101,8 +102,15 @@ fn main() {
     let standalone = false;
 
     let mut app = App::new();
+    // Registered before any other plugin (in particular, before
+    // `AdventureSimulatorNetPlugins` below) - see `on_client_disconnected`'s
+    // own doc comment for why the ordering here is load-bearing, not
+    // cosmetic.
+    if !standalone {
+        app.add_observer(on_client_disconnected);
+    }
     app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
-        filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+        filter: "adventuresim_tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
         ..default()
     }))
     .add_plugins((
@@ -113,7 +121,11 @@ fn main() {
             }),
         AdventureSimulatorNetPlugins,
     ))
-    .add_plugins((combat::CombatPlugin, bot::BotPlugin))
+    .add_plugins((
+        combat::CombatPlugin,
+        equipment::TacticalEquipmentPlugin,
+        bot::BotPlugin,
+    ))
     .insert_resource(MissionState::new(
         (!args.no_timeout)
             .then_some(args.timeout)
@@ -172,6 +184,7 @@ fn main() {
                         .after(spawn_connected_players)
                         .after(process_terminal_submission_results),
                     process_terminal_submission_results.after(stdb::update_spacetimedb),
+                    expire_disconnected_players,
                     fail_stalled_terminal_submission
                         .after(process_terminal_submission_results)
                         .before(check_terminal_combat_outcome),
@@ -183,8 +196,7 @@ fn main() {
                     (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDbReady>),
                 ),
             )
-            .add_observer(on_join_request)
-            .add_observer(on_client_disconnected);
+            .add_observer(on_join_request);
     }
 
     #[cfg(feature = "debug")]
@@ -242,7 +254,7 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
     let registry = world.resource::<AppTypeRegistry>().read();
     // The filter must be set up *before* `extract_entities` - it's applied
     // immediately as entities are extracted, not lazily at `build()`.
-    let scene = DynamicSceneBuilder::from_world(world)
+    let scene = DynamicWorldBuilder::from_world(world, &registry)
         .deny_all_components()
         .allow_component::<Player>()
         .allow_component::<CharacterId>()
@@ -303,11 +315,30 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
     }
 }
 
+/// [`WorldDeserializer`](bevy::world_serialization::serde::WorldDeserializer)
+/// requires a [`LoadFromPath`](bevy::asset::LoadFromPath) to resolve any
+/// `Handle<T>` fields found while deserializing. None of the allowlisted
+/// components in [`on_debug_dump_world_request`] hold asset handles, so this
+/// should never actually be called.
+#[cfg(feature = "debug")]
+struct NoAssetHandlesInDump;
+
+#[cfg(feature = "debug")]
+impl bevy::asset::LoadFromPath for NoAssetHandlesInDump {
+    fn load_from_path_erased(
+        &mut self,
+        _type_id: std::any::TypeId,
+        _path: bevy::asset::AssetPath<'static>,
+    ) -> bevy::asset::UntypedHandle {
+        unimplemented!("world dumps do not contain asset handles")
+    }
+}
+
 /// Loads a `.scn.ron` file written by [`on_debug_dump_world_request`] and
 /// applies its reflected entities/resources to the running world, mirroring
-/// `bevy_scene::SceneLoader` but reading directly from disk instead of
-/// through `AssetServer` (dumps live outside the `assets/` root). A no-op
-/// unless `--world-dump` was passed.
+/// `bevy_world_serialization::WorldAssetLoader` but reading directly from
+/// disk instead of through `AssetServer` (dumps live outside the `assets/`
+/// root). A no-op unless `--world-dump` was passed.
 #[cfg(feature = "debug")]
 fn load_world_dump(world: &mut World) {
     let Some(path) = world.resource::<Args>().world_dump.clone() else {
@@ -330,8 +361,9 @@ fn load_world_dump(world: &mut World) {
                 return;
             }
         };
-        let scene_deserializer = bevy::scene::serde::SceneDeserializer {
+        let scene_deserializer = bevy::world_serialization::serde::WorldDeserializer {
             type_registry: &registry,
+            load_from_path: &mut NoAssetHandlesInDump,
         };
         match serde::de::DeserializeSeed::deserialize(scene_deserializer, &mut deserializer)
             .map_err(|error| deserializer.span_error(error))
@@ -553,6 +585,9 @@ mod debug_dump_world_tests {
                     slash: true,
                     pierce: false,
                     windup_secs: 0.3,
+                    swing_precision: 0.0,
+                    stab_precision: 0.0,
+                    prefers_stab: false,
                 },
             ))
             .id();
@@ -645,9 +680,12 @@ fn on_scene_terrain_added(
     query: Query<&SceneTerrain>,
 ) -> Result {
     let terrain = query.get(event.entity)?;
-    commands
-        .entity(event.entity)
-        .insert((Replicated, RigidBody::Static, terrain.collider()));
+    commands.entity(event.entity).insert((
+        Replicated,
+        RigidBody::Static,
+        CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
+        terrain.collider(),
+    ));
     Ok(())
 }
 
@@ -678,9 +716,10 @@ fn on_server_started(
         generator.period = gen_period;
         let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
         // Only "core" scene data goes here (the same data a world dump
-        // carries) - `on_scene_terrain_added` derives the physics collider
-        // and replication marker the moment `SceneTerrain` lands below,
-        // whether that's from this fresh generation or a loaded dump.
+        // carries) - `on_scene_terrain_added` derives the physics collider,
+        // collision layer, and replication marker the moment `SceneTerrain`
+        // lands below, whether that's from this fresh generation or a
+        // loaded dump.
         commands.spawn((SceneId(args.scene_key.clone()), terrain, Transform::default()));
     }
     // World-bounds walls are a pure function of scene_width/scene_depth, so
@@ -689,6 +728,7 @@ fn on_server_started(
     let scene_depth = args.scene_depth as f32;
     commands.spawn((
         RigidBody::Static,
+        CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
         Transform::default(),
         children![
             (

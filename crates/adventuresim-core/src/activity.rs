@@ -85,12 +85,14 @@ fn redistribution_roll(seed: u64, segment: u64) -> u64 {
 
 impl ActivityLocation {
     pub const fn allows(self, activity: LocationActivity) -> bool {
-        match (self, activity) {
-            (Self::Settlement { has_inn: true }, LocationActivity::Carousing) => true,
-            (Self::Settlement { .. }, LocationActivity::Thievery) => true,
-            (Self::NamedOutdoorLocation, LocationActivity::Raiding) => true,
-            _ => false,
-        }
+        matches!(
+            (self, activity),
+            (
+                Self::Settlement { has_inn: true },
+                LocationActivity::Carousing
+            ) | (Self::Settlement { .. }, LocationActivity::Thievery)
+                | (Self::NamedOutdoorLocation, LocationActivity::Raiding)
+        )
     }
 
     pub const fn unavailable_reason(self, activity: LocationActivity) -> Option<&'static str> {

@@ -756,12 +756,12 @@ fn compile_profile(
             .investigation
             .countermeasure_hypotheses
             .iter()
-            .filter_map(|value| match value.as_str() {
-                "shattering_blow" => Some(CountermeasureHypothesis::ShatteringBlow),
-                "fire" => Some(CountermeasureHypothesis::Fire),
-                "silver" => Some(CountermeasureHypothesis::Silver),
-                "daylight" => Some(CountermeasureHypothesis::Daylight),
-                "courage" => Some(CountermeasureHypothesis::Courage),
+            .map(|value| match value.as_str() {
+                "shattering_blow" => CountermeasureHypothesis::ShatteringBlow,
+                "fire" => CountermeasureHypothesis::Fire,
+                "silver" => CountermeasureHypothesis::Silver,
+                "daylight" => CountermeasureHypothesis::Daylight,
+                "courage" => CountermeasureHypothesis::Courage,
                 _ => unreachable!("validated countermeasure"),
             })
             .collect::<Vec<_>>()

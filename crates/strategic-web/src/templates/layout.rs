@@ -21,7 +21,7 @@ pub fn entry_layout(title: &str, content: Markup) -> Markup {
 pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
     let header = html! {
         header class="top-bar entry-top-bar" {
-            div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
+            div class="top-bar-left" { h1 class="logo" { "Fabelgeist" } }
             div class="entry-message" { "Tactical mission" }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
@@ -75,7 +75,7 @@ pub fn strategic_notice_page(
 fn entry_top_bar_with_session(logged_in_as: Option<&str>) -> Markup {
     html! {
         header class="top-bar entry-top-bar" {
-            div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
+            div class="top-bar-left" { h1 class="logo" { "Fabelgeist" } }
             div class="entry-message" { "The road ahead" }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as { span class="player-name" { strong { (name) } } }
@@ -162,7 +162,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { (title) " - Adventure Simulator" }
+                title { (title) " - Fabelgeist" }
 
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
@@ -236,7 +236,7 @@ fn entry_top_bar() -> Markup {
     html! {
         header class="top-bar entry-top-bar" {
             div class="top-bar-left" {
-                h1 class="logo" { "Adventure Simulator" }
+                h1 class="logo" { "Fabelgeist" }
             }
             div class="entry-message" { "Choose an adventurer to begin" }
             div class="top-bar-right" {}
@@ -616,7 +616,7 @@ fn camp_flame_effect() -> Markup {
 fn building_tint(settlement: &str, service: &str, material: &str) -> String {
     let hash = settlement
         .bytes()
-        .chain([b':'])
+        .chain(*b":")
         .chain(service.bytes())
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
@@ -636,7 +636,7 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
         "religion" => 11,
         _ => (hash % 12) as usize,
     };
-    let settlement_shift = ((hash >> 24) % 9) as u64;
+    let settlement_shift = (hash >> 24) % 9;
     let hue = if material == "stone" {
         [46, 198, 218, 205, 224, 252, 282, 164, 128, 68, 36, 214][service_slot] + settlement_shift
     } else {
@@ -782,6 +782,16 @@ mod tests {
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
+
+    #[test]
+    fn shell_and_entry_header_use_the_official_fabelgeist_name() {
+        let shell = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
+        assert!(shell.contains("<title>Chat - Fabelgeist</title>"));
+
+        let entry = entry_layout("Create", html! {}).into_string();
+        assert!(entry.contains("<h1 class=\"logo\">Fabelgeist</h1>"));
+        assert!(!entry.contains("Adventure Simulator"));
+    }
 
     #[test]
     fn strategic_shell_cache_busts_exact_location_chat_authority() {

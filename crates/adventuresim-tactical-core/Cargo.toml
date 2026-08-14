@@ -1,6 +1,6 @@
 [package]
 name = "adventuresim-tactical-core"
-description = "Adventure Simulator: Tactical layer core library"
+description = "Fabelgeist: Tactical layer core library"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
@@ -25,4 +25,5 @@ noiz.workspace = true
 workspace = true
 
 [dev-dependencies]
+postcard.workspace = true
 serde_json.workspace = true

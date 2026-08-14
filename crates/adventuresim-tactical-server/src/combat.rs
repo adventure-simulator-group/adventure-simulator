@@ -9,18 +9,19 @@ mod ranged;
 use adventuresim_core::item_references::ARROW_ID;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::{FromClient, SendMode, ServerTriggerExt, ToClients},
+    bevy_replicon::prelude::{FromClient, SendTargets, ServerTriggerExt, ToClients},
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest, SuccessfulAttackResponse},
 };
 use bevy::prelude::*;
 use std::{collections::HashMap, num::NonZeroU32, time::Duration};
 
-use crate::player_projection::PlayerProjectionSet;
+use crate::player_projection::{AuthoritativeMovementIntent, PlayerProjectionSet};
 pub(crate) use authority::{
     CombatDuration, CombatInstant, MeleeAttackAuthority, RangedAttackAuthority, ReportedPrecision,
 };
 use authority::{ValidatedRangedImpact, validate_melee_intent_cheap, validate_ranged_intent};
 pub(crate) use condition::update_tactical_combat_state;
+#[cfg(test)]
 pub(crate) use consequence::apply_transient_attack_result;
 use consequence::{apply_melee_attack_result, record_party_ammunition_use};
 #[cfg(test)]
@@ -711,6 +712,81 @@ mod tests {
     }
 
     #[test]
+    fn jog_holds_exhaustion_sprint_adds_it_and_rest_recovers_it() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_systems(Update, update_tactical_combat_state);
+        let endurance = 3.0;
+        let jog_speed = tactical_jog_speed(endurance);
+        let actor = app
+            .world_mut()
+            .spawn((
+                Player::default(),
+                Attributes {
+                    endurance,
+                    left_leg_strength: 3.0,
+                    right_leg_strength: 3.0,
+                    ..default()
+                },
+                TacticalCombatState {
+                    exhaustion: 0.25,
+                    ..default()
+                },
+                input::AccumulatedInput { ..default() },
+                AuthoritativeMovementIntent(Some(Vec2::Y)),
+                MovementPace::Jog,
+                // External physics velocity must not affect movement exertion.
+                LinearVelocity(Vec3::new(jog_speed + 10.0, 0.0, 0.0)),
+            ))
+            .id();
+
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        let jog_exhaustion = app
+            .world()
+            .entity(actor)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .exhaustion;
+        assert!((jog_exhaustion - 0.25).abs() < f32::EPSILON);
+
+        *app.world_mut()
+            .entity_mut(actor)
+            .get_mut::<MovementPace>()
+            .unwrap() = MovementPace::Sprint;
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        let sprint_exhaustion = app
+            .world()
+            .entity(actor)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .exhaustion;
+        assert!(sprint_exhaustion > jog_exhaustion);
+
+        app.world_mut()
+            .entity_mut(actor)
+            .get_mut::<AuthoritativeMovementIntent>()
+            .unwrap()
+            .0 = None;
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        let resting_exhaustion = app
+            .world()
+            .entity(actor)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .exhaustion;
+        assert!(resting_exhaustion < sprint_exhaustion);
+    }
+
+    #[test]
     fn batched_completions_consume_one_windup_once() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
@@ -721,7 +797,10 @@ mod tests {
         let target = app.world_mut().spawn(Limbs::default()).id();
         app.world_mut().trigger(FromClient {
             client_id: ClientId::Client(attacker),
-            message: MeleeActionRequest::Start,
+            message: MeleeActionRequest::Start {
+                strike_family: StrikeFamily::Thrust,
+                footwork: Footwork::Stay,
+            },
         });
         // The bare test attacker has no equipped weapon, so its observed
         // windup is zero and any positive advance clears it; 300ms mirrors

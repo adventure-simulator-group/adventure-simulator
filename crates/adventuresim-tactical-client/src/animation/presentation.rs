@@ -59,13 +59,13 @@ pub(super) fn can_predict_locomotion(
     previous: &SkeletonState,
     authoritative: &SkeletonState,
 ) -> bool {
-    authoritative.is_grounded()
+    authoritative.is_surface_supported()
         && authoritative.action_kind() == SkeletonAction::None
         && authoritative.animation_speed() > 0.05
         && previous.posture() == authoritative.posture()
         && previous.weapon_guard() == authoritative.weapon_guard()
         && previous.action_kind() == authoritative.action_kind()
-        && previous.is_grounded() == authoritative.is_grounded()
+        && previous.is_surface_supported() == authoritative.is_surface_supported()
         && previous.animation_pack == authoritative.animation_pack
 }
 
@@ -97,7 +97,7 @@ pub(super) fn advance_presented_skeleton(
             .world_velocity
             .lerp(authoritative.world_velocity, response);
 
-        let speed = next.animation_speed();
+        let speed = presentation_phase_speed(&next);
         let prediction_delta =
             gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds);
         let predicted = (previous.gait_phase + prediction_delta).rem_euclid(1.0);
@@ -137,6 +137,17 @@ pub(super) fn advance_presented_skeleton(
 
     presented.state = next;
     presented.source_tick = authoritative.locomotion_sample_tick;
+}
+
+fn presentation_phase_speed(skeleton: &SkeletonState) -> f32 {
+    let speed = skeleton.animation_speed();
+    if skeleton.downed_turning() {
+        speed * 2.0
+    } else if skeleton.body().is_downed() {
+        speed * (2.0 / 3.0)
+    } else {
+        speed
+    }
 }
 
 pub(super) fn update_presented_skeletons(
@@ -227,10 +238,16 @@ struct LocomotionEventCursor {
 
 impl Plugin for TacticalAnimationPlugin {
     fn build(&self, app: &mut App) {
+        if !app.is_plugin_added::<bevy_animation_graph::AnimationGraphPlugin>() {
+            app.add_plugins(bevy_animation_graph::AnimationGraphPlugin::default());
+        }
         app.init_resource::<AnimationPackCatalog>()
             .init_resource::<AnimationRuntime>()
+            .init_resource::<semantic_graph::SemanticGraphLibrary>()
+            .init_resource::<semantic_graph::SemanticGraphTelemetry>()
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
+            .init_resource::<procedural::FixedTickPoseCache>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
@@ -244,8 +261,9 @@ impl Plugin for TacticalAnimationPlugin {
                     identify_animation_players,
                     procedural::bind_humanoid_bones,
                     procedural::cache_humanoid_rigs,
-                    procedural::capture_humanoid_rig_axes,
                     capture_authored_bind_transforms,
+                    procedural::capture_humanoid_rig_axes,
+                    semantic_graph::evaluate_semantic_graph_paths,
                     evaluate_skeletons,
                     log_animation_diagnostics,
                     tick_impact_reactions,
@@ -269,15 +287,24 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_landing_leg_compression,
                     procedural::apply_locomotion_body_response,
+                    procedural::apply_jump_charge_crouch,
                     procedural::apply_head_and_torso_look,
                     procedural::apply_impact_reaction,
-                    procedural::apply_support_foot_grounding,
+                    procedural::apply_ordinary_locomotion_ik,
                     procedural::apply_terrain_leg_ik,
+                    procedural::enforce_anatomical_knee_yaw,
                     procedural::apply_arm_and_weapon_constraints,
+                    procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()
                     .after(AnimationSystems)
+                    .after(bevy_animation_graph::core::plugin::AnimationGraphSet::Final)
                     .before(TransformSystems::Propagate),
+            )
+            .add_systems(
+                PostUpdate,
+                procedural::refresh_raised_support_after_propagation
+                    .after(TransformSystems::Propagate),
             );
     }
 }

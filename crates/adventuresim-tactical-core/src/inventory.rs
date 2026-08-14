@@ -2,8 +2,11 @@ use std::num::NonZeroU32;
 
 use adventuresim_core::{
     body::{BodyPart, BodySide},
+    equipment::MeleeAttackStyle,
+    item_catalog::{EquipmentChannel, EquipmentLocation},
     prelude::PlayerEquipment,
 };
+use avian3d::prelude::LayerMask;
 use bevy::{
     ecs::{
         entity::MapEntities, lifecycle::HookContext, query::QueryData, system::SystemParam,
@@ -13,6 +16,9 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, VariantArray};
+
+pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
+pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Deref, DerefMut)]
 #[reflect(Component)]
@@ -92,6 +98,9 @@ pub enum ArmorSide {
 pub struct WeaponItem {
     pub skill_weights: [f32; 9],
     pub accuracy: f32,
+    pub swing_precision: f32,
+    pub stab_precision: f32,
+    pub prefers_stab: bool,
     pub penetration: f32,
     pub reach: f32,
     pub balance: f32,
@@ -120,23 +129,92 @@ pub struct ItemProperties {
     pub weight: f32,
 }
 
-#[derive(Component, Reflect, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(Component, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq, MapEntities)]
 pub struct EquipmentTopology {
     pub placement_id: Option<String>,
+    #[entities]
     pub occupancies: Vec<EquipmentTopologyOccupancy>,
 }
 
-#[derive(Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, MapEntities)]
 pub struct EquipmentTopologyOccupancy {
     pub occupancy_id: String,
-    pub anchor_kind: String,
-    pub location: Option<String>,
-    pub parent_inventory_item_id: Option<u64>,
-    pub attachment_point_id: Option<String>,
-    pub channel: String,
+    #[entities]
+    pub anchor: TacticalEquipmentAnchor,
+    pub channel: EquipmentChannel,
     pub order: u16,
     pub requirement_index: u16,
     pub capacity_index: u16,
+}
+
+/// Recomputes the legacy combat hand caches after an ownership root is
+/// rebound. Relationship hooks maintain the item list, but changing `ItemOf`
+/// alone does not rerun the `EquipSlot` hooks that populate these caches.
+pub fn rebuild_inventory_holding_cache(world: &mut World, root: Entity) {
+    let mut weapon = None;
+    let mut shield = None;
+    let mut query = world.query::<(
+        Entity,
+        &ItemOf,
+        &EquipSlot,
+        Has<WeaponItem>,
+        Has<ShieldItem>,
+    )>();
+    for (entity, owner, slot, is_weapon, is_shield) in query.iter(world) {
+        if owner.0 != root || !matches!(slot, EquipSlot::HoldingLeft | EquipSlot::HoldingRight) {
+            continue;
+        }
+        if is_weapon {
+            weapon = Some(entity);
+        }
+        if is_shield {
+            shield = Some(entity);
+        }
+    }
+    if let Some(mut inventory) = world.get_mut::<InventoryItems>(root) {
+        inventory.holding_weapon = weapon;
+        inventory.holding_shield = shield;
+    }
+}
+
+/// Tactical topology never exposes durable inventory row IDs to a client.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, MapEntities)]
+pub enum TacticalEquipmentAnchor {
+    CharacterLocation(EquipmentLocation),
+    ItemAttachment {
+        #[entities]
+        parent: Entity,
+        attachment_point_id: String,
+    },
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct EquipmentPhysical {
+    pub dimensions_m: Vec3,
+    pub grip_to_tip_m: f32,
+    pub anchor_offset_m: Vec3,
+}
+
+impl EquipmentPhysical {
+    pub fn is_valid(self) -> bool {
+        self.dimensions_m.is_finite()
+            && self.dimensions_m.cmpgt(Vec3::ZERO).all()
+            && self.grip_to_tip_m.is_finite()
+            && self.grip_to_tip_m >= 0.0
+            && self.anchor_offset_m.is_finite()
+    }
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TacticalSceneItem;
+
+/// Replicated optimistic-concurrency token for tactical equipment actions.
+/// The authority increments it after every accepted mutation.
+#[derive(
+    Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq,
+)]
+pub struct EquipmentActionState {
+    pub revision: u32,
 }
 
 #[derive(
@@ -248,6 +326,10 @@ impl InventoryView<'_, '_, '_> {
             .and_then(|weapon| self.q_item.get(weapon).ok())
     }
 
+    pub fn has_equipped_weapon(&self) -> bool {
+        self.equipped_weapon().is_some()
+    }
+
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
         self.q_inventory
             .get(self.entity)
@@ -297,7 +379,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.skill_weights)
-            .unwrap_or([0.0; 9]);
+            .unwrap_or([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         adventuresim_core::equipment::WeaponSkillDistribution {
             polearm: w[0],
             axe: w[1],
@@ -317,10 +399,36 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or_default()
     }
 
+    fn weapon_swing_precision(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.swing_precision)
+            .unwrap_or(0.2)
+    }
+
+    fn weapon_stab_precision(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.stab_precision)
+            .unwrap_or(0.5)
+    }
+
+    fn weapon_preferred_melee_style(&self) -> MeleeAttackStyle {
+        if self
+            .equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_none_or(|weapon| weapon.prefers_stab)
+        {
+            MeleeAttackStyle::Stab
+        } else {
+            MeleeAttackStyle::Swing
+        }
+    }
+
     fn weapon_is_melee(&self) -> bool {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
-            .is_some_and(|weapon| weapon.melee)
+            .is_none_or(|weapon| weapon.melee)
     }
 
     fn weapon_is_ranged(&self) -> bool {
@@ -332,7 +440,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     fn weapon_does_blunt(&self) -> bool {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
-            .is_some_and(|weapon| weapon.blunt)
+            .is_none_or(|weapon| weapon.blunt)
     }
 
     fn weapon_does_slash(&self) -> bool {
@@ -348,20 +456,21 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_holding_side(&self) -> Option<BodySide> {
-        self.equipped_weapon()
-            .and_then(|item| item.slot)
-            .and_then(|slot| match slot {
-                EquipSlot::HoldingLeft => Some(BodySide::Left),
-                EquipSlot::HoldingRight => Some(BodySide::Right),
-                _ => None,
-            })
+        let Some(item) = self.equipped_weapon() else {
+            return Some(BodySide::Right);
+        };
+        item.slot.and_then(|slot| match slot {
+            EquipSlot::HoldingLeft => Some(BodySide::Left),
+            EquipSlot::HoldingRight => Some(BodySide::Right),
+            _ => None,
+        })
     }
 
     fn weapon_reach(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.reach)
-            .unwrap_or_default()
+            .unwrap_or(crate::combat::HANDS_REACH)
     }
 
     fn weapon_windup_secs(&self) -> f32 {
@@ -509,6 +618,51 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rebuilding_holding_cache_preserves_weapon_and_shield_after_owner_rebind() {
+        let mut world = World::new();
+        let owner = world.spawn(InventoryItems::default()).id();
+        let weapon = world
+            .spawn((
+                ItemOf(owner),
+                EquipSlot::HoldingRight,
+                WeaponItem {
+                    skill_weights: [0.0; 9],
+                    accuracy: 0.0,
+                    swing_precision: 0.0,
+                    stab_precision: 0.0,
+                    prefers_stab: false,
+                    penetration: 0.0,
+                    reach: 1.0,
+                    balance: 0.0,
+                    precise: false,
+                    melee: true,
+                    ranged: false,
+                    blunt: false,
+                    slash: true,
+                    pierce: false,
+                    windup_secs: 0.0,
+                },
+            ))
+            .id();
+        let shield = world
+            .spawn((
+                ItemOf(owner),
+                EquipSlot::HoldingLeft,
+                ShieldItem { block: 1.0 },
+            ))
+            .id();
+        {
+            let mut inventory = world.get_mut::<InventoryItems>(owner).unwrap();
+            inventory.holding_weapon = None;
+            inventory.holding_shield = None;
+        }
+        rebuild_inventory_holding_cache(&mut world, owner);
+        let inventory = world.get::<InventoryItems>(owner).unwrap();
+        assert_eq!(inventory.holding_weapon, Some(weapon));
+        assert_eq!(inventory.holding_shield, Some(shield));
+    }
+
+    #[test]
     fn tactical_handoff_folds_multiple_layers_once_per_inventory_item() {
         let inner = ArmorItem {
             range_of_motion: 0.9,
@@ -559,33 +713,30 @@ mod tests {
             occupancies: vec![
                 EquipmentTopologyOccupancy {
                     occupancy_id: "character:1:Chest:60:0".into(),
-                    anchor_kind: "CharacterLocation".into(),
-                    location: Some("Chest".into()),
-                    parent_inventory_item_id: None,
-                    attachment_point_id: None,
-                    channel: "Accessory".into(),
+                    anchor: TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::Chest),
+                    channel: EquipmentChannel::Accessory,
                     order: 0,
                     requirement_index: 0,
                     capacity_index: 0,
                 },
                 EquipmentTopologyOccupancy {
                     occupancy_id: "item:41:left:0".into(),
-                    anchor_kind: "ItemAttachment".into(),
-                    location: None,
-                    parent_inventory_item_id: Some(41),
-                    attachment_point_id: Some("left".into()),
-                    channel: "Mount".into(),
+                    anchor: TacticalEquipmentAnchor::ItemAttachment {
+                        parent: Entity::from_bits(41),
+                        attachment_point_id: "left".into(),
+                    },
+                    channel: EquipmentChannel::Mount,
                     order: 0,
                     requirement_index: 0,
                     capacity_index: 0,
                 },
                 EquipmentTopologyOccupancy {
                     occupancy_id: "item:42:right:0".into(),
-                    anchor_kind: "ItemAttachment".into(),
-                    location: None,
-                    parent_inventory_item_id: Some(42),
-                    attachment_point_id: Some("right".into()),
-                    channel: "Mount".into(),
+                    anchor: TacticalEquipmentAnchor::ItemAttachment {
+                        parent: Entity::from_bits(42),
+                        attachment_point_id: "right".into(),
+                    },
+                    channel: EquipmentChannel::Mount,
                     order: 1,
                     requirement_index: 1,
                     capacity_index: 0,
@@ -594,7 +745,38 @@ mod tests {
         };
         assert_eq!(topology.placement_id.as_deref(), Some("double_strap"));
         assert_eq!(topology.occupancies.len(), 3);
-        assert_eq!(topology.occupancies[1].parent_inventory_item_id, Some(41));
+        assert!(matches!(
+            topology.occupancies[1].anchor,
+            TacticalEquipmentAnchor::ItemAttachment { .. }
+        ));
         assert_eq!(topology.occupancies[2].requirement_index, 1);
+    }
+
+    #[test]
+    fn topology_maps_nested_attachment_parent_entities() {
+        let parent = Entity::from_bits(41);
+        let mapped_parent = Entity::from_bits(141);
+        let mut topology = EquipmentTopology {
+            placement_id: Some("attached".into()),
+            occupancies: vec![EquipmentTopologyOccupancy {
+                occupancy_id: "item:41:left:0".into(),
+                anchor: TacticalEquipmentAnchor::ItemAttachment {
+                    parent,
+                    attachment_point_id: "left".into(),
+                },
+                channel: EquipmentChannel::Mount,
+                order: 0,
+                requirement_index: 0,
+                capacity_index: 0,
+            }],
+        };
+
+        topology.map_entities(&mut (parent, mapped_parent));
+
+        assert!(matches!(
+            topology.occupancies[0].anchor,
+            TacticalEquipmentAnchor::ItemAttachment { parent: found, .. }
+                if found == mapped_parent
+        ));
     }
 }

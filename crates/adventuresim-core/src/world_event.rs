@@ -501,7 +501,7 @@ mod tests {
                 resolve: true,
             } if problem_id == "problem" && source_outcome_id == "outcome"
         ));
-        for (pair, character_id) in plan[1..].chunks_exact(2).zip([4, 9]) {
+        for (pair, character_id) in plan[1..].as_chunks::<2>().0.iter().zip([4, 9]) {
             assert!(matches!(
                 &pair[0],
                 WorldEventConsequence::CaseParticipantSnapshot {

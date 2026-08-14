@@ -185,7 +185,7 @@ pub fn item_display_name(item_id: &str) -> String {
 pub fn item_source_edit_url(item_id: &str) -> Option<String> {
     let source = adventuresim_core::item_catalog::source_for_item(item_id)?;
     adventuresim_dialogue::github_edit_url_for_location(
-        "adventure-simulator-group/adventure-simulator",
+        "adventure-simulator-group/fabelgeist",
         option_env!("ADVENTURESIM_SOURCE_REF").unwrap_or("main"),
         &source.file,
         source.line,
@@ -305,6 +305,49 @@ pub fn panel(title: &str, content: Markup) -> Markup {
                 (content)
             }
         }
+    }
+}
+
+/// Status badge
+pub fn status_badge(status: &str) -> Markup {
+    let class = match status.to_lowercase().as_str() {
+        "available" => "badge badge-success",
+        "accepted" => "badge badge-warning",
+        "completed" => "badge badge-info",
+        "ready" => "badge badge-success",
+        "pending" | "searching" | "deploying" => "badge badge-warning",
+        "failed" => "badge badge-danger",
+        "ended" => "badge badge-info",
+        _ => "badge",
+    };
+    html! {
+        span class=(class) { (status) }
+    }
+}
+
+/// Empty state placeholder
+pub fn empty_state(message: &str, action_href: Option<&str>, action_label: Option<&str>) -> Markup {
+    html! {
+        div class="empty-state" {
+            p { (message) }
+            @if let (Some(href), Some(label)) = (action_href, action_label) {
+                a href=(href) class="btn btn-primary" {
+                    (label)
+                }
+            }
+        }
+    }
+}
+
+/// Population level description
+pub fn population_description(level: i32) -> &'static str {
+    match level {
+        1 => "Hamlet",
+        2 => "Village",
+        3 => "Town",
+        4 => "City",
+        5 => "Capital",
+        _ => "Unknown",
     }
 }
 
@@ -533,6 +576,20 @@ mod icon_tests {
     }
 
     #[test]
+    fn every_catalog_item_icon_has_a_vendored_game_icon() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("static/icons/game");
+        for item in adventuresim_core::item_catalog::catalog() {
+            let path = root.join(format!("{}.svg", item.presentation.icon));
+            assert!(
+                path.is_file(),
+                "missing strategic Game Icon {} for {}",
+                item.presentation.icon,
+                item.id
+            );
+        }
+    }
+
+    #[test]
     fn icon_markup_is_local_accessible_and_header_is_compact() {
         let icon = item_type_icon("arming_sword").into_string();
         assert!(icon.contains("/static/icons/game/broadsword.svg"));
@@ -581,55 +638,8 @@ mod icon_tests {
     #[test]
     fn item_source_links_use_the_compiled_location_and_configured_ref() {
         let url = item_source_edit_url("arming_sword").unwrap();
-        assert!(
-            url.starts_with(
-                "https://github.com/adventure-simulator-group/adventure-simulator/edit/"
-            )
-        );
+        assert!(url.starts_with("https://github.com/adventure-simulator-group/fabelgeist/edit/"));
         assert!(url.contains("/content/items/catalog.yaml#L"));
         assert_eq!(item_source_edit_url("modded_item"), None);
-    }
-}
-
-/// Status badge
-pub fn status_badge(status: &str) -> Markup {
-    let class = match status.to_lowercase().as_str() {
-        "available" => "badge badge-success",
-        "accepted" => "badge badge-warning",
-        "completed" => "badge badge-info",
-        "ready" => "badge badge-success",
-        "pending" | "searching" | "deploying" => "badge badge-warning",
-        "failed" => "badge badge-danger",
-        "ended" => "badge badge-info",
-        _ => "badge",
-    };
-    html! {
-        span class=(class) { (status) }
-    }
-}
-
-/// Empty state placeholder
-pub fn empty_state(message: &str, action_href: Option<&str>, action_label: Option<&str>) -> Markup {
-    html! {
-        div class="empty-state" {
-            p { (message) }
-            @if let (Some(href), Some(label)) = (action_href, action_label) {
-                a href=(href) class="btn btn-primary" {
-                    (label)
-                }
-            }
-        }
-    }
-}
-
-/// Population level description
-pub fn population_description(level: i32) -> &'static str {
-    match level {
-        1 => "Hamlet",
-        2 => "Village",
-        3 => "Town",
-        4 => "City",
-        5 => "Capital",
-        _ => "Unknown",
     }
 }

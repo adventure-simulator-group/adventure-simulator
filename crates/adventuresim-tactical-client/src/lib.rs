@@ -13,6 +13,7 @@
 #![cfg(feature = "remote-types")]
 
 pub mod animation;
+pub mod animation_graph_nodes;
 pub mod camera;
 pub mod debug;
 pub mod player;

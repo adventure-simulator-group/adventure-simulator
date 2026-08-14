@@ -348,7 +348,7 @@ pub(crate) fn context_contact_revision_view(
     ctx.db
         .party_context_contact_authority()
         .id()
-        .find(&party_context_contact_id(party_id, context_id))
+        .find(party_context_contact_id(party_id, context_id))
         .map_or(fallback, |contact| contact.revision)
 }
 
@@ -360,7 +360,7 @@ pub(crate) fn party_contacted_context(
     ctx.db
         .party_context_contact_authority()
         .id()
-        .find(&party_context_contact_id(party_id, context_id))
+        .find(party_context_contact_id(party_id, context_id))
         .is_some_and(|contact| contact.contacted && contact.mutual_awareness)
 }
 
@@ -634,7 +634,7 @@ fn exact_case_site_visible_to_observer_view(
         .db
         .case_site_authority()
         .id_key()
-        .find(&case_site_id.to_owned())
+        .find(case_site_id.to_owned())
     else {
         return false;
     };
@@ -960,7 +960,7 @@ fn contextual_membership_is_visible(
                 .db
                 .strategic_encounter()
                 .party_id()
-                .find(&party_id.to_owned())
+                .find(party_id.to_owned())
                 .is_some_and(|encounter| encounter.encounter_id == membership.context_id),
             CharacterContextKind::HostileGroup => true,
         }

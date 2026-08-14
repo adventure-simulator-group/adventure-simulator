@@ -11,8 +11,9 @@ pub(crate) struct FrozenTerminal {
     pub(crate) receipt: TacticalConsequenceReceipt,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 enum TerminalLifecycle {
+    #[default]
     Running,
     RetryScheduled {
         frozen: FrozenTerminal,
@@ -30,12 +31,6 @@ enum TerminalLifecycle {
     Finished {
         outcome: TacticalOutcome,
     },
-}
-
-impl Default for TerminalLifecycle {
-    fn default() -> Self {
-        Self::Running
-    }
 }
 
 impl TerminalLifecycle {

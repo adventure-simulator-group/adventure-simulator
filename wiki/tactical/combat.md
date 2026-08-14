@@ -1,5 +1,10 @@
 # Combat
 
+Standalone tactical missions and fixtures use the canonical John Fabelgeist
+build whenever no persisted strategic character is supplied. This includes
+the shared attributes and combat training as well as his durable starting
+loadout; live tactical state remains transient.
+
 Strategic autoresolve uses shared bestiary combat profiles. Skeleton bone is a
 full-coverage innate protection layer with substantial resistance and no
 padding, making blunt attacks substantially more effective than cutting attacks
@@ -13,7 +18,10 @@ field changes real-time behavior; tactical enemy state remains transient.
 When the player clicks the [Attack button](../client/controls.md#direct-controls), initiating an attack animation, we run a shapecast in front of the player character. If there is an intersection between the attacker's hitreg and some other actor's hitbox, we calculate [input precision](../client/controls.md#direct-controls). Then comes the skill check algorithm.
 
 Client melee requests and server-controlled melee AI feed one internal server
-attack-intent path. Client-reported input precision is preserved: reproducing
+attack-intent path. Each melee weapon declares a preferred slash or stab and
+separate swing and stab precision terms; the selected animation family selects
+the matching combat term. Unarmed fists are a stab-preferring melee fallback.
+Client-reported input precision is preserved: reproducing
 full animation and secondary physics on the headless server is not an intended
 authority boundary, while character and equipment statistics still bound the
 combat calculation.
@@ -45,7 +53,7 @@ every frontal AI.
 
 Before resolution, the headless server rejects self or friendly attacks,
 missing allegiance or combat state, incapacitated participants, non-finite
-precision, missing weapons, attacks beyond shared interaction range plus a
+precision, invalid weapon state, attacks beyond shared interaction range plus a
 small 0.25-meter network-motion allowance, requests outside a fresh
 server-observed windup/cooldown, and blocked authoritative physics line of
 sight. Cheap state, timing, and range checks run before the physics cast. Finite
@@ -100,7 +108,7 @@ Broadly speaking, the flow goes like this:
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
 	3. Multiply final value by [input precision](../client/controls.md)
 
-The weapon term also provides the strategic recruitment **weapon precision** scale. The current discrete recommendations are 0.5 for clubs and hammers, 1.0 for axes, 1.5 for ordinary swords and spears, and 2.0 for purpose-built precise weapons such as rapiers or bodkin ammunition. Damage type is not a recruitment role: slash, pierce, and blunt weapons are compared through this single precision scale instead.
+For melee weapons, the weapon term is selected from separate **swing precision** and **stab precision** values. Edges and impact faces generally have swing precision at or below 0.5, while points can be substantially more exact. The catalog's war hammer is the unusual high-swing-precision example because its compact four-sided beak concentrates a swung attack on a small target. Ranged weapons retain their single accuracy term. Damage type is not a recruitment role.
 2. calculate `dodge_defense`:
 	1. Calculate `armor_dodge_term` from their armor.
 		1. This isn't actually the weight of the armor; it's based on articulations on joints.
@@ -180,6 +188,12 @@ melee pursuit/attack cadence when it cannot make a ranged attack.
 ## Incapacitation
 A character's incapacitation represents the sum of all disabling effects on them and corresponds to the state of their animation. When above half, they are "staggered" and each additional 1% of incapacitation causes a 2% penalty to movement and attribute checks, and when above 100% they are completely incapacitated (which also causes knockdown). Most negative effects that a character has can affect their incapacitation, past a certain threshold. Your incapacitation is displayed as a wheel in the center of the screen. If it is at 0%, the wheel is invisible, and as it increases it starts from 12 o'clock and extends as an arc clockwise. Each factor that contributes to incapacitation has a different color to differentiate them.
 
+The tactical client draws this wheel with EGUI around the center reticle. It
+preserves the strategic fear, fatigue, hunger, thirst, and temperature source
+breakdown captured at mission enrollment, then combines those segments with
+live recomputed pain and blood loss plus transient white imbalance. The arc
+clamps at one revolution, and the reticle remains visible inside it.
+
 The strategic character panel uses the same colors for its segmented incapacitation meter, source meters, and source icons. Hunger and thirst share centered meters with their physiological reserves: reserve fills right, while incapacitation fills left after crossing zero. Exact percentages remain available on hover and to assistive technology, while the default view emphasizes the relative contribution of each source.
 
 Each of the following factors range from 0% to at least 100%.
@@ -211,14 +225,32 @@ fn balance_damage(attacker, defender, attack_directness):
 ```
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
+In tactical combat it is transient, server-authoritative grey incapacitation.
+The movement contribution is based on server-authoritative locomotion intent,
+not measured physics velocity: full jogging contributes exactly zero, walking
+or partial input recovers exhaustion, and sprinting adds it. External impulses
+therefore cannot create breath exhaustion, while poison, climbing, combat, and
+other future sources remain free to add independent rates. Tactical breath
+changes use a 5x response scale so exertion and recovery resolve quickly enough
+to matter during a fight without changing any movement-speed thresholds. Wheel
+segments below 0.5% are hidden as subpixel display noise without changing state.
 ```rs
-const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.002
-# someone with 2 endurance (poorly fed Napoleonic soldier) can march 1.2m/s all day. Therefore a simple linear ratio between velocity and breath must be about:
 const BREATH_PER_METERS_PER_SECOND = 0.0034
+const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
+
+# Sustainable jog speed is 1.8m/s at endurance 1, 2.1m/s at endurance 2,
+# and the elite-marathon average of 5.83m/s at endurance 5. Between those
+# anchors, most of the extraordinary performance is reserved for high endurance.
+fn sustainable_jog_speed(endurance):
+	if endurance <= 1:
+		t = clamp(endurance, 0, 1)
+		return lerp(1.4, 1.8, t * t * (3 - 2 * t))
+	t = (clamp(endurance, 1, 5) - 1) / 4
+	return 1.8 + 4.03 * pow(t, 1.873873)
  
 fn update_stamina(player):
-	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
-	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
+	breath_delta = (character.velocity - sustainable_jog_speed(character.endurance)) * BREATH_PER_METERS_PER_SECOND
+	player.breath_damage += dt * breath_delta * TACTICAL_BREATH_RESPONSE_SCALE
 ```
 ### Pain (pink)
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.
@@ -357,3 +389,14 @@ projectiles, blood loss, ammunition, weapon/shield/armor contact wear, combat
 dirt and blood filth, morale, loot classification, and diagnostics). Random
 encounter reports use encounter IDs and never create quest battle results or
 complete an active quest.
+
+Dropped equipment uses dedicated item and terrain-support physics/query layers. Its authored box
+collider supports terrain and pointing pickup queries, but melee hit selection
+still targets only limb hitboxes and server combat line-of-sight explicitly
+excludes tactical scene-item boxes. Equipment therefore cannot extend a melee
+hit shape, collide with characters, affect camera collision, or provide
+improvised combat cover. The collider is offset from the grip by the same
+authored transform as the visible mesh, and drop searches bounded candidate
+positions with shape-overlap rejection before creating a body. Pickup remains server-authorized
+and requires the pointed candidate to win the deterministic ray-distance then
+entity-identity ordering, be in range, and have unobstructed line of sight.

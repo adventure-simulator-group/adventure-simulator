@@ -48,6 +48,7 @@ pub(in crate::animation) fn apply_locomotion_body_response(
                 .is_some_and(|value| value != skeleton.is_grounded());
         if discontinuous
             || !skeleton.is_grounded()
+            || skeleton.is_posture_transitioning()
             || skeleton.action_kind() != SkeletonAction::None
         {
             next.pitch_radians = 0.0;

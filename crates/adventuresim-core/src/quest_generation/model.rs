@@ -896,12 +896,10 @@ pub fn player_visible_testimony_sequence(
     let mut visible_witnesses = BTreeSet::from([primary.id.clone()]);
     let mut delivered_witnesses = BTreeSet::new();
     let mut output = Vec::new();
-    loop {
-        let Some(witness) = generated.witnesses.iter().find(|witness| {
+    while let Some(witness) = generated.witnesses.iter().find(|witness| {
             visible_witnesses.contains(&witness.id) && !delivered_witnesses.contains(&witness.id)
-        }) else {
-            break;
-        };
+        })
+    {
         delivered_witnesses.insert(witness.id.clone());
         for (_, statement) in initial_testimony_projection(witness) {
             for referred in &statement.referred_witness_ids {

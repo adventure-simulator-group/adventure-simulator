@@ -189,7 +189,7 @@ fn ensure_scenario_character(
 }
 
 fn ensure_scenario_settlement(ctx: &ReducerContext, id: &str, name: &str) -> Result<(), String> {
-    if let Some(existing) = ctx.db.settlement().id().find(&id.to_owned()) {
+    if let Some(existing) = ctx.db.settlement().id().find(id.to_owned()) {
         return (existing.name == name)
             .then_some(())
             .ok_or_else(|| "Development scenario settlement identity conflicts".into());
@@ -198,7 +198,7 @@ fn ensure_scenario_settlement(ctx: &ReducerContext, id: &str, name: &str) -> Res
         .db
         .settlement()
         .id()
-        .find(&"riverdale".to_owned())
+        .find("riverdale".to_owned())
         .ok_or("Development scenario settlement template is missing")?;
     settlement.id = id.into();
     settlement.name = name.into();
@@ -209,14 +209,14 @@ fn ensure_scenario_settlement(ctx: &ReducerContext, id: &str, name: &str) -> Res
 
 pub(crate) fn ensure_foraging_demo_settlement(ctx: &ReducerContext) -> Result<(), String> {
     const ID: &str = "dev-scenario-foraging";
-    let (mut settlement, exists) = if let Some(existing) = ctx.db.settlement().id().find(&ID.to_owned()) {
+    let (mut settlement, exists) = if let Some(existing) = ctx.db.settlement().id().find(ID.to_owned()) {
         (existing, true)
     } else {
         (
             ctx.db
                 .settlement()
                 .id()
-                .find(&"riverdale".to_owned())
+                .find("riverdale".to_owned())
                 .ok_or("Foraging demo settlement template is missing")?,
             false,
         )
@@ -319,7 +319,7 @@ fn ensure_recurring_threat_offer_awareness(
         .db
         .local_problem_authority()
         .id()
-        .find(&problem_id.to_string())
+        .find(problem_id.to_string())
         .ok_or("Recurring-threat scenario problem is missing")?;
     problem.public_awareness_bps = problem.public_awareness_bps.max(6_000);
     ctx.db.local_problem_authority().id().update(problem);
@@ -448,7 +448,7 @@ pub(crate) fn materialize_development_scenario_gallery(
         let label = definition
             .cast
             .first()
-            .map_or_else(|| definition.id.replace('-', " ").replace('_', " "), |speaker| format!("Encounter with {}", speaker.name));
+            .map_or_else(|| definition.id.replace(['-', '_'], " "), |speaker| format!("Encounter with {}", speaker.name));
         register_development_scenario(ctx, &scenario_slug, "Road encounters", &label, "Play this compiled encounter through its ordinary journey-camp presentation.", character_id, "/camp")?;
         register_development_subject(ctx, &scenario_slug, "road_encounter", &occurrence_id)?;
     }

@@ -676,7 +676,7 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                     } else if choice.requires_treatment() {
                         ordinary_treatment_complete
                     } else {
-                        choice.requirements.iter().all(|requirement| available(requirement))
+                        choice.requirements.iter().all(&available)
                     },
                 }).collect() } else { Vec::new() },
                 response: selected.into_iter().flat_map(|choice| choice.response.iter()).filter_map(line).collect(),
@@ -877,7 +877,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Narrative encounter requires a durable journey")?;
     let definition = adventuresim_core::road_encounter_catalog::encounter(&selection.catalog_id)
         .ok_or("Narrative encounter selection has an unknown catalog ID")?;
@@ -885,7 +885,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         .db
         .party_journey_route_authority()
         .party_id()
-        .find(&party_id.to_string());
+        .find(party_id.to_string());
     let position = route
         .as_ref()
         .and_then(|route| route_position_at_minute(route, journey.completed_minutes))
@@ -894,7 +894,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         .db
         .party_journey_encounter_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Narrative encounter requires durable encounter entropy")?
         .seed;
     let origin_slug = match origin {
@@ -1015,8 +1015,8 @@ fn materialize_narrative_combat(
         .ok_or("Narrative combat requires durable encounter entropy")?;
     let roll_index = narrative_combat_roll(encounter_authority.seed, &challenge.id);
     let encounter_id = opaque_strategic_encounter_id(encounter_authority.seed, roll_index);
-    if let Some(existing) = ctx.db.strategic_encounter().party_id().find(&party.id) {
-        if existing.status == "awaiting_choice" {
+    if let Some(existing) = ctx.db.strategic_encounter().party_id().find(&party.id)
+        && existing.status == "awaiting_choice" {
             if existing.encounter_id == encounter_id
                 && ctx
                     .db
@@ -1032,7 +1032,6 @@ fn materialize_narrative_combat(
             }
             return Err("Resolve the pending strategic encounter before starting another".into());
         }
-    }
     let core_archetype = match archetype {
         adventuresim_core::road_encounter_catalog::RoadCombatArchetype::Bandits => {
             EncounterArchetype::Bandits
@@ -1249,7 +1248,7 @@ pub(crate) fn bind_errantry_trials_to_current_camp(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     if party.camp_destination.is_none() {
         return Ok(());
@@ -1258,7 +1257,7 @@ pub(crate) fn bind_errantry_trials_to_current_camp(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Camp has no journey authority")?;
     let JourneyEndpoint::CaseSite(destination) = &journey.destination else {
         return Ok(());

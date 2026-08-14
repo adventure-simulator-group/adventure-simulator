@@ -306,7 +306,7 @@ fn validate_tracking_action_origin(
             ctx.db
                 .investigation_action_capability()
                 .id()
-                .find(&id.to_owned())
+                .find(id.to_owned())
         },
         |id| {
             ctx.db
@@ -528,7 +528,7 @@ fn validate_generated_pattern_condition(
                 .ok_or("Victim cohort target is unavailable")?;
             let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
                 cohort_id: target.cohort_id.clone(),
-                resident_character_id: target.resident_character_id.clone(),
+                resident_character_id: target.resident_character_id,
                 demographic: *demographic,
                 age_band: target.age_band.clone(),
                 sex: target.sex.clone(),
@@ -543,7 +543,7 @@ fn validate_generated_pattern_condition(
                     .ok_or("Victim cohort NPC no longer has a visible demographic")?
             } else {
                 adventuresim_core::quest_generation::WitnessCandidate {
-                    resident_character_id: npc.character_id.clone(),
+                    resident_character_id: npc.character_id,
                     display_name: npc.name.clone(),
                     demographic: crate::strategic::generated_npc_demographic(&npc),
                     age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
@@ -592,7 +592,7 @@ fn validate_live_action_prerequisites(
             ctx.db
                 .investigation_action_capability()
                 .id()
-                .find(&id.to_owned())
+                .find(id.to_owned())
         },
         |id| {
             ctx.db
@@ -613,7 +613,7 @@ fn validate_live_action_prerequisites(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     if party.camp_destination.is_some()
         || party.camp_remaining_minutes > 0
@@ -621,7 +621,7 @@ fn validate_live_action_prerequisites(
             .db
             .party_journey_authority()
             .party_id()
-            .find(&party_id.to_string())
+            .find(party_id.to_string())
             .is_some()
     {
         return Err("Investigation cannot begin during a journey or camp".into());
@@ -708,7 +708,7 @@ fn case_objective_contains_custody_target(
         .db
         .case_authority()
         .id()
-        .find(&case_id.to_string())
+        .find(case_id.to_string())
         .ok_or("Investigation case no longer exists")?;
     let expression: adventuresim_core::case::ObjectiveExpression =
         serde_json::from_str(&case.objective_expression_json)
@@ -742,7 +742,7 @@ fn validate_pickup_custody(
         .db
         .case_custody()
         .object_id()
-        .find(&object_id.to_string())
+        .find(object_id.to_string())
         .ok_or("Capability target has no custody authority")?;
     if current.case_id != capability.case_id
         || current.object_kind != object_kind
@@ -756,7 +756,7 @@ fn validate_pickup_custody(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     if party.current_case_site_id.as_deref() != Some(current.holder_id.as_str()) {
         return Err("Party is not at the custody site".into());
@@ -790,7 +790,7 @@ fn reissue_stale_custody_capability(
         .db
         .case_custody()
         .object_id()
-        .find(&object_id.to_string())
+        .find(object_id.to_string())
         .ok_or("Capability target has no custody authority")?;
     let next = current.version.saturating_add(1);
     if expected == next {

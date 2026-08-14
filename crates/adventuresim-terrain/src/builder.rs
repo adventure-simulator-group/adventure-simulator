@@ -435,7 +435,7 @@ fn polygon_mask(
                 }
             }
             intersections.sort_by(f64::total_cmp);
-            for pair in intersections.chunks_exact(2) {
+            for pair in intersections.as_chunks::<2>().0 {
                 let start = ((pair[0] - f64::from(west)) * f64::from(width))
                     .floor()
                     .max(0.0) as usize;

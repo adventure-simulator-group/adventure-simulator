@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use bevy::reflect::{TypeInfo, VariantInfo, VariantType};
+use bevy::reflect::{TypeInfo, enums::VariantInfo, enums::VariantType};
 
 /// `glam` float-vector types with a hand-coded `Serialize` impl the
 /// reflected shape can't see - hardcoded to `list[float]` with a known

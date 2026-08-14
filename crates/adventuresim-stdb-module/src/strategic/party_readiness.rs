@@ -103,15 +103,15 @@ fn party_leader_is_publicly_ready(ctx: &ReducerContext, party: &Party) -> bool {
         .character_id()
         .find(party.leader_id)
         .is_some_and(|condition| condition.status == "ready");
-    let leader_is_ready = leader_is_alive
+
+    leader_is_alive
         && leader_condition_ready
         && !ctx
             .db
             .character_illness_status()
             .character_id()
             .find(party.leader_id)
-            .is_some_and(|illness| illness.symptomatic || illness.critical);
-    leader_is_ready
+            .is_some_and(|illness| illness.symptomatic || illness.critical)
 }
 
 fn ready_companion_may_direct_recovery(

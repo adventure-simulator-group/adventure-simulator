@@ -11,8 +11,10 @@ pub(super) fn resolve_melee_attack(
     mut q_authorities: Query<&mut MeleeAttackAuthority>,
     q_bestiary_categories: Query<&BestiaryCategories>,
     q_pending: Query<&PendingDefenderResponse>,
+    q_scene_items: Query<Entity, With<TacticalSceneItem>>,
     time: Res<Time<()>>,
 ) {
+    let attack_style = event.strike_family.melee_style();
     let entity = event.attacker;
 
     let Ok(attacker_view) = viewer.get(entity).inspect_err(|err| {
@@ -79,6 +81,7 @@ pub(super) fn resolve_melee_attack(
     };
     let line_of_sight = authoritative_line_of_sight(
         &spatial,
+        &q_scene_items,
         validated.attacker(),
         validated.target(),
         validated.attacker_position(),
@@ -104,9 +107,10 @@ pub(super) fn resolve_melee_attack(
     let flanking = flanking_from_dir((a1, a2), (d1, d2));
 
     let Some(attacker_side) = attacker_view.weapon_holding_side() else {
-        debug!("Rejected attacker without a held weapon");
+        debug!("Rejected attacker without a usable striking side");
         return;
     };
+    let attacker_has_weapon = viewer.inventory.get(entity).has_equipped_weapon();
 
     let pending = q_pending.get(attack.target()).ok();
     let defender_response = resolve_defender_response(pending, &time, &defender_view);
@@ -122,6 +126,7 @@ pub(super) fn resolve_melee_attack(
 
     let result = attacker_view.resolve_melee_attack(
         attacker_side,
+        attack_style,
         &defender_view,
         &defender_categories.0,
         defender_response,
@@ -150,7 +155,7 @@ pub(super) fn resolve_melee_attack(
         result,
         attacker_weapon_slot,
         defender_parry_slot,
-        attacker_weapon_contact: true,
+        attacker_weapon_contact: attacker_has_weapon,
     });
 
     match result {
@@ -177,7 +182,7 @@ pub(super) fn resolve_melee_attack(
     }
 
     cmd.server_trigger(ToClients {
-        mode: SendMode::CLIENTS_ONLY,
+        targets: SendTargets::All,
         message: SuccessfulAttackResponse {
             attacker: attack.attacker(),
             hit: vec![attack.target()],

@@ -242,7 +242,7 @@ fn transition_case_custody(
         .db
         .case_custody()
         .source_id()
-        .find(&source_id.to_string())
+        .find(source_id.to_string())
     {
         return if existing.case_id == case_id
             && existing.object_id == object_id
@@ -284,7 +284,7 @@ fn transition_case_custody(
         .db
         .case_custody()
         .object_id()
-        .find(&object_id.to_string())
+        .find(object_id.to_string())
     {
         records.insert(
             custody_object(current.object_kind, &current.object_id)?,
@@ -411,7 +411,7 @@ fn party_strategic_minute(ctx: &ReducerContext, party_id: &str) -> Result<u64, S
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     Ok(ctx
         .db
@@ -425,7 +425,7 @@ fn open_case_expression(
     ctx: &ReducerContext,
     case_id: &str,
 ) -> Result<Option<adventuresim_core::case::ObjectiveExpression>, String> {
-    let Some(case) = ctx.db.case_authority().id().find(&case_id.to_string()) else {
+    let Some(case) = ctx.db.case_authority().id().find(case_id.to_string()) else {
         return Ok(None);
     };
     if case.resolution_status != CaseResolutionStatus::Open {
@@ -448,7 +448,7 @@ fn ensure_objective_continuity_guards(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     let now = party_strategic_minute(ctx, party_id)?;
     use adventuresim_core::case::ObjectiveRequirement as R;
@@ -478,7 +478,7 @@ fn ensure_objective_continuity_guards(
                         .db
                         .case_custody()
                         .object_id()
-                        .find(&subject_id.as_str().to_string());
+                        .find(subject_id.as_str().to_string());
                     let valid = custody.as_ref().is_some_and(|row| {
                         row.case_id == case_id
                             && row.holder_kind == CustodyHolderKind::Party
@@ -540,7 +540,7 @@ pub(crate) fn reconcile_party_objective_continuity(
     ctx: &ReducerContext,
     party_id: &str,
 ) -> Result<(), String> {
-    let Some(party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
+    let Some(party) = ctx.db.party_authority().id().find(party_id.to_string()) else {
         return Ok(());
     };
     let now = party_strategic_minute(ctx, party_id)?;
@@ -677,7 +677,7 @@ fn commit_case_site_arrival_objectives(
             .db
             .case_custody()
             .object_id()
-            .find(&subject_id.as_str().to_string())
+            .find(subject_id.as_str().to_string())
             .ok_or("Escorted subject has no custody authority")?;
         if current.case_id != site.case_id
             || current.holder_kind != CustodyHolderKind::Party
@@ -760,7 +760,7 @@ fn emit_terminal_custody_impossibility(
             .db
             .case_authority()
             .id()
-            .find(&case_id.to_string())
+            .find(case_id.to_string())
             .is_none_or(|case| case.resolution_status != CaseResolutionStatus::Open)
         {
             break;
@@ -937,7 +937,7 @@ pub(crate) fn ingest_case_outcome_fact(
         .db
         .case_authority()
         .id()
-        .find(&case_id.to_string())
+        .find(case_id.to_string())
         .ok_or("Case not found")?;
     let generated_provenance = validated_case_outcome_provenance(ctx, &case)?;
     if let Some(validated) = generated_provenance.as_ref()
@@ -977,7 +977,7 @@ pub(crate) fn ingest_case_outcome_fact(
         .db
         .case_outcome_fact()
         .source_id()
-        .find(&source_id.to_string())
+        .find(source_id.to_string())
     {
         return if existing.case_id == case.id
             && existing.party_id == party_id
@@ -1129,7 +1129,7 @@ fn execute_case_finale(
         .db
         .case_finale_execution()
         .finale_id()
-        .find(&finale_id.to_string())
+        .find(finale_id.to_string())
     {
         return if existing.source_id == source_id && existing.party_id == party_id {
             Ok(())
@@ -1141,7 +1141,7 @@ fn execute_case_finale(
         .db
         .case_finale_authority()
         .id()
-        .find(&finale_id.to_string())
+        .find(finale_id.to_string())
         .ok_or("Finale not found")?;
     if finale.status != FinaleStatus::Selected {
         return Err("Finale is not selected".into());
@@ -1323,13 +1323,11 @@ pub(crate) fn generated_case_site_hostile_resolution_eligible<'a>(
     {
         return None;
     }
-    let Some(generated_site) = generated
+    let generated_site = generated
         .sites
         .iter()
         .find(|site| site.id.0 == case_site.id.value)
-    else {
-        return None;
-    };
+        ?;
     if generated_site.safe_label != case_site.name {
         return None;
     }
@@ -1407,7 +1405,7 @@ pub(crate) fn ensure_bound_mission_authority(
         .db
         .mission_authority()
         .id()
-        .find(&mission_id.to_string())
+        .find(mission_id.to_string())
     {
         return if existing.party_id == party_id
             && existing.observer_character_id == observer_character_id
@@ -1464,7 +1462,7 @@ pub(crate) fn ensure_bound_mission_authority(
                 .db
                 .hostile_group_authority()
                 .id()
-                .find(&hostile_group_id.to_string())
+                .find(hostile_group_id.to_string())
                 .into_iter()
                 .collect();
             let finales: Vec<_> = ctx
@@ -1509,7 +1507,7 @@ pub(crate) fn ensure_bound_mission_authority(
                 .db
                 .party_authority()
                 .id()
-                .find(&party_id.to_string())
+                .find(party_id.to_string())
                 .ok_or("Party not found")?;
             if party.active_contract_id.as_deref() != Some(&accepted_contract.id) {
                 return Err("This quest requires an accepted active contract".into());

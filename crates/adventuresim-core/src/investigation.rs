@@ -648,11 +648,11 @@ pub fn qualitative_deductions(inference: &SafeInference) -> Vec<ThreatDeduction>
         .iter()
         .take(6)
         .map(|candidate| {
-            let ratio_bps = if top == 0 {
-                0
-            } else {
-                candidate.score.saturating_mul(10_000) / top
-            };
+            let ratio_bps = candidate
+                .score
+                .saturating_mul(10_000)
+                .checked_div(top)
+                .unwrap_or(0);
             let support = if ratio_bps >= 7_500 {
                 DeductionSupport::Strong
             } else if ratio_bps >= 3_000 {

@@ -246,27 +246,6 @@ fn set_bone_world_rotation(
     }
 }
 
-#[cfg(test)]
-mod memory_tests {
-    use super::*;
-
-    #[test]
-    fn resetting_leg_memory_cannot_reset_arm_continuity() {
-        let mut leg = LegIkState(LegIkMemory {
-            left_leg: Some(Vec3::X),
-            ..default()
-        });
-        let arm = ArmIkState(ArmIkMemory {
-            left_arm: Some(Vec3::Y),
-            ..default()
-        });
-        assert_eq!(leg.0.left_leg, Some(Vec3::X));
-        leg = LegIkState::default();
-        assert_eq!(leg.0.left_leg, None);
-        assert_eq!(arm.0.left_arm, Some(Vec3::Y));
-    }
-}
-
 fn set_world_transform(
     entity: Entity,
     world: Transform,
@@ -289,5 +268,26 @@ fn set_world_transform(
         && let Ok(mut transform) = transforms.p1().get_mut(entity)
     {
         *transform = local;
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn resetting_leg_memory_cannot_reset_arm_continuity() {
+        let mut leg = LegIkState(LegIkMemory {
+            left_leg: Some(Vec3::X),
+            ..default()
+        });
+        let arm = ArmIkState(ArmIkMemory {
+            left_arm: Some(Vec3::Y),
+            ..default()
+        });
+        assert_eq!(leg.0.left_leg, Some(Vec3::X));
+        leg = LegIkState::default();
+        assert_eq!(leg.0.left_leg, None);
+        assert_eq!(arm.0.left_arm, Some(Vec3::Y));
     }
 }

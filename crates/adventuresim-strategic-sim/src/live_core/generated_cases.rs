@@ -2525,7 +2525,7 @@ impl LiveRunner {
             CoreLoopEventKind::TurnIn,
             format!(
                 "party={};quest={}",
-                bounded_event_field(&party_id),
+                bounded_event_field(party_id),
                 bounded_event_field(&quest.id)
             ),
         );

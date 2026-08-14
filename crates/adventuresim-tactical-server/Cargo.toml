@@ -36,3 +36,6 @@ clap = { workspace = true }
 # Debug-only world dump loading
 ron = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+
+[lints]
+workspace = true

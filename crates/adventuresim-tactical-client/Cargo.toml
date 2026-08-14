@@ -1,6 +1,6 @@
 [package]
 name = "adventuresim-tactical-client"
-description = "Adventure Simulator: Wasm game client"
+description = "Fabelgeist: Wasm game client"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
@@ -12,10 +12,16 @@ debug = ["bevy/debug", "bevy/bevy_remote", "adventuresim-tactical-core/avian_deb
 tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
 # See src/lib.rs - only used by crates/adventuresim-tactical-brp-generator.
 remote-types = ["debug"]
+animation-graph-editor = ["dep:bevy_animation_graph_editor"]
+animation-graph-physics = ["bevy_animation_graph/physics_avian", "dep:avian3d"]
 
 [dependencies]
 bevy.workspace = true
 bevy_flair.workspace = true
+bevy_egui.workspace = true
+bevy_mod_outline.workspace = true
+bevy_animation_graph.workspace = true
+avian3d = { workspace = true, optional = true }
 adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
 clap.workspace = true
@@ -28,6 +34,7 @@ tracy-client-sys = { version = "=0.28.0", optional = true }
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
 bevy = { workspace = true, default-features = true, features = ["file_watcher"] }
+bevy_animation_graph_editor = { workspace = true, optional = true }
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 bevy = { workspace = true, default-features = false, features = [
@@ -64,3 +71,16 @@ doc = false
 name = "animation-viewer"
 path = "src/animation_viewer_main.rs"
 doc = false
+required-features = ["debug"]
+
+[[bin]]
+name = "animation-graph-editor"
+path = "src/animation_graph_editor_main.rs"
+doc = false
+required-features = ["animation-graph-editor"]
+
+[[bin]]
+name = "ragdoll-viewer"
+path = "src/ragdoll_viewer_main.rs"
+doc = false
+required-features = ["debug", "animation-graph-physics"]

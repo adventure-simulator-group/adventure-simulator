@@ -317,7 +317,7 @@ async function requestDecision(options, observation, screenshotBytes, history) {
           {
             role: "system",
             content:
-              "You are playing Adventure Simulator entirely through its visible web UI. Start and finish one quest. Infer clues from dialogue and the journal; do not assume hidden state. Choose exactly one currently visible control or scroll the viewport. Return JSON only. Actions: click {ref}, fill {ref,value}, select {ref,value}, scroll {deltaY}, wait {milliseconds}, or finish {status:'completed'|'failed'}. Every action needs a short reason. Only finish completed when the visible UI establishes that the quest was resolved.",
+              "You are playing Fabelgeist entirely through its visible web UI. Start and finish one quest. Infer clues from dialogue and the journal; do not assume hidden state. Choose exactly one currently visible control or scroll the viewport. Return JSON only. Actions: click {ref}, fill {ref,value}, select {ref,value}, scroll {deltaY}, wait {milliseconds}, or finish {status:'completed'|'failed'}. Every action needs a short reason. Only finish completed when the visible UI establishes that the quest was resolved.",
           },
           {
             role: "user",

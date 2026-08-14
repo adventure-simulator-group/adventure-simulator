@@ -91,12 +91,15 @@ pub(super) fn log_animation_diagnostics(
     mut log: Option<ResMut<AnimationDiagnosticLog>>,
     input: Option<Res<DiagnosticInputStatus>>,
     render_schedule: Option<Res<RenderScheduleTelemetry>>,
+    terrains: Query<&SceneTerrain>,
     players: Query<
         (
             &Transform,
+            &GlobalTransform,
             &SkeletonState,
             &PresentedSkeleton,
             &AnimationPlayback,
+            Option<&semantic_graph::SemanticGraphTrace>,
         ),
         (With<Player>, With<crate::player::ClientPlayer>),
     >,
@@ -115,12 +118,17 @@ pub(super) fn log_animation_diagnostics(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_micros().min(u64::MAX as u128) as u64)
         .unwrap_or_default();
-    for (transform, authoritative, presented, playback) in &players {
+    let terrain = terrains.iter().next();
+    for (transform, global_transform, authoritative, presented, playback, semantic_graph) in
+        &players
+    {
+        let global_translation = global_transform.translation();
+        let terrain_height = terrain.and_then(|terrain| terrain.height_at(global_translation.xz()));
         let evaluation = AnimationEvaluation::from_skeleton(presented);
         let transition = playback.presentation_transition.as_ref().map(|transition| {
             serde_json::json!({
                 "elapsed_seconds": transition.elapsed_seconds,
-                "progress": (transition.elapsed_seconds / PRESENTATION_CROSSFADE_SECONDS)
+                "progress": (transition.elapsed_seconds / transition.duration_seconds)
                     .clamp(0.0, 1.0),
             })
         });
@@ -145,6 +153,13 @@ pub(super) fn log_animation_diagnostics(
                 "translation": transform.translation.to_array(),
                 "rotation_xyzw": transform.rotation.to_array(),
             },
+            "controller_global_transform": {
+                "translation": global_translation.to_array(),
+                "rotation_xyzw": global_transform.compute_transform().rotation.to_array(),
+            },
+            "terrain_height": terrain_height,
+            "controller_height_above_terrain": terrain_height
+                .map(|height| global_translation.y - height),
             "authoritative": authoritative,
             "presented": &presented.state,
             "presentation_phase_error_remaining": presented.phase_error_remaining,
@@ -153,6 +168,13 @@ pub(super) fn log_animation_diagnostics(
             "presentation_phase_measurement_error": presented.last_phase_measurement_error,
             "presentation_phase_source_changed": presented.last_phase_source_changed,
             "evaluation": evaluation,
+            "semantic_graph": semantic_graph.map(|trace| serde_json::json!({
+                "requested_path": trace.requested_path,
+                "path": trace.path,
+                "inputs": &trace.inputs,
+                "runtime_evaluated": trace.runtime_evaluated,
+                "evaluation_equivalent": trace.evaluation == evaluation,
+            })),
             "playback": {
                 "use_authored_bind_pose": playback.use_authored_bind_pose,
                 "whole_body_mirror": playback.whole_body_mirror,

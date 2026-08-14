@@ -8,8 +8,9 @@ use axum::{
 };
 
 use super::AppState;
-use crate::session::{Session, clear_character_cookie};
+use crate::session::{Session, clear_character_cookie, redirect_with_session_cookie};
 use crate::spacetimedb::Character;
+use serde_json::json;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(home))
@@ -39,7 +40,57 @@ fn home_path(character: &crate::spacetimedb::Character, party_is_camping: bool) 
 
 async fn home(State(state): State<AppState>, session: Session) -> Response {
     let Some(character_id) = session.character_id_u64() else {
-        return Redirect::to("/characters/candidates").into_response();
+        let issued = if session.owner_key().is_none() {
+            match state.session_codec.issue() {
+                Ok(issued) => Some(issued),
+                Err(error) => {
+                    tracing::error!(%error, "failed to issue default-character browser session");
+                    return (
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                        "A browser session could not be created. Please try again.",
+                    )
+                        .into_response();
+                }
+            }
+        } else {
+            None
+        };
+        let owner_key = session
+            .owner_key()
+            .or_else(|| issued.as_ref().map(|issued| issued.owner_key.as_str()))
+            .expect("existing or newly issued browser owner");
+        let default = adventuresim_core::starting_character::default_character(owner_key);
+        if let Err(error) = state
+            .db
+            .call("create_default_character", &[json!(owner_key)])
+            .await
+        {
+            tracing::error!(%error, "failed to create the default character");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "The default character could not be created. Please try again.",
+            )
+                .into_response();
+        }
+        if let Err(error) = state
+            .db
+            .call(
+                "select_browser_character",
+                &[json!(owner_key), json!(default.id)],
+            )
+            .await
+        {
+            tracing::error!(%error, character_id = default.id, "failed to select the default character");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "The default character could not be selected. Please try again.",
+            )
+                .into_response();
+        }
+        let token = session
+            .token()
+            .or_else(|| issued.as_ref().map(|issued| issued.token.as_str()));
+        return redirect_with_session_cookie(&state.session_codec, token, "/");
     };
     let character = match super::data::character(&state, character_id).await {
         Ok(Some(character)) => character,

@@ -14,6 +14,7 @@
 
 pub mod bot;
 pub mod combat;
+pub mod equipment;
 pub mod mission;
 pub mod player_projection;
 pub mod stdb;

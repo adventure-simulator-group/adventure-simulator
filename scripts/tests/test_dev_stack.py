@@ -610,7 +610,7 @@ class WorkflowTests(unittest.TestCase):
         websocket = FakeWebSocket()
         config = {
             "obs_original_scene": "Gameplay",
-            "obs_capture_scene": "Adventure Simulator diagnostic abc",
+            "obs_capture_scene": "Fabelgeist diagnostic abc",
             "obs_original_collection": "Developer Scenes",
             "obs_capture_collection": "Portable Scenes",
             "obs_original_profile": "Developer Profile",
@@ -624,7 +624,7 @@ class WorkflowTests(unittest.TestCase):
                 ("SetCurrentProgramScene", {"sceneName": "Gameplay"}),
                 (
                     "RemoveScene",
-                    {"sceneName": "Adventure Simulator diagnostic abc"},
+                    {"sceneName": "Fabelgeist diagnostic abc"},
                 ),
                 (
                     "SetCurrentSceneCollection",
@@ -653,7 +653,7 @@ class WorkflowTests(unittest.TestCase):
         capture = dev_stack.ObsCapture(mock.Mock(), websocket, Path("obs.identity.json"))
         config = {
             "obs_original_scene": "Idle",
-            "obs_capture_scene": "Adventure Simulator diagnostic abc",
+            "obs_capture_scene": "Fabelgeist diagnostic abc",
             "obs_original_collection": "Developer Scenes",
             "obs_capture_collection": "Portable Scenes",
             "obs_original_profile": "Developer Profile",

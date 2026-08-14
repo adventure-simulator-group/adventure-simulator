@@ -1,6 +1,7 @@
 use adventuresim_tactical_core::prelude::{
-    CharacterControllerCameraOf, CharacterControllerState, Collider, ShapeCastConfig, SpatialQuery,
-    SpatialQueryFilter, WeaponGuardState,
+    BodyState, CharacterControllerCameraOf, CharacterControllerState, Collider, PlayerEquipment,
+    ShapeCastConfig, SkeletonState, SpatialQuery, SpatialQueryFilter, TacticalPlayerViewer,
+    WeaponGuardState,
 };
 use adventuresim_tactical_netcode::client::WeaponGuardInputState;
 use bevy::prelude::*;
@@ -81,6 +82,8 @@ pub struct CameraRigConfig {
     pub collision_hysteresis: f32,
     pub teleport_distance: f32,
     pub crouch_focus_adjustment: f32,
+    pub prone_focus_adjustment: f32,
+    pub supine_focus_adjustment: f32,
     pub aim_distance: f32,
     pub muzzle_offset: Vec3,
 }
@@ -113,6 +116,8 @@ impl Default for CameraRigConfig {
             collision_hysteresis: 0.08,
             teleport_distance: 2.0,
             crouch_focus_adjustment: -0.45,
+            prone_focus_adjustment: -0.82,
+            supine_focus_adjustment: -0.76,
             aim_distance: 100.0,
             // Local right, up, and forward from the controller center.
             muzzle_offset: Vec3::new(0.28, 0.55, 0.42),
@@ -218,7 +223,11 @@ fn update_camera_rig(
     spatial: SpatialQuery,
     soft_occluders: Query<(), With<CameraSoftOccluder>>,
     controllers: Query<
-        (&Transform, &CharacterControllerState),
+        (
+            &Transform,
+            &CharacterControllerState,
+            Option<&SkeletonState>,
+        ),
         Without<CharacterControllerCameraOf>,
     >,
     mut cameras: Query<(
@@ -237,7 +246,8 @@ fn update_camera_rig(
 
     let dt = time.delta_secs().min(0.1);
     for (mut camera, camera_of, projection) in &mut cameras {
-        let Ok((controller, controller_state)) = controllers.get(camera_of.character_controller)
+        let Ok((controller, controller_state, skeleton)) =
+            controllers.get(camera_of.character_controller)
         else {
             continue;
         };
@@ -251,10 +261,11 @@ fn update_camera_rig(
         )
         .clamp(0.0, 1.0);
         let profile = blend_profile(config.lowered, config.raised, state.blend);
-        let crouch_adjustment = if controller_state.crouching {
-            config.crouch_focus_adjustment
-        } else {
-            0.0
+        let crouch_adjustment = match skeleton.map(SkeletonState::body) {
+            Some(BodyState::Prone) => config.prone_focus_adjustment,
+            Some(BodyState::Supine) => config.supine_focus_adjustment,
+            _ if controller_state.crouching => config.crouch_focus_adjustment,
+            _ => 0.0,
         };
         let anchor = controller.translation + Vec3::Y * (profile.focus_height + crouch_adjustment);
 
@@ -382,17 +393,29 @@ fn update_camera_aim(
     spatial: SpatialQuery,
     cameras: Query<(&Transform, &CharacterControllerCameraOf)>,
     controllers: Query<&Transform, Without<CharacterControllerCameraOf>>,
+    viewer: TacticalPlayerViewer,
     mut aim: ResMut<CameraAimState>,
 ) {
-    aim.active = mode.third_person && guard.desired == WeaponGuardState::Raised;
-    if !aim.active {
+    let raised = mode.third_person && guard.desired == WeaponGuardState::Raised;
+    if !raised {
+        aim.active = false;
         aim.blocked = false;
         aim.camera_hit = None;
         aim.actual_hit = None;
         return;
     }
+    aim.active = false;
 
     for (camera, camera_of) in &cameras {
+        aim.active = viewer
+            .get(camera_of.character_controller)
+            .is_ok_and(|player| player.weapon_is_ranged());
+        if !aim.active {
+            aim.blocked = false;
+            aim.camera_hit = None;
+            aim.actual_hit = None;
+            continue;
+        }
         let Ok(controller) = controllers.get(camera_of.character_controller) else {
             continue;
         };

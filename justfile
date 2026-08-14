@@ -1,4 +1,4 @@
-# Adventure Simulator - local development
+# Fabelgeist - local development
 # Install just: cargo install just
 # List commands: just --list
 
@@ -348,6 +348,24 @@ tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="miss
 tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }}
 
+# Launch the native-only graph editor after validating semantic packs and routes.
+animation-graph-editor asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --no-default-features --features animation-graph-editor --bin animation-graph-editor -- --asset-source {{ quote(asset_source) }}
+
+# Capture a deterministic semantic-route preview with the gameplay viewer.
+animation-graph-preview scenario="steady-walk-2.0" output="target/animation-captures/graph-preview":
+    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
+
+# Launch the focused native Cascadeur-humanoid ragdoll fixture with a complete
+# Avian solver. This does not change the live client's query-only physics path.
+ragdoll-viewer asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }}
+
+# Capture animated, active-motor, and passive ragdoll review frames plus
+# manifest.json/failure.txt validation gates, then exit.
+ragdoll-capture output="target/animation-captures/ragdoll-review" asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }} --output {{ quote(output) }}
+
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.
 tactical-status:
@@ -393,6 +411,22 @@ win-dev:
     @{{ python_bin }} scripts/just_tasks.py win-dev
 
 # Workspace utilities
+wiki-format path:
+    @{{ python_bin }} scripts/format_wiki_markdown.py {{ quote(path) }}
+
+wiki-summary:
+    @{{ python_bin }} scripts/update_wiki_summary.py
+
+wiki-check:
+    @npm run check:wiki-tooling-format
+    @{{ python_bin }} -B -m unittest scripts.test_format_wiki_markdown scripts.test_update_wiki_summary -v
+    @{{ python_bin }} scripts/update_wiki_summary.py --check
+    @{{ python_bin }} scripts/update_project_map.py --check
+    @mdbook build
+
+wiki-serve:
+    @mdbook serve
+
 check:
     @cargo check --workspace
 
@@ -467,7 +501,7 @@ fmt:
     @cargo fmt --all
 
 lint:
-    @cargo clippy --workspace -- -D warnings
+    @cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 clean:
     @cargo clean

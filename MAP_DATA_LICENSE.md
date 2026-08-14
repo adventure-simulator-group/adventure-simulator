@@ -1,6 +1,6 @@
 # Strategic map and terrain data licence
 
-This notice accompanies these generated Adventure Simulator artifacts:
+This notice accompanies these generated Fabelgeist artifacts:
 
 - `strategic-map-v1.json`
 - `strategic-map-tiles-v1.pack`
@@ -9,7 +9,7 @@ This notice accompanies these generated Adventure Simulator artifacts:
 
 ## Licence boundary
 
-Except for the third-party material identified below, Adventure Simulator's
+Except for the third-party material identified below, Fabelgeist's
 copyright and similar rights in its original selection, classification,
 styling, arrangement, and other contributions to these generated artifacts are
 licensed under the [Creative Commons Attribution-ShareAlike 4.0 International
@@ -29,11 +29,11 @@ reasonably prominent link to an equivalent permanent copy.
 Dengg, Maartje A.B., and Kasper H. Andersen.
 
 The Zenodo description identifies the downloadable dataset as CC BY-SA, while
-its structured rights field identifies CC BY 4.0. Adventure Simulator
+its structured rights field identifies CC BY 4.0. Fabelgeist
 conservatively treats the source and its adapted map material as [CC BY-SA
 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
-Adventure Simulator clips, simplifies, classifies, and rasterizes Viabundus
+Fabelgeist clips, simplifies, classifies, and rasterizes Viabundus
 roads, ferries, settlements, and water geometry; it also projects active roads
 into the native-detail routing surface. These modifications are not endorsed
 by the Viabundus authors or institutions.
@@ -53,17 +53,17 @@ The organisations in charge of the Copernicus programme by law or by
 delegation do not incur any liability for any use of the Copernicus
 WorldDEM-30.
 
-Adventure Simulator resamples and classifies the elevation source into visual
+Fabelgeist resamples and classifies the elevation source into visual
 relief, hill and mountain presentation, and a native-detail routing surface.
 Neither the provider, the licensor, nor any organisation responsible for the
-Copernicus programme endorses Adventure Simulator or these modifications.
+Copernicus programme endorses Fabelgeist or these modifications.
 
 ## Copernicus Land Monitoring Service forest data
 
 Generated using European Union's Copernicus Land Monitoring Service
 information: [High Resolution Layer Forest 2018](https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a).
 
-Adventure Simulator aggregates the available Tree Cover Density and leaf-type
+Fabelgeist aggregates the available Tree Cover Density and leaf-type
 products, classifies canopy coverage, and naturalizes forest boundaries for map
 presentation and terrain routing. The source coverage and these modifications
 are identified in the generated manifests. No endorsement by the European

@@ -248,7 +248,7 @@ fn require_corpse_access(
         .db
         .strategic_corpse()
         .id()
-        .find(&corpse_id.to_owned())
+        .find(corpse_id.to_owned())
         .ok_or("Corpse not found")?;
     if ctx
         .db
@@ -725,7 +725,7 @@ pub(crate) fn persist_pathology_snapshot(
         .db
         .corpse_pathology()
         .corpse_id()
-        .find(&corpse_id.to_owned())
+        .find(corpse_id.to_owned())
         .is_some()
     {
         return Ok(());
@@ -1603,7 +1603,7 @@ pub(crate) fn grant_permission_from_dialogue(
         .db
         .strategic_corpse()
         .id()
-        .find(&corpse_id.to_owned())
+        .find(corpse_id.to_owned())
         .ok_or("Corpse not found")?;
     if corpse.discovering_party_id != party_id {
         return Err("Party has not discovered this corpse".into());
@@ -1645,7 +1645,7 @@ pub(crate) fn grant_permission_from_dialogue(
         .db
         .character_familiarity()
         .id()
-        .find(&format!("{low_id}:{high_id}"))
+        .find(format!("{low_id}:{high_id}"))
         .map_or(0, |row| row.shared_minutes);
     let familiarity_bps =
         ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
@@ -1899,7 +1899,7 @@ pub(crate) fn permission_topics_for_npc(
                             .db
                             .corpse_permission_attempt()
                             .id()
-                            .find(&format!(
+                            .find(format!(
                                 "{}:{}:{}:{}:{}",
                                 corpse.id,
                                 party_id,

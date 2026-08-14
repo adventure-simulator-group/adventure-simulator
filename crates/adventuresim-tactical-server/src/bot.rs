@@ -18,13 +18,17 @@ use crate::{
     },
     mission::MissionState,
 };
+#[cfg(test)]
+use defense::CountedEnemyDefeat;
 use defense::{
-    CountedEnemyDefeat, on_attack_started, on_tactical_combatant_defeated,
-    on_targeted_attack_started, on_targeted_ranged_attack_started, tick_bot_reactions,
+    on_attack_started, on_tactical_combatant_defeated, on_targeted_attack_started,
+    on_targeted_ranged_attack_started, tick_bot_reactions,
 };
 pub use defense::DefenseChances;
 pub use offense::OffensiveCombatAi;
-use offense::{compare_target, drive_offensive_combat_ai, ranged_weapon_needs_ammo_lookup};
+#[cfg(test)]
+use offense::ranged_weapon_needs_ammo_lookup;
+use offense::{compare_target, drive_offensive_combat_ai};
 
 /// Marks a server-controlled bot filling in for a temporary (non-connected)
 /// mission character.
@@ -162,6 +166,9 @@ mod tests {
         world.entity_mut(weapon).insert(WeaponItem {
             skill_weights: [0.0; 9],
             accuracy: 1.0,
+            swing_precision: 0.45,
+            stab_precision: 0.6,
+            prefers_stab: false,
             penetration: 1.0,
             reach: KATZBALGER_REACH,
             balance: 0.0,
@@ -199,6 +206,9 @@ mod tests {
         world.entity_mut(weapon).insert(WeaponItem {
             skill_weights: [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0],
             accuracy: 1.0,
+            swing_precision: 0.45,
+            stab_precision: 0.6,
+            prefers_stab: false,
             penetration: 1.0,
             reach: TEST_WEAPON_REACH,
             balance: 0.0,

@@ -154,10 +154,28 @@ pub(super) fn collect_loaded_packs(
         .map(|(key, handle)| (key.clone(), handle.clone()))
         .collect::<Vec<_>>();
     let mut graph = AnimationGraph::new();
+    for target in &runtime.lower_body_targets {
+        graph.add_target_to_mask_group(*target, LOWER_BODY_MASK_GROUP);
+    }
+    for target in &runtime.upper_body_targets {
+        graph.add_target_to_mask_group(*target, UPPER_BODY_MASK_GROUP);
+    }
     runtime.clips = ordered
         .into_iter()
         .map(|(key, handle)| {
             let node = graph.add_clip(handle.clone(), 1.0, graph.root);
+            let upper_node = graph.add_clip_with_mask(
+                handle.clone(),
+                1 << LOWER_BODY_MASK_GROUP,
+                1.0,
+                graph.root,
+            );
+            let lower_node = graph.add_clip_with_mask(
+                handle.clone(),
+                1 << UPPER_BODY_MASK_GROUP,
+                1.0,
+                graph.root,
+            );
             let pack = &catalog.packs[&key.0];
             let anchor_motion = key.1.strip_suffix("_mirrored").unwrap_or(&key.1);
             let anchor_frames = pack
@@ -174,10 +192,52 @@ pub(super) fn collect_loaded_packs(
                 )
                 .collect::<BTreeSet<_>>();
             let anchor_nodes = anchor_frames
-                .into_iter()
+                .iter()
+                .copied()
                 .map(|frame| (frame, graph.add_clip(handle.clone(), 1.0, graph.root)))
                 .collect();
-            (key, LoadedClip { node, anchor_nodes })
+            let duration_seconds = clips.get(&handle).map_or(0.0, AnimationClip::duration);
+            let upper_anchor_nodes = anchor_frames
+                .iter()
+                .copied()
+                .map(|frame| {
+                    (
+                        frame,
+                        graph.add_clip_with_mask(
+                            handle.clone(),
+                            1 << LOWER_BODY_MASK_GROUP,
+                            1.0,
+                            graph.root,
+                        ),
+                    )
+                })
+                .collect();
+            let lower_anchor_nodes = anchor_frames
+                .into_iter()
+                .map(|frame| {
+                    (
+                        frame,
+                        graph.add_clip_with_mask(
+                            handle.clone(),
+                            1 << UPPER_BODY_MASK_GROUP,
+                            1.0,
+                            graph.root,
+                        ),
+                    )
+                })
+                .collect();
+            (
+                key,
+                LoadedClip {
+                    node,
+                    duration_seconds,
+                    anchor_nodes,
+                    upper_node,
+                    upper_anchor_nodes,
+                    lower_node,
+                    lower_anchor_nodes,
+                },
+            )
         })
         .collect();
     runtime.graph = Some(graphs.add(graph));
@@ -231,7 +291,7 @@ pub(super) fn attach_loaded_rig_scenes(
             parent.spawn((
                 Name::new("Authored animation rig"),
                 AnimationRigScene(player),
-                SceneRoot(scene.clone()),
+                WorldAssetRoot(scene.clone()),
                 Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
                 Visibility::Hidden,
             ));
@@ -274,7 +334,7 @@ pub(super) fn establish_animation_targets(
             Vec::new(),
             &children,
             &names,
-            &mut runtime.canonical_targets,
+            &mut runtime,
         );
         commands.entity(rig_root).insert(RigAnimationTargetsBound);
     }
@@ -310,14 +370,20 @@ pub(super) fn bind_animation_target_paths(
     mut path: Vec<Name>,
     children: &Query<&Children>,
     names: &Query<&Name>,
-    canonical_targets: &mut HashSet<AnimationTargetId>,
+    runtime: &mut AnimationRuntime,
 ) {
     let Ok(name) = names.get(entity) else {
         return;
     };
     path.push(name.clone());
     let target = AnimationTargetId::from_names(path.iter());
-    canonical_targets.insert(target);
+    runtime.canonical_targets.insert(target);
+    let lower_body = is_lower_body_animation_target(name.as_str());
+    if lower_body {
+        runtime.lower_body_targets.insert(target);
+    } else {
+        runtime.upper_body_targets.insert(target);
+    }
     commands.entity(entity).insert((target, AnimatedBy(player)));
     if let Ok(entity_children) = children.get(entity) {
         for child in entity_children.iter() {
@@ -328,10 +394,22 @@ pub(super) fn bind_animation_target_paths(
                 path.clone(),
                 children,
                 names,
-                canonical_targets,
+                runtime,
             );
         }
     }
+}
+
+pub(super) fn is_lower_body_animation_target(name: &str) -> bool {
+    let bone_name = name.to_ascii_lowercase();
+    bone_name == "skeleton"
+        || bone_name == "root"
+        || bone_name == "pelvis"
+        || bone_name.contains("hips")
+        || bone_name.contains("thigh")
+        || bone_name.contains("shin")
+        || bone_name.contains("foot")
+        || bone_name.contains("toe")
 }
 
 pub(super) fn identify_animation_players(
