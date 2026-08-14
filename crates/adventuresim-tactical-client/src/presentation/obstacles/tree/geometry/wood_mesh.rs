@@ -242,8 +242,10 @@ fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe) -> f3
     const CRACK_PHASES: [f32; 13] = [
         0.08, 0.55, 0.91, 1.53, 1.86, 2.44, 2.86, 3.27, 3.82, 4.17, 4.78, 5.31, 5.83,
     ];
+    let axial_metres = (point - segment.start).dot(tangent);
     let mut nearest_crack = f32::INFINITY;
     let mut signed_crack = 0.0;
+    let mut nearest_crack_index = 0;
     for (index, base_phase) in CRACK_PHASES.into_iter().enumerate() {
         let seed_phase = index as f32 * 1.618_034;
         let drift = 0.11 * (point.dot(Vec3::new(0.17, 0.83, -0.29)) * 1.18 + seed_phase).sin()
@@ -255,6 +257,7 @@ fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe) -> f3
         if distance < nearest_crack {
             nearest_crack = distance;
             signed_crack = delta * radius;
+            nearest_crack_index = index;
         }
     }
     let arc_distance = nearest_crack;
@@ -268,25 +271,56 @@ fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe) -> f3
         return 0.0;
     }
 
+    // Mature oak fissures are streams, not uninterrupted flutes. Each stream
+    // closes on a different, softly staggered cadence so adjacent plates
+    // interlock rather than forming horizontal bands. A small residual keeps
+    // the relief continuous while the dominant groove visibly terminates.
+    let plate_phase = nearest_crack_index as f32 * 2.399_963 + segment.primary_group as f32 * 0.37;
+    let plate_length = bark.plate_length_metres.max(0.08);
+    let break_signal = (axial_metres * core::f32::consts::TAU / plate_length + plate_phase).sin()
+        + 0.38
+            * (axial_metres * core::f32::consts::TAU / (plate_length * 0.47) - plate_phase * 0.6)
+                .sin();
+    let fissure_continuity = smoothstep(-0.52, -0.05, break_signal);
+    let fissure_strength = 0.82 + 0.18 * fissure_continuity;
     let groove = (-bark.fissure_depth_metres
         * (-0.5 * (arc_distance / bark.fissure_width_metres.max(1.0e-4)).powi(2)).exp())
-    .max(-radius * 0.035);
+    .max(-radius * 0.035)
+        * fissure_strength;
     let lip_center = bark.fissure_width_metres * 2.25;
     let lip_width = bark.fissure_width_metres * 1.15;
     let lip_distance = (arc_distance - lip_center) / lip_width.max(1.0e-4);
     let lip_asymmetry = 1.0 + 0.18 * (signed_crack / bark.fissure_width_metres.max(1.0e-4)).tanh();
     let lips = (bark.lip_height_metres * lip_asymmetry * (-0.5 * lip_distance.powi(2)).exp())
-        .min(radius * 0.045);
+        .min(radius * 0.035)
+        * (0.72 + 0.28 * fissure_continuity);
     let plate_t = (arc_distance / (radius * 0.24).max(0.035)).clamp(0.0, 1.0);
     let plate_crown = bark.plate_height_metres * (core::f32::consts::PI * plate_t).sin().powi(2);
-    let transverse_breaks = 0.65
-        + 0.35
-            * (point.dot(Vec3::new(0.37, 1.23, -0.28)) * 3.1 + theta * 0.7)
-                .sin()
-                .abs();
+    let transverse_breaks = 0.48
+        + 0.32 * (axial_metres * core::f32::consts::TAU / plate_length - plate_phase * 0.4).sin()
+        + 0.20 * (theta * 3.0 + plate_phase).sin();
     let broad_warp = 0.27 * (point.dot(Vec3::new(0.21, 0.62, -0.37)) * 0.74).sin();
     let broad_fold = 0.007 * (5.0 * theta + broad_warp).cos() * (radius / 0.7).clamp(0.2, 1.0);
-    (groove + lips + plate_crown * transverse_breaks + broad_fold) * strength
+    let closure = 1.0 - fissure_continuity;
+    let between_fissures = smoothstep(
+        bark.fissure_width_metres * 2.8,
+        bark.fissure_width_metres * 5.5,
+        arc_distance,
+    );
+    let transverse_closure = -bark.fissure_depth_metres * 0.16 * closure * between_fissures;
+    // Horizontal roots carry broader, quieter folds than the upright trunk.
+    // This prevents fine bark relief from turning the root crown into a pile
+    // of inflated cords while preserving the same continuous surface field.
+    let upright = tangent.y.abs();
+    let orientation_attenuation = 0.88 + 0.12 * upright;
+    (groove + lips + plate_crown * transverse_breaks.max(0.18) + broad_fold + transverse_closure)
+        * strength
+        * orientation_attenuation
+}
+
+fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
+    let t = ((value - edge0) / (edge1 - edge0).max(1.0e-6)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Blend branch-space relief with the same proximity semantics as the smooth
@@ -563,13 +597,18 @@ fn append_branch_curve_tube(
         // One basal collar belongs at the biological attachment. Repeating a
         // collar at every polygon joint makes a smooth axis look assembled.
         rings.push((
-            first.start - first_direction * first.start_radius * 0.22,
-            first.start_radius * 1.18,
+            first.start - first_direction * first.start_radius * 0.12,
+            first.start_radius * 1.12,
             first_direction,
         ));
         rings.push((
-            first.start + first_direction * first.start_radius * 0.5,
-            first.start_radius * 0.94,
+            first.start + first_direction * first.start_radius * 0.28,
+            first.start_radius * 1.06,
+            first_direction,
+        ));
+        rings.push((
+            first.start + first_direction * first.start_radius * 0.72,
+            first.start_radius * 0.98,
             first_direction,
         ));
     } else {
@@ -586,7 +625,23 @@ fn append_branch_curve_tube(
         } else {
             direction
         };
-        rings.push((branch.end, branch.end_radius, tangent));
+        // Axial sampling must resolve the recipe's plate length. Sampling only
+        // skeleton joints aliases staggered fissure closures into an entirely
+        // smooth or entirely grooved trunk depending on the seed phase.
+        let spacing = (bark.plate_length_metres * 0.28).clamp(0.16, 0.32);
+        let steps = ((branch.end - branch.start).length() / spacing)
+            .ceil()
+            .max(1.0) as u32;
+        for step in 1..=steps {
+            let along = step as f32 / steps as f32;
+            rings.push((
+                branch.start.lerp(branch.end, along),
+                branch
+                    .start_radius
+                    .lerp(branch.end_radius, along.powf(0.64)),
+                tangent,
+            ));
+        }
     }
     let ring_stride = sides + 1;
     // A whole-number wrap keeps the duplicated cylindrical seam texel-exact.

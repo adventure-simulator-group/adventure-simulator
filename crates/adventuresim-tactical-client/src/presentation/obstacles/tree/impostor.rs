@@ -7,7 +7,7 @@ use raster::*;
 use super::super::super::*;
 use super::geometry::*;
 
-pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 6;
+pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 7;
 pub(in crate::presentation) const TREE_IMPOSTOR_RENDER_METHOD: &str =
     "deterministic software triangle render of exact production branch and leaf meshes";
 const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 0.95;
@@ -696,7 +696,7 @@ mod tests {
 
         assert_eq!(first.mesh.count_vertices(), 4);
         assert_eq!(first.provenance.records.len(), 8);
-        assert_eq!(first.provenance.bake_version, 6);
+        assert_eq!(first.provenance.bake_version, 7);
         assert_eq!(first.image.data, second.image.data);
         assert!((WHOLE_TREE_RUNTIME_WIDTH_SCALE - 0.95).abs() < f32::EPSILON);
         assert!((WHOLE_TREE_BAKE_EXPOSURE - 0.91).abs() < f32::EPSILON);
