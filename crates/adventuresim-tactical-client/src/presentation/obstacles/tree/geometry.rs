@@ -45,17 +45,21 @@ pub(in crate::presentation) struct BarkRecipe {
     pub(in crate::presentation) mature_radius_metres: f32,
     pub(in crate::presentation) minimum_radius_metres: f32,
     pub(in crate::presentation) root_lobe_height_metres: f32,
+    /// Typical uninterrupted length of a mature bark fissure before a plate
+    /// closes it or diverts it sideways.
+    pub(in crate::presentation) plate_length_metres: f32,
     pub(in crate::presentation) branch_depth_attenuation: [f32; 4],
 }
 
 pub(in crate::presentation) const ENGLISH_OAK_BARK: BarkRecipe = BarkRecipe {
     fissure_depth_metres: 0.017,
     fissure_width_metres: 0.013,
-    lip_height_metres: 0.016,
-    plate_height_metres: 0.014,
+    lip_height_metres: 0.014,
+    plate_height_metres: 0.012,
     mature_radius_metres: 0.38,
     minimum_radius_metres: 0.045,
-    root_lobe_height_metres: 0.038,
+    root_lobe_height_metres: 0.032,
+    plate_length_metres: 0.72,
     branch_depth_attenuation: [1.0, 0.62, 0.24, 0.06],
 };
 
@@ -67,6 +71,7 @@ pub(in crate::presentation) const COMMON_HAZEL_BARK: BarkRecipe = BarkRecipe {
     mature_radius_metres: 0.12,
     minimum_radius_metres: 0.035,
     root_lobe_height_metres: 0.0,
+    plate_length_metres: 0.34,
     branch_depth_attenuation: [0.45, 0.2, 0.05, 0.0],
 };
 
