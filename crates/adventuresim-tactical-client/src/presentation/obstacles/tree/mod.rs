@@ -5,13 +5,15 @@ mod materials;
 mod presentation;
 
 pub(in crate::presentation) use geometry::{
-    COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, TREE_PRIMARY_GROUP_COUNT, TreeBranchSegment,
-    procedural_oak_bud_group_mesh, procedural_oak_bud_mesh, procedural_oak_leaf_card_group_mesh,
-    procedural_oak_leaf_card_mesh, procedural_oak_leaves, procedural_oak_textured_leaf_group_mesh,
-    procedural_oak_textured_leaf_mesh, procedural_tree_branch_group_mesh,
-    procedural_tree_branch_mesh, procedural_tree_skeleton, procedural_woody_branch_mesh,
-    procedural_woody_cambered_leaf_mesh, procedural_woody_leaf_card_mesh,
-    procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, OAK_GNARLING_SHOWCASE, OakGnarlingParameters,
+    TREE_PRIMARY_GROUP_COUNT, TreeBranchSegment, procedural_oak_bud_group_mesh,
+    procedural_oak_bud_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaf_card_mesh,
+    procedural_oak_leaves, procedural_oak_skeleton_with_gnarling,
+    procedural_oak_textured_leaf_group_mesh, procedural_oak_textured_leaf_mesh,
+    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
+    procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
+    procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
+    procedural_woody_plant_skeleton,
 };
 pub(crate) use impostor::TreeImpostorProvenance;
 pub(in crate::presentation) use lod::update_tree_projected_lod_ranges;

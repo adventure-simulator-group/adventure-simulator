@@ -391,7 +391,26 @@ root-profile lobing. Oak therefore develops raised, transversely broken plates
 between asymmetrical crack lips on the old trunk and major limbs while young
 shoots fade toward smooth wood; hazel uses the same mesher with a restrained
 smooth-bark preset. Root-profile lobes align with generated buttress directions
-and fade with height. Living oak and hazel cards are presets over
+and fade with height. Oak architecture separately exposes an
+`OakGnarlingParameters` growth-history
+recipe. Its normalized controls independently cover root spread, meander,
+exposure, and forking; trunk lean, sweep, twist, crooks, and taper irregularity;
+knot frequency and size, burl swelling; scaffold droop, sweep, and contortion;
+and crown asymmetry. Zero preserves the established open-grown English oak.
+Authored wind-shaped, ancient, and extreme presets exercise increasingly
+gnarled forms while retaining deterministic seeds, connected branch axes,
+bounded presentation geometry, solid bark albedo, and the ordinary tactical
+collider.
+Tree instantiation derives additional growth stress only from stable site
+signals: canopy shelter, hill exposure, elevation, wetland coverage,
+cultivation, geographic cell, and the individual tree seed. Exposed trees
+share a deterministic prevailing-stress azimuth, with small individual bias,
+so wind-shaped trunks and crowns lean coherently. The current weather snapshot
+is deliberately excluded: a six-hour gust or rain event may animate foliage
+but cannot rewrite decades of woody growth. Until imported climatology carries
+historical wind roses and soil depth, hill/open/elevation values remain bounded
+exposure proxies rather than claims of measured local wind history.
+Living oak and hazel cards are presets over
 one structural leaf generator. Binary silhouettes and parameterized blade,
 petiole, midrib, lobe/tooth, and vein fields produce discrete front/back
 albedo, detailed normal and AO, and low-detail roughness while sharing a
