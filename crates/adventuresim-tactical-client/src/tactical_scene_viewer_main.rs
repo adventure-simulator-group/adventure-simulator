@@ -63,6 +63,10 @@ struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32).range(30..), conflicts_with_all = ["leaf_benchmark_frames", "tree_lighting_benchmark_frames"])]
     scene_performance_benchmark_frames: Option<u32>,
 
+    /// Collect GPU timestamps and render diagnostics during the scene benchmark.
+    #[arg(long, requires = "scene_performance_benchmark_frames")]
+    scene_performance_render_diagnostics: bool,
+
     /// Azimuth around the review tree for locked leaf-LOD comparison views.
     #[arg(long, default_value_t = 45.0)]
     tree_review_azimuth_degrees: f32,
@@ -96,6 +100,7 @@ fn main() {
         args.leaf_benchmark_frames,
         args.tree_lighting_benchmark_frames,
         args.scene_performance_benchmark_frames,
+        args.scene_performance_render_diagnostics,
         args.tree_review_azimuth_degrees,
         match args.profile {
             CaptureProfile::Semantic => "semantic",

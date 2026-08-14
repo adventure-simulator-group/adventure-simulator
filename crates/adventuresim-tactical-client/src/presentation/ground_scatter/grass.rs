@@ -77,16 +77,20 @@ pub(super) fn spawn(
     }
 }
 
-// A 54 x 54 grid preserves the established macro-patch footprint while
-// placing four times as many authored blades per square metre as the original
-// 27 x 27 grid.
-const GRASS_PATCH_GRID_SIDE: usize = 54;
+// A 96 x 96 grid preserves the established macro-patch footprint while
+// approaching the shoot density of a mature meadow. Density lives inside the
+// shared mesh rather than in more ECS entities, so extraction and visibility
+// costs remain bounded as the sward becomes substantially fuller.
+const GRASS_PATCH_GRID_SIDE: usize = 96;
 const GRASS_PATCH_SPACING: f32 = 3.2;
 const GRASS_BLADE_SPACING: f32 = 3.51 / (GRASS_PATCH_GRID_SIDE - 1) as f32;
 // Keep neighbouring near-flat macro patches inside the blade footprint even
 // when their deterministic centre jitter diverges in opposite directions.
 const GRASS_PATCH_JITTER_FRACTION: f32 = 0.04;
-const GRASS_FAR_GRID_COORDINATES: [usize; 12] = [0, 5, 10, 14, 19, 24, 29, 34, 39, 43, 48, 53];
+const GRASS_FAR_GRID_COORDINATES: [usize; 40] = [
+    0, 2, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27, 29, 32, 34, 37, 39, 41, 44, 46, 49, 51, 54, 56, 58,
+    61, 63, 66, 68, 71, 73, 76, 78, 80, 83, 85, 88, 90, 93, 95,
+];
 pub(super) fn grass_material(
     wind_scale: f32,
     lod: GrassMeshLod,
@@ -101,9 +105,8 @@ pub(super) fn grass_material(
     // growth; exposed low-moisture swards develop coherent senescent cohorts.
     material.shading.y = grass_dryness;
     TacticalFoliageMaterial {
-        // Only the near mesh is four times denser. The far mesh retains the
-        // established 144-blade topology and projected coverage rather than
-        // spending geometry on subpixel blades.
+        // The far mesh is still substantially reduced, but retains enough
+        // shoots to keep a dense meadow from visually collapsing at distance.
         shape: Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(grass_density)),
         ground_mask_transform: Vec4::new(1.0 / ground.width(), 1.0 / ground.depth(), 0.5, 0.5),
         ground_mask: Some(ground_mask),
@@ -194,9 +197,11 @@ impl GrassMeshLod {
         if self == Self::Near {
             return 1.0;
         }
-        // Keep the far representation calibrated to the original 27 x 27
-        // near field. The additional 54 x 54 density is intentionally local.
-        let near_count = (27 * 27) as f32 * grass_density.clamp(0.0, 1.0);
+        // Compensate only for the blades discarded by the far LOD. This keeps
+        // projected cover stable through the crossfade without hiding the
+        // deliberate increase in authored shoot density.
+        let near_count =
+            (GRASS_PATCH_GRID_SIDE * GRASS_PATCH_GRID_SIDE) as f32 * grass_density.clamp(0.0, 1.0);
         let lod_count = self.blade_count(grass_density).max(1) as f32;
         (near_count.max(1.0) / lod_count).sqrt()
     }
@@ -404,8 +409,8 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
-        assert_eq!(near_positions.len(), 2_916 * 15);
-        assert_eq!(far_positions.len(), 144 * 7);
+        assert_eq!(near_positions.len(), 9_216 * 15);
+        assert_eq!(far_positions.len(), 1_600 * 7);
         assert!(near_positions.len() > far_positions.len());
         let sparse_positions = sparse
             .attribute(Mesh::ATTRIBUTE_POSITION)
@@ -618,8 +623,8 @@ mod tests {
 
         let near = grass_patch_mesh(Color::WHITE, GrassMeshLod::Near, 1.0);
         let far = grass_patch_mesh(Color::WHITE, GrassMeshLod::Far, 1.0);
-        assert_eq!(near.count_vertices(), 2_916 * 15);
-        assert_eq!(far.count_vertices(), 144 * 7);
+        assert_eq!(near.count_vertices(), 9_216 * 15);
+        assert_eq!(far.count_vertices(), 1_600 * 7);
     }
 
     #[test]
@@ -658,7 +663,7 @@ mod tests {
         );
         assert_eq!(
             Vec4::new(1.0, 0.88, 0.09, GrassMeshLod::Far.width_compensation(1.0)),
-            Vec4::new(1.0, 0.88, 0.09, 2.25)
+            Vec4::new(1.0, 0.88, 0.09, 2.4)
         );
     }
 }

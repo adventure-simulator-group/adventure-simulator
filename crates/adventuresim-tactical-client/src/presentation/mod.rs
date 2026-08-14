@@ -35,7 +35,7 @@ use weather::*;
 #[allow(unused_imports)]
 pub(crate) use environment::{scene_ambient_light, scene_ibl_visibility_floor};
 #[allow(unused_imports)]
-pub(crate) use ground_scatter::{GrassInteractor, GroundScatterLayer};
+pub(crate) use ground_scatter::{GrassInteractor, GroundScatterLayer, LooseStonePebblePatch};
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
 #[allow(unused_imports)]
@@ -118,6 +118,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalVistaMaterial>::default(),
             MaterialPlugin::<TacticalRockMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
+            MaterialPlugin::<TacticalPebbleBillboardMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),

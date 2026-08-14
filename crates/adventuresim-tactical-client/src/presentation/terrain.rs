@@ -39,21 +39,10 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     #[uniform(100)]
     weather: Vec4,
     #[uniform(100)]
-    variation: Vec4,
-    #[uniform(100)]
     far_sward: Vec4,
     #[texture(101)]
     #[sampler(102)]
     ground_map: Handle<Image>,
-    #[texture(103)]
-    #[sampler(104)]
-    dirt_diffuse: Handle<Image>,
-    #[texture(105)]
-    #[sampler(106)]
-    dirt_normal_gl: Handle<Image>,
-    #[texture(107)]
-    #[sampler(108)]
-    dirt_arm: Handle<Image>,
 }
 
 impl MaterialExtension for TacticalTerrainExtension {
@@ -97,7 +86,6 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     for (entity, id, terrain, environment, ground) in &query {
         let legacy_environment;
@@ -111,14 +99,14 @@ pub(in crate::presentation) fn present_pending_terrain(
             presentations.iter().find(|(source, _)| source.0 == entity)
         {
             if let Some(mut material) = materials.get_mut(&handle.0) {
-                *material = terrain_material(environment, ground, &mut images, &procedural_assets);
+                *material = terrain_material(environment, ground, &mut images);
                 true
             } else {
                 false
             }
         } else {
             info!(?entity, "Spawning a scene {id:?}");
-            let material = terrain_material(environment, ground, &mut images, &procedural_assets);
+            let material = terrain_material(environment, ground, &mut images);
             commands.spawn((
                 Name::new(format!("{} terrain mesh", id.0)),
                 ScenePresentationOf(entity),
@@ -140,7 +128,6 @@ pub(in crate::presentation) fn terrain_material(
     environment: &SceneEnvironment,
     ground: Option<&SceneGround>,
     images: &mut Assets<Image>,
-    assets: &ProceduralEnvironmentAssets,
 ) -> TacticalTerrainMaterial {
     TacticalTerrainMaterial {
         base: StandardMaterial {
@@ -163,12 +150,6 @@ pub(in crate::presentation) fn terrain_material(
                 bps(environment.hilly_bps),
                 bps(environment.weather.wind_speed_bps),
             ),
-            variation: Vec4::new(
-                digest_unit(&environment.scene_digest),
-                0.055,
-                0.032,
-                environment.generation_version as f32,
-            ),
             // Beyond the geometric grass range, retain a band-limited sward
             // response in the terrain material instead of paying for blades
             // that project to less than a pixel. x/y are the fade interval;
@@ -185,9 +166,6 @@ pub(in crate::presentation) fn terrain_material(
                 ground,
                 stable_text_seed(&environment.scene_digest),
             )),
-            dirt_diffuse: assets.soil.albedo.clone(),
-            dirt_normal_gl: assets.soil.normal_gl.clone(),
-            dirt_arm: assets.soil.arm.clone(),
         },
     }
 }
@@ -425,6 +403,25 @@ mod tests {
 
     use super::*;
     use bevy::asset::{AssetApp, AssetPlugin};
+
+    #[test]
+    fn ground_shader_uses_solid_palette_colors_without_surface_texture_detail() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_terrain.wgsl"
+        ));
+        assert!(shader.contains("var ground_map: texture_2d<f32>"));
+        assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(color, 1.0)"));
+        for forbidden in [
+            "dirt_diffuse",
+            "dirt_normal_gl",
+            "dirt_arm",
+            "procedural_normal",
+            "mapped_dirt_normal",
+        ] {
+            assert!(!shader.contains(forbidden), "found {forbidden}");
+        }
+    }
     use bevy::prelude::TaskPoolPlugin;
 
     #[test]
@@ -457,10 +454,6 @@ mod tests {
         app.init_asset::<Image>();
         app.init_asset::<Mesh>();
         app.init_asset::<TacticalTerrainMaterial>();
-        let procedural_assets = generate_procedural_environment_assets(
-            &mut app.world_mut().resource_mut::<Assets<Image>>(),
-        );
-        app.insert_resource(procedural_assets);
         app.add_observer(on_game_scene_added);
         app.add_observer(on_environment_added);
         app.add_observer(on_ground_added);

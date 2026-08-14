@@ -15,7 +15,6 @@ pub(super) fn on_scene_vista_bundle(
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut vista_tree_cache: ResMut<VistaTreePresentationCache>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     for entity in &existing {
         commands.entity(entity).despawn();
@@ -32,7 +31,7 @@ pub(super) fn on_scene_vista_bundle(
     let weather = playable_scene
         .map(|(_, environment)| environment.weather)
         .unwrap_or_else(clear_vista_weather);
-    let material = materials.add(vista_material(&procedural_assets, weather));
+    let material = materials.add(vista_material(weather));
     if playable_scene.is_none() {
         warn!(
             scene_digest = %bundle.scene_digest,
@@ -706,10 +705,7 @@ pub(crate) struct VistaTerrain(pub(crate) u8);
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalVistaExtension {
-    #[texture(100)]
-    #[sampler(101)]
-    rock_diffuse: Handle<Image>,
-    #[uniform(102)]
+    #[uniform(100)]
     weather: Vec4,
 }
 
@@ -722,10 +718,7 @@ impl MaterialExtension for TacticalVistaExtension {
 pub(in crate::presentation) type TacticalVistaMaterial =
     ExtendedMaterial<StandardMaterial, TacticalVistaExtension>;
 
-fn vista_material(
-    assets: &ProceduralEnvironmentAssets,
-    weather: WeatherSnapshot,
-) -> TacticalVistaMaterial {
+fn vista_material(weather: WeatherSnapshot) -> TacticalVistaMaterial {
     TacticalVistaMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -734,7 +727,6 @@ fn vista_material(
             ..default()
         },
         extension: TacticalVistaExtension {
-            rock_diffuse: assets.rock.albedo.clone(),
             weather: Vec4::new(
                 bps(weather.ground_moisture_bps),
                 bps(weather.snow_cover_bps),
@@ -752,6 +744,18 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn vista_ground_uses_solid_palette_colors_and_geometry_normals() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_vista.wgsl"
+        ));
+        assert!(!shader.contains("texture_2d"));
+        assert!(!shader.contains("textureSample"));
+        assert!(!shader.contains("composed_normal"));
+        assert!(shader.contains("let molded_rock = vec3<f32>(0.31, 0.30, 0.275)"));
+    }
 
     #[test]
     fn vista_lods_build_independent_overlapping_rings() {

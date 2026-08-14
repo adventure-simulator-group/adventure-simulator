@@ -862,21 +862,76 @@ For coordinate-derived demos, attribute production tree and LOD cost with:
 just tactical-scene-performance-benchmark <input.json> <fresh-output> 120
 ```
 
-The release-mode timing pass compares the natural scene against hidden playable/vista
-trees, hidden playable leaves, and forced LOD0 through LOD4 at one locked
-camera. It writes `scene-performance-benchmark.json` and
+The release-mode timing pass compares the natural scene against hidden
+playable/vista trees, playable leaves, grass, understory, litter, loose stones,
+procedural rocks, playable terrain, vista terrain, and forced tree LOD0 through
+LOD4 at one locked camera. It writes `scene-performance-benchmark.json` and
 `scene-performance-comparison.md`. Performance runs use an unpaced headless
-schedule and render to an offscreen 1280x720 texture so desktop-compositor
+schedule and render to an offscreen 2560x1440 texture so desktop-compositor
 presentation cannot pin fast scenes to the monitor refresh interval. The
 reported end-to-end frame duration still
 includes Bevy scheduling, extraction, and render-world synchronization; it is
-not interchangeable with summed GPU timestamp duration. A 480 FPS renderer
-budget is 2.083 ms, so use the diagnostic `elapsed_gpu` pass sum for that GPU
-gate and retain wall time as a separate engine-loop metric. Run the opt-in
-`tactical-scene-render-diagnostics` recipe separately when DX12/Vulkan GPU-pass
-timestamps and shader invocation counters are needed; those queries add enough
+not interchangeable with summed GPU timestamp duration. The QHD/60 target is
+16.667 ms at P95. Reports also retain P99, worst-frame, over-budget count,
+budget utilization, and signed headroom. A conclusive pass requires both wall
+P95 and summed GPU P95 to fit the budget; without GPU timestamps the report
+marks the verdict unavailable instead of treating CPU-side wall timing as a
+pass. Run the opt-in `tactical-scene-render-diagnostics` recipe when Metal,
+DX12, or Vulkan GPU-pass timestamps and shader invocation counters are needed;
+those queries add enough
 observer/synchronization overhead that their frame times must not be compared
 directly with the timing-only results.
+
+The acceptance target follows [Apple's current MacBook Air specifications](https://www.apple.com/macbook-air/specs/):
+the base 13-inch 2026 MacBook Air with Apple M5, a
+10-core CPU, 8-core GPU, 16 GiB unified memory, 153 GiB/s memory bandwidth, and
+fanless cooling. Run the checked-in dense-woodland acceptance case on that
+machine, connected to power, with:
+
+```powershell
+just tactical-qhd60-benchmark
+```
+
+Its default 600 measured frames per mode plus 180-frame warm-ups sustain the
+full production and isolation matrix long enough to expose obvious fanless
+thermal decay. The JSON records the actual host OS, architecture, chip/GPU,
+memory, target profile, resolution, and whether assertions indicate a release
+build. A run on another machine is useful for before/after comparisons but is
+not evidence that the MacBook Air target passes. Native Metal/wgpu results are
+the deterministic renderer gate; the shipping browser/WebGPU build still
+needs an on-device presentation trace before release because browser and
+compositor overhead are outside this harness.
+
+To compare environment families on equal ground area, run:
+
+```powershell
+just tactical-terrain-density-benchmark
+```
+
+This constructs bare, grassland, sparse-woodland, dense-woodland, wetland, and
+rocky versions of the same flat 100-by-100-metre production plot. The camera,
+QHD target, clear weather, lighting, terrain geometry, and bare vista are held
+constant. Each profile runs in a fresh process so scene construction cannot
+leak entities or render state between measurements. The aggregate JSON and
+Markdown report total GPU time, marginal cost against the bare plot, and
+generated trees/scatter normalized to entities per square kilometre. Frame
+cost is deliberately reported for the visible one-hectare plot rather than
+multiplied by 100: frustum culling, occlusion, LOD, and overdraw make render
+cost non-linear with world area. Terrain families whose positive marginal GPU
+cost lies within 0.75x–1.25x of the median family are considered balanced;
+more expensive families need cheaper assets or lower density, while cheaper
+families have room for higher density or detail. This is a diagnostic band,
+not a mandate to consume the budget: do not add overlapping scatter or
+sub-pixel triangles merely to match a more expensive terrain. Cull or replace
+geometry before its smallest faces approach one pixel, and reserve unused
+headroom for readable larger features, terrain relief, or future effects.
+
+Loose-stone ground cover follows that projected-size rule through three
+production representations: a rounded hero mesh through 5–6 metres, a cheaper
+mesh through 20–24 metres, and batched camera-facing pebble quads beyond it.
+The billboard shader measures each quad's rasterized diameter and dithers it
+away between roughly 1.5 and 0.75 pixels, so differently sized stones disappear
+by screen size rather than sharing a visibly abrupt world-distance cutoff.
 
 Use fresh output directories for before/after comparisons. A dense Harz scene
 is the representative tree stress case; a sparse summit such as Brocken is a

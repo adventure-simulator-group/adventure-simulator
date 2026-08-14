@@ -541,12 +541,13 @@ style while detailed OpenGL-normal and AO channels share a
 physical scale across rock recipes. It adds no emissive response, collider
 detail, entity, draw call, displacement, or authoritative silhouette change.
 
-Near-field upward-facing tactical ground similarly uses one parameterized soil
-recipe for aligned two-region albedo/roughness and detailed OpenGL-normal/AO response. The
-world-space top projection is blended beneath authoritative cover and weather
-colour, declines on steep faces, and fades from 42 to 96 metres before its
-detail becomes subpixel. It never displaces the authoritative heightfield and
-adds three bounded texture reads only within the presentation shader.
+Playable and vista ground use solid molded-material palette regions with hard
+boundaries for substrate, cover, exposed stone, water, and snow. Ground has no
+sampled albedo texture, normal map, or synthesized micro-normal detail; its
+only surface normal comes from terrain geometry. The retained ground map is a
+discrete gameplay-data mask that selects those regions, not visual texture
+detail. Weather may still change the uniform wetness, roughness, and snow
+response without modifying the authoritative heightfield.
 
 The Moon is the deliberate procedural exception: its LRO reference map keeps
 real crater geography, while the Moon shader quantizes reflectance into four
