@@ -5,14 +5,15 @@ use super::impostor::{
     tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
-    COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, OAK_GNARLING_SHOWCASE, OakGnarlingParameters,
-    TREE_PRIMARY_GROUP_COUNT, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    beech_leaf_material, oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
-    procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
+    COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
+    OakGnarlingParameters, TREE_PRIMARY_GROUP_COUNT, TacticalTreeImpostorMaterial,
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    TreeLodRenderOverride, TreeTrunkLod, beech_leaf_material, oak_bark_material, oak_leaf_material,
+    procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
     procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
-    procedural_woody_branch_mesh, procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    procedural_woody_branch_mesh, procedural_woody_crown_mesh, procedural_woody_plant_leaves,
+    procedural_woody_plant_skeleton,
 };
 use crate::presentation::{
     ActiveTacticalScene, ProceduralEnvironmentAssets, SceneEnvironment, obstacle_seed, splitmix64,
@@ -97,7 +98,6 @@ impl TreePresentationSpecies {
         match self {
             Self::EnglishOak => OAK_TREE_BAKE_STYLE,
             Self::CommonBeech => TreeBakeStyle {
-                bark: COMMON_BEECH_BARK,
                 bark_srgb: [145.0, 145.0, 135.0],
                 leaf_srgb: [91.0, 119.0, 70.0],
                 crown_radius_metres: COMMON_BEECH_PARAMETERS.crown_radius_metres,
@@ -457,6 +457,8 @@ pub(in crate::presentation) fn present_pending_trees(
     let competition = canopy_competition(environment.canopy_bps);
     let site_key = oak_site_key(environment);
     for (entity, transform) in &pending {
+        let started = std::time::Instant::now();
+        info!("Generating playable tactical tree presentation");
         let seed = obstacle_seed(transform.translation);
         let species = tree_species_for_site(transform.translation, environment);
         let variant_index = (seed & 3) as usize;
@@ -496,6 +498,12 @@ pub(in crate::presentation) fn present_pending_trees(
                     (branches, leaves)
                 }
             };
+            info!(
+                elapsed_ms = started.elapsed().as_millis(),
+                branches = branches.len(),
+                leaves = leaves.len(),
+                "Generated playable tactical tree source geometry"
+            );
             let bark_material = match species {
                 TreePresentationSpecies::EnglishOak => {
                     tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
@@ -538,6 +546,10 @@ pub(in crate::presentation) fn present_pending_trees(
                     }
                 })
                 .collect::<Vec<_>>();
+            info!(
+                elapsed_ms = started.elapsed().as_millis(),
+                "Generated playable tactical tree impostor suite"
+            );
             for bake in &baked_lods {
                 validate_tree_bake_provenance(&bake.provenance);
             }
@@ -590,10 +602,10 @@ pub(in crate::presentation) fn present_pending_trees(
                 aggregate_branch_meshes: [2, 1].map(|depth| {
                     meshes.add(match species {
                         TreePresentationSpecies::EnglishOak => {
-                            procedural_tree_branch_mesh(&branches, depth)
+                            procedural_woody_crown_mesh(&branches, depth, ENGLISH_OAK_BARK)
                         }
                         TreePresentationSpecies::CommonBeech => {
-                            procedural_woody_branch_mesh(&branches, depth, COMMON_BEECH_BARK)
+                            procedural_woody_crown_mesh(&branches, depth, COMMON_BEECH_BARK)
                         }
                     })
                 }),
@@ -615,6 +627,10 @@ pub(in crate::presentation) fn present_pending_trees(
             cached
         };
         spawn_cached_tree(&mut commands, entity, &cached);
+        info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "Generated playable tactical tree presentation"
+        );
         commands.entity(entity).remove::<PendingTreePresentation>();
     }
 }
@@ -754,6 +770,30 @@ mod tests {
         ] {
             assert_eq!(tree_streaming_mask(distance) & required_bits, required_bits);
         }
+    }
+
+    #[test]
+    fn complete_live_oak_mesh_suite_remains_constructible() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let mut vertex_count = procedural_tree_branch_mesh(&branches, 0).count_vertices();
+        for primary_group in 0..TREE_PRIMARY_GROUP_COUNT {
+            vertex_count +=
+                procedural_tree_branch_group_mesh(&branches, 3, primary_group).count_vertices();
+            vertex_count +=
+                procedural_oak_textured_leaf_group_mesh(&leaves, primary_group).count_vertices();
+            vertex_count +=
+                procedural_oak_leaf_card_group_mesh(&leaves, primary_group).count_vertices();
+            vertex_count +=
+                procedural_oak_bud_group_mesh(&branches, primary_group).count_vertices();
+        }
+        vertex_count += [2, 1]
+            .into_iter()
+            .map(|depth| {
+                procedural_woody_crown_mesh(&branches, depth, ENGLISH_OAK_BARK).count_vertices()
+            })
+            .sum::<usize>();
+        assert!(vertex_count > 0);
     }
 
     #[test]
