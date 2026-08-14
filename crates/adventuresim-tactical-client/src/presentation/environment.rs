@@ -80,7 +80,10 @@ pub(super) fn scene_atmosphere_solar_illuminance(environment: &SceneEnvironment)
 pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog {
     let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
     let (start, end, color) = match environment.weather.precipitation {
-        Precipitation::Clear => (30_000.0, 50_000.0, Color::srgb_u8(188, 201, 207)),
+        // Even clear continental air loses contrast over kilometres. Starting
+        // the blend beyond tactical ranges gives regional ridges and tree
+        // lines depth without washing out nearby gameplay silhouettes.
+        Precipitation::Clear => (2_500.0, 42_000.0, Color::srgb_u8(188, 201, 207)),
         Precipitation::Rain => (
             800.0 + 3_500.0 * (1.0 - intensity),
             3_000.0 + 14_000.0 * (1.0 - intensity),
@@ -159,6 +162,12 @@ fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+fn tactical_msaa() -> Msaa {
+    // Fixed-function 4x hardware resolve is supported by the WebGPU path and
+    // is particularly valuable for thin grass and branch silhouettes.
+    Msaa::Sample4
+}
+
 pub(in crate::presentation) fn setup_tactical_presentation(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
@@ -188,8 +197,7 @@ pub(in crate::presentation) fn setup_tactical_presentation(
             },
             ..default()
         },
-        // Gameplay MSAA is deliberately off even in the full preset.
-        Msaa::Off,
+        tactical_msaa(),
     ));
     if settings.atmosphere_enabled {
         camera.insert(AtmosphereSettings::default());
@@ -202,9 +210,6 @@ pub(in crate::presentation) fn setup_tactical_presentation(
     }
     if settings.bloom_enabled {
         camera.insert(Bloom::NATURAL);
-    }
-    if settings.ssao_enabled {
-        camera.insert(ScreenSpaceAmbientOcclusion::default());
     }
 }
 
@@ -270,6 +275,11 @@ mod tests {
     }
 
     #[test]
+    fn gameplay_uses_four_sample_webgpu_hardware_msaa() {
+        assert_eq!(tactical_msaa(), Msaa::Sample4);
+    }
+
+    #[test]
     fn direct_sunlight_never_shines_upward_from_below_the_horizon() {
         let clear = environment(Precipitation::Clear, 0);
         assert_eq!(scene_sunlight_illuminance(&clear, -45.0), 0.0);
@@ -306,6 +316,17 @@ mod tests {
         };
         assert!(fog_end(&rain) < fog_end(&clear));
         assert!(fog_end(&snow) < fog_end(&clear));
+    }
+
+    #[test]
+    fn clear_air_haze_starts_beyond_tactical_gameplay_range() {
+        let clear = scene_distance_fog(&environment(Precipitation::Clear, 0));
+        let FogFalloff::Linear { start, end } = clear.falloff else {
+            panic!("clear weather must use bounded linear fog");
+        };
+        assert!(start >= 2_000.0);
+        assert!(start < 5_000.0);
+        assert!(end >= 40_000.0);
     }
 
     #[test]

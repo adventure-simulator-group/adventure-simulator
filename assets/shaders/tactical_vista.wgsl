@@ -4,7 +4,12 @@
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 }
 
-@group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> vista_weather: vec4<f32>;
+struct TacticalVistaMaterial {
+    weather: vec4<f32>,
+    grass_color: vec4<f32>,
+}
+
+@group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> vista: TacticalVistaMaterial;
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
@@ -17,8 +22,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Distant blades become one hard-selected aggregate color instead of
     // subpixel geometry or textured surface detail.
     let sward = sward_coverage * (1.0 - slope * 0.82);
-    let sward_color = color * vec3<f32>(0.80, 1.055, 0.70);
-    color = select(color, sward_color, sward >= 0.5);
+    let sward_color = vista.grass_color.rgb;
+    let sward_cell = floor(in.world_position.xz * 0.5);
+    let sward_dither = fract(sin(dot(sward_cell, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+    color = select(color, sward_color, sward_dither < sward);
 
     // Exposed regional slopes use the same kind of solid molded-material
     // palette region as playable terrain, without triplanar albedo sampling.
@@ -29,7 +36,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // The same authoritative weather snapshot drives near and vista terrain.
     // Snow remains slope-aware at regional scale and mutes the residual sward
     // instead of ending at the playable-mesh boundary.
-    let snow_mask = vista_weather.y * smoothstep(0.28, 0.86, terrain_normal.y);
+    let snow_mask = vista.weather.y * smoothstep(0.28, 0.86, terrain_normal.y);
     color = select(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask >= 0.5);
 
     pbr_input.material.base_color = vec4<f32>(color, 1.0);

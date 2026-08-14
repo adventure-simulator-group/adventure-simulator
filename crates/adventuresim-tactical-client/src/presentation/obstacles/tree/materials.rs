@@ -190,7 +190,10 @@ impl Material for TacticalTreeLeafCardMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Mask(self.surface_parameters.x)
+        // Preserve the procedural cutout, then let 4x MSAA turn its remaining
+        // fractional opacity into sample coverage instead of a jagged binary
+        // silhouette. This is hardware multisampling and works on WebGPU.
+        AlphaMode::AlphaToCoverage
     }
 
     fn enable_prepass() -> bool {
@@ -329,6 +332,26 @@ mod tests {
 
         let darkest_authored_visibility = 1.0 + oak_occlusion * (0.32 - 1.0);
         assert!((0.66..=0.68).contains(&darkest_authored_visibility));
+    }
+
+    #[test]
+    fn leaf_cutouts_use_hardware_multisample_coverage_and_lod_dither() {
+        bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+        let mut app = App::new();
+        app.add_plugins(AssetPlugin::default());
+        app.init_asset::<Image>();
+        let assets = generate_procedural_environment_assets(
+            &mut app.world_mut().resource_mut::<Assets<Image>>(),
+        );
+        assert_eq!(
+            oak_leaf_material(&assets).alpha_mode(),
+            AlphaMode::AlphaToCoverage
+        );
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_tree_leaf_card.wgsl"
+        ));
+        assert!(shader.contains("visibility_range_dither(in.position"));
     }
 
     #[test]

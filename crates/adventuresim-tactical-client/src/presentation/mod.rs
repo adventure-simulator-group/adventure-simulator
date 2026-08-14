@@ -75,7 +75,7 @@ use bevy::{
         atmosphere::ScatteringMedium, light_consts::lux,
     },
     mesh::{Indices, MeshVertexAttribute, PrimitiveTopology},
-    pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion},
+    pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension},
     post_process::bloom::Bloom,
     prelude::*,
     render::render_resource::{
@@ -92,7 +92,6 @@ pub struct TacticalPresentationPlugin {
     pub environment_light_enabled: bool,
     pub environment_map_size: u32,
     pub bloom_enabled: bool,
-    pub ssao_enabled: bool,
     pub max_vista_lods: usize,
 }
 
@@ -105,7 +104,6 @@ impl Default for TacticalPresentationPlugin {
             environment_light_enabled: true,
             environment_map_size: 64,
             bloom_enabled: false,
-            ssao_enabled: false,
             max_vista_lods: 3,
         }
     }
@@ -131,7 +129,6 @@ impl Plugin for TacticalPresentationPlugin {
             environment_light_enabled: self.environment_light_enabled,
             environment_map_size: self.environment_map_size,
             bloom_enabled: self.bloom_enabled,
-            ssao_enabled: self.ssao_enabled,
             max_vista_lods: self.max_vista_lods,
         })
         // The sky observer preserves this low, cool floor at night and restores
@@ -203,6 +200,5 @@ pub(crate) struct TacticalGraphicsSettings {
     pub(crate) environment_light_enabled: bool,
     pub(crate) environment_map_size: u32,
     pub(crate) bloom_enabled: bool,
-    pub(crate) ssao_enabled: bool,
     pub(crate) max_vista_lods: usize,
 }

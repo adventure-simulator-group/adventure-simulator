@@ -281,11 +281,14 @@ pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeL
 }
 
 pub(in crate::presentation) fn procedural_woody_cambered_leaf_mesh(leaves: &[TreeLeaf]) -> Mesh {
-    let mut positions = Vec::with_capacity(leaves.len() * 9);
-    let mut normals = Vec::with_capacity(leaves.len() * 9);
-    let mut uvs = Vec::with_capacity(leaves.len() * 9);
-    let mut colors = Vec::with_capacity(leaves.len() * 9);
-    let mut indices = Vec::with_capacity(leaves.len() * 24);
+    const GRID: u32 = 3;
+    const VERTICES_PER_LEAF: usize = (GRID * GRID) as usize;
+    const INDICES_PER_LEAF: usize = ((GRID - 1) * (GRID - 1) * 6) as usize;
+    let mut positions = Vec::with_capacity(leaves.len() * VERTICES_PER_LEAF);
+    let mut normals = Vec::with_capacity(leaves.len() * VERTICES_PER_LEAF);
+    let mut uvs = Vec::with_capacity(leaves.len() * VERTICES_PER_LEAF);
+    let mut colors = Vec::with_capacity(leaves.len() * VERTICES_PER_LEAF);
+    let mut indices = Vec::with_capacity(leaves.len() * INDICES_PER_LEAF);
     for leaf in leaves {
         let (mut center, width, height) = oak_leaf_card_bounds(*leaf);
         const COVERAGE_SCALE: f32 = 1.10;
@@ -301,8 +304,8 @@ pub(in crate::presentation) fn procedural_woody_cambered_leaf_mesh(leaves: &[Tre
         } else {
             1.0
         };
-        for row in 0..3 {
-            let v = row as f32 * 0.5;
+        for row in 0..GRID {
+            let v = row as f32 / (GRID - 1) as f32;
             // Even an almost-untwisted source leaf needs enough geometric
             // change to justify this near representation over the flat card.
             // Accumulate a small asymmetric twist toward the tip while the
@@ -311,8 +314,8 @@ pub(in crate::presentation) fn procedural_woody_cambered_leaf_mesh(leaves: &[Tre
             let twist = Quat::from_axis_angle(leaf.up, twist_angle);
             let cross_right = (twist * leaf.right).normalize();
             let cross_normal = cross_right.cross(leaf.up).normalize();
-            for column in 0..3 {
-                let u = column as f32 * 0.5;
+            for column in 0..GRID {
+                let u = column as f32 / (GRID - 1) as f32;
                 let side = (u - 0.5) * 2.0;
                 let lateral = side * scaled_width * 0.5;
                 let length_profile = (core::f32::consts::PI * v).sin();
@@ -335,11 +338,11 @@ pub(in crate::presentation) fn procedural_woody_cambered_leaf_mesh(leaves: &[Tre
                 colors.push([shade, shade, shadow_selector, ambient_visibility]);
             }
         }
-        for row in 0..2_u32 {
-            for column in 0..2_u32 {
-                let lower_left = base + row * 3 + column;
+        for row in 0..(GRID - 1) {
+            for column in 0..(GRID - 1) {
+                let lower_left = base + row * GRID + column;
                 let lower_right = lower_left + 1;
-                let upper_left = lower_left + 3;
+                let upper_left = lower_left + GRID;
                 let upper_right = upper_left + 1;
                 indices.extend_from_slice(&[
                     lower_left,

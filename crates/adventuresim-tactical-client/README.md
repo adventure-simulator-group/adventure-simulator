@@ -330,7 +330,7 @@ capture supervisor release movement only after recording is ready. Add
 `--exit-after-script` for bounded unattended captures.
 
 The gameplay camera already runs with MSAA disabled. For matched performance
-diagnostics, pass `graphics_preset=no-shadows`, `no-ssao`, `no-bloom`, or
+diagnostics, pass `graphics_preset=no-shadows`, `no-bloom`, or
 `no-atmosphere` to disable one cost independently. `minimal` omits all four:
 
 ```powershell

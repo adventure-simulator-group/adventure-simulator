@@ -1,11 +1,12 @@
 use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneId, SceneTerrain};
 use bevy::{
+    color::{ColorToComponents, LinearRgba},
     ecs::change_detection::DetectChanges,
     pbr::Material,
     prelude::{
-        Asset, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle, Image, Mesh,
-        Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time, Transform, Vec2, Vec3,
-        Vec4, With, Without, default,
+        AlphaMode, Asset, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle,
+        Image, Mesh, Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time,
+        Transform, Vec2, Vec3, Vec4, With, Without, default,
     },
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -298,7 +299,6 @@ pub(super) fn spawn_ground_foliage(
         commands,
         terrain,
         ground,
-        environment,
         grass_seed,
         grass_profile,
         &grass::Assets {
@@ -380,6 +380,21 @@ pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> 
         Color::srgb_u8(pigment.x as u8, pigment.y as u8, pigment.z as u8)
     };
     (color, grass_dryness)
+}
+
+/// Solid-ground albedo that reproduces the *rendered* optical mass of the
+/// procedural sward. Blade vertex pigments are subsequently darkened by the
+/// species/cohort palette, root occlusion, rib occlusion, and thin-foliage
+/// lighting, so copying their input pigment directly makes upward-facing
+/// terrain much brighter than the grass it replaces.
+pub(in crate::presentation) fn grass_terminal_pigment(environment: &SceneEnvironment) -> Color {
+    let linear = grass_pigment(environment).0.to_linear().to_f32_array();
+    Color::LinearRgba(LinearRgba::new(
+        linear[0] * 0.22,
+        linear[1] * 0.25,
+        linear[2] * 0.05,
+        1.0,
+    ))
 }
 
 fn foliage_transform(
@@ -527,6 +542,10 @@ impl Material for TacticalFoliageMaterial {
 
     fn fragment_shader() -> ShaderRef {
         FOLIAGE_SHADER.into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::AlphaToCoverage
     }
 
     fn enable_prepass() -> bool {

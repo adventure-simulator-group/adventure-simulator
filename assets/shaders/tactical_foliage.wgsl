@@ -3,7 +3,11 @@
     mesh_functions,
     mesh_view_bindings::{globals, view},
     pbr_fragment::pbr_input_from_vertex_output,
-    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
+    pbr_functions::{
+        apply_pbr_lighting,
+        main_pass_post_lighting_processing,
+        visibility_range_dither,
+    },
     pbr_types::{
         STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT,
         STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT,
@@ -24,6 +28,18 @@ struct TacticalFoliageMaterial {
 var<uniform> foliage: TacticalFoliageMaterial;
 @group(#{MATERIAL_BIND_GROUP}) @binding(1) var ground_mask_texture: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(2) var ground_mask_sampler: sampler;
+
+fn rotate_between(
+    vector: vec3<f32>,
+    source_direction: vec3<f32>,
+    target_direction: vec3<f32>,
+) -> vec3<f32> {
+    let axis = cross(source_direction, target_direction);
+    let cosine = clamp(dot(source_direction, target_direction), -1.0, 1.0);
+    return vector
+        + cross(axis, vector)
+        + cross(axis, cross(axis, vector)) / max(1.0 + cosine, 0.001);
+}
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
@@ -59,7 +75,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         // This uses the existing world-space wave and mask fetch, so topology,
         // draw count, and texture-sample count stay unchanged.
         let meadow_zone = smoothstep(-0.36, 0.52, spatial_noise);
-        let camera_distance = distance(root_world.xz, view.lod_view_world_position.xz);
+        let camera_distance = distance(root_world.xyz, view.lod_view_world_position.xyz);
         let distance_opening = smoothstep(7.0, 24.0, camera_distance);
         let clump_coverage = mix(1.0, mix(0.54, 1.0, meadow_zone), distance_opening);
         let effective_coverage = ground_coverage * clump_coverage;
@@ -72,7 +88,15 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     // distance threshold collapsed rejected blades here, after their vertex
     // invocations had already begun, so it did not save vertex work.
     let width_compensation = max(foliage.shape.w, 1.0);
-    let bend = clamp(vertex.uv.y, 0.0, 1.0);
+    // Near-LOD seed heads use negative V. Unlike a blade ribbon, their U is
+    // the authored height where the rigid branch cluster attaches to its
+    // stalk; the magnitude of V is that attachment's normalized height.
+    let is_inflorescence = vertex.uv.y < 0.0;
+    let bend = select(
+        clamp(vertex.uv.y, 0.0, 1.0),
+        clamp(-vertex.uv.y, 0.0, 1.0),
+        is_inflorescence,
+    );
     let wind_direction = normalize(foliage.wind.xy);
     let wind_cross = vec2<f32>(-wind_direction.y, wind_direction.x);
     // World-space vigor breaks the repeated shared-mesh silhouette without
@@ -144,7 +168,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     if foliage.shape.x > 0.5 {
         // Each grass blade is a single longitudinal ribbon. Its sampled rows
         // follow one cubic curve, rather than translating a rigid card.
-        let t = clamp(vertex.uv.y, 0.0, 1.0);
+        let t = bend;
         let one_minus_t = 1.0 - t;
         let curve_profile = 3.0 * one_minus_t * one_minus_t * t * 0.06
             + 3.0 * one_minus_t * t * t * 0.5
@@ -159,46 +183,93 @@ fn vertex(vertex: Vertex) -> VertexOutput {
             + wind_offset
             + interaction_offset;
 
-        let centre_local = vec3<f32>(root_local.x, position.y * blade_vigor, root_local.z);
-        let centre_world = mesh_functions::mesh_position_local_to_world(
-            world_from_local,
-            vec4<f32>(centre_local, 1.0),
-        );
         let curve_offset = total_curve * curve_profile * blade_visibility;
-
-        // Rotate a ribbon toward the camera only as it becomes edge-on. This
-        // preserves each blade's authored facing while preventing it from
-        // disappearing to sub-pixel width at glancing angles.
-        let local_side = normalize(vec2<f32>(-vertex.normal.z, vertex.normal.x));
-        let transformed_side = (world_from_local
-            * vec4<f32>(local_side.x, 0.0, local_side.y, 0.0)).xz;
-        let side_scale = length(transformed_side);
-        let original_side = normalize(transformed_side + vec2<f32>(0.0001, 0.0));
-        let to_camera = normalize(view.lod_view_world_position.xz - root_world.xz
-            + vec2<f32>(0.0001, 0.0));
-        var camera_side = vec2<f32>(-to_camera.y, to_camera.x);
-        camera_side = select(camera_side, -camera_side, dot(camera_side, original_side) < 0.0);
-        let edge_on = 1.0 - smoothstep(0.08, 0.38, abs(dot(original_world_normal.xz, to_camera)));
-        let visible_side = normalize(mix(original_side, camera_side, edge_on * foliage.shape.y));
-        let half_width = length(position.xz - root_local.xz)
-            * side_scale
-            * width_compensation;
-        let signed_side = select(-1.0, 1.0, vertex.uv.x >= 0.5);
-        let side_offset = visible_side * half_width * signed_side;
-        world_position = vec4<f32>(
-            centre_world.x + curve_offset.x + side_offset.x,
-            centre_world.y - interaction_droop * t * t * blade_visibility,
-            centre_world.z + curve_offset.y + side_offset.y,
-            centre_world.w,
+        let world_up = normalize(
+            (world_from_local * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz
         );
-
-        let world_up = (world_from_local * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz;
-        let tangent = vec3<f32>(
+        let tangent = normalize(vec3<f32>(
             world_up.x * blade_vigor + total_curve.x * curve_derivative,
             world_up.y * blade_vigor - interaction_droop * 2.0 * t,
             world_up.z * blade_vigor + total_curve.y * curve_derivative,
-        );
-        shaped_world_normal = normalize(cross(tangent, vec3<f32>(visible_side.x, 0.0, visible_side.y)));
+        ));
+
+        if is_inflorescence {
+            let authored_anchor_y = vertex.uv.x * blade_visibility;
+            let anchor_local = vec3<f32>(
+                root_local.x,
+                authored_anchor_y * blade_vigor,
+                root_local.z,
+            );
+            let anchor_world = mesh_functions::mesh_position_local_to_world(
+                world_from_local,
+                vec4<f32>(anchor_local, 1.0),
+            );
+            let authored_offset_local = vec3<f32>(
+                position.x - root_local.x,
+                (position.y - authored_anchor_y) * blade_vigor,
+                position.z - root_local.z,
+            ) * blade_visibility;
+            let authored_offset_world = (
+                world_from_local * vec4<f32>(authored_offset_local, 0.0)
+            ).xyz;
+            let bent_offset = rotate_between(authored_offset_world, world_up, tangent);
+            world_position = vec4<f32>(
+                anchor_world.x + curve_offset.x + bent_offset.x,
+                anchor_world.y - interaction_droop * t * t * blade_visibility + bent_offset.y,
+                anchor_world.z + curve_offset.y + bent_offset.z,
+                anchor_world.w,
+            );
+            shaped_world_normal = normalize(rotate_between(
+                original_world_normal,
+                world_up,
+                tangent,
+            ));
+        } else {
+            let centre_local = vec3<f32>(root_local.x, position.y * blade_vigor, root_local.z);
+            let centre_world = mesh_functions::mesh_position_local_to_world(
+                world_from_local,
+                vec4<f32>(centre_local, 1.0),
+            );
+
+            // Rotate a ribbon toward the camera only as it becomes edge-on.
+            // Seed heads bypass this reconstruction and retain their authored
+            // multi-quad silhouette in the branch above.
+            let local_side = normalize(vec2<f32>(-vertex.normal.z, vertex.normal.x));
+            let transformed_side = (world_from_local
+                * vec4<f32>(local_side.x, 0.0, local_side.y, 0.0)).xz;
+            let side_scale = length(transformed_side);
+            let original_side = normalize(transformed_side + vec2<f32>(0.0001, 0.0));
+            let to_camera = normalize(view.lod_view_world_position.xz - root_world.xz
+                + vec2<f32>(0.0001, 0.0));
+            var camera_side = vec2<f32>(-to_camera.y, to_camera.x);
+            camera_side = select(camera_side, -camera_side, dot(camera_side, original_side) < 0.0);
+            let edge_on = 1.0 - smoothstep(
+                0.08,
+                0.38,
+                abs(dot(original_world_normal.xz, to_camera)),
+            );
+            let visible_side = normalize(mix(
+                original_side,
+                camera_side,
+                edge_on * foliage.shape.y,
+            ));
+            let half_width = length(position.xz - root_local.xz)
+                * side_scale
+                * width_compensation;
+            let signed_side = select(-1.0, 1.0, vertex.uv.x >= 0.5);
+            let side_offset = visible_side * half_width * signed_side;
+            world_position = vec4<f32>(
+                centre_world.x + curve_offset.x + side_offset.x,
+                centre_world.y - interaction_droop * t * t * blade_visibility,
+                centre_world.z + curve_offset.y + side_offset.y,
+                centre_world.w,
+            );
+
+            shaped_world_normal = normalize(cross(
+                tangent,
+                vec3<f32>(visible_side.x, 0.0, visible_side.y),
+            ));
+        }
     } else {
         let adjusted_xz = root_local.xz
             + (position.xz - root_local.xz) * width_compensation;
@@ -238,7 +309,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 #ifdef VISIBILITY_RANGE_DITHER
     out.visibility_range_dither = mesh_functions::get_visibility_range_dither_level(
         vertex.instance_index,
-        world_from_local[3],
+        vec4<f32>(root_world, 1.0),
     );
 #endif
     return out;
@@ -246,6 +317,20 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+    var lod_coverage = 1.0;
+#ifdef VISIBILITY_RANGE_DITHER
+    // Convert Bevy's sixteen-step visibility value into continuous coverage.
+    // With AlphaToCoverage this becomes four hardware sample levels instead
+    // of a conspicuous 4x4 checkerboard of discarded grass fragments.
+    lod_coverage = clamp(
+        1.0 - abs(f32(in.visibility_range_dither)) / 16.0,
+        0.0,
+        1.0,
+    );
+    if lod_coverage <= 0.0 {
+        discard;
+    }
+#endif
     let height_fraction = clamp(in.uv.y, 0.0, 1.0);
     let root_self_shadow = mix(
         foliage.shading.x,
@@ -267,7 +352,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         | STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
     pbr_input.material.base_color = vec4<f32>(
         in.color.rgb,
-        1.0,
+        lod_coverage,
     );
     pbr_input.material.perceptual_roughness = 0.86;
     pbr_input.material.metallic = 0.0;

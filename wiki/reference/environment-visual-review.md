@@ -16,7 +16,7 @@ gates, the aggregate `manifest.json` must have `passed: true`, and neither the
 aggregate nor any child may contain `failure.txt`. A missing, unreadable,
 misframed, or irrelevant plate is a coverage gap, not evidence of good quality.
 Review evidence is lit by the production-default presentation configuration,
-including atmosphere environment-map light, bloom, SSAO, shadows, and the same
+including atmosphere environment-map light, bloom, four-sample MSAA, shadows, and the same
 vista setting. Child and aggregate gates reject configuration drift. The only
 intentional presentation difference is the named diagnostic occluder
 suppression below; reviewers must not accept evidence produced with per-asset

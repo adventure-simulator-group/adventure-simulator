@@ -95,7 +95,6 @@ enum GraphicsPreset {
     #[default]
     Default,
     NoShadows,
-    NoSsao,
     NoBloom,
     NoAtmosphere,
     NoEnvironmentLight,
@@ -114,7 +113,6 @@ impl GraphicsPreset {
             ),
             environment_map_size: 64,
             bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
-            ssao_enabled: !matches!(self, Self::NoSsao | Self::Minimal),
             max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
         }
     }
@@ -323,19 +321,11 @@ mod graphics_preset_tests {
 
     #[test]
     fn individual_presets_disable_only_the_requested_effect() {
-        let no_ssao = GraphicsPreset::NoSsao.presentation();
-        assert!(no_ssao.shadows_enabled);
-        assert!(no_ssao.atmosphere_enabled);
-        assert!(no_ssao.environment_light_enabled);
-        assert!(no_ssao.bloom_enabled);
-        assert!(!no_ssao.ssao_enabled);
-
         let no_atmosphere = GraphicsPreset::NoAtmosphere.presentation();
         assert!(no_atmosphere.shadows_enabled);
         assert!(!no_atmosphere.atmosphere_enabled);
         assert!(!no_atmosphere.environment_light_enabled);
         assert!(no_atmosphere.bloom_enabled);
-        assert!(no_atmosphere.ssao_enabled);
     }
 
     #[test]
@@ -345,7 +335,6 @@ mod graphics_preset_tests {
         assert!(!minimal.atmosphere_enabled);
         assert!(!minimal.environment_light_enabled);
         assert!(!minimal.bloom_enabled);
-        assert!(!minimal.ssao_enabled);
     }
 
     #[test]

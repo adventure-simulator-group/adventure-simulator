@@ -1,5 +1,9 @@
 use super::*;
-use bevy::prelude::{App, Update};
+use crate::presentation::legacy_scene_environment;
+use bevy::{
+    color::ColorToComponents,
+    prelude::{App, Update},
+};
 
 #[test]
 fn local_interactor_position_reaches_only_ground_foliage_materials() {
@@ -46,4 +50,24 @@ fn grass_density_favors_open_meadow_and_thins_under_closed_canopy() {
     assert!((grass_scatter_density(0.35, 0.0, 0.0, 0.0) - 0.6475).abs() < 0.000_01);
     assert_eq!(grass_scatter_density(0.9, 0.0, 0.0, 0.0), 0.25);
     assert_eq!(grass_scatter_density(0.0, 1.0, 0.0, 0.0), 0.25);
+}
+
+#[test]
+fn terminal_grass_pigment_compensates_for_foliage_optical_darkening() {
+    let environment = legacy_scene_environment(&SceneId("terminal-grass-pigment".into()));
+    let blade = grass_pigment(&environment).0.to_linear().to_f32_array();
+    let terminal = grass_terminal_pigment(&environment)
+        .to_linear()
+        .to_f32_array();
+    for (channel, expected) in [0.22, 0.25, 0.05].into_iter().enumerate() {
+        assert!((terminal[channel] / blade[channel] - expected).abs() < 0.000_01);
+    }
+}
+
+#[test]
+fn foliage_uses_hardware_multisample_coverage() {
+    assert_eq!(
+        foliage_material(0.3, true).alpha_mode(),
+        AlphaMode::AlphaToCoverage
+    );
 }

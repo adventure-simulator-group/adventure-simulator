@@ -2386,7 +2386,7 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--graphics-preset",
         choices=(
-            "default", "no-shadows", "no-ssao", "no-bloom", "no-atmosphere",
+            "default", "no-shadows", "no-bloom", "no-atmosphere",
             "no-environment-light", "minimal"
         ),
         default="default",

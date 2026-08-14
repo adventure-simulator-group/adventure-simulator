@@ -16,7 +16,6 @@ use bevy::{
     core_pipeline::tonemapping::Tonemapping,
     ecs::system::SystemParam,
     light::{AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster},
-    pbr::ScreenSpaceAmbientOcclusion,
     post_process::bloom::Bloom,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
@@ -737,7 +736,6 @@ fn capture_presentation_plugin() -> TacticalPresentationPlugin {
         plugin.shadows_enabled = false;
     }
     if std::env::var_os("TACTICAL_BENCH_DISABLE_POST_PROCESSING").is_some() {
-        plugin.ssao_enabled = false;
         plugin.bloom_enabled = false;
     }
     plugin
@@ -751,7 +749,6 @@ fn feature_state(settings: &TacticalGraphicsSettings) -> PresentationFeatureStat
         environment_light: settings.environment_light_enabled,
         environment_map_size: settings.environment_map_size,
         bloom: settings.bloom_enabled,
-        ssao: settings.ssao_enabled,
         max_vista_lods: settings.max_vista_lods,
     }
 }
@@ -765,7 +762,6 @@ fn requested_feature_state() -> PresentationFeatureState {
         environment_light: requested.environment_light_enabled,
         environment_map_size: requested.environment_map_size,
         bloom: requested.bloom_enabled,
-        ssao: requested.ssao_enabled,
         max_vista_lods: requested.max_vista_lods,
     }
 }
@@ -775,7 +771,6 @@ fn observed_presentation_features(
     environment_map: Option<&AtmosphereEnvironmentMapLight>,
     filtered_environment_map: Option<&EnvironmentMapLight>,
     bloom: Option<&Bloom>,
-    ssao: Option<&ScreenSpaceAmbientOcclusion>,
     exposure: &Exposure,
     tonemapping: &Tonemapping,
     ambient: &GlobalAmbientLight,
@@ -792,7 +787,6 @@ fn observed_presentation_features(
         camera_environment_map_allocated: filtered_environment_map.is_some(),
         camera_environment_map_intensity: filtered_environment_map.map(|light| light.intensity),
         camera_bloom: bloom.is_some(),
-        camera_ssao: ssao.is_some(),
         camera_exposure_ev100: exposure.ev100,
         camera_tonemapping: format!("{tonemapping:?}"),
         ambient_color: ambient.color.to_linear().to_f32_array(),
@@ -828,7 +822,6 @@ fn observed_presentation_features(
         && observed.camera_environment_map_intensity
             == requested.environment_light.then_some(1.0)
         && observed.camera_bloom == requested.bloom
-        && observed.camera_ssao == requested.ssao
         // Production exposure is driven by the scene's solar/lunar state and
         // may be between authored targets while the ECS observer settles.
         && observed.camera_exposure_ev100.is_finite()
@@ -1052,7 +1045,6 @@ mod capture_lighting_tests {
         assert!(requested.environment_light);
         assert_eq!(requested.environment_map_size, 64);
         assert!(!requested.bloom);
-        assert!(!requested.ssao);
         assert_eq!(requested.max_vista_lods, 3);
     }
 
@@ -2324,7 +2316,6 @@ fn capture_views(
             Option<&AtmosphereEnvironmentMapLight>,
             Option<&EnvironmentMapLight>,
             Option<&Bloom>,
-            Option<&ScreenSpaceAmbientOcclusion>,
             &Exposure,
             &Tonemapping,
         ),
@@ -2686,7 +2677,6 @@ fn capture_views(
         camera.6,
         camera.7,
         camera.8,
-        camera.9,
         &lighting.ambient,
         &lighting.ambient_handoff,
         &celestial,

@@ -273,7 +273,6 @@ pub(super) struct PresentationFeatureState {
     pub(super) environment_light: bool,
     pub(super) environment_map_size: u32,
     pub(super) bloom: bool,
-    pub(super) ssao: bool,
     pub(super) max_vista_lods: usize,
 }
 
@@ -285,7 +284,6 @@ pub(super) struct ObservedPresentationFeatures {
     pub(super) camera_environment_map_allocated: bool,
     pub(super) camera_environment_map_intensity: Option<f32>,
     pub(super) camera_bloom: bool,
-    pub(super) camera_ssao: bool,
     pub(super) camera_exposure_ev100: f32,
     pub(super) camera_tonemapping: String,
     pub(super) ambient_color: [f32; 4],
