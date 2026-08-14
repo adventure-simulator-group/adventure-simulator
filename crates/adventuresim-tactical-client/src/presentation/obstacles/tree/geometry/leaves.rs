@@ -122,11 +122,13 @@ pub(in crate::presentation) fn procedural_woody_plant_leaves(
 ) -> Vec<TreeLeaf> {
     match parameters.form {
         WoodyPlantForm::MatureOak => procedural_oak_leaves(seed, branches, canopy_competition),
-        WoodyPlantForm::CommonHazel => procedural_hazel_leaves(seed, branches, parameters),
+        WoodyPlantForm::MatureBeech | WoodyPlantForm::MultiStemShrub => {
+            procedural_multistem_shrub_leaves(seed, branches, parameters)
+        }
     }
 }
 
-fn procedural_hazel_leaves(
+fn procedural_multistem_shrub_leaves(
     seed: u64,
     branches: &[TreeBranchSegment],
     parameters: WoodyPlantParameters,
@@ -172,9 +174,16 @@ fn procedural_hazel_leaves(
                 leaf_up.cross(frame_right).normalize()
             };
             let petiole_start = shoot.start.lerp(shoot.end, along.clamp(0.04, 0.96));
-            let petiole_length = 0.012 + unit_hash(leaf_seed ^ 3) * 0.011;
-            let length = 0.082 + unit_hash(leaf_seed ^ 4) * 0.038;
-            let width = length * (0.72 + unit_hash(leaf_seed ^ 5) * 0.12);
+            let petiole_length = parameters.petiole_length_metres[0]
+                + unit_hash(leaf_seed ^ 3)
+                    * (parameters.petiole_length_metres[1] - parameters.petiole_length_metres[0]);
+            let length = parameters.leaf_length_metres[0]
+                + unit_hash(leaf_seed ^ 4)
+                    * (parameters.leaf_length_metres[1] - parameters.leaf_length_metres[0]);
+            let width = length
+                * (parameters.leaf_width_ratio[0]
+                    + unit_hash(leaf_seed ^ 5)
+                        * (parameters.leaf_width_ratio[1] - parameters.leaf_width_ratio[0]));
             let blade_base = petiole_start + radial * petiole_length;
             leaves.push(TreeLeaf {
                 petiole_start,

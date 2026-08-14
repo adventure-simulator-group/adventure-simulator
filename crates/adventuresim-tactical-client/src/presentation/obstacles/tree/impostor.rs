@@ -51,6 +51,21 @@ pub(in crate::presentation) struct TreeLodClusterBake {
     pub(in crate::presentation) radius: f32,
 }
 
+#[derive(Clone, Copy)]
+pub(in crate::presentation) struct TreeBakeStyle {
+    pub(in crate::presentation) bark: BarkRecipe,
+    pub(in crate::presentation) bark_srgb: [f32; 3],
+    pub(in crate::presentation) leaf_srgb: [f32; 3],
+    pub(in crate::presentation) crown_radius_metres: f32,
+}
+
+pub(in crate::presentation) const OAK_TREE_BAKE_STYLE: TreeBakeStyle = TreeBakeStyle {
+    bark: ENGLISH_OAK_BARK,
+    bark_srgb: [116.0, 103.0, 82.0],
+    leaf_srgb: super::materials::OAK_LEAF_IMPOSTOR_BASE_SRGB,
+    crown_radius_metres: ENGLISH_OAK_PARAMETERS.crown_radius_metres,
+};
+
 pub(in crate::presentation) fn validate_tree_bake_provenance(provenance: &TreeImpostorProvenance) {
     debug_assert!(provenance.seed.count_ones() > 0);
     debug_assert!((1..=4).contains(&provenance.lod));
@@ -118,6 +133,16 @@ pub(in crate::presentation) fn bake_tree_lod(
     leaves: &[TreeLeaf],
     lod: u8,
 ) -> TreeLodBake {
+    bake_tree_lod_with_style(seed, branches, leaves, lod, OAK_TREE_BAKE_STYLE)
+}
+
+pub(in crate::presentation) fn bake_tree_lod_with_style(
+    seed: u64,
+    branches: &[TreeBranchSegment],
+    leaves: &[TreeLeaf],
+    lod: u8,
+    style: TreeBakeStyle,
+) -> TreeLodBake {
     let cards = tree_bake_cards(seed, branches, leaves, lod);
     let tile_size = match lod {
         1 => 96,
@@ -151,6 +176,7 @@ pub(in crate::presentation) fn bake_tree_lod(
             tile_x,
             tile_y,
             &mut pixels,
+            style,
         );
         let (opaque_pixel_count, silhouette_centroid) = tree_tile_alpha_stats(
             &pixels,

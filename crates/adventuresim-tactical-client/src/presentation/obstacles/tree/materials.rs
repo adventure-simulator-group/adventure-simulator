@@ -7,7 +7,10 @@ use bevy::{
     shader::ShaderRef,
 };
 
-use super::geometry::{COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS};
+use super::geometry::{
+    BLACKTHORN_PARAMETERS, COMMON_BEECH_PARAMETERS, COMMON_HAWTHORN_PARAMETERS,
+    COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS,
+};
 #[cfg(test)]
 use crate::presentation::generate_procedural_environment_assets;
 use crate::presentation::{LeafTextureSet, ProceduralEnvironmentAssets};
@@ -88,6 +91,42 @@ pub(in crate::presentation) fn hazel_leaf_material(
         0.68,
         canopy_ao_strength(COMMON_HAZEL_PARAMETERS.crown_radius_metres),
         0.46,
+    )
+}
+
+pub(in crate::presentation) fn blackthorn_leaf_material(
+    assets: &ProceduralEnvironmentAssets,
+) -> TacticalTreeLeafCardMaterial {
+    leaf_material(
+        &assets.blackthorn_leaf,
+        0.34,
+        0.7,
+        canopy_ao_strength(BLACKTHORN_PARAMETERS.crown_radius_metres),
+        0.42,
+    )
+}
+
+pub(in crate::presentation) fn hawthorn_leaf_material(
+    assets: &ProceduralEnvironmentAssets,
+) -> TacticalTreeLeafCardMaterial {
+    leaf_material(
+        &assets.hawthorn_leaf,
+        0.31,
+        0.7,
+        canopy_ao_strength(COMMON_HAWTHORN_PARAMETERS.crown_radius_metres),
+        0.44,
+    )
+}
+
+pub(in crate::presentation) fn beech_leaf_material(
+    assets: &ProceduralEnvironmentAssets,
+) -> TacticalTreeLeafCardMaterial {
+    leaf_material(
+        &assets.beech_leaf,
+        0.3,
+        0.68,
+        canopy_ao_strength(COMMON_BEECH_PARAMETERS.crown_radius_metres),
+        0.43,
     )
 }
 

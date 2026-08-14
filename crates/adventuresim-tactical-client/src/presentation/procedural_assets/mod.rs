@@ -28,6 +28,9 @@ pub(crate) struct ProceduralEnvironmentAssets {
     pub(super) oak_leaf: LeafTextureSet,
     pub(super) dry_oak_leaf: LeafTextureSet,
     pub(super) hazel_leaf: LeafTextureSet,
+    pub(super) blackthorn_leaf: LeafTextureSet,
+    pub(super) hawthorn_leaf: LeafTextureSet,
+    pub(super) beech_leaf: LeafTextureSet,
     pub(super) rock: SurfaceTextureSet,
 }
 
@@ -88,6 +91,54 @@ impl LeafRecipe {
         back_blade: [82, 119, 61],
         roughness: 216,
     };
+
+    const BLACKTHORN: Self = Self {
+        widest_point: 0.46,
+        base_power: 0.82,
+        tip_power: 0.76,
+        lobe_count: 0.0,
+        lobe_depth: 0.0,
+        tooth_count: 11.0,
+        tooth_depth: 0.028,
+        vein_pairs: 6,
+        bend: 0.018,
+        blade: [61, 103, 42],
+        vein: [117, 139, 66],
+        back_blade: [77, 111, 56],
+        roughness: 220,
+    };
+
+    const HAWTHORN: Self = Self {
+        widest_point: 0.44,
+        base_power: 0.72,
+        tip_power: 0.68,
+        lobe_count: 3.5,
+        lobe_depth: 0.14,
+        tooth_count: 9.0,
+        tooth_depth: 0.035,
+        vein_pairs: 6,
+        bend: -0.012,
+        blade: [72, 113, 44],
+        vein: [132, 151, 68],
+        back_blade: [84, 119, 58],
+        roughness: 217,
+    };
+
+    const BEECH: Self = Self {
+        widest_point: 0.47,
+        base_power: 0.72,
+        tip_power: 0.76,
+        lobe_count: 0.0,
+        lobe_depth: 0.0,
+        tooth_count: 8.0,
+        tooth_depth: 0.018,
+        vein_pairs: 8,
+        bend: 0.022,
+        blade: [67, 108, 46],
+        vein: [126, 147, 72],
+        back_blade: [81, 117, 59],
+        roughness: 214,
+    };
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -110,6 +161,9 @@ pub(super) fn generate_procedural_environment_assets(
         oak_leaf: generate_leaf_textures(images, LeafRecipe::WHITE_OAK),
         dry_oak_leaf: generate_leaf_textures(images, LeafRecipe::DRY_WHITE_OAK),
         hazel_leaf: generate_leaf_textures(images, LeafRecipe::HAZEL),
+        blackthorn_leaf: generate_leaf_textures(images, LeafRecipe::BLACKTHORN),
+        hawthorn_leaf: generate_leaf_textures(images, LeafRecipe::HAWTHORN),
+        beech_leaf: generate_leaf_textures(images, LeafRecipe::BEECH),
         rock: generate_surface_textures(images, SurfaceRecipe::Rock),
     }
 }
@@ -364,6 +418,9 @@ mod tests {
             LeafRecipe::WHITE_OAK,
             LeafRecipe::DRY_WHITE_OAK,
             LeafRecipe::HAZEL,
+            LeafRecipe::BLACKTHORN,
+            LeafRecipe::HAWTHORN,
+            LeafRecipe::BEECH,
         ] {
             let mut images = Assets::<Image>::default();
             let textures = generate_leaf_textures(&mut images, recipe);

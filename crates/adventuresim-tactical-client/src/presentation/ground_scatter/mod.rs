@@ -14,11 +14,12 @@ use bevy::{
 };
 
 use super::obstacles::tree::{
+    BLACKTHORN_BARK, BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_BARK, COMMON_HAWTHORN_PARAMETERS,
     COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, TacticalTreeImpostorMaterial,
-    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, hazel_leaf_material,
-    procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
-    procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
-    procedural_woody_plant_skeleton,
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, blackthorn_leaf_material,
+    hawthorn_leaf_material, hazel_leaf_material, procedural_woody_branch_mesh,
+    procedural_woody_cambered_leaf_mesh, procedural_woody_leaf_card_mesh,
+    procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
 };
 use super::{
     PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
@@ -32,20 +33,42 @@ mod litter;
 mod loose_stone;
 mod understory;
 
-use grass::{GrassMeshLod, grass_material, grass_patch_mesh};
+use grass::grass_material;
+pub(in crate::presentation) use grass::{
+    GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod,
+    VISTA_GRASS_PATCH_SPACING, grass_community_at, grass_lod_visibility, grass_patch_mesh,
+    vista_grass_material,
+};
 use litter::{
     DRY_LEAF_MESH_VARIANTS, TWIG_MESH_VARIANTS, dry_leaf_patch_mesh, forest_floor_leaf_material,
     twig_patch_mesh,
 };
 pub(crate) use loose_stone::{LooseStonePebblePatch, TacticalPebbleBillboardMaterial};
 
-#[derive(Resource, Default)]
-pub(in crate::presentation) struct HazelPresentationCache {
+#[derive(Default)]
+pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,
     cambered_leaves: Option<Handle<Mesh>>,
     leaf_cards: Option<Handle<Mesh>>,
     bark: Option<Handle<StandardMaterial>>,
     leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
+}
+
+#[derive(Resource, Default)]
+pub(in crate::presentation) struct WoodyUnderstoryPresentationCache {
+    hazel: WoodyUnderstoryPresentation,
+    blackthorn: WoodyUnderstoryPresentation,
+    hawthorn: WoodyUnderstoryPresentation,
+}
+
+impl WoodyUnderstoryPresentationCache {
+    fn presentation(&self, species: understory::UnderstorySpecies) -> &WoodyUnderstoryPresentation {
+        match species {
+            understory::UnderstorySpecies::CommonHazel => &self.hazel,
+            understory::UnderstorySpecies::Blackthorn => &self.blackthorn,
+            understory::UnderstorySpecies::CommonHawthorn => &self.hawthorn,
+        }
+    }
 }
 
 #[derive(Resource, Default)]
@@ -154,7 +177,7 @@ pub(super) fn spawn_ground_foliage(
     standard_materials: &mut Assets<StandardMaterial>,
     pebble_billboard_materials: &mut Assets<TacticalPebbleBillboardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
-    hazel_cache: &mut HazelPresentationCache,
+    understory_cache: &mut WoodyUnderstoryPresentationCache,
     ground_foliage_cache: &mut GroundFoliagePresentationCache,
     procedural_assets: &ProceduralEnvironmentAssets,
     images: &mut Assets<Image>,
@@ -179,42 +202,34 @@ pub(super) fn spawn_ground_foliage(
     // capping denser biomes near one plant in four lattice cells. This leaves
     // traversable openings and gives every terrain family a comparable GPU
     // budget without reducing the much cheaper canopy-tree population.
-    let understory_chance = understory_scatter_chance(canopy, wetland);
-    let grass_dryness = (1.0
-        - bps(environment.weather.ground_moisture_bps) * 0.7
-        - canopy * 1.2
-        - wetland * 0.8
-        - water * 0.8)
-        .clamp(0.0, 1.0);
-    let grass_color = if environment.weather.snow_cover_bps >= 5_000 {
-        Color::srgb_u8(155, 164, 137)
-    } else if environment.cultivation_bps >= 4_000 {
-        Color::srgb_u8(142, 133, 61)
-    } else {
-        // Blend pigment in sRGB authoring space from hydrated chlorophyll to
-        // a dry olive sward. Fine-grained cohort variation remains in the
-        // shader, but the biome-wide baseline now honors replicated moisture
-        // and shade instead of rendering dry grassland as woodland green.
-        let hydrated = Vec3::new(82.0, 119.0, 45.0);
-        let senescent = Vec3::new(150.0, 126.0, 52.0);
-        let pigment = hydrated.lerp(senescent, grass_dryness * 0.78);
-        Color::srgb_u8(pigment.x as u8, pigment.y as u8, pigment.z as u8)
-    };
-    let grass_near_mesh = meshes.add(grass_patch_mesh(
-        grass_color,
-        GrassMeshLod::Near,
-        grass_density,
-    ));
-    let grass_far_mesh = meshes.add(grass_patch_mesh(
-        grass_color,
-        GrassMeshLod::Far,
-        grass_density,
-    ));
-    ensure_hazel_presentation(
+    let understory_chance = understory_scatter_chance(canopy, wetland, cultivation);
+    let (grass_color, grass_dryness) = grass_pigment(environment);
+    let grass_profile = GrassCommunityProfile::from_environment(environment);
+    let grass_community_meshes = GrassCommunity::ALL.map(|community| grass::CommunityMeshes {
+        near: meshes.add(grass_patch_mesh(
+            grass_color,
+            GrassMeshLod::Near,
+            grass_density,
+            community,
+        )),
+        far: meshes.add(grass_patch_mesh(
+            grass_color,
+            GrassMeshLod::Far,
+            grass_density,
+            community,
+        )),
+        vista: meshes.add(grass_patch_mesh(
+            grass_color,
+            GrassMeshLod::Vista,
+            grass_density,
+            community,
+        )),
+    });
+    ensure_understory_presentations(
         meshes,
         standard_materials,
         leaf_materials,
-        hazel_cache,
+        understory_cache,
         procedural_assets,
     );
     let grass_wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
@@ -233,6 +248,14 @@ pub(super) fn spawn_ground_foliage(
     let grass_far_material = materials.add(grass_material(
         grass_wind_scale,
         GrassMeshLod::Far,
+        grass_density,
+        grass_dryness,
+        grass_mask.clone(),
+        ground,
+    ));
+    let grass_vista_material = materials.add(grass_material(
+        grass_wind_scale,
+        GrassMeshLod::Vista,
         grass_density,
         grass_dryness,
         grass_mask,
@@ -270,16 +293,19 @@ pub(super) fn spawn_ground_foliage(
     // randomly shrinking/rotating the square footprint opened visible seams.
     // Aligning each patch to the sampled terrain normal keeps the shared plane
     // seated on slopes while its blades retain deterministic local variation.
+    let grass_seed = stable_text_seed(&environment.scene_digest) ^ 0x6772_6173_735f_6c6f;
     grass::spawn(
         commands,
         terrain,
         ground,
-        base_seed,
+        environment,
+        grass_seed,
+        grass_profile,
         &grass::Assets {
-            near_mesh: grass_near_mesh,
-            far_mesh: grass_far_mesh,
+            community_meshes: grass_community_meshes,
             near_material: grass_near_material,
             far_material: grass_far_material,
+            vista_material: grass_vista_material,
         },
     );
 
@@ -287,9 +313,15 @@ pub(super) fn spawn_ground_foliage(
         commands,
         terrain,
         ground,
-        hazel_cache,
+        understory_cache,
         base_seed,
         understory_chance,
+        understory::UnderstoryHabitat {
+            canopy,
+            wetland,
+            cultivation,
+            moisture: bps(environment.weather.ground_moisture_bps),
+        },
     );
 
     litter::spawn(
@@ -317,13 +349,37 @@ pub(super) fn spawn_ground_foliage(
     );
 }
 
-fn understory_scatter_chance(canopy: f32, wetland: f32) -> f32 {
-    (canopy * 0.52 + wetland * 0.3).clamp(0.0, 0.24)
+fn understory_scatter_chance(canopy: f32, wetland: f32, cultivation: f32) -> f32 {
+    (canopy * 0.52 + wetland * 0.3 + cultivation * 0.08).clamp(0.0, 0.24)
 }
 
 fn grass_scatter_density(canopy: f32, water: f32, cultivation: f32, snow: f32) -> f32 {
     (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.25, 0.98)
         * (1.0 - snow * 0.36)
+}
+
+pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> (Color, f32) {
+    let grass_dryness = (1.0
+        - bps(environment.weather.ground_moisture_bps) * 0.7
+        - bps(environment.canopy_bps) * 1.2
+        - bps(environment.wetland_bps) * 0.8
+        - bps(environment.water_bps) * 0.8)
+        .clamp(0.0, 1.0);
+    let color = if environment.weather.snow_cover_bps >= 5_000 {
+        Color::srgb_u8(155, 164, 137)
+    } else if environment.cultivation_bps >= 4_000 {
+        Color::srgb_u8(142, 133, 61)
+    } else {
+        // Blend pigment in sRGB authoring space from hydrated chlorophyll to
+        // a dry olive sward. Fine-grained cohort variation remains in the
+        // shader, but the biome-wide baseline honors replicated moisture and
+        // shade instead of rendering dry grassland as woodland green.
+        let hydrated = Vec3::new(82.0, 119.0, 45.0);
+        let senescent = Vec3::new(150.0, 126.0, 52.0);
+        let pigment = hydrated.lerp(senescent, grass_dryness * 0.78);
+        Color::srgb_u8(pigment.x as u8, pigment.y as u8, pigment.z as u8)
+    };
+    (color, grass_dryness)
 }
 
 fn foliage_transform(
@@ -366,7 +422,7 @@ pub(super) fn present_ground_scatter(
     mut pebble_billboard_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut images: ResMut<Assets<Image>>,
-    mut hazel_cache: ResMut<HazelPresentationCache>,
+    mut understory_cache: ResMut<WoodyUnderstoryPresentationCache>,
     mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
@@ -378,7 +434,7 @@ pub(super) fn present_ground_scatter(
             &mut standard_materials,
             &mut pebble_billboard_materials,
             &mut leaf_materials,
-            &mut hazel_cache,
+            &mut understory_cache,
             &mut ground_foliage_cache,
             &procedural_assets,
             &mut images,
@@ -391,35 +447,58 @@ pub(super) fn present_ground_scatter(
     }
 }
 
-fn ensure_hazel_presentation(
+fn ensure_understory_presentations(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
-    cache: &mut HazelPresentationCache,
+    cache: &mut WoodyUnderstoryPresentationCache,
     procedural_assets: &ProceduralEnvironmentAssets,
 ) {
-    if cache.branches.is_some() {
+    if cache.hazel.branches.is_some() {
         return;
     }
     // One deterministic specimen is shared by every scattered shrub. Instance
     // transforms still vary placement, rotation, and scale without generating
     // unique botanical geometry per occurrence.
-    let seed = 0xc0a1_5a2e_11_u64;
-    let branches = procedural_woody_plant_skeleton(seed, 0.0, COMMON_HAZEL_PARAMETERS);
-    let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, COMMON_HAZEL_PARAMETERS);
-    cache.branches = Some(meshes.add(procedural_woody_branch_mesh(
-        &branches,
-        3,
-        COMMON_HAZEL_BARK,
-    )));
-    cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
-    cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
-    cache.bark = Some(materials.add(StandardMaterial {
-        base_color: Color::srgb_u8(118, 104, 78),
-        perceptual_roughness: 0.96,
-        ..default()
-    }));
-    cache.leaves = Some(leaf_materials.add(hazel_leaf_material(procedural_assets)));
+    let species = [
+        (
+            &mut cache.hazel,
+            0xc0a1_5a2e_11_u64,
+            COMMON_HAZEL_PARAMETERS,
+            COMMON_HAZEL_BARK,
+            Color::srgb_u8(118, 104, 78),
+            hazel_leaf_material(procedural_assets),
+        ),
+        (
+            &mut cache.blackthorn,
+            0xb1ac_7a0e_31_u64,
+            BLACKTHORN_PARAMETERS,
+            BLACKTHORN_BARK,
+            Color::srgb_u8(61, 52, 44),
+            blackthorn_leaf_material(procedural_assets),
+        ),
+        (
+            &mut cache.hawthorn,
+            0xa7a7_4a0e_51_u64,
+            COMMON_HAWTHORN_PARAMETERS,
+            COMMON_HAWTHORN_BARK,
+            Color::srgb_u8(91, 76, 60),
+            hawthorn_leaf_material(procedural_assets),
+        ),
+    ];
+    for (cache, seed, parameters, bark, bark_color, leaf_material) in species {
+        let branches = procedural_woody_plant_skeleton(seed, 0.0, parameters);
+        let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, parameters);
+        cache.branches = Some(meshes.add(procedural_woody_branch_mesh(&branches, 3, bark)));
+        cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
+        cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
+        cache.bark = Some(materials.add(StandardMaterial {
+            base_color: bark_color,
+            perceptual_roughness: 0.96,
+            ..default()
+        }));
+        cache.leaves = Some(leaf_materials.add(leaf_material));
+    }
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]

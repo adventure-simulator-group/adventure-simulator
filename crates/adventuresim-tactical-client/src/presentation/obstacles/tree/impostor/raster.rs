@@ -1,11 +1,10 @@
-use super::TreeBakeCard;
+#[cfg(test)]
+use super::OAK_TREE_BAKE_STYLE;
+use super::{TreeBakeCard, TreeBakeStyle};
 use crate::presentation::obstacles::tree::geometry::{
-    ENGLISH_OAK_PARAMETERS, TreeBranchSegment, TreeLeaf, procedural_oak_textured_leaf_mesh,
-    procedural_tree_branch_mesh,
+    TreeBranchSegment, TreeLeaf, procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
 };
-use crate::presentation::obstacles::tree::materials::{
-    OAK_LEAF_IMPOSTOR_BASE_SRGB, canopy_ao_strength,
-};
+use crate::presentation::obstacles::tree::materials::canopy_ao_strength;
 use bevy::{
     math::Vec3Swizzles,
     mesh::{Indices, VertexAttributeValues},
@@ -22,6 +21,7 @@ pub(super) fn render_tree_card(
     tile_x: u32,
     tile_y: u32,
     pixels: &mut [u8],
+    style: TreeBakeStyle,
 ) {
     let mut depth = vec![f32::NEG_INFINITY; (tile_size * tile_size) as usize];
     let source_branches = branches
@@ -29,7 +29,7 @@ pub(super) fn render_tree_card(
         .filter(|branch| card.includes_branch(branch))
         .copied()
         .collect::<Vec<_>>();
-    let branch_mesh = procedural_tree_branch_mesh(&source_branches, 3);
+    let branch_mesh = procedural_woody_branch_mesh(&source_branches, 3, style.bark);
     raster_source_mesh(
         card,
         &branch_mesh,
@@ -41,13 +41,14 @@ pub(super) fn render_tree_card(
         tile_y,
         pixels,
         &mut depth,
+        style,
     );
     let source_leaves = leaves
         .iter()
         .filter(|leaf| card.includes_leaf(leaf))
         .copied()
         .collect::<Vec<_>>();
-    let leaf_mesh = procedural_oak_textured_leaf_mesh(&source_leaves);
+    let leaf_mesh = procedural_woody_cambered_leaf_mesh(&source_leaves);
     raster_source_mesh(
         card,
         &leaf_mesh,
@@ -59,6 +60,7 @@ pub(super) fn render_tree_card(
         tile_y,
         pixels,
         &mut depth,
+        style,
     );
 }
 
@@ -79,6 +81,7 @@ fn raster_source_mesh(
     tile_y: u32,
     pixels: &mut [u8],
     depth: &mut [f32],
+    style: TreeBakeStyle,
 ) {
     let positions = mesh
         .attribute(Mesh::ATTRIBUTE_POSITION)
@@ -140,9 +143,9 @@ fn raster_source_mesh(
                 let light = 0.62 + normal.dot(Vec3::new(0.35, 0.86, 0.25)).abs() * 0.34;
                 let color = match material {
                     TreeSourceMaterial::Bark => [
-                        (116.0 * light) as u8,
-                        (103.0 * light) as u8,
-                        (82.0 * light) as u8,
+                        (style.bark_srgb[0] * light) as u8,
+                        (style.bark_srgb[1] * light) as u8,
+                        (style.bark_srgb[2] * light) as u8,
                         255,
                     ],
                     TreeSourceMaterial::Leaf => {
@@ -153,7 +156,7 @@ fn raster_source_mesh(
                                 .map(|(index, weight)| Vec4::from_array(colors[*index]) * weight)
                                 .sum()
                         });
-                        baked_oak_leaf_color(tint, light)
+                        baked_leaf_color(tint, light, style)
                     }
                 };
                 write_tree_pixel(
@@ -174,20 +177,19 @@ fn raster_source_mesh(
     }
 }
 
-fn baked_oak_leaf_color(tint: Vec4, light: f32) -> [u8; 4] {
+fn baked_leaf_color(tint: Vec4, light: f32, style: TreeBakeStyle) -> [u8; 4] {
     // Vertex color RGB is semantic data, not an albedo tint: X/Y carry the
     // authored shade, Z selects a live directional self-shadow, and W carries
     // ambient visibility. The old bake accidentally treated XYZ as pigment,
     // producing lime cards and using the binary shadow selector as blue.
     let shade = ((tint.x + tint.y) * 0.5).clamp(0.0, 1.5);
-    let canopy_visibility = 1.0
-        + canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres)
-            * (tint.w.clamp(0.32, 1.0) - 1.0);
+    let canopy_visibility =
+        1.0 + canopy_ao_strength(style.crown_radius_metres) * (tint.w.clamp(0.32, 1.0) - 1.0);
     let response = (shade * canopy_visibility * light).max(0.0);
     [
-        (OAK_LEAF_IMPOSTOR_BASE_SRGB[0] * response).min(255.0) as u8,
-        (OAK_LEAF_IMPOSTOR_BASE_SRGB[1] * response).min(255.0) as u8,
-        (OAK_LEAF_IMPOSTOR_BASE_SRGB[2] * response).min(255.0) as u8,
+        (style.leaf_srgb[0] * response).min(255.0) as u8,
+        (style.leaf_srgb[1] * response).min(255.0) as u8,
+        (style.leaf_srgb[2] * response).min(255.0) as u8,
         255,
     ]
 }
@@ -231,9 +233,10 @@ mod tests {
 
     #[test]
     fn baked_leaf_color_uses_generated_palette_and_authored_canopy_visibility() {
-        let exposed = baked_oak_leaf_color(Vec4::new(1.0, 1.0, 0.0, 1.0), 1.0);
-        let alternate_shadow_selector = baked_oak_leaf_color(Vec4::new(1.0, 1.0, 1.0, 1.0), 1.0);
-        let interior = baked_oak_leaf_color(Vec4::new(1.0, 1.0, 0.0, 0.32), 1.0);
+        let exposed = baked_leaf_color(Vec4::new(1.0, 1.0, 0.0, 1.0), 1.0, OAK_TREE_BAKE_STYLE);
+        let alternate_shadow_selector =
+            baked_leaf_color(Vec4::new(1.0, 1.0, 1.0, 1.0), 1.0, OAK_TREE_BAKE_STYLE);
+        let interior = baked_leaf_color(Vec4::new(1.0, 1.0, 0.0, 0.32), 1.0, OAK_TREE_BAKE_STYLE);
 
         assert_eq!(exposed, [96, 113, 76, 255]);
         assert_eq!(alternate_shadow_selector, exposed);
@@ -247,6 +250,19 @@ mod tests {
         assert!(
             exposed[2] > exposed[0] / 2,
             "blue must come from pigment, not a selector"
+        );
+    }
+
+    #[test]
+    fn baked_leaf_color_accepts_a_species_palette() {
+        let beech = TreeBakeStyle {
+            leaf_srgb: [91.0, 119.0, 70.0],
+            crown_radius_metres: 4.6,
+            ..OAK_TREE_BAKE_STYLE
+        };
+        assert_eq!(
+            baked_leaf_color(Vec4::new(1.0, 1.0, 0.0, 1.0), 1.0, beech),
+            [91, 119, 70, 255]
         );
     }
 }
