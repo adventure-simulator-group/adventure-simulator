@@ -37,6 +37,7 @@ use litter::{
     DRY_LEAF_MESH_VARIANTS, TWIG_MESH_VARIANTS, dry_leaf_patch_mesh, forest_floor_leaf_material,
     twig_patch_mesh,
 };
+pub(crate) use loose_stone::{LooseStonePebblePatch, TacticalPebbleBillboardMaterial};
 
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct HazelPresentationCache {
@@ -117,6 +118,7 @@ pub(super) fn update_grass_interaction(
 pub(super) fn update_celestial_material_lighting(
     celestial: Res<PresentedCelestialLighting>,
     mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
+    mut pebble_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
 ) {
     if !celestial.is_changed() {
         return;
@@ -137,6 +139,12 @@ pub(super) fn update_celestial_material_lighting(
             .ambient_color
             .extend(celestial.material_ambient_response);
     }
+    for (_, material) in pebble_materials.iter_mut() {
+        material.lighting = direction.extend(celestial.material_light_factor);
+        material.ambient = celestial
+            .ambient_color
+            .extend(celestial.material_ambient_response);
+    }
 }
 
 pub(super) fn spawn_ground_foliage(
@@ -144,6 +152,7 @@ pub(super) fn spawn_ground_foliage(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<TacticalFoliageMaterial>,
     standard_materials: &mut Assets<StandardMaterial>,
+    pebble_billboard_materials: &mut Assets<TacticalPebbleBillboardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     hazel_cache: &mut HazelPresentationCache,
     ground_foliage_cache: &mut GroundFoliagePresentationCache,
@@ -159,14 +168,18 @@ pub(super) fn spawn_ground_foliage(
     let wetland = bps(environment.wetland_bps);
     let cultivation = bps(environment.cultivation_bps);
     let snow = bps(environment.weather.snow_cover_bps);
-    let grass_density = (0.96 - canopy * 0.16 - water * 0.88 + cultivation * 0.04)
-        .clamp(0.06, 0.98)
-        * (1.0 - snow * 0.36);
-    // A mature shared hazel occupies far more space than the former crossed
-    // card placeholder. Scatter on a wider lattice so woodland contains
-    // legible individual shrubs and traversable openings instead of a wall of
-    // overlapping coppice stems.
-    let understory_chance = (canopy * 0.52 + wetland * 0.3).clamp(0.0, 0.52);
+    // Mature open swards can exceed a thousand shoots per square metre, while
+    // closed oak canopy suppresses grass well before it suppresses woody
+    // understory. Keep the expensive new density in open terrain instead of
+    // charging every woodland for meadow-level geometry beneath deep shade.
+    let grass_density = grass_scatter_density(canopy, water, cultivation, snow);
+    // Equal-area QHD benchmarks show that the full woody hazel/reed-like
+    // specimen, rather than the trees themselves, dominates dense woodland
+    // and wetland cost. Keep sparse woodland's established occupancy while
+    // capping denser biomes near one plant in four lattice cells. This leaves
+    // traversable openings and gives every terrain family a comparable GPU
+    // budget without reducing the much cheaper canopy-tree population.
+    let understory_chance = understory_scatter_chance(canopy, wetland);
     let grass_dryness = (1.0
         - bps(environment.weather.ground_moisture_bps) * 0.7
         - canopy * 1.2
@@ -297,10 +310,20 @@ pub(super) fn spawn_ground_foliage(
         commands,
         meshes,
         standard_materials,
+        pebble_billboard_materials,
         terrain,
         ground,
         base_seed,
     );
+}
+
+fn understory_scatter_chance(canopy: f32, wetland: f32) -> f32 {
+    (canopy * 0.52 + wetland * 0.3).clamp(0.0, 0.24)
+}
+
+fn grass_scatter_density(canopy: f32, water: f32, cultivation: f32, snow: f32) -> f32 {
+    (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.25, 0.98)
+        * (1.0 - snow * 0.36)
 }
 
 fn foliage_transform(
@@ -340,6 +363,7 @@ pub(super) fn present_ground_scatter(
     mut meshes: ResMut<Assets<Mesh>>,
     mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
+    mut pebble_billboard_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut hazel_cache: ResMut<HazelPresentationCache>,
@@ -352,6 +376,7 @@ pub(super) fn present_ground_scatter(
             &mut meshes,
             &mut foliage_materials,
             &mut standard_materials,
+            &mut pebble_billboard_materials,
             &mut leaf_materials,
             &mut hazel_cache,
             &mut ground_foliage_cache,

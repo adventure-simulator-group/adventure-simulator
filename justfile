@@ -332,17 +332,29 @@ tactical-tree-leaf-benchmark output="target/tactical-scene-captures/tree-leaf-be
 tactical-tree-lighting-benchmark output="target/tactical-scene-captures/tree-lighting-benchmark" frames="180":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --absolute-minute 340560 --tree-lighting-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
 
-# Attribute production real-world scene cost by tree family and forced LOD.
+# Attribute production real-world scene cost at QHD by tree family and forced LOD.
 # Input and output must identify one already generated coordinate scene and a
 # fresh results directory respectively.
 tactical-scene-performance-benchmark input output frames="120":
     @cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(input) }} --scene-performance-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
 
+# Acceptance and cost-attribution benchmark for the base 2026 M5 MacBook Air.
+# Run this release build on target-class hardware with the laptop connected to
+# power. The dense woodland fixture and full isolation matrix provide a
+# sustained QHD load; GPU timestamps make the 60 FPS verdict conclusive.
+tactical-qhd60-benchmark output="target/tactical-benchmarks/qhd60-dense-woodland" frames="600":
+    @cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --scene-performance-benchmark-frames {{ quote(frames) }} --scene-performance-render-diagnostics --output {{ quote(output) }}
+
+# Compare equal-area bare, grassland, woodland, wetland, and rocky production
+# plots and normalize their generated asset densities to one square kilometre.
+tactical-terrain-density-benchmark output="target/tactical-benchmarks/terrain-density" frames="600":
+    @{{ python_bin }} scripts/tactical_terrain_density_benchmark.py --output {{ quote(output) }} --frames {{ quote(frames) }}
+
 # Collect the same matrix with DX12/Vulkan render-pass timestamp and pipeline
 # statistics instrumentation. This intentionally has more observer overhead
 # than the timing-only benchmark above.
 tactical-scene-render-diagnostics input output frames="60":
-    @set TACTICAL_BENCH_RENDER_DIAGNOSTICS=1 && cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(input) }} --scene-performance-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+    @cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(input) }} --scene-performance-benchmark-frames {{ quote(frames) }} --scene-performance-render-diagnostics --output {{ quote(output) }}
 
 # Capture both leaf representations from face-on through grazing review
 # azimuths under identical controlled daylight.

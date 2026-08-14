@@ -47,16 +47,20 @@ use view_specs::{
 };
 
 use crate::presentation::{
-    AtmosphereIblAmbientHandoff, GroundScatterLayer, PresentedTree, ProceduralEnvironmentAssets,
-    ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
-    TacticalTreeLeafCardMaterial, TerrainMaterialPresentation, TreeImpostorProvenance,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
-    oak_review_terminal_specimen,
+    AtmosphereIblAmbientHandoff, GroundScatterLayer, LooseStonePebblePatch, PresentedTree,
+    ProceduralEnvironmentAssets, ProceduralRockVisual, TacticalGraphicsSettings,
+    TacticalPresentationPlugin, TacticalTreeLeafCardMaterial, TerrainMaterialPresentation,
+    TreeImpostorProvenance, TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride,
+    TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
+    oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
+const PERFORMANCE_VIEW_WIDTH: u32 = 2560;
+const PERFORMANCE_VIEW_HEIGHT: u32 = 1440;
+const PERFORMANCE_TARGET_FPS: f64 = 60.0;
+const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
 const CAPTURE_PROFILE_VERSION: u16 = 11;
@@ -229,7 +233,7 @@ struct TreeLightingBenchmarkReport {
     results: Vec<TreeLightingBenchmarkResult>,
 }
 
-const SCENE_PERFORMANCE_WARMUP_FRAMES: u32 = 45;
+const SCENE_PERFORMANCE_WARMUP_FRAMES: u32 = 180;
 
 #[derive(Clone, Copy)]
 struct ScenePerformanceMode {
@@ -239,10 +243,19 @@ struct ScenePerformanceMode {
     hide_playable_leaves: bool,
     hide_playable_trees: bool,
     hide_vista_trees: bool,
-    hide_litter: bool,
+    hidden_scene_layers: u16,
 }
 
-const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
+const HIDE_LITTER: u16 = 1 << 0;
+const HIDE_GRASS: u16 = 1 << 1;
+const HIDE_UNDERSTORY: u16 = 1 << 2;
+const HIDE_LOOSE_STONE: u16 = 1 << 3;
+const HIDE_ROCKS: u16 = 1 << 4;
+const HIDE_PLAYABLE_TERRAIN: u16 = 1 << 5;
+const HIDE_VISTA_TERRAIN: u16 = 1 << 6;
+const HIDE_ALL_SCATTER: u16 = HIDE_LITTER | HIDE_GRASS | HIDE_UNDERSTORY | HIDE_LOOSE_STONE;
+
+const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 20] = [
     ScenePerformanceMode {
         name: "Natural production LODs",
         forced_lod: None,
@@ -250,7 +263,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "No vista trees",
@@ -259,7 +272,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: true,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "No playable trees",
@@ -268,7 +281,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: true,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "No trees",
@@ -277,7 +290,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: true,
         hide_vista_trees: true,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "No forest-floor litter",
@@ -286,7 +299,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: true,
+        hidden_scene_layers: HIDE_LITTER,
     },
     ScenePerformanceMode {
         name: "No trees or forest-floor litter",
@@ -295,7 +308,70 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: true,
         hide_vista_trees: true,
-        hide_litter: true,
+        hidden_scene_layers: HIDE_LITTER,
+    },
+    ScenePerformanceMode {
+        name: "No grass",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_GRASS,
+    },
+    ScenePerformanceMode {
+        name: "No understory",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_UNDERSTORY,
+    },
+    ScenePerformanceMode {
+        name: "No loose stones",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_LOOSE_STONE,
+    },
+    ScenePerformanceMode {
+        name: "No ground scatter",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_ALL_SCATTER,
+    },
+    ScenePerformanceMode {
+        name: "No procedural rocks",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_ROCKS,
+    },
+    ScenePerformanceMode {
+        name: "No vista terrain",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_VISTA_TERRAIN,
+    },
+    ScenePerformanceMode {
+        name: "No playable terrain",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_PLAYABLE_TERRAIN,
     },
     ScenePerformanceMode {
         name: "Forced LOD0 cambered leaves",
@@ -304,7 +380,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "Forced LOD0 flat leaves",
@@ -313,7 +389,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "Forced LOD1 cards",
@@ -322,7 +398,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "Forced LOD2 cards",
@@ -331,7 +407,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "Forced LOD3 crown cards",
@@ -340,7 +416,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     ScenePerformanceMode {
         name: "Forced LOD4 billboards",
@@ -349,7 +425,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: false,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
     // Destructive isolation goes last so every earlier mode sees the exact
     // production entity set.
@@ -360,7 +436,7 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 13] = [
         hide_playable_leaves: true,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hide_litter: false,
+        hidden_scene_layers: 0,
     },
 ];
 
@@ -375,6 +451,7 @@ struct ScenePerformanceBenchmarkState {
     playable_tree_count: Option<usize>,
     playable_leaf_entities: Option<usize>,
     vista_tree_entities: Option<usize>,
+    scene_entity_counts: Option<BTreeMap<String, usize>>,
     results: Vec<ScenePerformanceBenchmarkResult>,
     stop_after_mode: usize,
 }
@@ -400,6 +477,7 @@ impl ScenePerformanceBenchmarkState {
             playable_tree_count: None,
             playable_leaf_entities: None,
             vista_tree_entities: None,
+            scene_entity_counts: None,
             results: Vec::with_capacity(SCENE_PERFORMANCE_MODES.len()),
             stop_after_mode: selected_mode.unwrap_or(SCENE_PERFORMANCE_MODES.len() - 1),
         }
@@ -412,10 +490,19 @@ struct ScenePerformanceBenchmarkResult {
     mean_ms: f64,
     median_ms: f64,
     p95_ms: f64,
+    p99_ms: f64,
+    worst_ms: f64,
     mean_fps: f64,
+    frames_over_budget: usize,
+    frames_over_budget_percent: f64,
+    wall_60_fps_budget_passes: bool,
     gpu_elapsed_median_ms: Option<f64>,
     gpu_elapsed_p95_ms: Option<f64>,
-    gpu_480_fps_budget_passes: Option<bool>,
+    gpu_60_fps_budget_passes: Option<bool>,
+    limiting_p95_ms: f64,
+    headroom_ms: f64,
+    budget_utilization_percent: f64,
+    measured_60_fps_passes: Option<bool>,
     visible_tree_entities: BTreeMap<String, usize>,
     render_diagnostics: BTreeMap<String, BenchmarkMetricSummary>,
 }
@@ -425,17 +512,47 @@ struct BenchmarkMetricSummary {
     mean: f64,
     median: f64,
     p95: f64,
+    p99: f64,
+}
+
+#[derive(Serialize)]
+struct BenchmarkTargetHardware {
+    model: &'static str,
+    chip: &'static str,
+    cpu: &'static str,
+    gpu: &'static str,
+    unified_memory_gib: u8,
+    memory_bandwidth_gib_per_second: u16,
+    cooling: &'static str,
+}
+
+#[derive(Serialize)]
+struct BenchmarkHost {
+    os: &'static str,
+    architecture: &'static str,
+    chip_or_cpu: Option<String>,
+    gpu: Option<String>,
+    memory: Option<String>,
+    release_build: bool,
 }
 
 #[derive(Serialize)]
 struct ScenePerformanceBenchmarkReport {
     pipeline: &'static str,
+    target_fps: f64,
+    frame_budget_ms: f64,
+    target_hardware: BenchmarkTargetHardware,
+    host: BenchmarkHost,
+    host_matches_target: bool,
+    target_acceptance_passes: Option<bool>,
     fixture: String,
     source_input: String,
     resolution: [u32; 2],
     playable_tree_count: usize,
     playable_leaf_entities: usize,
     vista_tree_entities: usize,
+    playable_area_square_km: f64,
+    scene_entity_counts: BTreeMap<String, usize>,
     warmup_frames_per_mode: u32,
     sample_frames_per_mode: u32,
     render_diagnostics_enabled: bool,
@@ -453,6 +570,7 @@ pub(crate) fn run(
     leaf_benchmark_frames: Option<u32>,
     tree_lighting_benchmark_frames: Option<u32>,
     scene_performance_benchmark_frames: Option<u32>,
+    scene_performance_render_diagnostics: bool,
     tree_review_azimuth_degrees: f32,
     profile: &'static str,
     requested_views: Vec<String>,
@@ -524,8 +642,8 @@ pub(crate) fn run(
     let leaf_benchmarking = leaf_benchmark_frames.is_some();
     let tree_lighting_benchmarking = tree_lighting_benchmark_frames.is_some();
     let scene_performance_benchmarking = scene_performance_benchmark_frames.is_some();
-    let scene_performance_render_diagnostics =
-        std::env::var_os("TACTICAL_BENCH_RENDER_DIAGNOSTICS").is_some();
+    let scene_performance_render_diagnostics = scene_performance_render_diagnostics
+        || std::env::var_os("TACTICAL_BENCH_RENDER_DIAGNOSTICS").is_some();
     let mut app = App::new();
     let default_plugins = DefaultPlugins
         .set(AssetPlugin {
@@ -603,8 +721,8 @@ fn redirect_performance_camera_offscreen(
     mut images: ResMut<Assets<Image>>,
 ) {
     let image = Image::new_target_texture(
-        VIEW_WIDTH,
-        VIEW_HEIGHT,
+        PERFORMANCE_VIEW_WIDTH,
+        PERFORMANCE_VIEW_HEIGHT,
         bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
         None,
     );
@@ -979,6 +1097,51 @@ mod capture_lighting_tests {
         assert_eq!(valley.y, minimum);
         assert_eq!(peak.y, maximum);
         assert!(maximum - minimum > 100.0);
+    }
+
+    #[test]
+    fn qhd60_benchmark_contract_matches_the_base_target() {
+        let target = benchmark_target_hardware();
+        assert_eq!(
+            [PERFORMANCE_VIEW_WIDTH, PERFORMANCE_VIEW_HEIGHT],
+            [2560, 1440]
+        );
+        assert_eq!(PERFORMANCE_TARGET_FPS, 60.0);
+        assert!((PERFORMANCE_FRAME_BUDGET_MS - 16.666_666).abs() < 0.000_01);
+        assert_eq!(target.chip, "Apple M5");
+        assert_eq!(target.gpu, "8-core GPU");
+        assert_eq!(target.unified_memory_gib, 16);
+        assert_eq!(target.memory_bandwidth_gib_per_second, 153);
+        assert_eq!(target.cooling, "fanless");
+    }
+
+    #[test]
+    fn mac_system_profiler_fields_tolerate_indentation() {
+        let profile = "Hardware:\n    Chip: Apple M5\n    Memory: 16 GB\nGraphics:\n        Chipset Model: Apple M5\n";
+        assert_eq!(profiler_value(profile, "Chip").as_deref(), Some("Apple M5"));
+        assert_eq!(profiler_value(profile, "Memory").as_deref(), Some("16 GB"));
+        assert_eq!(
+            profiler_value(profile, "Chipset Model").as_deref(),
+            Some("Apple M5")
+        );
+        assert_eq!(profiler_value(profile, "Missing"), None);
+    }
+
+    #[test]
+    fn target_acceptance_rejects_non_target_hosts() {
+        let target = BenchmarkHost {
+            os: "macos",
+            architecture: "aarch64",
+            chip_or_cpu: Some("Apple M5".into()),
+            gpu: Some("Apple M5".into()),
+            memory: Some("16 GB".into()),
+            release_build: true,
+        };
+        assert!(benchmark_host_matches_target(&target));
+        assert!(!benchmark_host_matches_target(&BenchmarkHost {
+            os: "windows",
+            ..target
+        }));
     }
 }
 
@@ -1630,15 +1793,30 @@ fn benchmark_scene_performance(
     mut commands: Commands,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
-    mut playable_trees: Query<
-        (Entity, &mut Visibility),
-        (
-            With<PresentedTree>,
-            Without<VistaTreePresentation>,
-            Without<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
-            Without<GroundScatterLayer>,
-        ),
-    >,
+    mut visibility_layers: ParamSet<(
+        Query<
+            (Entity, &mut Visibility),
+            (
+                With<PresentedTree>,
+                Without<VistaTreePresentation>,
+                Without<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
+                Without<GroundScatterLayer>,
+            ),
+        >,
+        Query<
+            &mut Visibility,
+            (
+                With<VistaTreePresentation>,
+                Without<PresentedTree>,
+                Without<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
+                Without<GroundScatterLayer>,
+            ),
+        >,
+        Query<(&GroundScatterLayer, &mut Visibility)>,
+        Query<&mut Visibility, With<ProceduralRockVisual>>,
+        Query<&mut Visibility, With<TerrainMaterialPresentation>>,
+        Query<&mut Visibility, With<VistaTerrain>>,
+    )>,
     playable_leaves: Query<
         Entity,
         (
@@ -1649,16 +1827,7 @@ fn benchmark_scene_performance(
             Without<GroundScatterLayer>,
         ),
     >,
-    mut vista_trees: Query<
-        &mut Visibility,
-        (
-            With<VistaTreePresentation>,
-            Without<PresentedTree>,
-            Without<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
-            Without<GroundScatterLayer>,
-        ),
-    >,
-    mut litter: Query<(&GroundScatterLayer, &mut Visibility)>,
+    loose_stone_pebble_patches: Query<&LooseStonePebblePatch>,
     visible_tree_lods: Query<(&TreeLod, &ViewVisibility, Option<&TreeLeafRepresentation>)>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -1680,43 +1849,90 @@ fn benchmark_scene_performance(
         if let Projection::Perspective(projection) = &mut *camera.2 {
             projection.fov = 80.0_f32.to_radians();
         }
-        for (_, mut visibility) in &mut playable_trees {
+        for (_, mut visibility) in &mut visibility_layers.p0() {
             *visibility = if mode.hide_playable_trees {
                 Visibility::Hidden
             } else {
                 Visibility::Inherited
             };
         }
-        for mut visibility in &mut vista_trees {
+        for mut visibility in &mut visibility_layers.p1() {
             *visibility = if mode.hide_vista_trees {
                 Visibility::Hidden
             } else {
                 Visibility::Inherited
             };
         }
-        for (layer, mut visibility) in &mut litter {
-            if matches!(
-                layer,
-                GroundScatterLayer::DryLeaves | GroundScatterLayer::Twigs
-            ) {
-                *visibility = if mode.hide_litter {
-                    Visibility::Hidden
-                } else {
-                    Visibility::Inherited
-                };
-            }
+        for (layer, mut visibility) in &mut visibility_layers.p2() {
+            let mask = match layer {
+                GroundScatterLayer::DryLeaves | GroundScatterLayer::Twigs => HIDE_LITTER,
+                GroundScatterLayer::Grass => HIDE_GRASS,
+                GroundScatterLayer::Understory => HIDE_UNDERSTORY,
+                GroundScatterLayer::LooseStone => HIDE_LOOSE_STONE,
+            };
+            *visibility = if mode.hidden_scene_layers & mask != 0 {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
+        }
+        for mut visibility in &mut visibility_layers.p3() {
+            *visibility = if mode.hidden_scene_layers & HIDE_ROCKS != 0 {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
+        }
+        for mut visibility in &mut visibility_layers.p4() {
+            *visibility = if mode.hidden_scene_layers & HIDE_PLAYABLE_TERRAIN != 0 {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
+        }
+        for mut visibility in &mut visibility_layers.p5() {
+            *visibility = if mode.hidden_scene_layers & HIDE_VISTA_TERRAIN != 0 {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
         }
         state.configured_mode = Some(state.mode);
     }
     state
         .playable_tree_count
-        .get_or_insert_with(|| playable_trees.iter().count());
+        .get_or_insert_with(|| visibility_layers.p0().iter().count());
     state
         .playable_leaf_entities
         .get_or_insert_with(|| playable_leaves.iter().count());
     state
         .vista_tree_entities
-        .get_or_insert_with(|| vista_trees.iter().count());
+        .get_or_insert_with(|| visibility_layers.p1().iter().count());
+    if state.scene_entity_counts.is_none() {
+        let mut counts = BTreeMap::new();
+        for (layer, _) in visibility_layers.p2().iter() {
+            let name = match layer {
+                GroundScatterLayer::Grass => "grass_patches",
+                GroundScatterLayer::Understory => "understory_patches",
+                GroundScatterLayer::DryLeaves => "dry_leaf_patches",
+                GroundScatterLayer::Twigs => "twig_patches",
+                GroundScatterLayer::LooseStone => "loose_stone_patches",
+            };
+            *counts.entry(name.to_owned()).or_default() += 1;
+        }
+        counts.insert(
+            "procedural_rocks".to_owned(),
+            visibility_layers.p3().iter().count(),
+        );
+        counts.insert(
+            "loose_stone_pebbles".to_owned(),
+            loose_stone_pebble_patches
+                .iter()
+                .map(|patch| patch.physical_pebbles)
+                .sum(),
+        );
+        state.scene_entity_counts = Some(counts);
+    }
     // Leaf removal is intentionally destructive and therefore last in the
     // matrix. This is the only reliable way to prevent the production LOD
     // system from restoring leaf visibility in the same frame.
@@ -1768,6 +1984,7 @@ fn benchmark_scene_performance(
                     mean,
                     median: percentile(&samples, 0.50),
                     p95: percentile(&samples, 0.95),
+                    p99: percentile(&samples, 0.99),
                 },
             ))
         })
@@ -1776,6 +1993,16 @@ fn benchmark_scene_performance(
         summed_render_metric(&render_diagnostics, "elapsed_gpu", |metric| metric.median);
     let gpu_elapsed_p95_ms =
         summed_render_metric(&render_diagnostics, "elapsed_gpu", |metric| metric.p95);
+    let p99_ms = percentile(&state.samples_ms, 0.99);
+    let worst_ms = *state.samples_ms.last().expect("benchmark has samples");
+    let frames_over_budget = state
+        .samples_ms
+        .iter()
+        .filter(|sample| **sample > PERFORMANCE_FRAME_BUDGET_MS)
+        .count();
+    let frames_over_budget_percent =
+        frames_over_budget as f64 * 100.0 / state.samples_ms.len() as f64;
+    let limiting_p95_ms = gpu_elapsed_p95_ms.map_or(p95_ms, |gpu_ms| p95_ms.max(gpu_ms));
     let mut visible_tree_entities = BTreeMap::new();
     for (lod, view_visibility, leaf_representation) in &visible_tree_lods {
         if !view_visibility.get() {
@@ -1793,10 +2020,21 @@ fn benchmark_scene_performance(
         mean_ms,
         median_ms,
         p95_ms,
+        p99_ms,
+        worst_ms,
         mean_fps: 1_000.0 / mean_ms,
+        frames_over_budget,
+        frames_over_budget_percent,
+        wall_60_fps_budget_passes: p95_ms <= PERFORMANCE_FRAME_BUDGET_MS,
         gpu_elapsed_median_ms,
         gpu_elapsed_p95_ms,
-        gpu_480_fps_budget_passes: gpu_elapsed_p95_ms.map(|elapsed| elapsed <= 1_000.0 / 480.0),
+        gpu_60_fps_budget_passes: gpu_elapsed_p95_ms
+            .map(|elapsed| elapsed <= PERFORMANCE_FRAME_BUDGET_MS),
+        limiting_p95_ms,
+        headroom_ms: PERFORMANCE_FRAME_BUDGET_MS - limiting_p95_ms,
+        budget_utilization_percent: limiting_p95_ms / PERFORMANCE_FRAME_BUDGET_MS * 100.0,
+        measured_60_fps_passes: gpu_elapsed_p95_ms
+            .map(|gpu_ms| p95_ms.max(gpu_ms) <= PERFORMANCE_FRAME_BUDGET_MS),
         visible_tree_entities,
         render_diagnostics,
     });
@@ -1816,18 +2054,38 @@ fn benchmark_scene_performance(
         .results
         .iter()
         .any(|result| !result.render_diagnostics.is_empty());
+    let host = benchmark_host();
+    let host_matches_target = benchmark_host_matches_target(&host);
+    let target_acceptance_passes =
+        (host_matches_target && host.release_build && render_diagnostics_enabled).then(|| {
+            state
+                .results
+                .first()
+                .and_then(|result| result.measured_60_fps_passes)
+                .unwrap_or(false)
+        });
     let report = ScenePerformanceBenchmarkReport {
-        pipeline: "tactical_scene_performance_benchmark_v1",
+        pipeline: "tactical_scene_qhd60_performance_benchmark_v2",
+        target_fps: PERFORMANCE_TARGET_FPS,
+        frame_budget_ms: PERFORMANCE_FRAME_BUDGET_MS,
+        target_hardware: benchmark_target_hardware(),
+        host,
+        host_matches_target,
+        target_acceptance_passes,
         fixture: capture.fixture.clone(),
         source_input: capture.input_path.display().to_string(),
-        resolution: [VIEW_WIDTH, VIEW_HEIGHT],
+        resolution: [PERFORMANCE_VIEW_WIDTH, PERFORMANCE_VIEW_HEIGHT],
         playable_tree_count: state.playable_tree_count.unwrap_or_default(),
         playable_leaf_entities: state.playable_leaf_entities.unwrap_or_default(),
         vista_tree_entities: state.vista_tree_entities.unwrap_or_default(),
+        playable_area_square_km: f64::from(
+            capture.terrain.width_metres * capture.terrain.depth_metres,
+        ) / 1_000_000.0,
+        scene_entity_counts: state.scene_entity_counts.take().unwrap_or_default(),
         warmup_frames_per_mode: SCENE_PERFORMANCE_WARMUP_FRAMES,
         sample_frames_per_mode: state.sample_frames,
         render_diagnostics_enabled,
-        note: "Paired, same-camera, release-mode offscreen measurements at 1280x720. End-to-end frame time includes Bevy scheduling, extraction, and render-world synchronization; summed elapsed_gpu passes isolate the GPU budget when the active Vulkan/DX12 adapter exposes timestamp queries.",
+        note: "Paired, same-camera, release-mode offscreen measurements at 2560x1440. Wall time covers Bevy scheduling, extraction, and render-world synchronization; GPU timestamp diagnostics are required for a conclusive 60 FPS result. Run on a base M5 MacBook Air after thermal warm-up for target-hardware acceptance; results from other hosts are comparative only.",
         results: core::mem::take(&mut state.results),
     };
     write_scene_performance_benchmark(&capture.output, &report);
@@ -1850,6 +2108,77 @@ fn summed_render_metric(
 fn percentile(sorted: &[f64], percentile: f64) -> f64 {
     let index = ((sorted.len() - 1) as f64 * percentile).round() as usize;
     sorted[index]
+}
+
+fn benchmark_target_hardware() -> BenchmarkTargetHardware {
+    BenchmarkTargetHardware {
+        model: "13-inch MacBook Air (2026 base configuration)",
+        chip: "Apple M5",
+        cpu: "10-core CPU (4 super, 6 efficiency)",
+        gpu: "8-core GPU",
+        unified_memory_gib: 16,
+        memory_bandwidth_gib_per_second: 153,
+        cooling: "fanless",
+    }
+}
+
+fn benchmark_host() -> BenchmarkHost {
+    let profiler = (std::env::consts::OS == "macos")
+        .then(|| {
+            Command::new("system_profiler")
+                .args([
+                    "SPHardwareDataType",
+                    "SPDisplaysDataType",
+                    "-detailLevel",
+                    "mini",
+                ])
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+        })
+        .flatten();
+    BenchmarkHost {
+        os: std::env::consts::OS,
+        architecture: std::env::consts::ARCH,
+        chip_or_cpu: profiler
+            .as_deref()
+            .and_then(|profile| profiler_value(profile, "Chip"))
+            .or_else(|| std::env::var("PROCESSOR_IDENTIFIER").ok()),
+        gpu: profiler
+            .as_deref()
+            .and_then(|profile| profiler_value(profile, "Chipset Model")),
+        memory: profiler
+            .as_deref()
+            .and_then(|profile| profiler_value(profile, "Memory")),
+        release_build: !cfg!(debug_assertions),
+    }
+}
+
+fn benchmark_host_matches_target(host: &BenchmarkHost) -> bool {
+    host.os == "macos"
+        && host.architecture == "aarch64"
+        && host
+            .chip_or_cpu
+            .as_deref()
+            .is_some_and(|chip| chip.contains("Apple M5"))
+        && host
+            .gpu
+            .as_deref()
+            .is_some_and(|gpu| gpu.contains("Apple M5"))
+        && host
+            .memory
+            .as_deref()
+            .and_then(|memory| memory.split_whitespace().next())
+            .and_then(|amount| amount.parse::<u16>().ok())
+            .is_some_and(|gib| gib >= 16)
+}
+
+fn profiler_value(profile: &str, key: &str) -> Option<String> {
+    profile.lines().find_map(|line| {
+        let (candidate, value) = line.trim().split_once(':')?;
+        (candidate == key).then(|| value.trim().to_owned())
+    })
 }
 
 fn write_leaf_benchmark(output: &Path, report: &LeafBenchmarkReport) {
@@ -1935,7 +2264,12 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
     .expect("scene performance benchmark JSON writes");
     let baseline = report.results.first().map_or(1.0, |result| result.mean_ms);
     let mut markdown = format!(
-        "# Tactical scene performance benchmark\n\nScene: `{}`; {} playable trees; {} leaf entities; {} vista tree billboards; {}x{}; {} measured frames per mode after {} warm-up frames. The 480 FPS GPU budget is 2.083 ms and is evaluated at P95.\n\n| Mode | Wall median ms | Wall P95 ms | GPU median ms | GPU P95 ms | 480 FPS GPU gate | Cost vs natural |\n|---|---:|---:|---:|---:|:---:|---:|\n",
+        "# Tactical scene QHD/60 performance benchmark\n\nTarget: {} with {}, {}, {} GiB unified memory, and {} cooling. Scene: `{}`; {} playable trees; {} leaf entities; {} vista tree billboards; {}x{}; {} measured frames per mode after {} warm-up frames. The {:.3} ms 60 FPS budget is evaluated at P95; P99, worst-frame, and over-budget counts remain in the JSON report.\n\nHost: `{}` / `{}`; release build: **{}**; target-class match: **{}**; target acceptance: **{}**. A conclusive target result requires GPU timestamps and a run on target-class hardware.\n\n| Mode | Wall P95 ms | GPU P95 ms | Limiting P95 ms | Budget used | Headroom ms | Measured 60 FPS gate | Frames over budget | Cost vs natural |\n|---|---:|---:|---:|---:|---:|:---:|---:|---:|\n",
+        report.target_hardware.model,
+        report.target_hardware.chip,
+        report.target_hardware.gpu,
+        report.target_hardware.unified_memory_gib,
+        report.target_hardware.cooling,
         report.fixture,
         report.playable_tree_count,
         report.playable_leaf_entities,
@@ -1944,26 +2278,35 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
         report.resolution[1],
         report.sample_frames_per_mode,
         report.warmup_frames_per_mode,
+        report.frame_budget_ms,
+        report.host.os,
+        report.host.architecture,
+        report.host.release_build,
+        report.host_matches_target,
+        report
+            .target_acceptance_passes
+            .map_or("n/a", |passed| if passed { "pass" } else { "fail" }),
     );
     for result in &report.results {
         markdown.push_str(&format!(
-            "| {} | {:.3} | {:.3} | {} | {} | {} | {:.2}x |\n",
+            "| {} | {:.3} | {} | {:.3} | {:.1}% | {:+.3} | {} | {} ({:.1}%) | {:.2}x |\n",
             result.mode,
-            result.median_ms,
             result.p95_ms,
-            result
-                .gpu_elapsed_median_ms
-                .map_or_else(|| "n/a".to_owned(), |value| format!("{value:.3}")),
             result
                 .gpu_elapsed_p95_ms
                 .map_or_else(|| "n/a".to_owned(), |value| format!("{value:.3}")),
+            result.limiting_p95_ms,
+            result.budget_utilization_percent,
+            result.headroom_ms,
             result
-                .gpu_480_fps_budget_passes
+                .measured_60_fps_passes
                 .map_or("n/a", |passed| { if passed { "pass" } else { "fail" } }),
+            result.frames_over_budget,
+            result.frames_over_budget_percent,
             result.mean_ms / baseline,
         ));
     }
-    markdown.push_str("\n_Render diagnostics and pipeline statistics are retained in the JSON report. Isolation modes hide only the named production entity family; camera, terrain, lighting, grass, weather, and all other work are held constant._\n");
+    markdown.push_str("\n_An `n/a` gate means GPU timestamps were unavailable, so wall timing alone cannot certify the target. Render diagnostics and pipeline statistics are retained in the JSON report. Isolation modes hide only the named production entity family; camera, terrain, lighting, grass, weather, and all other work are held constant._\n");
     fs::write(output.join("scene-performance-comparison.md"), markdown)
         .expect("scene performance benchmark table writes");
 }

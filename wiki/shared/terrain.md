@@ -138,8 +138,9 @@ Root self-shadow and a darker centre rib are occlusion responses; a small
 solid-color palette and softened upward normals keep the dense field readable
 without making individual cards look heavily lit. A procedural terrain
 material selects hard-bounded forest floor, dry ground, mud, cultivation,
-stone, water, and snow albedo regions while retaining small-scale normal and
-AO variation. Tree sampling follows canopy
+stone, water, and snow albedo regions. Both playable and vista ground omit
+albedo textures, normal maps, and synthesized micro-normal detail; lighting
+uses terrain-geometry normals only. Tree sampling follows canopy
 coverage; rock sampling uses an independent deterministic roll scaled by hilly
 coverage, so the two features do not suppress one another. Weather affects ground
 wetness/snow tint, bounded rain or snow particles, wind drift, sunlight

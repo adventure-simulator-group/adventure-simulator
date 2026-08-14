@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2001)
+## Files (2003)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -65,6 +65,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/data/hipparcos-bright-stars.csv` — Repository support file.
 - `assets/shaders/tactical_foliage.wgsl` — Repository support file.
 - `assets/shaders/tactical_moon.wgsl` — Repository support file.
+- `assets/shaders/tactical_pebble_billboard.wgsl` — Repository support file.
 - `assets/shaders/tactical_rock.wgsl` — Repository support file.
 - `assets/shaders/tactical_stars.wgsl` — Repository support file.
 - `assets/shaders/tactical_terrain.wgsl` — Repository support file.
@@ -1909,6 +1910,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/quest_web_eval.mjs` — Repository support file.
 - `scripts/real_world_tactical.py` — Development or documentation automation script.
+- `scripts/tactical_terrain_density_benchmark.py` — Development or documentation automation script.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
 - `scripts/test_init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/test_init_owda.py` — Development or documentation automation script.

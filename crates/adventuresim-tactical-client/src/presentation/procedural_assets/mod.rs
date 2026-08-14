@@ -28,7 +28,6 @@ pub(crate) struct ProceduralEnvironmentAssets {
     pub(super) oak_leaf: LeafTextureSet,
     pub(super) dry_oak_leaf: LeafTextureSet,
     pub(super) hazel_leaf: LeafTextureSet,
-    pub(super) soil: SurfaceTextureSet,
     pub(super) rock: SurfaceTextureSet,
 }
 
@@ -94,7 +93,6 @@ impl LeafRecipe {
 #[derive(Clone, Copy, Debug)]
 enum SurfaceRecipe {
     OakBark,
-    Soil,
     Rock,
 }
 
@@ -112,7 +110,6 @@ pub(super) fn generate_procedural_environment_assets(
         oak_leaf: generate_leaf_textures(images, LeafRecipe::WHITE_OAK),
         dry_oak_leaf: generate_leaf_textures(images, LeafRecipe::DRY_WHITE_OAK),
         hazel_leaf: generate_leaf_textures(images, LeafRecipe::HAZEL),
-        soil: generate_surface_textures(images, SurfaceRecipe::Soil),
         rock: generate_surface_textures(images, SurfaceRecipe::Rock),
     }
 }
@@ -286,15 +283,6 @@ fn periodic_height(recipe: SurfaceRecipe, u: f32, v: f32) -> f32 {
             let plates = (u * tau * 11.0).sin() * (v * tau * 7.0).cos();
             furrow * 0.72 + plates * 0.10
         }
-        SurfaceRecipe::Soil => {
-            // Soil is structurally irregular at every useful scale. Tileable
-            // value noise avoids the long parallel ridges produced by a few
-            // periodic waves while remaining deterministic and seamless.
-            let macro_shape = periodic_value_noise(u, v, 5, 0x51a7_3c29);
-            let aggregate = periodic_value_noise(u + v, u - v, 11, 0x9d2c_6e41);
-            let grains = periodic_value_noise(2.0 * u - v, u + 2.0 * v, 23, 0xc4b8_17f3);
-            macro_shape * 0.24 + aggregate * 0.13 + grains * 0.055
-        }
         SurfaceRecipe::Rock => {
             (u * tau * 4.0).sin() * (v * tau * 5.0).cos() * 0.24
                 + ((u * 1.7 - v) * tau * 13.0).sin() * 0.07
@@ -302,42 +290,9 @@ fn periodic_height(recipe: SurfaceRecipe, u: f32, v: f32) -> f32 {
     }
 }
 
-fn periodic_value_noise(u: f32, v: f32, cells: i32, seed: u32) -> f32 {
-    let x = u * cells as f32;
-    let y = v * cells as f32;
-    let x0 = x.floor() as i32;
-    let y0 = y.floor() as i32;
-    let fx = x - x.floor();
-    let fy = y - y.floor();
-    let smooth = |t: f32| t * t * (3.0 - 2.0 * t);
-    let sx = smooth(fx);
-    let sy = smooth(fy);
-    let lattice = |px: i32, py: i32| {
-        let px = px.rem_euclid(cells) as u32;
-        let py = py.rem_euclid(cells) as u32;
-        let mut hash = seed ^ px.wrapping_mul(0x9e37_79b9) ^ py.wrapping_mul(0x85eb_ca6b);
-        hash ^= hash >> 16;
-        hash = hash.wrapping_mul(0x7feb_352d);
-        hash ^= hash >> 15;
-        hash = hash.wrapping_mul(0x846c_a68b);
-        hash ^= hash >> 16;
-        hash as f32 / u32::MAX as f32 * 2.0 - 1.0
-    };
-    let bottom = lattice(x0, y0).lerp(lattice(x0 + 1, y0), sx);
-    let top = lattice(x0, y0 + 1).lerp(lattice(x0 + 1, y0 + 1), sx);
-    bottom.lerp(top, sy)
-}
-
 fn surface_palette(recipe: SurfaceRecipe, height: f32, _u: f32, _v: f32) -> ([u8; 3], u8) {
     match recipe {
         SurfaceRecipe::OakBark => ([70, 50, 30], 241),
-        SurfaceRecipe::Soil => {
-            if height > 0.0 {
-                ([91, 75, 48], 235)
-            } else {
-                ([78, 65, 43], 235)
-            }
-        }
         SurfaceRecipe::Rock => {
             if height > 0.04 {
                 ([139, 136, 128], 221)
@@ -436,11 +391,7 @@ mod tests {
 
     #[test]
     fn surface_albedo_and_roughness_are_palette_constrained_but_normals_are_detailed() {
-        for recipe in [
-            SurfaceRecipe::OakBark,
-            SurfaceRecipe::Soil,
-            SurfaceRecipe::Rock,
-        ] {
+        for recipe in [SurfaceRecipe::OakBark, SurfaceRecipe::Rock] {
             let mut images = Assets::<Image>::default();
             let textures = generate_surface_textures(&mut images, recipe);
             assert!(rgba_palette(images.get(&textures.albedo).unwrap()).len() <= 2);
@@ -479,35 +430,5 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([241])
         );
-    }
-
-    #[test]
-    fn soil_structure_is_seamless_deterministic_and_not_axis_banded() {
-        for y in 0..=32 {
-            for x in 0..=32 {
-                let u = x as f32 / 32.0;
-                let v = y as f32 / 32.0;
-                let height = periodic_height(SurfaceRecipe::Soil, u, v);
-                assert_eq!(height, periodic_height(SurfaceRecipe::Soil, u, v));
-                assert!((height - periodic_height(SurfaceRecipe::Soil, u + 1.0, v)).abs() < 1e-5);
-                assert!((height - periodic_height(SurfaceRecipe::Soil, u, v + 1.0)).abs() < 1e-5);
-            }
-        }
-
-        let mut horizontal_transitions = 0;
-        let mut vertical_transitions = 0;
-        for y in 0..64 {
-            for x in 0..64 {
-                let raised = |px: usize, py: usize| {
-                    periodic_height(SurfaceRecipe::Soil, px as f32 / 64.0, py as f32 / 64.0) > 0.0
-                };
-                horizontal_transitions += usize::from(raised(x, y) != raised((x + 1) % 64, y));
-                vertical_transitions += usize::from(raised(x, y) != raised(x, (y + 1) % 64));
-            }
-        }
-        assert!(horizontal_transitions > 200);
-        assert!(vertical_transitions > 200);
-        let axis_ratio = horizontal_transitions as f32 / vertical_transitions as f32;
-        assert!((0.55..=1.8).contains(&axis_ratio));
     }
 }
