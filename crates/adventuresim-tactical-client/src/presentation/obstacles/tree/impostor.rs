@@ -637,11 +637,20 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
         let spatial_scale = if index < 3 { cluster_scale } else { 1.0 };
         (base.start * focal_scale * spatial_scale)..(base.end * focal_scale * spatial_scale)
     };
+    let delayed_transition_out = |index: usize| {
+        let handoff = transition(index);
+        let width = handoff.end - handoff.start;
+        handoff.end..(handoff.end + width)
+    };
     let (start, end) = match lod {
         0 => (0.0..0.0, transition(0)),
-        1 => (transition(0), transition(1)),
-        2 => (transition(1), transition(2)),
-        3 => (transition(2), transition(3)),
+        // Keep the outgoing aggregate fully visible while the next one
+        // dithers in, then fade it out over an equally wide trailing band.
+        // The baked silhouettes are not pixel-identical, so exact
+        // complementary dithering can otherwise expose crown holes.
+        1 => (transition(0), delayed_transition_out(1)),
+        2 => (transition(1), delayed_transition_out(2)),
+        3 => (transition(2), delayed_transition_out(3)),
         4 => (transition(3), (190.0 * focal_scale)..(200.0 * focal_scale)),
         _ => unreachable!("tree LOD is bounded"),
     };
@@ -753,6 +762,8 @@ mod tests {
             "/../../assets/shaders/tactical_tree_impostor.wgsl"
         ));
         assert!(shader.contains("pbr_functions::visibility_range_dither("));
+        assert!(shader.contains("abs(dot(normalize(in.world_normal), light_direction))"));
+        assert!(shader.contains("let normal_light = 0.25 + card_light * 0.75"));
     }
 
     #[test]
@@ -786,7 +797,7 @@ mod tests {
     }
 
     #[test]
-    fn tree_lod_crossfades_share_exact_transition_margins() {
+    fn leaf_crossfade_is_exact_and_aggregate_handoffs_overlap() {
         let cambered_leaf = tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5);
         let alpha_leaf = tree_leaf_visibility(TreeLeafRepresentation::AlphaCard, 1.0, 3.5);
         assert_eq!(cambered_leaf.end_margin, alpha_leaf.start_margin);
@@ -794,7 +805,12 @@ mod tests {
         for lod in 0..4 {
             let current = tree_lod_visibility(lod);
             let next = tree_lod_visibility(lod + 1);
-            assert_eq!(current.end_margin, next.start_margin);
+            if lod == 0 {
+                assert_eq!(current.end_margin, next.start_margin);
+            } else {
+                assert_eq!(current.end_margin.start, next.start_margin.end);
+                assert!(current.end_margin.end > next.start_margin.end);
+            }
             assert!(!current.is_abrupt());
         }
     }
@@ -803,9 +819,9 @@ mod tests {
     fn production_tree_lod_ranges_handoff_before_detail_is_subpixel() {
         let expected = [
             (0.0..0.0, 6.0..8.0),
-            (6.0..8.0, 12.0..16.0),
-            (12.0..16.0, 24.0..32.0),
-            (24.0..32.0, 50.0..60.0),
+            (6.0..8.0, 16.0..20.0),
+            (12.0..16.0, 32.0..40.0),
+            (24.0..32.0, 60.0..70.0),
             (50.0..60.0, 190.0..200.0),
         ];
         for (lod, (start, end)) in expected.into_iter().enumerate() {
@@ -821,13 +837,17 @@ mod tests {
     }
 
     #[test]
-    fn recursive_lod_preserves_shared_boundaries_at_every_projected_scale() {
+    fn recursive_lod_preserves_safe_overlap_at_every_projected_scale() {
         for focal_scale in [0.55, 1.0, 2.4] {
             for radius in [1.8, 3.5, 6.0] {
                 for lod in 0..4 {
                     let current = tree_projected_lod_visibility(lod, focal_scale, radius);
                     let next = tree_projected_lod_visibility(lod + 1, focal_scale, radius);
-                    assert_eq!(current.end_margin, next.start_margin);
+                    if lod == 0 {
+                        assert_eq!(current.end_margin, next.start_margin);
+                    } else {
+                        assert_eq!(current.end_margin.start, next.start_margin.end);
+                    }
                     assert!(!current.use_aabb && !next.use_aabb);
                 }
             }

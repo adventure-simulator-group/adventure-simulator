@@ -1344,7 +1344,7 @@ mod tests {
         ));
         assert_eq!(shader.matches("textureSampleLevel(").count(), 1);
         assert!(shader.contains("let effective_coverage = ground_coverage * clump_coverage"));
-        assert!(shader.contains("let edge_growth = mix(0.58, 1.0"));
+        assert!(shader.contains("let edge_growth = mix(0.26, 1.0"));
         assert!(!shader.contains("let tip_age"));
         assert!(shader.contains("* mix(1.0, 0.94, mature_age)"));
         assert!(shader.contains("lean_amount + 0.012 * mature_age"));

@@ -46,26 +46,44 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let ground_sample = textureSample(ground_map, ground_map_sampler, in.uv);
     let cover_kind = round(ground_sample.r * 255.0);
     let substrate_kind = round(ground_sample.g * 255.0);
+    // Signed canopy-floor distance: 0.0 is open ground, 0.0-0.5 approaches
+    // litter from outside, and 0.5-1.0 moves into its shaded interior.
+    let canopy_floor = ground_sample.a;
     let tall_grass = 1.0 - step(0.5, abs(cover_kind - 1.0));
     let leaf_litter = 1.0 - step(0.5, abs(cover_kind - 2.0));
 
     // Ground uses only solid molded-material colors selected at hard gameplay
     // boundaries. There is no sampled albedo or normal-map surface detail.
     var color = terrain.base_color.rgb;
-    if canopy >= 0.5 { color = vec3<f32>(0.105, 0.175, 0.072); }
-    if cultivation >= 0.4 { color = vec3<f32>(0.33, 0.285, 0.105); }
+    if canopy >= 0.5 { color = vec3<f32>(0.065, 0.045, 0.022); }
+    if cultivation >= 0.4 { color = vec3<f32>(0.17, 0.11, 0.035); }
     if wetland >= 0.4 || substrate_kind == 3.0 { color = vec3<f32>(0.18, 0.16, 0.105); }
 
-    // Tall-grass ground and blades share one albedo pigment. Applying it
-    // before exposed rock, litter, and water preserves those authoritative
-    // surface types while hiding the final blade-geometry fade.
-    if tall_grass > 0.5 {
-        color = terrain.grass_color.rgb;
-    }
+    // Near grass-covered terrain remains visible substrate. The geometric
+    // blades provide all green until their final LOD begins to disappear.
+    // Canopy proximity may darken that substrate, but never paints a second
+    // green sward beneath the blades.
+    let shaded_substrate = select(
+        vec3<f32>(0.09, 0.065, 0.027),
+        vec3<f32>(0.067, 0.047, 0.021),
+        canopy_floor >= 0.34,
+    );
+    color = select(
+        color,
+        shaded_substrate,
+        tall_grass > 0.5 && canopy_floor >= 0.16,
+    );
     if substrate_kind == 1.0 || substrate_kind == 2.0 || slope >= 0.5 {
         color = vec3<f32>(0.31, 0.30, 0.275);
     }
-    if leaf_litter > 0.5 { color = vec3<f32>(0.255, 0.16, 0.065); }
+    // Shallow litter islands visually join the shaded sward. Only the deep,
+    // connected canopy core exposes dark loam.
+    let litter_color = select(
+        vec3<f32>(0.070, 0.045, 0.019),
+        vec3<f32>(0.052, 0.032, 0.017),
+        canopy_floor >= 0.78,
+    );
+    color = select(color, litter_color, leaf_litter > 0.5);
     if water >= 0.5 || substrate_kind == 5.0 { color = vec3<f32>(0.09, 0.18, 0.22); }
 
     // Use the same true camera distance that drives mesh visibility. Horizontal

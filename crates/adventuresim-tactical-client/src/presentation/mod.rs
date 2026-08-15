@@ -44,8 +44,9 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
-    PresentedTree, TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
-    TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
+    PresentedTree, TacticalTreeLeafCardMaterial, TreeAssetResidencyDiagnostics,
+    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    oak_bark_material, oak_leaf_material,
 };
 pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
@@ -151,6 +152,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<WoodyUnderstoryPresentationCache>()
         .init_resource::<GroundFoliagePresentationCache>()
         .init_resource::<TreePresentationCache>()
+        .init_resource::<TreeAssetResidencyDiagnostics>()
         .init_resource::<VistaTreePresentationCache>()
         .init_resource::<TreeLodRenderOverride>()
         .init_resource::<ActiveTacticalScene>()
