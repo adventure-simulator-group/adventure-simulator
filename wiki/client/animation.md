@@ -1384,9 +1384,19 @@ Supine may also result from a hit or physical fall and uses the direct
 `supine_transition` motion when recovery does not first require a ragdoll handoff.
 The initial controls do not include prone strafing.
 
-Prone travel is capped at 3.0 m/s and supine scampering at 2.4 m/s, three times
-their initial controller caps. Their authored contact-to-mirror cadence runs at
-twice its initial rate rather than inheriting the full physical speed increase.
+Prone travel uses the ordinary pace controls with crawl-specific speeds:
+walking is fixed at 0.45 m/s, jogging is one third of the character's neutral
+upright jog speed, and sprinting reaches 2.0 m/s. Crawl effort is assessed at
+three times its physical speed, making the middle pace breath-neutral and the
+maximum pace exhausting at every endurance rank. Prone WASD input uses tank
+controls in the body's orientation rather than the camera orientation, with
+lateral input limited to three-eighths of longitudinal speed. Downed postures
+retain Ahoy's shortened crouch collision shape without inheriting its upright
+one-third crouch speed penalty. Authored prone contacts follow authoritative
+velocity directly. Their 0.60 m contact step balances the authored hand and
+knee reach so neither support point accumulates the much larger slide produced
+by a full metre of controller travel. Supine scampering remains capped at 2.4 m/s with its
+deliberately reduced contact cadence.
 All authored posture transitions keep the gameplay root facing fixed: the
 directional dive and get-up poses encode their own direction relative to that
 root and must not be rotated a second time toward residual velocity.

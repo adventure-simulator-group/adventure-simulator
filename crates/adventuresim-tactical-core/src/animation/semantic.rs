@@ -366,21 +366,21 @@ mod contract_tests {
     }
 
     #[test]
-    fn tripled_prone_travel_uses_twice_the_previous_authored_cadence() {
+    fn prone_cadence_follows_its_authoritative_posture_speed() {
         let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
         project_skeleton_locomotion(
             &mut state,
             SkeletonLocomotionInput {
                 orientation: Quat::IDENTITY,
-                linear_velocity: Vec3::NEG_Z * 3.0,
+                linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
                 crouching: true,
                 delta_seconds: 0.25,
                 tick: 1,
             },
         );
-        let former = gait_cycle_phase_delta(PRONE_LOCOMOTION_PROFILE, 1.0, 0.25);
-        assert!((state.gait_phase - former * 2.0).abs() < 0.000_01);
+        let expected = gait_cycle_phase_delta(PRONE_LOCOMOTION_PROFILE, 2.0, 0.25);
+        assert!((state.gait_phase - expected).abs() < 0.000_01);
     }
 
     #[test]

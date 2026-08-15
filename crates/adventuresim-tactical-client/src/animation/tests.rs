@@ -144,6 +144,35 @@ mod legacy_tests {
     }
 
     #[test]
+    fn prone_presentation_predicts_the_authoritative_crawl_cadence() {
+        let velocity = Vec3::NEG_Z * 2.0;
+        let mut authoritative = SkeletonState::default()
+            .with_body_state(BodyState::Prone)
+            .with_local_velocity(velocity)
+            .with_world_velocity(velocity);
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+
+        project_skeleton_locomotion(
+            &mut authoritative,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: velocity,
+                grounded: true,
+                crouching: true,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 1,
+            },
+        );
+        advance_presented_skeleton(&mut presented, &authoritative, 1.0 / LOCOMOTION_SAMPLE_HZ);
+
+        assert!(
+            circular_phase_delta(presented.gait_phase, authoritative.gait_phase).abs() < 0.000_01
+        );
+        assert_eq!(presented.last_phase_correction_delta, 0.0);
+        assert_eq!(presented.phase_error_remaining, 0.0);
+    }
+
+    #[test]
     fn presentation_phase_correction_is_rate_limited_across_packet_jitter() {
         let velocity = Vec3::NEG_Z * 5.5;
         let authoritative = SkeletonState::default()

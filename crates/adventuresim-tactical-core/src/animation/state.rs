@@ -1655,9 +1655,12 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
         // Turning in place has no physical velocity, but its crawl/scamper
         // cycle should run at twice the former synthetic cadence.
         physical_speed.max(0.8) * 2.0
-    } else if skeleton.body.is_downed() {
-        // Downed movement caps are tripled while authored cadence is only
-        // doubled, so drive phase from two thirds of physical speed.
+    } else if skeleton.body == BodyState::Prone {
+        // Crawl pace is selected authoritatively; contacts follow the resulting
+        // physical travel directly without the former two-thirds lag.
+        physical_speed
+    } else if skeleton.body == BodyState::Supine {
+        // Supine retains its deliberately less literal scamper cadence.
         physical_speed * (2.0 / 3.0)
     } else {
         physical_speed

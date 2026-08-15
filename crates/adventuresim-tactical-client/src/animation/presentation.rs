@@ -143,10 +143,16 @@ fn presentation_phase_speed(skeleton: &SkeletonState) -> f32 {
     let speed = skeleton.animation_speed();
     if skeleton.downed_turning() {
         speed * 2.0
-    } else if skeleton.body().is_downed() {
-        speed * (2.0 / 3.0)
     } else {
-        speed
+        match skeleton.body() {
+            // Keep presentation prediction identical to the authoritative
+            // projector. Prone crawl contacts track physical travel directly;
+            // retaining the old two-thirds multiplier here made every server
+            // sample correct the displayed phase and visibly cut the crawl.
+            BodyState::Prone => speed,
+            BodyState::Supine => speed * (2.0 / 3.0),
+            _ => speed,
+        }
     }
 }
 

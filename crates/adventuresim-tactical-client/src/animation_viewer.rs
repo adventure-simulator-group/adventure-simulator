@@ -1166,14 +1166,22 @@ fn capture_plan() -> Vec<PlannedFrame> {
     .collect()
 }
 
-fn downed_contact_scenario(name: &'static str, _body: BodyState) -> Vec<PlannedFrame> {
-    (0..=84)
+fn downed_contact_scenario(name: &'static str, body: BodyState) -> Vec<PlannedFrame> {
+    let speed = match body {
+        BodyState::Prone => 2.0,
+        BodyState::Supine => 0.8,
+        _ => 0.0,
+    };
+    // Include a full review cycle after the pose-buffer startup settles. The
+    // shorter probe ended just before the first loop seam, hiding precisely
+    // the kind of crawl discontinuity this scenario is meant to diagnose.
+    (0..=148)
         .map(|scenario_frame| PlannedFrame {
             scenario: name,
             scenario_frame,
-            speed: 0.0,
+            speed,
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
-            local_direction: Vec2::ZERO,
+            local_direction: Vec2::NEG_Y,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
             crouching: true,
@@ -1739,7 +1747,7 @@ fn drive_sequence(
                     .is_some_and(|motion| animation_runtime.motion_is_processed(motion));
             skeleton.set_downed_turning(
                 frame.scenario != "downed-prone-look-at"
-                    && (preload_locomotion || frame.scenario_frame >= 4),
+                    && (preload_locomotion || (frame.scenario_frame >= 4 && frame.speed <= 0.05)),
             );
         }
 
