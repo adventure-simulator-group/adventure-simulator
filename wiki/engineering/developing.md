@@ -88,10 +88,10 @@ Bootstrap completes the same observer-safe discovery transition as accepting a
 local NPC rumor: the selected character starts with the exact problem's receipt,
 witness referral, and journal-visible lead/action graph. It also records the dry
 notice that makes the case immediately available in the journal index; identical
-notice and lead presentation rows are collapsed. Continue through the normal quest,
-physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is idempotent
-for the scenario character and its dedicated settlement. The gallery is available
-only in a development-bootstrap module.
+notice and lead presentation rows are collapsed. Continue through the normal
+quest, physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is
+idempotent for the scenario character and its dedicated settlement. The gallery
+is available only in a development-bootstrap module.
 
 ## Autopsy demo
 
@@ -185,21 +185,21 @@ then fails unless both public quest paths and the final survival/return gates
 complete for the exact seeded IDs and designated leaders. Aggregate activity or
 a safe abandonment cannot substitute for direct accept/travel/encounter/report
 and generated discovery/intake/completion evidence. It writes `report.json`
-first and an actionable `failure.json` when a
-coverage metric is unmet. It also evaluates the authoritative strategic
-incident, escalation, recruitment, and quest systems. See
-[`strategic-simulation.md`](strategic-simulation.md#quest-evaluators).
-The separate end-to-end web evaluator is LLM-only and drives the same visible
+first and an actionable `failure.json` when a coverage metric is unmet. It also
+evaluates the authoritative strategic incident, escalation, recruitment, and
+quest systems. See
+[`strategic-simulation.md`](strategic-simulation.md#quest-evaluators). The
+separate end-to-end web evaluator is LLM-only and drives the same visible
 controls as a player. With a local strategic server running, invoke
 `just quest-web-eval quest-browser-run-001`. It saves `index.html`,
 `manifest.json`, and a chronological PNG after every action. It requires
 Playwright's Chromium browser (`npx playwright install chromium`) and reads the
-model credential from `OPENAI_API_KEY` by default.
-The opt-in authoritative integration driver is
-`just strategic-sim-core-loop-world <new-output-dir>` loads the pinned
-`target/world-1544.json` rather than sample/renderer data and is preferred for
-exploratory imported-world gameplay evaluation; it deliberately does not force
-the deterministic quest fixture. Both recipes create, claim, and delete their own
+model credential from `OPENAI_API_KEY` by default. The opt-in authoritative
+integration driver is `just strategic-sim-core-loop-world <new-output-dir>`
+loads the pinned `target/world-1544.json` rather than sample/renderer data and
+is preferred for exploratory imported-world gameplay evaluation; it deliberately
+does not force the deterministic quest fixture. Both recipes create, claim, and
+delete their own
   nonce-named loopback database, compile a one-run bootstrap capability in
   memory, and accepts no host, database, or capability override.
 
@@ -264,7 +264,8 @@ identity immediately before invoking SpacetimeDB.
 
 To run the complete stack with automatic tactical server spawning:
 
-**Terminal 1:** Start SpacetimeDB, the strategic web server, and tactical spawner
+**Terminal 1:** Start SpacetimeDB, the strategic web server, and tactical
+spawner
 ```bash
 just dev
 ```
@@ -274,7 +275,8 @@ just dev
 just build-wasm
 ```
 
-Now when you click a location in the browser, a tactical server will automatically spawn.
+Now when you click a location in the browser, a tactical server will
+automatically spawn.
 
 ## Strategic-Only Development
 
@@ -640,15 +642,15 @@ repository root:
 just animation-graph-editor assets
 ```
 
-The launcher first reports missing optional semantic motion files and validates anchor frame bounds, the
-ordinary locomotion route, the raised/right-attack route, and exact/mirrored
-catalog fallback resolution. It then validates and queries the same centralized
-runtime graph assets used by gameplay for a representative ordinary stride and
-right-lead attack. Missing optional files are warnings; invalid anchors, files
-required by either deterministic route, and graph load/schema/query failures are
-fatal. It prints catalog problems together and does not open the UI with a
-broken required route. The editor feature is disabled by default and is
-not part of the Wasm or server build.
+The launcher first reports missing optional semantic motion files and validates
+anchor frame bounds, the ordinary locomotion route, the raised/right-attack
+route, and exact/mirrored catalog fallback resolution. It then validates and
+queries the same centralized runtime graph assets used by gameplay for a
+representative ordinary stride and right-lead attack. Missing optional files are
+warnings; invalid anchors, files required by either deterministic route, and
+graph load/schema/query failures are fatal. It prints catalog problems together
+and does not open the UI with a broken required route. The editor feature is
+disabled by default and is not part of the Wasm or server build.
 
 Use the gameplay capture fixture for deterministic preview evidence rather than
 treating the editor viewport as final output:
@@ -661,70 +663,68 @@ Choose any scenario accepted by `animation-viewer`; the output retains its
 scenario telemetry, semantic-route counts, `manifest.json`, `failure.txt`, PNG
 sequences, and HTML review surface.
 
-Use `just tactical-play diagnostic` to run the same native gameplay client
-with a bounded analogue-input script and a per-render-frame animation-state
-JSONL log. The generated script, `animation-state-<session>.jsonl`, and process
-logs are written to the supervised run directory reported by `just tactical-status`.
+Use `just tactical-play diagnostic` to run the same native gameplay client with
+a bounded analogue-input script and a per-render-frame animation-state JSONL
+log. The generated script, `animation-state-<session>.jsonl`, and process logs
+are written to the supervised run directory reported by `just tactical-status`.
 The bounded script keeps forward movement held while raising and lowering guard,
-so the trace also verifies that raised-stance replication and locomotion remain live.
-This is the preferred reproducer when deterministic `animation-viewer`
-captures disagree with visible networked gameplay.
-Scripted diagnostic mode forces the default third-person camera and suppresses
-live keyboard and mouse buttons, motion, and scrolling so activity in another
-application cannot alter the capture. Third person is also the normal tactical
-client's default; F9 still toggles camera mode outside scripted diagnostics.
-Only `diagnostic` enables the per-frame JSONL log by default, supplies scripted
-input, and exits automatically. Interactive `animation` and `combat` profiles
-avoid unbounded diagnostic files; use the native client's explicit
-`--animation-log PATH` option when an interactive recording needs correlation.
-On Windows, `presentation_trace=auto` records a
-`presentmon-<session>.csv` ETW trace for the bounded diagnostic profile when
-PresentMon is installed. Use `presentation_trace=required` for a capture that
-must include independent display timing (including an interactive profile), or
-`off` to disable it. The JSONL includes wall-clock time, the render thread's
-latest render-schedule completion counter, each frame's predicted gait-phase
-travel and bounded drift correction, and new authoritative phase measurements.
-Only PresentMon confirms that a frame reached the Windows presentation path.
-On Windows, the diagnostic profile also uses OBS Studio capture when it is
-installed. The supervisor uses a dedicated OBS profile and scene collection,
-creates the required capture source, and releases the scripted movement only
-after a low-resolution OBS source screenshot contains nonblack pixels and
-recording has started. It stops when the input script exits and moves the finalized
-video to `<capture-source>-capture-<session>.<extension>` in the same run directory.
-This does not control or stop an OBS process that was already
-running, and it restores the previously selected profile, scene collection,
-scene, and exact WebSocket configuration bytes after capture. Set the sixth
-`just tactical-play` argument to `off` to disable capture or `required` to fail
-when OBS is unavailable. OBS 28 or newer must have been started once so its
-built-in WebSocket configuration exists. The launcher searches PATH and the
-standard Windows install location; `OBS_PATH` and `OBS_WEBSOCKET_CONFIG`
-override those paths. `OBS_PROFILE` and `OBS_COLLECTION` rename the dedicated
-workspace (both default to `Fabelgeist Diagnostics`). The
-seventh argument selects `window` (the default Windows Graphics Capture path)
-or `display`. Display capture creates a monitor source, automatically matches
-the monitor containing the tactical window, and crops it to the client area's
-live Win32 coordinates, allowing the final DWM
-desktop composition to be compared with the application's WGC surface. The
-client is temporarily topmost without being focused during display capture so
-activity in another application cannot occlude the measured pixels. The
-temporary window source forces Windows Graphics Capture because OBS's
-automatic BitBlt choice can return stale frames for Bevy's Vulkan window.
-Set `OBS_MONITOR_ID` to an OBS `monitor_id` value when identical monitor names
-make automatic selection ambiguous. OBS capture requires no external ffmpeg;
-the lifecycle script uses Python's standard library, with `PYTHON_BIN` available
-when Python is installed outside PATH.
-The fifth `just tactical-play` argument selects `auto-vsync`,
-`auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or `immediate` for
-swapchain frame-pacing comparisons; normal launches default to `auto-vsync`.
-The eighth argument selects `auto`, `vulkan`, or `dx12` as wgpu's render
-backend. For example, `just tactical-play diagnostic 25020 default off
-auto-vsync required display dx12` records a deterministic DX12 Display Capture
-without requiring PresentMon.
-Pass a fourth argument of `no-shadows`, `no-bloom`,
-`no-atmosphere`, or `minimal` to compare GPU-oriented rendering presets; MSAA
-is already disabled in every tactical preset.
-The normal client uses a 64×64 generated atmosphere environment map. Use
-`no-environment-light` to omit it while retaining the visible sky.
+so the trace also verifies that raised-stance replication and locomotion remain
+live. This is the preferred reproducer when deterministic `animation-viewer`
+captures disagree with visible networked gameplay. Scripted diagnostic mode
+forces the default third-person camera and suppresses live keyboard and mouse
+buttons, motion, and scrolling so activity in another application cannot alter
+the capture. Third person is also the normal tactical client's default; F9 still
+toggles camera mode outside scripted diagnostics. Only `diagnostic` enables the
+per-frame JSONL log by default, supplies scripted input, and exits
+automatically. Interactive `animation` and `combat` profiles avoid unbounded
+diagnostic files; use the native client's explicit `--animation-log PATH` option
+when an interactive recording needs correlation. On Windows,
+`presentation_trace=auto` records a `presentmon-<session>.csv` ETW trace for the
+bounded diagnostic profile when PresentMon is installed. Use
+`presentation_trace=required` for a capture that must include independent
+display timing (including an interactive profile), or `off` to disable it.
+The JSONL includes wall-clock time, the render thread's latest render-schedule
+completion counter, each frame's predicted gait-phase travel and bounded drift
+correction, and new authoritative phase measurements. Only PresentMon confirms
+that a frame reached the Windows presentation path. On Windows, the diagnostic
+profile also uses OBS Studio capture when it is installed. The supervisor uses a
+dedicated OBS profile and scene collection, creates the required capture source,
+and releases the scripted movement only after a low-resolution OBS source
+screenshot contains nonblack pixels and recording has started. It stops when the
+input script exits and moves the finalized video to
+`<capture-source>-capture-<session>.<extension>` in the same run directory. This
+does not control or stop an OBS process that was already running, and it
+restores the previously selected profile, scene collection, scene, and exact
+WebSocket configuration bytes after capture. Set the sixth `just tactical-play`
+argument to `off` to disable capture or `required` to fail when OBS is
+unavailable. OBS 28 or newer must have been started once so its built-in
+WebSocket configuration exists. The launcher searches PATH and the standard
+Windows install location; `OBS_PATH` and `OBS_WEBSOCKET_CONFIG` override those
+paths. `OBS_PROFILE` and `OBS_COLLECTION` rename the dedicated workspace (both
+default to `Fabelgeist Diagnostics`). The seventh argument selects `window` (the
+default Windows Graphics Capture path) or `display`. Display capture creates a
+monitor source, automatically matches the monitor containing the tactical
+window, and crops it to the client area's live Win32 coordinates, allowing the
+final DWM desktop composition to be compared with the application's WGC surface.
+The client is temporarily topmost without being focused during display capture
+so activity in another application cannot occlude the measured pixels. The
+temporary window source forces Windows Graphics Capture because OBS's automatic
+BitBlt choice can return stale frames for Bevy's Vulkan window. Set
+`OBS_MONITOR_ID` to an OBS `monitor_id` value when identical monitor names make
+automatic selection ambiguous. OBS capture requires no external ffmpeg; the
+lifecycle script uses Python's standard library, with `PYTHON_BIN` available
+when Python is installed outside PATH. The fifth `just tactical-play` argument
+selects `auto-vsync`, `auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or
+`immediate` for swapchain frame-pacing comparisons; normal launches default to
+`auto-vsync`. The eighth argument selects `auto`, `vulkan`, or `dx12` as
+wgpu's render backend. For example,
+`just tactical-play diagnostic 25020 default off auto-vsync required display dx12`
+records a deterministic DX12 Display Capture without requiring PresentMon. Pass
+a fourth argument of `no-shadows`, `no-bloom`, `no-atmosphere`, or `minimal` to
+compare GPU-oriented rendering presets; MSAA is already disabled in every
+tactical preset. The normal client uses a 64×64 generated atmosphere
+environment map. Use `no-environment-light` to omit it while retaining the
+visible sky.
 
 This builds the native tactical server and client before creating a mission,
 starts a worktree-isolated SpacetimeDB instance, publishes and seeds it, starts
@@ -969,8 +969,8 @@ The profile also includes `forest-floor-debris-detail`, a deterministic
 39.6-degree vertical-FOV plate 0.36 metres above and 0.92 metres from the
 midpoint of the closest rendered leaf-patch/twig-patch pair within 0.55 metres.
 The manifest records both subject distances from that midpoint and validation
-fails closed unless each is at most 0.275 metres. Sparse woodland requests this plate
-in the named morning and grazing runs (and retains it in a full three-time
+fails closed unless each is at most 0.275 metres. Sparse woodland requests this
+plate in the named morning and grazing runs (and retains it in a full three-time
 matrix); validation requires both leaf and twig patches plus visible fine
 detail. This is the acceptance view for the 35-metre detailed-litter cutoff.
 
@@ -989,71 +989,70 @@ while playing the dense-woodland animation demo remain reproducible in the
 native screenshot harness.
 
 The `tree-cold-traversal` profile keeps natural tree LOD selection, warms only
-the distant whole-tree card, records the first renderable frame across an
-inward distance sequence, retreats, and repeats the identical approach with
-the generated assets resident. Its manifest records upper-centre canopy pixel
+the distant whole-tree card, records the first renderable frame across an inward
+distance sequence, retreats, and repeats the identical approach with the
+generated assets resident. Its manifest records upper-centre canopy pixel
 coverage and fails unless every cold plate retains at least 80 percent of its
-same-distance warm plate, with a scanline-sky-relative crown-coverage floor. This
-is the temporal acceptance profile for first-approach-only canopy loss; settled
-static LOD plates do not substitute for it.
+same-distance warm plate, with a scanline-sky-relative crown-coverage floor.
+This is the temporal acceptance profile for first-approach-only canopy loss;
+settled static LOD plates do not substitute for it.
 
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
-`input.json`, a browsable `index.html`, and a
-machine-readable `manifest.json`. Focused views target the nearest tree,
-when present: a complete individual-leaf tree, a canopy-ground view proving the
-leaf-litter/grass boundary, a mixed recursive-LOD view, a neutral silhouette plate, an
-isolated terminal-shoot close-up with a 10 cm scale marker, and matched-scale
-leafed-twig, small-branch, crown-branch, and whole-tree-billboard views. The
-tree sequence also includes locked baseline, canopy-AO-only,
-self-shadow-only, and combined lighting plates. The
-terminal plate uses the exact production branch and leaf geometry for that
-seed rather than a separately authored review prop. They fall back to the ordinary ground view
-for treeless fixtures. The viewer waits for custom material pipelines before
-capturing, then exits unsuccessfully and writes `failure.txt` when
-presentation/collider counts, collider-bounded procedural rocks, authoritative
-separate dry-leaf and twig scatter for generated trees, terrain
+`input.json`, a browsable `index.html`, and a machine-readable `manifest.json`.
+Focused views target the nearest tree, when present: a complete individual-leaf
+tree, a canopy-ground view proving the leaf-litter/grass boundary, a mixed
+recursive-LOD view, a neutral silhouette plate, an isolated terminal-shoot
+close-up with a 10 cm scale marker, and matched-scale leafed-twig, small-branch,
+crown-branch, and whole-tree-billboard views. The tree sequence also includes
+locked baseline, canopy-AO-only, self-shadow-only, and combined lighting plates.
+The terminal plate uses the exact production branch and leaf geometry for that
+seed rather than a separately authored review prop. They fall back to the
+ordinary ground view for treeless fixtures. The viewer waits for custom material
+pipelines before capturing, then exits unsuccessfully and writes `failure.txt`
+when presentation/collider counts, collider-bounded procedural rocks,
+authoritative separate dry-leaf and twig scatter for generated trees, terrain
 material, coarse-input upsampling, microrelief, expected foliage, rendered
-overhead foliage detail in the flat sentinel fixture, all five tree
-LODs, precipitation, three vista LODs, the 50 km vista contract, non-uniform
-rendered content, or the dedicated boundary-peak view fail. Explicit output directories must be
-fresh so a prior capture cannot satisfy a new run accidentally.
-The fourth optional recipe argument overrides `absolute_minute` for controlled
+overhead foliage detail in the flat sentinel fixture, all five tree LODs,
+precipitation, three vista LODs, the 50 km vista contract, non-uniform rendered
+content, or the dedicated boundary-peak view fail. Explicit output directories
+must be fresh so a prior capture cannot satisfy a new run accidentally. The
+fourth optional recipe argument overrides `absolute_minute` for controlled
 lighting comparisons and is recorded in the manifest. The canopy-series recipe
 uses local noon by default so the five botanical plates remain inspectable even
 when their source fixture represents midnight; pass another absolute minute to
-exercise dawn, dusk, or night lighting explicitly.
-The canopy series holds the fixture seed, generated obstacles, cameras, and
-render settings constant while overriding only the captured
-`SceneEnvironment.canopy_bps` to 0, 2500, 5000, 7500, and 10000. Each manifest
-records the effective value. This test-only override makes open-grown through
-forest-grown tree architecture directly comparable without introducing
-neighbour queries or spawn-order coupling into runtime generation.
-The manifest also records resolution, settle-frame budget, profile and camera
-versions, exact requested views, camera transform/target/up/FOV, review azimuth,
-effective world minute, renderer/executable/revision provenance when available,
-presentation feature flags, and its capture-clock strategy. The harness advances
-Bevy's virtual clock to a fixed two-second wind phase and pauses it before
-settling and GPU readbacks, so readback latency does not change foliage pose.
-Normal review plates use `TacticalPresentationPlugin::default()` exactly:
-shadows, atmosphere/celestials, 64-pixel atmosphere environment-map lighting,
-bloom and all three vista LODs are enabled just as in production. Four-sample
-MSAA is the WebGPU-compatible anti-aliasing path; SSAO is not part of the
-tactical renderer because Bevy 0.19 does not support it on WebGPU. The
-manifest records every setting and a production-default-parity gate; the matrix
-runner rejects any child whose feature map differs from this contract.
-Parity is based on observed runtime state, not only requested configuration:
-the manifest records the actual `TacticalGraphicsSettings`, camera environment
-map and size, Bloom component, four-sample MSAA, exposure, tonemapping, and final global
-ambient color/brightness. The capture harness does not override ambient light;
-the production environment observer owns its final value.
-After the ordinary warmup, each view performs two consecutive disposable GPU
-readbacks and records their mean luminance. Their change must stay within the
-larger of 1.5 display-luma levels or two percent; unavailable, non-finite, or
-unstable samples fail the explicit lighting-readiness gate before review.
-Branch-junction and terrain-grazing diagnostics temporarily suppress production
-leaves and grass respectively, retaining production subject geometry/material
-and recording the suppression in the capture record.
+exercise dawn, dusk, or night lighting explicitly. The canopy series holds the
+fixture seed, generated obstacles, cameras, and render settings constant while
+overriding only the captured `SceneEnvironment.canopy_bps` to 0, 2500, 5000,
+7500, and 10000. Each manifest records the effective value. This test-only
+override makes open-grown through forest-grown tree architecture directly
+comparable without introducing neighbour queries or spawn-order coupling into
+runtime generation. The manifest also records resolution, settle-frame budget,
+profile and camera versions, exact requested views, camera
+transform/target/up/FOV, review azimuth, effective world minute,
+renderer/executable/revision provenance when available, presentation feature
+flags, and its capture-clock strategy. The harness advances Bevy's virtual clock
+to a fixed two-second wind phase and pauses it before settling and GPU
+readbacks, so readback latency does not change foliage pose. Normal review
+plates use `TacticalPresentationPlugin::default()` exactly: shadows,
+atmosphere/celestials, 64-pixel atmosphere environment-map lighting, bloom and
+all three vista LODs are enabled just as in production. Four-sample MSAA is the
+WebGPU-compatible anti-aliasing path; SSAO is not part of the tactical renderer
+because Bevy 0.19 does not support it on WebGPU. The manifest records every
+setting and a production-default-parity gate; the matrix runner rejects any
+child whose feature map differs from this contract. Parity is based on observed
+runtime state, not only requested configuration: the manifest records the actual
+`TacticalGraphicsSettings`, camera environment map and size, Bloom component,
+four-sample MSAA, exposure, tonemapping, and final global ambient
+color/brightness. The capture harness does not override ambient light; the
+production environment observer owns its final value. After the ordinary warmup,
+each view performs two consecutive disposable GPU readbacks and records their
+mean luminance. Their change must stay within the larger of 1.5 display-luma
+levels or two percent; unavailable, non-finite, or unstable samples fail the
+explicit lighting-readiness gate before review. Branch-junction and
+terrain-grazing diagnostics temporarily suppress production leaves and grass
+respectively, retaining production subject geometry/material and recording the
+suppression in the capture record.
 
 The matrix runner also treats engine `ERROR` output, including asynchronous
 custom-shader compilation failures, as a failed fixture even if the viewer was
@@ -1064,21 +1063,21 @@ Capture the curated environment-only matrix with
 alias). It crosses sparse woodland, a rocky open hillside, dry grassland, and a
 narrow LOD-boundary peak with morning, grazing, and moonlit named times: twelve
 child runs and five sky plates rather than an all-fixture/all-view explosion.
-Pass a fresh output
-directory as its first argument when a stable path is useful. Repeat
-`--fixture` or `--time` directly against `scripts/capture_tactical_scenes.py`
-for a smaller A/B matrix. The runner writes an aggregate `manifest.json`, HTML
-gallery, and `failure.txt` if any child process, exact-view manifest, semantic
-gate, shader log, or Sun/twilight/Moon/stars evidence fails. Weather, water,
-clouds, caves, and characters are explicitly outside this review profile.
-Semantic gates complement rather than replace rendered-image inspection.
-The aggregate verifies fixture, named minute, pipeline/profile/camera versions,
-requested and observed production presentation features, per-view lighting
-readiness, resolution, exact nonempty PNG sets,
-celestial conditions, and one consistent source identity. Identity includes Git HEAD, dirty state, and a SHA-256 of the
-relevant presentation Rust, shaders, textures, fixtures, and lockfiles.
-`--skip-build` works only when it matches a prior successful build stamp, which
-prevents stale binaries being mislabeled while allowing identified dirty runs.
+Pass a fresh output directory as its first argument when a stable path is
+useful. Repeat `--fixture` or `--time` directly against
+`scripts/capture_tactical_scenes.py` for a smaller A/B matrix. The runner writes
+an aggregate `manifest.json`, HTML gallery, and `failure.txt` if any child
+process, exact-view manifest, semantic gate, shader log, or
+Sun/twilight/Moon/stars evidence fails. Weather, water, clouds, caves, and
+characters are explicitly outside this review profile. Semantic gates complement
+rather than replace rendered-image inspection. The aggregate verifies fixture,
+named minute, pipeline/profile/camera versions, requested and observed
+production presentation features, per-view lighting readiness, resolution, exact
+nonempty PNG sets, celestial conditions, and one consistent source identity.
+Identity includes Git HEAD, dirty state, and a SHA-256 of the relevant
+presentation Rust, shaders, textures, fixtures, and lockfiles. `--skip-build`
+works only when it matches a prior successful build stamp, which prevents stale
+binaries being mislabeled while allowing identified dirty runs.
 
 Use [the environment review rubric](environment-visual-review.md) and copy the
 checked-in ledger template for severity, cost/benefit triage, independent
@@ -1198,22 +1197,22 @@ just web-isolated-strategic social-demo 23100
 ```
 
 Select **Social Demo**, open **Greta the Guard**, and open their conversation
-from the portrait action. Use **Recent Tidings** for morale concerns and
-**Of Thee** for observer-safe questions about Greta.
-The fixture includes defeat and injury penalties, established Familiarity,
-positive Affinity, exact multi-valued observer beliefs, presentation, and one
-deliberately incorrect perceived sensitivity. Greta professes Lutheranism, and
-Social Demo has direct Lutheran study plus correlated Catholic knowledge, so
-the themed Prayer response is immediately usable. The conversation dock offers
-Insight, Charm, Command, Deception, and target-specific Religion; Lighten Mood
-and Flirt are distinct Charm
-approaches, and repeated supported observations demonstrate the
-Transparency-controlled Insight/Deception training split. The bootstrap capability is
-compiled only for the isolated workflow; there is no standalone public fixture
-reducer. Schema changes are destructive in this pre-launch workflow, so rerun
-the isolated profile to recreate its database. Select **Zealous Prayer Demo**
-and open **Margareta the Pilgrim** to inspect the same Lutheran action kept
-visible, greyed out, and annotated with its unavailable reason.
+from the portrait action. Use **Recent Tidings** for morale concerns and **Of
+Thee** for observer-safe questions about Greta. The fixture includes defeat and
+injury penalties, established Familiarity, positive Affinity, exact multi-valued
+observer beliefs, presentation, and one deliberately incorrect perceived
+sensitivity. Greta professes Lutheranism, and Social Demo has direct Lutheran
+study plus correlated Catholic knowledge, so the themed Prayer response is
+immediately usable. The conversation dock offers Insight, Charm, Command,
+Deception, and target-specific Religion; Lighten Mood and Flirt are distinct
+Charm approaches, and repeated supported observations demonstrate the
+Transparency-controlled Insight/Deception training split. The bootstrap
+capability is compiled only for the isolated workflow; there is no standalone
+public fixture reducer. Schema changes are destructive in this pre-launch
+workflow, so rerun the isolated profile to recreate its database. Select
+**Zealous Prayer Demo** and open **Margareta the Pilgrim** to inspect the same
+Lutheran action kept visible, greyed out, and annotated with its unavailable
+reason.
 
 Encounter development should query `backend_context_characters` by exact
 `context_id` or `location_id`. After contextual schema changes, run

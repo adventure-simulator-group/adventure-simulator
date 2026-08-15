@@ -11,24 +11,24 @@ per-asset lighting compensation.
 Run `just tactical-environment-review` into a fresh directory. The compact
 matrix deliberately crosses four representative environments with morning,
 grazing, and moonlit times, then adds five isolated plates for the Sun, low-Sun
-detail, twilight, Moon, and stars. Each child manifest must pass semantic and exact-view
-gates, the aggregate `manifest.json` must have `passed: true`, and neither the
-aggregate nor any child may contain `failure.txt`. A missing, unreadable,
-misframed, or irrelevant plate is a coverage gap, not evidence of good quality.
-Review evidence is lit by the production-default presentation configuration,
-including atmosphere environment-map light, bloom, four-sample MSAA, shadows, and the same
-vista setting. Child and aggregate gates reject configuration drift. The only
-intentional presentation difference is the named diagnostic occluder
-suppression below; reviewers must not accept evidence produced with per-asset
-brightness compensation or a reduced capture-only lighting path.
-Manifests prove this from observed graphics settings, camera post-processing
-components, exposure/tonemapping, environment-map size, and ambient state.
-Every requested plate also needs two consecutive settled readbacks with bounded
-luminance change; a lighting-readiness failure makes the plate UNASSESSABLE.
-Branch-junction diagnostics suppress only production leaf render entities, and
-terrain-grazing diagnostics suppress only production grass render entities;
-their manifests record and gate those suppressions so production subject
-geometry and material remain visible without occlusion.
+detail, twilight, Moon, and stars. Each child manifest must pass semantic and
+exact-view gates, the aggregate `manifest.json` must have `passed: true`, and
+neither the aggregate nor any child may contain `failure.txt`. A missing,
+unreadable, misframed, or irrelevant plate is a coverage gap, not evidence of
+good quality. Review evidence is lit by the production-default presentation
+configuration, including atmosphere environment-map light, bloom, four-sample
+MSAA, shadows, and the same vista setting. Child and aggregate gates reject
+configuration drift. The only intentional presentation difference is the named
+diagnostic occluder suppression below; reviewers must not accept evidence
+produced with per-asset brightness compensation or a reduced capture-only
+lighting path. Manifests prove this from observed graphics settings, camera
+post-processing components, exposure/tonemapping, environment-map size, and
+ambient state. Every requested plate also needs two consecutive settled
+readbacks with bounded luminance change; a lighting-readiness failure makes the
+plate UNASSESSABLE. Branch-junction diagnostics suppress only production leaf
+render entities, and terrain-grazing diagnostics suppress only production grass
+render entities; their manifests record and gate those suppressions so
+production subject geometry and material remain visible without occlusion.
 
 The `moonlit` slot is a separate verified lunar instant. Its manifest must show
 the Sun below -12 degrees, Moon above 20 degrees, and lunar illumination above
@@ -59,12 +59,16 @@ Give the reviewer the aggregate `index.html`, all referenced PNGs, its
 Severity measures visible harm, not implementation difficulty:
 
 - **0 — resolved:** no material defect remains at the reviewed scale.
-- **1 — negligible:** detectable under close inspection, unlikely to justify work.
-- **2 — minor:** locally distracting but the environment still reads correctly.
+- **1 — negligible:** detectable under close inspection, unlikely to justify
+  work.
+- **2 — minor:** locally distracting but the environment still reads
+  correctly.
 - **3 — material:** repeatedly visible or meaningfully harms realism.
 - **4 — major:** dominates a subject or breaks scene credibility.
-- **5 — critical:** pervasive failure that invalidates the environment presentation.
-- **UNASSESSABLE:** required evidence is absent, obscured, stale, or misframed.
+- **5 — critical:** pervasive failure that invalidates the environment
+  presentation.
+- **UNASSESSABLE:** required evidence is absent, obscured, stale, or
+  misframed.
 
 At minimum, explicitly assess trunk bark/model complexity, branch-to-trunk
 junction width, root uniformity, ground normal/height detail, leaf and twig
@@ -100,7 +104,8 @@ is repaired; they are never silently closed.
 
 The canonical machine-readable fields and allowed values are defined by
 `assets/tactical-scenes/environment-review-ledger.schema.json`; copy
-`environment-review-ledger.template.json` for each review cycle.
-Run `just tactical-environment-review-ledger` against the populated ledger. It
-validates the checked-in schema's required ledger shape before verifying evidence and coverage state,
-severity-2+ alternatives, exact benefit/cost arithmetic, and stop invariants.
+`environment-review-ledger.template.json` for each review cycle. Run
+`just tactical-environment-review-ledger` against the populated ledger. It
+validates the checked-in schema's required ledger shape before verifying
+evidence and coverage state, severity-2+ alternatives, exact benefit/cost
+arithmetic, and stop invariants.
