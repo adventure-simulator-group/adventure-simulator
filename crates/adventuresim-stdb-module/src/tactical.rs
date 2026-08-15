@@ -21,6 +21,7 @@ use crate::{
         fail_bound_mission_attempt, hostile_group_authority, mission_authority,
         outcome_source_authority, strategic_gateway_authority__view,
     },
+    time::character_time,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -102,6 +103,11 @@ pub struct TacticalServerRequest {
     pub scene_key: String,
     pub party_id: String,
     pub requested_by: u64,
+    /// Exact authoritative case-site position captured at request time.
+    pub longitude_e7: i32,
+    pub latitude_e7: i32,
+    /// Requesting leader's absolute strategic minute captured atomically.
+    pub absolute_minute: u64,
     /// Living strategic party members bound when the mission is requested.
     pub expected_party_members: u32,
     /// Immutable participant authority captured with the mission request.
@@ -630,6 +636,19 @@ pub fn request_tactical_server(
     if case_site.scene_key != scene_key {
         return Err("Tactical scene does not match the occupied case site".into());
     }
+    if !case_site.coordinates_are_geographic
+        || !(-1_800_000_000..=1_800_000_000).contains(&case_site.longitude_e7)
+        || !(-900_000_000..=900_000_000).contains(&case_site.latitude_e7)
+    {
+        return Err("Tactical entry requires an exact geographic case-site position".into());
+    }
+    let absolute_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character has no authoritative strategic clock")?
+        .minutes;
     match crate::investigation::case_site_provenance_reducer(ctx, &case_site) {
         Some(None) => {}
         Some(Some(_)) => {
@@ -741,6 +760,9 @@ pub fn request_tactical_server(
             scene_key,
             party_id,
             requested_by: character_id,
+            longitude_e7: case_site.longitude_e7,
+            latitude_e7: case_site.latitude_e7,
+            absolute_minute,
             expected_party_members,
             authorized_party_member_ids,
             required_enemy_kills: mission.enemy_count,

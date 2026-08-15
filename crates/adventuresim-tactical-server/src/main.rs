@@ -7,14 +7,14 @@ mod mission;
 mod player_projection;
 mod stdb;
 
-use std::{net::SocketAddr, num::NonZeroU32};
+use std::{net::SocketAddr, num::NonZeroU32, path::PathBuf};
 
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::{physics::AdventureSimulatorPhysicsPlugin, prelude::*};
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::LocalAddr,
     bevy_replicon::prelude::{Replicated, ServerState},
-    prelude::{AdventureSimulatorNetPlugins, AdventureSimulatorServer},
+    prelude::{AdventureSimulatorNetPlugins, AdventureSimulatorServer, SceneVistaBundle},
 };
 #[cfg(feature = "debug")]
 use adventuresim_tactical_netcode::{
@@ -40,7 +40,7 @@ use crate::{
 };
 
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
-const TERRAIN_SIZE: usize = 100;
+const DEFAULT_SCENE_INPUT: &str = "assets/tactical-scenes/dense-woodland.json";
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
@@ -52,12 +52,12 @@ struct Args {
     mission_id: String,
     #[arg(long, env = "ADVENTURESIM_TACTICAL_CLAIM", hide_env_values = true)]
     tactical_claim: String,
-    #[arg(long)]
+    #[arg(long, default_value = "woodland")]
     scene_key: String,
-    #[arg(long, default_value_t = TERRAIN_SIZE)]
-    scene_width: usize,
-    #[arg(long, default_value_t = TERRAIN_SIZE)]
-    scene_depth: usize,
+    /// Exact versioned scene input. Defaults to the committed dense woodland
+    /// fixture for standalone tactical development.
+    #[arg(long)]
+    scene_input: Option<PathBuf>,
     #[arg(long)]
     required_enemy_kills: u32,
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
@@ -74,8 +74,60 @@ struct Args {
     no_timeout: bool,
 }
 
+fn default_scene_input_path() -> PathBuf {
+    let working_directory_path = PathBuf::from(DEFAULT_SCENE_INPUT);
+    if working_directory_path.is_file() {
+        return working_directory_path;
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(DEFAULT_SCENE_INPUT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn standalone_default_is_the_dense_woodland_fixture() {
+        let input = TacticalSceneInput::load(&default_scene_input_path())
+            .expect("default tactical scene input should remain valid");
+
+        assert_eq!(input.scene_key, "woodland");
+        assert_eq!(
+            input.source,
+            SceneSource::SyntheticFixture("dense-woodland".into())
+        );
+    }
+}
+
 fn main() {
     let args = Args::parse();
+    let scene_input_path = args
+        .scene_input
+        .clone()
+        .unwrap_or_else(default_scene_input_path);
+    let loaded_scene_input = match TacticalSceneInput::load(&scene_input_path) {
+        Ok(input) => input,
+        Err(error) => {
+            eprintln!("refusing invalid tactical scene input: {error}");
+            std::process::exit(2);
+        }
+    };
+    let scene_vista_bundle = Some(SceneVistaBundle {
+        scene_digest: loaded_scene_input
+            .digest()
+            .expect("loaded scene input was validated"),
+        playable_half_extent_metres: Vec2::new(
+            f32::from(loaded_scene_input.playable.width.saturating_sub(1))
+                * loaded_scene_input.playable.spacing_metres
+                * 0.5,
+            f32::from(loaded_scene_input.playable.depth.saturating_sub(1))
+                * loaded_scene_input.playable.spacing_metres
+                * 0.5,
+        ),
+        lods: loaded_scene_input.vista.lods.clone(),
+    });
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
         filter: "adventuresim_tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
@@ -103,6 +155,8 @@ fn main() {
         NonZeroU32::new(args.expected_party_members)
             .expect("clap validates at least one expected party member"),
     ))
+    .insert_resource(SceneVistaBundleResource(scene_vista_bundle))
+    .insert_resource(LoadedSceneInput(loaded_scene_input))
     .insert_resource(args)
     .add_systems(
         Update,
@@ -142,6 +196,12 @@ fn main() {
     app.run();
 }
 
+#[derive(Resource)]
+struct LoadedSceneInput(TacticalSceneInput);
+
+#[derive(Resource)]
+pub(crate) struct SceneVistaBundleResource(pub(crate) Option<SceneVistaBundle>);
+
 #[cfg(feature = "debug")]
 fn on_debug_game_time_scale_request(
     request: On<FromClient<DebugGameTimeScaleRequest>>,
@@ -174,35 +234,88 @@ fn setup_stdb_callbacks(conn: Res<SpacetimeDb>) {
 
 fn on_server_started(
     args: Res<Args>,
+    scene_input: Res<LoadedSceneInput>,
     conn: Res<SpacetimeDb>,
     mut commands: Commands,
     server_addr: Single<&LocalAddr, With<AdventureSimulatorServer>>,
 ) -> Result {
     info!("Server opened on {:?}", **server_addr);
     info!("Creating a game scene for {}", args.scene_key);
-    let mut generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
-    let (scene_height, gen_period) = match args.scene_key.as_str() {
-        "hills" => (30, 200.0),
-        "desert" => (2, 30.0),
-        id => {
-            warn!("Unknown scene: {id}");
-            (0, 1.0)
-        }
-    };
-    generator.period = gen_period;
-    let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
+    let input = &scene_input.0;
+    let generated = input.generate()?;
+    info!(
+        scene_digest = %generated.digest,
+        schema_version = input.schema_version,
+        generation_version = input.generation_version,
+        source = ?input.source,
+        obstacles = generated.obstacles.len(),
+        upsampled_height_samples = generated.repairs.upsampled_height_samples,
+        microrelief_adjusted_samples = generated.repairs.microrelief_adjusted_samples,
+        adjusted_height_samples = generated.repairs.adjusted_height_samples,
+        repaired_water_samples = generated.repairs.repaired_water_samples,
+        removed_corridor_obstacles = generated.repairs.removed_corridor_obstacles,
+        "Loaded deterministic tactical scene input"
+    );
+    let scene_id = input.scene_key.clone();
+    let terrain = generated.terrain;
+    let ground = generated.ground;
+    let environment = input.environment_snapshot(generated.digest);
+    let obstacles = generated.obstacles;
+    let obstacle_spacing = input.playable.spacing_metres;
+    for obstacle in obstacles {
+        let (grid_x, grid_z, kind, collider, height_offset, label) = match obstacle {
+            GeneratedObstacle::Tree { x, z } => (
+                x,
+                z,
+                SceneObstacle::Tree,
+                Collider::cylinder(TREE_TRUNK_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES),
+                TREE_TRUNK_HEIGHT_METRES * 0.5,
+                "tree trunk",
+            ),
+            GeneratedObstacle::Rock { x, z, recipe } => (
+                x,
+                z,
+                SceneObstacle::Rock(recipe),
+                Collider::sphere(recipe.collision_radius_metres()),
+                recipe.collision_radius_metres(),
+                "rock",
+            ),
+        };
+        let x = f32::from(grid_x) * obstacle_spacing - terrain.width() * 0.5;
+        let z = f32::from(grid_z) * obstacle_spacing - terrain.depth() * 0.5;
+        let y = terrain.height_at(Vec2::new(x, z)).unwrap_or_default() + height_offset;
+        let yaw = match kind {
+            SceneObstacle::Rock(recipe) => {
+                (recipe.seed >> 40) as f32 / ((1_u32 << 24) - 1) as f32 * core::f32::consts::TAU
+            }
+            SceneObstacle::Tree => 0.0,
+        };
+        commands.spawn((
+            Replicated,
+            Name::new(format!("Tactical scene {label}")),
+            kind,
+            RigidBody::Static,
+            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
+            collider,
+            Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw)),
+        ));
+    }
     let terrain_collider = terrain.collider();
-    commands.spawn((
+    let mut scene = commands.spawn((
         Replicated,
-        SceneId(args.scene_key.clone()),
+        SceneId(scene_id),
         terrain,
+        ground,
         RigidBody::Static,
         CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
         terrain_collider,
         Transform::default(),
     ));
-    let scene_width = args.scene_width as f32;
-    let scene_depth = args.scene_depth as f32;
+    scene.insert(environment);
+    let scene_width =
+        f32::from(input.playable.width.saturating_sub(1)) * input.playable.spacing_metres;
+    let scene_depth =
+        f32::from(input.playable.depth.saturating_sub(1)) * input.playable.spacing_metres;
     commands.spawn((
         RigidBody::Static,
         CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),

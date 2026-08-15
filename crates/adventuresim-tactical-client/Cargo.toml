@@ -31,7 +31,7 @@ tracing-subscriber = { version = "0.3", optional = true }
 tracy-client-sys = { version = "=0.28.0", optional = true }
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
-bevy = { workspace = true, default-features = true, features = ["file_watcher"] }
+bevy = { workspace = true, default-features = true, features = ["file_watcher", "jpeg"] }
 bevy_animation_graph_editor = { workspace = true, optional = true }
 
 [target."cfg(target_family = \"wasm\")".dependencies]
@@ -47,6 +47,7 @@ bevy = { workspace = true, default-features = false, features = [
     "scene",
     "picking",
     "audio",
+    "jpeg",
     "png",
     "tonemapping_luts",
     "zstd_rust",
@@ -78,3 +79,15 @@ name = "ragdoll-viewer"
 path = "src/ragdoll_viewer_main.rs"
 doc = false
 required-features = ["debug", "animation-graph-physics"]
+
+[[bin]]
+name = "tactical-scene-viewer"
+path = "src/tactical_scene_viewer_main.rs"
+doc = false
+required-features = ["debug"]
+
+[[bin]]
+name = "tactical-sky-viewer"
+path = "src/tactical_sky_viewer_main.rs"
+doc = false
+required-features = ["debug"]

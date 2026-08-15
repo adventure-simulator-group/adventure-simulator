@@ -298,8 +298,18 @@ title = "Stealth"
 path = "tactical/stealth.md"
 
 [[item]]
+kind = "page"
+title = "Sky presentation"
+path = "tactical/sky.md"
+
+[[item]]
 kind = "part"
 title = "World data"
+
+[[item]]
+kind = "page"
+title = "Tactical environment visual review"
+path = "engineering/world-data/environment-visual-review.md"
 
 [[item]]
 kind = "page"
