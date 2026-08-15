@@ -3,6 +3,8 @@
 #![allow(dead_code)]
 
 #[cfg(not(target_family = "wasm"))]
+mod camera;
+#[cfg(not(target_family = "wasm"))]
 mod presentation;
 #[cfg(not(target_family = "wasm"))]
 mod tactical_scene_viewer;
@@ -21,6 +23,10 @@ enum CaptureProfile {
     Semantic,
     /// Compact environment-art review suite; intended for matrix review.
     EnvironmentReview,
+    /// Production third-person camera sweep on the unmodified animation scene.
+    AnimationPlay,
+    /// Cold first approach, retreat, and warm second approach across tree LODs.
+    TreeColdTraversal,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -105,6 +111,8 @@ fn main() {
         match args.profile {
             CaptureProfile::Semantic => "semantic",
             CaptureProfile::EnvironmentReview => "environment-review",
+            CaptureProfile::AnimationPlay => "animation-play",
+            CaptureProfile::TreeColdTraversal => "tree-cold-traversal",
         },
         args.views,
     );

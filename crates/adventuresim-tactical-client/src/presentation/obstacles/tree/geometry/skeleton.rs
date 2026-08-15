@@ -302,23 +302,25 @@ mod tests {
                     && a.start_radius == b.start_radius
                     && a.end_radius == b.end_radius)
         );
-        assert!(
-            branches
-                .iter()
-                .all(|branch| branch.start.y >= 0.0 && branch.end.y >= 0.0)
-        );
         let trunk = branches
             .iter()
             .filter(|branch| branch.depth == 0)
             .collect::<Vec<_>>();
         assert_eq!(trunk.len(), 8);
+        assert!(
+            (trunk[0].start.y + TREE_TRUNK_HEIGHT_METRES * 0.5).abs() < f32::EPSILON,
+            "the beech mesh root must share the collider-centred tree origin"
+        );
         assert!(trunk.iter().all(|segment| segment.end.xz().length() < 0.09));
         let crown_base = branches
             .iter()
             .filter(|branch| branch.depth == 1)
             .map(|branch| branch.start.y)
             .fold(f32::INFINITY, f32::min);
-        assert!(crown_base > COMMON_BEECH_PARAMETERS.height_metres * 0.4);
+        assert!(
+            crown_base + TREE_TRUNK_HEIGHT_METRES * 0.5
+                > COMMON_BEECH_PARAMETERS.height_metres * 0.4
+        );
         assert!(COMMON_BEECH_BARK.fissure_depth_metres < 0.0005);
         assert_eq!(COMMON_BEECH_BARK.root_lobe_height_metres, 0.003);
         let leaves = procedural_woody_plant_leaves(91, &branches, 0.65, COMMON_BEECH_PARAMETERS);
@@ -1088,7 +1090,7 @@ fn procedural_beech_skeleton(
             let sweep = (core::f32::consts::PI * t).sin() * 0.08;
             Vec3::new(
                 crown_phase.cos() * sweep,
-                height * t,
+                -TREE_TRUNK_HEIGHT_METRES * 0.5 + height * t,
                 crown_phase.sin() * sweep,
             )
         })

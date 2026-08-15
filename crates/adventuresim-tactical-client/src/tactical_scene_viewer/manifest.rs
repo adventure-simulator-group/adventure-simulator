@@ -1,19 +1,30 @@
 use adventuresim_tactical_core::prelude::{SceneSource, WeatherSnapshot};
 use serde::Serialize;
 
-use super::view_specs::CaptureViewSpec;
+#[cfg(test)]
+use super::view_specs::ANIMATION_PLAY_VIEWS;
+use super::view_specs::{CaptureViewSpec, TREE_COLD_TRAVERSAL_VIEWS};
 
 #[derive(Clone, Serialize)]
 pub(super) struct CaptureRecord {
     pub(super) view: String,
     pub(super) label: String,
     pub(super) screenshot: String,
+    pub(super) rendered_resolution: [u32; 2],
     pub(super) camera_translation: [f32; 3],
     pub(super) camera_target: [f32; 3],
     pub(super) camera_up: [f32; 3],
     pub(super) vertical_fov_degrees: f32,
+    pub(super) camera_boom_desired_metres: Option<f32>,
+    pub(super) camera_boom_resolved_metres: Option<f32>,
+    pub(super) camera_obstruction_hit: Option<bool>,
+    pub(super) nearest_playable_tree_distance_metres: Option<f32>,
+    pub(super) largest_visible_vista_tree_distance_metres: Option<f32>,
+    pub(super) largest_visible_vista_tree_angular_height_degrees: Option<f32>,
+    pub(super) largest_visible_vista_tree_has_collider: Option<bool>,
     pub(super) foreground_pixel_bps: u16,
     pub(super) detail_pixel_bps: u16,
+    pub(super) canopy_pixel_bps: u16,
     pub(super) forced_tree_lod: Option<u8>,
     pub(super) focused_tree_lod_queued: Option<bool>,
     pub(super) diagnostic_leaf_suppression: bool,
@@ -116,6 +127,9 @@ pub(super) struct ValidationSummary {
     pub(super) all_views_captured: bool,
     pub(super) requested_views_captured_exactly_once: bool,
     pub(super) requested_detail_targets_available: bool,
+    pub(super) camera_obstruction_resolved: bool,
+    pub(super) vista_tree_near_field_bounded: bool,
+    pub(super) tree_cold_traversal_canopy_continuous: bool,
     pub(super) production_lighting_parity: bool,
     pub(super) lighting_readiness: bool,
     pub(super) all_views_render_content: bool,
@@ -223,6 +237,87 @@ fn finalize_screenshot_validation(
             .find(|view| view.slug == capture.view)
             .is_some_and(|view| capture.foreground_pixel_bps >= view.minimum_foreground_bps)
     });
+    validation.camera_obstruction_resolved = requested_views.iter().all(|requested| {
+        let Some(view) = views.iter().find(|view| view.slug == requested) else {
+            return false;
+        };
+        if !matches!(
+            view.pose,
+            super::view_specs::CapturePose::AnimationPlayObstruction { .. }
+        ) {
+            return true;
+        }
+        captures
+            .iter()
+            .find(|capture| capture.view == *requested)
+            .is_some_and(|capture| {
+                capture.camera_obstruction_hit == Some(true)
+                    && capture
+                        .camera_boom_desired_metres
+                        .is_some_and(|desired| desired > 0.0)
+                    && capture
+                        .camera_boom_resolved_metres
+                        .zip(capture.camera_boom_desired_metres)
+                        .is_some_and(|(resolved, desired)| resolved + 0.05 < desired)
+            })
+    });
+    let boundary_views = requested_views
+        .iter()
+        .filter(|view| view.starts_with("animation-play-boundary-"))
+        .count();
+    validation.vista_tree_near_field_bounded = capture_profile != "animation-play"
+        || boundary_views == 8
+            && captures
+                .iter()
+                .filter(|capture| capture.view.starts_with("animation-play-boundary-"))
+                .count()
+                == 8
+            && captures
+                .iter()
+                .filter(|capture| capture.view.starts_with("animation-play-boundary-"))
+                .all(|capture| {
+                    capture
+                        .largest_visible_vista_tree_angular_height_degrees
+                        .is_some_and(|degrees| degrees <= 16.1)
+                        && capture.largest_visible_vista_tree_has_collider == Some(false)
+                });
+    let complete_tree_traversal = TREE_COLD_TRAVERSAL_VIEWS
+        .iter()
+        .filter(|view| !view.warmup)
+        .all(|view| {
+            requested_views
+                .iter()
+                .any(|requested| requested == view.slug)
+        });
+    validation.tree_cold_traversal_canopy_continuous = capture_profile != "tree-cold-traversal"
+        || complete_tree_traversal
+            && requested_views.len() == TREE_COLD_TRAVERSAL_VIEWS.len() - 1
+            && requested_views
+                .iter()
+                .filter_map(|view| view.strip_prefix("tree-cold-first-"))
+                .all(|suffix| {
+                    let cold = captures
+                        .iter()
+                        .find(|capture| capture.view == format!("tree-cold-first-{suffix}"));
+                    let warm = captures
+                        .iter()
+                        .find(|capture| capture.view == format!("tree-warm-second-{suffix}"));
+                    cold.zip(warm).is_some_and(|(cold, warm)| {
+                        // The 90 m crown is only five basis points after the
+                        // leaf-card A2C conversion. Keep that observed crown
+                        // as the absolute floor while the paired 80% rule
+                        // remains the temporal-disappearance gate.
+                        cold.canopy_pixel_bps >= 5
+                            && warm.canopy_pixel_bps >= 5
+                            && u32::from(cold.canopy_pixel_bps) * 5
+                                >= u32::from(warm.canopy_pixel_bps) * 4
+                    })
+                })
+            && requested_views
+                .iter()
+                .filter(|view| view.starts_with("tree-cold-first-"))
+                .count()
+                == 16;
     if requested_views
         .iter()
         .any(|view| view == "forest-floor-debris-detail")
@@ -297,6 +392,9 @@ pub(super) fn validation_passes(validation: &ValidationSummary) -> bool {
     validation.all_views_captured
         && validation.requested_views_captured_exactly_once
         && validation.requested_detail_targets_available
+        && validation.camera_obstruction_resolved
+        && validation.vista_tree_near_field_bounded
+        && validation.tree_cold_traversal_canopy_continuous
         && validation.production_lighting_parity
         && validation.lighting_readiness
         && validation.all_views_render_content
@@ -331,6 +429,9 @@ mod tests {
             all_views_captured: true,
             requested_views_captured_exactly_once: true,
             requested_detail_targets_available: true,
+            camera_obstruction_resolved: true,
+            vista_tree_near_field_bounded: true,
+            tree_cold_traversal_canopy_continuous: true,
             production_lighting_parity: true,
             lighting_readiness: true,
             all_views_render_content: false,
@@ -363,12 +464,21 @@ mod tests {
             view: view.into(),
             label: view.into(),
             screenshot: format!("{view}.png"),
+            rendered_resolution: [0, 0],
             camera_translation: [0.0; 3],
             camera_target: [0.0; 3],
             camera_up: [0.0, 1.0, 0.0],
             vertical_fov_degrees: 45.0,
+            camera_boom_desired_metres: None,
+            camera_boom_resolved_metres: None,
+            camera_obstruction_hit: None,
+            nearest_playable_tree_distance_metres: None,
+            largest_visible_vista_tree_distance_metres: None,
+            largest_visible_vista_tree_angular_height_degrees: None,
+            largest_visible_vista_tree_has_collider: None,
             foreground_pixel_bps,
             detail_pixel_bps,
+            canopy_pixel_bps: 0,
             forced_tree_lod: None,
             focused_tree_lod_queued: None,
             diagnostic_leaf_suppression: false,
@@ -432,6 +542,218 @@ mod tests {
             &views,
         );
         assert!(!validation.requested_detail_targets_available);
+        assert!(!validation.passed);
+    }
+
+    #[test]
+    fn obstruction_capture_fails_closed_without_a_tree_hit() {
+        let views = [CaptureViewSpec::new(
+            "animation-play-obstruction-000",
+            "Tree obstruction",
+            CapturePose::AnimationPlayObstruction { yaw_degrees: 0.0 },
+            80.0,
+            100,
+        )];
+        let requested = vec!["animation-play-obstruction-000".into()];
+        let mut captures = vec![capture("animation-play-obstruction-000", 100, 0)];
+        captures[0].camera_boom_desired_metres = Some(3.75);
+        captures[0].camera_boom_resolved_metres = Some(3.75);
+        captures[0].camera_obstruction_hit = Some(false);
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "animation-play",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(!validation.camera_obstruction_resolved);
+        assert!(!validation.passed);
+
+        captures[0].camera_boom_resolved_metres = Some(0.34);
+        captures[0].camera_obstruction_hit = Some(true);
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "animation-play",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(validation.camera_obstruction_resolved);
+        assert!(!validation.vista_tree_near_field_bounded);
+        assert!(!validation.passed);
+    }
+
+    #[test]
+    fn boundary_capture_requires_all_views_and_bounds_every_visible_vista_tree() {
+        let views = ANIMATION_PLAY_VIEWS
+            .iter()
+            .copied()
+            .filter(|view| view.slug.starts_with("animation-play-boundary-"))
+            .collect::<Vec<_>>();
+        let requested = views
+            .iter()
+            .map(|view| view.slug.to_owned())
+            .collect::<Vec<_>>();
+        let mut captures = requested
+            .iter()
+            .map(|view| {
+                let mut record = capture(view, 1_000, 0);
+                record.largest_visible_vista_tree_angular_height_degrees = Some(16.0);
+                record.largest_visible_vista_tree_has_collider = Some(false);
+                record
+            })
+            .collect::<Vec<_>>();
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "animation-play",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(validation.vista_tree_near_field_bounded);
+        assert!(validation.passed);
+
+        captures[3].largest_visible_vista_tree_angular_height_degrees = Some(16.2);
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "animation-play",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(!validation.vista_tree_near_field_bounded);
+        assert!(!validation.passed);
+    }
+
+    #[test]
+    fn partial_cold_tree_traversal_fails_closed() {
+        let views = [
+            CaptureViewSpec::new(
+                "tree-cold-first-050",
+                "Cold",
+                CapturePose::TreeColdTraversal { distance: 50.0 },
+                80.0,
+                100,
+            ),
+            CaptureViewSpec::new(
+                "tree-warm-second-050",
+                "Warm",
+                CapturePose::TreeColdTraversal { distance: 50.0 },
+                80.0,
+                100,
+            ),
+        ];
+        let requested = vec!["tree-cold-first-050".into(), "tree-warm-second-050".into()];
+        let mut captures = vec![
+            capture("tree-cold-first-050", 100, 0),
+            capture("tree-warm-second-050", 100, 0),
+        ];
+        captures[0].canopy_pixel_bps = 100;
+        captures[1].canopy_pixel_bps = 100;
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "tree-cold-traversal",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(!validation.tree_cold_traversal_canopy_continuous);
+        assert!(!validation.passed);
+    }
+
+    #[test]
+    fn complete_cold_tree_traversal_compares_every_first_and_warm_approach() {
+        let views = TREE_COLD_TRAVERSAL_VIEWS;
+        let requested = views
+            .iter()
+            .filter(|view| !view.warmup)
+            .map(|view| view.slug.to_owned())
+            .collect::<Vec<_>>();
+        let mut captures = requested
+            .iter()
+            .map(|view| capture(view, 200, 0))
+            .collect::<Vec<_>>();
+        for capture in &mut captures {
+            capture.canopy_pixel_bps = 100;
+        }
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "tree-cold-traversal",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(validation.tree_cold_traversal_canopy_continuous);
+        assert!(validation.passed);
+
+        captures
+            .iter_mut()
+            .filter(|capture| {
+                capture.view == "tree-cold-first-090" || capture.view == "tree-warm-second-090"
+            })
+            .for_each(|capture| capture.canopy_pixel_bps = 5);
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "tree-cold-traversal",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(validation.tree_cold_traversal_canopy_continuous);
+        assert!(validation.passed);
+
+        captures
+            .iter_mut()
+            .find(|capture| capture.view == "tree-cold-first-090")
+            .unwrap()
+            .canopy_pixel_bps = 4;
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "tree-cold-traversal",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(!validation.tree_cold_traversal_canopy_continuous);
+        assert!(!validation.passed);
+
+        captures
+            .iter_mut()
+            .find(|capture| capture.view == "tree-cold-first-090")
+            .unwrap()
+            .canopy_pixel_bps = 5;
+
+        captures
+            .iter_mut()
+            .find(|capture| capture.view == "tree-cold-first-026")
+            .unwrap()
+            .canopy_pixel_bps = 79;
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "dense-woodland",
+            "tree-cold-traversal",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(!validation.tree_cold_traversal_canopy_continuous);
         assert!(!validation.passed);
     }
 }

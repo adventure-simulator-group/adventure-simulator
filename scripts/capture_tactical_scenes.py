@@ -35,9 +35,9 @@ SKY_MINUTES = {"sun": 172 * 1440 + 12 * 60, "sun-detail": 172 * 1440 + 19 * 60,
                "twilight": 80 * 1440 + 18 * 60,
                "moon": NAMED_TIMES["moonlit"], "stars": 637_860}
 EXPECTED_PIPELINE = "tactical_scene_native_capture_v6"
-EXPECTED_PROFILE_VERSION = 11
+EXPECTED_PROFILE_VERSION = 15
 EXPECTED_CAMERA_VERSION = 9
-EXPECTED_GENERATION_VERSION = 7
+EXPECTED_GENERATION_VERSION = 8
 EXPECTED_RESOLUTION = [1280, 720]
 EXPECTED_PRESENTATION_REQUEST = {
     "shadows": True,
@@ -52,12 +52,14 @@ SOURCE_PATHS = (
     "Cargo.lock",
     "Cargo.toml",
     "crates/adventuresim-tactical-client/Cargo.toml",
+    "crates/adventuresim-tactical-client/src/camera.rs",
     "crates/adventuresim-tactical-client/src/presentation",
     "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs",
     "crates/adventuresim-tactical-client/src/tactical_scene_viewer",
     "crates/adventuresim-tactical-client/src/tactical_scene_viewer_main.rs",
     "crates/adventuresim-tactical-client/src/tactical_sky_viewer.rs",
     "crates/adventuresim-tactical-client/src/tactical_sky_viewer_main.rs",
+    "crates/adventuresim-tactical-netcode/src/replication.rs",
     "scripts/capture_tactical_scenes.py",
     "assets/shaders",
     "assets/textures",

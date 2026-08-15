@@ -13,6 +13,20 @@ pub(super) enum TreeLightingModeId {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum CapturePose {
     Ground,
+    AnimationPlay {
+        yaw_degrees: f32,
+    },
+    AnimationPlayBoundary {
+        player_x: f32,
+        player_z: f32,
+        yaw_degrees: f32,
+    },
+    AnimationPlayObstruction {
+        yaw_degrees: f32,
+    },
+    TreeColdTraversal {
+        distance: f32,
+    },
     TreeReview,
     RecursiveTree,
     Root,
@@ -23,7 +37,9 @@ pub(super) enum CapturePose {
     Debris,
     GroundCover,
     LeafSpecimen,
-    TreeLod { distance: f32 },
+    TreeLod {
+        distance: f32,
+    },
     Overhead,
     Horizon,
     VistaPeak,
@@ -513,4 +529,300 @@ pub(super) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 12] = [
         1000
     )
     .vista(),
+];
+
+pub(super) const ANIMATION_PLAY_VIEWS: [CaptureViewSpec; 23] = [
+    v!(
+        "warmup",
+        "Animation-play production-camera warmup",
+        CapturePose::AnimationPlay { yaw_degrees: 0.0 },
+        80.0,
+        1000
+    )
+    .warmup()
+    .vista(),
+    v!(
+        "animation-play-000",
+        "Animation-play camera facing north",
+        CapturePose::AnimationPlay { yaw_degrees: 0.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-045",
+        "Animation-play camera facing north-east",
+        CapturePose::AnimationPlay { yaw_degrees: 45.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-090",
+        "Animation-play camera facing east",
+        CapturePose::AnimationPlay { yaw_degrees: 90.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-135",
+        "Animation-play camera facing south-east",
+        CapturePose::AnimationPlay { yaw_degrees: 135.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-180",
+        "Animation-play camera facing south",
+        CapturePose::AnimationPlay { yaw_degrees: 180.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-225",
+        "Animation-play camera facing south-west",
+        CapturePose::AnimationPlay { yaw_degrees: 225.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-270",
+        "Animation-play camera facing west",
+        CapturePose::AnimationPlay { yaw_degrees: 270.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-315",
+        "Animation-play camera facing north-west",
+        CapturePose::AnimationPlay { yaw_degrees: 315.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-n",
+        "Production camera at the north playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: 0.0,
+            player_z: 44.0,
+            yaw_degrees: 180.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-ne",
+        "Production camera at the north-east playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: 31.0,
+            player_z: 31.0,
+            yaw_degrees: 225.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-e",
+        "Production camera at the east playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: 44.0,
+            player_z: 0.0,
+            yaw_degrees: 270.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-se",
+        "Production camera at the south-east playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: 31.0,
+            player_z: -31.0,
+            yaw_degrees: 315.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-s",
+        "Production camera at the south playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: 0.0,
+            player_z: -44.0,
+            yaw_degrees: 0.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-sw",
+        "Production camera at the south-west playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: -31.0,
+            player_z: -31.0,
+            yaw_degrees: 45.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-w",
+        "Production camera at the west playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: -44.0,
+            player_z: 0.0,
+            yaw_degrees: 90.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-boundary-nw",
+        "Production camera at the north-west playable boundary facing the vista",
+        CapturePose::AnimationPlayBoundary {
+            player_x: -31.0,
+            player_z: 31.0,
+            yaw_degrees: 135.0
+        },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "tree-family-se-playable-only",
+        "South-east boundary camera with playable trees only",
+        CapturePose::AnimationPlayBoundary {
+            player_x: 31.0,
+            player_z: -31.0,
+            yaw_degrees: 315.0
+        },
+        80.0,
+        1000
+    ),
+    v!(
+        "tree-family-se-vista-only",
+        "South-east boundary camera with vista trees only",
+        CapturePose::AnimationPlayBoundary {
+            player_x: 31.0,
+            player_z: -31.0,
+            yaw_degrees: 315.0
+        },
+        80.0,
+        1000
+    )
+    .vista()
+    .hide_obstacles(),
+    v!(
+        "animation-play-obstruction-000",
+        "Production camera boom blocked by a north-side tree trunk",
+        CapturePose::AnimationPlayObstruction { yaw_degrees: 0.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-obstruction-090",
+        "Production camera boom blocked by an east-side tree trunk",
+        CapturePose::AnimationPlayObstruction { yaw_degrees: 90.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-obstruction-180",
+        "Production camera boom blocked by a south-side tree trunk",
+        CapturePose::AnimationPlayObstruction { yaw_degrees: 180.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+    v!(
+        "animation-play-obstruction-270",
+        "Production camera boom blocked by a west-side tree trunk",
+        CapturePose::AnimationPlayObstruction { yaw_degrees: 270.0 },
+        80.0,
+        1000
+    )
+    .vista(),
+];
+
+const fn traversal_view(slug: &'static str, label: &'static str, distance: f32) -> CaptureViewSpec {
+    CaptureViewSpec::new(
+        slug,
+        label,
+        CapturePose::TreeColdTraversal { distance },
+        80.0,
+        200,
+    )
+    .vista()
+}
+
+// Ordered temporal evidence for demand-driven tree residency. The first pass
+// starts with only the distant whole-tree card warm, crosses every production
+// LOD and leaf-representation handoff, retreats, then repeats the exact inward
+// path with the generated assets resident. Non-warmup views intentionally use
+// no settle frames or disposable readbacks in the capture driver.
+pub(super) const TREE_COLD_TRAVERSAL_VIEWS: [CaptureViewSpec; 41] = [
+    CaptureViewSpec::new(
+        "warmup",
+        "Distant-card pipeline warmup",
+        CapturePose::TreeColdTraversal { distance: 120.0 },
+        80.0,
+        200,
+    )
+    .warmup()
+    .vista(),
+    traversal_view("tree-cold-first-090", "Cold approach at 90 metres", 90.0),
+    traversal_view("tree-cold-first-072", "Cold approach at 72 metres", 72.0),
+    traversal_view("tree-cold-first-062", "Cold approach at 62 metres", 62.0),
+    traversal_view("tree-cold-first-058", "Cold approach at 58 metres", 58.0),
+    traversal_view("tree-cold-first-050", "Cold approach at 50 metres", 50.0),
+    traversal_view("tree-cold-first-042", "Cold approach at 42 metres", 42.0),
+    traversal_view("tree-cold-first-034", "Cold approach at 34 metres", 34.0),
+    traversal_view("tree-cold-first-030", "Cold approach at 30 metres", 30.0),
+    traversal_view("tree-cold-first-026", "Cold approach at 26 metres", 26.0),
+    traversal_view("tree-cold-first-022", "Cold approach at 22 metres", 22.0),
+    traversal_view("tree-cold-first-018", "Cold approach at 18 metres", 18.0),
+    traversal_view("tree-cold-first-014", "Cold approach at 14 metres", 14.0),
+    traversal_view("tree-cold-first-010", "Cold approach at 10 metres", 10.0),
+    traversal_view("tree-cold-first-007", "Cold approach at 7 metres", 7.0),
+    traversal_view("tree-cold-first-005", "Cold approach at 5 metres", 5.0),
+    traversal_view("tree-cold-first-003", "Cold approach at 3 metres", 3.0),
+    traversal_view("tree-retreat-010", "Retreat at 10 metres", 10.0),
+    traversal_view("tree-retreat-018", "Retreat at 18 metres", 18.0),
+    traversal_view("tree-retreat-026", "Retreat at 26 metres", 26.0),
+    traversal_view("tree-retreat-034", "Retreat at 34 metres", 34.0),
+    traversal_view("tree-retreat-042", "Retreat at 42 metres", 42.0),
+    traversal_view("tree-retreat-058", "Retreat at 58 metres", 58.0),
+    traversal_view("tree-retreat-072", "Retreat at 72 metres", 72.0),
+    traversal_view("tree-retreat-090", "Retreat at 90 metres", 90.0),
+    traversal_view("tree-warm-second-090", "Warm approach at 90 metres", 90.0),
+    traversal_view("tree-warm-second-072", "Warm approach at 72 metres", 72.0),
+    traversal_view("tree-warm-second-062", "Warm approach at 62 metres", 62.0),
+    traversal_view("tree-warm-second-058", "Warm approach at 58 metres", 58.0),
+    traversal_view("tree-warm-second-050", "Warm approach at 50 metres", 50.0),
+    traversal_view("tree-warm-second-042", "Warm approach at 42 metres", 42.0),
+    traversal_view("tree-warm-second-034", "Warm approach at 34 metres", 34.0),
+    traversal_view("tree-warm-second-030", "Warm approach at 30 metres", 30.0),
+    traversal_view("tree-warm-second-026", "Warm approach at 26 metres", 26.0),
+    traversal_view("tree-warm-second-022", "Warm approach at 22 metres", 22.0),
+    traversal_view("tree-warm-second-018", "Warm approach at 18 metres", 18.0),
+    traversal_view("tree-warm-second-014", "Warm approach at 14 metres", 14.0),
+    traversal_view("tree-warm-second-010", "Warm approach at 10 metres", 10.0),
+    traversal_view("tree-warm-second-007", "Warm approach at 7 metres", 7.0),
+    traversal_view("tree-warm-second-005", "Warm approach at 5 metres", 5.0),
+    traversal_view("tree-warm-second-003", "Warm approach at 3 metres", 3.0),
 ];

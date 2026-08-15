@@ -2,7 +2,6 @@
     forward_io::{Vertex, VertexOutput},
     mesh_functions,
     mesh_view_bindings::{globals, view},
-    pbr_functions,
     view_transformations::position_world_to_clip,
 }
 
@@ -40,8 +39,16 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         ).xyz;
         let to_camera = normalize(view.world_position.xz - root_world.xz + vec2<f32>(0.0001, 0.0));
         let right = vec3<f32>(to_camera.y, 0.0, -to_camera.x);
+        // Whole-tree cards face the camera, so they cannot use the model's
+        // rotated basis directly. They must still inherit its horizontal and
+        // vertical scale. Dropping these lengths made every level-4 card use
+        // the full baked-tree dimensions, even under a small tree parent.
+        let horizontal_scale = length(world_from_local[0].xyz);
+        let vertical_scale = length(world_from_local[1].xyz);
         world_position = vec4<f32>(
-            root_world + right * vertex.position.x + vec3<f32>(0.0, vertex.position.y, 0.0),
+            root_world
+                + right * vertex.position.x * horizontal_scale
+                + vec3<f32>(0.0, vertex.position.y * vertical_scale, 0.0),
             1.0,
         );
         world_normal = vec3<f32>(to_camera.x, 0.18, to_camera.y);
@@ -77,7 +84,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 #ifdef VISIBILITY_RANGE_DITHER
-    pbr_functions::visibility_range_dither(in.position, in.visibility_range_dither);
+    // Switch aggregate tree representations at the midpoint of Bevy's
+    // complementary visibility interval. A translucent crossfade reads as a
+    // pale duplicate crown, while Bevy's ordered 4x4 discard reads as a
+    // screen-door grid. The atlas cutout itself still uses multisample
+    // coverage; only the LOD handoff is intentionally crisp.
+    if in.visibility_range_dither <= -8 || in.visibility_range_dither > 8 {
+        discard;
+    }
 #endif
     var uv = in.uv;
     if i32(round(tree.parameters.x)) == 4 {

@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 1;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 7;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 8;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -373,15 +373,16 @@ impl TacticalSceneInput {
             .collect::<Vec<_>>();
         let before = obstacles.len();
         obstacles.retain(|obstacle| {
-            let (x, z) = match *obstacle {
-                GeneratedObstacle::Tree { x, z } | GeneratedObstacle::Rock { x, z, .. } => (x, z),
-            };
-            !is_reserved_playability_cell(
-                usize::from(x),
-                usize::from(z),
-                usize::from(self.playable.width),
-                usize::from(self.playable.depth),
-            )
+            let width = usize::from(self.playable.width);
+            let depth = usize::from(self.playable.depth);
+            match *obstacle {
+                GeneratedObstacle::Tree { x, z } => {
+                    !is_tree_camera_clearance_cell(usize::from(x), usize::from(z), depth)
+                }
+                GeneratedObstacle::Rock { x, z, .. } => {
+                    !is_reserved_playability_cell(usize::from(x), usize::from(z), width, depth)
+                }
+            }
         });
         repairs.removed_corridor_obstacles = (before - obstacles.len()) as u32;
         let ground = build_scene_ground(
@@ -771,6 +772,16 @@ fn is_reserved_playability_cell(x: usize, z: usize, width: usize, depth: usize) 
         || [party_x, enemy_x]
             .into_iter()
             .any(|center_x| x.abs_diff(center_x) <= 1 && z.abs_diff(center_z) <= 1)
+}
+
+fn is_tree_camera_clearance_cell(_x: usize, z: usize, depth: usize) -> bool {
+    let center_z = depth / 2;
+    // Players currently enter within a bounded five-metre square around the
+    // scene origin. Keep only large tree crowns out of the centre row and its
+    // immediate neighbours so they cannot enter the production third-person
+    // camera envelope. Rocks and terrain repair retain the narrower gameplay
+    // corridor contract above.
+    z.abs_diff(center_z) <= 1
 }
 
 fn clamp_height_pair(heights: &mut [f32], anchor: usize, target: usize, maximum_step: f32) {
@@ -1178,11 +1189,28 @@ mod tests {
                 }
             }
         }
-        assert!(first.obstacles.iter().all(|obstacle| {
-            let (x, z) = match *obstacle {
-                GeneratedObstacle::Tree { x, z } | GeneratedObstacle::Rock { x, z, .. } => (x, z),
-            };
-            !is_reserved_playability_cell(usize::from(x), usize::from(z), width, depth)
+        assert!(first.obstacles.iter().all(|obstacle| match *obstacle {
+            GeneratedObstacle::Tree { x, z } => {
+                !is_tree_camera_clearance_cell(usize::from(x), usize::from(z), depth)
+            }
+            GeneratedObstacle::Rock { x, z, .. } => {
+                !is_reserved_playability_cell(usize::from(x), usize::from(z), width, depth)
+            }
         }));
+    }
+
+    #[test]
+    fn reserved_playability_corridor_covers_the_spawn_camera_envelope() {
+        let width = 9;
+        let depth = 9;
+        for x in 0..width {
+            for z in 3..=5 {
+                assert!(is_tree_camera_clearance_cell(x, z, depth));
+            }
+            assert!(!is_tree_camera_clearance_cell(x, 2, depth));
+            assert!(!is_tree_camera_clearance_cell(x, 6, depth));
+        }
+        assert!(!is_reserved_playability_cell(0, 3, width, depth));
+        assert!(is_reserved_playability_cell(2, 3, width, depth));
     }
 }

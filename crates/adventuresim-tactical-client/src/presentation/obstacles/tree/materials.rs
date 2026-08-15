@@ -263,6 +263,13 @@ impl Material for TacticalTreeImpostorMaterial {
         TREE_IMPOSTOR_SHADER.into()
     }
 
+    fn alpha_mode(&self) -> AlphaMode {
+        // Preserve smooth coverage only at the sparse atlas silhouette. The
+        // shader handles LOD visibility as a crisp complementary handoff so
+        // neither ordered stipple nor translucent duplicate crowns appear.
+        AlphaMode::AlphaToCoverage
+    }
+
     fn enable_prepass() -> bool {
         false
     }
@@ -335,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn leaf_cutouts_use_hardware_multisample_coverage_and_lod_dither() {
+    fn leaf_cutouts_use_hardware_multisample_coverage_without_screen_door_dither() {
         bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
         let mut app = App::new();
         app.add_plugins(AssetPlugin::default());
@@ -351,7 +358,10 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_tree_leaf_card.wgsl"
         ));
-        assert!(shader.contains("visibility_range_dither(in.position"));
+        assert!(shader.contains("opacity * lod_coverage"));
+        assert!(shader.contains("abs(f32(dither)) / 16.0"));
+        assert!(shader.contains("dither <= -8 || dither > 8"));
+        assert!(!shader.contains("visibility_range_dither(in.position"));
     }
 
     #[test]

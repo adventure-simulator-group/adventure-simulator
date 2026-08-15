@@ -64,9 +64,26 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
         // that's error prone because of how client/server is built independently.
         app.replicate_once_filtered::<
             Collider,
-            Or<(With<Player>, With<Sensor>, With<TacticalSceneItem>)>,
+            Or<(
+                With<Player>,
+                With<Sensor>,
+                With<TacticalSceneItem>,
+                With<SceneObstacle>,
+                With<SceneId>,
+            )>,
         >()
-        .replicate_once_filtered::<RigidBody, Or<(With<Player>, With<TacticalSceneItem>)>>()
-        .replicate_once_filtered::<CollisionLayers, With<TacticalSceneItem>>();
+        .replicate_once_filtered::<
+            RigidBody,
+            Or<(
+                With<Player>,
+                With<TacticalSceneItem>,
+                With<SceneObstacle>,
+                With<SceneId>,
+            )>,
+        >()
+        .replicate_once_filtered::<
+            CollisionLayers,
+            Or<(With<TacticalSceneItem>, With<SceneObstacle>, With<SceneId>)>,
+        >();
     }
 }

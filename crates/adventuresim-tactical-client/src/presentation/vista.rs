@@ -767,12 +767,15 @@ fn spawn_vista_trees(
                 );
                 // Each atlas represents the visible crown mass of a small
                 // stand at regional distance, not a survey-accurate stem.
-                let stand_scale = if lod.spacing_metres <= 50.0 {
-                    1.0
-                } else {
-                    1.65
-                };
-                let scale = (1.05 + unit_hash(splitmix64(hash ^ 0xa29c_413d)) * 0.75) * stand_scale;
+                let scale = vista_tree_scale(
+                    lod.spacing_metres,
+                    unit_hash(splitmix64(hash ^ 0xa29c_413d)),
+                );
+                let card_height = cached
+                    .provenance
+                    .records
+                    .first()
+                    .map_or(12.0, |record| record.projected_bounds.w);
                 commands.spawn((
                     Name::new(format!("Distant vista {} billboard", species.name())),
                     VistaTerrain(lod.level),
@@ -782,19 +785,44 @@ fn spawn_vista_trees(
                     Mesh3d(cached.mesh.clone()),
                     MeshMaterial3d(cached.material.clone()),
                     cached.provenance.clone(),
-                    VisibilityRange {
-                        start_margin: 0.0..0.0,
-                        end_margin: if lod.spacing_metres <= 250.0 {
-                            1_600.0..1_900.0
-                        } else {
-                            4_600.0..5_200.0
-                        },
-                        use_aabb: false,
-                    },
+                    vista_tree_visibility(lod.spacing_metres, card_height, scale),
                     Transform::from_xyz(local.x, height, local.y).with_scale(Vec3::splat(scale)),
                 ));
             }
         }
+    }
+}
+
+const VISTA_TREE_MAX_ANGULAR_HEIGHT_RADIANS: f32 = 16.0_f32.to_radians();
+
+fn vista_tree_scale(spacing_metres: f32, variation: f32) -> f32 {
+    // Candidate count already represents regional stand density. Each card
+    // must remain one plausible tree; scaling a single trunk into a 32-metre
+    // stand creates the near-ring columns seen from the playable scene.
+    let coarse_scale = if spacing_metres <= 250.0 { 1.0 } else { 1.25 };
+    (0.85 + variation.clamp(0.0, 1.0) * 0.4) * coarse_scale
+}
+
+fn vista_tree_visibility(
+    spacing_metres: f32,
+    unscaled_card_height: f32,
+    scale: f32,
+) -> VisibilityRange {
+    let scaled_height = unscaled_card_height.max(0.0) * scale.max(0.0);
+    // Keep regional stand cards out of the near field. The first visible
+    // sample is at most 16 degrees; the fade completes farther away. Using
+    // this distance as the end of the fade admitted partially visible 17-19
+    // degree cards, contradicting the background-size contract.
+    let first_visible_distance =
+        scaled_height / (2.0 * (VISTA_TREE_MAX_ANGULAR_HEIGHT_RADIANS * 0.5).tan());
+    VisibilityRange {
+        start_margin: first_visible_distance..(first_visible_distance * 1.12),
+        end_margin: if spacing_metres <= 250.0 {
+            1_600.0..1_900.0
+        } else {
+            4_600.0..5_200.0
+        },
+        use_aabb: false,
     }
 }
 
@@ -1890,6 +1918,29 @@ mod tests {
         assert!(small > 0);
         assert!(large >= small * 3);
         assert_eq!(vista_tree_candidate_count(0.0, 250.0, 0), 0);
+    }
+
+    #[test]
+    fn vista_tree_cards_enter_only_at_background_angular_size() {
+        let card_height = 10.8;
+        for spacing in [50.0, 250.0, 1_000.0] {
+            for variation in [0.0, 0.5, 1.0] {
+                let scale = vista_tree_scale(spacing, variation);
+                let range = vista_tree_visibility(spacing, card_height, scale);
+                let angular_height =
+                    2.0 * ((card_height * scale * 0.5) / range.start_margin.start).atan();
+                assert!(
+                    angular_height <= VISTA_TREE_MAX_ANGULAR_HEIGHT_RADIANS + 0.0001,
+                    "spacing={spacing} scale={scale} angle={}",
+                    angular_height.to_degrees()
+                );
+                assert!(range.start_margin.start > 0.0);
+                assert!(range.start_margin.end > range.start_margin.start);
+                assert!(range.start_margin.end < range.end_margin.start);
+            }
+        }
+        assert!((vista_tree_scale(250.0, 1.0) - 1.25).abs() < 0.0001);
+        assert!((vista_tree_scale(1_000.0, 1.0) - 1.5625).abs() < 0.0001);
     }
 
     #[test]

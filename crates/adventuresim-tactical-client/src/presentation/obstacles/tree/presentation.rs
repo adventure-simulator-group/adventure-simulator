@@ -677,16 +677,17 @@ fn tree_streamed_leaf_representation(scaled_distance: f32) -> Option<TreeLeafRep
 }
 
 fn tree_streaming_mask(scaled_distance: f32) -> u8 {
-    // Residency is intentionally more conservative than visibility. Camera
-    // focal scaling, command deferral, and transition dithering are evaluated
-    // in separate systems; keeping both neighbouring tiers resident prevents
-    // a one-frame or persistent leafless gap without drawing either tier
-    // outside its VisibilityRange.
+    // Generate each incoming crown tier one full outgoing LOD band before it
+    // becomes visible. Mesh/material insertion is asynchronous in the render
+    // world: the old four-metre lead could leave only the already-resident
+    // trunk on a first approach, while a second approach was correct because
+    // the crown assets remained cached. This changes when eventual residency
+    // is paid, not which tiers are drawn or retained.
     u8::from(scaled_distance < 75.0)
-        | (u8::from(scaled_distance < 12.0) << 1)
-        | (u8::from((3.0..24.0).contains(&scaled_distance)) << 2)
-        | (u8::from((8.0..44.0).contains(&scaled_distance)) << 3)
-        | (u8::from((18.0..75.0).contains(&scaled_distance)) << 4)
+        | (u8::from(scaled_distance < 24.0) << 1)
+        | (u8::from((3.0..44.0).contains(&scaled_distance)) << 2)
+        | (u8::from((8.0..75.0).contains(&scaled_distance)) << 3)
+        | (u8::from((18.0..100.0).contains(&scaled_distance)) << 4)
         | (u8::from((40.0..220.0).contains(&scaled_distance)) << 5)
 }
 
@@ -1006,6 +1007,19 @@ mod tests {
         ] {
             assert_eq!(tree_streaming_mask(distance) & required_bits, required_bits);
         }
+    }
+
+    #[test]
+    fn streaming_prefetches_each_incoming_crown_one_outgoing_band_early() {
+        for (distance, incoming_lod_bit) in [
+            (90.0, 1 << 4),
+            (72.0, 1 << 3),
+            (42.0, 1 << 2),
+            (22.0, 1 << 1),
+        ] {
+            assert_ne!(tree_streaming_mask(distance) & incoming_lod_bit, 0);
+        }
+        assert_eq!(tree_streaming_mask(120.0), 1 << 5);
     }
 
     #[test]

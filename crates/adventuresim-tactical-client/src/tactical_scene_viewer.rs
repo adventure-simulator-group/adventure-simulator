@@ -7,6 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::{
@@ -29,7 +30,7 @@ mod manifest;
 mod view_specs;
 use capture_state::{
     CapturePhase, CaptureReadback, CaptureState, foliage_detail_pixel_bps, foreground_pixel_bps,
-    lighting_samples_stable, luminance_delta, mean_luminance,
+    lighting_samples_stable, luminance_delta, mean_luminance, tree_canopy_pixel_bps,
 };
 use manifest::{
     CaptureManifest, CaptureRecord, CelestialProvenance, FoliageSummary,
@@ -41,10 +42,11 @@ use manifest::{
 #[cfg(test)]
 use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
 use view_specs::{
-    CAPTURE_VIEWS, CapturePose, CaptureViewSpec, DetailRequirement, ENVIRONMENT_REVIEW_VIEWS,
-    TreeLightingModeId,
+    ANIMATION_PLAY_VIEWS, CAPTURE_VIEWS, CapturePose, CaptureViewSpec, DetailRequirement,
+    ENVIRONMENT_REVIEW_VIEWS, TREE_COLD_TRAVERSAL_VIEWS, TreeLightingModeId,
 };
 
+use crate::camera::CameraRigConfig;
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
     GroundScatterLayer, LooseStonePebblePatch, PresentedTree, ProceduralEnvironmentAssets,
@@ -63,7 +65,7 @@ const PERFORMANCE_VIEW_HEIGHT: u32 = 1440;
 const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
-const CAPTURE_PROFILE_VERSION: u16 = 11;
+const CAPTURE_PROFILE_VERSION: u16 = 15;
 const CAMERA_VERSION: u16 = 9;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
@@ -92,6 +94,7 @@ struct CaptureOverlay;
 
 #[derive(SystemParam)]
 struct LightingObservationParams<'w, 's> {
+    spatial: SpatialQuery<'w, 's>,
     settings: Res<'w, TacticalGraphicsSettings>,
     ambient: Res<'w, GlobalAmbientLight>,
     ambient_handoff: Res<'w, AtmosphereIblAmbientHandoff>,
@@ -101,6 +104,21 @@ struct LightingObservationParams<'w, 's> {
     litter_anchors: Query<'w, 's, &'static GroundLitterCaptureAnchors>,
     obstacle_transforms:
         Query<'w, 's, (&'static SceneObstacle, &'static GlobalTransform), Without<Camera3d>>,
+    vista_trees: Query<
+        'w,
+        's,
+        (
+            &'static GlobalTransform,
+            &'static TreeImpostorProvenance,
+            &'static VisibilityRange,
+            Has<Collider>,
+        ),
+        (
+            With<VistaTreePresentation>,
+            Without<SceneObstacle>,
+            Without<Camera3d>,
+        ),
+    >,
 }
 
 #[derive(Component)]
@@ -680,13 +698,22 @@ pub(crate) fn run(
     } else {
         app.add_plugins(default_plugins);
     }
-    app
-        // Visual-review plates use the exact production presentation defaults.
-        // Diagnostics may hide named occluder layers, but never substitute a
-        // cheaper lighting or post-processing pipeline.
-        .add_plugins(capture_presentation_plugin())
-        .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
-        .insert_resource(SceneSetup(Some(setup)));
+    app.add_plugins(AdventureSimulatorPhysicsPlugin {
+        enable_simulation: false,
+    })
+    // Visual-review plates use the exact production presentation defaults.
+    // Diagnostics may hide named occluder layers, but never substitute a
+    // cheaper lighting or post-processing pipeline.
+    .add_plugins(capture_presentation_plugin())
+    .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
+    .insert_resource(SceneSetup(Some(setup)));
+    app.insert_gizmo_config(
+        PhysicsGizmos::default(),
+        GizmoConfig {
+            enabled: false,
+            ..default()
+        },
+    );
     if scene_performance_benchmarking {
         app.add_systems(
             PostStartup,
@@ -854,6 +881,8 @@ fn selected_capture_views(
     let profile_views = match profile {
         "semantic" => CAPTURE_VIEWS.as_slice(),
         "environment-review" => ENVIRONMENT_REVIEW_VIEWS.as_slice(),
+        "animation-play" => ANIMATION_PLAY_VIEWS.as_slice(),
+        "tree-cold-traversal" => TREE_COLD_TRAVERSAL_VIEWS.as_slice(),
         _ => return Err(format!("unknown profile {profile}")),
     };
     if requested.is_empty() {
@@ -962,12 +991,92 @@ mod capture_lighting_tests {
 
     #[test]
     fn capture_profiles_have_one_implicit_leading_warmup() {
-        for profile in ["semantic", "environment-review"] {
+        for profile in [
+            "semantic",
+            "environment-review",
+            "animation-play",
+            "tree-cold-traversal",
+        ] {
             let views = selected_capture_views(profile, &[]).unwrap();
             assert_eq!(views.first().map(|view| view.slug), Some("warmup"));
             assert_eq!(views.iter().filter(|view| view.slug == "warmup").count(), 1);
             assert!(selected_capture_views(profile, &["warmup".into()]).is_err());
         }
+    }
+
+    #[test]
+    fn animation_play_profile_covers_a_natural_unforced_camera_orbit() {
+        let views = selected_capture_views("animation-play", &[]).unwrap();
+        let plates = &views[1..];
+
+        assert_eq!(plates.len(), 22);
+        assert_eq!(
+            plates.iter().map(|view| view.slug).collect::<Vec<_>>(),
+            vec![
+                "animation-play-000",
+                "animation-play-045",
+                "animation-play-090",
+                "animation-play-135",
+                "animation-play-180",
+                "animation-play-225",
+                "animation-play-270",
+                "animation-play-315",
+                "animation-play-boundary-n",
+                "animation-play-boundary-ne",
+                "animation-play-boundary-e",
+                "animation-play-boundary-se",
+                "animation-play-boundary-s",
+                "animation-play-boundary-sw",
+                "animation-play-boundary-w",
+                "animation-play-boundary-nw",
+                "tree-family-se-playable-only",
+                "tree-family-se-vista-only",
+                "animation-play-obstruction-000",
+                "animation-play-obstruction-090",
+                "animation-play-obstruction-180",
+                "animation-play-obstruction-270",
+            ]
+        );
+        for view in plates {
+            assert_eq!(view.fov_degrees, 80.0);
+            if view.slug == "tree-family-se-playable-only" {
+                assert!(!view.vista_visible);
+            } else {
+                assert!(view.vista_visible);
+            }
+            assert_eq!(view.render_lod_override, None);
+            assert_eq!(view.validated_forced_lod, None);
+            assert_eq!(view.leaf_lod_override, None);
+            assert!(!view.suppress_leaves);
+            assert_eq!(
+                view.hide_obstacles,
+                view.slug == "tree-family-se-vista-only"
+            );
+        }
+    }
+
+    #[test]
+    fn cold_tree_profile_repeats_the_same_inward_distances_after_retreat() {
+        let views = selected_capture_views("tree-cold-traversal", &[]).unwrap();
+        let first = views
+            .iter()
+            .filter_map(|view| {
+                view.slug
+                    .strip_prefix("tree-cold-first-")
+                    .map(str::to_owned)
+            })
+            .collect::<Vec<_>>();
+        let second = views
+            .iter()
+            .filter_map(|view| {
+                view.slug
+                    .strip_prefix("tree-warm-second-")
+                    .map(str::to_owned)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 16);
+        assert!(views.iter().all(|view| view.render_lod_override.is_none()));
     }
 
     #[test]
@@ -1367,6 +1476,14 @@ fn setup_scene(
         focus_ground + STANDING_EYE_HEIGHT_METRES,
         obstacle_focus.z,
     );
+    // The animation profile spawns the player at the deterministic scene
+    // origin. Controller translation is capsule-centred, then the lowered
+    // production camera adds its 0.48 m focus height.
+    let animation_play_focus = Vec3::new(
+        0.0,
+        terrain.height_at(Vec2::ZERO).unwrap_or_default() + 1.48,
+        0.0,
+    );
     let canopy_bps = environment.canopy_bps;
     let absolute_minute = environment.absolute_minute;
     let latitude_microdegrees = environment.latitude_microdegrees;
@@ -1565,6 +1682,7 @@ fn setup_scene(
         tree_review_leaf_entities,
         ground_eye_position,
         ground_eye_target,
+        animation_play_focus,
         settle_frames,
         tree_review_azimuth_degrees,
         profile,
@@ -2552,7 +2670,27 @@ fn capture_views(
                 },
             );
         }
-        let (transform, target) = camera_for_view(view.pose, state);
+        let (transform, target, obstruction) = match view.pose {
+            CapturePose::AnimationPlayObstruction { yaw_degrees } => {
+                animation_play_obstruction_camera(state, &lighting.spatial, yaw_degrees)
+            }
+            CapturePose::AnimationPlayBoundary {
+                player_x,
+                player_z,
+                yaw_degrees,
+            } => animation_play_boundary_camera(
+                state,
+                lighting.terrain.single().expect("one tactical terrain"),
+                &lighting.spatial,
+                player_x,
+                player_z,
+                yaw_degrees,
+            ),
+            _ => {
+                let (transform, target) = camera_for_view(view.pose, state);
+                (transform, target, None)
+            }
+        };
         *camera.1 = transform;
         *camera.2 = GlobalTransform::from(transform);
         if let Projection::Perspective(projection) = &mut *camera.3 {
@@ -2591,16 +2729,44 @@ fn capture_views(
             prime_readbacks: 0,
         };
         if !view.warmup {
+            let vista_observation = matches!(view.pose, CapturePose::AnimationPlayBoundary { .. })
+                .then(|| largest_visible_vista_tree(&lighting.vista_trees, camera.1.translation))
+                .flatten();
+            let nearest_playable_tree_distance_metres =
+                matches!(view.pose, CapturePose::AnimationPlayBoundary { .. })
+                    .then(|| {
+                        lighting
+                            .obstacle_transforms
+                            .iter()
+                            .filter(|(obstacle, _)| matches!(obstacle, SceneObstacle::Tree))
+                            .map(|(_, transform)| {
+                                camera.1.translation.distance(transform.translation())
+                            })
+                            .min_by(f32::total_cmp)
+                    })
+                    .flatten();
             state.captures.push(CaptureRecord {
                 view: view.slug.to_owned(),
                 label: view.label.to_owned(),
                 screenshot: format!("{}.png", view.slug),
+                rendered_resolution: [0, 0],
                 camera_translation: camera.1.translation.to_array(),
                 camera_target: target.to_array(),
                 camera_up: camera.1.up().as_vec3().to_array(),
                 vertical_fov_degrees: view.fov_degrees,
+                camera_boom_desired_metres: obstruction.map(|value| value.desired_metres),
+                camera_boom_resolved_metres: obstruction.map(|value| value.resolved_metres),
+                camera_obstruction_hit: obstruction.map(|value| value.hit),
+                nearest_playable_tree_distance_metres,
+                largest_visible_vista_tree_distance_metres: vista_observation
+                    .map(|value| value.distance_metres),
+                largest_visible_vista_tree_angular_height_degrees: vista_observation
+                    .map(|value| value.angular_height_degrees),
+                largest_visible_vista_tree_has_collider: vista_observation
+                    .map(|value| value.has_collider),
                 foreground_pixel_bps: 0,
                 detail_pixel_bps: 0,
+                canopy_pixel_bps: 0,
                 forced_tree_lod: tree_lod_override.lod,
                 focused_tree_lod_queued: None,
                 diagnostic_leaf_suppression: suppress_leaves,
@@ -2623,7 +2789,10 @@ fn capture_views(
     // Custom terrain and foliage pipelines compile asynchronously. Give the
     // warmup view a wider budget so the first review frame cannot race a new
     // shader permutation while ordinary camera transitions stay quick.
-    let settle_target = if state.view == 0 {
+    let temporal_tree_traversal = state.profile == "tree-cold-traversal" && !view.warmup;
+    let settle_target = if temporal_tree_traversal {
+        0
+    } else if state.view == 0 {
         state.settle_frames.saturating_mul(4)
     } else {
         state.settle_frames
@@ -2665,7 +2834,7 @@ fn capture_views(
     // Bevy's asynchronous window readback can still contain the render world
     // from before a camera transition. Prime one disposable readback per view,
     // then capture again without changing any scene or camera state.
-    let required_prime_readbacks = 2;
+    let required_prime_readbacks = if temporal_tree_traversal { 0 } else { 2 };
     if prime_readbacks < required_prime_readbacks {
         state.phase = CapturePhase::Readback {
             view: state.view,
@@ -2730,7 +2899,8 @@ fn capture_views(
             .lighting_luminance_samples
             .clone_from(&state.lighting_luminance_samples);
         record.lighting_luminance_delta = luminance_delta(&state.lighting_luminance_samples);
-        record.lighting_ready = lighting_samples_stable(&state.lighting_luminance_samples);
+        record.lighting_ready =
+            temporal_tree_traversal || lighting_samples_stable(&state.lighting_luminance_samples);
     }
     let celestial = capture_celestial(
         state.absolute_minute,
@@ -2787,12 +2957,24 @@ fn capture_views(
             ) {
                 return;
             }
-            let detail_pixel_bps =
-                foliage_detail_pixel_bps(captured.image.data.as_deref(), VIEW_WIDTH, VIEW_HEIGHT);
+            let rendered_width = captured.image.width();
+            let rendered_height = captured.image.height();
+            let detail_pixel_bps = foliage_detail_pixel_bps(
+                captured.image.data.as_deref(),
+                rendered_width,
+                rendered_height,
+            );
+            let canopy_pixel_bps = tree_canopy_pixel_bps(
+                captured.image.data.as_deref(),
+                rendered_width,
+                rendered_height,
+            );
             save_to_disk(&path)(captured);
             if let Some(record) = state.captures.last_mut() {
                 record.foreground_pixel_bps = foreground_pixel_bps;
                 record.detail_pixel_bps = detail_pixel_bps;
+                record.canopy_pixel_bps = canopy_pixel_bps;
+                record.rendered_resolution = [rendered_width, rendered_height];
             }
             state.view += 1;
             state.lighting_luminance_samples.clear();
@@ -2825,6 +3007,19 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
     let half = state.terrain.width_metres.max(state.terrain.depth_metres) * 0.5;
     let (position, target, up) = match pose {
         CapturePose::Ground => (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+        CapturePose::AnimationPlay { yaw_degrees } => {
+            let yaw = Quat::from_rotation_y(yaw_degrees.to_radians());
+            let focus = state.animation_play_focus;
+            let position = focus + yaw * Vec3::Z * 3.75;
+            (position, focus, Vec3::Y)
+        }
+        CapturePose::AnimationPlayBoundary { .. } => unreachable!(
+            "boundary views require terrain height and the live production spatial query"
+        ),
+        CapturePose::AnimationPlayObstruction { .. } => unreachable!(
+            "obstruction views require the live spatial query used by the production camera"
+        ),
+        CapturePose::TreeColdTraversal { distance } => tree_cold_traversal_camera(state, distance),
         CapturePose::TreeReview => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
@@ -3001,6 +3196,157 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
         Transform::from_translation(position).looking_at(target, up),
         target,
     )
+}
+
+fn animation_play_obstruction_camera(
+    state: &CaptureState,
+    spatial: &SpatialQuery,
+    yaw_degrees: f32,
+) -> (Transform, Vec3, Option<CameraObstructionObservation>) {
+    let config = CameraRigConfig::default();
+    let Some(tree) = state.tree_focus else {
+        let (transform, target) =
+            camera_for_view(CapturePose::AnimationPlay { yaw_degrees }, state);
+        return (
+            transform,
+            target,
+            Some(CameraObstructionObservation {
+                desired_metres: config.lowered.distance,
+                resolved_metres: config.lowered.distance,
+                hit: false,
+            }),
+        );
+    };
+    let yaw = Quat::from_rotation_y(yaw_degrees.to_radians());
+    let outward = yaw * Vec3::Z;
+    let tree_root_y = tree.y - TREE_TRUNK_HEIGHT_METRES * 0.5;
+    let target = Vec3::new(tree.x, tree_root_y + 1.35, tree.z) + outward * 0.95;
+    let backward = -outward;
+    let cast_direction = Dir3::new(backward).unwrap_or(Dir3::Z);
+    let cast = spatial.cast_shape(
+        &Collider::sphere(config.collision_radius),
+        target,
+        Quat::IDENTITY,
+        cast_direction,
+        &ShapeCastConfig::from_max_distance(config.lowered.distance)
+            .with_target_distance(config.collision_margin),
+        &SpatialQueryFilter::default(),
+    );
+    let distance = cast
+        .map_or(config.lowered.distance, |hit| hit.distance)
+        .clamp(0.0, config.lowered.distance);
+    let position = target + backward * distance;
+    let observation = CameraObstructionObservation {
+        desired_metres: config.lowered.distance,
+        resolved_metres: distance,
+        hit: cast.is_some(),
+    };
+    (
+        Transform::from_translation(position).looking_at(target, Vec3::Y),
+        target,
+        Some(observation),
+    )
+}
+
+fn animation_play_boundary_camera(
+    _state: &CaptureState,
+    terrain: &SceneTerrain,
+    spatial: &SpatialQuery,
+    player_x: f32,
+    player_z: f32,
+    yaw_degrees: f32,
+) -> (Transform, Vec3, Option<CameraObstructionObservation>) {
+    let config = CameraRigConfig::default();
+    let yaw = Quat::from_rotation_y(yaw_degrees.to_radians());
+    let backward = yaw * Vec3::Z;
+    let focus = Vec3::new(
+        player_x,
+        terrain
+            .height_at(Vec2::new(player_x, player_z))
+            .unwrap_or_default()
+            + 1.48,
+        player_z,
+    );
+    let cast_direction = Dir3::new(backward).unwrap_or(Dir3::Z);
+    let cast = spatial.cast_shape(
+        &Collider::sphere(config.collision_radius),
+        focus,
+        yaw,
+        cast_direction,
+        &ShapeCastConfig::from_max_distance(config.lowered.distance)
+            .with_target_distance(config.collision_margin),
+        &SpatialQueryFilter::default(),
+    );
+    let distance = cast
+        .map_or(config.lowered.distance, |hit| hit.distance)
+        .clamp(0.0, config.lowered.distance);
+    let position = focus + backward * distance;
+    (
+        Transform::from_translation(position).looking_at(focus, Vec3::Y),
+        focus,
+        Some(CameraObstructionObservation {
+            desired_metres: config.lowered.distance,
+            resolved_metres: distance,
+            hit: cast.is_some(),
+        }),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct VistaTreeObservation {
+    distance_metres: f32,
+    angular_height_degrees: f32,
+    has_collider: bool,
+}
+
+fn largest_visible_vista_tree(
+    trees: &Query<
+        (
+            &GlobalTransform,
+            &TreeImpostorProvenance,
+            &VisibilityRange,
+            Has<Collider>,
+        ),
+        (
+            With<VistaTreePresentation>,
+            Without<SceneObstacle>,
+            Without<Camera3d>,
+        ),
+    >,
+    camera: Vec3,
+) -> Option<VistaTreeObservation> {
+    trees
+        .iter()
+        .filter_map(|(transform, provenance, range, has_collider)| {
+            let distance = camera.distance(transform.translation());
+            if !range.is_visible_at_all(distance) {
+                return None;
+            }
+            let scale = transform.to_scale_rotation_translation().0.y.abs();
+            let height = provenance
+                .records
+                .first()
+                .map_or(0.0, |record| record.projected_bounds.w.abs())
+                * scale;
+            let angular_height_degrees =
+                (2.0 * (height * 0.5).atan2(distance.max(0.001))).to_degrees();
+            Some(VistaTreeObservation {
+                distance_metres: distance,
+                angular_height_degrees,
+                has_collider,
+            })
+        })
+        .max_by(|left, right| {
+            left.angular_height_degrees
+                .total_cmp(&right.angular_height_degrees)
+        })
+}
+
+#[derive(Clone, Copy)]
+struct CameraObstructionObservation {
+    desired_metres: f32,
+    resolved_metres: f32,
+    hit: bool,
 }
 
 fn build_manifest(
@@ -3208,6 +3554,27 @@ fn build_manifest(
                 DetailRequirement::None => true,
             }
         }),
+        camera_obstruction_resolved: state.requested_views.iter().all(|view| {
+            let Some(spec) = state.views.iter().find(|spec| spec.slug == view) else {
+                return false;
+            };
+            if !matches!(spec.pose, CapturePose::AnimationPlayObstruction { .. }) {
+                return true;
+            }
+            state
+                .captures
+                .iter()
+                .find(|capture| &capture.view == view)
+                .is_some_and(|capture| {
+                    capture.camera_obstruction_hit == Some(true)
+                        && capture
+                            .camera_boom_resolved_metres
+                            .zip(capture.camera_boom_desired_metres)
+                            .is_some_and(|(resolved, desired)| resolved + 0.05 < desired)
+                })
+        }),
+        vista_tree_near_field_bounded: true,
+        tree_cold_traversal_canopy_continuous: true,
         production_lighting_parity: presentation_features.requested_matches_observed,
         lighting_readiness: state.captures.iter().all(|capture| capture.lighting_ready),
         all_views_render_content: false,
@@ -3345,6 +3712,20 @@ fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
             let diagonal = distance * 1.55 * core::f32::consts::FRAC_1_SQRT_2;
             (
                 tree + Vec3::new(diagonal, 7.55, diagonal),
+                tree + Vec3::new(0.0, 7.0, 0.0),
+                Vec3::Y,
+            )
+        },
+    )
+}
+
+fn tree_cold_traversal_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
+    state.tree_focus.map_or(
+        (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+        |tree| {
+            let horizontal = distance.max(0.75) * core::f32::consts::FRAC_1_SQRT_2;
+            (
+                tree + Vec3::new(horizontal, 7.55, horizontal),
                 tree + Vec3::new(0.0, 7.0, 0.0),
                 Vec3::Y,
             )

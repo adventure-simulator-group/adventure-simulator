@@ -749,6 +749,10 @@ mod tests {
         assert_eq!(first.image.data, second.image.data);
         assert!((WHOLE_TREE_RUNTIME_WIDTH_SCALE - 0.95).abs() < f32::EPSILON);
         assert!((WHOLE_TREE_BAKE_EXPOSURE - 0.91).abs() < f32::EPSILON);
+        assert_eq!(
+            tree_impostor_material(42, 4, Handle::default()).alpha_mode(),
+            AlphaMode::AlphaToCoverage
+        );
         assert!(
             first
                 .provenance
@@ -761,7 +765,14 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_tree_impostor.wgsl"
         ));
-        assert!(shader.contains("pbr_functions::visibility_range_dither("));
+        assert!(shader.contains("let horizontal_scale = length(world_from_local[0].xyz)"));
+        assert!(shader.contains("vertex.position.x * horizontal_scale"));
+        assert!(shader.contains("vertex.position.y * vertical_scale"));
+        assert!(
+            shader.contains("in.visibility_range_dither <= -8 || in.visibility_range_dither > 8")
+        );
+        assert!(!shader.contains("visibility_alpha"));
+        assert!(!shader.contains("pbr_functions::visibility_range_dither("));
         assert!(shader.contains("abs(dot(normalize(in.world_normal), light_direction))"));
         assert!(shader.contains("let normal_light = 0.25 + card_light * 0.75"));
     }

@@ -86,6 +86,7 @@ pub(super) struct CaptureState {
     pub(super) tree_review_leaf_entities: Vec<(Entity, TreeLeafRepresentation)>,
     pub(super) ground_eye_position: Vec3,
     pub(super) ground_eye_target: Vec3,
+    pub(super) animation_play_focus: Vec3,
     pub(super) settle_frames: u32,
     pub(super) tree_review_azimuth_degrees: f32,
     pub(super) profile: String,
@@ -189,6 +190,48 @@ pub(super) fn foliage_detail_pixel_bps(data: Option<&[u8]>, width: u32, height: 
         .min(10_000) as u16
 }
 
+/// Foreground coverage in the upper-centre region where the focused tree crown
+/// is framed by `TreeColdTraversal`. Comparing each pixel to sky on the same
+/// scanline makes this a render-output gate without counting the atmosphere's
+/// vertical gradient: a main-world entity whose mesh/material is not prepared
+/// cannot satisfy it.
+pub(super) fn tree_canopy_pixel_bps(data: Option<&[u8]>, width: u32, height: u32) -> u16 {
+    if width == 0 || height == 0 {
+        return 0;
+    }
+    let Some(data) = data else { return 0 };
+    let row_bytes = width as usize * 4;
+    if data.len() < row_bytes * height as usize {
+        return 0;
+    }
+    let x_start = width as usize * 2 / 5;
+    let x_end = width as usize * 3 / 5;
+    let y_start = height as usize / 8;
+    let y_end = height as usize * 9 / 20;
+    let mut compared = 0usize;
+    let mut foreground = 0usize;
+    for y in y_start..y_end {
+        let row = &data[y * row_bytes..(y + 1) * row_bytes];
+        // Compare to sky from the same scanline so the atmosphere's vertical
+        // luminance gradient does not masquerade as crown coverage.
+        let background = &row[(width as usize / 8) * 4..][..4];
+        for pixel in &row.as_chunks::<4>().0[x_start..x_end] {
+            compared += 1;
+            let difference = pixel[..3]
+                .iter()
+                .zip(&background[..3])
+                .map(|(left, right)| left.abs_diff(*right) as u16)
+                .sum::<u16>();
+            foreground += usize::from(difference >= 20);
+        }
+    }
+    foreground
+        .checked_mul(10_000)
+        .and_then(|value| value.checked_div(compared))
+        .unwrap_or(0)
+        .min(10_000) as u16
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +260,14 @@ mod tests {
     fn foliage_metric_rejects_zero_sized_images() {
         assert_eq!(foliage_detail_pixel_bps(Some(&[]), 0, 1), 0);
         assert_eq!(foliage_detail_pixel_bps(Some(&[]), 1, 0), 0);
+    }
+
+    #[test]
+    fn canopy_metric_requires_upper_centre_render_content() {
+        let mut image = vec![100_u8, 140, 180, 255].repeat(16);
+        assert_eq!(tree_canopy_pixel_bps(Some(&image), 4, 4), 0);
+        let pixel = 4;
+        image[pixel..pixel + 4].copy_from_slice(&[20, 60, 25, 255]);
+        assert!(tree_canopy_pixel_bps(Some(&image), 4, 4) > 0);
     }
 }

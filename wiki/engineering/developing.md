@@ -797,6 +797,8 @@ presentation plugin:
 just tactical-scene-capture dense-woodland
 just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
 just tactical-scene-capture sparse-woodland target/tactical-scene-captures/daylight-review 12 340560
+just tactical-animation-play-capture target/tactical-scene-captures/animation-play
+just tactical-tree-cold-traversal-capture target/tactical-scene-captures/tree-cold-traversal
 just tactical-environment-review target/tactical-scene-captures/environment-review
 just tactical-tree-canopy-series target/tactical-scene-captures/oak-canopy-review
 just tactical-tree-leaf-benchmark target/tactical-scene-captures/tree-leaf-benchmark 180
@@ -971,6 +973,29 @@ fails closed unless each is at most 0.275 metres. Sparse woodland requests this 
 in the named morning and grazing runs (and retains it in a full three-time
 matrix); validation requires both leaf and twig patches plus visible fine
 detail. This is the acceptance view for the 35-metre detailed-litter cutoff.
+
+The `animation-play` profile uses the production 80-degree third-person camera
+at the tactical spawn origin, records eight fixed 45-degree yaw increments,
+then repeats production-camera sampling at eight positions around the playable
+boundary. Boundary records identify the nearest playable tree and the largest
+visible vista tree's distance, angular height, and collider status. Validation
+fails closed unless every boundary view is present and vista trees remain at or
+below the 16-degree background ceiling. Two south-east isolation plates retain
+the same camera while independently hiding playable and vista trees. Four
+cardinal tree-trunk obstruction plates are resolved through the live
+camera-boom spatial query.
+It leaves tree LOD selection and vista presentation unforced so defects visible
+while playing the dense-woodland animation demo remain reproducible in the
+native screenshot harness.
+
+The `tree-cold-traversal` profile keeps natural tree LOD selection, warms only
+the distant whole-tree card, records the first renderable frame across an
+inward distance sequence, retreats, and repeats the identical approach with
+the generated assets resident. Its manifest records upper-centre canopy pixel
+coverage and fails unless every cold plate retains at least 80 percent of its
+same-distance warm plate, with a scanline-sky-relative crown-coverage floor. This
+is the temporal acceptance profile for first-approach-only canopy loss; settled
+static LOD plates do not substitute for it.
 
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact

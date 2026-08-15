@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2003)
+## Files (2014)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -19,6 +19,8 @@ development, or other wiki document before changing a subsystem.
 - `.gitattributes` — Repository support file.
 - `.github/workflows/gh-pages.yml` — Repository support file.
 - `.gitignore` — Repository support file.
+- `.prettierignore` — Repository support file.
+- `.prettierrc.json` — Repository support file.
 - `AGENTS.md` — Project documentation.
 - `CNAME` — Repository support file.
 - `Caddyfile.dev` — Repository support file.
@@ -564,6 +566,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/courtship_terminal_reason_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/courtship_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/create_character_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/create_default_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_named_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_named_character_with_id_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -1891,11 +1894,16 @@ development, or other wiki document before changing a subsystem.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
+- `package-lock.json` — Repository support file.
+- `package.json` — Repository support file.
+- `research/legacy/meta.md` — Project documentation.
+- `research/legacy/roadmap.md` — Project documentation.
 - `rust-toolchain.toml` — Tooling or build configuration.
 - `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/capture_tactical_scenes.py` — Development or documentation automation script.
 - `scripts/dev_stack.py` — Development or documentation automation script.
+- `scripts/format_wiki_markdown.py` — Development or documentation automation script.
 - `scripts/import_hipparcos_stars.py` — Development or documentation automation script.
 - `scripts/init_forest_cover.py` — Development or documentation automation script.
 - `scripts/init_jung_pnv.py` — Development or documentation automation script.
@@ -1911,6 +1919,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/quest_web_eval.mjs` — Repository support file.
 - `scripts/real_world_tactical.py` — Development or documentation automation script.
 - `scripts/tactical_terrain_density_benchmark.py` — Development or documentation automation script.
+- `scripts/test_format_wiki_markdown.py` — Development or documentation automation script.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
 - `scripts/test_init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/test_init_owda.py` — Development or documentation automation script.
@@ -1918,6 +1927,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/test_init_viabundus.py` — Development or documentation automation script.
 - `scripts/test_init_world_data.py` — Development or documentation automation script.
 - `scripts/test_init_world_runtime.py` — Development or documentation automation script.
+- `scripts/test_update_wiki_summary.py` — Development or documentation automation script.
 - `scripts/test_world_data_bundle.py` — Development or documentation automation script.
 - `scripts/test_world_runtime_release.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
@@ -1930,6 +1940,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/tests/test_real_world_tactical.py` — Development or documentation automation script.
 - `scripts/tests/test_validate_environment_review_ledger.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
+- `scripts/update_wiki_summary.py` — Development or documentation automation script.
 - `scripts/validate_environment_review_ledger.py` — Development or documentation automation script.
 - `scripts/validate_organization_world.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
@@ -1941,70 +1952,70 @@ development, or other wiki document before changing a subsystem.
 - `wiki/client/controls.md` — Project documentation.
 - `wiki/client/models.md` — Project documentation.
 - `wiki/client/slots.md` — Project documentation.
-- `wiki/implementation.md` — Project documentation.
-- `wiki/meta.md` — Project documentation.
-- `wiki/networking.md` — Project documentation.
-- `wiki/reference/architecture.md` — Project documentation.
-- `wiki/reference/autopsies.md` — Project documentation.
-- `wiki/reference/bestiary.md` — Project documentation.
-- `wiki/reference/developing.md` — Project documentation.
-- `wiki/reference/dialogue.md` — Project documentation.
-- `wiki/reference/drought.md` — Project documentation.
-- `wiki/reference/elevation.md` — Project documentation.
-- `wiki/reference/environment-visual-review.md` — Project documentation.
-- `wiki/reference/equipment.md` — Project documentation.
-- `wiki/reference/errantry-and-challenges.md` — Project documentation.
-- `wiki/reference/fantastic-diseases.md` — Project documentation.
-- `wiki/reference/food-and-cooking.md` — Project documentation.
-- `wiki/reference/foraging.md` — Project documentation.
-- `wiki/reference/forest-cover.md` — Project documentation.
-- `wiki/reference/geology.md` — Project documentation.
-- `wiki/reference/herbalism.md` — Project documentation.
-- `wiki/reference/historical-land-use.md` — Project documentation.
-- `wiki/reference/hydrology.md` — Project documentation.
-- `wiki/reference/industries.md` — Project documentation.
-- `wiki/reference/item-authoring.md` — Project documentation.
-- `wiki/reference/llm/project-map-maintenance.md` — Project documentation.
-- `wiki/reference/measured-inventory.md` — Project documentation.
-- `wiki/reference/observer-knowledge.md` — Project documentation.
-- `wiki/reference/organizations.md` — Project documentation.
-- `wiki/reference/outbreaks.md` — Project documentation.
-- `wiki/reference/physical-materials.md` — Project documentation.
-- `wiki/reference/physical-objects-and-custody.md` — Project documentation.
-- `wiki/reference/physiology.md` — Project documentation.
-- `wiki/reference/potential-vegetation.md` — Project documentation.
-- `wiki/reference/puzzle-lab.md` — Project documentation.
-- `wiki/reference/quest-authority.md` — Project documentation.
-- `wiki/reference/quest-generation-and-investigation.md` — Project documentation.
-- `wiki/reference/religion.md` — Project documentation.
-- `wiki/reference/romance-road-encounters.md` — Project documentation.
-- `wiki/reference/route-terrain.md` — Project documentation.
-- `wiki/reference/soil.md` — Project documentation.
-- `wiki/reference/source-manifests.md` — Project documentation.
-- `wiki/reference/spatial-grid.md` — Project documentation.
-- `wiki/reference/strategic-action-planning.md` — Project documentation.
-- `wiki/reference/strategic-places.md` — Project documentation.
-- `wiki/reference/strategic-read-cache.md` — Project documentation.
-- `wiki/reference/strategic-rights.md` — Project documentation.
-- `wiki/reference/strategic-simulation.md` — Project documentation.
-- `wiki/reference/tree-species.md` — Project documentation.
-- `wiki/reference/viabundus.md` — Project documentation.
-- `wiki/reference/world-data-bundles.md` — Project documentation.
-- `wiki/roadmap.md` — Project documentation.
+- `wiki/contributing/item-authoring.md` — Project documentation.
+- `wiki/contributing/wiki-writing.md` — Project documentation.
+- `wiki/engineering/architecture.md` — Project documentation.
+- `wiki/engineering/developing.md` — Project documentation.
+- `wiki/engineering/implementation.md` — Project documentation.
+- `wiki/engineering/networking.md` — Project documentation.
+- `wiki/engineering/project-map-maintenance.md` — Project documentation.
+- `wiki/engineering/puzzle-lab.md` — Project documentation.
+- `wiki/engineering/strategic-read-cache.md` — Project documentation.
+- `wiki/engineering/strategic-simulation.md` — Project documentation.
+- `wiki/engineering/world-data/drought.md` — Project documentation.
+- `wiki/engineering/world-data/elevation.md` — Project documentation.
+- `wiki/engineering/world-data/environment-visual-review.md` — Project documentation.
+- `wiki/engineering/world-data/forest-cover.md` — Project documentation.
+- `wiki/engineering/world-data/geology.md` — Project documentation.
+- `wiki/engineering/world-data/historical-land-use.md` — Project documentation.
+- `wiki/engineering/world-data/hydrology.md` — Project documentation.
+- `wiki/engineering/world-data/industries.md` — Project documentation.
+- `wiki/engineering/world-data/observer-knowledge.md` — Project documentation.
+- `wiki/engineering/world-data/physical-materials.md` — Project documentation.
+- `wiki/engineering/world-data/physical-objects-and-custody.md` — Project documentation.
+- `wiki/engineering/world-data/potential-vegetation.md` — Project documentation.
+- `wiki/engineering/world-data/religion.md` — Project documentation.
+- `wiki/engineering/world-data/route-terrain.md` — Project documentation.
+- `wiki/engineering/world-data/soil.md` — Project documentation.
+- `wiki/engineering/world-data/source-manifests.md` — Project documentation.
+- `wiki/engineering/world-data/spatial-grid.md` — Project documentation.
+- `wiki/engineering/world-data/strategic-action-planning.md` — Project documentation.
+- `wiki/engineering/world-data/strategic-places.md` — Project documentation.
+- `wiki/engineering/world-data/strategic-rights.md` — Project documentation.
+- `wiki/engineering/world-data/tree-species.md` — Project documentation.
+- `wiki/engineering/world-data/viabundus.md` — Project documentation.
+- `wiki/engineering/world-data/world-data-bundles.md` — Project documentation.
+- `wiki/navigation.toml` — Tooling or build configuration.
 - `wiki/scenario.md` — Project documentation.
+- `wiki/shared/bestiary.md` — Project documentation.
 - `wiki/shared/encumbrance.md` — Project documentation.
 - `wiki/shared/energy.md` — Project documentation.
+- `wiki/shared/equipment.md` — Project documentation.
+- `wiki/shared/fantastic-diseases.md` — Project documentation.
+- `wiki/shared/food-and-cooking.md` — Project documentation.
 - `wiki/shared/health.md` — Project documentation.
+- `wiki/shared/herbalism.md` — Project documentation.
 - `wiki/shared/inventory.md` — Project documentation.
 - `wiki/shared/magic.md` — Project documentation.
+- `wiki/shared/measured-inventory.md` — Project documentation.
 - `wiki/shared/morale.md` — Project documentation.
+- `wiki/shared/physiology.md` — Project documentation.
 - `wiki/shared/stats.md` — Project documentation.
 - `wiki/shared/strata-map.md` — Project documentation.
 - `wiki/shared/terrain.md` — Project documentation.
+- `wiki/strategic/autopsies.md` — Project documentation.
 - `wiki/strategic/character.md` — Project documentation.
+- `wiki/strategic/dialogue.md` — Project documentation.
+- `wiki/strategic/errantry-and-challenges.md` — Project documentation.
+- `wiki/strategic/foraging.md` — Project documentation.
+- `wiki/strategic/organizations.md` — Project documentation.
+- `wiki/strategic/outbreaks.md` — Project documentation.
+- `wiki/strategic/quest-authority.md` — Project documentation.
+- `wiki/strategic/quest-generation-and-investigation.md` — Project documentation.
 - `wiki/strategic/quests.md` — Project documentation.
 - `wiki/strategic/reputation.md` — Project documentation.
 - `wiki/strategic/residences.md` — Project documentation.
+- `wiki/strategic/romance-road-encounters.md` — Project documentation.
 - `wiki/strategic/settlement.md` — Project documentation.
 - `wiki/strategic/time.md` — Project documentation.
 - `wiki/strategic/trade.md` — Project documentation.

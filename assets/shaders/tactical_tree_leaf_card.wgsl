@@ -1,6 +1,5 @@
 #import bevy_pbr::{
     mesh_functions,
-    pbr_functions::visibility_range_dither,
     view_transformations::position_world_to_clip,
 }
 
@@ -144,12 +143,29 @@ fn discard_transparent_leaf(uv: vec2<f32>) -> f32 {
     return opacity;
 }
 
+fn leaf_lod_coverage(dither: i32) -> f32 {
+    // Bevy's default visibility helper discards a fixed 4x4 ordered pattern.
+    // On a coherent crown that pattern reads as a screen door. Preserve the
+    // same sixteen transition levels as fractional alpha so AlphaToCoverage
+    // resolves them at the MSAA sample scale instead.
+    return clamp(1.0 - abs(f32(dither)) / 16.0, 0.0, 1.0);
+}
+
+fn discard_hidden_leaf_lod(dither: i32) {
+    // Depth, normal, motion, and shadow passes do not expose a color alpha for
+    // sample coverage. Use one stable midpoint handoff there instead of an
+    // ordered per-pixel discard that would imprint a checkerboard silhouette.
+    if dither <= -8 || dither > 8 {
+        discard;
+    }
+}
+
 #ifdef PREPASS_PIPELINE
 #ifdef PREPASS_FRAGMENT
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
 #ifdef VISIBILITY_RANGE_DITHER
-    visibility_range_dither(in.position, in.visibility_range_dither);
+    discard_hidden_leaf_lod(in.visibility_range_dither);
 #endif
     discard_transparent_leaf(in.uv);
     var out: FragmentOutput;
@@ -169,7 +185,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 @fragment
 fn fragment(in: VertexOutput) {
 #ifdef VISIBILITY_RANGE_DITHER
-    visibility_range_dither(in.position, in.visibility_range_dither);
+    discard_hidden_leaf_lod(in.visibility_range_dither);
 #endif
     discard_transparent_leaf(in.uv);
     // Thin whole terminal shoots, rather than high-frequency pixels, so
@@ -182,8 +198,12 @@ fn fragment(in: VertexOutput) {
 #else
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+    var lod_coverage = 1.0;
 #ifdef VISIBILITY_RANGE_DITHER
-    visibility_range_dither(in.position, in.visibility_range_dither);
+    lod_coverage = leaf_lod_coverage(in.visibility_range_dither);
+    if lod_coverage <= 0.0 {
+        discard;
+    }
 #endif
     let opacity = discard_transparent_leaf(in.uv);
     let position_dx = dpdx(in.world_position.xyz);
@@ -220,7 +240,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         | STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
     pbr_input.material.base_color = vec4<f32>(
         albedo,
-        opacity,
+        opacity * lod_coverage,
     );
     pbr_input.material.perceptual_roughness = arm.g;
     pbr_input.material.metallic = 0.0;

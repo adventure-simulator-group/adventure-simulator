@@ -309,6 +309,18 @@ tactical-play mode="animation" base_port="24920" graphics_preset="default" prese
 tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} --profile {{ quote(profile) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
 
+# Capture the production animation scene from the third-person spawn camera at
+# eight fixed yaw angles plus four live tree-obstruction boom checks, with
+# natural tree LODs and vista presentation enabled.
+tactical-animation-play-capture output="target/tactical-scene-captures/animation-play" settle_frames="12" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(scene_input) }} --profile animation-play --settle-frames {{ quote(settle_frames) }} --output {{ quote(output) }}
+
+# Capture the first cold approach, retreat, and identical warm second approach
+# through every natural tree LOD handoff. Only the distant-card warmup settles;
+# traversal plates intentionally preserve the first renderable frame.
+tactical-tree-cold-traversal-capture output="target/tactical-scene-captures/tree-cold-traversal" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(scene_input) }} --profile tree-cold-traversal --settle-frames 12 --output {{ quote(output) }}
+
 # Capture the production tactical scene sampled from the final real-world
 # terrain pack at signed WGS84 latitude/longitude decimal degrees.
 tactical-real-world-capture latitude longitude output="" absolute_minute="340320" settle_frames="12" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack":
