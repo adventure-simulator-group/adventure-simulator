@@ -46,13 +46,14 @@ use view_specs::{
 };
 
 use crate::presentation::{
-    AtmosphereIblAmbientHandoff, GroundScatterLayer, LooseStonePebblePatch, PresentedTree,
-    ProceduralEnvironmentAssets, ProceduralRockVisual, TacticalGraphicsSettings,
-    TacticalPresentationPlugin, TacticalTreeLeafCardMaterial, TerrainDetailPatch,
-    TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
-    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
-    TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
-    oak_leaf_material, oak_review_terminal_specimen,
+    AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
+    GroundScatterLayer, LooseStonePebblePatch, PresentedTree, ProceduralEnvironmentAssets,
+    ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
+    TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
+    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
+    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
+    oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -96,6 +97,10 @@ struct LightingObservationParams<'w, 's> {
     ambient_handoff: Res<'w, AtmosphereIblAmbientHandoff>,
     tree_trunks: Query<'w, 's, (), With<TreeTrunkLod>>,
     presented_tree_roots: Query<'w, 's, (), With<PresentedTree>>,
+    terrain: Query<'w, 's, &'static SceneTerrain>,
+    litter_anchors: Query<'w, 's, &'static GroundLitterCaptureAnchors>,
+    obstacle_transforms:
+        Query<'w, 's, (&'static SceneObstacle, &'static GlobalTransform), Without<Camera3d>>,
 }
 
 #[derive(Component)]
@@ -975,11 +980,11 @@ mod capture_lighting_tests {
                 .any(|view| view.slug == "forest-floor-debris-detail")
         );
         let target = Vec3::new(4.0, 1.25, -2.0);
-        let (camera, observed_target, up) = debris_detail_camera(target, 37.0);
+        let (camera, observed_target, up) = debris_detail_camera(target, None, 37.0);
         assert_eq!(observed_target, target);
         assert_eq!(up, Vec3::Y);
-        assert!((camera.y - target.y - 0.36).abs() < 0.00001);
-        assert!((camera.xz().distance(target.xz()) - 0.92).abs() < 0.00001);
+        assert!((camera.y - target.y - 0.72).abs() < 0.00001);
+        assert!((camera.xz().distance(target.xz()) - 0.36).abs() < 0.00001);
         assert_eq!(
             views
                 .iter()
@@ -996,6 +1001,17 @@ mod capture_lighting_tests {
         assert!((pair.leaf_distance_metres - 0.1).abs() < 0.00001);
         assert!((pair.twig_distance_metres - 0.1).abs() < 0.00001);
         assert_eq!(debris_capture_target(&[leaves[1]], &[twigs[0]], 0.55), None);
+
+        let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![1.0, 1.0, 1.0, 1.0]).unwrap();
+        let snapped = terrain_snapped_debris_capture_target(
+            &[Vec3::new(-0.2, 0.0, -0.1)],
+            &[Vec3::new(0.1, 0.0, -0.1)],
+            0.55,
+            &terrain,
+        )
+        .unwrap();
+        let ground = terrain.height_at(snapped.focus.xz()).unwrap();
+        assert!(snapped.focus.y >= ground);
     }
 
     #[test]
@@ -1040,12 +1056,12 @@ mod capture_lighting_tests {
     #[test]
     fn requested_lighting_documents_every_production_default() {
         let requested = requested_feature_state();
-        assert!(!requested.shadows);
+        assert!(requested.shadows);
         assert!(requested.atmosphere);
         assert!(requested.celestial);
         assert!(requested.environment_light);
         assert_eq!(requested.environment_map_size, 64);
-        assert!(!requested.bloom);
+        assert!(requested.bloom);
         assert_eq!(requested.max_vista_lods, 3);
     }
 
@@ -1539,6 +1555,7 @@ fn setup_scene(
         tree_focus,
         rock_focus,
         debris_focus,
+        debris_camera: None,
         debris_leaf_distance_metres: None,
         debris_twig_distance_metres: None,
         tree_leaf_focus,
@@ -2458,22 +2475,36 @@ fn capture_views(
             .map(|(entity, layer, transform)| (entity, *layer, transform.translation()))
             .collect::<Vec<_>>();
         if view.debris_target {
-            let leaves = ground_scatter_entities
+            let pairs = lighting
+                .litter_anchors
                 .iter()
-                .filter(|(_, layer, _)| *layer == GroundScatterLayer::DryLeaves)
-                .map(|(_, _, translation)| *translation)
+                .flat_map(|anchors| anchors.pairs.iter().copied())
                 .collect::<Vec<_>>();
-            let twigs = ground_scatter_entities
+            let obstacles = lighting
+                .obstacle_transforms
                 .iter()
-                .filter(|(_, layer, _)| *layer == GroundScatterLayer::Twigs)
-                .map(|(_, _, translation)| *translation)
+                .map(|(obstacle, transform)| {
+                    let radius = match obstacle {
+                        SceneObstacle::Tree => 1.8,
+                        SceneObstacle::Rock(recipe) => recipe.collision_radius_metres(),
+                    };
+                    (transform.translation(), radius)
+                })
                 .collect::<Vec<_>>();
-            if let Some(target) = debris_capture_target(&leaves, &twigs, 0.55) {
+            let terrain = lighting.terrain.single().expect("one tactical terrain");
+            if let Some(target) = reviewable_debris_capture_target(
+                &pairs,
+                terrain,
+                &obstacles,
+                state.tree_review_azimuth_degrees,
+            ) {
                 state.debris_focus = Some(target.focus);
+                state.debris_camera = Some(target.camera);
                 state.debris_leaf_distance_metres = Some(target.leaf_distance_metres);
                 state.debris_twig_distance_metres = Some(target.twig_distance_metres);
             } else {
                 state.debris_focus = None;
+                state.debris_camera = None;
                 state.debris_leaf_distance_metres = None;
                 state.debris_twig_distance_metres = None;
             }
@@ -2877,7 +2908,13 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
         }
         CapturePose::Debris => state.debris_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
-            |target| debris_detail_camera(target, state.tree_review_azimuth_degrees),
+            |target| {
+                debris_detail_camera(
+                    target,
+                    state.debris_camera,
+                    state.tree_review_azimuth_degrees,
+                )
+            },
         ),
         CapturePose::GroundCover => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
@@ -3318,6 +3355,7 @@ fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct DebrisCaptureTarget {
     focus: Vec3,
+    camera: Vec3,
     leaf_distance_metres: f32,
     twig_distance_metres: f32,
 }
@@ -3347,15 +3385,96 @@ fn debris_capture_target(
     let focus = leaf.lerp(twig, 0.5);
     Some(DebrisCaptureTarget {
         focus,
+        camera: Vec3::ZERO,
         leaf_distance_metres: focus.xz().distance(leaf.xz()),
         twig_distance_metres: focus.xz().distance(twig.xz()),
     })
 }
 
-fn debris_detail_camera(target: Vec3, azimuth_degrees: f32) -> (Vec3, Vec3, Vec3) {
+fn terrain_snapped_debris_capture_target(
+    leaf_positions: &[Vec3],
+    twig_positions: &[Vec3],
+    maximum_pair_distance_metres: f32,
+    terrain: &SceneTerrain,
+) -> Option<DebrisCaptureTarget> {
+    let mut target =
+        debris_capture_target(leaf_positions, twig_positions, maximum_pair_distance_metres)?;
+    let terrain_height = terrain.height_at(target.focus.xz())?;
+    target.focus.y = target.focus.y.max(terrain_height + 0.001);
+    Some(target)
+}
+
+fn reviewable_debris_capture_target(
+    pairs: &[GroundLitterCapturePair],
+    terrain: &SceneTerrain,
+    obstacles: &[(Vec3, f32)],
+    fallback_azimuth_degrees: f32,
+) -> Option<DebrisCaptureTarget> {
+    let half_width = terrain.width() * 0.5;
+    let half_depth = terrain.depth() * 0.5;
+    let mut candidates = pairs
+        .iter()
+        .filter_map(|pair| {
+            let mut target = terrain_snapped_debris_capture_target(
+                &[pair.dry_leaf],
+                &[pair.twig],
+                0.55,
+                terrain,
+            )?;
+            let normal = terrain.normal_at(target.focus.xz())?;
+            let edge_clearance =
+                (half_width - target.focus.x.abs()).min(half_depth - target.focus.z.abs());
+            if normal.y < 0.82 || edge_clearance < 1.8 {
+                return None;
+            }
+            let nearest = obstacles.iter().min_by(|left, right| {
+                target
+                    .focus
+                    .xz()
+                    .distance(left.0.xz())
+                    .total_cmp(&target.focus.xz().distance(right.0.xz()))
+            });
+            let obstacle_clearance = nearest
+                .map_or(half_width.min(half_depth), |(position, radius)| {
+                    target.focus.xz().distance(position.xz()) - radius
+                });
+            if obstacle_clearance < 1.25 {
+                return None;
+            }
+            let fallback = fallback_azimuth_degrees.to_radians();
+            let camera_horizontal = nearest
+                .map(|(position, _)| (target.focus.xz() - position.xz()).normalize_or_zero())
+                .filter(|direction| direction.length_squared() > 0.5)
+                .unwrap_or(Vec2::new(fallback.sin(), fallback.cos()));
+            let camera_xz = target.focus.xz() + camera_horizontal * 0.36;
+            let camera_ground = terrain.height_at(camera_xz)?;
+            target.camera = Vec3::new(
+                camera_xz.x,
+                (target.focus.y + 0.72).max(camera_ground + 0.5),
+                camera_xz.y,
+            );
+            let score = obstacle_clearance.min(8.0) * 4.0 + edge_clearance.min(8.0) + normal.y;
+            Some((score, target))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .0
+            .total_cmp(&left.0)
+            .then_with(|| left.1.focus.x.total_cmp(&right.1.focus.x))
+            .then_with(|| left.1.focus.z.total_cmp(&right.1.focus.z))
+    });
+    candidates.first().map(|(_, target)| *target)
+}
+
+fn debris_detail_camera(
+    target: Vec3,
+    camera: Option<Vec3>,
+    azimuth_degrees: f32,
+) -> (Vec3, Vec3, Vec3) {
     let azimuth = azimuth_degrees.to_radians();
     (
-        target + Vec3::new(azimuth.sin() * 0.92, 0.36, azimuth.cos() * 0.92),
+        camera.unwrap_or(target + Vec3::new(azimuth.sin() * 0.36, 0.72, azimuth.cos() * 0.36)),
         target,
         Vec3::Y,
     )

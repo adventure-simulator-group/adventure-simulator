@@ -15,7 +15,8 @@ use crate::presentation::generate_procedural_environment_assets;
 use crate::presentation::{ProceduralEnvironmentAssets, bps, leaf_material, splitmix64, unit_hash};
 
 use super::{
-    GroundScatterLayer, TacticalFoliageMaterial, TacticalTreeLeafCardMaterial, foliage_transform,
+    GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundScatterLayer,
+    TacticalFoliageMaterial, TacticalTreeLeafCardMaterial, foliage_transform,
 };
 
 const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 3;
@@ -56,6 +57,8 @@ pub(super) fn spawn(
 ) {
     const BATCH_CELL_METRES: f32 = 64.0;
     let mut batches = BTreeMap::<(i32, i32), LitterBatch>::new();
+    let mut leaf_anchors = Vec::new();
+    let mut twig_anchors = Vec::new();
     for (index, sample) in ground.samples().iter().enumerate() {
         let grid_x = index % ground.grid_width();
         let grid_z = index / ground.grid_width();
@@ -87,6 +90,9 @@ pub(super) fn spawn(
             else {
                 continue;
             };
+            if sample.cover == GroundCover::LeafLitter {
+                leaf_anchors.push(transform.translation);
+            }
             append_litter_batch(
                 meshes,
                 &assets.dry_leaf_meshes[(hash % assets.dry_leaf_meshes.len() as u64) as usize],
@@ -107,6 +113,9 @@ pub(super) fn spawn(
             else {
                 continue;
             };
+            if sample.cover == GroundCover::LeafLitter {
+                twig_anchors.push(transform.translation);
+            }
             append_litter_batch(
                 meshes,
                 &assets.twig_meshes[(hash % assets.twig_meshes.len() as u64) as usize],
@@ -142,6 +151,13 @@ pub(super) fn spawn(
                 BatchKind::Plants,
             );
         }
+    }
+    let pairs = closest_litter_anchor_pairs(&leaf_anchors, &twig_anchors, 0.55, 64);
+    if !pairs.is_empty() {
+        commands.spawn((
+            Name::new("Tactical litter capture anchors"),
+            GroundLitterCaptureAnchors { pairs },
+        ));
     }
     for ((cell_x, cell_z), batch) in batches {
         let transform = Transform::from_xyz(
@@ -183,6 +199,59 @@ pub(super) fn spawn(
             ));
         }
     }
+}
+
+fn closest_litter_anchor_pairs(
+    leaf_positions: &[Vec3],
+    twig_positions: &[Vec3],
+    maximum_pair_distance_metres: f32,
+    maximum_pairs: usize,
+) -> Vec<GroundLitterCapturePair> {
+    if maximum_pair_distance_metres <= 0.0 || maximum_pairs == 0 {
+        return Vec::new();
+    }
+    let cell_size = maximum_pair_distance_metres;
+    let cell = |position: Vec3| {
+        (
+            (position.x / cell_size).floor() as i32,
+            (position.z / cell_size).floor() as i32,
+        )
+    };
+    let mut leaves_by_cell = BTreeMap::<(i32, i32), Vec<Vec3>>::new();
+    for &leaf in leaf_positions {
+        leaves_by_cell.entry(cell(leaf)).or_default().push(leaf);
+    }
+    let mut candidates = Vec::<(f32, Vec3, Vec3)>::new();
+    for &twig in twig_positions {
+        let (cell_x, cell_z) = cell(twig);
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                let Some(leaves) = leaves_by_cell.get(&(cell_x + dx, cell_z + dz)) else {
+                    continue;
+                };
+                for &leaf in leaves {
+                    let distance = Vec2::new(leaf.x, leaf.z).distance(Vec2::new(twig.x, twig.z));
+                    if distance > maximum_pair_distance_metres {
+                        continue;
+                    }
+                    candidates.push((distance, leaf, twig));
+                }
+            }
+        }
+    }
+    candidates.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.x.total_cmp(&right.1.x))
+            .then_with(|| left.1.z.total_cmp(&right.1.z))
+            .then_with(|| left.2.x.total_cmp(&right.2.x))
+            .then_with(|| left.2.z.total_cmp(&right.2.z))
+    });
+    candidates
+        .into_iter()
+        .take(maximum_pairs)
+        .map(|(_, dry_leaf, twig)| GroundLitterCapturePair { dry_leaf, twig })
+        .collect()
 }
 
 fn leaf_litter_proximity(ground: &SceneGround, grid_x: usize, grid_z: usize) -> f32 {
@@ -687,6 +756,19 @@ mod tests {
         mesh::VertexAttributeValues,
         prelude::{App, Image, TaskPoolPlugin, default},
     };
+
+    #[test]
+    fn capture_anchors_preserve_distinct_placements_inside_one_batch_cell() {
+        let leaves = [Vec3::new(0.18, 1.0, 0.24), Vec3::new(4.0, 1.0, 4.0)];
+        let twigs = [Vec3::new(0.42, 1.01, 0.27), Vec3::new(7.0, 1.0, 7.0)];
+        let pairs = closest_litter_anchor_pairs(&leaves, &twigs, 0.55, 4);
+        assert_eq!(pairs[0].dry_leaf, leaves[0]);
+        assert_eq!(pairs[0].twig, twigs[0]);
+        assert_ne!(pairs[0].dry_leaf, Vec3::ZERO);
+        assert_ne!(pairs[0].twig, Vec3::ZERO);
+        assert_ne!(pairs[0].dry_leaf, pairs[0].twig);
+        assert!(pairs.len() <= 4);
+    }
 
     #[test]
     fn woodland_floor_transition_decays_outward_from_litter() {

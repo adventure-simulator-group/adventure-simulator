@@ -16,6 +16,9 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CaptureTacticalScenesTests(unittest.TestCase):
+    def test_expected_camera_version_matches_scene_capture_contract(self):
+        self.assertEqual(MODULE.EXPECTED_CAMERA_VERSION, 9)
+
     def test_source_identity_includes_all_viewer_modules(self):
         self.assertIn(
             "crates/adventuresim-tactical-client/src/tactical_scene_viewer",
@@ -201,12 +204,17 @@ class CaptureTacticalScenesTests(unittest.TestCase):
 
     def test_moonlit_slot_is_distinct_verified_lunar_evidence(self):
         self.assertEqual(MODULE.NAMED_TIMES["moonlit"], 359_940)
+        self.assertEqual(MODULE.SKY_MINUTES["moon"], MODULE.NAMED_TIMES["moonlit"])
+        self.assertEqual(MODULE.SKY_SETTLE_FRAMES_MIN, 96)
 
     def test_sky_manifest_requires_current_semantic_pipeline(self):
         source = inspect.getsource(MODULE.validated_sky_manifest)
         self.assertIn('"tactical_sky_native_capture_v3"', source)
         self.assertIn('"upper_sky_luma_variance"', source)
         self.assertIn('"solar_source_illuminance_lux"', source)
+        self.assertIn('expected_view == "moon"', source)
+        self.assertIn('manifest.get("moon_altitude_degrees", -90) > 20', source)
+        self.assertIn('manifest.get("lunar_illumination", 0) > .9', source)
 
 
 if __name__ == "__main__":

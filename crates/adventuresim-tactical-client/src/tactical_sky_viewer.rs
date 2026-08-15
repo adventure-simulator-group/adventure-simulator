@@ -1,4 +1,9 @@
-use std::{fs, path::PathBuf, process::Command};
+use std::{
+    fs,
+    path::PathBuf,
+    process::Command,
+    sync::{Arc, Mutex},
+};
 
 use adventuresim_tactical_core::prelude::*;
 use bevy::{
@@ -7,12 +12,22 @@ use bevy::{
     camera::Exposure,
     light::{AtmosphereEnvironmentMapLight, SunDisk},
     prelude::*,
-    render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
+    render::{
+        Render, RenderApp, RenderSystems,
+        extract_resource::{ExtractResource, ExtractResourcePlugin},
+        view::{
+            ExtractedView,
+            screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
+        },
+    },
     window::{PresentMode, WindowResolution},
 };
 use serde::Serialize;
 
-use crate::{SkyView, presentation::TacticalPresentationPlugin};
+use crate::{
+    SkyView,
+    presentation::{TacticalCameraSetup, TacticalPresentationPlugin},
+};
 
 const VIEW_WIDTH: u32 = 1600;
 const VIEW_HEIGHT: u32 = 900;
@@ -34,13 +49,38 @@ struct CaptureState {
     camera_translation: [f32; 3],
     camera_direction: [f32; 3],
     vertical_fov_degrees: f32,
+    observed_camera: Option<ObservedSkyCamera>,
+    camera_observation_ready: bool,
 }
+
+#[derive(Clone, Copy)]
+struct SkyViewConfiguration {
+    absolute_minute: u64,
+    sun_altitude_degrees: f32,
+    moon_altitude_degrees: f32,
+    lunar_illumination: f32,
+    camera_translation: Vec3,
+    camera_direction: Vec3,
+    vertical_fov_degrees: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ObservedSkyCamera {
+    translation: Vec3,
+    direction: Vec3,
+    vertical_fov_degrees: f32,
+    render_observations: u64,
+}
+
+#[derive(Resource, Clone, ExtractResource)]
+struct SkyCameraProbe(Arc<Mutex<Option<ObservedSkyCamera>>>);
 
 #[derive(Serialize)]
 struct SkyValidation {
     expected_dimensions: bool,
     non_black_content: bool,
     subject_content: bool,
+    camera_observation_ready: bool,
     passed: bool,
 }
 
@@ -52,9 +92,13 @@ struct SkyManifest {
     resolution: [u32; 2],
     settle_frames: u32,
     camera_version: u16,
+    requested_camera_translation: [f32; 3],
+    requested_camera_direction: [f32; 3],
+    requested_vertical_fov_degrees: f32,
     camera_translation: [f32; 3],
     camera_direction: [f32; 3],
     vertical_fov_degrees: f32,
+    render_camera_observations: u64,
     sun_altitude_degrees: f32,
     moon_altitude_degrees: f32,
     lunar_illumination: f32,
@@ -85,70 +129,86 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
     let _ = fs::remove_file(output.with_extension("failure.txt"));
 
     let asset_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let exit = App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(AssetPlugin {
-                    file_path: asset_root.to_string_lossy().into_owned(),
-                    ..default()
-                })
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: format!("Fabelgeist tactical sky: {view:?}"),
-                        resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT)
-                            .with_scale_factor_override(1.0),
-                        present_mode: PresentMode::AutoNoVsync,
-                        resizable: false,
-                        decorations: false,
-                        ..default()
-                    }),
+    let view_configuration = sky_view_configuration(view);
+    let camera_probe = SkyCameraProbe(Arc::new(Mutex::new(None)));
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(AssetPlugin {
+                file_path: asset_root.to_string_lossy().into_owned(),
+                ..default()
+            })
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: format!("Fabelgeist tactical sky: {view:?}"),
+                    resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT)
+                        .with_scale_factor_override(1.0),
+                    present_mode: PresentMode::AutoNoVsync,
+                    resizable: false,
+                    decorations: false,
                     ..default()
                 }),
-        )
-        .add_plugins(TacticalPresentationPlugin {
-            shadows_enabled: true,
-            atmosphere_enabled: true,
-            celestial_enabled: true,
-            environment_light_enabled: true,
-            environment_map_size: 64,
-            bloom_enabled: true,
-            max_vista_lods: 0,
-        })
-        .insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(CaptureState {
-            output,
-            settle_frames,
-            settled: 0,
-            prime_complete: false,
-            in_flight: false,
-            view,
-            absolute_minute: 0,
-            sun_altitude_degrees: 0.0,
-            moon_altitude_degrees: 0.0,
-            lunar_illumination: 0.0,
-            camera_translation: [0.0; 3],
-            camera_direction: [0.0; 3],
-            vertical_fov_degrees: 65.0,
-        })
-        .add_systems(PostStartup, move |world: &mut World| {
-            setup_view(world, view)
-        })
-        .add_systems(Last, capture_view)
-        .run();
+                ..default()
+            }),
+    )
+    .add_plugins(ExtractResourcePlugin::<SkyCameraProbe>::default())
+    .insert_resource(camera_probe)
+    .insert_resource(TacticalCameraSetup {
+        translation: view_configuration.camera_translation,
+        direction: view_configuration.camera_direction,
+        vertical_fov_degrees: view_configuration.vertical_fov_degrees,
+    })
+    .add_plugins(TacticalPresentationPlugin {
+        shadows_enabled: true,
+        atmosphere_enabled: true,
+        celestial_enabled: true,
+        environment_light_enabled: true,
+        environment_map_size: 64,
+        bloom_enabled: true,
+        max_vista_lods: 0,
+    })
+    .insert_resource(ClearColor(Color::BLACK))
+    .insert_resource(CaptureState {
+        output,
+        settle_frames,
+        settled: 0,
+        prime_complete: false,
+        in_flight: false,
+        view,
+        absolute_minute: view_configuration.absolute_minute,
+        sun_altitude_degrees: view_configuration.sun_altitude_degrees,
+        moon_altitude_degrees: view_configuration.moon_altitude_degrees,
+        lunar_illumination: view_configuration.lunar_illumination,
+        camera_translation: view_configuration.camera_translation.to_array(),
+        camera_direction: view_configuration.camera_direction.to_array(),
+        vertical_fov_degrees: view_configuration.vertical_fov_degrees,
+        observed_camera: None,
+        camera_observation_ready: false,
+    })
+    .add_systems(PostStartup, move |world: &mut World| {
+        setup_view(world, view)
+    })
+    .add_systems(Last, capture_view);
+    app.sub_app_mut(RenderApp).add_systems(
+        Render,
+        observe_extracted_sky_camera.in_set(RenderSystems::PrepareViews),
+    );
+    let exit = app.run();
     if exit != AppExit::Success {
         std::process::exit(1);
     }
 }
 
-fn setup_view(world: &mut World, view: SkyView) {
+fn sky_view_configuration(view: SkyView) -> SkyViewConfiguration {
     let absolute_minute = match view {
         SkyView::Sun => 172 * MINUTES_PER_DAY + 12 * 60,
         // Clear midsummer low Sun: demonstrates atmospheric extinction and
         // aureole structure without changing the production solar model.
         SkyView::SunDetail => 172 * MINUTES_PER_DAY + 19 * 60,
         SkyView::Twilight => 80 * MINUTES_PER_DAY + 18 * 60,
-        // Canonical first-quarter Moon at 21:55 on day 36.
-        SkyView::Moon => 53_155,
+        // Day 249 23:00: dark sky, Moon +24.6 degrees and 99% illuminated.
+        // Keep this identical to the compact matrix's verified moonlit slot.
+        SkyView::Moon => 359_940,
         // Canonical new moon at 23:00 on day 77.
         SkyView::Stars => 637_860,
     };
@@ -166,39 +226,45 @@ fn setup_view(world: &mut World, view: SkyView) {
         SkyView::Moon => moon,
         SkyView::Stars => Vec3::new(0.15, 0.55, -0.82).normalize(),
     };
-
-    let mut camera = world
-        .query_filtered::<(&mut Transform, &mut Exposure, &mut Projection), With<Camera3d>>()
-        .single_mut(world)
-        .expect("one tactical camera");
-    camera.0.translation = Vec3::new(0.0, 2.0, 8.0);
-    camera.0.look_to(view_direction, Vec3::Y);
-    if matches!(view, SkyView::Moon | SkyView::SunDetail)
-        && let Projection::Perspective(perspective) = &mut *camera.2
-    {
-        perspective.fov = (if matches!(view, SkyView::Moon) {
-            12.0_f32
+    SkyViewConfiguration {
+        absolute_minute,
+        sun_altitude_degrees: celestial.sun[1].asin().to_degrees(),
+        moon_altitude_degrees: celestial.moon[1].asin().to_degrees(),
+        lunar_illumination: celestial.lunar_illumination,
+        camera_translation: Vec3::new(0.0, 2.0, 8.0),
+        camera_direction: view_direction,
+        vertical_fov_degrees: if matches!(view, SkyView::Moon) {
+            12.0
+        } else if matches!(view, SkyView::SunDetail) {
+            20.0
         } else {
-            20.0_f32
-        })
-        .to_radians();
+            80.0
+        },
     }
-    let fov = match &*camera.2 {
+}
+
+fn setup_view(world: &mut World, view: SkyView) {
+    let configuration = sky_view_configuration(view);
+    let absolute_minute = configuration.absolute_minute;
+    let mut camera_query = world.query_filtered::<(&Transform, &Projection), With<Camera3d>>();
+    let (camera_transform, camera_projection) =
+        camera_query.single(world).expect("one tactical camera");
+    let live_fov_degrees = match camera_projection {
         Projection::Perspective(perspective) => perspective.fov.to_degrees(),
-        _ => 65.0,
+        _ => panic!("sky diagnostics require a perspective camera"),
     };
-    let camera_translation = camera.0.translation.to_array();
-    let camera_direction = camera.0.forward().as_vec3().to_array();
-    drop(camera);
-    let mut state = world.resource_mut::<CaptureState>();
-    state.absolute_minute = absolute_minute;
-    state.sun_altitude_degrees = celestial.sun[1].asin().to_degrees();
-    state.moon_altitude_degrees = celestial.moon[1].asin().to_degrees();
-    state.lunar_illumination = celestial.lunar_illumination;
-    state.camera_translation = camera_translation;
-    state.camera_direction = camera_direction;
-    state.vertical_fov_degrees = fov;
-    drop(state);
+    assert!(
+        camera_transform
+            .translation
+            .abs_diff_eq(configuration.camera_translation, 1e-5)
+    );
+    assert!(
+        camera_transform
+            .forward()
+            .as_vec3()
+            .abs_diff_eq(configuration.camera_direction, 1e-5)
+    );
+    assert!((live_fov_degrees - configuration.vertical_fov_degrees).abs() <= 1e-5);
 
     // A two-by-two authoritative terrain is the smallest complete scene
     // contract accepted by the production presentation observers. Keep its
@@ -262,15 +328,78 @@ fn setup_view(world: &mut World, view: SkyView) {
     );
 }
 
+fn observe_extracted_sky_camera(
+    views: Query<&ExtractedView, With<Camera3d>>,
+    probe: Res<SkyCameraProbe>,
+) {
+    let Ok(view) = views.single() else {
+        return;
+    };
+    let projection_scale_y = view.clip_from_view.y_axis.y;
+    if !projection_scale_y.is_finite() || projection_scale_y <= 0.0 {
+        return;
+    }
+    let mut observation = probe.0.lock().expect("sky camera probe lock");
+    let render_observations = observation.map_or(1, |previous| previous.render_observations + 1);
+    *observation = Some(ObservedSkyCamera {
+        translation: view.world_from_view.translation(),
+        direction: view.world_from_view.forward().as_vec3(),
+        vertical_fov_degrees: (2.0 * projection_scale_y.recip().atan()).to_degrees(),
+        render_observations,
+    });
+}
+
+fn camera_observation_matches(
+    observed: ObservedSkyCamera,
+    requested_translation: Vec3,
+    requested_direction: Vec3,
+    requested_fov_degrees: f32,
+) -> bool {
+    observed.render_observations >= 2
+        && observed
+            .translation
+            .abs_diff_eq(requested_translation, 1e-4)
+        && observed.direction.abs_diff_eq(requested_direction, 1e-4)
+        && (observed.vertical_fov_degrees - requested_fov_degrees).abs() <= 1e-3
+}
+
 fn capture_view(
     mut commands: Commands,
     mut state: ResMut<CaptureState>,
-    camera: Single<&Exposure, With<Camera3d>>,
+    camera: Single<(&Exposure, &GlobalTransform, &Projection), With<Camera3d>>,
+    camera_probe: Res<SkyCameraProbe>,
     sunlight: Single<&DirectionalLight, With<crate::presentation::TacticalSunlight>>,
 ) {
     if state.in_flight {
         return;
     }
+    let Some(render_observed) = *camera_probe.0.lock().expect("sky camera probe lock") else {
+        return;
+    };
+    let main_fov_degrees = match camera.2 {
+        Projection::Perspective(perspective) => perspective.fov.to_degrees(),
+        _ => f32::NAN,
+    };
+    let requested_translation = Vec3::from_array(state.camera_translation);
+    let requested_direction = Vec3::from_array(state.camera_direction);
+    let main_observed = ObservedSkyCamera {
+        translation: camera.1.translation(),
+        direction: camera.1.forward().as_vec3(),
+        vertical_fov_degrees: main_fov_degrees,
+        render_observations: render_observed.render_observations,
+    };
+    state.observed_camera = Some(render_observed);
+    state.camera_observation_ready = camera_observation_matches(
+        render_observed,
+        requested_translation,
+        requested_direction,
+        state.vertical_fov_degrees,
+    ) && camera_observation_matches(
+        main_observed,
+        requested_translation,
+        requested_direction,
+        state.vertical_fov_degrees,
+    );
     if state.settled < state.settle_frames {
         state.settled += 1;
         return;
@@ -288,7 +417,7 @@ fn capture_view(
     }
 
     let path = state.output.clone();
-    let exposure_ev100 = camera.ev100;
+    let exposure_ev100 = camera.0.ev100;
     let solar_source_illuminance_lux = sunlight.illuminance;
     commands.spawn(Screenshot::primary_window()).observe(
         move |captured: On<ScreenshotCaptured>,
@@ -318,10 +447,18 @@ fn capture_view(
                 expected_dimensions,
                 non_black_content: metrics.non_black_pixel_count >= 256,
                 subject_content,
+                camera_observation_ready: state.camera_observation_ready,
                 passed: expected_dimensions
                     && metrics.non_black_pixel_count >= 256
-                    && subject_content,
+                    && subject_content
+                    && state.camera_observation_ready,
             };
+            let observed_camera = state.observed_camera.unwrap_or(ObservedSkyCamera {
+                translation: Vec3::splat(f32::NAN),
+                direction: Vec3::splat(f32::NAN),
+                vertical_fov_degrees: f32::NAN,
+                render_observations: 0,
+            });
             let manifest = SkyManifest {
                 pipeline: "tactical_sky_native_capture_v3",
                 view: sky_view_slug(state.view),
@@ -329,9 +466,13 @@ fn capture_view(
                 resolution: [VIEW_WIDTH, VIEW_HEIGHT],
                 settle_frames: state.settle_frames,
                 camera_version: 1,
-                camera_translation: state.camera_translation,
-                camera_direction: state.camera_direction,
-                vertical_fov_degrees: state.vertical_fov_degrees,
+                requested_camera_translation: state.camera_translation,
+                requested_camera_direction: state.camera_direction,
+                requested_vertical_fov_degrees: state.vertical_fov_degrees,
+                camera_translation: observed_camera.translation.to_array(),
+                camera_direction: observed_camera.direction.to_array(),
+                vertical_fov_degrees: observed_camera.vertical_fov_degrees,
+                render_camera_observations: observed_camera.render_observations,
                 sun_altitude_degrees: state.sun_altitude_degrees,
                 moon_altitude_degrees: state.moon_altitude_degrees,
                 lunar_illumination: state.lunar_illumination,
@@ -497,6 +638,41 @@ fn horizon_view(direction: Vec3, altitude: f32) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn narrow_diagnostic_projections_are_frozen_before_startup() {
+        let sun = sky_view_configuration(SkyView::SunDetail);
+        let moon = sky_view_configuration(SkyView::Moon);
+        assert_eq!(sun.vertical_fov_degrees, 20.0);
+        assert_eq!(moon.vertical_fov_degrees, 12.0);
+        assert!(sun.camera_direction.is_normalized());
+        assert!(moon.camera_direction.is_normalized());
+        assert_ne!(sun.camera_direction, moon.camera_direction);
+        assert!(moon.sun_altitude_degrees < -12.0);
+        assert!(moon.moon_altitude_degrees > 20.0);
+        assert!(moon.lunar_illumination > 0.9);
+        let observed = ObservedSkyCamera {
+            translation: moon.camera_translation,
+            direction: moon.camera_direction,
+            vertical_fov_degrees: moon.vertical_fov_degrees,
+            render_observations: 2,
+        };
+        assert!(camera_observation_matches(
+            observed,
+            moon.camera_translation,
+            moon.camera_direction,
+            moon.vertical_fov_degrees,
+        ));
+        assert!(!camera_observation_matches(
+            ObservedSkyCamera {
+                vertical_fov_degrees: 20.0,
+                ..observed
+            },
+            moon.camera_translation,
+            moon.camera_direction,
+            moon.vertical_fov_degrees,
+        ));
+    }
 
     #[test]
     fn black_sky_cannot_satisfy_content_metrics() {

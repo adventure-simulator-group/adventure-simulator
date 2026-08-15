@@ -30,12 +30,13 @@ NAMED_TIMES = {
     "moonlit": 359_940,
 }
 SKY_VIEWS = ("sun", "sun-detail", "twilight", "moon", "stars")
+SKY_SETTLE_FRAMES_MIN = 96
 SKY_MINUTES = {"sun": 172 * 1440 + 12 * 60, "sun-detail": 172 * 1440 + 19 * 60,
                "twilight": 80 * 1440 + 18 * 60,
-               "moon": 53_155, "stars": 637_860}
+               "moon": NAMED_TIMES["moonlit"], "stars": 637_860}
 EXPECTED_PIPELINE = "tactical_scene_native_capture_v6"
 EXPECTED_PROFILE_VERSION = 11
-EXPECTED_CAMERA_VERSION = 7
+EXPECTED_CAMERA_VERSION = 9
 EXPECTED_GENERATION_VERSION = 7
 EXPECTED_RESOLUTION = [1280, 720]
 EXPECTED_PRESENTATION_REQUEST = {
@@ -338,6 +339,35 @@ def validated_sky_manifest(path: Path, expected_view: str, expected_identity: st
             raise ValueError(f"sky {field} differs")
     if manifest.get("revision") != expected_head or manifest.get("absolute_minute") != SKY_MINUTES[expected_view]:
         raise ValueError("sky revision or canonical minute differs")
+    if expected_view == "moon" and not (
+        manifest.get("sun_altitude_degrees", 90) < -12
+        and manifest.get("moon_altitude_degrees", -90) > 20
+        and manifest.get("lunar_illumination", 0) > .9
+    ):
+        raise ValueError("Moon plate lacks the canonical risen, illuminated Moon under a dark sky")
+    requested_translation = manifest.get("requested_camera_translation")
+    requested_direction = manifest.get("requested_camera_direction")
+    observed_translation = manifest.get("camera_translation")
+    observed_direction = manifest.get("camera_direction")
+    requested_fov = manifest.get("requested_vertical_fov_degrees")
+    observed_fov = manifest.get("vertical_fov_degrees")
+    vectors_match = lambda left, right: (
+        isinstance(left, list) and isinstance(right, list)
+        and len(left) == 3 and len(right) == 3
+        and all(isinstance(value, (int, float)) and math.isfinite(value)
+                for value in (*left, *right))
+        and all(abs(left[index] - right[index]) <= 1e-4 for index in range(3))
+    )
+    if not (
+        vectors_match(requested_translation, observed_translation)
+        and vectors_match(requested_direction, observed_direction)
+        and isinstance(requested_fov, (int, float)) and math.isfinite(requested_fov)
+        and isinstance(observed_fov, (int, float)) and math.isfinite(observed_fov)
+        and abs(requested_fov - observed_fov) <= 1e-3
+        and manifest.get("render_camera_observations", 0) >= 2
+        and manifest.get("validation", {}).get("camera_observation_ready") is True
+    ):
+        raise ValueError("sky extracted camera observation differs")
     if not manifest.get("validation", {}).get("passed") or path.parent.joinpath(f"{expected_view}.failure.txt").exists():
         raise ValueError("sky semantic validation failed")
     metrics = {
@@ -439,7 +469,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sky_results = []
     for view in SKY_VIEWS:
         destination = sky_output / f"{view}.png"
-        ok, _ = run_child([str(sky_exe), "--view", view, "--output", str(destination), "--settle-frames", str(max(48, args.settle_frames))], identity_value)
+        ok, _ = run_child([str(sky_exe), "--view", view, "--output", str(destination), "--settle-frames", str(max(SKY_SETTLE_FRAMES_MIN, args.settle_frames))], identity_value)
         error = None
         sky_manifest = None
         try:

@@ -46,6 +46,20 @@ use litter::{
 };
 pub(crate) use loose_stone::{LooseStonePebblePatch, TacticalPebbleBillboardMaterial};
 
+/// Real generated litter placements retained independently of batched mesh origins.
+/// Capture diagnostics use this bounded pair to frame dry leaves and twigs without
+/// mistaking a shared batch-cell transform for the rendered subjects.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct GroundLitterCapturePair {
+    pub(crate) dry_leaf: Vec3,
+    pub(crate) twig: Vec3,
+}
+
+#[derive(Component, Clone, Debug, PartialEq)]
+pub(crate) struct GroundLitterCaptureAnchors {
+    pub(crate) pairs: Vec<GroundLitterCapturePair>,
+}
+
 #[derive(Default)]
 pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,

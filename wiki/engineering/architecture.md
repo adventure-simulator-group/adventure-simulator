@@ -317,10 +317,11 @@ allocation grace remains a sky-local presentation concern. Terrain materials,
 Ground scatter, weather, colliders, and recipes continue to read their own
 entity-local authoritative scene components.
 
-The production tactical preset prioritizes high-throughput gameplay: directional
-shadow maps and bloom are disabled by default, while four-sample MSAA, atmosphere IBL,
-material occlusion, baked tree-card depth, terrain normals, and direct celestial
-lighting retain the scene's primary depth cues. Effects unsupported by WebGPU,
+The production tactical preset uses directional shadow maps, bloom, four-sample
+MSAA, atmosphere IBL, material occlusion, baked tree-card depth, terrain normals,
+and direct celestial lighting for the scene's primary depth cues. Controlled
+benchmarks may explicitly disable shadows or post-processing to isolate their
+cost. Effects unsupported by WebGPU,
 including Bevy 0.19 SSAO, are excluded rather than retained as native-only paths.
 Review viewers can still enable compatible individual lighting costs explicitly
 for controlled diagnostics.

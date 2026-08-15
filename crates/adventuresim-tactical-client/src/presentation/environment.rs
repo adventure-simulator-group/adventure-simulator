@@ -168,10 +168,28 @@ fn tactical_msaa() -> Msaa {
     Msaa::Sample4
 }
 
+#[derive(Resource, Clone, Copy)]
+pub(crate) struct TacticalCameraSetup {
+    pub(crate) translation: Vec3,
+    pub(crate) direction: Vec3,
+    pub(crate) vertical_fov_degrees: f32,
+}
+
+impl Default for TacticalCameraSetup {
+    fn default() -> Self {
+        Self {
+            translation: Vec3::ZERO,
+            direction: Vec3::NEG_Z,
+            vertical_fov_degrees: 80.0,
+        }
+    }
+}
+
 pub(in crate::presentation) fn setup_tactical_presentation(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     settings: Res<TacticalGraphicsSettings>,
+    camera_setup: Res<TacticalCameraSetup>,
 ) {
     if settings.atmosphere_enabled {
         commands.spawn(Atmosphere::earth(
@@ -183,10 +201,12 @@ pub(in crate::presentation) fn setup_tactical_presentation(
         Name::new("Tactical gameplay camera"),
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection {
-            fov: 80.0_f32.to_radians(),
+            fov: camera_setup.vertical_fov_degrees.to_radians(),
             far: 60_000.0,
             ..default()
         }),
+        Transform::from_translation(camera_setup.translation)
+            .looking_to(camera_setup.direction, Vec3::Y),
         Exposure::SUNLIGHT,
         Tonemapping::AcesFitted,
         DistanceFog {

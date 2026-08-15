@@ -33,9 +33,14 @@ use weather::*;
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
-pub(crate) use environment::{scene_ambient_light, scene_ibl_visibility_floor};
+pub(crate) use environment::{
+    TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
+};
 #[allow(unused_imports)]
-pub(crate) use ground_scatter::{GrassInteractor, GroundScatterLayer, LooseStonePebblePatch};
+pub(crate) use ground_scatter::{
+    GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundScatterLayer,
+    LooseStonePebblePatch,
+};
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
 #[allow(unused_imports)]
@@ -99,12 +104,12 @@ pub struct TacticalPresentationPlugin {
 impl Default for TacticalPresentationPlugin {
     fn default() -> Self {
         Self {
-            shadows_enabled: false,
+            shadows_enabled: true,
             atmosphere_enabled: true,
             celestial_enabled: true,
             environment_light_enabled: true,
             environment_map_size: 64,
-            bloom_enabled: false,
+            bloom_enabled: true,
             max_vista_lods: 3,
         }
     }
@@ -132,6 +137,7 @@ impl Plugin for TacticalPresentationPlugin {
             bloom_enabled: self.bloom_enabled,
             max_vista_lods: self.max_vista_lods,
         })
+        .init_resource::<TacticalCameraSetup>()
         // The sky observer preserves this low, cool floor at night and restores
         // physically scaled diffuse sky irradiance during daylight.
         .insert_resource(GlobalAmbientLight {
