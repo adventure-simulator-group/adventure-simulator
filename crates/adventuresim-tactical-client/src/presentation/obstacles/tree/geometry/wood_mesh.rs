@@ -25,19 +25,22 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
     let mut normals = Vec::new();
     let mut uvs = Vec::new();
     let mut indices = Vec::new();
-    let flare = RootFlareField::from_branches(branches, maximum_depth, bark);
+    let bark_phase = bark_phase_from_branches(branches);
+    let flare = RootFlareField::from_branches(branches, maximum_depth, bark, bark_phase);
     if let Some(flare) = &flare {
         append_root_flare_mesh(flare, &mut positions, &mut normals, &mut uvs, &mut indices);
     }
     let visible = branches
         .iter()
-        .filter(|branch| {
-            branch.depth <= maximum_depth
-                && flare
-                    .as_ref()
-                    .is_none_or(|flare| !flare.contains_segment(branch))
+        .filter_map(|branch| {
+            (branch.depth <= maximum_depth)
+                .then_some(*branch)
+                .and_then(|branch| {
+                    flare
+                        .as_ref()
+                        .map_or(Some(branch), |flare| flare.visible_segment(branch))
+                })
         })
-        .copied()
         .collect::<Vec<_>>();
     let mut curve_start = 0;
     while curve_start < visible.len() {
@@ -50,6 +53,7 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
         append_branch_curve_tube(
             curve,
             bark,
+            bark_phase,
             if curve[0].depth == 0 {
                 48
             } else {
@@ -160,6 +164,7 @@ struct RootFlareField {
     cell: f32,
     blend: f32,
     bark: BarkRecipe,
+    bark_phase: f32,
     root_directions: Vec<Vec3>,
 }
 
@@ -168,20 +173,21 @@ impl RootFlareField {
         branches: &[TreeBranchSegment],
         _maximum_depth: u8,
         bark: BarkRecipe,
+        bark_phase: f32,
     ) -> Option<Self> {
         // Hybrid skeleton/sweep/implicit architecture adapted from:
         // https://gist.github.com/halbe/5613d15ecfa84e80c04a56f34a656456
-        // Only the non-tubular root flare is contoured; ordinary woody runs
-        // retain the cheaper generalized-cylinder mesh below.
+        // The complete load-bearing trunk/root system is one implicit surface.
+        // A hybrid cutoff left two topologically unrelated boundary loops that
+        // could reveal a dark band under grazing light.
         let base = branches
             .iter()
             .filter(|branch| branch.depth == 0)
             .map(|branch| branch.start.y.min(branch.end.y))
             .fold(f32::INFINITY, f32::min);
-        let cutoff = base + 1.65;
         let segments = branches
             .iter()
-            .filter(|branch| branch.depth == 0 && branch.start.y.min(branch.end.y) < cutoff)
+            .filter(|branch| branch.depth == 0)
             .copied()
             .collect::<Vec<_>>();
         let has_roots = segments.iter().any(|segment| {
@@ -203,7 +209,6 @@ impl RootFlareField {
                 .max(segment.end + extent);
         }
         minimum.y = minimum.y.max(base - 0.42);
-        maximum.y = maximum.y.min(cutoff + 0.16);
         let root_directions = segments
             .iter()
             .filter_map(|segment| {
@@ -215,17 +220,21 @@ impl RootFlareField {
             segments,
             minimum,
             maximum,
-            cell: 0.105,
+            // Each polygon is subdivided once, producing roughly seven
+            // centimetre surface edges from this fourteen-centimetre field.
+            cell: 0.14,
             blend: 0.18,
             bark,
+            bark_phase,
             root_directions,
         })
     }
 
-    fn contains_segment(&self, segment: &TreeBranchSegment) -> bool {
-        segment.depth == 0
-            && segment.start.y <= self.maximum.y - self.cell
-            && segment.end.y <= self.maximum.y - self.cell
+    fn visible_segment(&self, segment: TreeBranchSegment) -> Option<TreeBranchSegment> {
+        if segment.depth != 0 {
+            return Some(segment);
+        }
+        None
     }
 
     fn macro_distance(&self, point: Vec3) -> f32 {
@@ -251,7 +260,7 @@ impl RootFlareField {
     fn displaced_surface(&self, point: Vec3) -> (Vec3, Vec3) {
         let outward = self.normal(point);
         let lobed = point + outward * self.root_profile_relief(point, outward);
-        displaced_bark_surface(lobed, outward, &self.segments, self.bark)
+        displaced_bark_surface(lobed, outward, &self.segments, self.bark, self.bark_phase)
     }
 
     fn root_profile_relief(&self, point: Vec3, outward: Vec3) -> f32 {
@@ -298,7 +307,7 @@ impl RootFlareField {
 /// The angular signal is periodic rather than UV-based, so crossing the
 /// cylindrical wrap cannot create a discontinuity. The world-space warp makes
 /// the fissures wander without baking any colour variation into the material.
-fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe) -> f32 {
+fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe, bark_phase: f32) -> f32 {
     let axis = segment.end - segment.start;
     let length_squared = axis.length_squared();
     if length_squared <= 1.0e-6 {
@@ -327,7 +336,7 @@ fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe) -> f3
         let seed_phase = index as f32 * 1.618_034;
         let drift = 0.11 * (point.dot(Vec3::new(0.17, 0.83, -0.29)) * 1.18 + seed_phase).sin()
             + 0.045 * (point.dot(Vec3::new(-0.53, 0.24, 0.47)) * 2.37 - seed_phase * 0.7).sin();
-        let delta = (theta - base_phase - drift + core::f32::consts::PI)
+        let delta = (theta - base_phase - bark_phase - drift + core::f32::consts::PI)
             .rem_euclid(core::f32::consts::TAU)
             - core::f32::consts::PI;
         let distance = delta.abs() * radius;
@@ -352,14 +361,19 @@ fn bark_relief(point: Vec3, segment: &TreeBranchSegment, bark: BarkRecipe) -> f3
     // closes on a different, softly staggered cadence so adjacent plates
     // interlock rather than forming horizontal bands. A small residual keeps
     // the relief continuous while the dominant groove visibly terminates.
-    let plate_phase = nearest_crack_index as f32 * 2.399_963 + segment.primary_group as f32 * 0.37;
+    let plate_phase = nearest_crack_index as f32 * 2.399_963
+        + segment.primary_group as f32 * 0.37
+        + bark_phase * 0.73;
     let plate_length = bark.plate_length_metres.max(0.08);
     let break_signal = (axial_metres * core::f32::consts::TAU / plate_length + plate_phase).sin()
         + 0.38
             * (axial_metres * core::f32::consts::TAU / (plate_length * 0.47) - plate_phase * 0.6)
                 .sin();
     let fissure_continuity = smoothstep(-0.52, -0.05, break_signal);
-    let fissure_strength = 0.82 + 0.18 * fissure_continuity;
+    // A closed plate should actually interrupt a fissure. Retaining most of
+    // the groove made one angular stream read as a manufactured longitudinal
+    // seam even though the cylindrical wrap itself was continuous.
+    let fissure_strength = 0.18 + 0.82 * fissure_continuity * fissure_continuity;
     let groove = (-bark.fissure_depth_metres
         * (-0.5 * (arc_distance / bark.fissure_width_metres.max(1.0e-4)).powi(2)).exp())
     .max(-radius * 0.035)
@@ -407,6 +421,7 @@ fn blended_bark_relief(
     segments: &[TreeBranchSegment],
     blend: f32,
     bark: BarkRecipe,
+    bark_phase: f32,
 ) -> f32 {
     let nearest = segments
         .iter()
@@ -418,7 +433,7 @@ fn blended_bark_relief(
         let delta = (capsule_distance(point, segment) - nearest).max(0.0);
         let weight = (-4.0 * delta / blend.max(1.0e-4)).exp();
         if weight > 1.0e-4 {
-            weighted += bark_relief(point, segment, bark) * weight;
+            weighted += bark_relief(point, segment, bark, bark_phase) * weight;
             total += weight;
         }
     }
@@ -430,17 +445,18 @@ fn displaced_bark_surface(
     outward: Vec3,
     segments: &[TreeBranchSegment],
     bark: BarkRecipe,
+    bark_phase: f32,
 ) -> (Vec3, Vec3) {
     const BLEND: f32 = 0.18;
     const EPSILON: f32 = 0.006;
-    let relief = blended_bark_relief(point, segments, BLEND, bark);
+    let relief = blended_bark_relief(point, segments, BLEND, bark, bark_phase);
     let gradient = Vec3::new(
-        blended_bark_relief(point + Vec3::X * EPSILON, segments, BLEND, bark)
-            - blended_bark_relief(point - Vec3::X * EPSILON, segments, BLEND, bark),
-        blended_bark_relief(point + Vec3::Y * EPSILON, segments, BLEND, bark)
-            - blended_bark_relief(point - Vec3::Y * EPSILON, segments, BLEND, bark),
-        blended_bark_relief(point + Vec3::Z * EPSILON, segments, BLEND, bark)
-            - blended_bark_relief(point - Vec3::Z * EPSILON, segments, BLEND, bark),
+        blended_bark_relief(point + Vec3::X * EPSILON, segments, BLEND, bark, bark_phase)
+            - blended_bark_relief(point - Vec3::X * EPSILON, segments, BLEND, bark, bark_phase),
+        blended_bark_relief(point + Vec3::Y * EPSILON, segments, BLEND, bark, bark_phase)
+            - blended_bark_relief(point - Vec3::Y * EPSILON, segments, BLEND, bark, bark_phase),
+        blended_bark_relief(point + Vec3::Z * EPSILON, segments, BLEND, bark, bark_phase)
+            - blended_bark_relief(point - Vec3::Z * EPSILON, segments, BLEND, bark, bark_phase),
     ) / (2.0 * EPSILON);
     (
         point + outward * relief,
@@ -460,6 +476,22 @@ fn capsule_distance(point: Vec3, segment: &TreeBranchSegment) -> f32 {
         .start_radius
         .lerp(segment.end_radius, along.powf(0.64));
     point.distance(segment.start + axis * along) - radius
+}
+
+fn bark_phase_from_branches(branches: &[TreeBranchSegment]) -> f32 {
+    let stride = (branches.len() / 64).max(1);
+    let mut hash = 0x6a09_e667_f3bc_c909_u64;
+    for (index, branch) in branches.iter().step_by(stride).enumerate() {
+        let bits = u64::from(branch.end.x.to_bits())
+            ^ u64::from(branch.end.y.to_bits()).rotate_left(17)
+            ^ u64::from(branch.end.z.to_bits()).rotate_left(33)
+            ^ (index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        hash ^= bits;
+        hash = hash.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        hash ^= hash >> 29;
+    }
+    let unit = ((hash >> 40) as u32) as f32 / ((1_u32 << 24) - 1) as f32;
+    unit * core::f32::consts::TAU
 }
 
 fn smooth_min(left: f32, right: f32, blend: f32) -> f32 {
@@ -656,6 +688,7 @@ pub(in crate::presentation) fn procedural_tree_branch_group_mesh(
 fn append_branch_curve_tube(
     curve: &[TreeBranchSegment],
     bark: BarkRecipe,
+    bark_phase: f32,
     sides: u32,
     positions: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
@@ -738,11 +771,12 @@ fn append_branch_curve_tube(
             accumulated_distance += center.distance(previous_center);
             (right, forward) = transport_branch_frame(previous_tangent, right, tangent);
         }
-        for side in 0..=sides {
+        let ring_base = positions.len();
+        for side in 0..sides {
             let phase = side as f32 * core::f32::consts::TAU / sides as f32;
             let normal = right * phase.cos() + forward * phase.sin();
             let (position, surface_normal) =
-                displaced_bark_surface(center + normal * radius, normal, curve, bark);
+                displaced_bark_surface(center + normal * radius, normal, curve, bark, bark_phase);
             positions.push(position.to_array());
             normals.push(surface_normal.to_array());
             uvs.push([
@@ -750,6 +784,15 @@ fn append_branch_curve_tube(
                 accumulated_distance / BARK_TEXTURE_HEIGHT_METRES,
             ]);
         }
+        // Duplicate the first evaluated vertex bit-for-bit at the cylindrical
+        // wrap. Re-evaluating sin(TAU), relief, and its finite-difference normal
+        // can otherwise produce a hairline lighting discontinuity.
+        positions.push(positions[ring_base]);
+        normals.push(normals[ring_base]);
+        uvs.push([
+            circumference_tiles,
+            accumulated_distance / BARK_TEXTURE_HEIGHT_METRES,
+        ]);
         previous_center = center;
         previous_tangent = tangent;
     }
@@ -786,8 +829,13 @@ fn append_branch_curve_tube(
                 let phase = side as f32 * core::f32::consts::TAU / sides as f32;
                 let radial = right * phase.cos() + forward * phase.sin();
                 let normal = (radial * 0.75 + last_direction * 0.66).normalize();
-                let (position, surface_normal) =
-                    displaced_bark_surface(center + radial * radius, normal, curve, bark);
+                let (position, surface_normal) = displaced_bark_surface(
+                    center + radial * radius,
+                    normal,
+                    curve,
+                    bark,
+                    bark_phase,
+                );
                 positions.push(position.to_array());
                 normals.push(surface_normal.to_array());
                 uvs.push([
@@ -862,6 +910,10 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(|attribute| attribute.as_float3())
             .expect("branch mesh has float positions");
+        let normals = mesh
+            .attribute(Mesh::ATTRIBUTE_NORMAL)
+            .and_then(|attribute| attribute.as_float3())
+            .expect("branch mesh has float normals");
 
         assert_eq!(uvs.len(), tangents.len());
         assert!(uvs.iter().flatten().all(|component| component.is_finite()));
@@ -875,7 +927,8 @@ mod tests {
             let length = Vec3::from_array([tangent[0], tangent[1], tangent[2]]).length();
             (length - 1.0).abs() < 1.0e-3 && tangent[3].abs() == 1.0
         }));
-        assert!(Vec3::from_array(positions[0]).distance(Vec3::from_array(positions[7])) < 1.0e-5);
+        assert_eq!(positions[0], positions[7]);
+        assert_eq!(normals[0], normals[7]);
         assert_eq!(uvs[0][0], 0.0);
         assert!(uvs[7][0] >= 1.0 && uvs[7][0].fract().abs() < f32::EPSILON);
         assert!(
@@ -887,11 +940,18 @@ mod tests {
     #[test]
     fn root_flare_is_a_bounded_smooth_union_with_finite_surface_data() {
         let branches = procedural_tree_skeleton(42, 0.0);
-        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK)
+        let bark_phase = bark_phase_from_branches(&branches);
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK, bark_phase)
             .expect("oak has a root flare");
         assert!(field.maximum.x - field.minimum.x < 4.0);
         assert!(field.maximum.z - field.minimum.z < 4.0);
-        assert!(field.maximum.y - field.minimum.y < 2.6);
+        assert!((5.0..20.0).contains(&(field.maximum.y - field.minimum.y)));
+        let dimensions = ((field.maximum - field.minimum) / field.cell)
+            .ceil()
+            .as_uvec3();
+        assert!(
+            u64::from(dimensions.x) * u64::from(dimensions.y) * u64::from(dimensions.z) < 180_000
+        );
 
         assert!(smooth_min(-0.1, -0.1, field.blend) < -0.1);
         for point in [Vec3::ZERO, field.minimum, field.maximum] {
@@ -913,6 +973,11 @@ mod tests {
             .and_then(|attribute| attribute.as_float3())
             .unwrap();
         assert!(positions.len() > 1_000);
+        assert!(
+            positions.len() < 500_000,
+            "unified hero trunk exceeded its bounded vertex budget: {}",
+            positions.len()
+        );
         assert_eq!(positions.len(), normals.len());
         assert!(positions.iter().flatten().all(|value| value.is_finite()));
         assert!(normals.iter().flatten().all(|value| value.is_finite()));
@@ -924,9 +989,41 @@ mod tests {
     }
 
     #[test]
+    fn root_flare_field_owns_the_complete_depth_zero_trunk_without_a_handoff() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let bark_phase = bark_phase_from_branches(&branches);
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK, bark_phase)
+            .expect("oak has a root flare");
+        let depth_zero = branches.iter().filter(|segment| segment.depth == 0).count();
+        assert_eq!(field.segments.len(), depth_zero);
+        assert!(
+            branches
+                .iter()
+                .copied()
+                .filter(|segment| segment.depth == 0)
+                .all(|segment| field.visible_segment(segment).is_none())
+        );
+    }
+
+    #[test]
+    fn bark_phase_is_deterministic_seeded_and_bounded() {
+        let phase = bark_phase_from_branches(&procedural_tree_skeleton(42, 0.0));
+        assert_eq!(
+            phase,
+            bark_phase_from_branches(&procedural_tree_skeleton(42, 0.0))
+        );
+        assert_ne!(
+            phase,
+            bark_phase_from_branches(&procedural_tree_skeleton(43, 0.0))
+        );
+        assert!((0.0..=core::f32::consts::TAU).contains(&phase));
+    }
+
+    #[test]
     fn bark_relief_is_periodic_and_blends_at_root_influence_boundaries() {
         let branches = procedural_tree_skeleton(42, 0.0);
-        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK)
+        let bark_phase = bark_phase_from_branches(&branches);
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK, bark_phase)
             .expect("oak has a root flare");
         let trunk = field
             .segments
@@ -944,8 +1041,8 @@ mod tests {
         let before = center + (right * epsilon.cos() + forward * (-epsilon).sin()) * radius;
         let after = center + (right * epsilon.cos() + forward * epsilon.sin()) * radius;
         assert!(
-            (bark_relief(before, trunk, ENGLISH_OAK_BARK)
-                - bark_relief(after, trunk, ENGLISH_OAK_BARK))
+            (bark_relief(before, trunk, ENGLISH_OAK_BARK, bark_phase)
+                - bark_relief(after, trunk, ENGLISH_OAK_BARK, bark_phase))
             .abs()
                 < 1.0e-3
         );
@@ -962,12 +1059,14 @@ mod tests {
             &field.segments,
             field.blend,
             ENGLISH_OAK_BARK,
+            bark_phase,
         );
         let right = blended_bark_relief(
             junction + Vec3::X * 0.002,
             &field.segments,
             field.blend,
             ENGLISH_OAK_BARK,
+            bark_phase,
         );
         assert!(left.is_finite() && right.is_finite());
         assert!((left - right).abs() < 0.01);
@@ -990,7 +1089,7 @@ mod tests {
                 .map(|index| {
                     let phase = index as f32 * core::f32::consts::TAU / 96.0;
                     let point = Vec3::new(phase.cos() * radius, 0.8, phase.sin() * radius);
-                    bark_relief(point, &segment, ENGLISH_OAK_BARK).abs()
+                    bark_relief(point, &segment, ENGLISH_OAK_BARK, 0.0).abs()
                 })
                 .fold(0.0_f32, f32::max)
         };
@@ -1003,7 +1102,8 @@ mod tests {
     #[test]
     fn root_profile_lobes_follow_generated_root_directions_and_fade_upward() {
         let branches = procedural_tree_skeleton(42, 0.0);
-        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK)
+        let bark_phase = bark_phase_from_branches(&branches);
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK, bark_phase)
             .expect("oak has a root flare");
         let base = field
             .segments

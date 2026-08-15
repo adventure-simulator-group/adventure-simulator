@@ -43,7 +43,12 @@ crown-to-billboard swap. Runtime atlas generation rasterizes low-sided woody
 silhouette tubes and progressively sampled, coverage-compensated leaves rather
 than rebuilding the multi-million-triangle production bark and leaf meshes for
 every card. The directly viewed near trunk, root flare, bark relief, and leaf
-cards remain the full production meshes. Intermediate crown wood excludes the
+cards remain the full production meshes. The complete load-bearing trunk and
+root system is one bounded implicit surface, eliminating the unrelated mesh
+loops and normal discontinuity of a flare/tube handoff. Swept higher-order
+branches duplicate their cylindrical wrap position and normal exactly. Bark
+fissure phases vary deterministically per specimen and close into irregular
+plates, so no permanent groove advertises that wrap. Intermediate crown wood excludes the
 depth-zero root flare because the separately streamed trunk remains resident,
 avoiding duplicate geometry and duplicate Surface Nets construction.
 The individual-leaf crown uses an 8-triangle cambered PBR card and a 30-triangle
