@@ -103,14 +103,16 @@ with Replicon's non-self-describing `postcard` wire codec. Lowering discards the
 intent entirely. Repeated writes of
 the already-current guard state preserve live footwork and gait phase.
 
-A discrete raised/lowered change is presentation-crossfaded from the currently
-displayed effective pose over 0.18 seconds. This includes resolved fallback
-clips and their whole-body mirror contribution, so an incomplete
-guard asset set does not hard-cut from locomotion to a relaxed fallback. The
-crossfade clock advances once per simulation sample in deterministic capture
-tools (and by render delta in gameplay); changing direction or gait phase does
-not restart it. Reversing guard during the blend starts from the pose already
-on screen rather than either original endpoint.
+A discrete raised/lowered change is smoothed from the currently displayed
+effective pose. The graph backend retains its 0.18-second presentation
+crossfade. The pose-buffer backend instead captures each joint's displayed
+local pose and velocity relative to the new target and critically damps that
+offset toward zero. It never keeps the outgoing clip alive. Both paths include
+resolved fallback clips and their whole-body mirror contribution, so an
+incomplete guard asset set does not hard-cut from locomotion to a relaxed
+fallback. Changing direction or authoritative gait phase does not restart
+transition smoothing, and an interruption begins from the pose already on
+screen rather than either original endpoint.
 
 The server owns movement, body mode, authoritative action timing, gameplay
 position, attack timing, hits, damage, and other outcomes. Typed action starts
@@ -163,14 +165,32 @@ therefore remains exact pose, same-pack mirrored counterpart, then parent
 fallback, independently for each requested semantic. Specialized packs can
 continue overriding only a subset.
 
-The existing authored FK player remains ordered before bind restoration,
-whole-body mirroring, body response, terrain IK/attack footwork, and weapon
-constraints. Ordinary locomotion samples complete continuous cycles;
-guard/action fallback still chooses one coherent whole-body mirror. The bridge
-does not consume root motion, emit gameplay events, choose actions or contacts,
-advance authoritative phases, displace the controller, add a second
-inertializer, or add another IK pass. The existing 0.18-second presentation
-crossfade remains the sole transition smoothing.
+Both authored FK backends remain ordered before bind restoration, whole-body
+mirroring, body response, terrain IK/attack footwork, and weapon constraints.
+Ordinary locomotion samples complete continuous cycles; guard/action fallback
+still chooses one coherent whole-body mirror. The semantic bridge does not
+consume root motion, emit gameplay events, choose actions or contacts, advance
+authoritative phases, displace the controller, or add another IK pass.
+
+The graph backend delegates the resolved weighted clips to Bevy's native
+`AnimationGraph` and `AnimationPlayer`. The opt-in pose-buffer backend flattens
+the same clips onto a 30 Hz grid keyed by skeleton family. At each tactical
+presentation tick it interpolates those baked keyframes at the current shared
+semantic phase, retaining previous/current per-character poses for velocity and
+interruption capture. Quaternion interpolation and angular-velocity differences
+always select the nearest quaternion hemisphere. Missing tracks and non-finite
+samples fall back to the canonical bind transform, and imported root-bone
+translation is replaced by its bind translation so authored root motion cannot
+move the gameplay entity. State and clip-set changes use interruption-safe
+per-joint inertial offsets rather than the graph backend's outgoing-clip
+crossfade. Characters beyond 100 metres or outside the camera frustum freeze
+their buffered pose and discard sampling debt when they return.
+
+Select the backend with `--animation-backend graph|pose-buffer` on the tactical
+client. Native debug clients can switch at runtime with `F10`. The switch changes
+only client FK presentation: both paths consume the same `PresentedSkeleton`,
+semantic graph result, pack fallback, controller transform, and authoritative
+gait/action/contact state.
 
 ### Graph authoring capability map
 
@@ -992,6 +1012,11 @@ phase-indexed height extrema and peak count, contact-phase sole clearance,
 controller vertical range, run flight duration/sole clearance, authoritative acceleration, retained lean,
 landing compression, contact identity, landing identity, and fixed tick; those
 signals locate suspect frames but do not replace review of the rendered mesh.
+Pass `--backend graph` or `--backend pose-buffer` to run the same scenario and
+capture gates through either FK backend. The manifest records the selected
+backend plus baked clip count/bytes, sampled-pose count, and the final culled
+character count so representative CPU/memory comparisons do not rely on a
+different fixture.
 For steady height scenarios, every complete cycle after warmup must contain
 exactly two prominent peaks in the phase 0.25 and 0.75 passing windows. A
 0.003 m prominence threshold filters sampling jitter while still rejecting an

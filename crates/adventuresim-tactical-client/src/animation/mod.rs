@@ -12,7 +12,9 @@ use bevy::{
     gltf::Gltf,
     prelude::*,
 };
+use clap::ValueEnum;
 
+pub(crate) mod pose_buffer;
 mod procedural;
 #[cfg(all(not(target_family = "wasm"), feature = "animation-graph-physics"))]
 pub(crate) mod ragdoll;
@@ -36,6 +38,24 @@ const UPPER_BODY_MASK_GROUP: u32 = 1;
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
 // lower face so the first-person camera lands at the authored head.
 const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
+
+/// Client-only authored-pose playback implementation. Both variants consume
+/// the same [`PresentedSkeleton`] and semantic animation-pack resolution.
+#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub(crate) enum AnimationBackend {
+    #[default]
+    Graph,
+    PoseBuffer,
+}
+
+impl AnimationBackend {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Graph => "graph",
+            Self::PoseBuffer => "pose_buffer",
+        }
+    }
+}
 
 mod diagnostics;
 use diagnostics::log_animation_diagnostics;
@@ -77,6 +97,7 @@ use catalog::*;
 
 #[derive(Debug, Clone)]
 struct LoadedClip {
+    handle: Handle<AnimationClip>,
     /// Dedicated graph node for continuous timeline playback. A Bevy graph
     /// node has one seek position, so sparse pose anchors use separate nodes
     /// below when two frames from the same source clip must be blended.
@@ -87,6 +108,7 @@ struct LoadedClip {
     upper_anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
     lower_node: AnimationNodeIndex,
     lower_anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
+    layer: ClipLayer,
 }
 
 impl LoadedClip {
@@ -96,6 +118,7 @@ impl LoadedClip {
 
     fn at_anchor_layer(&self, frame: u16, layer: ClipLayer) -> Self {
         let mut clip = self.clone();
+        clip.layer = layer;
         clip.node = match layer {
             ClipLayer::Whole => self.anchor_nodes.get(&frame).copied().unwrap_or(self.node),
             ClipLayer::Upper => self
@@ -113,7 +136,7 @@ impl LoadedClip {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ClipLayer {
     Whole,
     Upper,
@@ -243,6 +266,7 @@ mod loading;
 use loading::*;
 fn evaluate_skeletons(
     mut commands: Commands,
+    backend: Res<AnimationBackend>,
     catalog: Res<AnimationPackCatalog>,
     runtime: Res<AnimationRuntime>,
     time: Res<Time>,
@@ -353,19 +377,30 @@ fn evaluate_skeletons(
             };
             let ordinary_locomotion_active =
                 ordinary_locomotion_candidate && skeleton.animation_speed() > locomotion_threshold;
-            update_presentation_crossfade(
-                &mut playback,
-                target,
-                skeleton.weapon_guard(),
-                ordinary_locomotion_active,
-                if skeleton.body().is_downed() {
-                    DOWNED_PRESENTATION_CROSSFADE_SECONDS
-                } else {
-                    PRESENTATION_CROSSFADE_SECONDS
-                },
-                &procedural_clock,
-                time.delta_secs(),
-            );
+            if *backend == AnimationBackend::Graph {
+                update_presentation_crossfade(
+                    &mut playback,
+                    target,
+                    skeleton.weapon_guard(),
+                    ordinary_locomotion_active,
+                    if skeleton.body().is_downed() {
+                        DOWNED_PRESENTATION_CROSSFADE_SECONDS
+                    } else {
+                        PRESENTATION_CROSSFADE_SECONDS
+                    },
+                    &procedural_clock,
+                    time.delta_secs(),
+                );
+            } else {
+                // Pose-buffer playback captures the visible joint pose and
+                // velocity when this plan changes. Feeding it an outgoing
+                // clip blend would double-smooth the transition and retime
+                // authoritative gait/action phases.
+                playback.presentation_transition = None;
+                playback.weapon_guard = skeleton.weapon_guard();
+                playback.ordinary_locomotion_active = ordinary_locomotion_active;
+                apply_playback_pose(&mut playback, target);
+            }
         } else {
             let ordinary_locomotion_active =
                 ordinary_locomotion_candidate && skeleton.animation_speed() > 0.05;
@@ -1018,10 +1053,15 @@ fn sync_animation_graphs(
 }
 
 fn drive_fk_players(
+    backend: Res<AnimationBackend>,
     owners: Query<&AnimationPlayback>,
     mut players: Query<(&AnimationPlayerOwner, &mut AnimationPlayer)>,
 ) {
     for (owner, mut player) in &mut players {
+        if *backend == AnimationBackend::PoseBuffer {
+            player.stop_all();
+            continue;
+        }
         let Ok(playback) = owners.get(owner.0) else {
             continue;
         };

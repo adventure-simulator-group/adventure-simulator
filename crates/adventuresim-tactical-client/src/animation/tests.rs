@@ -672,6 +672,7 @@ mod legacy_tests {
             runtime.clips.insert(
                 key,
                 LoadedClip {
+                    handle: Handle::default(),
                     node: AnimationNodeIndex::new(node_base),
                     duration_seconds: 64.0 / ANIMATION_FPS,
                     anchor_nodes: anchor_nodes.clone(),
@@ -679,6 +680,7 @@ mod legacy_tests {
                     upper_anchor_nodes: anchor_nodes.clone(),
                     lower_node: AnimationNodeIndex::new(node_base),
                     lower_anchor_nodes: anchor_nodes,
+                    layer: ClipLayer::Whole,
                 },
             );
         }
@@ -774,6 +776,7 @@ mod legacy_tests {
         runtime.clips.insert(
             (HUMANOID_UNARMED_PACK.to_owned(), "run_mirrored".to_owned()),
             LoadedClip {
+                handle: Handle::default(),
                 node: AnimationNodeIndex::new(9_000),
                 duration_seconds: 64.0 / ANIMATION_FPS,
                 anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
@@ -781,6 +784,7 @@ mod legacy_tests {
                 upper_anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
                 lower_node: AnimationNodeIndex::new(9_000),
                 lower_anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
+                layer: ClipLayer::Whole,
             },
         );
         let mut weighted = Vec::new();

@@ -13,6 +13,7 @@ mod presentation;
 
 use std::path::PathBuf;
 
+use animation::AnimationBackend;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -36,6 +37,10 @@ struct Args {
     /// Capture only one named scenario (for example `steady-walk-2.0`).
     #[arg(long)]
     scenario: Option<String>,
+
+    /// Authored animation playback implementation under review.
+    #[arg(long, value_enum, default_value_t)]
+    backend: AnimationBackend,
 }
 
 fn main() {
@@ -52,6 +57,7 @@ fn main() {
         asset_root,
         args.frames_per_sample.max(1),
         args.scenario.as_deref(),
+        args.backend,
     );
     if let bevy::app::AppExit::Error(code) = exit {
         std::process::exit(code.get() as i32);

@@ -301,8 +301,8 @@ tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:t
 # animation disables combat, diagnostic runs scripted real-client input and
 # records every animation frame, combat uses normal enemies, and networking
 # omits the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }}
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json" animation_backend="graph": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --animation-backend {{ quote(animation_backend) }}
 
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
@@ -411,7 +411,12 @@ animation-graph-editor asset_source="assets":
 
 # Capture a deterministic semantic-route preview with the gameplay viewer.
 animation-graph-preview scenario="steady-walk-2.0" output="target/animation-captures/graph-preview":
-    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
+    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --backend graph --scenario {{ quote(scenario) }} --output {{ quote(output) }}
+
+# Capture the same deterministic gameplay viewer through fixed-rate pose
+# buffers and per-joint inertialization.
+animation-pose-buffer-preview scenario="steady-walk-2.0" output="target/animation-captures/pose-buffer-preview":
+    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --backend pose-buffer --scenario {{ quote(scenario) }} --output {{ quote(output) }}
 
 # Launch the focused native Cascadeur-humanoid ragdoll fixture with a complete
 # Avian solver. This does not change the live client's query-only physics path.

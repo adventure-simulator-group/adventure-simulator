@@ -242,6 +242,10 @@ impl Plugin for TacticalAnimationPlugin {
             app.add_plugins(bevy_animation_graph::AnimationGraphPlugin::default());
         }
         app.init_resource::<AnimationPackCatalog>()
+            .init_resource::<AnimationBackend>()
+            .init_resource::<pose_buffer::PoseBufferMetrics>()
+            .init_resource::<pose_buffer::RigDefinitions>()
+            .init_resource::<pose_buffer::BakedClipBank>()
             .init_resource::<AnimationRuntime>()
             .init_resource::<semantic_graph::SemanticGraphLibrary>()
             .init_resource::<semantic_graph::SemanticGraphTelemetry>()
@@ -254,6 +258,7 @@ impl Plugin for TacticalAnimationPlugin {
             .add_systems(
                 Update,
                 (
+                    pose_buffer::toggle_animation_backend,
                     collect_loaded_packs,
                     attach_loaded_rig_scenes,
                     update_presented_skeletons,
@@ -269,6 +274,7 @@ impl Plugin for TacticalAnimationPlugin {
                     tick_impact_reactions,
                     sync_animation_graphs,
                     drive_fk_players,
+                    pose_buffer::update_pose_buffers,
                     update_rig_visibility,
                     emit_locomotion_presentation_events,
                     trace_locomotion_presentation_events,
@@ -282,6 +288,7 @@ impl Plugin for TacticalAnimationPlugin {
             .add_systems(
                 PostUpdate,
                 (
+                    pose_buffer::apply_pose_buffers,
                     restore_authored_bind_pose,
                     procedural::apply_pose_mirroring,
                     procedural::stabilize_locomotion_torso,

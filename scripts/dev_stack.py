@@ -1435,6 +1435,7 @@ def tactical_session_config(
     window_capture: str = "auto",
     capture_source: str = "window",
     render_backend: str = "auto",
+    animation_backend: str = "graph",
 ) -> dict[str, object]:
     return {
         "repository": str(ROOT.resolve()),
@@ -1457,6 +1458,7 @@ def tactical_session_config(
         "window_capture": window_capture,
         "capture_source": capture_source,
         "render_backend": render_backend,
+        "animation_backend": animation_backend,
     }
 
 
@@ -1486,6 +1488,7 @@ def launch_recorded_tactical_client(
         "--server-addr", str(client_config["server_addr"]),
         "--graphics-preset", str(config.get("graphics_preset", "default")),
         "--present-mode", str(config.get("present_mode", "auto-vsync")),
+        "--animation-backend", str(config.get("animation_backend", "graph")),
     ]
     suffix = str(config["session_id"])[:12]
     if config["play_mode"] == TacticalPlayMode.DIAGNOSTIC.value:
@@ -1983,6 +1986,7 @@ def tactical_play(
     capture_source: str = "window",
     render_backend: str = "auto",
     scene_input: str | None = None,
+    animation_backend: str = "graph",
 ) -> int:
     launch_client = mode is not TacticalPlayMode.NETWORKING
     code = build_tactical_play(launch_client)
@@ -2002,7 +2006,7 @@ def tactical_play(
     config = tactical_session_config(
         values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
         graphics_preset,
-        present_mode, window_capture, capture_source, render_backend,
+        present_mode, window_capture, capture_source, render_backend, animation_backend,
     )
     session_file = run_dir / "tactical-session.json"
 
@@ -2414,6 +2418,9 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
     )
+    tactical_play_parser.add_argument(
+        "--animation-backend", choices=("graph", "pose-buffer"), default="graph"
+    )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
     return parser
@@ -2452,6 +2459,7 @@ def main() -> int:
                 TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
                 args.presentation_trace, args.present_mode, args.window_capture,
                 args.capture_source, args.render_backend, args.scene_input,
+                args.animation_backend,
             )
         if args.command == "tactical-status":
             return tactical_status()

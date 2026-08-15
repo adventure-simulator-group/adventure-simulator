@@ -18,10 +18,11 @@ use bevy::{
 };
 use serde::Serialize;
 
+use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
-    AnimationPlayback, AnimationRuntime, ArmIkState, AttackFootworkState, BoneRole, HumanoidBone,
-    LegIkDiagnostics, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
-    LocomotionPresentationEvent, LocomotionPresentationEventKind,
+    AnimationBackend, AnimationPlayback, AnimationRuntime, ArmIkState, AttackFootworkState,
+    BoneRole, HumanoidBone, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
+    LocomotionHeightState, LocomotionPresentationEvent, LocomotionPresentationEventKind,
     MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
     locomotion_support_weights,
@@ -164,6 +165,7 @@ pub(crate) fn run(
     asset_root: PathBuf,
     settle_frames: u32,
     scenario: Option<&str>,
+    backend: AnimationBackend,
 ) -> AppExit {
     fs::create_dir_all(&output).unwrap_or_else(|error| {
         panic!("failed to create animation capture directory {output:?}: {error}")
@@ -219,6 +221,7 @@ pub(crate) fn run(
         // Individual scenarios select terrain conformity explicitly so the
         // viewer can retain FK-only controls after the live default changed.
         .insert_resource(TerrainIkEnabled(initial_terrain_ik))
+        .insert_resource(backend)
         .insert_resource(ClearColor(Color::srgb(0.08, 0.1, 0.13)))
         .insert_resource(CaptureSequence::new(output, settle_frames, scenario))
         .add_systems(Startup, setup_viewer)
@@ -399,6 +402,8 @@ fn repeated_bone_mismatch(
 #[derive(Debug, Serialize)]
 struct CaptureManifest {
     sample_hz: f32,
+    animation_backend: &'static str,
+    pose_buffer: PoseBufferMetrics,
     pipeline: &'static str,
     views: [CaptureView; 3],
     validation: CaptureValidation,
@@ -2072,6 +2077,8 @@ fn collect_locomotion_presentation_events(
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
+    backend: Res<AnimationBackend>,
+    pose_buffer_metrics: Res<PoseBufferMetrics>,
     terrain_ik: Res<TerrainIkEnabled>,
     subjects: Query<
         (
@@ -2092,6 +2099,8 @@ fn capture_frame(
     terrain: Single<&SceneTerrain>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    let animation_backend = backend.as_str();
+    let pose_buffer_metrics = *pose_buffer_metrics;
     if !sequence.applied || sequence.capture_in_flight {
         return;
     }
@@ -2385,7 +2394,12 @@ fn capture_frame(
             sequence.index += 1;
             sequence.applied = false;
             if sequence.index == sequence.plan.len() {
-                finish_capture(&mut sequence, &mut exit);
+                finish_capture(
+                    &mut sequence,
+                    animation_backend,
+                    pose_buffer_metrics,
+                    &mut exit,
+                );
             }
         },
     );
@@ -2478,7 +2492,12 @@ fn wait_or_fail(sequence: &mut CaptureSequence, reason: &str, exit: &mut Message
     exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
 }
 
-fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppExit>) {
+fn finish_capture(
+    sequence: &mut CaptureSequence,
+    animation_backend: &'static str,
+    pose_buffer_metrics: PoseBufferMetrics,
+    exit: &mut MessageWriter<AppExit>,
+) {
     let frames = std::mem::take(&mut sequence.samples);
     let presentation_events = std::mem::take(&mut sequence.presentation_events);
     let scenarios = scenario_metrics(&frames);
@@ -3040,7 +3059,16 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     });
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
-        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, dependency-backed semantic graph, authored FK, and final procedural passes",
+        animation_backend,
+        pose_buffer: pose_buffer_metrics,
+        pipeline: match animation_backend {
+            "pose_buffer" => {
+                "shared tactical player, scene, camera, authoritative locomotion projection, dependency-backed semantic graph, fixed-rate pose-buffer FK with per-joint inertialization, and final procedural passes"
+            }
+            _ => {
+                "shared tactical player, scene, camera, authoritative locomotion projection, dependency-backed semantic graph, Bevy graph FK with presentation crossfade, and final procedural passes"
+            }
+        },
         views: VIEWS,
         validation: CaptureValidation {
             finite_transforms,

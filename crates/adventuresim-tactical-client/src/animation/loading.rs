@@ -229,6 +229,7 @@ pub(super) fn collect_loaded_packs(
             (
                 key,
                 LoadedClip {
+                    handle,
                     node,
                     duration_seconds,
                     anchor_nodes,
@@ -236,6 +237,7 @@ pub(super) fn collect_loaded_packs(
                     upper_anchor_nodes,
                     lower_node,
                     lower_anchor_nodes,
+                    layer: ClipLayer::Whole,
                 },
             )
         })
