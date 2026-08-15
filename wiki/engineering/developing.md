@@ -1079,9 +1079,9 @@ presentation Rust, shaders, textures, fixtures, and lockfiles. `--skip-build`
 works only when it matches a prior successful build stamp, which prevents stale
 binaries being mislabeled while allowing identified dirty runs.
 
-Use [the environment review rubric](environment-visual-review.md) and copy the
-checked-in ledger template for severity, cost/benefit triage, independent
-reassessment, and stopping criteria.
+Use [the environment review rubric](world-data/environment-visual-review.md)
+and copy the checked-in ledger template for severity, cost/benefit triage,
+independent reassessment, and stopping criteria.
 
 The focused sky viewer captures the production atmosphere and celestial
 materials without loading terrain, foliage, or a tactical server. Its five
