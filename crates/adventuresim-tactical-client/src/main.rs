@@ -27,7 +27,6 @@ use wasm_bindgen::prelude::*;
 
 #[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
-mod animation_graph_nodes;
 #[allow(dead_code)] // Viewer-only camera diagnostics are compiled into this binary.
 mod camera;
 #[cfg(feature = "debug")]

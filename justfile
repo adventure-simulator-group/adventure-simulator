@@ -405,23 +405,9 @@ tactical-environment-review-ledger ledger="assets/tactical-scenes/environment-re
 tactical-sky-capture view="sun" output="target/tactical-sky-captures/sun.png" settle_frames="24":
     @cargo run -p adventuresim-tactical-client --bin tactical-sky-viewer -- --view {{ quote(view) }} --output {{ quote(output) }} --settle-frames {{ quote(settle_frames) }}
 
-# Launch the native-only graph editor after validating semantic packs and routes.
-animation-graph-editor asset_source="assets":
-    @cargo run -p adventuresim-tactical-client --no-default-features --features animation-graph-editor --bin animation-graph-editor -- --asset-source {{ quote(asset_source) }}
-
-# Capture a deterministic semantic-route preview with the gameplay viewer.
-animation-graph-preview scenario="steady-walk-2.0" output="target/animation-captures/graph-preview":
+# Capture a deterministic semantic-route preview through pose-buffer playback.
+animation-preview scenario="steady-walk-2.0" output="target/animation-captures/animation-preview":
     @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
-
-# Launch the focused native Cascadeur-humanoid ragdoll fixture with a complete
-# Avian solver. This does not change the live client's query-only physics path.
-ragdoll-viewer asset_source="assets":
-    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }}
-
-# Capture animated, active-motor, and passive ragdoll review frames plus
-# manifest.json/failure.txt validation gates, then exit.
-ragdoll-capture output="target/animation-captures/ragdoll-review" asset_source="assets":
-    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }} --output {{ quote(output) }}
 
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.

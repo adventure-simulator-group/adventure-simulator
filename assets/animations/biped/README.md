@@ -51,3 +51,10 @@ counterparts are `guard_walk_lead_right`,
 optional counterpart is absent, the runtime mirrors its exact pair from the
 same pack before consulting a parent. Missing strafes then fall back to the
 same-lead guard walk, the static guard, and ultimately the base T-pose.
+
+The runtime can evaluate these same canonical files through either Bevy graph
+playback or the pose-buffer backend. Pose-buffer playback bakes curves to 30 Hz
+in memory, keys its rig and clip banks by skeleton family, substitutes bind
+transforms for missing or invalid tracks, and removes root-bone translation.
+The source GLBs therefore remain animation inputs; neither backend grants their
+root tracks authority over the gameplay entity.

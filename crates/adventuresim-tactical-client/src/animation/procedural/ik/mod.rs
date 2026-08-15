@@ -4665,7 +4665,7 @@ fn apply_attack_step(
     if finish_after_solve && skeleton.raised_locomotion().is_moving() {
         // A moving character can hand these exact plants to the ordinary
         // raised-step planner. At idle, keep attack recovery ownership so a
-        // late graph transition into the resting guard is absorbed as another
+        // late pose transition into the resting guard is absorbed as another
         // bounded correction instead of snapping both feet on the next frame.
         let left_plant = state.left_solve_target.unwrap_or(state.left_plant);
         let right_plant = state.right_solve_target.unwrap_or(state.right_plant);

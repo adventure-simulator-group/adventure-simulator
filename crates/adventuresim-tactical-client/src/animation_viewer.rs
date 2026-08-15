@@ -18,6 +18,7 @@ use bevy::{
 };
 use serde::Serialize;
 
+use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
     AnimationPlayback, AnimationRuntime, ArmIkState, AttackFootworkState, BoneRole, HumanoidBone,
     LegIkDiagnostics, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
@@ -25,7 +26,7 @@ use crate::animation::{
     MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
     locomotion_support_weights,
-    semantic_graph::{SemanticGraphPath, SemanticGraphTrace},
+    semantic_route::{SemanticRoutePath, SemanticRouteTrace},
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -399,13 +400,15 @@ fn repeated_bone_mismatch(
 #[derive(Debug, Serialize)]
 struct CaptureManifest {
     sample_hz: f32,
+    playback_backend: &'static str,
+    pose_buffer: PoseBufferMetrics,
     pipeline: &'static str,
     views: [CaptureView; 3],
     validation: CaptureValidation,
     scenarios: Vec<ScenarioMetrics>,
     frames: Vec<FrameSample>,
     presentation_events: Vec<PresentationEventSample>,
-    semantic_graph_path_counts: BTreeMap<String, u64>,
+    semantic_route_path_counts: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -446,7 +449,7 @@ struct CaptureValidation {
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
     attack_footwork_valid: bool,
-    semantic_graph_paths_exercised: bool,
+    semantic_route_paths_exercised: bool,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -584,9 +587,9 @@ struct FrameSample {
     attack_constrained_right_foot_target: Option<[f32; 3]>,
     attack_support_handoffs: u8,
     attack_maximum_reach_yield_metres: f32,
-    semantic_graph_requested_path: SemanticGraphPath,
-    semantic_graph_selected_path: SemanticGraphPath,
-    semantic_graph_runtime_evaluated: bool,
+    semantic_route_requested_path: SemanticRoutePath,
+    semantic_route_selected_path: SemanticRoutePath,
+    semantic_route_runtime_evaluated: bool,
     screenshots: BTreeMap<String, String>,
     bones: BTreeMap<String, BoneSample>,
 }
@@ -1163,14 +1166,22 @@ fn capture_plan() -> Vec<PlannedFrame> {
     .collect()
 }
 
-fn downed_contact_scenario(name: &'static str, _body: BodyState) -> Vec<PlannedFrame> {
-    (0..=84)
+fn downed_contact_scenario(name: &'static str, body: BodyState) -> Vec<PlannedFrame> {
+    let speed = match body {
+        BodyState::Prone => 2.0,
+        BodyState::Supine => 0.8,
+        _ => 0.0,
+    };
+    // Include a full review cycle after the pose-buffer startup settles. The
+    // shorter probe ended just before the first loop seam, hiding precisely
+    // the kind of crawl discontinuity this scenario is meant to diagnose.
+    (0..=148)
         .map(|scenario_frame| PlannedFrame {
             scenario: name,
             scenario_frame,
-            speed: 0.0,
+            speed,
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
-            local_direction: Vec2::ZERO,
+            local_direction: Vec2::NEG_Y,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
             crouching: true,
@@ -1736,7 +1747,7 @@ fn drive_sequence(
                     .is_some_and(|motion| animation_runtime.motion_is_processed(motion));
             skeleton.set_downed_turning(
                 frame.scenario != "downed-prone-look-at"
-                    && (preload_locomotion || frame.scenario_frame >= 4),
+                    && (preload_locomotion || (frame.scenario_frame >= 4 && frame.speed <= 0.05)),
             );
         }
 
@@ -2072,6 +2083,7 @@ fn collect_locomotion_presentation_events(
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
+    pose_buffer_metrics: Res<PoseBufferMetrics>,
     terrain_ik: Res<TerrainIkEnabled>,
     subjects: Query<
         (
@@ -2084,7 +2096,7 @@ fn capture_frame(
             Option<&LocomotionBodyResponseState>,
             Option<&LocomotionHeightState>,
             Option<&LegIkState>,
-            Option<&SemanticGraphTrace>,
+            Option<&SemanticRouteTrace>,
         ),
         With<CaptureSubject>,
     >,
@@ -2092,6 +2104,8 @@ fn capture_frame(
     terrain: Single<&SceneTerrain>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    let playback_backend = "pose_buffer";
+    let pose_buffer_metrics = *pose_buffer_metrics;
     if !sequence.applied || sequence.capture_in_flight {
         return;
     }
@@ -2105,7 +2119,7 @@ fn capture_frame(
         body_response,
         height_state,
         leg_ik,
-        semantic_graph,
+        semantic_route,
     )) = subjects.single()
     else {
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
@@ -2119,10 +2133,10 @@ fn capture_frame(
         );
         return;
     };
-    let Some(semantic_graph) = semantic_graph else {
+    let Some(semantic_route) = semantic_route else {
         wait_or_fail(
             &mut sequence,
-            "capture subject has no semantic graph trace",
+            "capture subject has no semantic route trace",
             &mut exit,
         );
         return;
@@ -2334,9 +2348,9 @@ fn capture_frame(
                 .map(|value| value.to_array()),
             attack_support_handoffs,
             attack_maximum_reach_yield_metres: attack_maximum_reach_yield,
-            semantic_graph_requested_path: semantic_graph.requested_path,
-            semantic_graph_selected_path: semantic_graph.path,
-            semantic_graph_runtime_evaluated: semantic_graph.runtime_evaluated,
+            semantic_route_requested_path: semantic_route.requested_path,
+            semantic_route_selected_path: semantic_route.path,
+            semantic_route_runtime_evaluated: semantic_route.runtime_evaluated,
             screenshots: VIEWS
                 .into_iter()
                 .map(|view| {
@@ -2385,7 +2399,12 @@ fn capture_frame(
             sequence.index += 1;
             sequence.applied = false;
             if sequence.index == sequence.plan.len() {
-                finish_capture(&mut sequence, &mut exit);
+                finish_capture(
+                    &mut sequence,
+                    playback_backend,
+                    pose_buffer_metrics,
+                    &mut exit,
+                );
             }
         },
     );
@@ -2478,7 +2497,12 @@ fn wait_or_fail(sequence: &mut CaptureSequence, reason: &str, exit: &mut Message
     exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
 }
 
-fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppExit>) {
+fn finish_capture(
+    sequence: &mut CaptureSequence,
+    playback_backend: &'static str,
+    pose_buffer_metrics: PoseBufferMetrics,
+    exit: &mut MessageWriter<AppExit>,
+) {
     let frames = std::mem::take(&mut sequence.samples);
     let presentation_events = std::mem::take(&mut sequence.presentation_events);
     let scenarios = scenario_metrics(&frames);
@@ -2512,7 +2536,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             && (!metrics.scenario.contains("run")
                 || metrics.maximum_foot_rotation_step_degrees
                     <= if metrics.scenario.starts_with("terrain-") {
-                        // Direct graph-weighted slope alignment can rotate a
+                        // Direct weight-driven slope alignment can rotate a
                         // pointed run foot rapidly during the short contact
                         // approach. Position, contact, penetration, and knee
                         // gates remain strict; no temporal rotation cache is
@@ -2603,7 +2627,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             metrics.scenario.as_str(),
             "terrain-run-flight-stop" | "terrain-tap-restart-crossfade"
         ) {
-            // Crossfading into graph-authored idle may blend support in before
+            // Transitioning into authored idle may blend support in before
             // a sampled zero-weight frame. If a true flight frame remains,
             // retain the toe-clearance gate; otherwise the ordinary contact
             // and penetration gates own the transition.
@@ -3027,20 +3051,22 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
     let attack_footwork_valid = validate_attack_footwork(&frames);
-    let semantic_graph_paths_exercised = frames.iter().all(|frame| {
-        frame.semantic_graph_requested_path == SemanticGraphPath::LegacyFallback
-            || (frame.semantic_graph_runtime_evaluated
-                && frame.semantic_graph_selected_path == frame.semantic_graph_requested_path)
+    let semantic_route_paths_exercised = frames.iter().all(|frame| {
+        frame.semantic_route_requested_path == SemanticRoutePath::LegacyFallback
+            || (frame.semantic_route_runtime_evaluated
+                && frame.semantic_route_selected_path == frame.semantic_route_requested_path)
     });
-    let semantic_graph_path_counts = frames.iter().fold(BTreeMap::new(), |mut counts, frame| {
+    let semantic_route_path_counts = frames.iter().fold(BTreeMap::new(), |mut counts, frame| {
         *counts
-            .entry(frame.semantic_graph_selected_path.as_str().to_owned())
+            .entry(frame.semantic_route_selected_path.as_str().to_owned())
             .or_insert(0) += 1;
         counts
     });
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
-        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, dependency-backed semantic graph, authored FK, and final procedural passes",
+        playback_backend,
+        pose_buffer: pose_buffer_metrics,
+        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, direct semantic routing, fixed-rate pose-buffer FK with per-joint inertialization, and final procedural passes",
         views: VIEWS,
         validation: CaptureValidation {
             finite_transforms,
@@ -3069,7 +3095,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             hard_stop_height_continuity_valid,
             repeated_evaluation_valid,
             attack_footwork_valid,
-            semantic_graph_paths_exercised,
+            semantic_route_paths_exercised,
             views_are_distinct,
             duplicate_view_frames: sequence.duplicate_view_frames.clone(),
             note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
@@ -3077,7 +3103,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         scenarios,
         frames,
         presentation_events,
-        semantic_graph_path_counts,
+        semantic_route_path_counts,
     };
     let manifest_path = sequence.output.join("manifest.json");
     fs::write(
@@ -3114,7 +3140,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && hard_stop_height_continuity_valid
         && repeated_evaluation_valid
         && attack_footwork_valid
-        && semantic_graph_paths_exercised
+        && semantic_route_paths_exercised
         && views_are_distinct
     {
         exit.write(AppExit::Success);
@@ -4526,7 +4552,7 @@ fn reported_support_contacts_are_valid(frames: &[FrameSample]) -> bool {
             || (!scenario_uses_terrain_ik(&frame.scenario)
                 && frame.weapon_guard == WeaponGuardState::Lowered)
         {
-            // In an FK-only comparison the graph weights describe authored
+            // In an FK-only comparison the semantic weights describe authored
             // loading, not a claim that the procedural solver owns contact.
             // Attack captures include client-owned recovery and the raised
             // locomotion seam after the authoritative action has cleared.
@@ -4942,9 +4968,9 @@ mod tests {
             attack_constrained_right_foot_target: None,
             attack_support_handoffs: 0,
             attack_maximum_reach_yield_metres: 0.0,
-            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_runtime_evaluated: false,
+            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_runtime_evaluated: false,
             screenshots,
             bones: BTreeMap::new(),
         };
@@ -5330,9 +5356,9 @@ mod tests {
             attack_constrained_right_foot_target: None,
             attack_support_handoffs: 0,
             attack_maximum_reach_yield_metres: 0.0,
-            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_runtime_evaluated: false,
+            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones,
         };
@@ -5595,9 +5621,9 @@ mod tests {
             attack_constrained_right_foot_target: None,
             attack_support_handoffs: 0,
             attack_maximum_reach_yield_metres: 0.0,
-            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_runtime_evaluated: false,
+            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones: BTreeMap::from([
                 ("left_foot".into(), foot(left_x, left_terrain_height)),

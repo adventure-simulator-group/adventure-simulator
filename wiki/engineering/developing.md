@@ -584,31 +584,6 @@ timeout fails closed without presenting an uncommitted result.
 
 ## Testing a Single Server
 
-### Private animation-graph dependency
-
-The tactical client pins the private
-`adventure-simulator-group/bevy_animation_graph` repository by full commit SHA.
-Developers must configure a Git credential with read access; `gh auth setup-git`
-is the preferred local GitHub CLI integration. If Cargo's embedded transport
-does not find that helper, set `CARGO_NET_GIT_FETCH_WITH_CLI=true`.
-
-Use a fresh empty Cargo home to verify both the immutable lock and credential:
-
-```powershell
-$fetchCargoHome = Join-Path $env:TEMP ("animation-graph-fetch-" + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $fetchCargoHome | Out-Null
-$env:CARGO_HOME = $fetchCargoHome
-$env:CARGO_NET_GIT_FETCH_WITH_CLI = "true"
-cargo fetch --locked
-```
-
-CI needs a GitHub App token, fine-grained PAT, or deploy credential explicitly
-authorized for the sibling private repository. The Fabelgeist
-workflow's repo-scoped `GITHUB_TOKEN` cannot read it. Repository secrets are
-also withheld from untrusted fork pull requests, so private-fetch verification
-must run on a trusted internal branch/check or remain explicitly unavailable
-for that fork event.
-
 After changing the canonical unarmed `walk.glb` or `run.glb`, regenerate the
 closed runtime cycles and their mirrored comparison clips with:
 
@@ -635,38 +610,18 @@ repository's `assets/` directory, independent of the executable location under
 presentation assets before opening a window, so a misplaced asset root fails at
 startup instead of silently rendering fallback materials.
 
-For animation-graph authoring, launch the optional native editor from the
-repository root:
+For deterministic animation preview evidence, run the gameplay capture fixture:
 
 ```powershell
-just animation-graph-editor assets
+just animation-preview steady-walk-2.0 target/animation-captures/preview
 ```
 
-The launcher first reports missing optional semantic motion files and validates
-anchor frame bounds, the ordinary locomotion route, the raised/right-attack
-route, and exact/mirrored catalog fallback resolution. It then validates and
-queries the same centralized runtime graph assets used by gameplay for a
-representative ordinary stride and right-lead attack. Missing optional files are
-warnings; invalid anchors, files required by either deterministic route, and
-graph load/schema/query failures are fatal. It prints catalog problems together
-and does not open the UI with a broken required route. The editor feature is
-disabled by default and is not part of the Wasm or server build.
-
-Use the gameplay capture fixture for deterministic preview evidence rather than
-treating the editor viewport as final output:
-
-```powershell
-just animation-graph-preview steady-walk-2.0 target/animation-captures/graph-preview
-```
-
-Choose any scenario accepted by `animation-viewer`; the output retains its
-scenario telemetry, semantic-route counts, `manifest.json`, `failure.txt`, PNG
-sequences, and HTML review surface.
-
-Use `just tactical-play diagnostic` to run the same native gameplay client with
-a bounded analogue-input script and a per-render-frame animation-state JSONL
-log. The generated script, `animation-state-<session>.jsonl`, and process logs
-are written to the supervised run directory reported by `just tactical-status`.
+The output retains scenario telemetry, semantic-route counts, `manifest.json`,
+`failure.txt`, PNG sequences, and the HTML review surface.
+Use `just tactical-play diagnostic` to run the same native gameplay client
+with a bounded analogue-input script and a per-render-frame animation-state
+JSONL log. The generated script, `animation-state-<session>.jsonl`, and process
+logs are written to the supervised run directory reported by `just tactical-status`.
 The bounded script keeps forward movement held while raising and lowering guard,
 so the trace also verifies that raised-stance replication and locomotion remain
 live. This is the preferred reproducer when deterministic `animation-viewer`

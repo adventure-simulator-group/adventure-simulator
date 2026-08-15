@@ -33,6 +33,7 @@ pub(crate) fn update_tactical_combat_state(
             movement,
             pace.copied().unwrap_or_default(),
             skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard),
+            skeleton.map_or(BodyState::default(), SkeletonState::body),
             endurance,
             sprint_speed,
         );

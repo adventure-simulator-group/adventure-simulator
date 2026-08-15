@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, str::FromStr};
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 use std::path::{Path, PathBuf};
 
 use adventuresim_tactical_core::prelude::*;
@@ -298,7 +298,7 @@ impl AnimationPackCatalog {
     }
 }
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EditorRouteResolution {
     pub route: &'static str,
@@ -310,7 +310,7 @@ pub(crate) struct EditorRouteResolution {
     pub frame: u16,
 }
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct EditorValidationReport {
     pub pack_count: usize,
@@ -324,7 +324,7 @@ pub(crate) struct EditorValidationReport {
 /// resolve the same deterministic ordinary and raised/attack samples used by
 /// the capture viewer. Errors are returned together so the native tool can
 /// print a complete actionable preflight instead of failing at the first file.
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 pub(crate) fn validate_editor_asset_root(
     asset_root: &Path,
 ) -> Result<EditorValidationReport, Vec<String>> {
@@ -458,7 +458,7 @@ pub(crate) fn validate_editor_asset_root(
     }
 }
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 fn resolve_editor_pose(
     catalog: &AnimationPackCatalog,
     requested_pack: &str,

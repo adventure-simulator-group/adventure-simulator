@@ -143,10 +143,16 @@ fn presentation_phase_speed(skeleton: &SkeletonState) -> f32 {
     let speed = skeleton.animation_speed();
     if skeleton.downed_turning() {
         speed * 2.0
-    } else if skeleton.body().is_downed() {
-        speed * (2.0 / 3.0)
     } else {
-        speed
+        match skeleton.body() {
+            // Keep presentation prediction identical to the authoritative
+            // projector. Prone crawl contacts track physical travel directly;
+            // retaining the old two-thirds multiplier here made every server
+            // sample correct the displayed phase and visibly cut the crawl.
+            BodyState::Prone => speed,
+            BodyState::Supine => speed * (2.0 / 3.0),
+            _ => speed,
+        }
     }
 }
 
@@ -238,13 +244,12 @@ struct LocomotionEventCursor {
 
 impl Plugin for TacticalAnimationPlugin {
     fn build(&self, app: &mut App) {
-        if !app.is_plugin_added::<bevy_animation_graph::AnimationGraphPlugin>() {
-            app.add_plugins(bevy_animation_graph::AnimationGraphPlugin::default());
-        }
         app.init_resource::<AnimationPackCatalog>()
+            .init_resource::<pose_buffer::PoseBufferMetrics>()
+            .init_resource::<pose_buffer::RigDefinitions>()
+            .init_resource::<pose_buffer::BakedClipBank>()
             .init_resource::<AnimationRuntime>()
-            .init_resource::<semantic_graph::SemanticGraphLibrary>()
-            .init_resource::<semantic_graph::SemanticGraphTelemetry>()
+            .init_resource::<semantic_route::SemanticRouteTelemetry>()
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
             .init_resource::<procedural::FixedTickPoseCache>()
@@ -258,17 +263,15 @@ impl Plugin for TacticalAnimationPlugin {
                     attach_loaded_rig_scenes,
                     update_presented_skeletons,
                     establish_animation_targets,
-                    identify_animation_players,
                     procedural::bind_humanoid_bones,
                     procedural::cache_humanoid_rigs,
                     capture_authored_bind_transforms,
                     procedural::capture_humanoid_rig_axes,
-                    semantic_graph::evaluate_semantic_graph_paths,
+                    semantic_route::evaluate_semantic_route_paths,
                     evaluate_skeletons,
                     log_animation_diagnostics,
                     tick_impact_reactions,
-                    sync_animation_graphs,
-                    drive_fk_players,
+                    pose_buffer::update_pose_buffers,
                     update_rig_visibility,
                     emit_locomotion_presentation_events,
                     trace_locomotion_presentation_events,
@@ -277,11 +280,8 @@ impl Plugin for TacticalAnimationPlugin {
             )
             .add_systems(
                 PostUpdate,
-                reset_authored_bind_before_fk.before(AnimationSystems),
-            )
-            .add_systems(
-                PostUpdate,
                 (
+                    pose_buffer::apply_pose_buffers,
                     restore_authored_bind_pose,
                     procedural::apply_pose_mirroring,
                     procedural::stabilize_locomotion_torso,
@@ -297,8 +297,6 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()
-                    .after(AnimationSystems)
-                    .after(bevy_animation_graph::core::plugin::AnimationGraphSet::Final)
                     .before(TransformSystems::Propagate),
             )
             .add_systems(
