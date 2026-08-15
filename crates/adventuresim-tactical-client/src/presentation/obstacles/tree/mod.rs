@@ -33,4 +33,6 @@ pub(in crate::presentation) use presentation::{
     VistaTreePresentationCache, ensure_vista_tree_variant, present_pending_trees,
     stream_tree_lod_children, tree_species_for_site,
 };
-pub(crate) use presentation::{PresentedTree, TreeAssetResidencyDiagnostics};
+pub(crate) use presentation::{
+    PresentedTree, TreeAssetResidencyDiagnostics, TreeLeafTriangleCount,
+};

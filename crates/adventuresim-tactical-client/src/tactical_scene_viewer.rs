@@ -49,9 +49,10 @@ use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundScatterLayer, LooseStonePebblePatch, PresentedTree,
     ProceduralEnvironmentAssets, ProceduralRockVisual, TacticalGraphicsSettings,
     TacticalPresentationPlugin, TacticalTreeLeafCardMaterial, TerrainMaterialPresentation,
-    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, VistaTerrain, VistaTreePresentation,
-    WeatherParticle, oak_bark_material, oak_leaf_material, oak_review_terminal_specimen,
+    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
+    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
+    oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -61,7 +62,6 @@ const PERFORMANCE_VIEW_HEIGHT: u32 = 1440;
 const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
-const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
 const CAPTURE_PROFILE_VERSION: u16 = 11;
 const CAMERA_VERSION: u16 = 7;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
@@ -1614,6 +1614,7 @@ fn benchmark_leaf_representations(
     time: Res<Time<Real>>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    leaf_meshes: Query<(&TreeLeafTriangleCount, &TreeLeafRepresentation)>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(state), Some(capture)) = (state.as_deref_mut(), capture.as_deref()) else {
@@ -1648,8 +1649,11 @@ fn benchmark_leaf_representations(
     let mean_ms = state.samples_ms.iter().sum::<f64>() / state.samples_ms.len() as f64;
     let median_ms = percentile(&state.samples_ms, 0.50);
     let p95_ms = percentile(&state.samples_ms, 0.95);
-    let scene_leaf_triangles =
-        capture.expected_trees * PROCEDURAL_OAK_LEAVES_PER_TREE * usize::from(triangles_per_leaf);
+    let scene_leaf_triangles = leaf_meshes
+        .iter()
+        .filter(|(_, active)| **active == representation)
+        .map(|(triangles, _)| triangles.0)
+        .sum();
     state.results.push(LeafBenchmarkResult {
         representation: name,
         triangles_per_leaf,

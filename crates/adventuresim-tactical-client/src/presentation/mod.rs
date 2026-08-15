@@ -45,8 +45,8 @@ pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
     PresentedTree, TacticalTreeLeafCardMaterial, TreeAssetResidencyDiagnostics,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    oak_bark_material, oak_leaf_material,
+    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
+    TreeTrunkLod, oak_bark_material, oak_leaf_material,
 };
 pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;

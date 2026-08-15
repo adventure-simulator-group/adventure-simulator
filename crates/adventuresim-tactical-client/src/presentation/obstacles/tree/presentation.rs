@@ -31,6 +31,13 @@ use super::TREE_PRIMARY_GROUP_COUNT;
 #[derive(Component)]
 pub(in crate::presentation) struct PendingTreePresentation;
 
+/// Exact submitted triangle count for one streamed leaf-cluster entity.
+/// Stored when the CPU mesh is built because production meshes intentionally
+/// relinquish their main-world vertex data after render extraction.
+#[derive(Component, Clone, Copy, Debug)]
+#[allow(dead_code)]
+pub(crate) struct TreeLeafTriangleCount(pub(crate) usize);
+
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct TreePresentationCache {
     variants: std::collections::HashMap<u64, CachedTreePresentation>,
@@ -259,6 +266,11 @@ fn spawn_streamed_tree_children(
                     radius: cluster.radius,
                 };
                 let cluster_aabb = tree_cluster_aabb(cluster.center, cluster.radius);
+                let cluster_leaf_count = cached
+                    .leaves
+                    .iter()
+                    .filter(|leaf| leaf.primary_group == cluster.primary_group)
+                    .count();
                 if new_leaf_mask & 1 != 0 {
                     parent.spawn((
                         Name::new(format!(
@@ -270,6 +282,7 @@ fn spawn_streamed_tree_children(
                         cluster_marker,
                         cluster_aabb,
                         TreeLeafRepresentation::TexturedMesh,
+                        TreeLeafTriangleCount(cluster_leaf_count * 8),
                         Mesh3d(
                             cluster
                                 .cambered_leaf_mesh
@@ -295,6 +308,7 @@ fn spawn_streamed_tree_children(
                         cluster_marker,
                         cluster_aabb,
                         TreeLeafRepresentation::AlphaCard,
+                        TreeLeafTriangleCount(cluster_leaf_count * 2),
                         Mesh3d(
                             cluster
                                 .leaf_card_mesh
