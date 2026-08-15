@@ -45,6 +45,31 @@ mod tests {
     use adventuresim_tactical_core::prelude::{TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES};
 
     #[test]
+    fn oak_shoot_pulses_leave_four_stable_canopy_windows() {
+        let attaches = (0..24_u64)
+            .map(|index| oak_clustered_shoot_attach(index, 24, 0.08, splitmix64(42 ^ index)))
+            .collect::<Vec<_>>();
+        assert!(
+            attaches
+                .iter()
+                .all(|attach| (0.04..=0.992).contains(attach))
+        );
+        let mut ordered = attaches.clone();
+        ordered.sort_by(f32::total_cmp);
+        assert_eq!(
+            ordered
+                .windows(2)
+                .filter(|pair| pair[1] - pair[0] > 0.1)
+                .count(),
+            4
+        );
+        let repeated = (0..24_u64)
+            .map(|index| oak_clustered_shoot_attach(index, 24, 0.08, splitmix64(42 ^ index)))
+            .collect::<Vec<_>>();
+        assert_eq!(attaches, repeated);
+    }
+
+    #[test]
     fn procedural_tree_has_a_deterministic_four_order_branch_hierarchy() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let crown_phase = unit_hash(42 ^ 0x9182_64ac) * core::f32::consts::TAU;
@@ -842,7 +867,10 @@ pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
             ));
         }
 
-        let secondary_count = if dominant { 20_u64 } else { 12_u64 };
+        // Organize the crown into readable scaffold masses rather than a
+        // uniformly filled wire cage. Fewer secondary axes leave deliberate
+        // windows and remove wood hidden behind several alpha-tested leaves.
+        let secondary_count = if dominant { 18_u64 } else { 11_u64 };
         for secondary_index in 0..secondary_count {
             let secondary_seed = splitmix64(primary_seed ^ (secondary_index + 0x51));
             // The last axis inherits the scaffold direction and carries
@@ -916,15 +944,15 @@ pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
             // current-year shoots in proportion to that larger envelope;
             // competition progressively self-prunes the surplus shoots.
             let shoot_count = if dominant {
-                40.0_f32.lerp(24.0, canopy_competition).round() as u64
+                34.0_f32.lerp(24.0, canopy_competition).round() as u64
             } else {
-                32.0_f32.lerp(16.0, canopy_competition).round() as u64
+                22.0_f32.lerp(15.0, canopy_competition).round() as u64
             };
             for shoot_index in 0..shoot_count {
                 let shoot_seed = splitmix64(secondary_seed ^ (shoot_index + 0xa3));
-                let normalized = shoot_index as f32 / (shoot_count - 1) as f32;
                 let first_attach = 0.08_f32.lerp(0.22, canopy_competition);
-                let attach = first_attach + normalized.powf(0.72) * (0.99 - first_attach);
+                let attach =
+                    oak_clustered_shoot_attach(shoot_index, shoot_count, first_attach, shoot_seed);
                 let shoot_start = sample_polyline(&secondary_points, attach);
                 let inherited = polyline_tangent(&secondary_points, attach);
                 let (frame_right, frame_up) = branch_frame(inherited);
@@ -960,6 +988,26 @@ pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
         }
     }
     branches
+}
+
+/// Distributes current-year shoots in five separated pulses along a secondary
+/// axis. Stable pulses retain terminal coverage while leaving recognizable sky
+/// and interior windows between foliage masses.
+fn oak_clustered_shoot_attach(
+    shoot_index: u64,
+    shoot_count: u64,
+    first_attach: f32,
+    shoot_seed: u64,
+) -> f32 {
+    const CLUSTER_COUNT: u64 = 5;
+    let cluster = (shoot_index * CLUSTER_COUNT / shoot_count.max(1)).min(CLUSTER_COUNT - 1);
+    let cluster_start = cluster * shoot_count / CLUSTER_COUNT;
+    let cluster_end = ((cluster + 1) * shoot_count / CLUSTER_COUNT).max(cluster_start + 1);
+    let within = (shoot_index - cluster_start) as f32 / (cluster_end - cluster_start) as f32;
+    let center = first_attach.lerp(0.965, cluster as f32 / (CLUSTER_COUNT - 1) as f32);
+    let spread = 0.052_f32.lerp(0.082, cluster as f32 / (CLUSTER_COUNT - 1) as f32);
+    (center + (within - 0.5) * spread + (unit_hash(shoot_seed ^ 0xc10d) - 0.5) * 0.018)
+        .clamp(0.04, 0.992)
 }
 
 fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranchSegment> {

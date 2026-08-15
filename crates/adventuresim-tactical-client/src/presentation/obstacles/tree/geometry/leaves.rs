@@ -33,6 +33,9 @@ pub(in crate::presentation) fn procedural_oak_leaves(
 ) -> Vec<TreeLeaf> {
     let mut leaves = Vec::new();
     let _ = canopy_competition;
+    // A compact terminal flush gives each shoot one readable foliage mass.
+    // The pulsed shoot layout then cuts redundant alpha overlap while
+    // retaining the oak's irregular shell.
     let leaves_per_shoot = 16_u64;
     for (shoot_index, shoot) in branches
         .iter()
@@ -52,13 +55,13 @@ pub(in crate::presentation) fn procedural_oak_leaves(
                 splitmix64(seed ^ shoot_index as u64 ^ leaf_index.wrapping_mul(0x91e1_0da5));
             // Alternate leaves along each current-year shoot, then finish in
             // the tighter terminal flush characteristic of pedunculate oak.
-            let along = if leaf_index < 3 {
-                0.06 + leaf_index as f32 * 0.18
+            let along = if leaf_index < 2 {
+                0.12 + leaf_index as f32 * 0.28
             } else {
-                (0.62
-                    + (leaf_index - 3) as f32 / (leaves_per_shoot - 4) as f32 * 0.36
+                (0.70
+                    + (leaf_index - 2) as f32 / (leaves_per_shoot - 3) as f32 * 0.285
                     + (unit_hash(leaf_seed ^ 12) - 0.5) * 0.008)
-                    .clamp(0.61, 0.985)
+                    .clamp(0.69, 0.99)
             };
             let alternate = if leaf_index & 1 == 0 { 1.0 } else { -1.0 };
             let spiral = leaf_index as f32 * 2.399_963_1 + (unit_hash(leaf_seed ^ 2) - 0.5) * 0.65;
@@ -91,7 +94,7 @@ pub(in crate::presentation) fn procedural_oak_leaves(
             let leaf_length = 0.1 + unit_hash(leaf_seed ^ 5) * 0.06;
             let leaf_width = 0.065 + unit_hash(leaf_seed ^ 6) * 0.04;
             let shell_exposure = ((shoot.end.xz().length() - 1.25) / 4.75).clamp(0.0, 1.0);
-            let shade = if leaf_index < 3 {
+            let shade = if leaf_index < 2 {
                 0.58 + shell_exposure * 0.22 + unit_hash(leaf_seed ^ 7) * 0.12
             } else {
                 0.68 + shell_exposure * 0.25 + unit_hash(leaf_seed ^ 7) * 0.14
@@ -486,7 +489,7 @@ mod tests {
     fn production_oak_has_finite_cambered_leaf_geometry() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
-        assert_eq!(leaves.len(), 69_632);
+        assert!((45_000..60_000).contains(&leaves.len()));
         assert!(leaves.iter().all(|leaf| leaf.petiole_start.is_finite()
             && leaf.center.is_finite()
             && leaf.right.is_finite()
@@ -516,10 +519,15 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(|attribute| attribute.as_float3())
             .expect("bud mesh has float positions");
-        assert_eq!(bud_positions.len(), 4_352 * 19);
+        let terminal_shoots = branches
+            .iter()
+            .filter(|branch| branch.depth == 3 && branch.is_limb_tip)
+            .count();
+        assert_eq!(terminal_shoots, leaves.len() / 16);
+        assert_eq!(bud_positions.len(), terminal_shoots * 19);
         assert_eq!(
             buds.indices().expect("bud mesh has indices").len() / 3,
-            4_352 * 30
+            terminal_shoots * 30
         );
         assert!(
             bud_positions

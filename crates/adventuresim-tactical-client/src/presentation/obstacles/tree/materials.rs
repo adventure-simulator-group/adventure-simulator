@@ -50,7 +50,7 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     pub(crate) physical_parameters: Vec4,
 }
 
-const OAK_LEAF_DIFFUSE_TRANSMISSION: f32 = 0.40;
+const OAK_LEAF_DIFFUSE_TRANSMISSION: f32 = 0.46;
 /// Representative alpha-weighted oak pigment for software-baked impostors.
 ///
 /// The live material samples distinct front/back procedural palettes. The
@@ -141,7 +141,7 @@ pub(in crate::presentation) fn beech_leaf_material(
 pub(super) fn canopy_ao_strength(crown_radius_metres: f32) -> f32 {
     // This is an empirical unresolved-path coefficient calibrated under the
     // production atmosphere IBL, not a measured whole-leaf absorption value.
-    const UNRESOLVED_FOLIAGE_EXTINCTION_PER_METRE: f32 = 0.11;
+    const UNRESOLVED_FOLIAGE_EXTINCTION_PER_METRE: f32 = 0.078;
     1.0 - (-UNRESOLVED_FOLIAGE_EXTINCTION_PER_METRE * crown_radius_metres.max(0.0)).exp()
 }
 
@@ -314,9 +314,9 @@ mod tests {
         let deep_crown = canopy_ao_strength(12.0);
 
         assert_eq!(clear, 0.0);
-        assert!((oak - 0.48).abs() < 0.01);
-        assert!((hazel - 0.16).abs() < 0.01);
-        assert!(hazel < oak * 0.35);
+        assert!((oak - 0.37).abs() < 0.01);
+        assert!((hazel - 0.12).abs() < 0.01);
+        assert!(hazel < oak * 0.36);
         assert!(clear < hazel && hazel < oak && oak < deep_crown);
         assert!((0.0..1.0).contains(&deep_crown));
     }
@@ -325,13 +325,13 @@ mod tests {
     fn oak_leaf_optics_preserve_bounded_transmission_and_occlusion() {
         let oak_occlusion = canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres);
 
-        assert!((oak_occlusion - 0.48).abs() < 0.01);
-        assert!((OAK_LEAF_DIFFUSE_TRANSMISSION - 0.40).abs() < f32::EPSILON);
+        assert!((oak_occlusion - 0.37).abs() < 0.01);
+        assert!((OAK_LEAF_DIFFUSE_TRANSMISSION - 0.46).abs() < f32::EPSILON);
+        assert!(oak_occlusion < OAK_LEAF_DIFFUSE_TRANSMISSION);
         assert!(OAK_LEAF_DIFFUSE_TRANSMISSION < 0.5);
-        assert!(oak_occlusion > OAK_LEAF_DIFFUSE_TRANSMISSION);
 
         let darkest_authored_visibility = 1.0 + oak_occlusion * (0.32 - 1.0);
-        assert!((0.66..=0.68).contains(&darkest_authored_visibility));
+        assert!((0.73..=0.75).contains(&darkest_authored_visibility));
     }
 
     #[test]

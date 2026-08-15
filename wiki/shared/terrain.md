@@ -51,6 +51,13 @@ fissure phases vary deterministically per specimen and close into irregular
 plates, so no permanent groove advertises that wrap. Intermediate crown wood excludes the
 depth-zero root flare because the separately streamed trunk remains resident,
 avoiding duplicate geometry and duplicate Surface Nets construction.
+Oak terminal shoots occur in separated pulses along each secondary axis. Their
+compact leaf flushes form a handful of readable foliage masses with stable
+interior windows instead of a uniformly noisy twig lattice. Every aggregate
+tree card is baked from this same clustered source geometry, preserving those
+masses and gaps across LOD transitions. Unresolved canopy occlusion is bounded
+and paired with diffuse leaf transmission so crown interiors remain legible in
+WebGPU without a separate subsurface or screen-space effect.
 The individual-leaf crown uses an 8-triangle cambered PBR card and a 30-triangle
 terminal bud. Once that camber falls below useful screen size, each leaf
 cross-fades to a two-triangle flat PBR
