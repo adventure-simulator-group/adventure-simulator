@@ -115,13 +115,13 @@ screen rather than either original endpoint.
 
 The server owns movement, body mode, authoritative action timing, gameplay
 position, attack timing, hits, damage, and other outcomes. Typed action starts
-currently preserve the established last-writer-wins replacement behavior;
-there is no invented action-vs-action rejection table. Entering a downed body
-mode atomically lowers guard and cancels the presentation action. A client may begin an
-animation immediately in response to local input, then reconcile it with the
+currently preserve the established last-writer-wins replacement behavior; there
+is no invented action-vs-action rejection table. Entering a downed body mode
+atomically lowers guard and cancels the presentation action. A client may begin
+an animation immediately in response to local input, then reconcile it with the
 server's accepted skeleton state. Bone transforms, terrain-adjusted foot
-positions, and secondary motion are presentation and are not authoritative.
-This follows the tactical trust boundary described in
+positions, and secondary motion are presentation and are not authoritative. This
+follows the tactical trust boundary described in
 [Networking](../engineering/networking.md#tactical-experience).
 
 For remote characters, an action start tick and a gait/lead-foot anchor are
@@ -139,9 +139,10 @@ The animation evaluator consumes skeleton state in this order:
 4. Interpolate authored poses using continuous blend coordinates.
 5. Apply masked or additive layers such as directional ducking and impact
    flinches.
-6. For ordinary locomotion, apply contact-weighted terrain correction, one shared
-   hip correction, and one two-bone solve per leg. Specialized combat footwork,
-   hand/weapon constraints, and head/torso look follow. Body facing is already
+6. For ordinary locomotion, apply contact-weighted terrain correction, one
+   shared hip correction, and one two-bone solve per leg. Specialized combat
+   footwork, hand/weapon constraints, and head/torso look follow. Body facing is
+   already
    present on the replicated root.
 7. Apply optional secondary animation.
 
@@ -159,9 +160,10 @@ for velocity and interruption capture. Quaternion interpolation and angular
 velocity differences select the nearest quaternion hemisphere. Missing tracks
 and non-finite samples fall back to the canonical bind transform, while imported
 root-bone translation is replaced by bind translation so authored root motion
-cannot move the gameplay entity. State and clip-set changes use interruption-safe
-per-joint inertial offsets. Characters beyond 100 metres or outside the camera
-frustum freeze their buffered pose and discard sampling debt when they return.
+cannot move the gameplay entity. State and clip-set changes use
+interruption-safe per-joint inertial offsets. Characters beyond 100 metres or
+outside the camera frustum freeze their buffered pose and discard sampling debt
+when they return.
 
 Authored FK remains ordered before bind restoration, whole-body mirroring, body
 response, terrain IK or attack footwork, and weapon constraints. The router and
@@ -470,10 +472,10 @@ contact. A forward dive recovers to `prone_idle`, a backward dive recovers to
 `prone_supine_roll_<left|right>` side-supported midpoint. The latter seeds the
 continuous downed-roll coordinate at that midpoint, so held camera-following
 continues without passing through prone idle; without held aim it settles back
-to prone normally. The transition root remains fixed through takeoff and
-flight while the authored pose owns direction. During terrain-contact recovery,
-the server progressively transfers the dive's directional yaw from the authored
-pose to the character root at the same rate that the pose returns to canonical
+to prone normally. The transition root remains fixed through takeoff and flight
+while the authored pose owns direction. During terrain-contact recovery, the
+server progressively transfers the dive's directional yaw from the authored pose
+to the character root at the same rate that the pose returns to canonical
 contact coordinates. This equal-and-opposite handoff preserves one world-space
 landing heading instead of visibly turning toward camera-forward and snapping
 back at the endpoint. Backward recovery chooses the negative-pi root branch
@@ -482,13 +484,13 @@ equivalent endpoint reached through a visible full flip. Forward and lateral
 airborne-to-contact recoveries own the rendered skeleton for 20 fixed ticks
 (0.3125 seconds at 64 Hz); the 180-degree backward-to-supine recovery uses 32
 ticks (0.5 seconds) to retain the same continuity bound. During either span,
-ordinary-locomotion IK, terrain IK, landing leg
-compression, locomotion body response, and upright height normalization must
-remain disabled until that transition completes. The dive files contain neither an impact pose nor
-arrival at prone or supine idle. These are standalone single-pose files; the
-older frame-5 convention belonged to the discarded combined duck/dive layout
-and is not part of the runtime contract. When `dive_right` is absent, the runtime mirrors `dive_left` in
-character space.
+ordinary-locomotion IK, terrain IK, landing leg compression, locomotion body
+response, and upright height normalization must remain disabled until that
+transition completes. The dive files contain neither an impact pose nor arrival
+at prone or supine idle. These are standalone single-pose files; the older
+frame-5 convention belonged to the discarded combined duck/dive layout and is
+not part of the runtime contract. When `dive_right` is absent, the runtime
+mirrors `dive_left` in character space.
 
 The shared supine contact convention keeps the head toward local +Z so rolls
 remain coherent with prone and both side-supported poses. Relative to canonical
@@ -497,15 +499,15 @@ inside the midpoint-to-upright half of `supine_transition`. The server leaves
 the root fixed throughout the supine-to-midpoint half, then progressively
 applies the equivalent negative-pi turn during the midpoint-to-upright half.
 These two turns cancel in world space: the rendered character does not change
-heading, while the authoritative root finishes in the correct upright orientation.
-This counter-yaw applies only to `SupineToUpright`; `prone_transition` and all
-rolls are unchanged. Authored transitions own body facing only while active.
-At the upright endpoint, a continuously held aim input immediately resumes
-ordinary camera-facing; it does not require a release and second press.
-The authoritative input state represents camera-facing ownership with one enum:
-free/settling, aim-driven downed roll, or modifier-driven downed body alignment.
-Those modes cannot overlap, and no persistent facing-suspension flag can survive
-a transition into upright movement.
+heading, while the authoritative root finishes in the correct upright
+orientation. This counter-yaw applies only to `SupineToUpright`;
+`prone_transition` and all rolls are unchanged. Authored transitions own body
+facing only while active. At the upright endpoint, a continuously held aim input
+immediately resumes ordinary camera-facing; it does not require a release and
+second press. The authoritative input state represents camera-facing ownership
+with one enum: free/settling, aim-driven downed roll, or modifier-driven downed
+body alignment. Those modes cannot overlap, and no persistent facing-suspension
+flag can survive a transition into upright movement.
 
 Ordinary jump/dodge airborne motion uses the two generic single-pose files
 listed above. The runtime blends
@@ -677,27 +679,26 @@ moving the pelvis alone would drive the authored feet through the floor.
 
 Server-authoritative tactical movement tops out at 5.5 metres per second with
 the guard lowered and 2.0 metres per second with the guard raised. Analogue
-input preserves its radial magnitude, so half stick deflection requests 2.75
-m/s lowered or 1.0 m/s raised. Radial clamping prevents diagonal overspeed,
-generic controllers without skeleton state use the lowered cap, and Ahoy still
-applies its existing crouch multiplier and deceleration. Raised guard scales
-Ahoy's acceleration frequency from 8 Hz to 22 Hz, so its 2.0 m/s cap and the
-ordinary 5.5 m/s run cap both produce the same 44 m/s² full-input ground
-acceleration. Gait phase 0 through 1 is
-one complete left-right cycle rather than one step. Shared typed walk, run,
-crouch, and raised-guard profiles own reference speed, step distance, support,
-flight, bounce, and compression metadata used by both authoritative projection
-and client presentation. This keeps cadence tied to actual post-physics ground
-distance without duplicated timing formulas or double-speed footfalls.
-The server retains each player's latest validated analogue movement request
-until a later request explicitly replaces or clears it. Before every movement
-step, the server restores Ahoy's disposable fixed-loop accumulator from that
-state. Missing packets on the unreliable input channel therefore cannot erase
-movement intent for one fixed tick. Intent drives the controller but does not
-select an authored gait. Measured post-physics planar velocity owns idle/walk/run
-selection and stride cadence, while measured acceleration is used only for
-procedural body response. The debug game-clock switch therefore cannot directly
-select a different gait.
+input preserves its radial magnitude, so half stick deflection requests 2.75 m/s
+lowered or 1.0 m/s raised. Radial clamping prevents diagonal overspeed, generic
+controllers without skeleton state use the lowered cap, and Ahoy still applies
+its existing crouch multiplier and deceleration. Raised guard scales Ahoy's
+acceleration frequency from 8 Hz to 22 Hz, so its 2.0 m/s cap and the ordinary
+5.5 m/s run cap both produce the same 44 m/s² full-input ground acceleration.
+Gait phase 0 through 1 is one complete left-right cycle rather than one step.
+Shared typed walk, run, crouch, and raised-guard profiles own reference speed,
+step distance, support, flight, bounce, and compression metadata used by both
+authoritative projection and client presentation. This keeps cadence tied to
+actual post-physics ground distance without duplicated timing formulas or
+double-speed footfalls. The server retains each player's latest validated
+analogue movement request until a later request explicitly replaces or clears
+it. Before every movement step, the server restores Ahoy's disposable fixed-loop
+accumulator from that state. Missing packets on the unreliable input channel
+therefore cannot erase movement intent for one fixed tick. Intent drives the
+controller but does not select an authored gait. Measured post-physics planar
+velocity owns idle/walk/run selection and stride cadence, while measured
+acceleration is used only for procedural body response. The debug game-clock
+switch therefore cannot directly select a different gait.
 
 Ordinary idle, walk, and run now follow one compact ownership contract:
 
@@ -940,63 +941,60 @@ authoritative server clock change together, so movement, physics, combat, and
 animation remain synchronized during slow-motion inspection.
 
 The native `animation-viewer` is a deterministic gameplay-presentation fixture
-for regression and visual review. It uses the gameplay player-spawn observer, character mesh,
-camera, terrain presentation, authored animation evaluator, and procedural
-passes rather than maintaining parallel fixture implementations. Locomotion is
-projected and integrated continuously at the authoritative 64Hz fixed tick.
-Non-terrain scenarios can still exercise authored leg motion with fixed
-controller Y. The terrain suite enables seeded uneven-ground IK for cross-slope,
-uphill, downhill, diagonal, crouched, mid-stride toggle, hard-stop, small
-tap-stop, flight-phase run-stop, tap/restart crossfade, speed-threshold chatter,
-steady 5.5 m/s run, raised-guard tap-stop, gradual 90-degree turn, and exact
-180-degree reversal probes. A deterministic procedural clock prevents asynchronous
-screenshot rendering from advancing retained IK state more than once for the
-same logical tick, while the complete FK/IK pipeline still reevaluates each
-view. The replay captures one raw gameplay-camera image plus side and front
-diagnostic images of that exact pose. Its manifest records final world-space
-bones, semantic IK weights, continuity, signed foot tracks and separation, knee
-flexion and bend hemisphere, desired body-forward alignment, bounded per-tick
-turning residual (including look-facing guards), terrain-relative foot
-clearance, and authored/solved foot targets,
-phase-indexed height extrema and peak count, contact-phase sole clearance,
-controller vertical range, run flight duration/sole clearance, authoritative acceleration, retained lean,
-landing compression, contact identity, landing identity, and fixed tick; those
-signals locate suspect frames but do not replace review of the rendered mesh.
-The manifest records baked clip count and bytes, sampled-pose count, and the
-final culled character count so representative CPU and memory measurements use
-the same fixture.
-For steady height scenarios, every complete cycle after warmup must contain
-exactly two prominent peaks in the phase 0.25 and 0.75 passing windows. A
-0.003 m prominence threshold filters sampling jitter while still rejecting an
-extra visible beat.
-The steady terrain run additionally requires alternating contact weights,
-80-200 ms unsupported intervals, bounded contact clearance, and a 2 cm maximum
-pelvis-height step. Ordinary feet are not tested as stationary world plants.
-The flight-phase stop and tap/restart probes apply their +1 cm transient toe
-floor only after locomotion begins or while stop-settle owns a foot. Their
-zero-speed, no-settle pre-roll remains covered by the general -1 cm terrain
-penetration tolerance and is not mislabeled as a Run flight sample.
-Typed scenario metadata distinguishes ordinary, transition, terrain,
-raised-guard, and landing gates. The suite includes a speed ramp, an
+for regression and visual review. It uses the gameplay player-spawn observer,
+character mesh, camera, terrain presentation, authored animation evaluator, and
+procedural passes rather than maintaining parallel fixture implementations.
+Locomotion is projected and integrated continuously at the authoritative 64Hz
+fixed tick. Non-terrain scenarios can still exercise authored leg motion with
+fixed controller Y. The terrain suite enables seeded uneven-ground IK for
+cross-slope, uphill, downhill, diagonal, crouched, mid-stride toggle, hard-stop,
+small tap-stop, flight-phase run-stop, tap/restart crossfade, speed-threshold
+chatter, steady 5.5 m/s run, raised-guard tap-stop, gradual 90-degree turn, and
+exact 180-degree reversal probes. A deterministic procedural clock prevents
+asynchronous screenshot rendering from advancing retained IK state more than
+once for the same logical tick, while the complete FK/IK pipeline still
+reevaluates each view. The replay captures one raw gameplay-camera image plus
+side and front diagnostic images of that exact pose. Its manifest records final
+world-space bones, semantic IK weights, continuity, signed foot tracks and
+separation, knee flexion and bend hemisphere, desired body-forward alignment,
+bounded per-tick turning residual (including look-facing guards),
+terrain-relative foot clearance, and authored/solved foot targets, phase-indexed
+height extrema and peak count, contact-phase sole clearance, controller vertical
+range, run flight duration/sole clearance, authoritative acceleration, retained
+lean, landing compression, contact identity, landing identity, and fixed tick;
+those signals locate suspect frames but do not replace review of the rendered
+mesh. The manifest records baked clip count and bytes, sampled-pose count, and
+the final culled character count so representative CPU and memory measurements
+use the same fixture. For steady height scenarios, every complete cycle after
+warmup must contain exactly two prominent peaks in the phase 0.25 and 0.75
+passing windows. A 0.003 m prominence threshold filters sampling jitter while
+still rejecting an extra visible beat. The steady terrain run additionally
+requires alternating contact weights, 80-200 ms unsupported intervals, bounded
+contact clearance, and a 2 cm maximum pelvis-height step. Ordinary feet are not
+tested as stationary world plants. The flight-phase stop and tap/restart probes
+apply their +1 cm transient toe floor only after locomotion begins or while
+stop-settle owns a foot. Their zero-speed, no-settle pre-roll remains covered by
+the general -1 cm terrain penetration tolerance and is not mislabeled as a Run
+flight sample. Typed scenario metadata distinguishes ordinary, transition,
+terrain, raised-guard, and landing gates. The suite includes a speed ramp, an
 apex-adjacent hard stop, real forward-input camera/controller turns through 90
 and 180 degrees, airborne landing, and a two-cycle cadence/contact fixture.
-Every logical sample is evaluated repeatedly across the three review views;
-the gate compares bones within 0.5 mm/0.05 degrees and requires unchanged
-contact/landing sequences and event counts. The first fixed-tick evaluation
-owns IK state advancement and the complete cached local pose; later views
-restore that pose without re-entering or mutating support/release state.
-Success also gates lean and phase
-continuity, hard-stop pelvis continuity from the moving-to-zero edge through
-settling, two ordered contacts per cycle and
-shared step distance, event order/count/deduplication, contact soles from
--0.02 m to 0.04 m, run flight soles from 0.05 m to 0.20 m, landing knee flex, foot
-preservation within 1 cm, and landing penetration no lower than -1 cm.
-The fixture supplies deterministic controller observations at the shared
-server projection boundary and follows rendered terrain height only in the
-cross-slope probe. Its replication-presentation probe withholds three of every
-four projected skeleton samples while accelerating and turning, so render-side
-phase prediction and resynchronization are exercised. It still does not run
-physics contacts, the network transport itself, or recorded live input.
+Every logical sample is evaluated repeatedly across the three review views; the
+gate compares bones within 0.5 mm/0.05 degrees and requires unchanged
+contact/landing sequences and event counts. The first fixed-tick evaluation owns
+IK state advancement and the complete cached local pose; later views restore
+that pose without re-entering or mutating support/release state. Success also
+gates lean and phase continuity, hard-stop pelvis continuity from the
+moving-to-zero edge through settling, two ordered contacts per cycle and shared
+step distance, event order/count/deduplication, contact soles from -0.02 m to
+0.04 m, run flight soles from 0.05 m to 0.20 m, landing knee flex, foot
+preservation within 1 cm, and landing penetration no lower than -1 cm. The
+fixture supplies deterministic controller observations at the shared server
+projection boundary and follows rendered terrain height only in the cross-slope
+probe. Its replication-presentation probe withholds three of every four
+projected skeleton samples while accelerating and turning, so render-side phase
+prediction and resynchronization are exercised. It still does not run physics
+contacts, the network transport itself, or recorded live input.
 
 The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
 0.30 m for raised-guard scenarios. Each explicit terrain scenario adds only
@@ -1034,34 +1032,33 @@ simulation state intentionally differs from the state that initiated them;
 their continuity remains covered by the per-frame displacement and rotation
 gates instead.
 
-During ordinary lowered-guard travel the server advances the replicated body's authored +Z
-axis toward authoritative horizontal velocity at a bounded turn rate that can
-complete a 180-degree reversal in 0.25 seconds. Camera
-pitch is removed before planar gait projection. Camera yaw intentionally maps
-raw movement input into world movement, but it is not applied again by either
-the client root or authored-rig child. At idle, the last body yaw is retained;
-an exact reversal uses a deterministic turn side. Raised guard, attack, and
-block retain controller-yaw look facing while moving. This root is
-shared by local players, remote players, bots, fallback bodies, authored rigs,
-and the viewer, with the authored +Z/controller -Z half-turn represented once.
-The viewer additionally replays gradual turns, an exact reversal, planted
-guard rotation, camera pitch, cross-slope terrain, every raised cardinal and
-diagonal direction, release during a step, and a mid-step lateral
-reversal.
+During ordinary lowered-guard travel the server advances the replicated body's
+authored +Z axis toward authoritative horizontal velocity at a bounded turn rate
+that can complete a 180-degree reversal in 0.25 seconds. Camera pitch is removed
+before planar gait projection. Camera yaw intentionally maps raw movement input
+into world movement, but it is not applied again by either the client root or
+authored-rig child. At idle, the last body yaw is retained; an exact reversal
+uses a deterministic turn side. Raised guard, attack, and block retain
+controller-yaw look facing while moving. This root is shared by local players,
+remote players, bots, fallback bodies, authored rigs, and the viewer, with the
+authored +Z/controller -Z half-turn represented once. The viewer additionally
+replays gradual turns, an exact reversal, planted guard rotation, camera pitch,
+cross-slope terrain, every raised cardinal and diagonal direction, release
+during a step, and a mid-step lateral reversal.
 
 During lowered travel, forward walk and run continue to serve diagonal and
 lateral travel. Ordinary raised upright grounded movement freezes the current
-lead and samples only its static guard pose. A client-only procedural lower-body pass
-alternates one swing foot with exactly one world-space support foot. Each
-compact step projects authoritative local velocity from the step origin,
-retains the authored guard's separated stance tracks, interpolates horizontally
-with a smooth curve, and adds a sine clearance arc. Step reach scales with
-analogue speed and is bounded to combat-shuffle distances. Raised swings use a
-high continuity ceiling rather than the old low IK velocity limit: the ceiling
-is above the measured worst ordinary 2 m/s guard step, so replacing the support
-foot can still meet its semantic contact deadline. Unusually long recovery
-steps remain bounded and converge over subsequent procedural steps instead of
-snapping in one frame.
+lead and samples only its static guard pose. A client-only procedural lower-body
+pass alternates one swing foot with exactly one world-space support foot. Each
+compact step projects authoritative local velocity from the step origin, retains
+the authored guard's separated stance tracks, interpolates horizontally with a
+smooth curve, and adds a sine clearance arc. Step reach scales with analogue
+speed and is bounded to combat-shuffle distances. Raised swings use a high
+continuity ceiling rather than the old low IK velocity limit: the ceiling is
+above the measured worst ordinary 2 m/s guard step, so replacing the support
+foot can still meet its semantic contact deadline. Unusually long recovery steps
+remain bounded and converge over subsequent procedural steps instead of snapping
+in one frame.
 
 Cadence follows current authoritative speed throughout the first step, so a
 small acceleration sample cannot slow a complete cycle. Ordinary turns are
@@ -1089,25 +1086,24 @@ remain client-only.
 
 Procedural guard plants and targets stay entirely client-side. Replicated
 `SkeletonState` carries a tagged planted/moving intent whose moving payload has
-semantic direction, speed, swing side, and step identity; it never
-carries bones or world foot positions. Flat-ground placement works with
-terrain IK disabled through `F8`. Raised planning and terrain conformity intentionally
-share one ordered solver pass so pole, plant, and pelvis memory are sampled
-once per frame. When terrain conformity is enabled, the same
-targets additionally follow height and slope without replacing their planted
-XZ positions. Raised grounded idle keeps the static authored guard while the
-procedural solver retains the feet in world space. If rotating the guard moves
-an authored foot more than 4 cm from its plant, the client replants one foot at
-a time over 0.16 seconds along a short lifted arc around the body. The other
-foot remains the support, and the moving target is constrained to the live
-guard corridor and minimum stance separation. Knee bend directions are
-parallel-transported with each leg and corrected continuously toward their
-anatomical hemisphere so a turn cannot abruptly flip a pole target. The final
-raised-guard and attack knee pole has its ground-plane yaw constrained to
-within plus or minus pi/8 radians of the rendered foot-to-toe direction, then
-receives the vertical component required by the leg's valid bend plane. This
-pivot state, like all procedural foot targets, is
-presentation-only and is never replicated. Raised crouched and airborne
+semantic direction, speed, swing side, and step identity; it never carries bones
+or world foot positions. Flat-ground placement works with terrain IK disabled
+through `F8`. Raised planning and terrain conformity intentionally share one
+ordered solver pass so pole, plant, and pelvis memory are sampled once per
+frame. When terrain conformity is enabled, the same targets additionally follow
+height and slope without replacing their planted XZ positions. Raised grounded
+idle keeps the static authored guard while the procedural solver retains the
+feet in world space. If rotating the guard moves an authored foot more than 4 cm
+from its plant, the client replants one foot at a time over 0.16 seconds along a
+short lifted arc around the body. The other foot remains the support, and the
+moving target is constrained to the live guard corridor and minimum stance
+separation. Knee bend directions are parallel-transported with each leg and
+corrected continuously toward their anatomical hemisphere so a turn cannot
+abruptly flip a pole target. The final raised-guard and attack knee pole has its
+ground-plane yaw constrained to within plus or minus pi/8 radians of the
+rendered foot-to-toe direction, then receives the vertical component required by
+the leg's valid bend plane. This pivot state, like all procedural foot targets,
+is presentation-only and is never replicated. Raised crouched and airborne
 characters retain the existing crouch and airborne posture rules; specialized
 raised variants can be added later.
 
@@ -1130,10 +1126,10 @@ feet whenever whole-body mirroring would change the weapon hand incorrectly.
 Directional ducking begins from the active guard rather than a neutral crouch.
 Each lead has forward, backward, anatomical-left, and anatomical-right
 semantics. A symmetrical pack may author the four extremes for one lead; the
-opposite lead then comes from the mirrored counterpart. Both lateral extremes for a single
-lead remain distinct and cannot be constructed by mirroring each other,
-because that would also exchange the lead feet. Keep the guard's planted foot
-locations and normal hand carriage.
+opposite lead then comes from the mirrored counterpart. Both lateral extremes
+for a single lead remain distinct and cannot be constructed by mirroring each
+other, because that would also exchange the lead feet. Keep the guard's planted
+foot locations and normal hand carriage.
 
 | Pose | Animator brief |
 |---|---|
@@ -1150,11 +1146,12 @@ merely the attacker's bearing.
 All duck files are frame-0-only stance poses. They contain no dive continuation.
 
 The four standalone stance-independent `dive_<direction>` files place their
-airborne pose at frame 0. Each represents the first instant both feet are unsupported, with a compact,
-protected silhouette suited to being held for arbitrary airtime. For backward
-and lateral dives, use a controlled turn, drop, or shoulder-led launch without
-encoding the prior guard lead. Do not animate impact or arrival at prone or
-supine idle; contact timing and the subsequent idle blend are runtime-owned.
+airborne pose at frame 0. Each represents the first instant both feet are
+unsupported, with a compact, protected silhouette suited to being held for
+arbitrary airtime. For backward and lateral dives, use a controlled turn, drop,
+or shoulder-led launch without encoding the prior guard lead. Do not animate
+impact or arrival at prone or supine idle; contact timing and the subsequent
+idle blend are runtime-owned.
 
 Directional ducks should preferably be authored as pose deltas or masked
 overrides over their named guard. Packs need only omit counterparts that remain
@@ -1384,22 +1381,22 @@ Supine may also result from a hit or physical fall and uses the direct
 `supine_transition` motion when recovery does not first require a ragdoll handoff.
 The initial controls do not include prone strafing.
 
-Prone travel uses the ordinary pace controls with crawl-specific speeds:
-walking is fixed at 0.45 m/s, jogging is one third of the character's neutral
-upright jog speed, and sprinting reaches 2.0 m/s. Crawl effort is assessed at
-three times its physical speed, making the middle pace breath-neutral and the
-maximum pace exhausting at every endurance rank. Prone WASD input uses tank
-controls in the body's orientation rather than the camera orientation, with
-lateral input limited to three-eighths of longitudinal speed. Downed postures
-retain Ahoy's shortened crouch collision shape without inheriting its upright
-one-third crouch speed penalty. Authored prone contacts follow authoritative
-velocity directly. Their 0.60 m contact step balances the authored hand and
-knee reach so neither support point accumulates the much larger slide produced
-by a full metre of controller travel. Supine scampering remains capped at 2.4 m/s with its
-deliberately reduced contact cadence.
-All authored posture transitions keep the gameplay root facing fixed: the
-directional dive and get-up poses encode their own direction relative to that
-root and must not be rotated a second time toward residual velocity.
+Prone travel uses the ordinary pace controls with crawl-specific speeds: walking
+is fixed at 0.45 m/s, jogging is one third of the character's neutral upright
+jog speed, and sprinting reaches 2.0 m/s. Crawl effort is assessed at three
+times its physical speed, making the middle pace breath-neutral and the maximum
+pace exhausting at every endurance rank. Prone WASD input uses tank controls in
+the body's orientation rather than the camera orientation, with lateral input
+limited to three-eighths of longitudinal speed. Downed postures retain Ahoy's
+shortened crouch collision shape without inheriting its upright one-third crouch
+speed penalty. Authored prone contacts follow authoritative velocity directly.
+Their 0.60 m contact step balances the authored hand and knee reach so neither
+support point accumulates the much larger slide produced by a full metre of
+controller travel. Supine scampering remains capped at 2.4 m/s with its
+deliberately reduced contact cadence. All authored posture transitions keep the
+gameplay root facing fixed: the directional dive and get-up poses encode their
+own direction relative to that root and must not be rotated a second time toward
+residual velocity.
 
 ## Initial complete-pack size
 
