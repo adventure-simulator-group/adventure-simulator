@@ -120,9 +120,15 @@ twigs with independent deterministic placement over the warmer forest-floor
 material. Open soil remains tall grass, wet ground selects reeds,
 and sufficiently hilly samples select loose stone; these profiles are mutually
 exclusive at a location even when one profile renders several compatible
-details. Loose-stone cells deterministically place non-colliding, separately
-shaded rock instances generated from four shared client-side volumetric meshes;
-they do not enter the foliage wind or player-bending shader.
+details. Loose-stone cells use low-frequency site fields stretched along the
+local fall line to form open ground, sparse margins, and coherent dense scree
+trains instead of a uniform pebble carpet. Two density-preserving shared mesh
+families retain the same individual stones through hero, near, and
+camera-facing billboard LODs. Their candidate lattice is coarse enough to
+avoid routine overlap, and their rounded bases extend slightly below the
+terrain so grazing views read embedded stones rather than open polygon caps.
+These non-colliding separately shaded instances do not enter the foliage wind
+or player-bending shader.
 
 The bounded client Surface Nets extractor is reusable infrastructure for future
 sparse volumetric terrain patches, but this iteration does not define a cave,
@@ -236,7 +242,39 @@ without making individual cards look heavily lit. A procedural terrain
 material selects hard-bounded forest floor, dry ground, mud, cultivation,
 stone, water, and snow albedo regions. Both playable and vista ground omit
 albedo textures, normal maps, and synthesized micro-normal detail; lighting
-uses terrain-geometry normals only. Tree-canopy ground is presented as a
+uses terrain-geometry normals only. A camera-local 40-metre detail patch
+refines that geometric normal response to a 25-centimetre grid without
+changing the authoritative two-metre collider. Its world-space,
+centimetre-scale relief is deterministic and fades to the source surface over
+the outer 4.5 metres. The residual height is signed and bounded to roughly
+seven centimetres down and ten centimetres up: broad soil undulation and
+sparse clods break up flat ground; local terrain gradients orient narrow
+drainage rills downhill and soil-creep ridges across slopes; concavity gathers
+a shallow sediment layer. Water stays flat. Road samples infer the local road
+axis and edges from authoritative ground semantics, then form a raised crown
+and paired compacted wheel ruts. Nearby replicated tree positions add a
+shallow mound, basin, and several long curved radial root ridges, tying the
+ground silhouette to the generated roots instead of applying unrelated noise.
+Stone and gravel suppress soil clods in favor of broad contour-following
+bedrock ledges and sparse intersecting fractures. Nearby replicated boulders
+carve a shallow visual socket, build a contact apron, and deposit a widening
+downhill debris tail, so the rock mass meets the landform instead of resting on
+a flat plane. These obstacle-aware residuals remain presentation-only and do
+not alter the authoritative terrain height or conservative colliders.
+These process layers are geometry, never baked albedo or normal detail. A
+camera-centred shader cutout removes the coarse base only beneath the safely
+covered patch interior, allowing signed channels to remain visible instead of
+being depth-occluded. The outer 1.5-metre overlap retains the base terrain and
+a small fixed-function depth bias resolves the almost fully morphed, coplanar
+perimeter without a second texture or non-WebGPU shader stage. The patch snaps in
+one-metre increments and retains the nearest vista
+height samples, so its quality radius follows the camera across the playable
+boundary. Its PBR response modestly expands the lateral components of the
+actual refined geometry normals and lowers dry roughness within the patch;
+this preserves solid albedo while keeping centimetre-scale facets legible
+under the bright environment-light floor. This is bounded CPU-generated triangle refinement that runs on
+WebGPU's ordinary vertex/fragment pipeline, not unavailable hardware
+tessellation or native-only mesh shaders. Tree-canopy ground is presented as a
 deterministic ecological sequence rather than a binary grass cutout. A
 high-resolution signed distance field derived from authoritative leaf-litter
 cover selects discrete dark-loam, litter, shaded-soil, and open-soil colors,

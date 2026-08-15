@@ -48,11 +48,11 @@ use view_specs::{
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundScatterLayer, LooseStonePebblePatch, PresentedTree,
     ProceduralEnvironmentAssets, ProceduralRockVisual, TacticalGraphicsSettings,
-    TacticalPresentationPlugin, TacticalTreeLeafCardMaterial, TerrainMaterialPresentation,
-    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
-    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
-    oak_review_terminal_specimen,
+    TacticalPresentationPlugin, TacticalTreeLeafCardMaterial, TerrainDetailPatch,
+    TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
+    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
+    TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
+    oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -63,7 +63,7 @@ const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const CAPTURE_PROFILE_VERSION: u16 = 11;
-const CAMERA_VERSION: u16 = 7;
+const CAMERA_VERSION: u16 = 9;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
@@ -1813,7 +1813,7 @@ fn benchmark_scene_performance(
         >,
         Query<(&GroundScatterLayer, &mut Visibility)>,
         Query<&mut Visibility, With<ProceduralRockVisual>>,
-        Query<&mut Visibility, With<TerrainMaterialPresentation>>,
+        Query<&mut Visibility, Or<(With<TerrainMaterialPresentation>, With<TerrainDetailPatch>)>>,
         Query<&mut Visibility, With<VistaTerrain>>,
     )>,
     playable_leaves: Query<
@@ -2826,8 +2826,12 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
                 let root = tree - Vec3::Y * (TREE_TRUNK_HEIGHT_METRES * 0.5 - 0.22);
                 let azimuth = state.tree_review_azimuth_degrees.to_radians();
                 (
-                    root + Vec3::new(azimuth.sin() * 2.4, 1.05, azimuth.cos() * 2.4),
-                    root + Vec3::Y * 0.16,
+                    // Include the surrounding soil in the root-junction plate:
+                    // the camera-local terrain recipe now continues the root
+                    // ridges beyond the tree mesh, which cannot be judged in
+                    // an extreme trunk-only close-up.
+                    root + Vec3::new(azimuth.sin() * 3.8, 1.3, azimuth.cos() * 3.8),
+                    root + Vec3::Y * 0.08,
                     Vec3::Y,
                 )
             },
@@ -2857,7 +2861,15 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
         ),
         CapturePose::TerrainGrazing => {
             let target = state.obstacle_focus - Vec3::Y * 1.42;
-            (target + Vec3::new(-5.5, 0.72, 4.5), target, Vec3::Y)
+            // Keep this plate close enough to resolve centimetre-scale ground
+            // geometry. The former seven-metre view was useful as landscape
+            // context but could not distinguish a 25 cm detail grid from the
+            // authoritative two-metre surface it refines.
+            (
+                target + Vec3::new(-1.65, 0.28, 1.45),
+                target + Vec3::new(0.35, 0.01, -0.25),
+                Vec3::Y,
+            )
         }
         CapturePose::GrassSeam => {
             let target = state.obstacle_focus - Vec3::Y * 1.30;
