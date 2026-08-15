@@ -20,12 +20,30 @@ use super::{
 
 const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 3;
 const TWIG_PASSES_PER_SAMPLE: u64 = 2;
+const WOODLAND_PLANT_PASSES_PER_SAMPLE: u64 = 1;
+const WOODLAND_FLOOR_TRANSITION_METRES: f32 = 3.2;
 
 pub(super) struct Assets {
     pub dry_leaf_meshes: Vec<Handle<Mesh>>,
     pub twig_meshes: Vec<Handle<Mesh>>,
     pub dry_leaf_material: Handle<TacticalTreeLeafCardMaterial>,
     pub twig_material: Handle<TacticalFoliageMaterial>,
+    pub woodland_plant_meshes: Vec<Handle<Mesh>>,
+    pub woodland_plant_material: Handle<TacticalFoliageMaterial>,
+}
+
+#[derive(Default)]
+struct LitterBatch {
+    leaves: Option<Mesh>,
+    twigs: Option<Mesh>,
+    plants: Option<Mesh>,
+}
+
+#[derive(Clone, Copy)]
+enum BatchKind {
+    Leaves,
+    Twigs,
+    Plants,
 }
 
 pub(super) fn spawn(
@@ -37,18 +55,27 @@ pub(super) fn spawn(
     assets: &Assets,
 ) {
     const BATCH_CELL_METRES: f32 = 64.0;
-    let mut batches = BTreeMap::<(i32, i32), (Option<Mesh>, Option<Mesh>)>::new();
+    let mut batches = BTreeMap::<(i32, i32), LitterBatch>::new();
     for (index, sample) in ground.samples().iter().enumerate() {
-        if sample.cover != GroundCover::LeafLitter {
-            continue;
-        }
         let grid_x = index % ground.grid_width();
         let grid_z = index / ground.grid_width();
+        let transition = match sample.cover {
+            GroundCover::LeafLitter => 1.0,
+            GroundCover::TallGrass => leaf_litter_proximity(ground, grid_x, grid_z),
+            _ => 0.0,
+        };
+        if transition <= 0.0 {
+            continue;
+        }
         let cell_origin = Vec2::new(
             grid_x as f32 * ground.grid_scale() - ground.width() * 0.5,
             grid_z as f32 * ground.grid_scale() - ground.depth() * 0.5,
         );
-        let density = bps(sample.cover_density_bps);
+        let density = if sample.cover == GroundCover::LeafLitter {
+            bps(sample.cover_density_bps)
+        } else {
+            transition * 0.34
+        };
         for pass in 0..DRY_LEAF_PASSES_PER_SAMPLE {
             let hash =
                 splitmix64(base_seed ^ index as u64 ^ pass.rotate_left(19) ^ 0x2b6f_5dd9_81aa_9135);
@@ -66,7 +93,7 @@ pub(super) fn spawn(
                 transform,
                 BATCH_CELL_METRES,
                 &mut batches,
-                true,
+                BatchKind::Leaves,
             );
         }
         for pass in 0..TWIG_PASSES_PER_SAMPLE {
@@ -86,17 +113,43 @@ pub(super) fn spawn(
                 transform,
                 BATCH_CELL_METRES,
                 &mut batches,
-                false,
+                BatchKind::Twigs,
+            );
+        }
+        let plant_chance = if sample.cover == GroundCover::LeafLitter {
+            0.055
+        } else {
+            transition * 0.38
+        };
+        for pass in 0..WOODLAND_PLANT_PASSES_PER_SAMPLE {
+            let hash =
+                splitmix64(base_seed ^ index as u64 ^ pass.rotate_left(27) ^ 0x7b31_eaf4_2c5d_9081);
+            if unit_hash(hash) >= plant_chance {
+                continue;
+            }
+            let Some(transform) =
+                forest_floor_patch_transform(terrain, ground, cell_origin, hash, 0.7, 0.004)
+            else {
+                continue;
+            };
+            append_litter_batch(
+                meshes,
+                &assets.woodland_plant_meshes
+                    [(hash % assets.woodland_plant_meshes.len() as u64) as usize],
+                transform,
+                BATCH_CELL_METRES,
+                &mut batches,
+                BatchKind::Plants,
             );
         }
     }
-    for ((cell_x, cell_z), (leaves, twigs)) in batches {
+    for ((cell_x, cell_z), batch) in batches {
         let transform = Transform::from_xyz(
             cell_x as f32 * BATCH_CELL_METRES,
             0.0,
             cell_z as f32 * BATCH_CELL_METRES,
         );
-        if let Some(mesh) = leaves {
+        if let Some(mesh) = batch.leaves {
             commands.spawn((
                 Name::new("Batched tactical dry leaves"),
                 GroundScatterLayer::DryLeaves,
@@ -107,7 +160,7 @@ pub(super) fn spawn(
                 transform,
             ));
         }
-        if let Some(mesh) = twigs {
+        if let Some(mesh) = batch.twigs {
             commands.spawn((
                 Name::new("Batched tactical twigs"),
                 GroundScatterLayer::Twigs,
@@ -118,7 +171,40 @@ pub(super) fn spawn(
                 transform,
             ));
         }
+        if let Some(mesh) = batch.plants {
+            commands.spawn((
+                Name::new("Batched tactical woodland-floor plants"),
+                GroundScatterLayer::Understory,
+                NotShadowCaster,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(assets.woodland_plant_material.clone()),
+                VisibilityRange::abrupt(0.0, 28.0),
+                transform,
+            ));
+        }
     }
+}
+
+fn leaf_litter_proximity(ground: &SceneGround, grid_x: usize, grid_z: usize) -> f32 {
+    let radius = (WOODLAND_FLOOR_TRANSITION_METRES / ground.grid_scale()).ceil() as isize;
+    let mut nearest = f32::INFINITY;
+    for dz in -radius..=radius {
+        for dx in -radius..=radius {
+            let x = grid_x as isize + dx;
+            let z = grid_z as isize + dz;
+            if x < 0
+                || z < 0
+                || x >= ground.grid_width() as isize
+                || z >= ground.grid_depth() as isize
+                || ground.samples()[z as usize * ground.grid_width() + x as usize].cover
+                    != GroundCover::LeafLitter
+            {
+                continue;
+            }
+            nearest = nearest.min(Vec2::new(dx as f32, dz as f32).length() * ground.grid_scale());
+        }
+    }
+    (1.0 - nearest / WOODLAND_FLOOR_TRANSITION_METRES).clamp(0.0, 1.0)
 }
 
 fn append_litter_batch(
@@ -126,8 +212,8 @@ fn append_litter_batch(
     source: &Handle<Mesh>,
     mut transform: Transform,
     cell_size: f32,
-    batches: &mut BTreeMap<(i32, i32), (Option<Mesh>, Option<Mesh>)>,
-    leaves: bool,
+    batches: &mut BTreeMap<(i32, i32), LitterBatch>,
+    kind: BatchKind,
 ) {
     let cell = (
         (transform.translation.x / cell_size).floor() as i32,
@@ -139,10 +225,11 @@ fn append_litter_batch(
         return;
     };
     let transformed = source.clone().transformed_by(transform);
-    let slot = if leaves {
-        &mut batches.entry(cell).or_default().0
-    } else {
-        &mut batches.entry(cell).or_default().1
+    let batch = batches.entry(cell).or_default();
+    let slot = match kind {
+        BatchKind::Leaves => &mut batch.leaves,
+        BatchKind::Twigs => &mut batch.twigs,
+        BatchKind::Plants => &mut batch.plants,
     };
     if let Some(batch) = slot {
         batch
@@ -155,6 +242,7 @@ fn append_litter_batch(
 
 pub(super) const DRY_LEAF_MESH_VARIANTS: u64 = 4;
 pub(super) const TWIG_MESH_VARIANTS: u64 = 3;
+pub(super) const WOODLAND_PLANT_MESH_VARIANTS: u64 = 3;
 pub(super) fn forest_floor_leaf_material(
     assets: &ProceduralEnvironmentAssets,
 ) -> TacticalTreeLeafCardMaterial {
@@ -184,10 +272,12 @@ fn forest_floor_patch_transform(
             unit_hash(splitmix64(hash ^ 0x672a_1f04)) - 0.5,
             unit_hash(splitmix64(hash ^ 0xeeb0_31cd)) - 0.5,
         ) * jitter;
-    if ground
-        .ground_at(position)
-        .is_none_or(|sample| sample.cover != GroundCover::LeafLitter)
-    {
+    if ground.ground_at(position).is_none_or(|sample| {
+        !matches!(
+            sample.cover,
+            GroundCover::LeafLitter | GroundCover::TallGrass
+        )
+    }) {
         return None;
     }
     let mut transform = foliage_transform(terrain, position.x, position.y, hash)?;
@@ -308,7 +398,101 @@ pub(super) fn twig_patch_mesh(variant: u64) -> Mesh {
     data.into_mesh()
 }
 
+/// A sparse shade-floor rosette. Seven-vertex cambered leaves provide a
+/// readable close silhouette without introducing a textured albedo or the
+/// single-triangle markers formerly used for tiny meadow accents.
+pub(super) fn woodland_plant_patch_mesh(variant: u64) -> Mesh {
+    let mut data = GroundLitterMeshData::default();
+    let palette = [
+        Color::srgb_u8(48, 79, 35),
+        Color::srgb_u8(57, 91, 40),
+        Color::srgb_u8(40, 68, 31),
+    ];
+    let plant_count = 2 + (variant % 2) as u64;
+    for plant in 0..plant_count {
+        let plant_hash = splitmix64(variant.rotate_left(23) ^ plant ^ 0x91e4_3bc7);
+        let centre = Vec2::new(
+            unit_hash(plant_hash) - 0.5,
+            unit_hash(splitmix64(plant_hash ^ 1)) - 0.5,
+        ) * 0.62;
+        let leaf_count = 5 + (plant_hash % 3) as u64;
+        let phase = unit_hash(splitmix64(plant_hash ^ 2)) * core::f32::consts::TAU;
+        for leaf in 0..leaf_count {
+            let hash = splitmix64(plant_hash ^ leaf.rotate_left(17));
+            let angle = phase
+                + leaf as f32 * core::f32::consts::TAU / leaf_count as f32
+                + (unit_hash(hash) - 0.5) * 0.28;
+            let length = 0.11 + unit_hash(splitmix64(hash ^ 3)) * 0.075;
+            let width = length * (0.19 + unit_hash(splitmix64(hash ^ 4)) * 0.08);
+            data.append_rosette_leaf(
+                centre,
+                Vec2::new(angle.cos(), angle.sin()),
+                length,
+                width,
+                0.055 + unit_hash(splitmix64(hash ^ 5)) * 0.055,
+                palette[(plant as usize + leaf as usize) % palette.len()],
+            );
+        }
+    }
+    data.into_mesh()
+}
+
 impl GroundLitterMeshData {
+    fn append_rosette_leaf(
+        &mut self,
+        root: Vec2,
+        direction: Vec2,
+        length: f32,
+        width: f32,
+        rise: f32,
+        color: Color,
+    ) {
+        let base = self.positions.len() as u32;
+        let side = Vec2::new(-direction.y, direction.x);
+        let centre = |along: f32, lateral: f32, height: f32| {
+            let point = root + direction * (length * along) + side * (width * lateral);
+            Vec3::new(point.x, height, point.y)
+        };
+        let positions = [
+            centre(0.0, -0.18, 0.002),
+            centre(0.0, 0.18, 0.002),
+            centre(0.38, -1.0, rise * 0.72),
+            centre(0.38, 1.0, rise * 0.72),
+            centre(0.76, -0.62, rise),
+            centre(0.76, 0.62, rise),
+            centre(1.0, 0.0, rise * 0.82),
+        ];
+        let normal = Vec3::new(-direction.x * 0.24, 0.94, -direction.y * 0.24).normalize();
+        let linear_color = color.to_linear().to_f32_array();
+        for (index, position) in positions.into_iter().enumerate() {
+            self.positions.push(position.to_array());
+            self.normals.push(normal.to_array());
+            self.uvs.push([
+                if index % 2 == 0 { 0.0 } else { 1.0 },
+                [0.0, 0.0, 0.38, 0.38, 0.76, 0.76, 1.0][index],
+            ]);
+            self.roots.push(root.to_array());
+            self.colors.push(linear_color);
+        }
+        self.indices.extend_from_slice(&[
+            base,
+            base + 2,
+            base + 1,
+            base + 1,
+            base + 2,
+            base + 3,
+            base + 2,
+            base + 4,
+            base + 3,
+            base + 3,
+            base + 4,
+            base + 5,
+            base + 4,
+            base + 6,
+            base + 5,
+        ]);
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn append_bent_twig(
         &mut self,
@@ -497,11 +681,33 @@ impl GroundLitterMeshData {
 mod tests {
     use super::*;
     use crate::presentation::obstacles::tree::oak_leaf_material;
+    use adventuresim_tactical_core::prelude::GroundSurface;
     use bevy::{
         asset::{AssetApp, AssetPlugin},
         mesh::VertexAttributeValues,
-        prelude::{App, Image, TaskPoolPlugin},
+        prelude::{App, Image, TaskPoolPlugin, default},
     };
+
+    #[test]
+    fn woodland_floor_transition_decays_outward_from_litter() {
+        let mut samples = vec![
+            GroundSurface {
+                cover: GroundCover::TallGrass,
+                cover_density_bps: 10_000,
+                cover_height_cm: 82,
+                ..default()
+            };
+            9 * 9
+        ];
+        samples[4 * 9 + 4].cover = GroundCover::LeafLitter;
+        let ground = SceneGround::from_samples(9, 9, 1.0, samples).unwrap();
+        let edge = leaf_litter_proximity(&ground, 5, 4);
+        let middle = leaf_litter_proximity(&ground, 6, 4);
+        let outside = leaf_litter_proximity(&ground, 8, 4);
+        assert!(1.0 > edge && edge > middle && middle > outside);
+        assert_eq!(outside, 0.0);
+    }
+
     #[test]
     fn forest_floor_meshes_are_deterministic_bounded_and_volumetric() {
         let leaves = dry_leaf_patch_mesh(0);
@@ -509,11 +715,17 @@ mod tests {
         let alternate_leaves = dry_leaf_patch_mesh(1);
         let twigs = twig_patch_mesh(0);
         let repeated_twigs = twig_patch_mesh(0);
+        let plants = woodland_plant_patch_mesh(0);
+        let repeated_plants = woodland_plant_patch_mesh(0);
         let leaf_positions = leaves
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
         let twig_positions = twigs
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        let plant_positions = plants
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
@@ -537,11 +749,15 @@ mod tests {
             twigs.attribute(Mesh::ATTRIBUTE_POSITION),
             repeated_twigs.attribute(Mesh::ATTRIBUTE_POSITION)
         );
+        assert_eq!(
+            plants.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_plants.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
         assert_ne!(
             leaves.attribute(Mesh::ATTRIBUTE_POSITION),
             alternate_leaves.attribute(Mesh::ATTRIBUTE_POSITION)
         );
-        for mesh in [&leaves, &twigs] {
+        for mesh in [&leaves, &twigs, &plants] {
             assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
             assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_1).is_some());
         }
@@ -609,7 +825,7 @@ mod tests {
             .normalize();
             assert!((b - a).cross(c - a).dot(average_normal) > 0.0);
         }
-        for positions in [leaf_positions, twig_positions] {
+        for positions in [leaf_positions, twig_positions, plant_positions] {
             assert!(positions.iter().flatten().all(|value| value.is_finite()));
         }
         assert!(
@@ -622,6 +838,8 @@ mod tests {
                 .iter()
                 .all(|point| point[0].abs() < 0.9 && point[2].abs() < 0.9)
         );
+        assert!((70..=150).contains(&plant_positions.len()));
+        assert!(plant_positions.iter().any(|point| point[1] > 0.08));
         let leaf_height_bounds = leaf_positions.iter().fold(
             (f32::INFINITY, f32::NEG_INFINITY),
             |(minimum, maximum), point| (minimum.min(point[1]), maximum.max(point[1])),

@@ -1,16 +1,19 @@
 use super::*;
 
+const TERMINAL_SWARD_FADE_START_METRES: f32 = 124.0;
+const TERMINAL_SWARD_FADE_END_METRES: f32 = 140.0;
+
 pub(super) fn scene_ground_color(environment: &SceneEnvironment) -> Color {
     let mut rgb = if environment.water_bps >= 5_000 {
         [52.0, 83.0, 98.0]
     } else if environment.wetland_bps >= 4_000 {
-        [73.0, 86.0, 58.0]
+        [70.0, 62.0, 43.0]
     } else if environment.canopy_bps >= 5_000 {
-        [55.0, 82.0, 43.0]
+        [65.0, 52.0, 32.0]
     } else if environment.cultivation_bps >= 4_000 {
-        [126.0, 116.0, 66.0]
+        [116.0, 91.0, 49.0]
     } else {
-        [96.0, 108.0, 56.0]
+        [101.0, 82.0, 49.0]
     };
     let snow = f32::from(environment.weather.snow_cover_bps) / 10_000.0;
     let wet = f32::from(environment.weather.ground_moisture_bps) / 10_000.0;
@@ -160,8 +163,8 @@ pub(in crate::presentation) fn terrain_material(
             // that project to less than a pixel. x/y are the fade interval;
             // z is environment-dependent coverage and w is reserved.
             far_sward: Vec4::new(
-                104.0,
-                132.0,
+                TERMINAL_SWARD_FADE_START_METRES,
+                TERMINAL_SWARD_FADE_END_METRES,
                 (1.0 - bps(environment.water_bps) * 0.9
                     - bps(environment.weather.snow_cover_bps) * 0.8)
                     .clamp(0.0, 1.0),
@@ -199,6 +202,77 @@ fn ground_surface_pixel(sample: GroundSurface) -> [u8; 4] {
         (u32::from(sample.cover_density_bps) * 255 / 10_000) as u8,
         sample.cover_height_cm.min(255) as u8,
     ]
+}
+
+fn chamfer_distance_to(
+    width: usize,
+    height: usize,
+    sources: impl Fn(usize) -> bool,
+    maximum: usize,
+) -> Vec<usize> {
+    let mut distance = (0..width * height)
+        .map(|index| if sources(index) { 0 } else { maximum + 1 })
+        .collect::<Vec<_>>();
+    for z in 0..height {
+        for x in 0..width {
+            let index = z * width + x;
+            for (dx, dz) in [(-1_isize, 0_isize), (0, -1), (-1, -1), (1, -1)] {
+                let nx = x as isize + dx;
+                let nz = z as isize + dz;
+                if nx >= 0 && nz >= 0 && nx < width as isize && nz < height as isize {
+                    distance[index] = distance[index]
+                        .min(distance[nz as usize * width + nx as usize].saturating_add(1));
+                }
+            }
+        }
+    }
+    for z in (0..height).rev() {
+        for x in (0..width).rev() {
+            let index = z * width + x;
+            for (dx, dz) in [(1_isize, 0_isize), (0, 1), (1, 1), (-1, 1)] {
+                let nx = x as isize + dx;
+                let nz = z as isize + dz;
+                if nx >= 0 && nz >= 0 && nx < width as isize && nz < height as isize {
+                    distance[index] = distance[index]
+                        .min(distance[nz as usize * width + nx as usize].saturating_add(1));
+                }
+            }
+        }
+    }
+    distance
+}
+
+fn encode_canopy_floor_distance(
+    ground: &SceneGround,
+    width: usize,
+    height: usize,
+    pixels: &mut [u8],
+) {
+    let metres_per_pixel = ground.grid_scale() / GROUND_PRESENTATION_SAMPLES_PER_CELL as f32;
+    let inner_radius = (2.2 / metres_per_pixel).ceil().max(1.0) as usize;
+    let outer_radius = (4.8 / metres_per_pixel).ceil().max(1.0) as usize;
+    let litter = pixels
+        .chunks_exact(4)
+        .map(|pixel| pixel[0] == GroundCover::LeafLitter as u8)
+        .collect::<Vec<_>>();
+    let distance_to_litter =
+        chamfer_distance_to(width, height, |index| litter[index], outer_radius);
+    let distance_to_other =
+        chamfer_distance_to(width, height, |index| !litter[index], inner_radius);
+    for index in 0..width * height {
+        let encoded = if litter[index] {
+            let depth = (distance_to_other[index] as f32 / inner_radius as f32).clamp(0.0, 1.0);
+            128.0 + depth * 127.0
+        } else {
+            let proximity =
+                (1.0 - distance_to_litter[index] as f32 / outer_radius as f32).clamp(0.0, 1.0);
+            proximity * 127.0
+        };
+        // Alpha is presentation-only. It carries signed distance from the
+        // organic litter boundary instead of duplicating gameplay cover
+        // height, which remains authoritative in SceneGround.
+        pixels[index * 4 + 3] = encoded.round() as u8;
+    }
 }
 
 fn ground_mask_noise(seed: u64, point: Vec2) -> f32 {
@@ -248,57 +322,25 @@ pub(super) fn organic_ground_pixels(ground: &SceneGround, seed: u64) -> (u32, u3
             ));
         }
     }
+    encode_canopy_floor_distance(ground, width, depth, &mut pixels);
     (width as u32, depth as u32, pixels)
 }
 
 pub(super) fn grass_cover_mask_pixels(ground: &SceneGround, seed: u64) -> (u32, u32, Vec<u8>) {
     let (width, height, ground_pixels) = organic_ground_pixels(ground, seed);
     let mut mask = vec![0_u8; width as usize * height as usize];
-    let radius = GROUND_PRESENTATION_SAMPLES_PER_CELL * 7 / 2;
+    let metres_per_pixel = ground.grid_scale() / GROUND_PRESENTATION_SAMPLES_PER_CELL as f32;
+    let radius = (4.8 / metres_per_pixel).ceil().max(1.0) as usize;
     let width_usize = width as usize;
     let height_usize = height as usize;
-    let mut distance = vec![radius + 1; width_usize * height_usize];
-    for z in 0..height_usize {
-        for x in 0..width_usize {
-            let index = z * width_usize + x;
-            let cover = ground_pixels[index * 4];
-            // The playable rectangle is a data-authority boundary, not a
-            // vegetation boundary. Do not manufacture a grass-free frame at
-            // the image edge; exterior coverage is stitched by the vista mask.
-            if cover != GroundCover::TallGrass as u8 {
-                distance[index] = 0;
-            }
-        }
-    }
-    // Two separable chamfer passes compute the Chebyshev distance to the
-    // nearest non-grass pixel in linear time. The former bounded square scan
-    // performed over one hundred million comparisons on a typical scene.
-    for z in 0..height_usize {
-        for x in 0..width_usize {
-            let index = z * width_usize + x;
-            for (dx, dz) in [(-1_isize, 0_isize), (0, -1), (-1, -1), (1, -1)] {
-                let nx = x as isize + dx;
-                let nz = z as isize + dz;
-                if nx >= 0 && nz >= 0 && nx < width as isize && nz < height as isize {
-                    distance[index] = distance[index]
-                        .min(distance[nz as usize * width_usize + nx as usize].saturating_add(1));
-                }
-            }
-        }
-    }
-    for z in (0..height_usize).rev() {
-        for x in (0..width_usize).rev() {
-            let index = z * width_usize + x;
-            for (dx, dz) in [(1_isize, 0_isize), (0, 1), (1, 1), (-1, 1)] {
-                let nx = x as isize + dx;
-                let nz = z as isize + dz;
-                if nx >= 0 && nz >= 0 && nx < width as isize && nz < height as isize {
-                    distance[index] = distance[index]
-                        .min(distance[nz as usize * width_usize + nx as usize].saturating_add(1));
-                }
-            }
-        }
-    }
+    // The playable rectangle is a data-authority boundary, not a vegetation
+    // boundary. Only authored non-grass pixels seed this distance field.
+    let distance = chamfer_distance_to(
+        width_usize,
+        height_usize,
+        |index| ground_pixels[index * 4] != GroundCover::TallGrass as u8,
+        radius,
+    );
     for z in 0..height as usize {
         for x in 0..width as usize {
             let pixel = (z * width as usize + x) * 4;
@@ -308,7 +350,7 @@ pub(super) fn grass_cover_mask_pixels(ground: &SceneGround, seed: u64) -> (u32, 
             let density = ground_pixels[pixel + 2];
             let feather = (distance[z * width_usize + x] as f32 / radius as f32)
                 .clamp(0.0, 1.0)
-                .powf(1.35);
+                .powf(1.28);
             mask[z * width as usize + x] = (f32::from(density) * feather) as u8;
         }
     }
@@ -422,7 +464,10 @@ mod tests {
         assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(color, 1.0)"));
         assert!(shader.contains("distance(position, view.lod_view_world_position.xyz)"));
         assert!(!shader.contains("distance(position.xz, view.lod_view_world_position.xz)"));
-        assert!(shader.contains("color = terrain.grass_color.rgb"));
+        assert!(!shader.contains("select(color, terrain.grass_color.rgb, tall_grass > 0.5)"));
+        assert!(shader.contains("let shaded_substrate = select("));
+        assert!(shader.contains("let canopy_floor = ground_sample.a"));
+        assert!(shader.contains("canopy_floor >= 0.78"));
         assert!(shader.contains("let sward_color = terrain.grass_color.rgb"));
         assert!(!shader.contains("sward_color = color *"));
         assert!(shader.contains("sward_dither < sward_amount"));
@@ -437,6 +482,14 @@ mod tests {
             assert!(!shader.contains(forbidden), "found {forbidden}");
         }
     }
+
+    #[test]
+    fn terminal_terrain_sward_starts_when_the_final_grass_lod_fades() {
+        let vista = grass_lod_visibility(GrassMeshLod::Vista);
+        assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
+        assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
+    }
+
     use bevy::prelude::TaskPoolPlugin;
 
     #[test]
@@ -556,7 +609,7 @@ mod tests {
         assert_eq!((width, depth, pixels.clone()), repeated);
         assert_ne!(pixels, changed.2);
 
-        let valid_pixels = [
+        let valid_surfaces = [
             ground_surface_pixel(GroundSurface::default()),
             ground_surface_pixel(GroundSurface {
                 cover: GroundCover::LeafLitter,
@@ -568,7 +621,19 @@ mod tests {
         assert!(
             pixels
                 .chunks_exact(4)
-                .all(|pixel| valid_pixels.iter().any(|valid| pixel == valid))
+                .all(|pixel| valid_surfaces.iter().any(|valid| pixel[..3] == valid[..3]))
+        );
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] == GroundCover::LeafLitter as u8 && pixel[3] > 180),
+            "deep litter must encode an interior loam zone"
+        );
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] != GroundCover::LeafLitter as u8 && pixel[3] > 0),
+            "open cover must retain an exterior canopy transition"
         );
 
         let first_leaf_litter_x = (0..depth as usize)

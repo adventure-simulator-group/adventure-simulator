@@ -1,15 +1,15 @@
 use super::geometry::BarkRecipe;
 use super::impostor::{
-    OAK_TREE_BAKE_STYLE, TreeBakeStyle, TreeImpostorProvenance, bake_tree_lod,
+    OAK_TREE_BAKE_STYLE, TreeBakeStyle, TreeImpostorProvenance, TreeLodBake, bake_tree_lod,
     bake_tree_lod_with_style, tree_impostor_material, tree_leaf_visibility, tree_lod_name,
     tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
     COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
-    OakGnarlingParameters, TREE_PRIMARY_GROUP_COUNT, TacticalTreeImpostorMaterial,
-    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
-    TreeLodRenderOverride, TreeTrunkLod, beech_leaf_material, oak_bark_material, oak_leaf_material,
-    procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
+    OakGnarlingParameters, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
+    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    beech_leaf_material, oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
+    procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
     procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
     procedural_woody_branch_mesh, procedural_woody_crown_mesh, procedural_woody_plant_leaves,
@@ -25,6 +25,9 @@ use bevy::{
     prelude::*,
 };
 
+#[cfg(test)]
+use super::TREE_PRIMARY_GROUP_COUNT;
+
 #[derive(Component)]
 pub(in crate::presentation) struct PendingTreePresentation;
 
@@ -33,6 +36,28 @@ pub(in crate::presentation) struct TreePresentationCache {
     variants: std::collections::HashMap<u64, CachedTreePresentation>,
     oak_bark_material: Option<Handle<StandardMaterial>>,
     beech_bark_material: Option<Handle<StandardMaterial>>,
+}
+
+/// Live accounting for procedurally generated playable-tree render assets.
+///
+/// Unlike `Assets` totals, these counters separate the representations that
+/// the tree streamer requested. The scene benchmark records this resource so
+/// a faster frame cannot hide an accidental increase in resident geometry.
+#[derive(Resource, Debug, Clone, Default, serde::Serialize)]
+pub(crate) struct TreeAssetResidencyDiagnostics {
+    pub(crate) variants: usize,
+    pub(crate) source_branches: usize,
+    pub(crate) source_leaves: usize,
+    pub(crate) trunk_vertices: usize,
+    pub(crate) detailed_branch_vertices: usize,
+    pub(crate) cambered_leaf_vertices: usize,
+    pub(crate) leaf_card_vertices: usize,
+    pub(crate) bud_vertices: usize,
+    pub(crate) aggregate_branch_vertices: usize,
+    pub(crate) impostor_vertices: usize,
+    pub(crate) impostor_texture_bytes: usize,
+    pub(crate) generated_lod_mask: u8,
+    pub(crate) generation_milliseconds: u128,
 }
 
 #[derive(Resource, Default)]
@@ -47,30 +72,36 @@ pub(in crate::presentation) struct CachedVistaTreePresentation {
     pub(in crate::presentation) provenance: TreeImpostorProvenance,
 }
 
-#[derive(Clone)]
 struct CachedTreePresentation {
+    variant_seed: u64,
+    species: TreePresentationSpecies,
     species_name: &'static str,
-    trunk_mesh: Handle<Mesh>,
-    clusters: Vec<CachedTreeClusterPresentation>,
-    aggregate_branch_meshes: [Handle<Mesh>; 2],
-    aggregate_card_meshes: [Handle<Mesh>; 3],
-    whole_tree_card_mesh: Handle<Mesh>,
+    branches: Vec<super::TreeBranchSegment>,
+    leaves: Vec<super::TreeLeaf>,
+    trunk_mesh: Option<Handle<Mesh>>,
+    cluster_layout: Option<Vec<(u8, Vec3, f32)>>,
+    clusters: Option<Vec<CachedTreeClusterPresentation>>,
+    aggregate_branch_meshes: [Option<Handle<Mesh>>; 2],
+    lod_cards: [Option<CachedTreeCardPresentation>; 4],
     bark_material: Handle<StandardMaterial>,
     leaf_material: Handle<TacticalTreeLeafCardMaterial>,
     bud_material: Handle<StandardMaterial>,
-    card_materials: [Handle<TacticalTreeImpostorMaterial>; 4],
-    provenance: [TreeImpostorProvenance; 4],
 }
 
-#[derive(Clone)]
 struct CachedTreeClusterPresentation {
     primary_group: u8,
     center: Vec3,
     radius: f32,
-    detailed_branch_mesh: Handle<Mesh>,
-    cambered_leaf_mesh: Handle<Mesh>,
-    leaf_card_mesh: Handle<Mesh>,
-    bud_mesh: Handle<Mesh>,
+    detailed_branch_mesh: Option<Handle<Mesh>>,
+    cambered_leaf_mesh: Option<Handle<Mesh>>,
+    leaf_card_mesh: Option<Handle<Mesh>>,
+    bud_mesh: Option<Handle<Mesh>>,
+}
+
+struct CachedTreeCardPresentation {
+    mesh: Handle<Mesh>,
+    material: Handle<TacticalTreeImpostorMaterial>,
+    provenance: TreeImpostorProvenance,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,7 +191,9 @@ pub(crate) struct PresentedTree;
 
 #[derive(Component, Clone)]
 pub(in crate::presentation) struct StreamedTreePresentation {
-    cached: CachedTreePresentation,
+    cache_key: u64,
+    resident_mask: u8,
+    resident_leaf_mask: u8,
     active_mask: u8,
     active_leaf: Option<TreeLeafRepresentation>,
 }
@@ -168,13 +201,20 @@ pub(in crate::presentation) struct StreamedTreePresentation {
 #[derive(Component)]
 pub(in crate::presentation) struct StreamedTreeChild;
 
-fn spawn_cached_tree(commands: &mut Commands, entity: Entity, cached: &CachedTreePresentation) {
+fn spawn_cached_tree(
+    commands: &mut Commands,
+    entity: Entity,
+    cache_key: u64,
+    species_name: &'static str,
+) {
     commands.entity(entity).insert((
-        Name::new(format!("Presented mature {}", cached.species_name)),
+        Name::new(format!("Presented mature {species_name}")),
         PresentedTree,
         Visibility::Inherited,
         StreamedTreePresentation {
-            cached: cached.clone(),
+            cache_key,
+            resident_mask: 0,
+            resident_leaf_mask: 0,
             active_mask: u8::MAX,
             active_leaf: None,
         },
@@ -185,32 +225,41 @@ fn spawn_streamed_tree_children(
     commands: &mut Commands,
     entity: Entity,
     cached: &CachedTreePresentation,
-    mask: u8,
-    selected_leaf: Option<TreeLeafRepresentation>,
+    new_mask: u8,
+    new_leaf_mask: u8,
 ) {
     commands.entity(entity).with_children(|parent| {
         // Keep renderable trunk state below the obstacle root. Hiding the trunk
         // at whole-tree LOD must not hide the camera-facing billboard sibling
         // through inherited parent visibility.
-        if mask & 1 != 0 {
+        if new_mask & 1 != 0 {
             parent.spawn((
                 Name::new(format!("{} trunk", cached.species_name)),
                 StreamedTreeChild,
                 TreeTrunkLod,
-                Mesh3d(cached.trunk_mesh.clone()),
+                Mesh3d(
+                    cached
+                        .trunk_mesh
+                        .clone()
+                        .expect("requested trunk mesh is resident"),
+                ),
                 MeshMaterial3d(cached.bark_material.clone()),
                 tree_trunk_visibility(),
             ));
         }
-        if mask & (1 << 1) != 0 {
-            for cluster in &cached.clusters {
+        if new_mask & (1 << 1) != 0 || new_leaf_mask != 0 {
+            for cluster in cached
+                .clusters
+                .as_ref()
+                .expect("requested detailed crown assets are resident")
+            {
                 let cluster_marker = TreeLodCluster {
                     primary_group: cluster.primary_group,
                     center: cluster.center,
                     radius: cluster.radius,
                 };
                 let cluster_aabb = tree_cluster_aabb(cluster.center, cluster.radius);
-                if selected_leaf != Some(TreeLeafRepresentation::AlphaCard) {
+                if new_leaf_mask & 1 != 0 {
                     parent.spawn((
                         Name::new(format!(
                             "{} scaffold {} cambered PBR leaves",
@@ -221,7 +270,12 @@ fn spawn_streamed_tree_children(
                         cluster_marker,
                         cluster_aabb,
                         TreeLeafRepresentation::TexturedMesh,
-                        Mesh3d(cluster.cambered_leaf_mesh.clone()),
+                        Mesh3d(
+                            cluster
+                                .cambered_leaf_mesh
+                                .clone()
+                                .expect("requested cambered leaf mesh is resident"),
+                        ),
                         MeshMaterial3d(cached.leaf_material.clone()),
                         tree_leaf_visibility(
                             TreeLeafRepresentation::TexturedMesh,
@@ -230,7 +284,7 @@ fn spawn_streamed_tree_children(
                         ),
                     ));
                 }
-                if selected_leaf != Some(TreeLeafRepresentation::TexturedMesh) {
+                if new_leaf_mask & 2 != 0 {
                     parent.spawn((
                         Name::new(format!(
                             "{} scaffold {} PBR leaf cards",
@@ -241,7 +295,12 @@ fn spawn_streamed_tree_children(
                         cluster_marker,
                         cluster_aabb,
                         TreeLeafRepresentation::AlphaCard,
-                        Mesh3d(cluster.leaf_card_mesh.clone()),
+                        Mesh3d(
+                            cluster
+                                .leaf_card_mesh
+                                .clone()
+                                .expect("requested leaf card mesh is resident"),
+                        ),
                         MeshMaterial3d(cached.leaf_material.clone()),
                         tree_leaf_visibility(
                             TreeLeafRepresentation::AlphaCard,
@@ -250,45 +309,60 @@ fn spawn_streamed_tree_children(
                         ),
                     ));
                 }
-                parent.spawn((
-                    Name::new(format!(
-                        "{} scaffold {} terminal buds",
-                        cached.species_name, cluster.primary_group
-                    )),
-                    StreamedTreeChild,
-                    TreeLod(0),
-                    cluster_marker,
-                    cluster_aabb,
-                    Mesh3d(cluster.bud_mesh.clone()),
-                    MeshMaterial3d(cached.bud_material.clone()),
-                    tree_lod_visibility(0),
-                ));
-                parent.spawn((
-                    Name::new(format!(
-                        "{} scaffold {} detailed wood",
-                        cached.species_name, cluster.primary_group
-                    )),
-                    StreamedTreeChild,
-                    TreeLod(0),
-                    cluster_marker,
-                    cluster_aabb,
-                    Mesh3d(cluster.detailed_branch_mesh.clone()),
-                    MeshMaterial3d(cached.bark_material.clone()),
-                    tree_lod_visibility(0),
-                ));
+                if new_mask & (1 << 1) != 0 {
+                    parent.spawn((
+                        Name::new(format!(
+                            "{} scaffold {} terminal buds",
+                            cached.species_name, cluster.primary_group
+                        )),
+                        StreamedTreeChild,
+                        TreeLod(0),
+                        cluster_marker,
+                        cluster_aabb,
+                        Mesh3d(
+                            cluster
+                                .bud_mesh
+                                .clone()
+                                .expect("requested bud mesh is resident"),
+                        ),
+                        MeshMaterial3d(cached.bud_material.clone()),
+                        tree_lod_visibility(0),
+                    ));
+                    parent.spawn((
+                        Name::new(format!(
+                            "{} scaffold {} detailed wood",
+                            cached.species_name, cluster.primary_group
+                        )),
+                        StreamedTreeChild,
+                        TreeLod(0),
+                        cluster_marker,
+                        cluster_aabb,
+                        Mesh3d(
+                            cluster
+                                .detailed_branch_mesh
+                                .clone()
+                                .expect("requested detailed branch mesh is resident"),
+                        ),
+                        MeshMaterial3d(cached.bark_material.clone()),
+                        tree_lod_visibility(0),
+                    ));
+                }
             }
         }
         for lod in 1..=3 {
-            if mask & (1 << (lod + 1)) == 0 {
+            if new_mask & (1 << (lod + 1)) == 0 {
                 continue;
             }
+            let card = cached.lod_cards[lod as usize - 1]
+                .as_ref()
+                .expect("requested aggregate tree card is resident");
             parent.spawn((
                 Name::new(tree_lod_name(lod, true)),
                 StreamedTreeChild,
                 TreeLod(lod),
                 NotShadowCaster,
-                Mesh3d(cached.aggregate_card_meshes[lod as usize - 1].clone()),
-                MeshMaterial3d(cached.card_materials[lod as usize - 1].clone()),
+                Mesh3d(card.mesh.clone()),
+                MeshMaterial3d(card.material.clone()),
                 tree_lod_visibility(lod),
             ));
             if lod <= 2 {
@@ -296,39 +370,225 @@ fn spawn_streamed_tree_children(
                     Name::new(tree_lod_name(lod, false)),
                     StreamedTreeChild,
                     TreeLod(lod),
-                    Mesh3d(cached.aggregate_branch_meshes[lod as usize - 1].clone()),
+                    Mesh3d(
+                        cached.aggregate_branch_meshes[lod as usize - 1]
+                            .clone()
+                            .expect("requested aggregate branch mesh is resident"),
+                    ),
                     MeshMaterial3d(cached.bark_material.clone()),
                     tree_lod_visibility(lod),
                 ));
             }
         }
-        if mask & (1 << 5) != 0 {
+        if new_mask & (1 << 5) != 0 {
+            let card = cached.lod_cards[3]
+                .as_ref()
+                .expect("requested whole-tree card is resident");
             parent.spawn((
                 Name::new(tree_lod_name(4, true)),
                 StreamedTreeChild,
                 TreeLod(4),
                 NoFrustumCulling,
                 NotShadowCaster,
-                Mesh3d(cached.whole_tree_card_mesh.clone()),
-                MeshMaterial3d(cached.card_materials[3].clone()),
-                cached.provenance[3].clone(),
+                Mesh3d(card.mesh.clone()),
+                MeshMaterial3d(card.material.clone()),
+                card.provenance.clone(),
                 tree_lod_visibility(4),
             ));
         }
     });
 }
 
+fn bake_tree_card_for_cached(cached: &CachedTreePresentation, lod: u8) -> TreeLodBake {
+    if cached.species == TreePresentationSpecies::EnglishOak {
+        bake_tree_lod(cached.variant_seed, &cached.branches, &cached.leaves, lod)
+    } else {
+        bake_tree_lod_with_style(
+            cached.variant_seed,
+            &cached.branches,
+            &cached.leaves,
+            lod,
+            cached.species.bake_style(),
+        )
+    }
+}
+
+fn ensure_tree_card_resident(
+    cached: &mut CachedTreePresentation,
+    lod: u8,
+    meshes: &mut Assets<Mesh>,
+    tree_materials: &mut Assets<TacticalTreeImpostorMaterial>,
+    images: &mut Assets<Image>,
+    diagnostics: &mut TreeAssetResidencyDiagnostics,
+) {
+    let index = lod as usize - 1;
+    if cached.lod_cards[index].is_some() {
+        return;
+    }
+    let bake = bake_tree_card_for_cached(cached, lod);
+    validate_tree_bake_provenance(&bake.provenance);
+    if lod == 1 {
+        cached.cluster_layout = Some(
+            bake.clusters
+                .iter()
+                .map(|cluster| (cluster.primary_group, cluster.center, cluster.radius))
+                .collect(),
+        );
+    }
+    diagnostics.impostor_vertices += bake.mesh.count_vertices();
+    diagnostics.impostor_texture_bytes += bake.image.data.as_ref().map_or(0, |pixels| pixels.len());
+    diagnostics.generated_lod_mask |= 1 << (lod + 1);
+    let texture = images.add(bake.image);
+    cached.lod_cards[index] = Some(CachedTreeCardPresentation {
+        mesh: meshes.add(bake.mesh),
+        material: tree_materials.add(tree_impostor_material(
+            cached.variant_seed,
+            bake.lod,
+            texture,
+        )),
+        provenance: bake.provenance,
+    });
+}
+
+fn ensure_detailed_tree_assets_resident(
+    cached: &mut CachedTreePresentation,
+    selected_leaf: Option<TreeLeafRepresentation>,
+    meshes: &mut Assets<Mesh>,
+    diagnostics: &mut TreeAssetResidencyDiagnostics,
+) {
+    if cached.clusters.is_none() {
+        cached.clusters = Some(
+            cached
+                .cluster_layout
+                .as_ref()
+                .expect("LOD1 bake supplies detailed crown cluster bounds")
+                .iter()
+                .map(
+                    |&(primary_group, center, radius)| CachedTreeClusterPresentation {
+                        primary_group,
+                        center,
+                        radius,
+                        detailed_branch_mesh: None,
+                        cambered_leaf_mesh: None,
+                        leaf_card_mesh: None,
+                        bud_mesh: None,
+                    },
+                )
+                .collect(),
+        );
+    }
+    for cluster in cached
+        .clusters
+        .as_mut()
+        .expect("detailed crown cache was initialized")
+    {
+        if cluster.detailed_branch_mesh.is_none() {
+            let mesh = match cached.species {
+                TreePresentationSpecies::EnglishOak => {
+                    procedural_tree_branch_group_mesh(&cached.branches, 3, cluster.primary_group)
+                }
+                TreePresentationSpecies::CommonBeech => procedural_species_branch_group_mesh(
+                    &cached.branches,
+                    3,
+                    cluster.primary_group,
+                    COMMON_BEECH_BARK,
+                ),
+            };
+            diagnostics.detailed_branch_vertices += mesh.count_vertices();
+            cluster.detailed_branch_mesh = Some(meshes.add(mesh));
+        }
+        if cluster.bud_mesh.is_none() {
+            let mesh = procedural_oak_bud_group_mesh(&cached.branches, cluster.primary_group);
+            diagnostics.bud_vertices += mesh.count_vertices();
+            cluster.bud_mesh = Some(meshes.add(mesh));
+        }
+        if selected_leaf != Some(TreeLeafRepresentation::AlphaCard)
+            && cluster.cambered_leaf_mesh.is_none()
+        {
+            let mesh =
+                procedural_oak_textured_leaf_group_mesh(&cached.leaves, cluster.primary_group);
+            diagnostics.cambered_leaf_vertices += mesh.count_vertices();
+            cluster.cambered_leaf_mesh = Some(meshes.add(mesh));
+        }
+        if selected_leaf != Some(TreeLeafRepresentation::TexturedMesh)
+            && cluster.leaf_card_mesh.is_none()
+        {
+            let mesh = procedural_oak_leaf_card_group_mesh(&cached.leaves, cluster.primary_group);
+            diagnostics.leaf_card_vertices += mesh.count_vertices();
+            cluster.leaf_card_mesh = Some(meshes.add(mesh));
+        }
+    }
+    diagnostics.generated_lod_mask |= 1 << 1;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ensure_tree_assets_resident(
+    cached: &mut CachedTreePresentation,
+    mask: u8,
+    selected_leaf: Option<TreeLeafRepresentation>,
+    meshes: &mut Assets<Mesh>,
+    tree_materials: &mut Assets<TacticalTreeImpostorMaterial>,
+    images: &mut Assets<Image>,
+    diagnostics: &mut TreeAssetResidencyDiagnostics,
+) {
+    let started = std::time::Instant::now();
+    if mask & 1 != 0 && cached.trunk_mesh.is_none() {
+        let mesh = match cached.species {
+            TreePresentationSpecies::EnglishOak => procedural_tree_branch_mesh(&cached.branches, 0),
+            TreePresentationSpecies::CommonBeech => {
+                procedural_woody_branch_mesh(&cached.branches, 0, COMMON_BEECH_BARK)
+            }
+        };
+        diagnostics.trunk_vertices += mesh.count_vertices();
+        cached.trunk_mesh = Some(meshes.add(mesh));
+        diagnostics.generated_lod_mask |= 1;
+    }
+    if mask & (1 << 1) != 0 {
+        ensure_tree_card_resident(cached, 1, meshes, tree_materials, images, diagnostics);
+        ensure_detailed_tree_assets_resident(cached, selected_leaf, meshes, diagnostics);
+    }
+    for lod in 1..=4 {
+        if mask & (1 << (lod + 1)) == 0 {
+            continue;
+        }
+        ensure_tree_card_resident(cached, lod, meshes, tree_materials, images, diagnostics);
+        if lod <= 2 && cached.aggregate_branch_meshes[lod as usize - 1].is_none() {
+            let depth = if lod == 1 { 2 } else { 1 };
+            let mesh = match cached.species {
+                TreePresentationSpecies::EnglishOak => {
+                    procedural_woody_crown_mesh(&cached.branches, depth, ENGLISH_OAK_BARK)
+                }
+                TreePresentationSpecies::CommonBeech => {
+                    procedural_woody_crown_mesh(&cached.branches, depth, COMMON_BEECH_BARK)
+                }
+            };
+            diagnostics.aggregate_branch_vertices += mesh.count_vertices();
+            cached.aggregate_branch_meshes[lod as usize - 1] = Some(meshes.add(mesh));
+        }
+    }
+    let elapsed = started.elapsed().as_millis();
+    diagnostics.generation_milliseconds += elapsed;
+    if elapsed > 0 {
+        info!(
+            species = cached.species_name,
+            requested_mask = mask,
+            elapsed_ms = elapsed,
+            resident_mask = diagnostics.generated_lod_mask,
+            "Generated demand-driven tactical tree assets"
+        );
+    }
+}
+
 pub(in crate::presentation) fn stream_tree_lod_children(
     mut commands: Commands,
     camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
     lod_override: Res<TreeLodRenderOverride>,
-    mut trees: Query<(
-        Entity,
-        &GlobalTransform,
-        Option<&Children>,
-        &mut StreamedTreePresentation,
-    )>,
-    streamed_children: Query<(), With<StreamedTreeChild>>,
+    mut trees: Query<(Entity, &GlobalTransform, &mut StreamedTreePresentation)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut tree_cache: ResMut<TreePresentationCache>,
+    mut residency: ResMut<TreeAssetResidencyDiagnostics>,
 ) {
     let focal_scale = match camera.1 {
         Projection::Perspective(projection) => {
@@ -336,33 +596,69 @@ pub(in crate::presentation) fn stream_tree_lod_children(
         }
         _ => 1.0,
     } * lod_override.projected_scale.unwrap_or(1.0);
-    for (entity, transform, children, mut presentation) in &mut trees {
+    for (entity, transform, mut presentation) in &mut trees {
         let distance = camera.0.translation().distance(transform.translation());
+        let scaled = distance / focal_scale.max(0.25);
         let mask = if let Some(lod) = lod_override.lod {
             (1 << (lod + 1)) | u8::from(lod < 4)
         } else {
-            let scaled = distance / focal_scale.max(0.25);
             tree_streaming_mask(scaled)
         };
-        if presentation.active_mask == mask && presentation.active_leaf == lod_override.leaf {
+        let selected_leaf = lod_override
+            .leaf
+            .or_else(|| tree_streamed_leaf_representation(scaled));
+        if presentation.active_mask == mask && presentation.active_leaf == selected_leaf {
             continue;
         }
-        if let Some(children) = children {
-            for child in children.iter() {
-                if streamed_children.contains(child) {
-                    commands.entity(child).despawn();
-                }
-            }
-        }
-        spawn_streamed_tree_children(
-            &mut commands,
-            entity,
-            &presentation.cached,
-            mask,
-            lod_override.leaf,
+        debug!(
+            distance,
+            scaled_distance = scaled,
+            requested_mask = mask,
+            ?selected_leaf,
+            "Changed streamed tactical tree residency"
         );
+        let cached = tree_cache
+            .variants
+            .get_mut(&presentation.cache_key)
+            .expect("streamed tree cache entry remains resident");
+        ensure_tree_assets_resident(
+            cached,
+            mask,
+            selected_leaf,
+            &mut meshes,
+            &mut tree_materials,
+            &mut images,
+            &mut residency,
+        );
+        let desired_leaf_mask = if mask & (1 << 1) == 0 {
+            0
+        } else {
+            match selected_leaf {
+                Some(TreeLeafRepresentation::TexturedMesh) => 1,
+                Some(TreeLeafRepresentation::AlphaCard) => 2,
+                None => 3,
+            }
+        };
+        let new_mask = mask & !presentation.resident_mask;
+        let new_leaf_mask = desired_leaf_mask & !presentation.resident_leaf_mask;
+        spawn_streamed_tree_children(&mut commands, entity, cached, new_mask, new_leaf_mask);
+        presentation.resident_mask |= new_mask;
+        presentation.resident_leaf_mask |= new_leaf_mask;
         presentation.active_mask = mask;
-        presentation.active_leaf = lod_override.leaf;
+        presentation.active_leaf = selected_leaf;
+    }
+}
+
+fn tree_streamed_leaf_representation(scaled_distance: f32) -> Option<TreeLeafRepresentation> {
+    // The material visibility ranges overlap from roughly 3.5-5 m. Widen the
+    // residency overlap slightly so projection and cluster-size adjustments
+    // cannot expose an ungenerated representation at the handoff.
+    if scaled_distance < 3.0 {
+        Some(TreeLeafRepresentation::TexturedMesh)
+    } else if scaled_distance > 6.0 {
+        Some(TreeLeafRepresentation::AlphaCard)
+    } else {
+        None
     }
 }
 
@@ -440,12 +736,10 @@ pub(in crate::presentation) fn present_pending_trees(
     pending: Query<(Entity, &Transform), With<PendingTreePresentation>>,
     active: Res<ActiveTacticalScene>,
     environments: Query<&SceneEnvironment>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
-    mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
-    mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
+    mut residency: ResMut<TreeAssetResidencyDiagnostics>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     let Some(environment) = active
@@ -468,9 +762,7 @@ pub(in crate::presentation) fn present_pending_trees(
             ^ competition_key.rotate_left(32)
             ^ site_key.rotate_left(17)
             ^ species.cache_salt();
-        let cached = if let Some(cached) = tree_cache.variants.get(&cache_key) {
-            cached.clone()
-        } else {
+        if !tree_cache.variants.contains_key(&cache_key) {
             let (branches, leaves) = match species {
                 TreePresentationSpecies::EnglishOak => {
                     let gnarling = oak_gnarling_for_site(
@@ -536,97 +828,27 @@ pub(in crate::presentation) fn present_pending_trees(
                 perceptual_roughness: 0.92,
                 ..default()
             });
-            let bake_style = species.bake_style();
-            let baked_lods = (1..5)
-                .map(|lod| {
-                    if species == TreePresentationSpecies::EnglishOak {
-                        bake_tree_lod(variant_seed, &branches, &leaves, lod)
-                    } else {
-                        bake_tree_lod_with_style(variant_seed, &branches, &leaves, lod, bake_style)
-                    }
-                })
-                .collect::<Vec<_>>();
-            info!(
-                elapsed_ms = started.elapsed().as_millis(),
-                "Generated playable tactical tree impostor suite"
-            );
-            for bake in &baked_lods {
-                validate_tree_bake_provenance(&bake.provenance);
-            }
-            let clusters = (0..TREE_PRIMARY_GROUP_COUNT)
-                .map(|primary_group| {
-                    let source = baked_lods[0]
-                        .clusters
-                        .iter()
-                        .find(|cluster| cluster.primary_group == primary_group)
-                        .expect("every generated primary scaffold has a baked cluster");
-                    CachedTreeClusterPresentation {
-                        primary_group,
-                        center: source.center,
-                        radius: source.radius,
-                        detailed_branch_mesh: meshes.add(match species {
-                            TreePresentationSpecies::EnglishOak => {
-                                procedural_tree_branch_group_mesh(&branches, 3, primary_group)
-                            }
-                            TreePresentationSpecies::CommonBeech => {
-                                procedural_species_branch_group_mesh(
-                                    &branches,
-                                    3,
-                                    primary_group,
-                                    COMMON_BEECH_BARK,
-                                )
-                            }
-                        }),
-                        cambered_leaf_mesh: meshes.add(procedural_oak_textured_leaf_group_mesh(
-                            &leaves,
-                            primary_group,
-                        )),
-                        leaf_card_mesh: meshes
-                            .add(procedural_oak_leaf_card_group_mesh(&leaves, primary_group)),
-                        bud_mesh: meshes
-                            .add(procedural_oak_bud_group_mesh(&branches, primary_group)),
-                    }
-                })
-                .collect();
             let cached = CachedTreePresentation {
+                variant_seed,
+                species,
                 species_name: species.name(),
-                trunk_mesh: meshes.add(match species {
-                    TreePresentationSpecies::EnglishOak => {
-                        procedural_tree_branch_mesh(&branches, 0)
-                    }
-                    TreePresentationSpecies::CommonBeech => {
-                        procedural_woody_branch_mesh(&branches, 0, COMMON_BEECH_BARK)
-                    }
-                }),
-                clusters,
-                aggregate_branch_meshes: [2, 1].map(|depth| {
-                    meshes.add(match species {
-                        TreePresentationSpecies::EnglishOak => {
-                            procedural_woody_crown_mesh(&branches, depth, ENGLISH_OAK_BARK)
-                        }
-                        TreePresentationSpecies::CommonBeech => {
-                            procedural_woody_crown_mesh(&branches, depth, COMMON_BEECH_BARK)
-                        }
-                    })
-                }),
-                aggregate_card_meshes: core::array::from_fn(|index| {
-                    meshes.add(baked_lods[index].mesh.clone())
-                }),
-                whole_tree_card_mesh: meshes.add(baked_lods[3].mesh.clone()),
+                branches,
+                leaves,
+                trunk_mesh: None,
+                cluster_layout: None,
+                clusters: None,
+                aggregate_branch_meshes: [None, None],
+                lod_cards: [None, None, None, None],
                 bark_material,
                 leaf_material,
                 bud_material,
-                card_materials: core::array::from_fn(|index| {
-                    let bake = &baked_lods[index];
-                    let texture = images.add(bake.image.clone());
-                    tree_materials.add(tree_impostor_material(variant_seed, bake.lod, texture))
-                }),
-                provenance: core::array::from_fn(|index| baked_lods[index].provenance.clone()),
             };
-            tree_cache.variants.insert(cache_key, cached.clone());
-            cached
-        };
-        spawn_cached_tree(&mut commands, entity, &cached);
+            residency.variants += 1;
+            residency.source_branches += cached.branches.len();
+            residency.source_leaves += cached.leaves.len();
+            tree_cache.variants.insert(cache_key, cached);
+        }
+        spawn_cached_tree(&mut commands, entity, cache_key, species.name());
         info!(
             elapsed_ms = started.elapsed().as_millis(),
             "Generated playable tactical tree presentation"
@@ -770,6 +992,63 @@ mod tests {
         ] {
             assert_eq!(tree_streaming_mask(distance) & required_bits, required_bits);
         }
+    }
+
+    #[test]
+    fn leaf_residency_only_overlaps_near_the_representation_handoff() {
+        assert_eq!(
+            tree_streamed_leaf_representation(2.0),
+            Some(TreeLeafRepresentation::TexturedMesh)
+        );
+        assert_eq!(tree_streamed_leaf_representation(4.0), None);
+        assert_eq!(
+            tree_streamed_leaf_representation(7.0),
+            Some(TreeLeafRepresentation::AlphaCard)
+        );
+    }
+
+    #[test]
+    fn distant_request_does_not_generate_near_tree_geometry() {
+        let variant_seed = 42;
+        let branches = procedural_tree_skeleton(variant_seed, 0.0);
+        let leaves = procedural_oak_leaves(variant_seed, &branches, 0.0);
+        let mut cached = CachedTreePresentation {
+            variant_seed,
+            species: TreePresentationSpecies::EnglishOak,
+            species_name: TreePresentationSpecies::EnglishOak.name(),
+            branches,
+            leaves,
+            trunk_mesh: None,
+            cluster_layout: None,
+            clusters: None,
+            aggregate_branch_meshes: [None, None],
+            lod_cards: [None, None, None, None],
+            bark_material: Handle::default(),
+            leaf_material: Handle::default(),
+            bud_material: Handle::default(),
+        };
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<TacticalTreeImpostorMaterial>::default();
+        let mut images = Assets::<Image>::default();
+        let mut diagnostics = TreeAssetResidencyDiagnostics::default();
+        ensure_tree_assets_resident(
+            &mut cached,
+            1 << 5,
+            None,
+            &mut meshes,
+            &mut materials,
+            &mut images,
+            &mut diagnostics,
+        );
+        assert!(cached.lod_cards[3].is_some());
+        assert!(cached.lod_cards[..3].iter().all(Option::is_none));
+        assert!(cached.trunk_mesh.is_none());
+        assert!(cached.clusters.is_none());
+        assert_eq!(diagnostics.trunk_vertices, 0);
+        assert_eq!(diagnostics.cambered_leaf_vertices, 0);
+        assert_eq!(diagnostics.leaf_card_vertices, 0);
+        assert!(diagnostics.impostor_vertices > 0);
+        assert!(diagnostics.impostor_texture_bytes > 0);
     }
 
     #[test]

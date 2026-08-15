@@ -77,7 +77,9 @@ pub(in crate::presentation) struct GroundFoliagePresentationCache {
     forest_floor_leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
     dry_leaf_meshes: Option<Vec<Handle<Mesh>>>,
     twig_meshes: Option<Vec<Handle<Mesh>>>,
+    woodland_plant_meshes: Option<Vec<Handle<Mesh>>>,
     twig_material: Option<Handle<TacticalFoliageMaterial>>,
+    woodland_plant_material: Option<Handle<TacticalFoliageMaterial>>,
 }
 
 pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> TacticalFoliageMaterial {
@@ -278,6 +280,14 @@ pub(super) fn spawn_ground_foliage(
                 .collect::<Vec<_>>()
         })
         .clone();
+    let woodland_plant_meshes = ground_foliage_cache
+        .woodland_plant_meshes
+        .get_or_insert_with(|| {
+            (0..litter::WOODLAND_PLANT_MESH_VARIANTS)
+                .map(|variant| meshes.add(litter::woodland_plant_patch_mesh(variant)))
+                .collect::<Vec<_>>()
+        })
+        .clone();
     let dry_leaf_material = ground_foliage_cache
         .forest_floor_leaves
         .get_or_insert_with(|| leaf_materials.add(forest_floor_leaf_material(procedural_assets)))
@@ -285,6 +295,10 @@ pub(super) fn spawn_ground_foliage(
     let twig_material = ground_foliage_cache
         .twig_material
         .get_or_insert_with(|| materials.add(foliage_material(0.0, false)))
+        .clone();
+    let woodland_plant_material = ground_foliage_cache
+        .woodland_plant_material
+        .get_or_insert_with(|| materials.add(foliage_material(0.035, false)))
         .clone();
     let base_seed = stable_text_seed(&environment.scene_digest) ^ stable_text_seed(&scene_id.0);
     // Grass uses a macro patch whose internal blade spacing matches the old
@@ -335,6 +349,8 @@ pub(super) fn spawn_ground_foliage(
             twig_meshes,
             dry_leaf_material,
             twig_material,
+            woodland_plant_meshes,
+            woodland_plant_material,
         },
     );
 

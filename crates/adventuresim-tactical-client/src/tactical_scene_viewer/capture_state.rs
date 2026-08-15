@@ -95,6 +95,7 @@ pub(super) struct CaptureState {
     pub(super) lighting_luminance_samples: Vec<f32>,
     pub(super) captures: Vec<CaptureRecord>,
     pub(super) recursive_lods_observed: BTreeSet<(u8, u8)>,
+    pub(super) recursive_aggregate_lods_observed: BTreeSet<u8>,
 }
 
 pub(super) fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {

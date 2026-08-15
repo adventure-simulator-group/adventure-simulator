@@ -116,7 +116,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     // Short juvenile pockets expose ground between mature clumps. At an
     // authoritative dirt/grass boundary, surviving blades also grow shorter
     // rather than ending in a same-height density wall.
-    let edge_growth = mix(0.58, 1.0, smoothstep(0.08, 0.9, ground_coverage));
+    let edge_growth = mix(0.26, 1.0, smoothstep(0.04, 0.92, ground_coverage));
     let blade_vigor = mix(juvenile_vigor, mature_vigor, meadow_zone)
         * edge_growth
         * mix(1.0, 0.94, mature_age);

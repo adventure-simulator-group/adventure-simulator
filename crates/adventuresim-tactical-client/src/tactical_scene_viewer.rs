@@ -49,9 +49,9 @@ use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundScatterLayer, LooseStonePebblePatch, PresentedTree,
     ProceduralEnvironmentAssets, ProceduralRockVisual, TacticalGraphicsSettings,
     TacticalPresentationPlugin, TacticalTreeLeafCardMaterial, TerrainMaterialPresentation,
-    TreeImpostorProvenance, TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride,
-    TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
-    oak_leaf_material, oak_review_terminal_specimen,
+    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
+    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, VistaTerrain, VistaTreePresentation,
+    WeatherParticle, oak_bark_material, oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -503,6 +503,7 @@ struct ScenePerformanceBenchmarkResult {
     budget_utilization_percent: f64,
     measured_60_fps_passes: Option<bool>,
     visible_tree_entities: BTreeMap<String, usize>,
+    tree_asset_residency: TreeAssetResidencyDiagnostics,
     render_diagnostics: BTreeMap<String, BenchmarkMetricSummary>,
 }
 
@@ -1557,6 +1558,7 @@ fn setup_scene(
         lighting_luminance_samples: Vec::new(),
         captures: Vec::new(),
         recursive_lods_observed: BTreeSet::new(),
+        recursive_aggregate_lods_observed: BTreeSet::new(),
     });
     if let Some(sample_frames) = leaf_benchmark_frames {
         commands.insert_resource(LeafBenchmarkState::new(sample_frames));
@@ -1782,6 +1784,7 @@ fn benchmark_scene_performance(
     capture: Option<Res<CaptureState>>,
     time: Res<Time<Real>>,
     diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
+    tree_asset_residency: Res<TreeAssetResidencyDiagnostics>,
     mut commands: Commands,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
@@ -2028,6 +2031,7 @@ fn benchmark_scene_performance(
         measured_60_fps_passes: gpu_elapsed_p95_ms
             .map(|gpu_ms| p95_ms.max(gpu_ms) <= PERFORMANCE_FRAME_BUDGET_MS),
         visible_tree_entities,
+        tree_asset_residency: tree_asset_residency.clone(),
         render_diagnostics,
     });
     println!(
@@ -2296,6 +2300,25 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
             result.frames_over_budget,
             result.frames_over_budget_percent,
             result.mean_ms / baseline,
+        ));
+    }
+    if let Some(natural) = report.results.first() {
+        let assets = &natural.tree_asset_residency;
+        markdown.push_str(&format!(
+            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices; {} impostor vertices; {:.2} MiB of impostor pixels; {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
+            assets.variants,
+            assets.source_branches,
+            assets.source_leaves,
+            assets.trunk_vertices,
+            assets.detailed_branch_vertices,
+            assets.cambered_leaf_vertices,
+            assets.leaf_card_vertices,
+            assets.bud_vertices,
+            assets.aggregate_branch_vertices,
+            assets.impostor_vertices,
+            assets.impostor_texture_bytes as f64 / (1024.0 * 1024.0),
+            assets.generation_milliseconds,
+            assets.generated_lod_mask,
         ));
     }
     markdown.push_str("\n_An `n/a` gate means GPU timestamps were unavailable, so wall timing alone cannot certify the target. Render diagnostics and pipeline statistics are retained in the JSON report. Isolation modes hide only the named production entity family; camera, terrain, lighting, grass, weather, and all other work are held constant._\n");
@@ -2593,6 +2616,15 @@ fn capture_views(
                 })
                 .map(|(lod, cluster, _, _, _)| (cluster.primary_group, lod.0)),
         );
+        // LOD1 and coarser collapse many biological groups into one mesh to
+        // reduce draw calls. Record those visible aggregate tiers separately
+        // instead of pretending they still have per-cluster entity identity.
+        state.recursive_aggregate_lods_observed.extend(
+            tree_lods
+                .iter()
+                .filter(|(lod, visibility, _)| lod.0 > 0 && visibility.get())
+                .map(|(lod, _, _)| lod.0),
+        );
     }
 
     // Bevy's asynchronous window readback can still contain the render world
@@ -2774,7 +2806,11 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
-                    tree + Vec3::new(33.0, 5.5, 33.0),
+                    // Exercise the current detailed-cluster to leafed-twig
+                    // handoff. The older 47 m plate predated the tightened
+                    // production LOD ranges and could only see whole-crown
+                    // aggregates, so it could never prove recursive mixing.
+                    tree + Vec3::new(8.0, 4.5, 8.0),
                     tree + Vec3::new(0.0, 4.5, 0.0),
                     Vec3::Y,
                 )
@@ -2978,13 +3014,13 @@ fn build_manifest(
             .map(|(group, _)| group)
             .collect::<BTreeSet<_>>()
             .len(),
-        mixed_lods_observed: state
-            .recursive_lods_observed
+        visible_aggregate_lods: state
+            .recursive_aggregate_lods_observed
             .iter()
-            .map(|(_, lod)| lod)
-            .collect::<BTreeSet<_>>()
-            .len()
-            >= 2,
+            .copied()
+            .collect(),
+        mixed_lods_observed: !state.recursive_lods_observed.is_empty()
+            && !state.recursive_aggregate_lods_observed.is_empty(),
         visible_group_lods,
     };
     let mut grass_clumps = 0;

@@ -95,6 +95,7 @@ pub(super) struct TreeBakeCardSummary {
 pub(super) struct RecursiveTreeLodSummary {
     pub(super) primary_cluster_count: usize,
     pub(super) visible_group_lods: Vec<[u8; 2]>,
+    pub(super) visible_aggregate_lods: Vec<u8>,
     pub(super) mixed_lods_observed: bool,
 }
 

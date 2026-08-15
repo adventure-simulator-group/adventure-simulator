@@ -59,11 +59,22 @@ primary scaffold clusters each carry their own individual leaves, terminal
 buds, progressively simplified wood, leafed-twig cards, small-branch cards,
 and crown cards. Projected screen size is evaluated from the active camera's
 field of view and viewport height against each cluster's own bounds, so the far
-side of a nearby crown may collapse before the near side. Matched dither bands
-cross-fade adjacent representations without a whole-tree topology pop; only the
-final distant billboard is selected for the entire tree. Generated variants
+side of a nearby crown may collapse before the near side. Dither bands
+cross-fade adjacent representations without a whole-tree topology pop. The
+cheap aggregate tiers deliberately overlap their full-strength intervals: the
+incoming silhouette fades in before the outgoing, non-identical silhouette
+fades away, preventing transition holes. Only the final distant billboard is
+selected for the entire tree. Generated variants
 reuse cached mesh and material handles, allowing Bevy's WebGPU renderer to
-instance repeated trees automatically. Leaf wind is evaluated in the vertex
+instance repeated trees automatically. The cache initially retains only the
+deterministic branch/leaf recipe output and shared materials. Trunks, detailed
+scaffold meshes, the cambered and flat leaf representations, aggregate crown
+wood, and each baked atlas are generated only when the camera's conservative
+LOD-residency mask first requests them. The two individual-leaf meshes coexist
+only in a widened handoff band; a camera wholly inside either leaf tier does
+not construct the other representation merely because it belongs to the same
+tree. This is demand generation rather than eviction: once requested, a
+variant's handles remain cached for reuse during the scene. Leaf wind is evaluated in the vertex
 shader with fixed petiole roots, spatially varied gusts, and high-frequency tip
 flutter; no per-frame CPU deformation or non-WebGPU feature is required. The
 open-grown reference LOD0 is capped by test at 3.6 million triangles, versus
@@ -141,9 +152,12 @@ different geometry rather than blades merely
 discarded in the vertex shader, following the high/low geometry and far-field
 impostor division described in Eric Wohllaib's GDC 2021
 [*Procedural Grass in Ghost of Tsushima*](https://gdcvault.com/play/1027033/)
-talk. They fade by 140 metres; beneath and beyond them, tall-grass terrain uses
-an optical-average molded-plastic pigment derived from the same environmental
-grass palette. It compensates for the species/cohort darkening, blade
+talk. They fade by 140 metres. Beneath every geometric tier, the terrain keeps
+the local solid soil, litter, mud, cultivation, or stone substrate instead of
+painting grass green onto the ground; the blades alone provide the near-field
+sward color. Only while the final vista blades fade from 124 to 140 metres does
+the terrain introduce an optical-average molded-plastic pigment derived from
+the same environmental grass palette. It compensates for the species/cohort darkening, blade
 occlusion, and thin-foliage lighting that act after the blade input color.
 This solid terminal LOD carries the field without sub-pixel geometry
 or exposing a differently colored silhouette when the last blades disappear. Regional vista
@@ -210,7 +224,15 @@ without making individual cards look heavily lit. A procedural terrain
 material selects hard-bounded forest floor, dry ground, mud, cultivation,
 stone, water, and snow albedo regions. Both playable and vista ground omit
 albedo textures, normal maps, and synthesized micro-normal detail; lighting
-uses terrain-geometry normals only. Tree sampling follows canopy
+uses terrain-geometry normals only. Tree-canopy ground is presented as a
+deterministic ecological sequence rather than a binary grass cutout. A
+high-resolution signed distance field derived from authoritative leaf-litter
+cover selects discrete dark-loam, litter, shaded-soil, and open-soil colors,
+and grades grass density and height across a 4.8-metre exterior band. Sparse
+fallen leaves, twigs, and multi-segment shade-plant rosettes extend into the
+outer 3.2 metres while the deep core stays mostly bare. These remain solid
+molded-material regions and procedural meshes rather than ground texture
+detail. Tree sampling follows canopy
 coverage; rock sampling uses an independent deterministic roll scaled by hilly
 coverage, so the two features do not suppress one another. Weather affects ground
 wetness/snow tint, bounded rain or snow particles, wind drift, sunlight

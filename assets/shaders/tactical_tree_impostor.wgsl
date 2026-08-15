@@ -105,11 +105,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // The atlas already contains the source tree's small-scale normal and
     // occlusion variation. Apply only a broad hemispherical cosine here;
     // never add the old 78% direct-light floor on top of the baked response.
-    let normal_light = clamp(
-        dot(normalize(in.world_normal), light_direction) * 0.5 + 0.5,
-        0.0,
-        1.0,
-    );
+    // Aggregate cards are intentionally two-sided. Their authored normal
+    // describes the card plane, not a literal one-sided leaf surface, so use
+    // symmetric wrap lighting and retain enough diffuse fill for an oblique
+    // card not to turn an otherwise healthy crown into a black cutout.
+    let card_light = abs(dot(normalize(in.world_normal), light_direction));
+    let normal_light = 0.25 + card_light * 0.75;
     let ambient_irradiance = tree.ambient.rgb * tree.ambient.w;
     let direct_irradiance = normal_light
         * tree.lighting.w
