@@ -278,6 +278,308 @@ The current tactical stack uses Bevy Replicon over Aeronet WebSockets:
    compatible private strategic outcome, and commits durable consequences
    idempotently.
 
+Tactical terrain authority enters the short-lived server through the bounded,
+versioned `TacticalSceneInput` document. It contains a deterministic seed,
+template key, imported-package or named-fixture provenance, geographic/time
+origin, complete strategic weather snapshot, dense playable samples, and
+progressively coarser presentation-only vista samples. The server validates the
+document before opening any listener, deterministically upsamples coarse source
+grids to at most two-metre spacing, adds bounded seeded microrelief, builds its
+collider from those row-major heights, replicates the heightfield data, and logs
+the SHA-256 scene digest and generation version. Each vista bundle also carries
+the authoritative playable half-extents. Clients split coarse boundary cells at
+that exact rectangle, so presentation-only vista triangles neither cover the
+collider terrain nor leave a magic-number gap when source spacing exceeds the
+playable area's size. The first vista ring also samples the replicated playable
+heightfield at its inner edge, then blends back to regional elevation across one
+coarse cell; the render boundary therefore stays watertight even when those two
+height sources disagree. Each client builds the playable render mesh from that
+replicated heightfield; the server never extracts or transmits render geometry.
+Gameplay-relevant generated trees and rocks are
+static server colliders with compact replicated recipes and transforms. A rock
+recipe contains a deterministic seed, broad archetype, lithology, dimensions,
+and conservative collision radius. Clients run bounded uniform-grid Surface
+Nets to derive each rock mesh, while the server creates only the recipe and
+sphere proxy. The same client-only mesher supplies shared non-colliding
+loose-stone variants. Trees likewise derive a seeded four-order skeleton on the
+client without receiving or simulating the collider.
+
+The tactical presentation plugin explicitly owns which `SceneEnvironment` drives
+scene-wide presentation policy for lighting, fog, and weather particles. Under
+the one-playable-scene contract, the newest live scene entity is active;
+replacing its immutable environment refreshes the selection, and removing it
+deterministically falls back to the next live scene. The active environment
+produces one shared celestial-lighting snapshot containing Sun/Moon directions
+and altitudes, lunar illumination, exposure, and ambient candidates. Sky
+lights/discs, tree impostors, and ambient policy consume that same snapshot
+instead of depending on ECS query iteration order. Atmosphere-IBL allocation
+grace remains a sky-local presentation concern. Terrain materials, Ground
+scatter, weather, colliders, and recipes continue to read their own entity-local
+authoritative scene components.
+
+The production tactical preset uses directional shadow maps, bloom, four-sample
+MSAA, atmosphere IBL, material occlusion, baked tree-card depth, terrain
+normals, and direct celestial lighting for the scene's primary depth cues.
+Controlled benchmarks may explicitly disable shadows or post-processing to
+isolate their cost. Effects unsupported by WebGPU, including Bevy 0.19 SSAO, are
+excluded rather than retained as native-only paths. Review viewers can still
+enable compatible individual lighting costs explicitly for controlled
+diagnostics.
+
+The immutable world-data canopy coverage continuously controls tree architecture
+without inspecting neighboring entities: low coverage produces a short clear
+bole and broad open-grown crown, while dense canopy produces a taller clear bole
+and narrower competitive crown, so tree generation remains deterministic and
+parallel. Tree presentation cross-fades from branch tubes and individual leaf
+cards through twig, small-branch, and crown-branch impostors to a single
+camera-facing whole-tree billboard. Impostor bounds come from the actual
+descendant branch groups rather than an unrelated generic crown, preserving the
+generated tree's silhouette across levels. Renderable trunk geometry is a
+sibling of the aggregate levels beneath a non-rendering obstacle root, so
+disabling the trunk cannot hide its billboard through inherited visibility. LOD0
+retains per-scaffold bounds so nearby forest aisles cull detailed leaves
+conservatively. LOD1 through LOD3 combine each tree's matching cards and wood
+into one or two aggregate entities, avoiding seven duplicate draw/extraction
+boundaries once scaffold detail is no longer readable. Each non-rendering tree
+root streams only the current LOD and its cross-fade neighbor into the ECS;
+inactive levels remain in the shared presentation cache instead of imposing
+extraction and visibility work on every frame. The projected handoffs are
+0.65--1 metre for cambered-to-flat leaves, then 1--1.5, 1.5--2.5, 2.5--4, and
+50--60 metres through the whole-tree billboard, scaled by focal length and
+cluster radius. The deliberately wider final interval keeps the screen-door
+dissolve outside the near forest while retaining the inexpensive crown cards. A
+measured dense-forest depth-prepass policy was removed after streamed LODs made
+its extra pass slower than ordinary rendering. These changes are
+presentation-only and leave collision, tree recipes, and vista-tree impostors
+unchanged. The camera-facing far card bypasses only CPU frustum culling because
+its final orientation is produced in the vertex shader from stale source-card
+bounds; the normal projected-size visibility range still culls it by distance.
+The eight-view whole-tree atlas selects tiles by each bake card's outward
+normal, not its orthographic right-axis angle. A bounded bake-only exposure and
+card width calibration keep the single-card crown close to the preceding
+aggregate crown without adding runtime texture samples, geometry, or draws. The
+software bake treats leaf vertex color as semantic shade, self-shadow selection,
+and ambient visibility rather than RGB pigment. It uses the generated oak
+palette's representative pigment and the same unresolved-canopy visibility
+response as live foliage, avoiding a saturated color change across tree LODs.
+The custom impostor fragment path executes Bevy's visibility-range dither, so
+the existing overlapping projected-distance margins cross-fade rather than
+swapping the two representations abruptly. Those visual levels do not change the
+server-owned trunk collider. The near-tree skeleton also grows a bounded
+five-to-ten-root visual flare from the same tree seed. Unequal angular gaps,
+reach, radius, and burial break up radial repetition; two or three broader
+buttresses follow the main scaffold-load azimuths, and at most two roots add a
+short lateral fork. This presentation detail remains capped at 22 segments and
+does not expand the server's cylindrical trunk collider. The lower trunk and
+proximal roots are converted into a bounded smooth-union capsule field and
+contoured as one watertight near-LOD flare; ordinary woody runs remain cheap
+generalized-cylinder sweeps. The same flare is retained across the pre-impostor
+wood LODs while successive upper branch orders collapse. Oak and hazel branch
+recipes also cap each child base at 80% of its local parent-axis radius. The
+existing bounded basal ring therefore cannot become wider than its trunk or
+parent limb. Near woody meshes use one solid molded-brown dielectric material
+with uniform roughness. Trunk/root relief comes from the unified geometry and
+scene lighting, so no UV-dependent albedo, normal, roughness, or AO channel can
+reveal the branch-influence handoff across the implicit flare. Ordinary sweep
+UVs still duplicate the wrap seam and parallel-transport their tangent frame for
+future branch-space channels. Near oak wood instead evaluates deterministic
+longitudinal fissures directly in branch space: irregular streamlines wander
+along each woody axis, a narrow inset groove is bordered by two raised lips, and
+smooth proximity weights blend the relief wherever root capsules join the trunk.
+The periodic angular calculation has no texture wrap, and only the extracted
+surface is displaced, avoiding microdetail evaluation throughout the bounded
+flare volume. Species bark recipes control fissure width/depth, lip and plate
+height, minimum mature radius, branch-order attenuation, and root-profile
+lobing. Oak therefore develops raised, transversely broken plates between
+asymmetrical crack lips on the old trunk and major limbs while young shoots fade
+toward smooth wood; hazel uses the same mesher with a restrained smooth-bark
+preset. Root-profile lobes align with generated buttress directions and fade
+with height. Oak architecture separately exposes an `OakGnarlingParameters`
+growth-history recipe. Its normalized controls independently cover root spread,
+meander, exposure, and forking; trunk lean, sweep, twist, crooks, and taper
+irregularity; knot frequency and size, burl swelling; scaffold droop, sweep, and
+contortion; and crown asymmetry. Zero preserves the established open-grown
+English oak. Authored wind-shaped, ancient, and extreme presets exercise
+increasingly gnarled forms while retaining deterministic seeds, connected branch
+axes, bounded presentation geometry, solid bark albedo, and the ordinary
+tactical collider. Tree instantiation derives additional growth stress only from
+stable site signals: canopy shelter, hill exposure, elevation, wetland coverage,
+cultivation, geographic cell, and the individual tree seed. Exposed trees share
+a deterministic prevailing-stress azimuth, with small individual bias, so
+wind-shaped trunks and crowns lean coherently. The current weather snapshot is
+deliberately excluded: a six-hour gust or rain event may animate foliage but
+cannot rewrite decades of woody growth. Until imported climatology carries
+historical wind roses and soil depth, hill/open/elevation values remain bounded
+exposure proxies rather than claims of measured local wind history. Living oak
+and hazel cards are presets over one structural leaf generator. Binary
+silhouettes and parameterized blade, petiole, midrib, lobe/tooth, and vein
+fields produce discrete front/back albedo, detailed normal and AO, and
+low-detail roughness while sharing a crown-size Beer--Lambert response for only
+the self-occlusion unresolved by explicit cards and screen-space AO. An
+empirically bounded 0.11-per-metre coefficient yields about 48% mature-oak and
+16% hazel unresolved occlusion under the production atmosphere IBL. Oak diffuse
+transmission is 0.40 versus hazel's 0.46, preserving the smaller, thinner
+crown's greater transmission. The custom material explicitly enables Bevy's
+diffuse-transmission lighting path so this energy is added on the back side
+rather than merely removed from reflected diffuse. This does not change leaf
+topology, alpha coverage, entity count, draw count, exposure, or global
+lighting. Non-colliding grass and understory use automatically instanced shared
+meshes, layered shader wind, and root-to-tip shading. Grass cross-fades from a
+9,216-blade, fifteen-vertex near-field macro patch to a stable 1,600-blade,
+seven-vertex subset at distance; rejected blades are absent from the far mesh
+rather than collapsed after vertex shading. The 3.2-metre patch spacing cuts
+grass render entities by roughly an order of magnitude while retaining the
+original macro-patch footprint at four times the authored blade density near the
+player and camera. The distant mesh retains the earlier density because
+individual blades are subpixel there. The 4x near mesh cross-fades to the
+original far topology over 18--26 metres rather than paying four times the
+vertex cost throughout the former 34--44 metre high-detail radius. A
+deterministic scalar mask derived from the same authoritative ground-cover
+contour as the terrain rejects blades on dirt and leaf litter and progressively
+thins the grass-side boundary. Tree crowns guarantee a compact litter core at
+the trunk, then use a deterministic radially tapered litter mosaic beneath the
+outer crown. Overlapping crowns therefore accumulate a closed forest floor while
+sparse woodland keeps dappled grass instead of stamping one grass-free disc per
+tree. Boundary macro patches remain present, while patches fully inside
+non-grass cover are omitted. Near and far LODs use the same stable per-blade
+thresholds, so the organic edge does not change at the cross-fade. The
+visibility-range lookup uses each blade's world-space root and the foliage
+fragment stage applies the complementary dither, preventing a whole macro patch
+from changing as a square. At the playable edge, one continuous mask preserves
+authoritative cover then blends for twelve metres into regional vista coverage;
+map bounds are not treated as non-grass and exterior coverage is not quantized
+per patch. Macro patches remain unit-scale and nearly gridded, with boundary
+blade rows constrained to wander outward to mitigate square seams on near-flat
+and ordinary sloped terrain. This is a continuity mitigation rather than a
+guarantee across sharp terrain-normal discontinuities. Within the unchanged
+topology, deterministic mixed-age height, independent width, clumping,
+three-class pigment, lean, and curvature variation avoids a repeated
+vertical-curtain silhouette. A shared world-space meadow field keeps the full
+authored density within seven metres, then introduces short juvenile pockets and
+irregular occupancy before the 18--26 metre cross-fade. The authoritative
+grass-side mask uses a broader nonlinear feather, and surviving boundary blades
+shorten with coverage, so dirt and leaf-litter transitions do not terminate as a
+same-height wall. This composition also derives a stable age cohort from the
+existing per-blade LOD threshold: a bounded minority of mature blades develops
+one hard-edged, desaturated straw-tip region while juvenile cohorts retain one
+of three green pigments. Root shading and rib definition are occlusion responses
+rather than albedo gradients. Near and far LODs therefore preserve the same age
+identity without another vertex attribute, texture read, transcendental
+evaluation, mesh, entity, material, or draw. Beneath and beyond the geometric
+range, tall-grass terrain uses an optical-average solid albedo derived from the
+same environment pigment as the blades. The compensation accounts for
+categorical blade darkening, occlusion, and thin-foliage lighting; copying the
+brighter pre-lighting pigment to upward-facing ground would retain a visible
+boundary. The ground therefore acts as the terminal sward LOD. Ordinary tactical
+gameplay uses WebGPU-compatible fixed-function four-sample MSAA for thin grass,
+branch, and character silhouettes. SSAO is excluded from the tactical renderer
+because Bevy 0.19 does not support its SSAO implementation on WebGPU. Bevy's
+standard mesh path supplies WebGPU-compatible GPU preprocessing, culling, and
+indirect batches when the adapter supports them, with its normal fallback on
+more limited browser devices. Forest-floor scatter retains its authoritative
+leaf-litter placement and patch composition. Nearby patches are merged
+deterministically into 64-metre render batches, collapsing tens of thousands of
+dry-leaf and twig entities while preserving the four leaf variants, three twig
+variants, two materials, and authored transforms. Detailed leaves now end at 35
+metres, while subpixel twigs end at 24 metres: the current visibility
+architecture cannot substitute a cheaper mesh without an extra entity/draw, and
+rendering alpha-tested cambered plates to 72 metres was not worth that overdraw.
+Each 24-leaf shared patch uses deterministic nine-vertex cambered, gently
+tilted, curled oak plates arranged into four loose, shallow layers plus
+scattered singles;
+  every plate is seated by its lowest vertex slightly below the local patch
+  plane and has a bounded lift so it cannot become an upright card. A dry-oak
+  preset supplies bounded tan/brown blade and vein palettes. These plates
+  retain the
+leaf plates with the production oak morphology, front/back albedo, normal and AO
+maps, and a dedicated dry PBR response with zero canopy AO, low transmission,
+higher roughness, and lower thickness; fallen-leaf wind is disabled. Each
+nine-twig shared patch uses bowed four-ring, five-to-six-sided segments with
+buried contact points, near-zero tapered tips, and at most two deterministic
+short forks. Litter entities remain `NotShadowCaster`, and the geometry change
+adds no entity, material slot, draw call, gameplay collider, or placement rule.
+The local player transform drives nearby blade bending on the client only; this
+cosmetic interaction is neither replicated nor included in collision or tactical
+authority. The immutable environment and weather snapshots control the
+procedural ground material, precipitation particles, fog distance, wind drift,
+and sunlight. The Earth-atmosphere path keeps top-of-atmosphere solar source
+energy available after the Sun crosses the geometric horizon. Bevy's atmospheric
+transmittance and visible-disc calculation then suppress direct surface
+illumination while retaining directional civil and nautical twilight scattering.
+The no-atmosphere fallback retains an explicit zero-below-horizon direct-light
+curve because it has no planetary occlusion. Exposure transitions continuously
+from nautical twilight to the moon-conditioned night target between -12 and -18
+degrees solar altitude; the physical 0.533-degree solar disc, ACES tonemapping,
+natural bloom, and bounded lookup-table atmosphere stay unchanged. The filtered
+64-pixel atmosphere environment map is the full preset's canonical indirect PBR
+source. `GlobalAmbientLight` provides the complete altitude-aware fallback until
+that map is allocated and a bounded four-frame handoff grace elapses, or
+whenever a preset disables it; afterward only the authored moonless/moonlit
+visibility floor and a bounded 10,500-cd/m2 unresolved multi-bounce term remain.
+Bevy therefore no longer adds the full 30,000-cd/m2 isotropic daylight
+approximation on top of directional atmosphere IBL, while shaded bark and
+foliage retain readable outdoor bounce light. Large vista grids are deliberately
+not ordinary replicated ECS components. The server sends each accepted client
+one immutable, ordered `SceneVistaBundle`; the client builds seam-sharing LOD
+rings split into independently frustum-culled mesh chunks without inner-area
+overdraw, colliders, or shadows. Each finer ring geomorphs its outermost sample
+row onto the next coarser height surface, with a one-fine-cell inward blend;
+this removes cracks and T-junction wedges without adding skirts, overlap, or
+gameplay geometry. Vista vertices reuse the ordinary ground palette in linear
+color space, preserving regional forest, wetland, cultivation, and water
+variation instead of assigning one average color per LOD; the same boundary
+interval morphs both height and reflectance. This adds one vertex attribute but
+no material, texture sample, draw call, collider, or replicated state per
+region. Synthetic review fixtures normalize each vista LOD to the playable
+terrain's origin height, preventing coarse one-sided rings from becoming an
+invisible ceiling above the player. Production-composition review cameras keep
+these vistas visible rather than reserving them for an isolated horizon plate.
+The dispatcher samples the final continental terrain pack at the request's
+authoritative case-site coordinates and character minute, materializes the
+validated document atomically, and passes only its path to the child. A
+tactical-only workflow may instead supply the identical format with
+`--scene-input`, so tactical processes never load the continental pack.
+Standalone tactical development defaults to the committed `dense-woodland` input
+when no path is supplied; the server has no alternate noise-terrain fallback.
+
+Collider-bearing rocks remain compact authoritative `RockRecipe` values. The
+client's bounded 18-cubed Surface Nets field now applies archetype-specific
+faceting, cleavage, chipping, and asymmetric ground-contact flattening while
+remaining inside the unchanged conservative spherical proxy. A shared
+lithology-parameterized dielectric material uses one parameterized rock
+surface. Its two-region albedo and roughness preserve the molded-material
+style while detailed OpenGL-normal and AO channels share a
+0.5-tile-per-metre triplanar projection, avoiding UV seams while preserving
+physical scale across rock recipes. It adds no emissive response, collider
+detail, entity, draw call, displacement, or authoritative silhouette change.
+
+Playable and vista ground use solid molded-material palette regions with hard
+boundaries for substrate, cover, exposed stone, water, and snow. Ground has no
+sampled albedo texture, normal map, or synthesized micro-normal detail; its
+only surface normal comes from terrain geometry. The retained ground map is a
+discrete gameplay-data mask that selects those regions, not visual texture
+detail. Weather may still change the uniform wetness, roughness, and snow
+response without modifying the authoritative heightfield.
+
+The Moon is the deliberate procedural exception: its LRO reference map keeps
+real crater geography, while the Moon shader quantizes reflectance into four
+hard albedo bands before applying the physical phase response.
+
+Night exposure preserves the physical 0.25-lux full-moon directional light
+and a distinct dark moonless floor. A risen illuminated Moon lowers the shared
+camera EV100 from -0.5 toward -1.25, modeling visual adaptation without any
+per-asset emission or brightness multipliers; a below-horizon Moon leaves
+exposure unchanged.
+
+The Surface Nets implementation is deliberately private to the tactical client
+and is the first bounded volumetric-meshing primitive, not a cave system. Future
+overhang, cliff, or cave patches must replicate a compact deterministic field
+recipe rather than a canonical render mesh. Their heightfield collar, removed
+terrain triangles, server collision representation, ground-query dispatch, and
+traversability contract remain unresolved and are not represented by the
+current scene schema. In particular, adding those patches must not move mesh
+extraction into the dispatcher or tactical server.
+
 A running tactical client receives a private, server-generated 256-bit
 reconnect capability after enrollment. The client retains it in process across
 WebSocket reconnects on both native and wasm, and presents it with the character
@@ -311,28 +613,27 @@ no pathfinding yet.
 
 The client sends windup start and completion through one mapped ordered melee
 protocol. The tactical server validates melee allegiance, state, range, a fresh
-observed windup and cooldown, then authoritative physics line of sight before resolving an
-attack. Finite client-reported precision remains trusted because reconstructing
-animation and secondary physics is intentionally outside the headless server.
-The ordered wire messages are payload enums rather than phase-tagged field
-bags: starts cannot carry completion data, melee completions always name a
-target, and ranged completion distinguishes a miss from a targeted hit. Raw
-finite precision becomes `ReportedPrecision` without clamping or geometric
-reconstruction, and duration-backed authority types gate mutation.
+observed windup and cooldown, then authoritative physics line of sight before
+resolving an attack. Finite client-reported precision remains trusted because
+reconstructing animation and secondary physics is intentionally outside the
+headless server. The ordered wire messages are payload enums rather than
+phase-tagged field bags: starts cannot carry completion data, melee completions
+always name a target, and ranged completion distinguishes a miss from a targeted
+hit. Raw finite precision becomes `ReportedPrecision` without clamping or
+geometric reconstruction, and duration-backed authority types gate mutation.
 Accepted results mutate replicated limb health plus transient blood loss and
 imbalance. Shared autoresolve rules derive pain, blood-loss, and imbalance
 incapacitation and recover balance over time. Tactical enrollment projects
 authoritative body weight, current/maximum blood, and strategic condition
-contributions. It preserves the source values for fear, fatigue, hunger,
-thirst, and temperature so the client can present the same segmented condition
-language as the strategic UI; the same shared derivation as autoresolve
-excludes pain and blood from starting incapacitation before recomputing them
-live. Actors currently
-over the threshold stop moving, attacking, defending, and participating in
-offensive AI target selection; imbalance-only incapacitation can recover.
-The numeric incapacitation value is the sole stored readiness authority;
-active, staggered, and incapacitated status are mechanically derived from it
-rather than synchronized through a second boolean or ECS marker.
+contributions. It preserves the source values for fear, fatigue, hunger, thirst,
+and temperature so the client can present the same segmented condition language
+as the strategic UI; the same shared derivation as autoresolve excludes pain and
+blood from starting incapacitation before recomputing them live. Actors
+currently over the threshold stop moving, attacking, defending, and
+participating in offensive AI target selection; imbalance-only incapacitation
+can recover. The numeric incapacitation value is the sole stored readiness
+authority; active, staggered, and incapacitated status are mechanically derived
+from it rather than synchronized through a second boolean or ECS marker.
 
 These per-tick effects remain in memory only. A mission enemy's first transition
 into incapacitation counts as its defeat; recovery and later incapacitation do
@@ -340,8 +641,8 @@ not count it again. Once all required enemies are defeated, the tactical server
 immediately reports `Defeated`. Once every loaded Party combatant is
 incapacitated, it immediately reports `Failed`; simultaneous defeat also fails
 deterministically. Strategic authority binds the expected living Party count
-into the request and active server records, and the trusted dispatcher passes
-it to the child. Resolution waits until every expected adventurer has loaded at
+into the request and active server records, and the trusted dispatcher passes it
+to the child. Resolution waits until every expected adventurer has loaded at
 least once, no player is still loading, and all required enemies have loaded.
 Enrollment is then sealed. Once enrollment has begun, an empty Party has a
 ten-second reconnection grace before `Failed`, including when every client
@@ -349,15 +650,15 @@ disconnects before the seal. A timeout-disabled development server where nobody
 ever joins remains available. Terminal submission retries a frozen result after
 synchronous errors no more than once per second, before reevaluating combat
 predicates. Queueing is not commitment: only an `end_tactical_server_then`
-callback confirming reducer acceptance latches the result and broadcasts the authoritative
-Victory/Defeat presentation event, keeps the transport alive for a bounded
-three-second display window, and then exits. The delay is strictly post-commit:
-it cannot defer strategic authority or create a second outcome. A configured
-timeout remains a bounded `Failed` fallback.
-Enrollment and terminal progress are private lifecycle enums. A resolution and
-its bounded receipt form one frozen value whose retry time, acknowledgement
-deadline, transport failure, committed presentation, and finished state exist
-only in their applicable variants.
+callback confirming reducer acceptance latches the result and broadcasts the
+authoritative Victory/Defeat presentation event, keeps the transport alive for a
+bounded three-second display window, and then exits. The delay is strictly
+post-commit: it cannot defer strategic authority or create a second outcome. A
+configured timeout remains a bounded `Failed` fallback. Enrollment and terminal
+progress are private lifecycle enums. A resolution and its bounded receipt form
+one frozen value whose retry time, acknowledgement deadline, transport failure,
+committed presentation, and finished state exist only in their applicable
+variants.
 
 The terminal call carries a bounded authenticated consequence receipt frozen
 with the resolution. It contains only Party character IDs, applied (clamped)

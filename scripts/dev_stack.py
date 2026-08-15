@@ -474,6 +474,12 @@ def worktree_fingerprint(root: Path = ROOT) -> str:
 
 
 def runtime_root() -> Path:
+    override = os.environ.get("ADVENTURESIM_RUNTIME_ROOT")
+    if override:
+        path = Path(override)
+        if not path.is_absolute():
+            raise ValueError("ADVENTURESIM_RUNTIME_ROOT must be absolute")
+        return path
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA")
         if not base:
@@ -803,6 +809,7 @@ def write_tactical_env_file(
     character_id: int,
     enemy_count: int,
     tactical_claim: str | None,
+    scene_input: str | None = None,
     profile: str | None = None,
     worktree_fingerprint_value: str | None = None,
     run_dir: Path | None = None,
@@ -823,6 +830,7 @@ def write_tactical_env_file(
         # launcher deliberately retains it only in memory.
         values.append(f"ADVENTURESIM_TACTICAL_CLAIM={tactical_claim}")
     optional = {
+        "TACTICAL_SCENE_INPUT": scene_input,
         "TACTICAL_PROFILE": profile,
         "TACTICAL_WORKTREE_FINGERPRINT": worktree_fingerprint_value,
         # python-dotenv treats backslashes as escapes even in unquoted values.
@@ -1163,9 +1171,10 @@ def run_profile(
     mode: ProfileMode = ProfileMode.STRATEGIC,
     verify_http: bool = False,
     mission_id: str = "mission:test-mission",
-    scene_key: str = "hills",
+    scene_key: str = "woodland",
     character_id: int = 0,
     enemy_count: int = 3,
+    scene_input: str | None = None,
 ) -> int:
     values = profile_values(name, base_port)
     state_root = runtime_root()
@@ -1240,6 +1249,7 @@ def run_profile(
                     mission_id=mission_id, scene_key=scene_key,
                     character_id=character_id, enemy_count=enemy_count,
                     tactical_claim=tactical_claim,
+                    scene_input=scene_input,
                 )
                 wrote_tactical_env = True
                 print("")
@@ -1419,6 +1429,7 @@ def tactical_session_config(
     character_id: int,
     enemy_count: int,
     session_id: str,
+    scene_input: str | None = None,
     graphics_preset: str = "default",
     present_mode: str = "auto-vsync",
     window_capture: str = "auto",
@@ -1440,6 +1451,7 @@ def tactical_session_config(
         "native_client": mode is not TacticalPlayMode.NETWORKING,
         "browser_client": False,
         "session_id": session_id,
+        "scene_input": scene_input,
         "graphics_preset": graphics_preset,
         "present_mode": present_mode,
         "window_capture": window_capture,
@@ -1970,6 +1982,7 @@ def tactical_play(
     window_capture: str = "auto",
     capture_source: str = "window",
     render_backend: str = "auto",
+    scene_input: str | None = None,
 ) -> int:
     launch_client = mode is not TacticalPlayMode.NETWORKING
     code = build_tactical_play(launch_client)
@@ -1987,7 +2000,8 @@ def tactical_play(
     character_id = 0
     enemy_count = 1
     config = tactical_session_config(
-        values, mode, mission_id, character_id, enemy_count, session_id, graphics_preset,
+        values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
+        graphics_preset,
         present_mode, window_capture, capture_source, render_backend,
     )
     session_file = run_dir / "tactical-session.json"
@@ -2044,7 +2058,7 @@ def tactical_play(
             result = run_checked([
                 "spacetime", "call", "--server", server_url, database,
                 "seed_standalone_tactical_mission", bootstrap_token,
-                str(character_id), mission_id, "hills", str(enemy_count), tactical_claim,
+                str(character_id), mission_id, "woodland", str(enemy_count), tactical_claim,
             ])
             if result.returncode:
                 write_console(result.stdout)
@@ -2054,10 +2068,11 @@ def tactical_play(
                 database=database,
                 port=int(values["tactical_port"]),
                 mission_id=mission_id,
-                scene_key="hills",
+                scene_key="woodland",
                 character_id=character_id,
                 enemy_count=enemy_count,
                 tactical_claim=None,
+                scene_input=scene_input,
                 profile=profile,
                 worktree_fingerprint_value=str(values["worktree_fingerprint"]),
                 run_dir=run_dir,
@@ -2081,13 +2096,19 @@ def tactical_play(
             combat_scale = tactical_combat_scale(mode)
             server_log = run_dir / "server.log"
             server_metadata = run_dir / "server.identity.json"
-            server_process = spawn_recorded([
+            server_command = [
                 str(server_executable), "--addr", f"0.0.0.0:{values['tactical_port']}",
-                "--mission-id", mission_id, "--scene-key", "hills",
+                "--mission-id", mission_id, "--scene-key", "woodland",
                 "--spacetimedb-url", server_url, "--spacetimedb-module", database,
                 "--expected-party-members", "1", "--required-enemy-kills", str(enemy_count),
                 "--enemy-combat-scale-bps", str(combat_scale), "--no-timeout",
-            ], server_metadata, server_log, server_config, environment=environment)
+            ]
+            if scene_input:
+                server_command.extend(["--scene-input", scene_input])
+            server_process = spawn_recorded(
+                server_command, server_metadata, server_log, server_config,
+                environment=environment,
+            )
             wait_for_tactical_server(
                 server_process, server_metadata, server_log, server_url, database,
                 mission_id, int(values["tactical_port"]),
@@ -2341,7 +2362,8 @@ def create_parser() -> argparse.ArgumentParser:
     runner = sub.add_parser("run-profile")
     runner.add_argument("--mode", choices=[m.value for m in ProfileMode], default=ProfileMode.STRATEGIC.value)
     runner.add_argument("--mission-id", default="mission:test-mission")
-    runner.add_argument("--scene-key", default="hills")
+    runner.add_argument("--scene-key", default="woodland")
+    runner.add_argument("--scene-input", default="assets/tactical-scenes/dense-woodland.json")
     runner.add_argument("--character-id", type=int, default=0)
     runner.add_argument("--enemy-count", type=int, default=3)
     runner.add_argument("name")
@@ -2364,7 +2386,7 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--graphics-preset",
         choices=(
-            "default", "no-shadows", "no-ssao", "no-bloom", "no-atmosphere",
+            "default", "no-shadows", "no-bloom", "no-atmosphere",
             "no-environment-light", "minimal"
         ),
         default="default",
@@ -2389,6 +2411,9 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--render-backend", choices=("auto", "vulkan", "dx12"), default="auto"
     )
+    tactical_play_parser.add_argument(
+        "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
+    )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
     return parser
@@ -2411,6 +2436,7 @@ def main() -> int:
                 args.name, args.base_port, mode=ProfileMode(args.mode),
                 mission_id=args.mission_id, scene_key=args.scene_key,
                 character_id=args.character_id, enemy_count=args.enemy_count,
+                scene_input=args.scene_input,
             )
         if args.command == "verify-profile":
             return run_profile(
@@ -2425,7 +2451,7 @@ def main() -> int:
             return tactical_play(
                 TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
                 args.presentation_trace, args.present_mode, args.window_capture,
-                args.capture_source, args.render_backend,
+                args.capture_source, args.render_backend, args.scene_input,
             )
         if args.command == "tactical-status":
             return tactical_status()

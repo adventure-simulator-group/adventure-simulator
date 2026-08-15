@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use bevy::time::Stopwatch;
 
 use crate::{
-    Args,
+    Args, SceneVistaBundleResource,
     bot::{MissionEnemy, OffensiveCombatAi},
     combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
     equipment::{
@@ -615,6 +615,7 @@ pub(crate) fn on_join_request(
     mut action_sequences: ResMut<LastEquipmentSequence>,
     conn: Res<SpacetimeDb>,
     ready: Res<SpacetimeDbReady>,
+    vista: Res<SceneVistaBundleResource>,
 ) -> Result {
     let Some(client) = join.client_id.entity() else {
         return Ok(());
@@ -678,6 +679,7 @@ pub(crate) fn on_join_request(
             token,
         });
         send_reconnect_capability(&mut commands, join.client_id, join.character_id, token);
+        send_scene_vista(&mut commands, join.client_id, &vista);
         reconnect_equipment_lifecycle(
             disconnected,
             client,
@@ -727,6 +729,7 @@ pub(crate) fn on_join_request(
         },
     ));
     send_reconnect_capability(&mut commands, join.client_id, join.character_id, token);
+    send_scene_vista(&mut commands, join.client_id, &vista);
     info!(
         "Character {} connected and entered mission, awaiting loading",
         join.character_id.0
@@ -1156,6 +1159,19 @@ fn send_reconnect_capability(
             token,
         },
     });
+}
+
+fn send_scene_vista(
+    commands: &mut Commands,
+    client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId,
+    vista: &SceneVistaBundleResource,
+) {
+    if let Some(message) = &vista.0 {
+        commands.server_trigger(ToClients {
+            targets: SendTargets::Single(client_id),
+            message: message.clone(),
+        });
+    }
 }
 
 fn queue_replication_rebind(commands: &mut Commands, client: Entity) {

@@ -12,6 +12,7 @@ pub mod inventory;
 pub mod physics;
 pub mod player;
 pub mod scene;
+pub mod scene_input;
 
 pub use avian3d;
 
@@ -55,7 +56,18 @@ pub mod prelude {
         Stats, TacticalCombatState, TacticalIncapacitationSources, TacticalPlayerView,
         TacticalPlayerViewer, default_tactical_character_id,
     };
-    pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
+    pub use crate::scene::{
+        GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,
+        TerrainGenerator,
+    };
+    pub use crate::scene_input::{
+        EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
+        RockArchetype, RockLithology, RockRecipe, SceneEnvironment, SceneInputError, SceneObstacle,
+        SceneRepairReport, SceneSource, TACTICAL_SCENE_GENERATION_VERSION,
+        TACTICAL_SCENE_SCHEMA_VERSION, TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES,
+        TREE_TRUNK_RADIUS_METRES, TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod,
+        VistaSample,
+    };
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};
     pub use adventuresim_core::prelude::*;

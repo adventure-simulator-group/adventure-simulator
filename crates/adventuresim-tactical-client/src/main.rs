@@ -14,7 +14,7 @@ use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
-    asset::io::AssetSourceBuilder,
+    asset::{AssetPlugin, io::AssetSourceBuilder},
     ecs::schedule::common_conditions::any_with_component,
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
@@ -95,7 +95,6 @@ enum GraphicsPreset {
     #[default]
     Default,
     NoShadows,
-    NoSsao,
     NoBloom,
     NoAtmosphere,
     NoEnvironmentLight,
@@ -107,13 +106,14 @@ impl GraphicsPreset {
         presentation::TacticalPresentationPlugin {
             shadows_enabled: !matches!(self, Self::NoShadows | Self::Minimal),
             atmosphere_enabled: !matches!(self, Self::NoAtmosphere | Self::Minimal),
+            celestial_enabled: !matches!(self, Self::Minimal),
             environment_light_enabled: !matches!(
                 self,
                 Self::NoAtmosphere | Self::NoEnvironmentLight | Self::Minimal
             ),
             environment_map_size: 64,
             bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
-            ssao_enabled: !matches!(self, Self::NoSsao | Self::Minimal),
+            max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
         }
     }
 }
@@ -138,15 +138,34 @@ pub fn wasm_run(args: Vec<String>) {
 fn run(args: Args) {
     let mut app = App::new();
     #[cfg(not(target_family = "wasm"))]
+    let asset_root = native_asset_root();
+    #[cfg(not(target_family = "wasm"))]
+    validate_native_presentation_assets(&asset_root)
+        .unwrap_or_else(|error| panic!("invalid tactical client asset root: {error}"));
+    #[cfg(not(target_family = "wasm"))]
     app.register_asset_source(
         "workspace",
-        AssetSourceBuilder::platform_default(
-            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../assets")
-                .to_string_lossy(),
-            None,
-        ),
+        AssetSourceBuilder::platform_default(&asset_root.to_string_lossy(), None),
     );
+    #[cfg(not(target_family = "wasm"))]
+    let default_plugins = DefaultPlugins
+        .set(AssetPlugin {
+            file_path: asset_root.to_string_lossy().into_owned(),
+            ..default()
+        })
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Fabelgeist - Tactical".into(),
+                canvas: Some("#game-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                present_mode: args.present_mode.into(),
+                decorations: false,
+                ..default()
+            }),
+            ..default()
+        });
+    #[cfg(target_family = "wasm")]
     let default_plugins = DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Fabelgeist - Tactical".into(),
@@ -215,6 +234,42 @@ fn run(args: Args) {
     app.run();
 }
 
+#[cfg(not(target_family = "wasm"))]
+fn native_asset_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets")
+        .canonicalize()
+        .unwrap_or_else(|error| panic!("could not resolve native asset directory: {error}"))
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn validate_native_presentation_assets(asset_root: &std::path::Path) -> Result<(), String> {
+    const REQUIRED_ASSETS: &[&str] = &[
+        "shaders/tactical_foliage.wgsl",
+        "shaders/tactical_moon.wgsl",
+        "shaders/tactical_stars.wgsl",
+        "shaders/tactical_terrain.wgsl",
+        "shaders/tactical_tree_impostor.wgsl",
+        "shaders/tactical_tree_leaf_card.wgsl",
+        "tactical-equipment-icons.png",
+        "textures/moon/lroc_color_2k.jpg",
+    ];
+    let missing = REQUIRED_ASSETS
+        .iter()
+        .filter(|path| !asset_root.join(path).is_file())
+        .copied()
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} is missing required presentation assets: {}",
+            asset_root.display(),
+            missing.join(", ")
+        ))
+    }
+}
+
 fn setup_client(mut commands: Commands, args: Res<Args>) {
     commands.spawn(AdventureSimulatorClient {
         player_id: args.id,
@@ -258,21 +313,19 @@ fn release_cursor(
 mod graphics_preset_tests {
     use super::*;
 
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn native_asset_root_contains_required_presentation_assets() {
+        validate_native_presentation_assets(&native_asset_root()).unwrap();
+    }
+
     #[test]
     fn individual_presets_disable_only_the_requested_effect() {
-        let no_ssao = GraphicsPreset::NoSsao.presentation();
-        assert!(no_ssao.shadows_enabled);
-        assert!(no_ssao.atmosphere_enabled);
-        assert!(no_ssao.environment_light_enabled);
-        assert!(no_ssao.bloom_enabled);
-        assert!(!no_ssao.ssao_enabled);
-
         let no_atmosphere = GraphicsPreset::NoAtmosphere.presentation();
         assert!(no_atmosphere.shadows_enabled);
         assert!(!no_atmosphere.atmosphere_enabled);
         assert!(!no_atmosphere.environment_light_enabled);
         assert!(no_atmosphere.bloom_enabled);
-        assert!(no_atmosphere.ssao_enabled);
     }
 
     #[test]
@@ -282,7 +335,6 @@ mod graphics_preset_tests {
         assert!(!minimal.atmosphere_enabled);
         assert!(!minimal.environment_light_enabled);
         assert!(!minimal.bloom_enabled);
-        assert!(!minimal.ssao_enabled);
     }
 
     #[test]
