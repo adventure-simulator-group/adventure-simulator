@@ -23,15 +23,18 @@ use super::GroundScatterLayer;
 
 const PEBBLE_BILLBOARD_SHADER: &str = "shaders/tactical_pebble_billboard.wgsl";
 const MESH_VARIANTS: u64 = 8;
-const PHYSICAL_PEBBLES_PER_PATCH: usize = 64;
-const PEBBLE_PATCH_COLUMNS: usize = 8;
-const PEBBLE_PATCH_ROWS: usize = PHYSICAL_PEBBLES_PER_PATCH / PEBBLE_PATCH_COLUMNS;
+const PEBBLE_CANDIDATES_PER_PATCH: usize = 49;
+const PEBBLE_PATCH_COLUMNS: usize = 7;
+const PEBBLE_PATCH_ROWS: usize = PEBBLE_CANDIDATES_PER_PATCH / PEBBLE_PATCH_COLUMNS;
 const STANDARD_PEBBLE_RADIAL_SEGMENTS: usize = 6;
+#[cfg(test)]
 const STANDARD_PEBBLE_VERTICES: usize = STANDARD_PEBBLE_RADIAL_SEGMENTS * 2 + 2;
+#[cfg(test)]
 const STANDARD_PEBBLE_TRIANGLES: usize = STANDARD_PEBBLE_RADIAL_SEGMENTS * 4;
 const HERO_PEBBLE_RADIAL_SEGMENTS: usize = 16;
 const HERO_PEBBLE_RING_COUNT: usize = 3;
 const HERO_PEBBLE_VERTICES: usize = HERO_PEBBLE_RADIAL_SEGMENTS * HERO_PEBBLE_RING_COUNT + 2;
+#[cfg(test)]
 const HERO_PEBBLE_TRIANGLES: usize = HERO_PEBBLE_RADIAL_SEGMENTS * HERO_PEBBLE_RING_COUNT * 2;
 const BILLBOARD_VERTICES: usize = 4;
 const BILLBOARD_TRIANGLES: usize = 2;
@@ -88,6 +91,23 @@ enum PebbleMeshLod {
     Billboard,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PebbleDensity {
+    Sparse,
+    Dense,
+}
+
+impl PebbleDensity {
+    const ALL: [Self; 2] = [Self::Sparse, Self::Dense];
+
+    const fn asset_offset(self) -> usize {
+        match self {
+            Self::Sparse => 0,
+            Self::Dense => MESH_VARIANTS as usize,
+        }
+    }
+}
+
 pub(super) fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -98,32 +118,29 @@ pub(super) fn spawn(
     base_seed: u64,
 ) {
     let half_extent = ground.grid_scale() * 0.5;
-    let hero_meshes = (0..MESH_VARIANTS)
-        .map(|variant| {
-            meshes.add(pebble_patch_mesh(
-                splitmix64(0x7065_6262_6c65_0000 ^ variant),
-                PebbleMeshLod::Hero,
-                half_extent,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let near_meshes = (0..MESH_VARIANTS)
-        .map(|variant| {
-            meshes.add(pebble_patch_mesh(
-                splitmix64(0x7065_6262_6c65_0000 ^ variant),
+    let mut hero_meshes = Vec::new();
+    let mut near_meshes = Vec::new();
+    let mut billboard_meshes = Vec::new();
+    let mut pebble_counts = Vec::new();
+    for density in PebbleDensity::ALL {
+        for variant in 0..MESH_VARIANTS {
+            let seed = splitmix64(0x7065_6262_6c65_0000 ^ variant);
+            let hero = pebble_patch_mesh(seed, PebbleMeshLod::Hero, half_extent, density);
+            pebble_counts.push(hero.count_vertices() / HERO_PEBBLE_VERTICES);
+            hero_meshes.push(meshes.add(hero));
+            near_meshes.push(meshes.add(pebble_patch_mesh(
+                seed,
                 PebbleMeshLod::Near,
                 half_extent,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let billboard_meshes = (0..MESH_VARIANTS)
-        .map(|variant| {
-            meshes.add(pebble_billboard_patch_mesh(
-                splitmix64(0x7065_6262_6c65_0000 ^ variant),
+                density,
+            )));
+            billboard_meshes.push(meshes.add(pebble_billboard_patch_mesh(
+                seed,
                 half_extent,
-            ))
-        })
-        .collect::<Vec<_>>();
+                density,
+            )));
+        }
+    }
     let stone_material = materials.add(StandardMaterial {
         base_color: rock_color(RockLithology::Granite),
         perceptual_roughness: 1.0,
@@ -158,18 +175,26 @@ pub(super) fn spawn(
             continue;
         }
         let hash = splitmix64(base_seed ^ index as u64 ^ 0x7374_6f6e_655f_7363);
-        let variant = (hash % MESH_VARIANTS) as usize;
+        let coverage = scree_patch_coverage(base_seed, position, normal);
+        let density = if coverage >= 0.61 {
+            PebbleDensity::Dense
+        } else if coverage >= 0.34 {
+            PebbleDensity::Sparse
+        } else {
+            continue;
+        };
+        let variant = density.asset_offset() + (hash % MESH_VARIANTS) as usize;
         let yaw = Quat::from_rotation_y(
             unit_hash(splitmix64(hash ^ 0x55d8_093b)) * core::f32::consts::TAU,
         );
-        let transform = Transform::from_xyz(position.x, height + 0.018, position.y)
+        let transform = Transform::from_xyz(position.x, height + 0.006, position.y)
             .with_rotation(Quat::from_rotation_arc(Vec3::Y, normal) * yaw);
 
         commands.spawn((
             Name::new("Tactical loose-stone hero pebble patch"),
             GroundScatterLayer::LooseStone,
             LooseStonePebblePatch {
-                physical_pebbles: PHYSICAL_PEBBLES_PER_PATCH,
+                physical_pebbles: pebble_counts[variant],
             },
             NotShadowCaster,
             Mesh3d(hero_meshes[variant].clone()),
@@ -229,26 +254,95 @@ fn pebble_lod_visibility(lod: PebbleMeshLod) -> VisibilityRange {
     }
 }
 
-fn pebble_patch_mesh(seed: u64, lod: PebbleMeshLod, half_extent: f32) -> Mesh {
+fn scree_patch_coverage(seed: u64, point: Vec2, normal: Vec3) -> f32 {
+    let downhill = Vec2::new(normal.x, normal.z).normalize_or_zero();
+    let downhill = if downhill.length_squared() > 0.001 {
+        downhill
+    } else {
+        Vec2::X
+    };
+    let across = Vec2::new(-downhill.y, downhill.x);
+    let broad = scree_noise(seed ^ 0x7363_7265_655f_6272, point / 4.8);
+    // Stretch the second field along the fall line so loose material gathers
+    // into downhill trains rather than evenly stippling the whole substrate.
+    let streak_point = Vec2::new(point.dot(across) / 2.2, point.dot(downhill) / 8.5);
+    let streak = scree_noise(seed ^ 0x7363_7265_655f_7374, streak_point);
+    broad * 0.58 + streak * 0.42
+}
+
+fn scree_noise(seed: u64, point: Vec2) -> f32 {
+    let cell = point.floor();
+    let local = point - cell;
+    let curve = local * local * (Vec2::splat(3.0) - local * 2.0);
+    let hash = |offset: Vec2| {
+        let coordinate = cell + offset;
+        let x = i64::from(coordinate.x as i32) as u64;
+        let y = i64::from(coordinate.y as i32) as u64;
+        unit_hash(splitmix64(
+            seed ^ x.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ y.wrapping_mul(0xbf58_476d_1ce4_e5b9),
+        ))
+    };
+    let bottom_left = hash(Vec2::ZERO);
+    let bottom = bottom_left + (hash(Vec2::X) - bottom_left) * curve.x;
+    let top_left = hash(Vec2::Y);
+    let top = top_left + (hash(Vec2::ONE) - top_left) * curve.x;
+    bottom + (top - bottom) * curve.y
+}
+
+fn pebble_survives(
+    seed: u64,
+    hash: u64,
+    centre: Vec2,
+    half_extent: f32,
+    density: PebbleDensity,
+) -> bool {
+    let cluster = |salt: u64| {
+        Vec2::new(
+            unit_hash(splitmix64(seed ^ salt)) * 2.0 - 1.0,
+            unit_hash(splitmix64(seed ^ salt.rotate_left(19))) * 2.0 - 1.0,
+        ) * half_extent
+            * 0.7
+    };
+    let radius = (half_extent * 0.72).max(0.18);
+    let influence = [
+        cluster(0x636c_7573_7465_7201),
+        cluster(0x636c_7573_7465_7202),
+    ]
+    .into_iter()
+    .map(|cluster| (-(centre.distance_squared(cluster) / radius.powi(2)) * 1.4).exp())
+    .fold(0.0_f32, f32::max);
+    let chance = match density {
+        PebbleDensity::Sparse => 0.035 + influence * 0.42,
+        PebbleDensity::Dense => 0.09 + influence * 0.76,
+    };
+    unit_hash(splitmix64(hash ^ 0x7065_6262_6c65_6b70)) < chance
+}
+
+fn pebble_patch_mesh(
+    seed: u64,
+    lod: PebbleMeshLod,
+    half_extent: f32,
+    density: PebbleDensity,
+) -> Mesh {
     let (radial_segments, ring_profiles): (usize, &[(f32, f32, f32)]) = match lod {
         PebbleMeshLod::Hero => (
             HERO_PEBBLE_RADIAL_SEGMENTS,
-            &[(0.12, 0.68, -0.52), (0.46, 1.00, 0.02), (0.76, 0.76, 0.46)],
+            &[(-0.05, 0.72, -0.38), (0.42, 1.00, 0.06), (0.76, 0.76, 0.46)],
         ),
         PebbleMeshLod::Near => (
             STANDARD_PEBBLE_RADIAL_SEGMENTS,
-            &[(0.18, 0.82, -0.34), (0.58, 1.0, 0.28)],
+            &[(-0.03, 0.84, -0.28), (0.58, 1.0, 0.28)],
         ),
         PebbleMeshLod::Billboard => unreachable!("billboards use their dedicated quad mesh"),
     };
     let vertices_per_pebble = radial_segments * ring_profiles.len() + 2;
     let triangles_per_pebble = radial_segments * ring_profiles.len() * 2;
-    let mut positions = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * vertices_per_pebble);
-    let mut normals = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * vertices_per_pebble);
-    let mut uvs = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * vertices_per_pebble);
-    let mut indices = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * triangles_per_pebble * 3);
+    let mut positions = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * vertices_per_pebble);
+    let mut normals = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * vertices_per_pebble);
+    let mut uvs = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * vertices_per_pebble);
+    let mut indices = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * triangles_per_pebble * 3);
 
-    for pebble in 0..PHYSICAL_PEBBLES_PER_PATCH {
+    for pebble in 0..PEBBLE_CANDIDATES_PER_PATCH {
         let hash = splitmix64(seed ^ pebble as u64 ^ 0x6772_6176_656c_0001);
         let radius = MIN_PEBBLE_RADIUS_METRES
             + unit_hash(splitmix64(hash ^ 0x9137_b22c))
@@ -266,13 +360,22 @@ fn pebble_patch_mesh(seed: u64, lod: PebbleMeshLod, half_extent: f32) -> Mesh {
             ((row as f32 + 0.5 + jitter_z * 0.88) / PEBBLE_PATCH_ROWS as f32 * 2.0 - 1.0)
                 * half_extent,
         );
+        if !pebble_survives(
+            seed,
+            hash,
+            Vec2::new(centre.x, centre.z),
+            half_extent,
+            density,
+        ) {
+            continue;
+        }
         let height = radius * (0.85 + unit_hash(splitmix64(hash ^ 0x4f08_d119)) * 0.45);
         let yaw = unit_hash(splitmix64(hash ^ 0x5ca1_0f77)) * core::f32::consts::TAU;
         let direction = Vec3::new(yaw.cos(), 0.0, yaw.sin());
         let tangent = Vec3::new(-direction.z, 0.0, direction.x);
         let lateral_scale = 0.72 + unit_hash(splitmix64(hash ^ 0xd71c_820e)) * 0.26;
         let base = positions.len() as u32;
-        positions.push(centre.to_array());
+        positions.push((centre - Vec3::Y * radius * 0.18).to_array());
         normals.push(Vec3::NEG_Y.to_array());
         uvs.push([0.5, 0.5]);
 
@@ -302,7 +405,7 @@ fn pebble_patch_mesh(seed: u64, lod: PebbleMeshLod, half_extent: f32) -> Mesh {
         let top = first_ring + (radial_segments * ring_profiles.len()) as u32;
         for segment in 0..radial_segments as u32 {
             let next = (segment + 1) % radial_segments as u32;
-            indices.extend_from_slice(&[base, first_ring + next, first_ring + segment]);
+            indices.extend_from_slice(&[base, first_ring + segment, first_ring + next]);
         }
         for ring in 0..ring_profiles.len() - 1 {
             let lower = first_ring + (ring * radial_segments) as u32;
@@ -311,18 +414,18 @@ fn pebble_patch_mesh(seed: u64, lod: PebbleMeshLod, half_extent: f32) -> Mesh {
                 let next = (segment + 1) % radial_segments as u32;
                 indices.extend_from_slice(&[
                     lower + segment,
+                    upper + next,
                     lower + next,
-                    upper + next,
                     lower + segment,
-                    upper + next,
                     upper + segment,
+                    upper + next,
                 ]);
             }
         }
         let last_ring = top - radial_segments as u32;
         for segment in 0..radial_segments as u32 {
             let next = (segment + 1) % radial_segments as u32;
-            indices.extend_from_slice(&[last_ring + segment, last_ring + next, top]);
+            indices.extend_from_slice(&[last_ring + segment, top, last_ring + next]);
         }
     }
 
@@ -337,13 +440,13 @@ fn pebble_patch_mesh(seed: u64, lod: PebbleMeshLod, half_extent: f32) -> Mesh {
     mesh
 }
 
-fn pebble_billboard_patch_mesh(seed: u64, half_extent: f32) -> Mesh {
-    let mut positions = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * BILLBOARD_VERTICES);
-    let mut centres = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * BILLBOARD_VERTICES);
-    let mut uvs = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * BILLBOARD_VERTICES);
-    let mut indices = Vec::with_capacity(PHYSICAL_PEBBLES_PER_PATCH * BILLBOARD_TRIANGLES * 3);
+fn pebble_billboard_patch_mesh(seed: u64, half_extent: f32, density: PebbleDensity) -> Mesh {
+    let mut positions = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * BILLBOARD_VERTICES);
+    let mut centres = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * BILLBOARD_VERTICES);
+    let mut uvs = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * BILLBOARD_VERTICES);
+    let mut indices = Vec::with_capacity(PEBBLE_CANDIDATES_PER_PATCH * BILLBOARD_TRIANGLES * 3);
 
-    for pebble in 0..PHYSICAL_PEBBLES_PER_PATCH {
+    for pebble in 0..PEBBLE_CANDIDATES_PER_PATCH {
         let hash = splitmix64(seed ^ pebble as u64 ^ 0x6772_6176_656c_0001);
         let radius = MIN_PEBBLE_RADIUS_METRES
             + unit_hash(splitmix64(hash ^ 0x9137_b22c))
@@ -359,6 +462,15 @@ fn pebble_billboard_patch_mesh(seed: u64, half_extent: f32) -> Mesh {
             ((row as f32 + 0.5 + jitter_z * 0.88) / PEBBLE_PATCH_ROWS as f32 * 2.0 - 1.0)
                 * half_extent,
         );
+        if !pebble_survives(
+            seed,
+            hash,
+            Vec2::new(centre.x, centre.z),
+            half_extent,
+            density,
+        ) {
+            continue;
+        }
         let height = radius * (0.85 + unit_hash(splitmix64(hash ^ 0x4f08_d119)) * 0.45);
         let sprite_centre = centre + Vec3::Y * height * 0.5;
         let base = positions.len() as u32;
@@ -395,32 +507,87 @@ mod tests {
 
     #[test]
     fn pebble_lods_use_rounded_meshes_and_one_quad_per_distant_stone() {
-        let hero = pebble_patch_mesh(7, PebbleMeshLod::Hero, 1.0);
-        let near = pebble_patch_mesh(7, PebbleMeshLod::Near, 1.0);
-        let billboard = pebble_billboard_patch_mesh(7, 1.0);
-        assert_eq!(
-            hero.count_vertices(),
-            PHYSICAL_PEBBLES_PER_PATCH * HERO_PEBBLE_VERTICES
-        );
+        let hero = pebble_patch_mesh(7, PebbleMeshLod::Hero, 1.0, PebbleDensity::Dense);
+        let near = pebble_patch_mesh(7, PebbleMeshLod::Near, 1.0, PebbleDensity::Dense);
+        let billboard = pebble_billboard_patch_mesh(7, 1.0, PebbleDensity::Dense);
+        let pebble_count = hero.count_vertices() / HERO_PEBBLE_VERTICES;
+        assert!((8..=32).contains(&pebble_count), "{pebble_count}");
+        assert_eq!(hero.count_vertices(), pebble_count * HERO_PEBBLE_VERTICES);
         assert_eq!(
             hero.indices().unwrap().len(),
-            PHYSICAL_PEBBLES_PER_PATCH * HERO_PEBBLE_TRIANGLES * 3
+            pebble_count * HERO_PEBBLE_TRIANGLES * 3
         );
         assert_eq!(
             near.count_vertices(),
-            PHYSICAL_PEBBLES_PER_PATCH * STANDARD_PEBBLE_VERTICES
+            pebble_count * STANDARD_PEBBLE_VERTICES
         );
         assert_eq!(
             near.indices().unwrap().len(),
-            PHYSICAL_PEBBLES_PER_PATCH * STANDARD_PEBBLE_TRIANGLES * 3
+            pebble_count * STANDARD_PEBBLE_TRIANGLES * 3
         );
         assert_eq!(
             billboard.count_vertices(),
-            PHYSICAL_PEBBLES_PER_PATCH * BILLBOARD_VERTICES
+            pebble_count * BILLBOARD_VERTICES
         );
         assert_eq!(
             billboard.indices().unwrap().len(),
-            PHYSICAL_PEBBLES_PER_PATCH * BILLBOARD_TRIANGLES * 3
+            pebble_count * BILLBOARD_TRIANGLES * 3
+        );
+
+        let positions = match hero.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
+            bevy::mesh::VertexAttributeValues::Float32x3(values) => values,
+            other => panic!("unexpected pebble positions {other:?}"),
+        };
+        let normals = match hero.attribute(Mesh::ATTRIBUTE_NORMAL).unwrap() {
+            bevy::mesh::VertexAttributeValues::Float32x3(values) => values,
+            other => panic!("unexpected pebble normals {other:?}"),
+        };
+        let Indices::U32(indices) = hero.indices().unwrap() else {
+            panic!("pebble mesh should use u32 indices");
+        };
+        for triangle in indices.chunks_exact(3) {
+            let [a, b, c] = triangle else { unreachable!() };
+            let a = Vec3::from_array(positions[*a as usize]);
+            let b = Vec3::from_array(positions[*b as usize]);
+            let c = Vec3::from_array(positions[*c as usize]);
+            let face = (b - a).cross(c - a).normalize_or_zero();
+            let expected = triangle
+                .iter()
+                .map(|index| Vec3::from_array(normals[*index as usize]))
+                .sum::<Vec3>()
+                .normalize_or_zero();
+            assert!(
+                face.dot(expected) > 0.05,
+                "outward normals and front-face winding disagree: {face:?} versus {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scree_density_is_clustered_and_preserved_across_lods() {
+        let sparse = pebble_patch_mesh(19, PebbleMeshLod::Hero, 1.0, PebbleDensity::Sparse)
+            .count_vertices()
+            / HERO_PEBBLE_VERTICES;
+        let dense = pebble_patch_mesh(19, PebbleMeshLod::Hero, 1.0, PebbleDensity::Dense)
+            .count_vertices()
+            / HERO_PEBBLE_VERTICES;
+        assert!(sparse > 0);
+        assert!(dense > sparse, "sparse {sparse}, dense {dense}");
+
+        let normal = Vec3::new(0.25, 0.9, -0.15).normalize();
+        let samples = (0..80)
+            .map(|step| scree_patch_coverage(77, Vec2::new(step as f32 * 0.5, 3.0), normal))
+            .collect::<Vec<_>>();
+        assert!(
+            samples
+                .windows(2)
+                .all(|pair| (pair[1] - pair[0]).abs() < 0.22)
+        );
+        assert!(
+            samples.iter().copied().fold(f32::NEG_INFINITY, f32::max)
+                - samples.iter().copied().fold(f32::INFINITY, f32::min)
+                > 0.25,
+            "world-space scree field needs broad occupied and exposed bands"
         );
     }
 

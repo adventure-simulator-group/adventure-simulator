@@ -53,7 +53,7 @@ pub(crate) use sky::AtmosphereIblAmbientHandoff;
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
-pub(crate) use terrain::TerrainMaterialPresentation;
+pub(crate) use terrain::{TerrainDetailPatch, TerrainMaterialPresentation};
 #[allow(unused_imports)]
 pub(crate) use vista::{VistaTerrain, VistaTreePresentation};
 #[allow(unused_imports)]
@@ -154,6 +154,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<TreePresentationCache>()
         .init_resource::<TreeAssetResidencyDiagnostics>()
         .init_resource::<VistaTreePresentationCache>()
+        .init_resource::<ActiveVistaSurface>()
         .init_resource::<TreeLodRenderOverride>()
         .init_resource::<ActiveTacticalScene>()
         .init_resource::<PresentedCelestialLighting>()
@@ -163,7 +164,12 @@ impl Plugin for TacticalPresentationPlugin {
             (
                 update_grass_interaction,
                 update_tree_leaf_wind,
-                (present_pending_terrain, present_ground_scatter).chain(),
+                (
+                    present_pending_terrain,
+                    update_terrain_detail_patch,
+                    present_ground_scatter,
+                )
+                    .chain(),
                 (
                     refresh_active_tactical_scene,
                     update_presented_celestial_lighting,

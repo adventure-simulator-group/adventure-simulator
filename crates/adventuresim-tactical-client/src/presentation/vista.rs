@@ -11,9 +11,56 @@ pub(crate) struct VistaGrassPresentation;
 #[derive(Component)]
 pub(crate) struct VistaRockPresentation;
 
+/// Retains the nearest presentation-only height samples after the one-shot
+/// network event has been consumed. Camera-local ground refinement uses this
+/// surface outside the authoritative playable rectangle so geometry quality
+/// remains a function of camera distance rather than gameplay bounds.
+#[derive(Resource, Default, Clone)]
+pub(super) struct ActiveVistaSurface {
+    revision: u64,
+    scene_digest: String,
+    playable_half_extent: Vec2,
+    lods: Vec<VistaLod>,
+}
+
+impl ActiveVistaSurface {
+    pub(super) fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub(super) fn presented_height_at(
+        &self,
+        scene_digest: &str,
+        terrain: &SceneTerrain,
+        local: Vec2,
+    ) -> Option<f32> {
+        if let Some(height) = terrain.height_at(local) {
+            return Some(height);
+        }
+        if self.scene_digest != scene_digest {
+            return None;
+        }
+        let lod = self.lods.first()?;
+        let world = local
+            + Vec2::new(
+                lod.origin_east_metres as f32,
+                lod.origin_north_metres as f32,
+            );
+        let vista_height = presented_height_at(lod, world, self.lods.get(1))?;
+        Some(stitch_vista_height_to_playable_edge(
+            terrain,
+            local,
+            self.playable_half_extent,
+            lod.spacing_metres,
+            vista_height,
+        ))
+    }
+}
+
 pub(super) fn on_scene_vista_bundle(
     bundle: On<SceneVistaBundle>,
     mut commands: Commands,
+    mut active_surface: ResMut<ActiveVistaSurface>,
     existing: Query<Entity, With<VistaTerrain>>,
     playable_scenes: Query<(&SceneTerrain, &SceneGround, &SceneEnvironment)>,
     settings: Res<TacticalGraphicsSettings>,
@@ -28,6 +75,12 @@ pub(super) fn on_scene_vista_bundle(
     let started = std::time::Instant::now();
     let mut presented_chunk_count = 0_usize;
     info!("Generating tactical vista presentation");
+    *active_surface = ActiveVistaSurface {
+        revision: active_surface.revision.wrapping_add(1),
+        scene_digest: bundle.scene_digest.clone(),
+        playable_half_extent: bundle.playable_half_extent_metres,
+        lods: bundle.lods.iter().take(2).cloned().collect(),
+    };
     for entity in &existing {
         commands.entity(entity).despawn();
     }
@@ -1398,6 +1451,40 @@ mod tests {
         let pigment = Color::srgb_u8(91, 126, 47);
         let material = vista_material(clear_vista_weather(), pigment);
         assert_eq!(material.extension.grass_color, color_vec4(pigment));
+    }
+
+    #[test]
+    fn retained_near_vista_surface_continues_detail_patch_across_playable_bounds() {
+        let terrain =
+            SceneTerrain::from_heightmap(3, 3, 2.0, vec![10.0; 9]).expect("playable terrain");
+        let lod = VistaLod {
+            level: 0,
+            spacing_metres: 2.0,
+            width: 5,
+            depth: 5,
+            origin_east_metres: 0.0,
+            origin_north_metres: 0.0,
+            heights_metres: vec![20.0; 25],
+            environment: vec![EnvironmentalSample::default(); 25],
+        };
+        let retained = ActiveVistaSurface {
+            revision: 1,
+            scene_digest: "boundary".into(),
+            playable_half_extent: Vec2::splat(2.0),
+            lods: vec![lod],
+        };
+        assert_eq!(
+            retained.presented_height_at("boundary", &terrain, Vec2::new(2.0, 0.0)),
+            Some(10.0)
+        );
+        let outside = retained
+            .presented_height_at("boundary", &terrain, Vec2::new(3.0, 0.0))
+            .unwrap();
+        assert!((outside - 15.0).abs() < 0.0001, "{outside}");
+        assert_eq!(
+            retained.presented_height_at("different", &terrain, Vec2::new(3.0, 0.0)),
+            None
+        );
     }
 
     #[test]

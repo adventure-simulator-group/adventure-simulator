@@ -21,6 +21,8 @@ struct TacticalTerrainMaterial {
     cover: vec4<f32>,
     weather: vec4<f32>,
     far_sward: vec4<f32>,
+    playable_bounds: vec4<f32>,
+    detail_patch: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100)
@@ -35,6 +37,21 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     let position = in.world_position.xyz;
     let normal = normalize(in.world_normal);
+
+    // The camera-local mesh contains signed residual height. Remove the
+    // coarse surface only where that patch is guaranteed to cover it, or the
+    // old surface would depth-occlude every drainage channel and wheel rut.
+    // A 1.5 m overlap remains before the circular patch edge, where relief is
+    // already morphed almost completely back to the authoritative surface.
+    if terrain.detail_patch.x > 0.5
+        && distance(position.xz, view.lod_view_world_position.xz) < terrain.detail_patch.y {
+        discard;
+    }
+    // Preserve the geometry-derived direction but modestly expand its lateral
+    // components on the refined mesh. Solid molded colors otherwise let the
+    // bright environment-light floor wash out centimetre-scale facets.
+    let readable_detail_normal = normalize(vec3<f32>(normal.x * 1.45, normal.y, normal.z * 1.45));
+    pbr_input.N = select(readable_detail_normal, normal, terrain.detail_patch.x > 0.5);
     let canopy = terrain.cover.x;
     let wetland = terrain.cover.y;
     let cultivation = terrain.cover.z;
@@ -107,11 +124,23 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let sward_dither = fract(sin(dot(sward_cell, vec2<f32>(12.9898, 78.233))) * 43758.5453);
     color = select(color, sward_color, sward_dither < sward_amount);
 
+    // The camera-local detail mesh can cross the gameplay rectangle. Keep the
+    // representation distance-driven while handing its clamped playable
+    // material map to the vista's aggregate sward with discrete world-space
+    // coverage instead of exposing a brown rectangular patch.
+    let outside_distance = max(
+        abs(position.x) - terrain.playable_bounds.x,
+        abs(position.z) - terrain.playable_bounds.y,
+    );
+    let outside_sward = smoothstep(0.0, terrain.playable_bounds.z, outside_distance);
+    color = select(color, sward_color, sward_dither < outside_sward);
+
     let snow_mask = snow * smoothstep(0.3, 0.86, normal.y);
     color = select(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask >= 0.5);
 
     pbr_input.material.base_color = vec4<f32>(color, 1.0);
-    let base_roughness = 0.9 + wetness * 0.07 - water * 0.19;
+    let dry_roughness = select(0.84, 0.9, terrain.detail_patch.x > 0.5);
+    let base_roughness = dry_roughness + wetness * 0.07 - water * 0.19;
     pbr_input.material.perceptual_roughness = clamp(base_roughness, 0.55, 1.0);
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
