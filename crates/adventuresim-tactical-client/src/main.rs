@@ -27,7 +27,6 @@ use wasm_bindgen::prelude::*;
 
 #[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
-mod animation_graph_nodes;
 #[allow(dead_code)] // Viewer-only camera diagnostics are compiled into this binary.
 mod camera;
 #[cfg(feature = "debug")]
@@ -64,10 +63,6 @@ struct Args {
     /// Swapchain presentation strategy for frame-pacing diagnostics.
     #[arg(long, value_enum, default_value_t)]
     present_mode: ClientPresentMode,
-    /// Client-only authored animation playback implementation. Press F10 in a
-    /// native debug client to switch at runtime.
-    #[arg(long, value_enum, default_value_t)]
-    animation_backend: animation::AnimationBackend,
 }
 
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -205,7 +200,6 @@ fn run(args: Args) {
         args.graphics_preset.presentation(),
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-    .insert_resource(args.animation_backend)
     .add_systems(Startup, setup_client)
     .add_systems(
         Update,

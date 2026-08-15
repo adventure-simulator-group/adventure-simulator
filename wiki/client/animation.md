@@ -104,11 +104,10 @@ intent entirely. Repeated writes of
 the already-current guard state preserve live footwork and gait phase.
 
 A discrete raised/lowered change is smoothed from the currently displayed
-effective pose. The graph backend retains its 0.18-second presentation
-crossfade. The pose-buffer backend instead captures each joint's displayed
-local pose and velocity relative to the new target and critically damps that
-offset toward zero. It never keeps the outgoing clip alive. Both paths include
-resolved fallback clips and their whole-body mirror contribution, so an
+effective pose. The pose buffer captures each joint's displayed local pose and
+velocity relative to the new target and critically damps that offset toward
+zero without retaining the outgoing clip. Resolved fallback clips and their
+whole-body mirror contribution remain part of the effective pose, so an
 incomplete guard asset set does not hard-cut from locomotion to a relaxed
 fallback. Changing direction or authoritative gait phase does not restart
 transition smoothing, and an interruption begins from the pose already on
@@ -140,83 +139,34 @@ The animation evaluator consumes skeleton state in this order:
 4. Interpolate authored poses using continuous blend coordinates.
 5. Apply masked or additive layers such as directional ducking and impact
    flinches.
-6. For ordinary locomotion, apply graph-weighted terrain correction, one shared
+6. For ordinary locomotion, apply contact-weighted terrain correction, one shared
    hip correction, and one two-bone solve per leg. Specialized combat footwork,
    hand/weapon constraints, and head/torso look follow. Body facing is already
    present on the replicated root.
 7. Apply optional secondary animation.
 
-The dependency-backed semantic bridge routes ordinary grounded locomotion and
-raised-guard/attack evaluation through real dependency `AnimationGraph`
-queries. Its inputs are a read-only snapshot of
-`PresentedSkeleton` plus `AnimationEvaluation`: speed, local direction,
-gait/action phase, crouch/airborne state, attack height, lead and support feet,
-contact sequence, effective pack, and the attack's captured step
-direction/speed. The bridge flattens anchor samples directly and span samples
-into separate start/end contributions. A chain of dependency pose-blend nodes
-composes those weights; the graph-returned start/end weights atomically
-reconstruct each `PoseSample` total and span progress before driving the existing
-effective-pack resolver. Persistent contexts are keyed by player and route and
-seek meaningful gait/action phase; despawned-player contexts are pruned. A
-missing, malformed, non-finite, out-of-range, or non-normalized graph output
-discards the entire temporary decode and selects the untouched legacy
-evaluation. Resolution
-therefore remains exact pose, same-pack mirrored counterpart, then parent
-fallback, independently for each requested semantic. Specialized packs can
-continue overriding only a subset.
+The semantic router reads a read-only snapshot of `PresentedSkeleton` and its
+pure `AnimationEvaluation`: speed, local direction, gait/action phase,
+crouch/airborne state, attack height, lead and support feet, contact sequence,
+effective pack, and captured attack-step movement. Resolution remains exact
+pose, same-pack mirrored counterpart, then parent fallback for each requested
+semantic.
 
-Both authored FK backends remain ordered before bind restoration, whole-body
-mirroring, body response, terrain IK/attack footwork, and weapon constraints.
-Ordinary locomotion samples complete continuous cycles; guard/action fallback
-still chooses one coherent whole-body mirror. The semantic bridge does not
-consume root motion, emit gameplay events, choose actions or contacts, advance
-authoritative phases, displace the controller, or add another IK pass.
+The pose buffer flattens the resolved clips onto a 30 Hz grid keyed by skeleton
+family. Each tactical presentation tick interpolates baked keyframes at the
+current shared semantic phase and retains previous/current per-character poses
+for velocity and interruption capture. Quaternion interpolation and angular
+velocity differences select the nearest quaternion hemisphere. Missing tracks
+and non-finite samples fall back to the canonical bind transform, while imported
+root-bone translation is replaced by bind translation so authored root motion
+cannot move the gameplay entity. State and clip-set changes use interruption-safe
+per-joint inertial offsets. Characters beyond 100 metres or outside the camera
+frustum freeze their buffered pose and discard sampling debt when they return.
 
-The graph backend delegates the resolved weighted clips to Bevy's native
-`AnimationGraph` and `AnimationPlayer`. The opt-in pose-buffer backend flattens
-the same clips onto a 30 Hz grid keyed by skeleton family. At each tactical
-presentation tick it interpolates those baked keyframes at the current shared
-semantic phase, retaining previous/current per-character poses for velocity and
-interruption capture. Quaternion interpolation and angular-velocity differences
-always select the nearest quaternion hemisphere. Missing tracks and non-finite
-samples fall back to the canonical bind transform, and imported root-bone
-translation is replaced by its bind translation so authored root motion cannot
-move the gameplay entity. State and clip-set changes use interruption-safe
-per-joint inertial offsets rather than the graph backend's outgoing-clip
-crossfade. Characters beyond 100 metres or outside the camera frustum freeze
-their buffered pose and discard sampling debt when they return.
-
-Select the backend with `--animation-backend graph|pose-buffer` on the tactical
-client. Native debug clients can switch at runtime with `F10`. The switch changes
-only client FK presentation: both paths consume the same `PresentedSkeleton`,
-semantic graph result, pack fallback, controller transform, and authoritative
-gait/action/contact state.
-
-### Graph authoring capability map
-
-The pinned dependency supplies generic semantic anchor nodes, 1D and 2D sparse
-blend spaces, nested reusable graphs, bone-masked linear layers,
-additive/difference layers, semantic mirroring, marker synchronization, and
-presentation-only transitions/inertialization. Fabelgeist's initial
-bridge intentionally uses only the smallest subset: a registered custom sparse
-semantic blend node, a fixed dependency pose-blend chain, and dependency pose
-evaluation for ordinary locomotion and raised guard/attack. Existing code
-continues to own sparse 1D speed/gait-phase
-and directional selection, nested effective-pack fallback, binary gait endpoint
-mirroring, coherent whole-body guard mirroring, and the single 0.18-second
-presentation crossfade. Bone masks remain in the authored resolver. The bridge
-does not yet claim to use the dependency's 2D blend-space, nested-graph,
-additive/difference, marker-sync, or inertializer nodes.
-
-Launch the project-compatible native editor with `just animation-graph-editor
-assets`. It registers the custom sparse blend node, reports optional missing
-motion files, validates anchor frame bounds and deterministic catalog fallback,
-then validates and queries the same centralized runtime graphs for a
-representative ordinary stride and right-lead attack before opening the UI.
-Graph load, schema, or query failures are fatal. Use `just animation-graph-preview`
-for deterministic viewer/capture evidence; editor clip preview does not replace
-the viewer manifest and failure gates.
-
+Authored FK remains ordered before bind restoration, whole-body mirroring, body
+response, terrain IK or attack footwork, and weapon constraints. The router and
+pose buffer cannot choose actions or contacts, advance authoritative phase, emit
+gameplay events, displace the controller, or mutate server state.
 Action authoring may stay sparse. Walk and run authoring supplies contact and
 passing/flight poses; `scripts/build_locomotion_cycles.py` combines them with
 their character-space mirrors into closed runtime motions. The graph samples
@@ -751,10 +701,10 @@ select a different gait.
 
 Ordinary idle, walk, and run now follow one compact ownership contract:
 
-1. The dependency animation graph returns idle/walk/run weights at the shared
-   predicted authoritative phase.
+1. The semantic evaluator returns idle/walk/run weights at the shared predicted
+   authoritative phase.
 2. Walk and run sample their closed 64-frame runtime cycles continuously.
-3. The same graph-returned samples provide left/right IK weights. Walk retains
+3. The same semantic samples provide left/right IK weights. Walk retains
    support; run uses a narrow contact lobe and publishes real zero-weight
    flight intervals; idle loads both feet. Simulation support timing remains a
    separate authoritative locomotion concern.
@@ -764,7 +714,7 @@ Ordinary idle, walk, and run now follow one compact ownership contract:
 5. Ordinary locomotion has no world-space plants, planned contacts, procedural
    swing arc, stop capture, support-acquisition latch, or post-propagation
    ownership correction. Starts and stops use the single presentation
-   crossfade between graph poses.
+   inertial transition between pose-buffer targets.
 
 This deliberately follows Overgrowth's division: authored locomotion owns the
 performance and IK only conforms the final FK pose to terrain. Combat guard and
@@ -1004,7 +954,7 @@ screenshot rendering from advancing retained IK state more than once for the
 same logical tick, while the complete FK/IK pipeline still reevaluates each
 view. The replay captures one raw gameplay-camera image plus side and front
 diagnostic images of that exact pose. Its manifest records final world-space
-bones, graph IK weights, continuity, signed foot tracks and separation, knee
+bones, semantic IK weights, continuity, signed foot tracks and separation, knee
 flexion and bend hemisphere, desired body-forward alignment, bounded per-tick
 turning residual (including look-facing guards), terrain-relative foot
 clearance, and authored/solved foot targets,
@@ -1012,16 +962,14 @@ phase-indexed height extrema and peak count, contact-phase sole clearance,
 controller vertical range, run flight duration/sole clearance, authoritative acceleration, retained lean,
 landing compression, contact identity, landing identity, and fixed tick; those
 signals locate suspect frames but do not replace review of the rendered mesh.
-Pass `--backend graph` or `--backend pose-buffer` to run the same scenario and
-capture gates through either FK backend. The manifest records the selected
-backend plus baked clip count/bytes, sampled-pose count, and the final culled
-character count so representative CPU/memory comparisons do not rely on a
-different fixture.
+The manifest records baked clip count and bytes, sampled-pose count, and the
+final culled character count so representative CPU and memory measurements use
+the same fixture.
 For steady height scenarios, every complete cycle after warmup must contain
 exactly two prominent peaks in the phase 0.25 and 0.75 passing windows. A
 0.003 m prominence threshold filters sampling jitter while still rejecting an
 extra visible beat.
-The steady terrain run additionally requires alternating graph contact weights,
+The steady terrain run additionally requires alternating contact weights,
 80-200 ms unsupported intervals, bounded contact clearance, and a 2 cm maximum
 pelvis-height step. Ordinary feet are not tested as stationary world plants.
 The flight-phase stop and tap/restart probes apply their +1 cm transient toe
@@ -1066,7 +1014,7 @@ uses a 0.13 m budget. The exact authored flight pose measures 0.143 m of foot
 motion and 0.125 m of knee motion per sample; lower-speed non-run probes retain
 the 0.055 m foot and 0.10 m knee budgets. Strict terrain-Run probes permit a
 0.16 m knee step for slope-aligned contact acquisition (measured at 0.152 m).
-Terrain-run slope alignment permits the direct graph-weighted contact rotation
+Terrain-run slope alignment permits the direct contact-weighted rotation
 without adding a temporal foot-orientation cache.
 The analytic knee-flexion reserve and bend-hemisphere gates use that same
 procedural scope; they are not asserted against authored FK-only motion.
@@ -1128,9 +1076,9 @@ by continuous raised locomotion.
 Raised sprint input is the sole exception. Its gameplay speed remains the
 character's endurance-neutral jog, but presentation layers the static guard on
 the upper body over the ordinary walk/run interpolation on the lower body. The
-animation graph masks the locomotion clip off `stomach_01` and every descendant
-upper-body target while masking the guard clip off `root`, `pelvis`, and every
-leg target. Ordinary locomotion terrain IK owns this composite's legs;
+clip resolver masks locomotion off `stomach_01` and every descendant upper-body
+target while masking guard off `root`, `pelvis`, and every leg target. Ordinary
+locomotion terrain IK owns this composite's legs;
 procedural combat stepping owns every non-sprint raised movement.
 
 Semantic intent carries a wrapping step sequence and a swing side separate
@@ -1472,49 +1420,10 @@ semantics.
 
 ## Secondary animation
 
-The native `ragdoll-viewer` now provides a deliberately isolated passive
-ragdoll for the existing Cascadeur humanoid. It maps a conservative set of
-major bones through reusable `bevy_animation_graph` ragdoll definitions and
-runs a complete Avian solver without changing the live client's query-only
-physics setup. Twist bones, toes, clavicles, neck intermediates, and weapon
-sockets remain excluded from the rigid-body topology. The ragdoll owns only
-rendered bone transforms while active; it never moves the replicated player
-root, gameplay collider, hitboxes, or persistent strategic state.
-
-Clients may also use joint motors or other procedural dynamics to give bones
-inertia and react to movement, collisions, weapons, clothing, and equipment.
-Overgrowth can mix authored animation with active-ragdoll physics;
-its animation output carries per-bone physics weights through
-[`animation.cpp`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Source/Asset/Asset/animation.cpp#L1269-L1425)
-and `RiggedObject` applies them to joint strength.
-
-The focused fixture is an engineering/review capability rather than an MVP
-combat or death mechanic. Integrating ragdoll state with authoritative combat,
-network replication, recovery, or get-up behavior remains future work. The
-base evaluator preserves a clean final-pose stage so those decisions do not
-change authored pack semantics.
-
-The active fixture mode uses the fork's validated Avian adapter to drive the
-existing revolute knee and elbow joints. Strength ramps at the fixed physics
-rate; switching to passive ramps toward an explicit zero-torque, disabled
-motor rather than retaining an implicit solver default. Target, velocity,
-frequency, damping, and torque inputs are finite-checked and clamped by the
-dependency. This is hinge-only: Avian's spherical joints have limits but no
-corresponding angular motor API, so the hips, shoulders, spine, and neck are
-not claimed as actively driven.
-
-`just ragdoll-capture` advances animated, active, and passive modes for exact
-fixed-solver tick counts independent of render cadence, then records screenshots plus
-bounded telemetry in `manifest.json`. It gates finite metrics, driven hinge
-count, active error convergence, and passive zero strength, writing
-`failure.txt` on failure. The fixture terrain is also a real static physics
-collider restricted to the ragdoll layer, and capture rejects active or passive
-poses whose pelvis falls through the terrain or remains in high-speed motion.
-Settling is evaluated across the final half-second of fixed physics samples,
-not from one potentially misleading instant at the end of a bounce.
-These numeric gates catch wiring, collision, and solver regressions; the images
-remain the authority for presentation quality.
-
+Secondary procedural dynamics may later add bone inertia and reactions to
+movement, collisions, weapons, clothing, and equipment. Those effects remain
+client presentation and must not move the replicated player root, gameplay
+collider, hitboxes, or persistent strategic state.
 ## Stylistic principles
 
 Animations should remain realistic in accordance with the

@@ -1,10 +1,9 @@
 //! Fixed-rate local-pose sampling and interruption-safe inertialization.
 //!
 //! This is deliberately downstream of semantic animation-pack resolution:
-//! both playback backends consume the same `PresentedSkeleton` and
-//! `AnimationPlayback` plan. The graph backend asks Bevy's `AnimationPlayer`
-//! to evaluate that plan, while this backend bakes clip curves onto a 30 Hz
-//! grid, samples into per-character buffers, and writes the resulting local
+//! the semantic router produces an `AnimationPlayback` plan from the shared
+//! `PresentedSkeleton`. This backend bakes clip curves onto a 30 Hz grid,
+//! samples into per-character buffers, and writes the resulting local
 //! transforms before the shared procedural passes.
 
 use std::{collections::HashMap, sync::Arc};
@@ -153,7 +152,6 @@ pub(super) struct PoseBufferRig {
     offsets: Vec<JointInertialOffset>,
     plan: Option<PosePlanKey>,
     active: bool,
-    capture_on_activate: bool,
     frozen: bool,
 }
 
@@ -237,7 +235,6 @@ impl JointInertialOffset {
 
 pub(super) fn update_pose_buffers(
     mut commands: Commands,
-    backend: Res<AnimationBackend>,
     time: Res<Time>,
     procedural_clock: Res<ProceduralAnimationClock>,
     catalog: Res<AnimationPackCatalog>,
@@ -348,19 +345,11 @@ pub(super) fn update_pose_buffers(
                 offsets: vec![JointInertialOffset::default(); joint_count],
                 plan: None,
                 active: false,
-                capture_on_activate: *backend == AnimationBackend::Graph,
                 frozen: false,
             };
             commands.entity(owner).insert(pose_rig);
             continue;
         };
-
-        if *backend != AnimationBackend::PoseBuffer {
-            rig.active = false;
-            rig.capture_on_activate = true;
-            rig.frozen = false;
-            continue;
-        }
 
         let delta_seconds = match procedural_clock.fixed_step() {
             Some((tick, _)) if rig.last_evaluation_tick == Some(tick) => {
@@ -409,7 +398,7 @@ pub(super) fn update_pose_buffers(
             continue;
         };
         if transition {
-            let capture_displayed = rig.active || rig.capture_on_activate;
+            let capture_displayed = rig.active;
             for (joint, target_pose) in target.iter().copied().enumerate() {
                 let displayed = if capture_displayed {
                     rig.displayed_pose(joint)
@@ -436,7 +425,6 @@ pub(super) fn update_pose_buffers(
             rig.interpolation_alpha = 1.0;
             rig.plan = Some(key);
             rig.active = true;
-            rig.capture_on_activate = true;
         } else {
             rig.previous = rig.next.clone();
             rig.next = target;
@@ -451,30 +439,10 @@ pub(super) fn update_pose_buffers(
     }
 }
 
-pub(super) fn toggle_animation_backend(
-    keys: Option<Res<ButtonInput<KeyCode>>>,
-    mut backend: ResMut<AnimationBackend>,
-) {
-    if keys.is_some_and(|keys| keys.just_pressed(KeyCode::F10)) {
-        *backend = match *backend {
-            AnimationBackend::Graph => AnimationBackend::PoseBuffer,
-            AnimationBackend::PoseBuffer => AnimationBackend::Graph,
-        };
-        info!(
-            backend = backend.as_str(),
-            "animation playback backend changed"
-        );
-    }
-}
-
 pub(super) fn apply_pose_buffers(
-    backend: Res<AnimationBackend>,
     mut rigs: Query<&mut PoseBufferRig>,
     mut transforms: Query<&mut Transform, Without<PoseBufferRig>>,
 ) {
-    if *backend != AnimationBackend::PoseBuffer {
-        return;
-    }
     for mut rig in &mut rigs {
         if !rig.active || rig.frozen {
             continue;

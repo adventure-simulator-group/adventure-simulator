@@ -5,19 +5,12 @@ use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::message::PlayerInputRequest;
 use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{
-    animation::{AnimatedBy, AnimationTargetId},
-    app::AnimationSystems,
-    asset::LoadState,
-    ecs::hierarchy::ChildSpawnerCommands,
-    gltf::Gltf,
-    prelude::*,
+    animation::AnimationTargetId, asset::LoadState, ecs::hierarchy::ChildSpawnerCommands,
+    gltf::Gltf, prelude::*,
 };
-use clap::ValueEnum;
 
 pub(crate) mod pose_buffer;
 mod procedural;
-#[cfg(all(not(target_family = "wasm"), feature = "animation-graph-physics"))]
-pub(crate) mod ragdoll;
 
 #[allow(unused_imports)]
 pub(crate) use procedural::{
@@ -30,32 +23,10 @@ pub(crate) use procedural::{
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
-const PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
-const DOWNED_PRESENTATION_CROSSFADE_SECONDS: f32 = 0.5;
-const LOWER_BODY_MASK_GROUP: u32 = 0;
-const UPPER_BODY_MASK_GROUP: u32 = 1;
 // Player transforms sit at the center of the 1.9 m server collider, while
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
 // lower face so the first-person camera lands at the authored head.
 const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
-
-/// Client-only authored-pose playback implementation. Both variants consume
-/// the same [`PresentedSkeleton`] and semantic animation-pack resolution.
-#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
-pub(crate) enum AnimationBackend {
-    #[default]
-    Graph,
-    PoseBuffer,
-}
-
-impl AnimationBackend {
-    pub(crate) const fn as_str(self) -> &'static str {
-        match self {
-            Self::Graph => "graph",
-            Self::PoseBuffer => "pose_buffer",
-        }
-    }
-}
 
 mod diagnostics;
 use diagnostics::log_animation_diagnostics;
@@ -64,7 +35,7 @@ use diagnostics::log_animation_diagnostics;
 pub(crate) use diagnostics::{
     AnimationDiagnosticLog, DiagnosticInputStatus, RenderScheduleTelemetry,
 };
-pub(crate) mod semantic_graph;
+pub(crate) mod semantic_route;
 
 fn animation_asset_path(path: &str) -> String {
     #[cfg(not(target_family = "wasm"))]
@@ -98,16 +69,7 @@ use catalog::*;
 #[derive(Debug, Clone)]
 struct LoadedClip {
     handle: Handle<AnimationClip>,
-    /// Dedicated graph node for continuous timeline playback. A Bevy graph
-    /// node has one seek position, so sparse pose anchors use separate nodes
-    /// below when two frames from the same source clip must be blended.
-    node: AnimationNodeIndex,
     duration_seconds: f32,
-    anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
-    upper_node: AnimationNodeIndex,
-    upper_anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
-    lower_node: AnimationNodeIndex,
-    lower_anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
     layer: ClipLayer,
 }
 
@@ -116,22 +78,9 @@ impl LoadedClip {
         self.at_anchor_layer(frame, ClipLayer::Whole)
     }
 
-    fn at_anchor_layer(&self, frame: u16, layer: ClipLayer) -> Self {
+    fn at_anchor_layer(&self, _frame: u16, layer: ClipLayer) -> Self {
         let mut clip = self.clone();
         clip.layer = layer;
-        clip.node = match layer {
-            ClipLayer::Whole => self.anchor_nodes.get(&frame).copied().unwrap_or(self.node),
-            ClipLayer::Upper => self
-                .upper_anchor_nodes
-                .get(&frame)
-                .copied()
-                .unwrap_or(self.upper_node),
-            ClipLayer::Lower => self
-                .lower_anchor_nodes
-                .get(&frame)
-                .copied()
-                .unwrap_or(self.lower_node),
-        };
         clip
     }
 }
@@ -155,11 +104,7 @@ pub(super) struct AnimationRuntime {
     clip_handles: BTreeMap<(String, String), Handle<AnimationClip>>,
     clips: BTreeMap<(String, String), LoadedClip>,
     library: AnimationPackLibrary,
-    graph: Option<Handle<AnimationGraph>>,
-    revision: u64,
     canonical_targets: HashSet<AnimationTargetId>,
-    lower_body_targets: HashSet<AnimationTargetId>,
-    upper_body_targets: HashSet<AnimationTargetId>,
 }
 
 impl AnimationRuntime {
@@ -178,8 +123,6 @@ pub(super) struct AnimationPlayback {
     pub(super) foot_ik_weights: Vec2,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
-    presentation_transition: Option<PlaybackTransition>,
-    evaluation_tick: Option<u64>,
 }
 
 impl AnimationPlayback {
@@ -189,7 +132,7 @@ impl AnimationPlayback {
     }
 
     pub(super) fn presentation_is_settled(&self) -> bool {
-        self.authored_pose_is_ready() && self.presentation_transition.is_none()
+        self.authored_pose_is_ready()
     }
 }
 
@@ -202,8 +145,6 @@ impl Default for AnimationPlayback {
             foot_ik_weights: Vec2::ZERO,
             weapon_guard: WeaponGuardState::Lowered,
             ordinary_locomotion_active: false,
-            presentation_transition: None,
-            evaluation_tick: None,
         }
     }
 }
@@ -224,13 +165,6 @@ struct PlaybackPose {
     foot_ik_weights: Vec2,
 }
 
-#[derive(Debug, Clone)]
-struct PlaybackTransition {
-    from: PlaybackPose,
-    elapsed_seconds: f32,
-    duration_seconds: f32,
-}
-
 #[derive(Component)]
 pub struct FallbackAnimationRig(pub Entity);
 
@@ -242,12 +176,6 @@ struct AnimationRigAttached;
 
 #[derive(Component)]
 struct RigAnimationTargetsBound;
-
-#[derive(Component)]
-struct AnimationPlayerOwner(pub Entity);
-
-#[derive(Component, Default)]
-struct AnimationGraphRevision(u64);
 
 #[derive(Component, Debug, Clone, Copy)]
 struct AuthoredBindTransform {
@@ -266,26 +194,22 @@ mod loading;
 use loading::*;
 fn evaluate_skeletons(
     mut commands: Commands,
-    backend: Res<AnimationBackend>,
     catalog: Res<AnimationPackCatalog>,
     runtime: Res<AnimationRuntime>,
-    time: Res<Time>,
-    procedural_clock: Res<ProceduralAnimationClock>,
     players: Query<
         (
             Entity,
             &PresentedSkeleton,
-            &semantic_graph::SemanticGraphTrace,
+            &semantic_route::SemanticRouteTrace,
             Option<&mut AnimationPlayback>,
         ),
         With<Player>,
     >,
 ) {
-    for (entity, skeleton, graph_trace, playback) in players {
-        // This evaluation contains weights/progress decoded from the dependency
-        // graph's returned Pose. The preceding chained system always inserts a
-        // trace, including an explicit legacy fallback trace on graph errors.
-        let evaluation = graph_trace.evaluation.clone();
+    for (entity, skeleton, route_trace, playback) in players {
+        // The preceding chained system directly routes authoritative
+        // presentation state into deterministic semantic samples.
+        let evaluation = route_trace.evaluation.clone();
         let samples = if evaluation.action.is_empty() {
             &evaluation.base
         } else {
@@ -363,7 +287,7 @@ fn evaluate_skeletons(
                     0.0
                 }
             },
-            foot_ik_weights: graph_foot_ik_weights(&evaluation),
+            foot_ik_weights: semantic_foot_ik_weights(&evaluation),
             clips: weighted,
         };
         let ordinary_locomotion_candidate = ordinary_locomotion_candidate(skeleton);
@@ -377,30 +301,9 @@ fn evaluate_skeletons(
             };
             let ordinary_locomotion_active =
                 ordinary_locomotion_candidate && skeleton.animation_speed() > locomotion_threshold;
-            if *backend == AnimationBackend::Graph {
-                update_presentation_crossfade(
-                    &mut playback,
-                    target,
-                    skeleton.weapon_guard(),
-                    ordinary_locomotion_active,
-                    if skeleton.body().is_downed() {
-                        DOWNED_PRESENTATION_CROSSFADE_SECONDS
-                    } else {
-                        PRESENTATION_CROSSFADE_SECONDS
-                    },
-                    &procedural_clock,
-                    time.delta_secs(),
-                );
-            } else {
-                // Pose-buffer playback captures the visible joint pose and
-                // velocity when this plan changes. Feeding it an outgoing
-                // clip blend would double-smooth the transition and retime
-                // authoritative gait/action phases.
-                playback.presentation_transition = None;
-                playback.weapon_guard = skeleton.weapon_guard();
-                playback.ordinary_locomotion_active = ordinary_locomotion_active;
-                apply_playback_pose(&mut playback, target);
-            }
+            playback.weapon_guard = skeleton.weapon_guard();
+            playback.ordinary_locomotion_active = ordinary_locomotion_active;
+            apply_playback_pose(&mut playback, target);
         } else {
             let ordinary_locomotion_active =
                 ordinary_locomotion_candidate && skeleton.animation_speed() > 0.05;
@@ -411,8 +314,6 @@ fn evaluate_skeletons(
                 foot_ik_weights: target.foot_ik_weights,
                 weapon_guard: skeleton.weapon_guard(),
                 ordinary_locomotion_active,
-                presentation_transition: None,
-                evaluation_tick: procedural_clock.fixed_step().map(|(tick, _)| tick),
             });
         }
     }
@@ -426,68 +327,6 @@ fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
             || skeleton.downed_turning())
 }
 
-fn update_presentation_crossfade(
-    playback: &mut AnimationPlayback,
-    target: PlaybackPose,
-    weapon_guard: WeaponGuardState,
-    ordinary_locomotion_active: bool,
-    transition_duration_seconds: f32,
-    procedural_clock: &ProceduralAnimationClock,
-    render_delta_seconds: f32,
-) {
-    let delta_seconds = match procedural_clock.fixed_step() {
-        Some((tick, _)) if playback.evaluation_tick == Some(tick) => 0.0,
-        Some((tick, delta_seconds)) => {
-            playback.evaluation_tick = Some(tick);
-            delta_seconds
-        }
-        None => render_delta_seconds.max(0.0),
-    };
-    let guard_changed = playback.weapon_guard != weapon_guard;
-    let locomotion_changed =
-        playback.ordinary_locomotion_active != ordinary_locomotion_active && !guard_changed;
-    let transition_started = guard_changed || locomotion_changed;
-    if transition_started {
-        playback.presentation_transition = Some(PlaybackTransition {
-            from: playback_pose(playback),
-            elapsed_seconds: 0.0,
-            duration_seconds: transition_duration_seconds.max(f32::EPSILON),
-        });
-        playback.weapon_guard = weapon_guard;
-    }
-    playback.ordinary_locomotion_active = ordinary_locomotion_active;
-
-    let mut transition_complete = false;
-    let resolved = if let Some(transition) = playback.presentation_transition.as_mut() {
-        // The state change is first presented at the exact old pose. Time
-        // begins accumulating on the next simulation/render observation, so
-        // a replicated guard or locomotion edge cannot consume the preceding
-        // frame's dt.
-        if !transition_started {
-            transition.elapsed_seconds += delta_seconds;
-        }
-        let progress = (transition.elapsed_seconds / transition.duration_seconds).clamp(0.0, 1.0);
-        let pose = blend_playback_poses(&transition.from, &target, progress);
-        transition_complete = progress >= 1.0;
-        pose
-    } else {
-        target
-    };
-    if transition_complete {
-        playback.presentation_transition = None;
-    }
-    apply_playback_pose(playback, resolved);
-}
-
-fn playback_pose(playback: &AnimationPlayback) -> PlaybackPose {
-    PlaybackPose {
-        clips: playback.clips.clone(),
-        use_authored_bind_pose: playback.use_authored_bind_pose,
-        whole_body_mirror: playback.whole_body_mirror,
-        foot_ik_weights: playback.foot_ik_weights,
-    }
-}
-
 fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.clips = pose.clips;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
@@ -495,23 +334,10 @@ fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.foot_ik_weights = pose.foot_ik_weights;
 }
 
-fn blend_playback_poses(from: &PlaybackPose, to: &PlaybackPose, progress: f32) -> PlaybackPose {
-    let progress = progress.clamp(0.0, 1.0);
-    let mut clips = Vec::new();
-    append_scaled_playback_clips(&mut clips, &from.clips, 1.0 - progress);
-    append_scaled_playback_clips(&mut clips, &to.clips, progress);
-    PlaybackPose {
-        use_authored_bind_pose: clips.is_empty(),
-        clips,
-        whole_body_mirror: from.whole_body_mirror.lerp(to.whole_body_mirror, progress),
-        foot_ik_weights: from.foot_ik_weights.lerp(to.foot_ik_weights, progress),
-    }
-}
-
-/// IK ownership follows the dependency graph's returned locomotion samples.
+/// IK ownership follows the direct semantic locomotion samples.
 /// The curve shapes are animation metadata: walk keeps one supported foot,
 /// run has genuine intervals with neither foot loaded, and idle loads both.
-fn graph_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
+fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
     let samples = if evaluation.action.is_empty() {
         &evaluation.base
     } else {
@@ -553,36 +379,6 @@ fn graph_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
     .clamp(Vec2::ZERO, Vec2::ONE)
 }
 
-fn append_scaled_playback_clips(
-    combined: &mut Vec<WeightedClip>,
-    source: &[WeightedClip],
-    scale: f32,
-) {
-    if scale <= f32::EPSILON {
-        return;
-    }
-    for source_clip in source {
-        let weight = source_clip.weight * scale;
-        if weight <= f32::EPSILON {
-            continue;
-        }
-        if let Some(existing) = combined.iter_mut().find(|existing| {
-            existing.clip.node == source_clip.clip.node
-                && (existing.time_seconds - source_clip.time_seconds).abs() < 0.0001
-        }) {
-            existing.weight += weight;
-            existing.mirrored_weight += source_clip.mirrored_weight * scale;
-        } else {
-            combined.push(WeightedClip {
-                clip: source_clip.clip.clone(),
-                weight,
-                time_seconds: source_clip.time_seconds,
-                mirrored_weight: source_clip.mirrored_weight * scale,
-            });
-        }
-    }
-}
-
 fn capture_authored_bind_transforms(
     mut commands: Commands,
     nodes: Query<(Entity, &Transform), (Added<Transform>, Without<AuthoredBindTransform>)>,
@@ -603,17 +399,6 @@ fn capture_authored_bind_transforms(
                 break;
             };
             current = parent.parent();
-        }
-    }
-}
-
-fn reset_authored_bind_before_fk(
-    playbacks: Query<&AnimationPlayback>,
-    mut nodes: Query<(&AuthoredBindTransform, &mut Transform)>,
-) {
-    for (bind, mut transform) in &mut nodes {
-        if playbacks.get(bind.owner).is_ok() {
-            *transform = bind.local;
         }
     }
 }
@@ -867,7 +652,9 @@ fn append_weighted_clip(
         return;
     }
     if let Some(existing) = weighted.iter_mut().find(|existing| {
-        existing.clip.node == clip.node && (existing.time_seconds - time_seconds).abs() < 0.0001
+        existing.clip.handle.id() == clip.handle.id()
+            && existing.clip.layer == clip.layer
+            && (existing.time_seconds - time_seconds).abs() < 0.0001
     }) {
         existing.weight += weight;
         if mirrored {
@@ -1025,64 +812,6 @@ fn append_resolved_sample_layer(
                     layer,
                 );
             }
-        }
-    }
-}
-
-fn sync_animation_graphs(
-    mut commands: Commands,
-    runtime: Res<AnimationRuntime>,
-    mut players: Query<
-        (Entity, &mut AnimationPlayer, &mut AnimationGraphRevision),
-        With<AnimationPlayerOwner>,
-    >,
-) {
-    let Some(graph) = runtime.graph.as_ref() else {
-        return;
-    };
-    for (entity, mut player, mut revision) in &mut players {
-        if revision.0 == runtime.revision {
-            continue;
-        }
-        player.stop_all();
-        revision.0 = runtime.revision;
-        commands
-            .entity(entity)
-            .insert(AnimationGraphHandle(graph.clone()));
-    }
-}
-
-fn drive_fk_players(
-    backend: Res<AnimationBackend>,
-    owners: Query<&AnimationPlayback>,
-    mut players: Query<(&AnimationPlayerOwner, &mut AnimationPlayer)>,
-) {
-    for (owner, mut player) in &mut players {
-        if *backend == AnimationBackend::PoseBuffer {
-            player.stop_all();
-            continue;
-        }
-        let Ok(playback) = owners.get(owner.0) else {
-            continue;
-        };
-        if playback.use_authored_bind_pose {
-            player.stop_all();
-            continue;
-        }
-        // The graph produces weighted semantic samples. Anchors seek to their
-        // authored frame; locomotion cycles seek continuously through the
-        // complete motion at the shared authoritative phase.
-        // Reusing the previous graph's active-node state lets dependency blend
-        // poses feed a small amount of their prior output into a repeated
-        // render of the same logical tick. Rebuild this tiny paused set so one
-        // tick is idempotent across gameplay/side/front evaluations.
-        player.stop_all();
-        for weighted in &playback.clips {
-            player
-                .play(weighted.clip.node)
-                .set_weight(weighted.weight)
-                .pause()
-                .seek_to(weighted.time_seconds);
         }
     }
 }
