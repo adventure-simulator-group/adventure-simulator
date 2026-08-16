@@ -267,7 +267,16 @@ impl RootFlareField {
     fn displaced_surface(&self, point: Vec3) -> (Vec3, Vec3) {
         let outward = self.normal(point);
         let lobed = point + outward * self.root_profile_relief(point, outward);
-        displaced_bark_surface(lobed, outward, &self.segments, self.bark, self.bark_phase)
+        (
+            displaced_sweep_bark_position(
+                lobed,
+                outward,
+                &self.segments,
+                self.bark,
+                self.bark_phase,
+            ),
+            outward,
+        )
     }
 
     fn root_profile_relief(&self, point: Vec3, outward: Vec3) -> f32 {
@@ -469,6 +478,19 @@ fn displaced_bark_surface(
         point + outward * relief,
         (outward - gradient).normalize_or_zero(),
     )
+}
+
+/// Displace a woody surface vertex without re-sampling bark relief six more
+/// times for a finite-difference micro-normal. Sweeps already supply a stable
+/// radial normal, while the root flare supplies its smooth-union field normal.
+fn displaced_sweep_bark_position(
+    point: Vec3,
+    outward: Vec3,
+    segments: &[TreeBranchSegment],
+    bark: BarkRecipe,
+    bark_phase: f32,
+) -> Vec3 {
+    point + outward * blended_bark_relief(point, segments, 0.18, bark, bark_phase)
 }
 
 fn capsule_distance(point: Vec3, segment: &TreeBranchSegment) -> f32 {
@@ -782,10 +804,15 @@ fn append_branch_curve_tube(
         for side in 0..sides {
             let phase = side as f32 * core::f32::consts::TAU / sides as f32;
             let normal = right * phase.cos() + forward * phase.sin();
-            let (position, surface_normal) =
-                displaced_bark_surface(center + normal * radius, normal, curve, bark, bark_phase);
+            let position = displaced_sweep_bark_position(
+                center + normal * radius,
+                normal,
+                curve,
+                bark,
+                bark_phase,
+            );
             positions.push(position.to_array());
-            normals.push(surface_normal.to_array());
+            normals.push(normal.to_array());
             uvs.push([
                 side as f32 / sides as f32 * circumference_tiles,
                 accumulated_distance / BARK_TEXTURE_HEIGHT_METRES,
@@ -836,7 +863,7 @@ fn append_branch_curve_tube(
                 let phase = side as f32 * core::f32::consts::TAU / sides as f32;
                 let radial = right * phase.cos() + forward * phase.sin();
                 let normal = (radial * 0.75 + last_direction * 0.66).normalize();
-                let (position, surface_normal) = displaced_bark_surface(
+                let position = displaced_sweep_bark_position(
                     center + radial * radius,
                     normal,
                     curve,
@@ -844,7 +871,7 @@ fn append_branch_curve_tube(
                     bark_phase,
                 );
                 positions.push(position.to_array());
-                normals.push(surface_normal.to_array());
+                normals.push(normal.to_array());
                 uvs.push([
                     side as f32 / sides as f32 * circumference_tiles,
                     terminal_distance / BARK_TEXTURE_HEIGHT_METRES,
@@ -1051,6 +1078,52 @@ mod tests {
             bark_phase_from_branches(&procedural_tree_skeleton(43, 0.0))
         );
         assert!((0.0..=core::f32::consts::TAU).contains(&phase));
+    }
+
+    #[test]
+    fn swept_bark_fast_path_preserves_the_displaced_surface_position() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let curve = branches
+            .iter()
+            .copied()
+            .filter(|branch| branch.depth == 1)
+            .take_while(|branch| !branch.is_limb_tip)
+            .collect::<Vec<_>>();
+        assert!(!curve.is_empty());
+        let segment = curve[0];
+        let axis = segment.end - segment.start;
+        let (right, _) = branch_frame(axis.normalize());
+        let point = segment.start + axis * 0.4 + right * segment.start_radius;
+        let bark_phase = bark_phase_from_branches(&branches);
+        let (full_position, _) =
+            displaced_bark_surface(point, right, &curve, ENGLISH_OAK_BARK, bark_phase);
+        let fast_position =
+            displaced_sweep_bark_position(point, right, &curve, ENGLISH_OAK_BARK, bark_phase);
+        assert!(full_position.abs_diff_eq(fast_position, 1.0e-6));
+    }
+
+    #[test]
+    fn root_flare_fast_normal_preserves_the_displaced_surface_position() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let bark_phase = bark_phase_from_branches(&branches);
+        let field = RootFlareField::from_branches(&branches, 0, ENGLISH_OAK_BARK, bark_phase)
+            .expect("oak has a root flare");
+        let segment = field.segments[0];
+        let axis = segment.end - segment.start;
+        let (right, _) = branch_frame(axis.normalize());
+        let point = segment.start + axis * 0.35 + right * segment.start_radius;
+        let outward = field.normal(point);
+        let lobed = point + outward * field.root_profile_relief(point, outward);
+        let (full_position, _) = displaced_bark_surface(
+            lobed,
+            outward,
+            &field.segments,
+            field.bark,
+            field.bark_phase,
+        );
+        let (fast_position, fast_normal) = field.displaced_surface(point);
+        assert!(full_position.abs_diff_eq(fast_position, 1.0e-6));
+        assert!((fast_normal.length() - 1.0).abs() < 1.0e-3);
     }
 
     #[test]
