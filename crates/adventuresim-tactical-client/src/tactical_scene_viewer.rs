@@ -51,11 +51,11 @@ use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
     GroundScatterLayer, LooseStonePebblePatch, PresentedTree, ProceduralEnvironmentAssets,
     ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
-    TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
-    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
-    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
-    oak_review_terminal_specimen,
+    TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial, TerrainDetailPatch,
+    TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
+    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
+    TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
+    oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -1343,6 +1343,7 @@ fn setup_scene(
     mut setup: ResMut<SceneSetup>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
@@ -1584,7 +1585,7 @@ fn setup_scene(
             local_focus,
             camera_direction,
         ) = oak_review_terminal_specimen(tree, canopy_bps);
-        let bark_material = materials.add(oak_bark_material(&procedural_assets));
+        let bark_material = bark_materials.add(oak_bark_material(&procedural_assets));
         let leaf_material = leaf_card_materials.add(oak_leaf_material(&procedural_assets));
         let bud_material = materials.add(StandardMaterial {
             base_color: Color::srgb(0.36, 0.27, 0.1),
