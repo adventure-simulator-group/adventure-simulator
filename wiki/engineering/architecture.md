@@ -388,9 +388,12 @@ along each woody axis, a narrow inset groove is bordered by two raised lips, and
 smooth proximity weights blend the relief wherever root capsules join the trunk.
 The periodic angular calculation has no texture wrap, and only the extracted
 surface is displaced, avoiding microdetail evaluation throughout the bounded
-flare volume. Species bark recipes control fissure width/depth, lip and plate
-height, minimum mature radius, branch-order attenuation, and root-profile
-lobing. Oak therefore develops raised, transversely broken plates between
+flare volume. The displaced surface retains the exact branch-space relief, but
+its vertex normals reuse the generalized-cylinder frame or smooth-union field
+normal instead of sampling the relief six additional times per vertex. Species
+bark recipes control fissure width/depth, lip and plate height, minimum mature
+radius, branch-order attenuation, and root-profile lobing. Oak therefore
+develops raised, transversely broken plates between
 asymmetrical crack lips on the old trunk and major limbs while young shoots fade
 toward smooth wood; hazel uses the same mesher with a restrained smooth-bark
 preset. Root-profile lobes align with generated buttress directions and fade
