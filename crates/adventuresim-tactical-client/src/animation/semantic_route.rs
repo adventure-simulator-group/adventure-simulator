@@ -25,9 +25,6 @@ pub(crate) struct SemanticRouteInputs {
     pub support: LeadFoot,
     pub contact_sequence: u64,
     pub pack: String,
-    pub captured_step: AttackStep,
-    pub captured_step_direction: Vec2,
-    pub captured_step_speed: f32,
 }
 
 impl SemanticRouteInputs {
@@ -35,8 +32,6 @@ impl SemanticRouteInputs {
         skeleton: &PresentedSkeleton,
         evaluation: &AnimationEvaluation,
     ) -> Self {
-        let (captured_step_direction, captured_step_speed) =
-            skeleton.attack_movement().unwrap_or((Vec2::ZERO, 0.0));
         Self {
             speed: evaluation.movement_speed,
             direction: skeleton.animation_local_velocity().xz().normalize_or_zero(),
@@ -49,9 +44,6 @@ impl SemanticRouteInputs {
             support: skeleton.contact_foot,
             contact_sequence: skeleton.contact_sequence,
             pack: skeleton.animation_pack.clone(),
-            captured_step: skeleton.attack_step(),
-            captured_step_direction,
-            captured_step_speed,
         }
     }
 }

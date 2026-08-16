@@ -19,10 +19,10 @@ pub use avian3d;
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
-        ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine,
-        AttackSpec, AttackStep, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
+        ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackAnimation,
+        AttackAnimations, AttackLine, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
         CROUCH_LOCOMOTION_PROFILE, DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec,
-        DownedFacingPose, Footwork, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
+        DownedFacingPose, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
         LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile,
         PackValidationError, PoseSample, PoseSampling, Posture, PostureTransitionKind,
         PostureTransitionState, RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE,
@@ -45,9 +45,9 @@ pub mod prelude {
         TACTICAL_BREATH_RESPONSE_SCALE, TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
         TACTICAL_PRONE_LATERAL_SPEED_SCALE, TACTICAL_PRONE_SPEED_METRES_PER_SECOND,
         TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND, TACTICAL_ROLL_SPEED_METRES_PER_SECOND,
-        TACTICAL_RUN_SPEED_METRES_PER_SECOND, TACTICAL_SUPINE_SPEED_METRES_PER_SECOND,
-        TACTICAL_WALK_SPEED_METRES_PER_SECOND, tactical_breath_recovery_per_second,
-        tactical_character_controller, tactical_exhaustion_change_per_second, tactical_jog_speed,
+        TACTICAL_RUN_SPEED_METRES_PER_SECOND, TACTICAL_WALK_SPEED_METRES_PER_SECOND,
+        tactical_breath_recovery_per_second, tactical_character_controller,
+        tactical_exhaustion_change_per_second, tactical_jog_speed,
         tactical_movement_acceleration_hz_for_guard,
         tactical_movement_exhaustion_change_per_second, tactical_movement_speed,
         tactical_movement_speed_for_guard, tactical_movement_speed_for_pace, tactical_sprint_speed,

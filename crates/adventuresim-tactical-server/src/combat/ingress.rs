@@ -45,6 +45,15 @@ pub(super) fn on_melee_attack_started(
     mut skeletons: Query<&mut SkeletonState>,
     time: Res<Time<()>>,
 ) {
+    let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
+        return;
+    };
+    let Some(strike_family) = skeleton.available_strike_family(event.strike_family) else {
+        return;
+    };
+    let Some(animation) = skeleton.select_attack_animation(strike_family) else {
+        return;
+    };
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
@@ -54,15 +63,12 @@ pub(super) fn on_melee_attack_started(
         event.windup,
         MELEE_WINDUP_NETWORK_ALLOWANCE,
     );
-    if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
-        let start = animation_tick(&time);
-        let attack = AttackSpec::melee_from_local_velocity_and_style(
-            skeleton.local_velocity,
-            event.strike_family,
-            event.footwork,
-        );
-        skeleton.begin_attack(attack, start, start + duration_ticks(event.windup));
-    }
+    let start = animation_tick(&time);
+    skeleton.begin_attack(
+        AttackSpec::new(animation),
+        start,
+        start + duration_ticks(event.windup),
+    );
 }
 
 pub(super) fn resolve_defender_response(
@@ -146,10 +152,16 @@ pub(super) fn on_melee_action_request(
         return;
     };
     match **event {
-        MeleeActionRequest::Start {
-            strike_family,
-            footwork,
-        } => {
+        MeleeActionRequest::Start { strike_family } => {
+            let Ok(mut skeleton) = skeletons.get_mut(attacker) else {
+                return;
+            };
+            let Some(strike_family) = skeleton.available_strike_family(strike_family) else {
+                return;
+            };
+            let Some(animation) = skeleton.select_attack_animation(strike_family) else {
+                return;
+            };
             let Ok(mut authority) = authorities.get_mut(attacker) else {
                 return;
             };
@@ -159,15 +171,12 @@ pub(super) fn on_melee_action_request(
                 CLIENT_MELEE_WINDUP,
                 MELEE_WINDUP_NETWORK_ALLOWANCE,
             );
-            if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
-                let start = animation_tick(&time);
-                let attack = AttackSpec::melee_from_local_velocity_and_style(
-                    skeleton.local_velocity,
-                    strike_family,
-                    footwork,
-                );
-                skeleton.begin_attack(attack, start, start + duration_ticks(CLIENT_MELEE_WINDUP));
-            }
+            let start = animation_tick(&time);
+            skeleton.begin_attack(
+                AttackSpec::new(animation),
+                start,
+                start + duration_ticks(CLIENT_MELEE_WINDUP),
+            );
         }
         MeleeActionRequest::Complete {
             target,

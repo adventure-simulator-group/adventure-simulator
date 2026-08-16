@@ -55,7 +55,10 @@ The humanoid base rig is independent from authored motions:
 ```text
 assets/animations/biped/unarmed/base.glb
 assets/animations/biped/unarmed/walk.glb
-assets/animations/biped/unarmed/attack_thrust_lead_left_stay.glb
+assets/animations/biped/unarmed/guard.glb
+assets/animations/biped/unarmed/swing.glb
+assets/animations/biped/unarmed/swing_follow.glb
+assets/animations/biped/unarmed/thrust.glb
 ```
 
 Only `base.glb` supplies a spawnable scene. Its default scene must retain the
@@ -335,14 +338,12 @@ These targets and constraints are client-only and never extend replicated
 
 ## Missing assets
 
-Pack lookup first follows the pack's single fallback chain. If the requested
-semantic pose is still absent, lookup follows the deterministic similar-pose
-chain (for example run to walk and thrust to slash), restarting pack lookup for
-each candidate. Missing, unloaded, zero-animation, multiple-animation, or short
-motion files affect only that motion. Every local or remote character also gets
-a generated T-pose safety net until the base scene is available. If no pose
-candidate resolves, the client uses the complete authored `base.glb` bind
-T-pose. The generated mannequin appears only when the compatible base rig
-itself is unavailable. Bind locals are reset before every animation evaluation
-so partial clips cannot accumulate stale or procedural transforms. Incomplete
-in-progress art does not panic.
+Ordinary pose lookup first follows the pack's single fallback chain, then its
+deterministic similar-pose chain. Attack availability is stricter because it is
+a gameplay capability. A pack that defines any of `swing`, `swing_follow`, or
+`thrust` owns that complete set, and absent members stay unavailable; only a
+pack with no attack poses inherits its parent's attacks. Missing, unloaded,
+zero-animation, multiple-animation, or short motion files are unavailable.
+Every local or remote character also gets a generated T-pose safety net until
+the base scene is available. Bind locals are reset before every animation
+evaluation so partial clips cannot accumulate stale or procedural transforms.

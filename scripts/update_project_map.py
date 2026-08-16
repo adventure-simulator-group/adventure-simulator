@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "wiki" / "generated" / "project-map.md"
 EXCLUDED_PARTS = {
-    ".git", "target", "node_modules", ".direnv", "book", "__pycache__", "downloads",
+    ".git", "target", "tmp", "node_modules", ".direnv", "book", "__pycache__", "downloads",
 }
 EXCLUDED_PATHS = {
     "crates/adventuresim-stdb-module/static/wasm",

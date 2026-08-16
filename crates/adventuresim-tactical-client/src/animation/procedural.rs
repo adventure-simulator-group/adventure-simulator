@@ -424,6 +424,7 @@ pub(crate) struct LocomotionBodyResponseState {
     pub(crate) roll_radians: f32,
     target_pitch_radians: f32,
     target_roll_radians: f32,
+    last_body_velocity: Vec3,
     last_tick: Option<u64>,
     last_posture: Option<Posture>,
     last_action: Option<SkeletonAction>,
@@ -891,10 +892,9 @@ struct BoneSnapshot {
 
 mod ik;
 pub(crate) use ik::{
-    ArmIkState, AttackFootworkState, HandIkTarget, HandSide, HeldWeaponConstraint,
-    HumanoidIkTargets, LegIkDiagnostics, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES,
-    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
-    locomotion_support_weights,
+    ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkDiagnostics,
+    LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
@@ -1219,17 +1219,27 @@ mod legacy_tests {
 
     #[test]
     fn body_response_and_landing_compression_are_bounded() {
-        let forward = body_response_target(Vec3::Z * 12.0);
-        let braking = body_response_target(Vec3::NEG_Z * 12.0);
-        let lateral = body_response_target(Vec3::X * 12.0);
-        assert!((-12.0..=-8.0).contains(&forward.x.to_degrees()));
-        assert!((6.0..=10.0).contains(&braking.x.to_degrees()));
-        assert!((6.0..=10.0).contains(&lateral.y.abs().to_degrees()));
+        let steady_run = body_response_target(Vec3::Z * 5.5, Vec3::ZERO, 1.0);
+        let forward = body_response_target(Vec3::Z * 5.5, Vec3::Z * 12.0, 1.0);
+        let braking = body_response_target(Vec3::Z * 5.5, Vec3::NEG_Z * 12.0, 1.0);
+        let walking_braking = body_response_target(
+            Vec3::Z * WALK_LOCOMOTION_PROFILE.reference_speed,
+            Vec3::NEG_Z * 12.0,
+            WALK_LOCOMOTION_PROFILE.reference_speed / RUN_LOCOMOTION_PROFILE.reference_speed,
+        );
+        let stopped_braking = body_response_target(Vec3::ZERO, Vec3::NEG_Z * 12.0, 0.0);
+        let lateral = body_response_target(Vec3::ZERO, Vec3::X * 12.0, 1.0);
+        assert!((11.9..=12.1).contains(&steady_run.x.to_degrees()));
+        assert!((28.0..=30.0).contains(&forward.x.to_degrees()));
+        assert!((-3.0..=-1.0).contains(&braking.x.to_degrees()));
+        assert!((-1.0..=0.0).contains(&walking_braking.x.to_degrees()));
+        assert!(stopped_braking.x.abs() <= f32::EPSILON);
+        assert!((11.0..=12.0).contains(&lateral.y.abs().to_degrees()));
         assert!(
-            body_response_target(Vec3::new(40.0, 0.0, 40.0))
+            body_response_target(Vec3::ZERO, Vec3::new(40.0, 0.0, 40.0), 1.0)
                 .length()
                 .to_degrees()
-                <= 15.0
+                <= 30.0
         );
         assert_eq!(
             landing_compression_for_impact(WALK_LOCOMOTION_PROFILE, 0.5),
@@ -1511,12 +1521,13 @@ mod legacy_tests {
     }
 
     #[test]
-    fn stay_attacks_plant_both_feet_while_unsupported_actions_preserve_authored_fk() {
+    fn attacks_keep_live_locomotion_support_while_unsupported_actions_preserve_authored_fk() {
         let mut attack = SkeletonState::default()
             .with_local_velocity(Vec3::NEG_Z * 5.5)
             .with_gait_phase(0.0);
+        let locomotion = locomotion_support_weights(&attack);
         attack.begin_attack(AttackSpec::default(), 0, 1);
-        assert_eq!(locomotion_support_weights(&attack), (1.0, 1.0));
+        assert_eq!(locomotion_support_weights(&attack), locomotion);
 
         let mut dodge = SkeletonState::default();
         dodge.begin_dodge(DodgeSpec::default(), 0, 1);

@@ -507,13 +507,7 @@ enum ActionKind {
     },
     Attack {
         target_height: f32,
-        strike_family: StrikeFamily,
-        footwork: Footwork,
-        step: AttackStep,
-        step_speed: f32,
-        movement_direction: Vec2,
-        movement_speed: f32,
-        start_lead: LeadFoot,
+        animation: AttackAnimation,
         timeline: ActionTimeline,
     },
     Block {
@@ -549,13 +543,7 @@ impl<'de> Deserialize<'de> for ActionState {
             },
             ActionKind::Attack {
                 target_height,
-                strike_family,
-                footwork,
-                step,
-                step_speed,
-                movement_direction,
-                movement_speed,
-                start_lead,
+                animation,
                 timeline,
             } => ActionKind::Attack {
                 target_height: if target_height.is_finite() {
@@ -563,25 +551,7 @@ impl<'de> Deserialize<'de> for ActionState {
                 } else {
                     AttackSpec::default().target_height
                 },
-                strike_family,
-                footwork,
-                step,
-                step_speed: if step_speed.is_finite() {
-                    step_speed.clamp(0.0, 8.0)
-                } else {
-                    0.0
-                },
-                movement_direction: if movement_direction.is_finite() {
-                    movement_direction.normalize_or_zero()
-                } else {
-                    Vec2::ZERO
-                },
-                movement_speed: if movement_speed.is_finite() {
-                    movement_speed.clamp(0.0, 8.0)
-                } else {
-                    0.0
-                },
-                start_lead,
+                animation,
                 timeline: timeline.normalized(),
             },
             ActionKind::Block {
@@ -609,83 +579,22 @@ pub struct DodgeSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AttackSpec {
     pub target_height: f32,
-    pub strike_family: StrikeFamily,
-    pub footwork: Footwork,
-    /// Longitudinal step snapshotted from authoritative movement velocity at
-    /// attack start. It is semantic rather than a free vector so later input
-    /// or facing changes cannot repick the attacking foot.
-    pub step: AttackStep,
-    pub step_speed: f32,
-    /// Controller-local physical travel captured with the attack. Gameplay
-    /// holds this direction until recovery ends; later input is retained for
-    /// the next ordinary locomotion tick instead of steering the attack.
-    pub movement_direction: Vec2,
-    pub movement_speed: f32,
+    pub animation: AttackAnimation,
 }
 
 impl Default for AttackSpec {
     fn default() -> Self {
         Self {
             target_height: 0.5,
-            strike_family: StrikeFamily::Thrust,
-            footwork: Footwork::Stay,
-            step: AttackStep::Stay,
-            step_speed: 0.0,
-            movement_direction: Vec2::ZERO,
-            movement_speed: 0.0,
+            animation: AttackAnimation::Thrust,
         }
     }
 }
 
 impl AttackSpec {
-    /// Builds melee footwork from the controller-local velocity already
-    /// observed by the authority. Forward is Bevy's conventional -Z axis;
-    /// lateral-only and tiny longitudinal motion deliberately remain planted.
-    pub fn melee_from_local_velocity(local_velocity: Vec3) -> Self {
-        let footwork = if AttackStep::from_local_velocity(local_velocity) == AttackStep::Stay {
-            Footwork::Stay
-        } else {
-            Footwork::Switch
-        };
-        Self::melee_from_local_velocity_and_style(local_velocity, StrikeFamily::Thrust, footwork)
-    }
-
-    pub fn melee_from_local_velocity_and_style(
-        local_velocity: Vec3,
-        strike_family: StrikeFamily,
-        footwork: Footwork,
-    ) -> Self {
-        let mut step = AttackStep::from_local_velocity(local_velocity);
-        let mut movement_direction = if local_velocity.is_finite() {
-            Vec2::new(local_velocity.x, -local_velocity.z).normalize_or_zero()
-        } else {
-            Vec2::ZERO
-        };
-        if strike_family == StrikeFamily::Slash
-            && footwork == Footwork::Switch
-            && movement_direction == Vec2::ZERO
-        {
-            step = AttackStep::Forward;
-            movement_direction = Vec2::Y;
-        }
+    pub fn new(animation: AttackAnimation) -> Self {
         Self {
-            strike_family,
-            footwork,
-            step,
-            step_speed: if local_velocity.is_finite() {
-                local_velocity.xz().length().clamp(0.0, 8.0)
-            } else {
-                0.0
-            },
-            // Ahoy's controller input uses +Y for forward while Bevy local
-            // velocity uses -Z. Store the captured physical direction; a
-            // stationary slash receives an explicit forward presentation step.
-            movement_direction,
-            movement_speed: if local_velocity.is_finite() {
-                local_velocity.xz().length().clamp(0.0, 8.0)
-            } else {
-                0.0
-            },
+            animation,
             ..Self::default()
         }
     }
@@ -719,60 +628,92 @@ impl ActionState {
 pub enum StrikeFamily {
     #[default]
     Thrust,
-    Slash,
+    Swing,
 }
 
 impl StrikeFamily {
     pub fn from_melee_style(style: MeleeAttackStyle) -> Self {
         match style {
-            MeleeAttackStyle::Swing => Self::Slash,
+            MeleeAttackStyle::Swing => Self::Swing,
             MeleeAttackStyle::Stab => Self::Thrust,
         }
     }
 
     pub fn melee_style(self) -> MeleeAttackStyle {
         match self {
-            Self::Slash => MeleeAttackStyle::Swing,
+            Self::Swing => MeleeAttackStyle::Swing,
             Self::Thrust => MeleeAttackStyle::Stab,
         }
     }
-}
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
-pub enum Footwork {
-    #[default]
-    Stay,
-    Switch,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
-pub enum AttackStep {
-    #[default]
-    Stay,
-    Forward,
-    Backward,
-}
-
-impl AttackStep {
-    pub const MIN_LONGITUDINAL_SPEED: f32 = 0.15;
-
-    pub fn from_local_velocity(local_velocity: Vec3) -> Self {
-        if !local_velocity.is_finite() {
-            return Self::Stay;
+    pub const fn alternate(self) -> Self {
+        match self {
+            Self::Swing => Self::Thrust,
+            Self::Thrust => Self::Swing,
         }
-        if local_velocity.z <= -Self::MIN_LONGITUDINAL_SPEED {
-            Self::Forward
-        } else if local_velocity.z >= Self::MIN_LONGITUDINAL_SPEED {
-            Self::Backward
-        } else {
-            Self::Stay
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum AttackAnimation {
+    Swing,
+    SwingFollow,
+    #[default]
+    Thrust,
+}
+
+impl AttackAnimation {
+    pub fn strike_family(self) -> StrikeFamily {
+        match self {
+            Self::Swing | Self::SwingFollow => StrikeFamily::Swing,
+            Self::Thrust => StrikeFamily::Thrust,
         }
     }
 
-    pub fn footwork(self) -> Footwork {
-        match self {
-            Self::Stay => Footwork::Stay,
-            Self::Forward | Self::Backward => Footwork::Switch,
+    pub const fn initial(family: StrikeFamily) -> Self {
+        match family {
+            StrikeFamily::Swing => Self::Swing,
+            StrikeFamily::Thrust => Self::Thrust,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub struct AttackAnimations {
+    pub swing: bool,
+    pub swing_follow: bool,
+    pub thrust: bool,
+}
+
+impl AttackAnimations {
+    pub const NONE: Self = Self {
+        swing: false,
+        swing_follow: false,
+        thrust: false,
+    };
+    pub const fn supports(self, animation: AttackAnimation) -> bool {
+        match animation {
+            AttackAnimation::Swing => self.swing,
+            AttackAnimation::SwingFollow => self.swing_follow,
+            AttackAnimation::Thrust => self.thrust,
+        }
+    }
+
+    pub const fn supports_family(self, family: StrikeFamily) -> bool {
+        self.supports(AttackAnimation::initial(family))
+    }
+
+    pub const fn any(self) -> bool {
+        self.swing || self.swing_follow || self.thrust
+    }
+}
+
+impl Default for AttackAnimations {
+    fn default() -> Self {
+        Self {
+            swing: true,
+            swing_follow: true,
+            thrust: true,
         }
     }
 }
@@ -810,6 +751,7 @@ pub struct SkeletonState {
     downed_facing: Option<DownedFacingState>,
     downed_turning: bool,
     pub animation_pack: String,
+    pub attack_animations: AttackAnimations,
 }
 
 #[derive(Deserialize)]
@@ -833,6 +775,7 @@ struct SkeletonStateWire {
     downed_facing: Option<DownedFacingState>,
     downed_turning: bool,
     animation_pack: String,
+    attack_animations: AttackAnimations,
 }
 
 impl<'de> Deserialize<'de> for SkeletonState {
@@ -872,6 +815,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
             downed_facing: wire.downed_facing.map(DownedFacingState::normalized),
             downed_turning: wire.downed_turning,
             animation_pack: wire.animation_pack,
+            attack_animations: wire.attack_animations,
         };
         state.transition_body(wire.body);
         state.set_jump_anticipation(wire.jump_anticipation == JumpAnticipation::Charging);
@@ -902,6 +846,7 @@ impl Default for SkeletonState {
             downed_facing: None,
             downed_turning: false,
             animation_pack: "humanoid_unarmed".to_owned(),
+            attack_animations: AttackAnimations::default(),
         }
     }
 }
@@ -1221,17 +1166,15 @@ impl SkeletonState {
             };
             target_pose.half_turns_near(camera_unwrapped)
         } else {
-            let camera_near_current =
-                camera_target + ((current - camera_target) / 2.0).round() * 2.0;
-            let lower = camera_near_current.floor();
-            if (camera_near_current - lower - 0.5).abs() <= 1.0e-4 {
+            let lower = current.floor();
+            if (current - lower - 0.5).abs() <= 1.0e-4 {
                 match self.body {
-                    BodyState::Prone => (camera_near_current / 2.0).round() * 2.0,
-                    BodyState::Supine => ((camera_near_current - 1.0) / 2.0).round() * 2.0 + 1.0,
+                    BodyState::Prone => (current / 2.0).round() * 2.0,
+                    BodyState::Supine => ((current - 1.0) / 2.0).round() * 2.0 + 1.0,
                     _ => unreachable!("downed body checked above"),
                 }
             } else {
-                camera_near_current.round()
+                current.round()
             }
         };
         let target_pose = if aim_held {
@@ -1300,42 +1243,42 @@ impl SkeletonState {
     }
     pub fn strike_family(&self) -> StrikeFamily {
         match self.action {
-            ActionState(ActionKind::Attack { strike_family, .. }) => strike_family,
+            ActionState(ActionKind::Attack { animation, .. }) => animation.strike_family(),
             _ => StrikeFamily::Thrust,
         }
     }
-    pub fn footwork(&self) -> Footwork {
+    pub fn attack_animation(&self) -> Option<AttackAnimation> {
         match self.action {
-            ActionState(ActionKind::Attack { footwork, .. }) => footwork,
-            _ => Footwork::Stay,
-        }
-    }
-    pub fn attack_step(&self) -> AttackStep {
-        match self.action {
-            ActionState(ActionKind::Attack { step, .. }) => step,
-            _ => AttackStep::Stay,
-        }
-    }
-    pub fn attack_step_speed(&self) -> f32 {
-        match self.action {
-            ActionState(ActionKind::Attack { step_speed, .. }) => step_speed,
-            _ => 0.0,
-        }
-    }
-    pub fn attack_movement(&self) -> Option<(Vec2, f32)> {
-        match self.action {
-            ActionState(ActionKind::Attack {
-                movement_direction,
-                movement_speed,
-                ..
-            }) => Some((movement_direction, movement_speed)),
+            ActionState(ActionKind::Attack { animation, .. }) => Some(animation),
             _ => None,
         }
     }
-    pub fn attack_start_lead(&self) -> LeadFoot {
-        match self.action {
-            ActionState(ActionKind::Attack { start_lead, .. }) => start_lead,
-            _ => self.lead_foot,
+    pub fn available_strike_family(&self, preferred: StrikeFamily) -> Option<StrikeFamily> {
+        if self.attack_animations.supports_family(preferred) {
+            Some(preferred)
+        } else {
+            let alternate = preferred.alternate();
+            self.attack_animations
+                .supports_family(alternate)
+                .then_some(alternate)
+        }
+    }
+
+    /// Selects a legal authored attack at the current action seam. An ordinary
+    /// attack starts only from recovery-complete idle. A second swing may
+    /// replace the first after contact when the pack owns a follow pose.
+    pub fn select_attack_animation(&self, family: StrikeFamily) -> Option<AttackAnimation> {
+        let initial = AttackAnimation::initial(family);
+        match self.attack_animation() {
+            None => self.attack_animations.supports(initial).then_some(initial),
+            Some(AttackAnimation::Swing)
+                if family == StrikeFamily::Swing
+                    && self.action_phase() >= 0.5
+                    && self.attack_animations.swing_follow =>
+            {
+                Some(AttackAnimation::SwingFollow)
+            }
+            _ => None,
         }
     }
     pub fn action_start_tick(&self) -> Option<u64> {
@@ -1413,25 +1356,7 @@ impl SkeletonState {
         };
         self.replace_action(ActionState(ActionKind::Attack {
             target_height,
-            strike_family: spec.strike_family,
-            footwork: spec.footwork,
-            step: spec.step,
-            step_speed: if spec.step_speed.is_finite() {
-                spec.step_speed.clamp(0.0, 8.0)
-            } else {
-                0.0
-            },
-            movement_direction: if spec.movement_direction.is_finite() {
-                spec.movement_direction.normalize_or_zero()
-            } else {
-                Vec2::ZERO
-            },
-            movement_speed: if spec.movement_speed.is_finite() {
-                spec.movement_speed.clamp(0.0, 8.0)
-            } else {
-                0.0
-            },
-            start_lead: self.lead_foot,
+            animation: spec.animation,
             timeline: ActionTimeline::new(start_tick, contact_tick),
         }));
     }
@@ -1446,14 +1371,6 @@ impl SkeletonState {
     /// Advances an action whose contact is the midpoint of its visual
     /// timeline. Recovery gets the same bounded duration as preparation.
     pub fn advance_action(&mut self, current_tick: u64) {
-        let switching_attack_start_lead = match self.action {
-            ActionState(ActionKind::Attack {
-                footwork: Footwork::Switch,
-                start_lead,
-                ..
-            }) => Some(start_lead),
-            _ => None,
-        };
         let timeline = match &mut self.action {
             ActionState(ActionKind::Idle) => return,
             ActionState(ActionKind::Dodge { timeline, .. })
@@ -1464,26 +1381,6 @@ impl SkeletonState {
         let contact_tick = timeline.start_tick.saturating_add(preparation);
         let end_tick = contact_tick.saturating_add(preparation);
         if current_tick >= end_tick {
-            if let Some(start_lead) = switching_attack_start_lead
-                && self.lead_foot == start_lead
-            {
-                self.lead_foot = match start_lead {
-                    LeadFoot::Left => LeadFoot::Right,
-                    LeadFoot::Right => LeadFoot::Left,
-                };
-                // Keep lowered-stance locomotion from immediately deriving the
-                // old lead again on the next tick. Raised guard ignores this
-                // parity except as a stable planted restart seam.
-                self.gait_phase = match self.lead_foot {
-                    LeadFoot::Left => 0.0,
-                    LeadFoot::Right => 0.5,
-                };
-            }
-            // A saturated timeline cannot receive the following tick that
-            // normally clears its retained endpoint. More generally, action
-            // advancement may arrive after the exact endpoint; commit the
-            // stance above before clearing so a missed tick cannot snap a
-            // switching attack back to its starting guard.
             if current_tick > end_tick || end_tick == u64::MAX {
                 self.action = ActionState::default();
                 return;
@@ -1665,10 +1562,7 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     } else {
         physical_speed
     };
-    let attack_active = skeleton.action_kind() == SkeletonAction::Attack;
-    if skeleton.weapon_guard() == WeaponGuardState::Raised
-        && skeleton.posture() == Posture::Upright
-        && !attack_active
+    if skeleton.weapon_guard() == WeaponGuardState::Raised && skeleton.posture() == Posture::Upright
     {
         advance_raised_locomotion_intent(skeleton, local_velocity, delta_seconds);
         let handoffs = skeleton
@@ -1678,7 +1572,7 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
         advance_contact_identity(skeleton, handoffs, previous_guard_swing);
     } else {
         skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted(previous_guard_sequence));
-        if input.grounded && ground_speed > 0.05 && !attack_active {
+        if input.grounded && ground_speed > 0.05 {
             let profile = locomotion_profile(skeleton);
             let phase = skeleton.gait_phase.rem_euclid(1.0);
             let next_phase = phase + gait_cycle_phase_delta(profile, ground_speed, delta_seconds);

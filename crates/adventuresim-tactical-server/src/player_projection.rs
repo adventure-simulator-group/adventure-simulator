@@ -54,10 +54,8 @@ pub(crate) struct AuthoritativePostureIntent {
     last_command_sequence: u32,
 }
 
-/// One camera-facing owner is selected per accepted input. In particular,
-/// aim-following and modifier-driven body alignment cannot both be active, and
-/// there is no persistent "suspended while upright" combination to leak out
-/// of an authored posture transition.
+/// One camera-facing owner is selected per accepted input. Free downed camera
+/// movement never changes body contact; only held aim owns camera-driven rolls.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum CameraFacingIntent {
     #[default]
@@ -897,6 +895,7 @@ fn apply_posture_action(
     accumulated_input: &mut AccumulatedInput,
 ) -> Option<DiveDirection> {
     let tick = skeleton.locomotion_sample_tick;
+    let mut dive_travel_direction = None;
     let transition = match action {
         PostureActionRequest::Toggle => match skeleton.body() {
             BodyState::Grounded(_) => Some(PostureTransitionKind::UprightToProne),
@@ -906,9 +905,16 @@ fn apply_posture_action(
         },
         PostureActionRequest::RollLeft => roll_transition(skeleton.body(), RollDirection::Left),
         PostureActionRequest::RollRight => roll_transition(skeleton.body(), RollDirection::Right),
-        PostureActionRequest::Dive { direction } => {
-            matches!(skeleton.body(), BodyState::Grounded(_))
-                .then_some(PostureTransitionKind::DiveToDowned { direction })
+        PostureActionRequest::Dive {
+            animation_direction,
+            travel_direction,
+        } => {
+            dive_travel_direction = Some(travel_direction);
+            matches!(skeleton.body(), BodyState::Grounded(_)).then_some(
+                PostureTransitionKind::DiveToDowned {
+                    direction: animation_direction,
+                },
+            )
         }
     };
     let transition = transition?;
@@ -924,9 +930,9 @@ fn apply_posture_action(
     if !skeleton.begin_posture_transition(transition, tick, duration) {
         return None;
     }
-    if let PostureTransitionKind::DiveToDowned { direction } = transition {
+    if matches!(transition, PostureTransitionKind::DiveToDowned { .. }) {
         accumulated_input.jumped = Some(Stopwatch::new());
-        return Some(direction);
+        return dive_travel_direction;
     }
     None
 }
@@ -960,15 +966,21 @@ fn authoritative_weapon_guard(
     }
 }
 
-fn prone_tank_controller_input(
+fn downed_tank_controller_input(
     movement: Vec2,
+    body: BodyState,
     body_orientation: Quat,
     controller_orientation: Quat,
 ) -> Vec2 {
+    let longitudinal_scale = if body == BodyState::Supine && movement.y < 0.0 {
+        0.5
+    } else {
+        1.0
+    };
     let body_local = Vec3::new(
         -movement.x * TACTICAL_PRONE_LATERAL_SPEED_SCALE,
         0.0,
-        movement.y,
+        movement.y * longitudinal_scale,
     );
     body_relative_controller_input(body_local, body_orientation, controller_orientation)
 }
@@ -981,6 +993,21 @@ fn body_relative_controller_input(
     let world_direction = controller_yaw(body_orientation) * body_local;
     let controller_local = controller_yaw(controller_orientation).inverse() * world_direction;
     Vec2::new(controller_local.x, -controller_local.z).clamp_length_max(1.0)
+}
+
+fn advance_downed_facing_for_camera(
+    skeleton: &mut SkeletonState,
+    facing: CameraFacingIntent,
+    target: f32,
+    maximum_step: f32,
+) {
+    if facing == CameraFacingIntent::Aim {
+        skeleton.advance_downed_facing(target, true, maximum_step);
+    } else if skeleton.downed_facing().is_some() {
+        // Aim release resolves an already-active interpolation to its nearest
+        // stable contact. A free camera cannot seed a new prone/supine roll.
+        skeleton.advance_downed_facing(target, false, 1.0);
+    }
 }
 
 /// Rehydrates Ahoy's disposable fixed-loop input from the latest accepted
@@ -1002,31 +1029,20 @@ pub(crate) fn restore_authoritative_movement_intent(
     for (movement_intent, skeleton, posture, controller, transform, mut accumulated_input) in
         &mut players
     {
-        accumulated_input.last_movement =
-            if let Some((direction, speed)) = skeleton.attack_movement() {
-                let cap = match skeleton.weapon_guard() {
-                    WeaponGuardState::Lowered => TACTICAL_RUN_SPEED_METRES_PER_SECOND,
-                    WeaponGuardState::Raised => TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
-                };
-                // A moving attack owns its captured movement through the
-                // completed switching action. Releasing or reversing input
-                // cannot stop the controller underneath the attack step; the
-                // latest player intent resumes once the end guard commits.
-                (speed > 0.01 && direction != Vec2::ZERO)
-                    .then_some(direction * (speed / cap).clamp(0.0, 1.0))
-            } else {
-                movement_intent.0
-            };
-        if skeleton.body() == BodyState::Prone
-            && skeleton.attack_movement().is_none()
+        accumulated_input.last_movement = movement_intent.0;
+        if skeleton.body().is_downed()
             && let (Some(controller), Some(transform), Some(movement)) =
                 (controller, transform, accumulated_input.last_movement)
         {
-            accumulated_input.last_movement = Some(prone_tank_controller_input(
+            accumulated_input.last_movement = Some(downed_tank_controller_input(
                 movement,
+                skeleton.body(),
                 transform.rotation,
                 controller.orientation,
             ));
+        }
+        if skeleton.body() == BodyState::Prone && posture.facing == CameraFacingIntent::Aim {
+            accumulated_input.last_movement = None;
         }
         accumulated_input.crouched =
             posture.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
@@ -1074,8 +1090,7 @@ pub(crate) fn update_skeleton_locomotion(
         let posture_transitioning = posture_transition_locks_body_facing(&skeleton);
         if posture_transitioning {
             // Authored transitions own their direction relative to a fixed
-            // root. This also suspends held downed alignment until a roll or
-            // get-up has reached its endpoint.
+            // root until a roll or get-up has reached its endpoint.
             skeleton.set_downed_turning(false);
         } else if skeleton.body().is_downed() && !skeleton.is_posture_transitioning() {
             let target = downed_camera_roll_target(transform.rotation, controller.orientation);
@@ -1087,17 +1102,12 @@ pub(crate) fn update_skeleton_locomotion(
                 );
                 skeleton.set_downed_turning(transform.rotation.angle_between(next) > 1.0e-5);
                 transform.rotation = next;
-                skeleton.advance_downed_facing(
-                    target,
-                    false,
-                    time.delta_secs() * LOCOMOTION_SAMPLE_HZ
-                        / GROUND_POSTURE_TRANSITION_TICKS as f32,
-                );
             } else {
                 skeleton.set_downed_turning(false);
-                skeleton.advance_downed_facing(
+                advance_downed_facing_for_camera(
+                    &mut skeleton,
+                    posture.facing,
                     target,
-                    posture.facing == CameraFacingIntent::Aim,
                     time.delta_secs() * LOCOMOTION_SAMPLE_HZ
                         / GROUND_POSTURE_TRANSITION_TICKS as f32,
                 );
@@ -1299,17 +1309,17 @@ mod tests {
         AuthoritativeMovementIntent, AuthoritativePostureIntent,
         BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent, DisconnectedPlayer,
         GROUND_POSTURE_TRANSITION_TICKS, Player, RECONNECT_GRACE_SECS,
-        ROLL_POSTURE_TRANSITION_TICKS, WeaponGuardState, advance_posture_transition_facing,
-        apply_posture_action, authoritative_weapon_guard, dive_horizontal_velocity, input,
-        mission_enemy_health_scale, mission_enemy_scale, posture_transition_locks_body_facing,
-        prone_tank_controller_input, queue_replication_rebind, reconnect_matches,
-        restore_authoritative_movement_intent, sequence_is_newer,
+        ROLL_POSTURE_TRANSITION_TICKS, WeaponGuardState, advance_downed_facing_for_camera,
+        advance_posture_transition_facing, apply_posture_action, authoritative_weapon_guard,
+        dive_horizontal_velocity, downed_tank_controller_input, input, mission_enemy_health_scale,
+        mission_enemy_scale, posture_transition_locks_body_facing, queue_replication_rebind,
+        reconnect_matches, restore_authoritative_movement_intent, sequence_is_newer,
         tactical_movement_speed_for_guard, try_claim_reconnect, validate_player_input,
     };
     use adventuresim_tactical_core::prelude::{
-        AttackSpec, BodyState, CharacterControllerState, CharacterId, DiveDirection,
-        GroundedPosture, MovementPace, PostureTransitionKind, RollDirection, SkeletonAction,
-        SkeletonState, TACTICAL_PRONE_LATERAL_SPEED_SCALE, advance_body_facing, controller_yaw,
+        BodyState, CharacterControllerState, CharacterId, DiveDirection, GroundedPosture,
+        MovementPace, PostureTransitionKind, RollDirection, SkeletonAction, SkeletonState,
+        TACTICAL_PRONE_LATERAL_SPEED_SCALE, advance_body_facing, controller_yaw,
         downed_camera_roll_target,
     };
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
@@ -1659,12 +1669,33 @@ mod tests {
     }
 
     #[test]
+    fn free_camera_cannot_reverse_a_completed_right_roll() {
+        let mut skeleton = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(skeleton.begin_posture_transition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Right,
+            },
+            0,
+            ROLL_POSTURE_TRANSITION_TICKS,
+        ));
+        skeleton.advance_posture_transition(ROLL_POSTURE_TRANSITION_TICKS);
+        assert_eq!(skeleton.body(), BodyState::Supine);
+
+        // A camera looking toward the character's feet maps back toward the
+        // prone sector, but it is inert without held aim.
+        advance_downed_facing_for_camera(&mut skeleton, CameraFacingIntent::Free, 0.0, 1.0);
+        assert_eq!(skeleton.body(), BodyState::Supine);
+        assert!(skeleton.downed_facing().is_none());
+    }
+
+    #[test]
     fn dive_preserves_requested_direction_and_starts_airborne_motion() {
         let mut skeleton = SkeletonState::default();
         let mut input = input::AccumulatedInput::default();
         let launched = apply_posture_action(
             PostureActionRequest::Dive {
-                direction: DiveDirection::Backward,
+                animation_direction: DiveDirection::Forward,
+                travel_direction: DiveDirection::Backward,
             },
             &mut skeleton,
             &mut input,
@@ -1673,7 +1704,7 @@ mod tests {
         assert_eq!(
             skeleton.posture_transition().unwrap().kind(),
             PostureTransitionKind::DiveToDowned {
-                direction: DiveDirection::Backward,
+                direction: DiveDirection::Forward,
             }
         );
         assert!(input.jumped.is_some());
@@ -1730,7 +1761,7 @@ mod tests {
     }
 
     #[test]
-    fn prone_tank_input_is_body_relative_and_lateral_travel_is_three_eighths_speed() {
+    fn downed_tank_input_is_body_relative_with_supine_feet_at_half_speed() {
         let body = Quat::from_rotation_y(0.4);
         for camera_yaw in [0.0, 0.9, 2.7, -1.4] {
             let controller = Quat::from_rotation_y(camera_yaw);
@@ -1740,13 +1771,49 @@ mod tests {
                 (Vec2::X, Vec3::NEG_X * TACTICAL_PRONE_LATERAL_SPEED_SCALE),
                 (-Vec2::X, Vec3::X * TACTICAL_PRONE_LATERAL_SPEED_SCALE),
             ] {
-                let resolved = prone_tank_controller_input(input, body, controller);
+                let resolved =
+                    downed_tank_controller_input(input, BodyState::Prone, body, controller);
                 let resolved_world =
                     controller_yaw(controller) * Vec3::new(resolved.x, 0.0, -resolved.y);
                 let expected_world = controller_yaw(body) * expected_body_local;
                 assert!(resolved_world.abs_diff_eq(expected_world, 0.0001));
             }
+            let supine_head =
+                downed_tank_controller_input(Vec2::Y, BodyState::Supine, body, controller);
+            let supine_feet =
+                downed_tank_controller_input(-Vec2::Y, BodyState::Supine, body, controller);
+            assert!((supine_head.length() - 1.0).abs() < 0.0001);
+            assert!((supine_feet.length() - 0.5).abs() < 0.0001);
         }
+    }
+
+    #[test]
+    fn aiming_while_prone_suppresses_normal_movement() {
+        let mut world = World::new();
+        let player = world
+            .spawn((
+                Player::default(),
+                AuthoritativeMovementIntent(Some(Vec2::Y)),
+                SkeletonState::default().with_body_state(BodyState::Prone),
+                AuthoritativePostureIntent {
+                    facing: CameraFacingIntent::Aim,
+                    ..default()
+                },
+                CharacterControllerState::default(),
+                Transform::default(),
+                input::AccumulatedInput::default(),
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(restore_authoritative_movement_intent);
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .get::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement,
+            None
+        );
     }
 
     #[test]
@@ -1788,84 +1855,6 @@ mod tests {
             controller_yaw(controller_orientation) * Vec3::new(resolved.x, 0.0, -resolved.y);
         let expected_world = controller_yaw(body_orientation) * Vec3::X;
         assert!(resolved_world.abs_diff_eq(expected_world, 0.0001));
-    }
-
-    #[test]
-    fn moving_attack_holds_captured_velocity_until_the_end_guard_commits() {
-        let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        skeleton.begin_attack(
-            AttackSpec::melee_from_local_velocity(Vec3::new(0.0, 0.0, -2.0)),
-            0,
-            10,
-        );
-        let mut world = World::new();
-        let player = world
-            .spawn((
-                Player::default(),
-                AuthoritativeMovementIntent(Some(Vec2::X)),
-                skeleton,
-                AuthoritativePostureIntent::default(),
-                input::AccumulatedInput::default(),
-            ))
-            .id();
-        let mut schedule = Schedule::default();
-        schedule.add_systems(restore_authoritative_movement_intent);
-
-        schedule.run(&mut world);
-        assert_eq!(
-            world
-                .get::<input::AccumulatedInput>(player)
-                .unwrap()
-                .last_movement,
-            Some(Vec2::Y)
-        );
-
-        world
-            .get_mut::<AuthoritativeMovementIntent>(player)
-            .unwrap()
-            .0 = None;
-        world
-            .get_mut::<SkeletonState>(player)
-            .unwrap()
-            .advance_action(10);
-        schedule.run(&mut world);
-        assert_eq!(
-            world
-                .get::<input::AccumulatedInput>(player)
-                .unwrap()
-                .last_movement,
-            Some(Vec2::Y)
-        );
-
-        world
-            .get_mut::<AuthoritativeMovementIntent>(player)
-            .unwrap()
-            .0 = Some(Vec2::X);
-        world
-            .get_mut::<SkeletonState>(player)
-            .unwrap()
-            .advance_action(20);
-        schedule.run(&mut world);
-        assert_eq!(
-            world
-                .get::<input::AccumulatedInput>(player)
-                .unwrap()
-                .last_movement,
-            Some(Vec2::Y)
-        );
-
-        world
-            .get_mut::<SkeletonState>(player)
-            .unwrap()
-            .advance_action(21);
-        schedule.run(&mut world);
-        assert_eq!(
-            world
-                .get::<input::AccumulatedInput>(player)
-                .unwrap()
-                .last_movement,
-            Some(Vec2::X)
-        );
     }
 
     #[test]

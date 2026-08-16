@@ -187,7 +187,6 @@ struct LegIkMemory {
     right_foot_target: Option<Vec3>,
     left_foot_world_target: Option<Vec3>,
     right_foot_world_target: Option<Vec3>,
-    attack_stance_close: Option<bool>,
     // The last propagated ankle positions are the last pose the player
     // actually saw. At the start of a stop, FK has already restored the new
     // idle sample before IK runs, so sampling globals in the IK pass would
@@ -355,25 +354,8 @@ const SETTLE_STEP_CLEARANCE_METRES: f32 = 0.10;
 const SETTLE_CAPTURE_POINT_MARGIN_METRES: f32 = 0.12;
 const ASSUMED_COM_HEIGHT_METRES: f32 = 1.0;
 const MAX_SETTLE_CAPTURE_SPEED: f32 = 1.1;
-const ATTACK_AIRBORNE_LUNGE_MIN_SPEED: f32 = 3.5;
-const ATTACK_FLAT_SOLE_CLEARANCE: f32 = 0.01;
-const ATTACK_SETTLE_SPEED_METRES_PER_SECOND: f32 = 1.5;
-const ATTACK_SWITCH_PASS_DISTANCE_METRES: f32 = 0.08;
-const ATTACK_SETTLE_MAXIMUM_PHASE: f32 = 0.2;
-const ATTACK_RECOVERY_NO_STEP_DISTANCE_METRES: f32 = 0.075;
-const ATTACK_RECOVERY_COMPLETE_DISTANCE_METRES: f32 = 0.005;
-const ATTACK_RECOVERY_STEP_SPEED_METRES_PER_SECOND: f32 = 5.0;
-const ATTACK_RECOVERY_MINIMUM_STEP_SECONDS: f32 = 0.12;
-const ATTACK_RECOVERY_MAXIMUM_STEP_SECONDS: f32 = 0.30;
-
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct LegIkState(LegIkMemory);
-
-impl LegIkState {
-    pub(crate) fn feet_are_close_for_attack(&self) -> Option<bool> {
-        self.0.attack_stance_close
-    }
-}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct LegIkDiagnostics {
@@ -470,55 +452,6 @@ pub(crate) struct RaisedFootworkState {
     left_end_direction: Option<Vec3>,
     right_end_direction: Option<Vec3>,
 }
-
-/// One client-only, world-space attack step. The replicated state supplies a
-/// stable start tick and typed direction; exact plants remain presentation
-/// details and never move the controller or alter combat reach.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub(crate) struct AttackFootworkState {
-    pub(crate) initialized: bool,
-    start_tick: u64,
-    lead: LeadFoot,
-    step: AttackStep,
-    footwork: Footwork,
-    takes_step: bool,
-    swing_left: bool,
-    last_origin: Vec3,
-    last_rotation: Quat,
-    swing_start: Vec3,
-    swing_end: Vec3,
-    settle_end_phase: f32,
-    settled_swing_start: Vec3,
-    recovering: bool,
-    recovery_step_active: bool,
-    recovery_step_lift: bool,
-    recovery_step_progress: f32,
-    recovery_step_duration: f32,
-    recovery_step_start: Vec3,
-    recovery_step_end: Vec3,
-    recovery_steps_completed: u8,
-    recovery_left_adjusted: bool,
-    recovery_right_adjusted: bool,
-    left_ball_plant: Option<Vec3>,
-    right_ball_plant: Option<Vec3>,
-    left_plant: Vec3,
-    right_plant: Vec3,
-    evaluation_tick: Option<u64>,
-    previous_phase: f32,
-    pub(crate) support_handoffs: u8,
-    pub(crate) left_support_weight: f32,
-    pub(crate) right_support_weight: f32,
-    pub(crate) left_requested_target: Option<Vec3>,
-    pub(crate) right_requested_target: Option<Vec3>,
-    pub(crate) left_solve_target: Option<Vec3>,
-    pub(crate) right_solve_target: Option<Vec3>,
-    pub(crate) maximum_reach_yield: f32,
-    left_knee_bend_world: Option<Vec3>,
-    right_knee_bend_world: Option<Vec3>,
-    left_end_direction: Option<Vec3>,
-    right_end_direction: Option<Vec3>,
-}
-
 impl Default for RaisedFootworkState {
     fn default() -> Self {
         Self {
@@ -909,7 +842,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
     parents: Query<&ChildOf>,
     mut ik_states: Query<&mut LegIkState>,
     mut raised_states: Query<&mut RaisedFootworkState>,
-    mut attack_states: Query<&mut AttackFootworkState>,
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
     mut commands: Commands,
 ) {
@@ -922,9 +854,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             if let Ok(mut state) = raised_states.get_mut(owner) {
                 *state = RaisedFootworkState::default();
             }
-            if let Ok(mut state) = attack_states.get_mut(owner) {
-                *state = AttackFootworkState::default();
-            }
             continue;
         }
         if !terrain_ik_posture_is_valid(skeleton) {
@@ -934,22 +863,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             if let Ok(mut state) = raised_states.get_mut(owner) {
                 *state = RaisedFootworkState::default();
             }
-            if let Ok(mut state) = attack_states.get_mut(owner) {
-                *state = AttackFootworkState::default();
-            }
             continue;
         }
-        let attack_action_active = skeleton.action_kind() == SkeletonAction::Attack;
-        let attack_recovery_active = !attack_action_active
-            && attack_states
-                .get(owner)
-                .is_ok_and(|state| state.initialized);
-        let attack_footwork_active = attack_action_active || attack_recovery_active;
-        let raised_guard_follower = !attack_footwork_active
-            && raised_footwork_posture_is_valid(skeleton)
+        let raised_guard_follower = raised_footwork_posture_is_valid(skeleton)
             && skeleton.weapon_guard() == WeaponGuardState::Raised
             && !skeleton.guarded_sprint_locomotion()
-            && skeleton.action_kind() == SkeletonAction::None;
+            && matches!(
+                skeleton.action_kind(),
+                SkeletonAction::None | SkeletonAction::Attack
+            );
         let raised_footwork_was_active = raised_states
             .get(owner)
             .is_ok_and(|state| state.initialized);
@@ -1281,7 +1203,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             legs[1].3 = right_weight;
             memory.settle = Some(settle);
         }
-        let desired_raised_pelvis_shift = if raised_guard_follower || attack_footwork_active {
+        let desired_raised_pelvis_shift = if raised_guard_follower {
             -RAISED_GUARD_PELVIS_DROP
         } else {
             0.0
@@ -1316,31 +1238,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             if let Ok(mut transform) = transforms.p1().get_mut(pelvis) {
                 transform.translation += local_delta;
             }
-        }
-        if attack_footwork_active {
-            apply_attack_step(
-                owner,
-                skeleton,
-                rig,
-                terrain,
-                enabled.0,
-                rig_origin,
-                rig_rotation,
-                state_delta_seconds,
-                clock.fixed_tick.map(|(tick, _)| tick),
-                &parents,
-                &mut attack_states,
-                &mut raised_states,
-                &mut memory,
-                &mut transforms,
-                &mut commands,
-            );
-            if let Ok(mut state) = ik_states.get_mut(owner) {
-                state.0 = memory;
-            } else {
-                commands.entity(owner).insert(LegIkState(memory));
-            }
-            continue;
         }
         if raised_guard_follower {
             prepare_slope_rotation_cache(&mut memory, SlopeAlignmentMode::Raised);
@@ -1405,13 +1302,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 right_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
             let visible_left = memory.left_foot_world_target.unwrap_or(left_authored);
             let visible_right = memory.right_foot_world_target.unwrap_or(right_authored);
-            memory.attack_stance_close = attack_stance_is_close(
-                visible_left,
-                visible_right,
-                left_authored,
-                right_authored,
-                rig_rotation,
-            );
             let discontinuous =
                 footwork.initialized && rig_origin.distance_squared(footwork.step_origin) > 4.0;
             let sequence_delta = guard_step_sequence_delta(
@@ -4062,651 +3952,6 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
         }
     }
 }
-
-#[allow(clippy::too_many_arguments)]
-fn apply_attack_step(
-    owner: Entity,
-    skeleton: &SkeletonState,
-    rig: &HumanoidRig,
-    terrain: Option<&SceneTerrain>,
-    terrain_enabled: bool,
-    rig_origin: Vec3,
-    rig_rotation: Quat,
-    state_delta_seconds: f32,
-    tick: Option<u64>,
-    parents: &Query<&ChildOf>,
-    states: &mut Query<&mut AttackFootworkState>,
-    raised_states: &mut Query<&mut RaisedFootworkState>,
-    memory: &mut LegIkMemory,
-    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
-    commands: &mut Commands,
-) {
-    let (Some(&left_upper), Some(&left_lower), Some(&left_foot)) = (
-        rig.get(&BoneRole::ThighLeft),
-        rig.get(&BoneRole::ShinLeft),
-        rig.get(&BoneRole::FootLeft),
-    ) else {
-        return;
-    };
-    let (Some(&right_upper), Some(&right_lower), Some(&right_foot)) = (
-        rig.get(&BoneRole::ThighRight),
-        rig.get(&BoneRole::ShinRight),
-        rig.get(&BoneRole::FootRight),
-    ) else {
-        return;
-    };
-    let Some((_, _, left_snapshot)) =
-        snapshot_chain(left_upper, left_lower, left_foot, parents, &transforms.p0())
-    else {
-        return;
-    };
-    let Some((_, _, right_snapshot)) = snapshot_chain(
-        right_upper,
-        right_lower,
-        right_foot,
-        parents,
-        &transforms.p0(),
-    ) else {
-        return;
-    };
-    // Attack plants use the already lowered authored ankles. Undoing the
-    // pelvis drop here would lift the planted sole during the action and force
-    // a visible vertical snap when ordinary guard footwork resumes.
-    let left_authored = left_snapshot.global.translation();
-    let right_authored = right_snapshot.global.translation();
-    let visible_left = memory.left_foot_world_target.unwrap_or(left_authored);
-    let visible_right = memory.right_foot_world_target.unwrap_or(right_authored);
-    let mut state = states
-        .get_mut(owner)
-        .map(|state| *state)
-        .unwrap_or_default();
-    let attack_active = skeleton.action_kind() == SkeletonAction::Attack;
-    let start_tick = if attack_active {
-        skeleton.action_start_tick().unwrap_or_default()
-    } else {
-        state.start_tick
-    };
-    let step = if attack_active {
-        skeleton.attack_step()
-    } else {
-        state.step
-    };
-    let footwork = if attack_active {
-        skeleton.footwork()
-    } else {
-        state.footwork
-    };
-    let start_lead = if attack_active {
-        skeleton.attack_start_lead()
-    } else {
-        state.lead
-    };
-    let phase = if attack_active {
-        skeleton.action_phase().clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
-    let replacement = attack_active
-        && (!state.initialized
-            || state.start_tick != start_tick
-            || state.lead != start_lead
-            || state.step != step
-            || state.footwork != footwork
-            || (state.initialized
-                && (rig_origin.distance(state.last_origin) > MAX_OWNER_TRANSLATION_PER_TICK
-                    || rig_rotation.angle_between(state.last_rotation).to_degrees()
-                        > MAX_OWNER_ROTATION_PER_TICK_DEGREES))
-            || phase + 0.001 < state.previous_phase);
-    if replacement {
-        let swing_left = attack_swing_is_left(
-            footwork,
-            visible_left,
-            visible_right,
-            rig_origin,
-            rig_rotation,
-            skeleton.world_velocity,
-            skeleton
-                .attack_movement()
-                .map(|(direction, _)| direction)
-                .unwrap_or(Vec2::ZERO),
-            start_lead,
-        );
-        let swing_start = if swing_left {
-            visible_left
-        } else {
-            visible_right
-        };
-        let settled_swing_start = attack_grounded_target(swing_start, terrain);
-        let preparation_seconds =
-            skeleton.action_preparation_ticks().unwrap_or(1) as f32 / LOCOMOTION_SAMPLE_HZ;
-        let settle_seconds = (swing_start.y - settled_swing_start.y).max(0.0)
-            / ATTACK_SETTLE_SPEED_METRES_PER_SECOND;
-        let settle_end_phase = attack_settle_end_phase(settle_seconds, preparation_seconds);
-        let (movement_direction, movement_speed) =
-            skeleton.attack_movement().unwrap_or((Vec2::Y, 0.0));
-        let world_direction = (rig_rotation
-            * Vec3::new(movement_direction.x, 0.0, movement_direction.y))
-        .normalize_or_zero();
-        let support = if swing_left {
-            visible_right
-        } else {
-            visible_left
-        };
-        let step_distance = attack_step_contact_distance(
-            footwork,
-            settled_swing_start,
-            support,
-            world_direction,
-            movement_speed,
-            preparation_seconds,
-        );
-        let mut swing_end = settled_swing_start + world_direction * step_distance;
-        // Authored attack clips are free to lift or delay their FK foot, but
-        // procedural attack footwork must arrive on the ground with contact.
-        // Use the planted ankle's height when the attack begins during an
-        // airborne locomotion lobe. Otherwise the moving foot can reach its
-        // horizontal contact endpoint while still visibly raised, making the
-        // later recovery grounding read as the actual step.
-        swing_end.y = support.y;
-        state = AttackFootworkState {
-            initialized: true,
-            start_tick,
-            lead: start_lead,
-            step,
-            footwork,
-            takes_step: footwork == Footwork::Switch || movement_speed > 0.05,
-            swing_left,
-            last_origin: rig_origin,
-            last_rotation: rig_rotation,
-            swing_start,
-            swing_end,
-            settle_end_phase,
-            settled_swing_start,
-            recovering: false,
-            recovery_step_active: false,
-            recovery_step_lift: false,
-            recovery_step_progress: 0.0,
-            recovery_step_duration: 0.0,
-            recovery_step_start: Vec3::ZERO,
-            recovery_step_end: Vec3::ZERO,
-            recovery_steps_completed: 0,
-            recovery_left_adjusted: false,
-            recovery_right_adjusted: false,
-            left_ball_plant: (!swing_left).then(|| {
-                memory.left_last_rendered_toe_world.unwrap_or_else(|| {
-                    rig.get(&BoneRole::ToeLeft)
-                        .and_then(|toe| snapshot(*toe, parents, &transforms.p0()))
-                        .map_or(visible_left, |toe| toe.global.translation())
-                })
-            }),
-            right_ball_plant: swing_left.then(|| {
-                memory.right_last_rendered_toe_world.unwrap_or_else(|| {
-                    rig.get(&BoneRole::ToeRight)
-                        .and_then(|toe| snapshot(*toe, parents, &transforms.p0()))
-                        .map_or(visible_right, |toe| toe.global.translation())
-                })
-            }),
-            left_plant: visible_left,
-            right_plant: visible_right,
-            evaluation_tick: tick,
-            previous_phase: phase,
-            support_handoffs: 0,
-            left_support_weight: 1.0,
-            right_support_weight: 1.0,
-            left_requested_target: None,
-            right_requested_target: None,
-            left_solve_target: None,
-            right_solve_target: None,
-            maximum_reach_yield: 0.0,
-            left_knee_bend_world: None,
-            right_knee_bend_world: None,
-            left_end_direction: None,
-            right_end_direction: None,
-        };
-    }
-    if !state.initialized {
-        return;
-    }
-    let advances = match tick {
-        Some(tick) => state.evaluation_tick != Some(tick),
-        None => state_delta_seconds > 0.0,
-    };
-    if advances {
-        if attack_active
-            && state.footwork == Footwork::Switch
-            && state.previous_phase < 0.5
-            && phase >= 0.5
-        {
-            state.support_handoffs = state.support_handoffs.saturating_add(1);
-        }
-        state.previous_phase = phase;
-        state.last_origin = rig_origin;
-        state.last_rotation = rig_rotation;
-    }
-    state.evaluation_tick = tick;
-    let mut finish_after_solve = false;
-    let (left_target, right_target, left_support, right_support) = if attack_active {
-        state.recovering = false;
-        // Step ownership is latched when the attack begins. Do not consult the
-        // live/replicated velocity again here: a brief authoritative velocity
-        // drop must not turn a moving attack into a two-foot plant halfway
-        // through its strike.
-        if !state.takes_step {
-            (state.left_plant, state.right_plant, 1.0, 1.0)
-        } else {
-            if phase <= 0.5 {
-                // The attack can be latched before the ordinary locomotion IK
-                // publishes its final support plant for that presentation
-                // frame. Refresh only the endpoint height from the retained
-                // planted foot; its horizontal strike endpoint stays fixed.
-                state.swing_end.y = if state.swing_left {
-                    state.right_solve_target.unwrap_or(state.right_plant).y
-                } else {
-                    state.left_solve_target.unwrap_or(state.left_plant).y
-                };
-            }
-            let swing_target = if phase < state.settle_end_phase {
-                let settle = smoothstep(0.0, state.settle_end_phase.max(f32::EPSILON), phase);
-                state.swing_start.lerp(state.settled_swing_start, settle)
-            } else if phase < 0.5 {
-                let strike = smoothstep(state.settle_end_phase, 0.5, phase);
-                let mut target = state.settled_swing_start.lerp(state.swing_end, strike);
-                target.y += (std::f32::consts::PI * strike).sin() * 0.10;
-                target
-            } else {
-                state.swing_end
-            };
-            if phase >= 0.5 {
-                if state.swing_left {
-                    state.left_plant = swing_target;
-                } else {
-                    state.right_plant = swing_target;
-                }
-            }
-            let (left, right) = if state.swing_left {
-                (swing_target, state.right_plant)
-            } else {
-                (state.left_plant, swing_target)
-            };
-            let landed = (phase >= 0.5) as u8 as f32;
-            let (left_support, right_support) = if state.swing_left {
-                (landed, 1.0)
-            } else {
-                (1.0, landed)
-            };
-            (left, right, left_support, right_support)
-        }
-    } else {
-        if !state.recovering {
-            // Recovery starts from the rendered result of the strike, not
-            // from the pre-ball-correction ankle requests. The support ankle
-            // may have moved substantially while its ball stayed planted;
-            // treating the old request as its current plant would hide that
-            // error and make locomotion inherit an elevated or twisted foot.
-            state.left_plant = state.left_solve_target.unwrap_or(state.left_plant);
-            state.right_plant = state.right_solve_target.unwrap_or(state.right_plant);
-            state.left_ball_plant = None;
-            state.right_ball_plant = None;
-        }
-        state.recovering = true;
-        let ideal_left = attack_grounded_target(left_authored, terrain);
-        let ideal_right = attack_grounded_target(right_authored, terrain);
-        if !state.recovery_step_active {
-            let left_error = state.left_plant.distance(ideal_left);
-            let right_error = state.right_plant.distance(ideal_right);
-            let moving_handoff = skeleton.raised_locomotion().is_moving()
-                && state.recovery_left_adjusted
-                && state.recovery_right_adjusted;
-            if moving_handoff {
-                // Once two bounded correction steps have re-established a
-                // viable alternating stance, hand the still-moving character
-                // to ordinary raised locomotion from these exact retained
-                // plants. Chasing a continuously advancing authored guard to
-                // zero error would otherwise retain attack ownership forever.
-                finish_after_solve = true;
-            } else if left_error.max(right_error) <= ATTACK_RECOVERY_COMPLETE_DISTANCE_METRES {
-                state.left_plant = ideal_left;
-                state.right_plant = ideal_right;
-                finish_after_solve = true;
-            } else {
-                state.swing_left =
-                    match (state.recovery_left_adjusted, state.recovery_right_adjusted) {
-                        (true, false) => false,
-                        (false, true) => true,
-                        _ => left_error >= right_error,
-                    };
-                let (start, end, error) = if state.swing_left {
-                    (state.left_plant, ideal_left, left_error)
-                } else {
-                    (state.right_plant, ideal_right, right_error)
-                };
-                state.recovery_step_active = true;
-                state.recovery_step_lift = error > ATTACK_RECOVERY_NO_STEP_DISTANCE_METRES;
-                state.recovery_step_progress = 0.0;
-                state.recovery_step_duration =
-                    (error / ATTACK_RECOVERY_STEP_SPEED_METRES_PER_SECOND).clamp(
-                        ATTACK_RECOVERY_MINIMUM_STEP_SECONDS,
-                        ATTACK_RECOVERY_MAXIMUM_STEP_SECONDS,
-                    );
-                state.recovery_step_start = start;
-                state.recovery_step_end = end;
-                if state.swing_left {
-                    state.left_ball_plant = None;
-                } else {
-                    state.right_ball_plant = None;
-                }
-            }
-        }
-        if state.recovery_step_active && advances {
-            state.recovery_step_progress = (state.recovery_step_progress
-                + state_delta_seconds / state.recovery_step_duration.max(f32::EPSILON))
-            .min(1.0);
-        }
-        let moving = if state.recovery_step_lift {
-            settle_swing_target(
-                state.recovery_step_start,
-                state.recovery_step_end,
-                state.recovery_step_progress,
-            )
-        } else {
-            state.recovery_step_start.lerp(
-                state.recovery_step_end,
-                smoothstep(0.0, 1.0, state.recovery_step_progress),
-            )
-        };
-        let (left, right, left_support, right_support) = if state.recovery_step_active {
-            if state.swing_left {
-                (moving, state.right_plant, 0.0, 1.0)
-            } else {
-                (state.left_plant, moving, 1.0, 0.0)
-            }
-        } else {
-            (state.left_plant, state.right_plant, 1.0, 1.0)
-        };
-        if state.recovery_step_active && state.recovery_step_progress >= 1.0 {
-            if state.swing_left {
-                state.left_plant = state.recovery_step_end;
-                state.recovery_left_adjusted = true;
-            } else {
-                state.right_plant = state.recovery_step_end;
-                state.recovery_right_adjusted = true;
-            }
-            state.recovery_step_active = false;
-            state.recovery_steps_completed = state.recovery_steps_completed.saturating_add(1);
-        }
-        (left, right, left_support, right_support)
-    };
-    state.left_support_weight = left_support;
-    state.right_support_weight = right_support;
-
-    for (upper, lower, foot, requested_target, left, support_weight) in [
-        (
-            left_upper,
-            left_lower,
-            left_foot,
-            left_target,
-            true,
-            left_support,
-        ),
-        (
-            right_upper,
-            right_lower,
-            right_foot,
-            right_target,
-            false,
-            right_support,
-        ),
-    ] {
-        let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
-            snapshot_chain(upper, lower, foot, parents, &transforms.p0())
-        else {
-            continue;
-        };
-        let upper_length = upper_snapshot
-            .global
-            .translation()
-            .distance(lower_snapshot.global.translation());
-        let lower_length = lower_snapshot
-            .global
-            .translation()
-            .distance(foot_snapshot.global.translation());
-        let attack_reach = if terrain_enabled {
-            // Cross-slope support needs the same small knee-reserve release as
-            // ordinary terrain IK. Keeping the flat-ground reserve here made
-            // the nominally planted foot creep as the pelvis crossed a slope.
-            terrain_maximum_reach(upper_length, lower_length)
-        } else {
-            maximum_reach(upper_length, lower_length)
-        };
-        // Fast root continuation can carry the hip beyond a literal world
-        // plant. Yield only the unreachable residual, giving a compressed
-        // lunge instead of a straight knee, teleport, or owner translation.
-        let constrained = constrain_target_to_reach(
-            requested_target,
-            upper_snapshot.global.translation(),
-            attack_reach,
-        );
-        // The attack trajectory and controller root are already sampled at a
-        // fixed rate. A second generic locomotion speed limit makes the solve
-        // lag behind the requested strike and shifts maximum extension into
-        // recovery. The analytic reach constraint below remains the safety
-        // bound; use the attack sample directly so contact stays synchronized.
-        let advanced = constrained;
-        let mut target =
-            constrain_target_to_reach(advanced, upper_snapshot.global.translation(), attack_reach);
-        state.maximum_reach_yield = state
-            .maximum_reach_yield
-            .max(requested_target.distance(target));
-        let side = anatomical_side(
-            rig_rotation,
-            rig_origin,
-            upper_snapshot.global.translation(),
-            left,
-        );
-        let remembered = if left {
-            state.left_knee_bend_world
-        } else {
-            state.right_knee_bend_world
-        }
-        .or_else(|| {
-            if left {
-                memory.left_leg
-            } else {
-                memory.right_leg
-            }
-            .map(|bend| pole_to_world(rig_rotation, bend))
-        });
-        let previous_end_direction = if left {
-            state.left_end_direction
-        } else {
-            state.right_end_direction
-        };
-        let canonical = canonical_knee_pole(side);
-        let canonical_world = pole_to_world(rig_rotation, canonical);
-        let foot_facing = rendered_foot_facing(
-            rig,
-            left,
-            foot_snapshot.global.translation(),
-            parents,
-            &transforms.p0(),
-        );
-        let pole = stabilized_knee_pole(
-            remembered,
-            previous_end_direction,
-            upper_snapshot.global.translation(),
-            lower_snapshot.global.translation(),
-            target,
-            canonical_world,
-            foot_facing,
-        )
-        .unwrap_or(canonical_world);
-        let pole = constrain_rendered_leg_pole(
-            rig,
-            left,
-            upper_snapshot.global.translation(),
-            foot_snapshot.global.translation(),
-            target,
-            pole,
-            parents,
-            &transforms.p0(),
-        );
-        if let Some(solution) = solve_two_bone_with_reach(
-            upper_snapshot.global.translation(),
-            lower_snapshot.global.translation(),
-            foot_snapshot.global.translation(),
-            target,
-            upper_length,
-            lower_length,
-            pole,
-            attack_reach,
-        ) {
-            apply_two_bone_solution(upper, lower, foot, solution, parents, transforms);
-            let bend = (solution.knee - upper_snapshot.global.translation())
-                .reject_from_normalized(solution.end_direction);
-            if advances && let Some(valid) = bend.try_normalize() {
-                if left {
-                    memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
-                    state.left_knee_bend_world = Some(valid);
-                    state.left_end_direction = Some(solution.end_direction);
-                } else {
-                    memory.right_leg = Some(pole_to_owner(rig_rotation, valid));
-                    state.right_knee_bend_world = Some(valid);
-                    state.right_end_direction = Some(solution.end_direction);
-                }
-            }
-        }
-        if terrain_enabled
-            && support_weight >= 0.5
-            && let Some(terrain) = terrain
-            && let Some(normal) = terrain.normal_at(target.xz())
-            && let Some(sole_axis) = rig.sole_axis(left)
-        {
-            align_foot_to_slope(foot, sole_axis, normal, parents, transforms);
-        }
-        let ball_plant = if left {
-            state.left_ball_plant
-        } else {
-            state.right_ball_plant
-        };
-        if let Some(ball_plant) = ball_plant
-            && let Some(&toe) = rig.get(if left {
-                &BoneRole::ToeLeft
-            } else {
-                &BoneRole::ToeRight
-            })
-            && let Some(toe_snapshot) = snapshot(toe, parents, &transforms.p0())
-        {
-            // The ankle is only a convenient IK endpoint; visible contact is
-            // owned by the ball/toe joint. Correct the solved ankle by the
-            // ball residual after authored and terrain rotation so the foot
-            // may pivot without sliding its contact point.
-            let residual = ball_plant - toe_snapshot.global.translation();
-            if residual.is_finite() && residual.length() <= 0.30 {
-                target += residual;
-                if let Some((corrected_upper, corrected_lower, corrected_foot)) =
-                    snapshot_chain(upper, lower, foot, parents, &transforms.p0())
-                {
-                    target = constrain_target_to_reach(
-                        target,
-                        corrected_upper.global.translation(),
-                        attack_reach,
-                    );
-                    let corrected_pole = constrain_rendered_leg_pole(
-                        rig,
-                        left,
-                        corrected_upper.global.translation(),
-                        corrected_foot.global.translation(),
-                        target,
-                        pole,
-                        parents,
-                        &transforms.p0(),
-                    );
-                    if let Some(solution) = solve_two_bone_with_reach(
-                        corrected_upper.global.translation(),
-                        corrected_lower.global.translation(),
-                        corrected_foot.global.translation(),
-                        target,
-                        upper_length,
-                        lower_length,
-                        corrected_pole,
-                        attack_reach,
-                    ) {
-                        apply_two_bone_solution(upper, lower, foot, solution, parents, transforms);
-                    }
-                }
-            }
-        }
-        if support_weight >= 0.95
-            && let Some(&toe) = rig.get(if left {
-                &BoneRole::ToeLeft
-            } else {
-                &BoneRole::ToeRight
-            })
-            && let Some(toe_snapshot) = snapshot(toe, parents, &transforms.p0())
-        {
-            if left && state.left_ball_plant.is_none() {
-                state.left_ball_plant = Some(toe_snapshot.global.translation());
-            } else if !left && state.right_ball_plant.is_none() {
-                state.right_ball_plant = Some(toe_snapshot.global.translation());
-            }
-        }
-        if left {
-            state.left_requested_target = Some(requested_target);
-            state.left_solve_target = Some(target);
-            memory.left_foot_world_target = Some(target);
-            memory.left_support_weight = Some(support_weight);
-        } else {
-            state.right_requested_target = Some(requested_target);
-            state.right_solve_target = Some(target);
-            memory.right_foot_world_target = Some(target);
-            memory.right_support_weight = Some(support_weight);
-        }
-    }
-    if finish_after_solve && skeleton.raised_locomotion().is_moving() {
-        // A moving character can hand these exact plants to the ordinary
-        // raised-step planner. At idle, keep attack recovery ownership so a
-        // late pose transition into the resting guard is absorbed as another
-        // bounded correction instead of snapping both feet on the next frame.
-        let left_plant = state.left_solve_target.unwrap_or(state.left_plant);
-        let right_plant = state.right_solve_target.unwrap_or(state.right_plant);
-        let swing_left = skeleton.raised_locomotion().swing_foot() == Some(LeadFoot::Left);
-        let visible_swing = if swing_left { left_plant } else { right_plant };
-        let handoff = RaisedFootworkState {
-            initialized: true,
-            was_moving: skeleton.raised_locomotion().is_moving(),
-            awaiting_step_sequence: true,
-            half_step: (skeleton.gait_phase.rem_euclid(1.0) >= 0.5) as u8,
-            lead: skeleton.lead_foot,
-            swing_left,
-            step_origin: rig_origin,
-            step_rotation: rig_rotation,
-            swing_stance_local: rig_rotation.inverse() * (visible_swing - rig_origin),
-            swing_start: visible_swing,
-            swing_end: visible_swing,
-            left_plant,
-            right_plant,
-            evaluation_tick: tick,
-            step_sequence: skeleton.raised_locomotion().step_sequence(),
-            left_support_weight: 1.0,
-            right_support_weight: 1.0,
-            left_solve_target: Some(left_plant),
-            right_solve_target: Some(right_plant),
-            ..default()
-        };
-        if let Ok(mut raised) = raised_states.get_mut(owner) {
-            *raised = handoff;
-        } else {
-            commands.entity(owner).insert(handoff);
-        }
-        state.initialized = false;
-    }
-    if let Ok(mut stored) = states.get_mut(owner) {
-        *stored = state;
-    } else {
-        commands.entity(owner).insert(state);
-    }
-}
-
 pub(super) fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded() && skeleton.posture() == Posture::Upright
 }
@@ -6170,43 +5415,16 @@ pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32)
     if !skeleton.is_grounded() {
         return (0.0, 0.0);
     }
-    if skeleton.action_kind() == SkeletonAction::Attack {
-        let takes_step = skeleton.footwork() == Footwork::Switch
-            || skeleton
-                .attack_movement()
-                .is_some_and(|(_, speed)| speed > 0.05);
-        if !takes_step {
-            return (1.0, 1.0);
-        }
-        let swing_left = match skeleton.footwork() {
-            Footwork::Stay => skeleton.attack_start_lead() == LeadFoot::Left,
-            Footwork::Switch => skeleton.attack_start_lead() == LeadFoot::Right,
-        };
-        if skeleton.attack_step_speed() >= ATTACK_AIRBORNE_LUNGE_MIN_SPEED {
-            let phase = skeleton.action_phase();
-            let launch = 1.0 - smoothstep(0.0, 0.12, phase);
-            let recovery = smoothstep(0.5, 1.0, phase);
-            return if swing_left {
-                (if phase < 0.5 { 0.0 } else { 1.0 }, launch.max(recovery))
-            } else {
-                (launch.max(recovery), if phase < 0.5 { 0.0 } else { 1.0 })
-            };
-        }
-        let handoff = smoothstep(0.45, 0.55, skeleton.action_phase());
-        return if swing_left {
-            (handoff, 1.0 - handoff)
-        } else {
-            (1.0 - handoff, handoff)
-        };
-    }
-    if skeleton.action_kind() != SkeletonAction::None {
+    if !matches!(
+        skeleton.action_kind(),
+        SkeletonAction::None | SkeletonAction::Attack
+    ) {
         return (0.0, 0.0);
     }
     if speed <= 0.05 {
         return (1.0, 1.0);
     }
     if skeleton.weapon_guard() == WeaponGuardState::Raised
-        && skeleton.action_kind() == SkeletonAction::None
         && skeleton.raised_locomotion().is_moving()
     {
         let swing_left = skeleton.raised_locomotion().swing_foot() == Some(LeadFoot::Left);
@@ -6270,118 +5488,6 @@ pub(super) fn constrain_foot_to_track(
     local.x = signed_x * side;
     rig_origin + rig_rotation * local
 }
-
-fn attack_grounded_target(mut target: Vec3, terrain: Option<&SceneTerrain>) -> Vec3 {
-    if let Some(height) = terrain.and_then(|terrain| terrain.height_at(target.xz())) {
-        target.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
-    } else {
-        target.y += ATTACK_FLAT_SOLE_CLEARANCE;
-    }
-    target
-}
-
-fn attack_stance_is_close(
-    visible_left: Vec3,
-    visible_right: Vec3,
-    guard_left: Vec3,
-    guard_right: Vec3,
-    rig_rotation: Quat,
-) -> Option<bool> {
-    let forward = (rig_rotation * Vec3::Z).xz().normalize_or_zero();
-    if forward == Vec2::ZERO
-        || !visible_left.is_finite()
-        || !visible_right.is_finite()
-        || !guard_left.is_finite()
-        || !guard_right.is_finite()
-    {
-        return None;
-    }
-    let visible_separation = (visible_left - visible_right).xz().dot(forward).abs();
-    let guard_separation = (guard_left - guard_right).xz().dot(forward).abs();
-    (guard_separation > 0.01).then_some(visible_separation <= guard_separation * 0.5)
-}
-
-fn attack_swing_is_left(
-    footwork: Footwork,
-    left: Vec3,
-    right: Vec3,
-    rig_origin: Vec3,
-    rig_rotation: Quat,
-    world_velocity: Vec3,
-    local_movement_direction: Vec2,
-    start_lead: LeadFoot,
-) -> bool {
-    let travel = world_velocity.xz().normalize_or_zero();
-    let fallback_forward = (rig_rotation * Vec3::Z).xz().normalize_or_zero();
-    let local_travel = (rig_rotation
-        * Vec3::new(local_movement_direction.x, 0.0, local_movement_direction.y))
-    .xz()
-    .normalize_or_zero();
-    let movement_forward = if travel != Vec2::ZERO {
-        travel
-    } else if local_travel != Vec2::ZERO {
-        local_travel
-    } else {
-        fallback_forward
-    };
-    let body_forward = if footwork == Footwork::Stay {
-        fallback_forward
-    } else {
-        movement_forward
-    };
-    let left_forward = (left - rig_origin).xz().dot(body_forward);
-    let right_forward = (right - rig_origin).xz().dot(body_forward);
-    if (left_forward - right_forward).abs() <= 0.005 {
-        return if footwork == Footwork::Stay {
-            start_lead == LeadFoot::Left
-        } else {
-            start_lead == LeadFoot::Right
-        };
-    }
-    if footwork == Footwork::Stay {
-        left_forward > right_forward
-    } else {
-        left_forward < right_forward
-    }
-}
-
-fn attack_settle_end_phase(settle_seconds: f32, preparation_seconds: f32) -> f32 {
-    if settle_seconds <= f32::EPSILON {
-        0.0
-    } else {
-        (settle_seconds / preparation_seconds.max(1.0 / LOCOMOTION_SAMPLE_HZ) * 0.5)
-            .clamp(0.0, ATTACK_SETTLE_MAXIMUM_PHASE)
-    }
-}
-
-fn attack_step_contact_distance(
-    footwork: Footwork,
-    swing_start: Vec3,
-    support: Vec3,
-    world_direction: Vec3,
-    movement_speed: f32,
-    preparation_seconds: f32,
-) -> f32 {
-    let root_travel_to_contact = movement_speed.max(0.0) * preparation_seconds.max(0.0);
-    let semantic_step = match footwork {
-        Footwork::Stay => guard_step_length(movement_speed),
-        Footwork::Switch => {
-            let distance_to_support = (support - swing_start).dot(world_direction).max(0.0);
-            distance_to_support + ATTACK_SWITCH_PASS_DISTANCE_METRES
-        }
-    };
-    // The endpoint needs both components at ordinary combat speeds: root
-    // travel carries the whole body through contact, while the semantic
-    // distance moves the swing foot relative to that body. Taking only the
-    // larger component made the foot nearly match the advancing root, which
-    // read as a locked leg even though its world-space target was moving.
-    // Taper the added stride only between a normal 2 m/s attack and the
-    // 5.5 m/s sprint fixture, where root travel already consumes the safe leg
-    // reach and an extra full stance length would tear the support contact.
-    let relative_step_scale = 1.0 - smoothstep(2.0, 5.5, movement_speed);
-    root_travel_to_contact + semantic_step * relative_step_scale
-}
-
 pub(super) fn plan_guard_step_endpoint(
     step_origin: Vec3,
     step_rotation: Quat,
@@ -9239,127 +8345,19 @@ mod slope_cache_tests {
     }
 
     #[test]
-    fn attack_swing_selection_uses_spatial_order_not_guard_label() {
-        let back = Vec3::new(-0.2, 0.1, -0.4);
-        let front = Vec3::new(0.2, 0.1, 0.4);
-        for lead in [LeadFoot::Left, LeadFoot::Right] {
-            assert!(attack_swing_is_left(
-                Footwork::Switch,
-                back,
-                front,
-                Vec3::ZERO,
-                Quat::IDENTITY,
-                Vec3::Z,
-                Vec2::Y,
-                lead,
+    fn attack_uses_the_live_guard_support_weights() {
+        let mut skeleton = SkeletonState::default()
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_local_velocity(Vec3::NEG_Z * 2.0)
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(
+                Vec2::NEG_Y,
+                2.0,
+                LeadFoot::Left,
+                7,
             ));
-            assert!(!attack_swing_is_left(
-                Footwork::Switch,
-                back,
-                front,
-                Vec3::ZERO,
-                Quat::IDENTITY,
-                -Vec3::Z,
-                -Vec2::Y,
-                lead,
-            ));
-        }
-    }
-
-    #[test]
-    fn stay_attack_steps_the_body_forward_foot() {
-        let back = Vec3::new(-0.2, 0.1, -0.1);
-        let front = Vec3::new(0.2, 0.1, 0.1);
-        for lead in [LeadFoot::Left, LeadFoot::Right] {
-            assert!(!attack_swing_is_left(
-                Footwork::Stay,
-                back,
-                front,
-                Vec3::ZERO,
-                Quat::IDENTITY,
-                -Vec3::Z,
-                -Vec2::Y,
-                lead,
-            ));
-        }
-    }
-
-    #[test]
-    fn attack_stance_close_threshold_is_half_guard_separation() {
-        let guard_left = Vec3::new(-0.2, 0.0, -0.4);
-        let guard_right = Vec3::new(0.2, 0.0, 0.4);
-        let left = Vec3::new(-0.2, 0.0, -0.2);
-        assert_eq!(
-            attack_stance_is_close(
-                left,
-                Vec3::new(0.2, 0.0, 0.2),
-                guard_left,
-                guard_right,
-                Quat::IDENTITY,
-            ),
-            Some(true)
-        );
-        assert_eq!(
-            attack_stance_is_close(
-                left,
-                Vec3::new(0.2, 0.0, 0.201),
-                guard_left,
-                guard_right,
-                Quat::IDENTITY,
-            ),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn moving_attack_step_advances_beyond_the_contact_time_root_travel() {
-        let speed = 2.0;
-        let preparation_seconds = 0.30;
-        let distance = attack_step_contact_distance(
-            Footwork::Stay,
-            Vec3::ZERO,
-            Vec3::new(0.0, 0.0, 0.3),
-            Vec3::Z,
-            speed,
-            preparation_seconds,
-        );
-        let root_travel = speed * preparation_seconds;
-        assert_eq!(distance, root_travel + guard_step_length(speed));
-        assert!(distance > root_travel);
-    }
-
-    #[test]
-    fn sprint_attack_step_does_not_exceed_contact_time_root_travel() {
-        let speed = 5.5;
-        let preparation_seconds = 0.30;
-        let distance = attack_step_contact_distance(
-            Footwork::Switch,
-            Vec3::new(0.0, 0.0, -0.2),
-            Vec3::new(0.0, 0.0, 0.2),
-            Vec3::Z,
-            speed,
-            preparation_seconds,
-        );
-        assert_eq!(distance, speed * preparation_seconds);
-    }
-
-    #[test]
-    fn stationary_switch_step_passes_the_planted_foot_before_contact() {
-        let swing = Vec3::new(0.0, 0.0, -0.2);
-        let support = Vec3::new(0.0, 0.0, 0.2);
-        let distance =
-            attack_step_contact_distance(Footwork::Switch, swing, support, Vec3::Z, 0.0, 0.30);
-        assert_eq!(distance, 0.4 + ATTACK_SWITCH_PASS_DISTANCE_METRES);
-    }
-
-    #[test]
-    fn airborne_attack_settle_is_bounded_to_early_preparation() {
-        assert_eq!(attack_settle_end_phase(0.0, 0.25), 0.0);
-        assert_eq!(
-            attack_settle_end_phase(10.0, 0.25),
-            ATTACK_SETTLE_MAXIMUM_PHASE
-        );
-        assert!(attack_settle_end_phase(0.02, 0.25) < 0.5);
+        let guard_weights = locomotion_support_weights(&skeleton);
+        skeleton.begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20);
+        assert_eq!(locomotion_support_weights(&skeleton), guard_weights);
     }
 
     #[test]
