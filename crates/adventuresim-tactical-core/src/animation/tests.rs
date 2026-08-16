@@ -312,6 +312,37 @@ mod legacy_tests {
     }
 
     #[test]
+    fn quickstep_contact_returns_to_raised_guard_without_discarding_momentum() {
+        let mut state = SkeletonState::default()
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_locomotion_sample_tick(10)
+            .with_world_velocity(Vec3::new(3.0, -2.0, 0.0))
+            .with_body_state(BodyState::Airborne);
+        state.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100);
+
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::X * 2.5,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 11,
+            },
+        );
+
+        assert_eq!(state.action_kind(), SkeletonAction::None);
+        assert_eq!(state.body(), BodyState::Grounded(GroundedPosture::Upright));
+        assert_eq!(state.world_velocity, Vec3::X * 2.5);
+        assert!(state.raised_locomotion().is_moving());
+        assert_eq!(
+            AnimationEvaluation::from_skeleton(&state).base[0].pose,
+            SemanticPose::Guard
+        );
+    }
+
+    #[test]
     fn turning_acceleration_is_differenced_in_one_world_frame() {
         let previous_velocity = Vec3::NEG_Z * 5.5;
         let orientation = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
@@ -411,6 +442,21 @@ mod legacy_tests {
             0.25,
         );
         assert!((Quat::IDENTITY.angle_between(completed) - std::f32::consts::PI).abs() < 0.0001);
+    }
+
+    #[test]
+    fn dive_launch_root_maps_every_authored_axis_to_camera_relative_travel() {
+        let orientation = Quat::from_euler(EulerRot::YXZ, 0.83, -0.4, 0.2);
+        let root = dive_launch_root_rotation(orientation);
+        let camera = controller_yaw(orientation);
+        for (authored_axis, travel) in [
+            (Vec3::Z, camera * Vec3::NEG_Z),
+            (Vec3::NEG_Z, camera * Vec3::Z),
+            (Vec3::X, camera * Vec3::NEG_X),
+            (Vec3::NEG_X, camera * Vec3::X),
+        ] {
+            assert!((root * authored_axis).abs_diff_eq(travel, 0.000_01));
+        }
     }
 
     #[test]
@@ -1015,19 +1061,13 @@ mod legacy_tests {
         }
     }
     #[test]
-    fn dodge_and_block_return_to_their_reference_stances() {
+    fn quickstep_holds_guard_while_block_returns_to_guard() {
         let mut dodge_state = SkeletonState::default();
         dodge_state.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100);
         dodge_state.advance_action(150);
         let dodge = AnimationEvaluation::from_skeleton(&dodge_state);
-        assert_eq!(dodge.action[0].pose, SemanticPose::DuckRight);
-        assert_eq!(
-            dodge.action[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::Guard,
-                progress: 0.5,
-            }
-        );
+        assert_eq!(dodge.base[0].pose, SemanticPose::Guard);
+        assert!(dodge.action.is_empty());
 
         let mut right_lead_dodge_state = SkeletonState::default().with_lead_foot(LeadFoot::Right);
         right_lead_dodge_state.begin_dodge(
@@ -1039,16 +1079,13 @@ mod legacy_tests {
         );
         right_lead_dodge_state.advance_action(50);
         let right_lead_dodge = AnimationEvaluation::from_skeleton(&right_lead_dodge_state);
+        assert_eq!(right_lead_dodge.base[0].pose, SemanticPose::Guard);
+        assert!(right_lead_dodge.action.is_empty());
+
+        dodge_state.transition_body(BodyState::Airborne);
         assert_eq!(
-            right_lead_dodge.action[0].pose,
+            AnimationEvaluation::from_skeleton(&dodge_state).base[0].pose,
             SemanticPose::Guard
-        );
-        assert_eq!(
-            right_lead_dodge.action[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::DuckLeft,
-                progress: 0.5,
-            }
         );
 
         let mut block_state = SkeletonState::default().with_lead_foot(LeadFoot::Left);

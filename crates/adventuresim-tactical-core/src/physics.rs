@@ -63,6 +63,8 @@ pub const TACTICAL_ROLL_SPEED_METRES_PER_SECOND: f32 = 1.3;
 pub const TACTICAL_JUMP_HEIGHT_METRES: f32 = 1.8;
 pub const TACTICAL_DIVE_JUMP_HEIGHT_METRES: f32 = 0.65;
 pub const TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND: f32 = 7.0;
+pub const TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES: f32 = 0.35;
+pub const TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND: f32 = 5.0;
 
 /// Ahoy multiplies requested speed by this frequency to obtain ground
 /// acceleration. Scale the raised-guard frequency against its lower speed cap
@@ -321,6 +323,10 @@ fn apply_analogue_movement_speed(
             TACTICAL_UPRIGHT_CROUCH_SPEED_SCALE
         };
         controller.jump_height = if skeleton.is_some_and(|skeleton| {
+            skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
+        }) {
+            TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES
+        } else if skeleton.is_some_and(|skeleton| {
             matches!(
                 skeleton
                     .posture_transition()
@@ -342,6 +348,17 @@ fn apply_analogue_movement_speed(
         }
         if skeleton.is_some_and(SkeletonState::is_posture_transitioning) {
             controller.speed = 0.0;
+            continue;
+        }
+        if skeleton.is_some_and(|skeleton| {
+            skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
+                && skeleton.action_direction() != Vec2::ZERO
+                && skeleton.quickstep_is_launched()
+                && skeleton.body() == crate::animation::BodyState::Airborne
+        }) {
+            controller.speed = TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
+            controller.acceleration_hz = TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
+                / TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
             continue;
         }
         let body = skeleton.map(SkeletonState::body);
@@ -483,6 +500,36 @@ mod tests {
                 .acceleration_hz,
             TACTICAL_RUN_ACCELERATION_HZ
         );
+    }
+
+    #[test]
+    fn launched_quickstep_uses_the_short_hop_and_dodge_speed() {
+        let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        skeleton.begin_dodge(crate::animation::DodgeSpec { direction: Vec2::Y }, 0, 20);
+        skeleton.advance_action(5);
+        skeleton.transition_body(crate::animation::BodyState::Airborne);
+        assert!(skeleton.quickstep_is_launched());
+        let mut world = World::new();
+        let entity = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                CharacterController::default(),
+                skeleton,
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(apply_analogue_movement_speed);
+        schedule.run(&mut world);
+
+        let controller = world.get::<CharacterController>(entity).unwrap();
+        assert_eq!(
+            controller.jump_height,
+            TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES
+        );
+        assert_eq!(controller.speed, TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND);
     }
 
     #[test]

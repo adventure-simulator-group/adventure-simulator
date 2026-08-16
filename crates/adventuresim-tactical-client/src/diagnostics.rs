@@ -36,6 +36,13 @@ enum ScriptCommand {
         input_speed: f32,
         duration_seconds: f32,
     },
+    Dive {
+        direction: MoveDirection,
+        duration_seconds: f32,
+    },
+    TogglePosture {
+        duration_seconds: f32,
+    },
     Wait {
         duration_seconds: f32,
     },
@@ -66,6 +73,15 @@ impl MoveDirection {
             Self::Right => Vec2::X,
         }
     }
+
+    fn dive_direction(self) -> DiveDirection {
+        match self {
+            Self::Forward => DiveDirection::Forward,
+            Self::Backward => DiveDirection::Backward,
+            Self::Left => DiveDirection::Left,
+            Self::Right => DiveDirection::Right,
+        }
+    }
 }
 
 #[derive(Resource, Debug)]
@@ -75,6 +91,7 @@ struct ScriptedInput {
     command_elapsed: f32,
     look: Vec2,
     weapon_guard: WeaponGuardState,
+    posture_sequence: u32,
     started: bool,
     exit_after_script: bool,
     finished_elapsed: Option<f32>,
@@ -147,6 +164,7 @@ impl Plugin for DiagnosticPlugin {
                 command_elapsed: 0.0,
                 look: Vec2::ZERO,
                 weapon_guard: WeaponGuardState::Lowered,
+                posture_sequence: 0,
                 started: false,
                 exit_after_script: self.exit_after_script,
                 finished_elapsed: None,
@@ -220,6 +238,16 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
                     "move input_speed must be 0..=1 and duration_seconds must be positive"
                         .to_owned(),
                 );
+            }
+            ScriptCommand::Dive {
+                duration_seconds, ..
+            } if !duration_seconds.is_finite() || *duration_seconds <= 0.0 => {
+                return Err("dive duration_seconds must be positive".to_owned());
+            }
+            ScriptCommand::TogglePosture { duration_seconds }
+                if !duration_seconds.is_finite() || *duration_seconds <= 0.0 =>
+            {
+                return Err("toggle_posture duration_seconds must be positive".to_owned());
             }
             ScriptCommand::Wait { duration_seconds }
                 if !duration_seconds.is_finite() || *duration_seconds <= 0.0 =>
@@ -313,8 +341,16 @@ fn drive_scripted_input(
             return;
         }
 
+        if script.command_elapsed == 0.0
+            && matches!(
+                &command,
+                ScriptCommand::Dive { .. } | ScriptCommand::TogglePosture { .. }
+            )
+        {
+            script.posture_sequence = script.posture_sequence.wrapping_add(1);
+        }
         script.command_elapsed += delta;
-        let (kind, duration, movement) = match command {
+        let (kind, duration, movement, posture) = match command {
             ScriptCommand::Move {
                 direction,
                 input_speed,
@@ -323,8 +359,35 @@ fn drive_scripted_input(
                 "move",
                 duration_seconds,
                 Some(direction.vector() * input_speed),
+                PostureCommand::default(),
             ),
-            ScriptCommand::Wait { duration_seconds } => ("wait", duration_seconds, None),
+            ScriptCommand::Dive {
+                direction,
+                duration_seconds,
+            } => (
+                "dive",
+                duration_seconds,
+                Some(direction.vector()),
+                PostureCommand {
+                    sequence: script.posture_sequence,
+                    action: Some(PostureActionRequest::Dive {
+                        animation_direction: direction.dive_direction(),
+                        travel_direction: direction.dive_direction(),
+                    }),
+                },
+            ),
+            ScriptCommand::TogglePosture { duration_seconds } => (
+                "toggle_posture",
+                duration_seconds,
+                None,
+                PostureCommand {
+                    sequence: script.posture_sequence,
+                    action: Some(PostureActionRequest::Toggle),
+                },
+            ),
+            ScriptCommand::Wait { duration_seconds } => {
+                ("wait", duration_seconds, None, PostureCommand::default())
+            }
             ScriptCommand::Rotate { .. }
             | ScriptCommand::Guard { .. }
             | ScriptCommand::WaitForSignal { .. } => unreachable!(),
@@ -336,7 +399,7 @@ fn drive_scripted_input(
             crouch: false,
             jump_charge: false,
             downed_align: false,
-            posture: default(),
+            posture,
             pace: MovementPace::Sprint,
             weapon_guard: script.weapon_guard,
         };
@@ -363,7 +426,7 @@ mod tests {
     #[test]
     fn example_script_parses_and_validates() {
         let script: InputScript = serde_json::from_str(
-            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"guard","raised":false},{"type":"wait","duration_seconds":0.5}]}"#,
+            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"dive","direction":"left","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"guard","raised":false},{"type":"wait","duration_seconds":0.5}]}"#,
         )
         .unwrap();
         assert!(validate_script(&script).is_ok());

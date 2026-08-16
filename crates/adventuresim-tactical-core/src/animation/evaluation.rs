@@ -48,27 +48,30 @@ impl AnimationEvaluation {
         let speed = state.animation_speed();
         let gait_phase = state.gait_phase.rem_euclid(1.0);
         let crouch_amount = matches!(state.posture(), Posture::Crouched) as u8 as f32;
-        let base = match state.posture() {
-            Posture::Prone => gait_or_idle(
-                speed,
-                gait_phase,
-                SemanticPose::ProneIdle,
-                SemanticPose::ProneCrawlContact,
-            ),
-            Posture::Supine => gait_or_idle(
-                speed,
-                gait_phase,
-                SemanticPose::SupineIdle,
-                SemanticPose::SupineScamperContact,
-            ),
-            Posture::Airborne => vec![airborne_sample(state.local_velocity.xz().length())],
-            Posture::Ragdolled => Vec::new(),
-            Posture::Upright if state.weapon_guard() == WeaponGuardState::Raised => {
-                raised_guard_locomotion_samples()
-            }
-            Posture::Upright | Posture::Crouched => {
-                locomotion_samples(speed, gait_phase, crouch_amount)
-            }
+        let base = match state.action_kind() {
+            SkeletonAction::Dodge => raised_guard_locomotion_samples(),
+            _ => match state.posture() {
+                Posture::Prone => gait_or_idle(
+                    speed,
+                    gait_phase,
+                    SemanticPose::ProneIdle,
+                    SemanticPose::ProneCrawlContact,
+                ),
+                Posture::Supine => gait_or_idle(
+                    speed,
+                    gait_phase,
+                    SemanticPose::SupineIdle,
+                    SemanticPose::SupineScamperContact,
+                ),
+                Posture::Airborne => vec![airborne_sample(state.local_velocity.xz().length())],
+                Posture::Ragdolled => Vec::new(),
+                Posture::Upright if state.weapon_guard() == WeaponGuardState::Raised => {
+                    raised_guard_locomotion_samples()
+                }
+                Posture::Upright | Posture::Crouched => {
+                    locomotion_samples(speed, gait_phase, crouch_amount)
+                }
+            },
         };
         let lower_body = if state.guarded_sprint_locomotion()
             && state.raised_locomotion().is_moving()
@@ -438,28 +441,7 @@ fn out_and_back(start: SemanticPose, middle: SemanticPose, phase: f32) -> PoseSa
 fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
     match state.action_kind() {
         SkeletonAction::None => Vec::new(),
-        SkeletonAction::Dodge => {
-            let direction = state.action_direction();
-            let pose = duck_direction_pose(
-                state.lead_foot,
-                if direction.x.abs() > direction.y.abs() {
-                    if direction.x < 0.0 {
-                        DiveDirection::Left
-                    } else {
-                        DiveDirection::Right
-                    }
-                } else if direction.y < 0.0 {
-                    DiveDirection::Backward
-                } else {
-                    DiveDirection::Forward
-                },
-            );
-            vec![out_and_back(
-                SemanticPose::Guard,
-                pose,
-                state.action_phase(),
-            )]
-        }
+        SkeletonAction::Dodge => Vec::new(),
         SkeletonAction::Attack => attack_samples(state),
         SkeletonAction::Block => vec![out_and_back(
             SemanticPose::Guard,

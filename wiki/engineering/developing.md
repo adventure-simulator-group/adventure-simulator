@@ -626,9 +626,12 @@ Use `just tactical-play diagnostic` to run the same native gameplay client
 with a bounded analogue-input script and a per-render-frame animation-state
 JSONL log. The generated script, `animation-state-<session>.jsonl`, and process
 logs are written to the supervised run directory reported by `just tactical-status`.
-The bounded script keeps forward movement held while raising and lowering guard,
-so the trace also verifies that raised-stance replication and locomotion remain
-live. This is the preferred reproducer when deterministic `animation-viewer`
+The bounded script keeps forward movement held while raising guard, then sends
+forward, backward, leftward, and rightward aimed dives through the real input,
+server, replication, and presentation path, standing between each, before
+lowering guard. The trace therefore verifies that raised-stance replication,
+locomotion, and every directional dive orientation remain live. This is the
+preferred reproducer when deterministic `animation-viewer`
 captures disagree with visible networked gameplay. Scripted diagnostic mode
 forces the default third-person camera and suppresses live keyboard and mouse
 buttons, motion, and scrolling so activity in another application cannot alter

@@ -442,13 +442,23 @@ with one enum: free/settling, aim-driven downed roll, or modifier-driven downed
 body alignment. Those modes cannot overlap, and no persistent facing-suspension
 flag can survive a transition into upright movement.
 
-Ordinary jump/dodge airborne motion uses the two generic single-pose files
-listed above. The runtime blends
-from a directional crouch/load into `airborne_center` or `airborne_travel`,
-modifies the traveling pose from horizontal velocity, and returns through a
-directional crouch/load on landing. Those generic airborne files have no
-separate authored launch, direction, or landing samples; the four dive poses
-are the explicit exception described above.
+Ordinary jump airborne motion uses the two generic single-pose files listed
+above. A quickstep instead retains the guard pose for its complete low hop. Its
+direction and action timeline are authoritative, while presentation leans into
+travel procedurally. The authored guard supplies the bent-knee load without an
+additional pelvis drop. Each takeoff ankle remains planted in world space until
+the leg reaches its solve limit or the hip-to-ankle line
+reaches a 45-degree arch. The leg solver then releases that foot and moves it
+toward the authored guard position so both feet have returned by landing. At
+contact, the dodge action and its procedural IK end immediately: there is no
+separate landing pose or compression. Ordinary raised guard presentation
+resumes on that contact frame and follows the character's remaining physical
+momentum while authoritative horizontal drag slows it. This separation allows
+raised guard locomotion to present externally imparted motion without requiring
+a dodge action, which is also the intended seam for later knockback. Guard
+pelvis correction is otherwise limited to the minimum required to keep a
+retained foot target within leg reach. The four dive poses remain the explicit
+authored directional-airborne exception described above.
 
 Attacks use the optional `swing`, `swing_follow`, and `thrust` frame-0 contact
 poses. Runtime timing supplies the guard-to-contact and contact-to-guard spans.
@@ -756,6 +766,15 @@ authored +Z/controller -Z half-turn represented once. The viewer additionally
 replays gradual turns, an exact reversal, planted guard rotation, camera pitch,
 cross-slope terrain, every raised cardinal and diagonal direction, release
 during a step, and a mid-step lateral reversal.
+
+For the locally controlled character, the client advances that same bounded
+facing rule every presentation frame. Raised guard reads live camera yaw;
+ordinary travel reads replicated authoritative velocity. Incoming server
+transforms remain authoritative, but their sparser rotation samples cannot
+reduce local aiming or movement-facing to network-cadence steps. Procedural
+neck and head aim uses only the residual between camera direction and the
+current-frame root rotation before transform propagation; it never reapplies
+the root's yaw from the previous frame.
 
 During lowered travel, forward walk and run continue to serve diagonal and
 lateral travel. Ordinary raised upright grounded movement retains its current
