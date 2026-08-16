@@ -11,6 +11,8 @@ var<uniform> weather_motion: vec4<f32>;
 var<uniform> weather_terrain: vec4<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(3)
 var weather_heightmap: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(4)
+var weather_occlusion_map: texture_2d<f32>;
 
 struct WeatherVertex {
     @location(0) position: vec3<f32>,
@@ -23,6 +25,7 @@ struct WeatherVertexOutput {
     @location(0) corner: vec2<f32>,
     @location(1) appearance: vec4<f32>,
     @location(2) variation: vec2<f32>,
+    @location(3) ground_clearance: f32,
 }
 
 fn decoded_height(texel: vec2<i32>) -> f32 {
@@ -49,6 +52,45 @@ fn terrain_height(world_xz: vec2<f32>) -> f32 {
     return mix(mix(h00, h10, blend.x), mix(h01, h11, blend.x), blend.y);
 }
 
+fn shelter_height(world_xz: vec2<f32>) -> vec2<f32> {
+    if any(abs(world_xz) > weather_terrain.xy) {
+        return vec2<f32>(-100000.0, 0.0);
+    }
+    let dimensions = vec2<i32>(textureDimensions(weather_occlusion_map));
+    let uv = (world_xz + weather_terrain.xy) / max(
+        weather_terrain.xy * 2.0,
+        vec2<f32>(0.001),
+    );
+    let texel = clamp(vec2<i32>(uv * vec2<f32>(dimensions)), vec2<i32>(0), dimensions - 1);
+    let sample = textureLoad(weather_occlusion_map, texel, 0);
+    let encoded = round(sample.r * 255.0) + round(sample.g * 255.0) * 256.0;
+    let minimum = weather_terrain.z - 2.0;
+    let maximum = weather_terrain.w + 24.0;
+    return vec2<f32>(mix(minimum, maximum, encoded / 65535.0), sample.a);
+}
+
+fn shelter_test(world_position: vec3<f32>, upwind_distance: f32, wind_slope: f32) -> f32 {
+    let sample_xz = world_position.xz - weather_motion.xy * upwind_distance;
+    let shelter = shelter_height(sample_xz);
+    let ray_height = world_position.y + upwind_distance / max(wind_slope, 0.04);
+    return select(0.0, 1.0, shelter.y > 0.5 && ray_height < shelter.x + 0.12);
+}
+
+fn precipitation_exposure(world_position: vec3<f32>, fall_speed: f32, wind_speed: f32) -> f32 {
+    let wind_slope = wind_speed / max(fall_speed, 0.1);
+    let blocked = max(
+        max(
+            shelter_test(world_position, 0.0, wind_slope),
+            shelter_test(world_position, 0.65, wind_slope),
+        ),
+        max(
+            shelter_test(world_position, 1.4, wind_slope),
+            shelter_test(world_position, 2.6, wind_slope),
+        ),
+    );
+    return 1.0 - blocked;
+}
+
 fn camera_anchor() -> vec2<f32> {
     return floor(view.world_position.xz / 2.0) * 2.0;
 }
@@ -64,6 +106,7 @@ fn vertex(vertex: WeatherVertex) -> WeatherVertexOutput {
     var out: WeatherVertexOutput;
     out.corner = vertex.corner;
     out.variation = vec2<f32>(vertex.data.x, vertex.data.w);
+    out.ground_clearance = 1000.0;
     let kind = u32(weather.x + 0.5);
     let intensity = clamp(weather.y, 0.0, 1.0);
     let severe_surge = smoothstep(0.95, 1.0, intensity);
@@ -100,6 +143,11 @@ fn vertex(vertex: WeatherVertex) -> WeatherVertexOutput {
         }
         ground = terrain_height(centre_xz);
         world_position = vec3<f32>(centre_xz.x, ground + 0.08 + phase * weather_motion.w, centre_xz.y);
+        if precipitation_exposure(world_position, base_speed, wind_speed) < 0.5 {
+            out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+            out.appearance = vec4<f32>(0.0);
+            return out;
+        }
 
         let to_particle = normalize(world_position - view.world_position);
         if is_snow {
@@ -129,6 +177,12 @@ fn vertex(vertex: WeatherVertex) -> WeatherVertexOutput {
             out.appearance = vec4<f32>(0.72, 0.81, 0.88, 0.22 + intensity * 0.34);
         }
     } else if kind == 3u {
+        let impact_wind_speed = mix(1.5, 11.0, weather.z);
+        if precipitation_exposure(world_position, 22.0, impact_wind_speed) < 0.5 {
+            out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+            out.appearance = vec4<f32>(0.0);
+            return out;
+        }
         let cycle = fract(time * (0.65 + intensity * 1.85) + vertex.data.x * 7.31 + vertex.data.y);
         let radius_metres = mix(0.025, 0.17, cycle) * mix(0.7, 1.3, vertex.data.y);
         world_position.y += 0.018;
@@ -155,6 +209,7 @@ fn vertex(vertex: WeatherVertex) -> WeatherVertexOutput {
             view.world_position.y + vertex.corner.y * 13.0,
             sheet_xz.y,
         );
+        out.ground_clearance = world_position.y - terrain_height(sheet_xz);
         let sheet_strength = smoothstep(0.78, 1.0, intensity);
         let sheet_alpha = sheet_strength * (0.012 + severe_surge * 0.042)
             * mix(0.72, 1.0, vertex.data.y);
@@ -251,7 +306,8 @@ fn fragment(in: WeatherVertexOutput) -> @location(0) vec4<f32> {
         let panel_edge = (1.0 - smoothstep(0.72, 1.0, abs(in.corner.x)))
             * (1.0 - smoothstep(0.78, 1.0, abs(in.corner.y)));
         let irregular_opacity = mix(0.46, 1.0, smoothstep(0.12, 0.88, breakup));
-        coverage = blurred_band * irregular_opacity * broad_wave * panel_edge;
+        let ground_fade = smoothstep(0.35, 4.5, in.ground_clearance);
+        coverage = blurred_band * irregular_opacity * broad_wave * panel_edge * ground_fade;
     }
     let alpha = in.appearance.a * coverage;
     if alpha < 0.006 {

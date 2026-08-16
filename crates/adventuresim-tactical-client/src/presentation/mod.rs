@@ -173,6 +173,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<PresentedCelestialLighting>()
         .init_resource::<AtmosphereIblAmbientHandoff>()
         .init_resource::<TacticalCloudCaptureOverride>()
+        .init_resource::<WeatherOcclusionState>()
         .add_systems(
             Update,
             (
@@ -201,7 +202,12 @@ impl Plugin for TacticalPresentationPlugin {
                 update_tactical_clouds.after(update_presented_celestial_lighting),
                 update_global_ambient_policy.after(apply_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
-                apply_active_scene_weather.after(refresh_active_tactical_scene),
+                apply_active_scene_weather
+                    .after(refresh_active_tactical_scene)
+                    .after(present_pending_trees),
+                update_weather_occlusion_map
+                    .after(apply_active_scene_weather)
+                    .after(present_pending_trees),
             ),
         )
         .add_observer(on_game_scene_added)

@@ -498,11 +498,18 @@ deterministic rain streaks or fluttering snow from the weather snapshot and
 samples a compact copy of the authoritative playable heightfield. Rain adds one
 bounded batch of terrain-conforming impact rings. Rain streaks use two
 soft-alpha profiles and analytic normal-shaped lighting rather than scene-color
-refraction. Heavy rain adds one batch of two concentric, 16-panel camera-local
-shells for the distant curtain. Their depth-tested fragment path synthesizes
-soft falling bands from 2D functions without a volume texture, raymarch, blur
-pass, or scene-color copy. Intensity changes how much of each fixed batch is
-visible, while the CPU performs no per-particle simulation or transform updates.
+refraction. A 512-pixel top-down shelter-height map rasterizes the actual
+procedural trunk and depth-one/two branch capsules when presented trees change.
+Falling rain and snow test four upwind points against that map in the vertex
+shader, and sheltered terrain impacts are suppressed; this adds no shadow
+camera, collision query, or per-particle CPU work. Heavy rain adds one batch of
+six concentric, 16-panel camera-local shells for the distant curtain. Their
+depth-tested fragment path synthesizes broad irregular falling bands from 2D
+functions, fades them through the final 4.5 metres above terrain, and uses the
+existing non-volumetric linear distance fog for unresolved tactical-range rain.
+It uses no volume texture, raymarch, blur pass, or scene-color copy. Intensity
+changes how much of each fixed batch is visible, while the CPU performs no
+per-particle simulation or transform updates.
 The Earth-atmosphere path keeps top-of-atmosphere solar
 source energy available after the Sun crosses the geometric horizon. Bevy's
 atmospheric transmittance and visible-disc calculation then suppress direct
