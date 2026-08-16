@@ -5,6 +5,12 @@ const OAK_BARK_TEXTURE_SIZE: u32 = 1024;
 const OAK_BARK_AO_SIZE: u32 = 512;
 const OAK_BARK_AO_DIRECTIONS: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 const OAK_BARK_AO_STEPS: [i32; 4] = [1, 4, 12, 32];
+pub(super) const FOREST_SOIL_TEXTURE_SIZE: u32 = 1024;
+const FOREST_SOIL_AO_SIZE: u32 = 512;
+const FOREST_SOIL_AO_DIRECTIONS: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+const FOREST_SOIL_AO_STEPS: [i32; 4] = [1, 4, 12, 32];
+pub(super) const FOREST_SOIL_TILE_METRES: f32 = 2.0;
+pub(super) const FOREST_SOIL_HEIGHT_RANGE_METRES: f32 = 0.028;
 
 #[derive(Clone, Debug)]
 pub(super) struct LeafTextureSet {
@@ -32,6 +38,11 @@ pub(super) struct BarkTextureSet {
     pub(super) height_ao: Handle<Image>,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct GroundTextureSet {
+    pub(super) height_ao: Handle<Image>,
+}
+
 #[derive(Resource, Clone, Debug)]
 pub(crate) struct ProceduralEnvironmentAssets {
     pub(super) oak_leaf: LeafTextureSet,
@@ -41,6 +52,7 @@ pub(crate) struct ProceduralEnvironmentAssets {
     pub(super) hawthorn_leaf: LeafTextureSet,
     pub(super) beech_leaf: LeafTextureSet,
     pub(super) oak_bark: BarkTextureSet,
+    pub(super) forest_soil: GroundTextureSet,
     pub(super) rock: SurfaceTextureSet,
 }
 
@@ -181,6 +193,7 @@ pub(super) fn generate_procedural_environment_assets(
         hawthorn_leaf: generate_leaf_textures(images, LeafRecipe::HAWTHORN),
         beech_leaf: generate_leaf_textures(images, LeafRecipe::BEECH),
         oak_bark: generate_oak_bark_texture(images),
+        forest_soil: generate_forest_soil_texture(images),
         rock: generate_surface_textures(images, SurfaceRecipe::Rock),
     }
 }
@@ -868,6 +881,167 @@ fn generate_oak_bark_texture(images: &mut Assets<Image>) -> BarkTextureSet {
     }
 }
 
+fn soil_random(cell_x: i32, cell_y: i32, period: i32, salt: u64) -> f32 {
+    let wrapped_x = cell_x.rem_euclid(period) as u64;
+    let wrapped_y = cell_y.rem_euclid(period) as u64;
+    let hash = bark_hash(wrapped_x | (wrapped_y << 16) | salt.rotate_left(33));
+    ((hash >> 40) as u32) as f32 / 16_777_215.0
+}
+
+fn soil_value_noise(point: Vec2, frequency: i32, salt: u64) -> f32 {
+    let scaled = point * frequency as f32;
+    let cell = scaled.floor().as_ivec2();
+    let local = scaled - cell.as_vec2();
+    let blend = local * local * (Vec2::splat(3.0) - local * 2.0);
+    let sample = |x: i32, y: i32| soil_random(cell.x + x, cell.y + y, frequency, salt);
+    let lower = sample(0, 0).lerp(sample(1, 0), blend.x);
+    let upper = sample(0, 1).lerp(sample(1, 1), blend.x);
+    lower.lerp(upper, blend.y) * 2.0 - 1.0
+}
+
+fn soil_feature_field(
+    point: Vec2,
+    grid: i32,
+    salt: u64,
+    density: f32,
+    minimum_radius: f32,
+    radius_span: f32,
+) -> f32 {
+    let scaled = point * grid as f32;
+    let base_cell = scaled.floor().as_ivec2();
+    let mut field = 0.0_f32;
+    for offset_y in -1..=1 {
+        for offset_x in -1..=1 {
+            let cell = base_cell + IVec2::new(offset_x, offset_y);
+            let enabled = soil_random(cell.x, cell.y, grid, salt ^ 0x5de3);
+            if enabled > density {
+                continue;
+            }
+            let centre = cell.as_vec2()
+                + Vec2::new(
+                    0.16 + soil_random(cell.x, cell.y, grid, salt ^ 0x13a7) * 0.68,
+                    0.16 + soil_random(cell.x, cell.y, grid, salt ^ 0x91cb) * 0.68,
+                );
+            let angle = soil_random(cell.x, cell.y, grid, salt ^ 0xc72d) * core::f32::consts::TAU;
+            let axis = Vec2::new(angle.cos(), angle.sin());
+            let delta = scaled - centre;
+            let local = Vec2::new(delta.dot(axis), delta.perp_dot(axis));
+            let radius =
+                minimum_radius + radius_span * soil_random(cell.x, cell.y, grid, salt ^ 0x27f1);
+            let aspect = 0.58 + soil_random(cell.x, cell.y, grid, salt ^ 0xe419) * 0.68;
+            let elliptical = Vec2::new(local.x / radius, local.y / (radius * aspect));
+            let angle = elliptical.y.atan2(elliptical.x);
+            let lobes = 2.0 + (soil_random(cell.x, cell.y, grid, salt ^ 0x6bd3) * 3.0).floor();
+            let phase = soil_random(cell.x, cell.y, grid, salt ^ 0x41af) * core::f32::consts::TAU;
+            let edge_warp = 1.0 + 0.14 * (angle * lobes + phase).sin();
+            let distance = elliptical.length() * edge_warp;
+            let mound = (1.0 - smoothstep(0.0, 1.0, distance)).powf(1.35);
+            field = field.max(mound);
+        }
+    }
+    field
+}
+
+/// Exactly periodic two-metre forest-floor relief. Broad compaction controls
+/// where distinct clods survive; smaller aggregate remains sparse enough that
+/// the surface reads as earth rather than isotropic multi-octave noise.
+fn forest_soil_height(u: f32, v: f32) -> f32 {
+    let point = Vec2::new(u, v);
+    let warp = Vec2::new(
+        soil_value_noise(point, 5, 0x8ae1),
+        soil_value_noise(point + Vec2::new(0.37, 0.61), 5, 0x42d7),
+    ) * 0.022;
+    let sample = point + warp;
+    let compaction = smoothstep(-0.34, 0.42, soil_value_noise(sample, 3, 0x1d93));
+    let broad =
+        soil_value_noise(sample, 7, 0x7c31) * 0.050 + soil_value_noise(sample, 13, 0xb527) * 0.028;
+    let hollows = soil_feature_field(sample, 11, 0xd1a9, 0.44, 0.40, 0.36);
+    let clods = soil_feature_field(sample, 18, 0x39e7, 0.57, 0.28, 0.29);
+    let aggregate = soil_feature_field(sample, 48, 0xa613, 0.22, 0.16, 0.20);
+    let granular = soil_value_noise(sample, 79, 0xf28b) * 0.015;
+    let loose_soil = 1.0 - compaction * 0.72;
+    (broad - hollows * 0.14
+        + clods * 0.25 * loose_soil
+        + aggregate * 0.075 * (0.55 + loose_soil * 0.45)
+        + granular * (0.38 + loose_soil * 0.62))
+        .clamp(-0.42, 0.46)
+}
+
+fn forest_soil_horizon_ao(field: &[f32], x: i32, y: i32) -> f32 {
+    let source_scale = (FOREST_SOIL_TEXTURE_SIZE / FOREST_SOIL_AO_SIZE) as i32;
+    let source_x = x * source_scale + source_scale / 2;
+    let source_y = y * source_scale + source_scale / 2;
+    let centre = periodic_sample(field, FOREST_SOIL_TEXTURE_SIZE, source_x, source_y)
+        * FOREST_SOIL_HEIGHT_RANGE_METRES;
+    let ao_texel_metres = FOREST_SOIL_TILE_METRES / FOREST_SOIL_AO_SIZE as f32;
+    let mut visibility = 0.0;
+    for (direction_x, direction_y) in FOREST_SOIL_AO_DIRECTIONS {
+        let mut maximum_slope = 0.0_f32;
+        for ao_step in FOREST_SOIL_AO_STEPS {
+            let source_step = ao_step * source_scale;
+            let neighbor = periodic_sample(
+                field,
+                FOREST_SOIL_TEXTURE_SIZE,
+                source_x + direction_x * source_step,
+                source_y + direction_y * source_step,
+            ) * FOREST_SOIL_HEIGHT_RANGE_METRES;
+            let run = ao_step as f32 * ao_texel_metres;
+            maximum_slope = maximum_slope.max(((neighbor - centre) / run).max(0.0));
+        }
+        visibility += 1.0 / (1.0 + maximum_slope * maximum_slope).sqrt();
+    }
+    (visibility / FOREST_SOIL_AO_DIRECTIONS.len() as f32).clamp(0.55, 1.0)
+}
+
+fn forest_soil_local_cavity(field: &[f32], x: i32, y: i32) -> f32 {
+    let centre = periodic_sample(field, FOREST_SOIL_TEXTURE_SIZE, x, y);
+    let neighbors = periodic_sample(field, FOREST_SOIL_TEXTURE_SIZE, x - 1, y)
+        + periodic_sample(field, FOREST_SOIL_TEXTURE_SIZE, x + 1, y)
+        + periodic_sample(field, FOREST_SOIL_TEXTURE_SIZE, x, y - 1)
+        + periodic_sample(field, FOREST_SOIL_TEXTURE_SIZE, x, y + 1);
+    let cavity = (neighbors * 0.25 - centre).max(0.0);
+    (1.0 - cavity * 2.2).clamp(0.78, 1.0)
+}
+
+fn generate_forest_soil_texture(images: &mut Assets<Image>) -> GroundTextureSet {
+    let size = FOREST_SOIL_TEXTURE_SIZE;
+    let heights = (0..size)
+        .flat_map(|y| {
+            (0..size).map(move |x| {
+                forest_soil_height(
+                    (x as f32 + 0.5) / size as f32,
+                    (y as f32 + 0.5) / size as f32,
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let horizon_ao = (0..FOREST_SOIL_AO_SIZE)
+        .flat_map(|y| {
+            let heights = &heights;
+            (0..FOREST_SOIL_AO_SIZE)
+                .map(move |x| forest_soil_horizon_ao(heights, x as i32, y as i32))
+        })
+        .collect::<Vec<_>>();
+    let mut height_ao = Vec::with_capacity((size * size * 2) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let height = periodic_sample(&heights, size, x as i32, y as i32);
+            let encoded_height = ((height + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8;
+            let u = (x as f32 + 0.5) / size as f32;
+            let v = (y as f32 + 0.5) / size as f32;
+            let broad_visibility = periodic_bilinear_sample(&horizon_ao, FOREST_SOIL_AO_SIZE, u, v);
+            let local_visibility = forest_soil_local_cavity(&heights, x as i32, y as i32);
+            let ao = (broad_visibility * local_visibility * 255.0)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            height_ao.extend_from_slice(&[encoded_height, ao]);
+        }
+    }
+    GroundTextureSet {
+        height_ao: images.add(image_rg_mipped(height_ao, size, true)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -980,6 +1154,61 @@ mod tests {
             let expected = ((source.iter().map(|value| *value as u32).sum::<u32>() + 2) / 4) as u8;
             assert_eq!(data[first_mip_offset + channel], expected);
         }
+    }
+
+    #[test]
+    fn forest_soil_is_one_packed_1024_texture_with_a_complete_mip_chain() {
+        let mut images = Assets::<Image>::default();
+        let textures = generate_forest_soil_texture(&mut images);
+        assert_eq!(images.len(), 1);
+        let image = images.get(&textures.height_ao).unwrap();
+        assert_eq!((image.width(), image.height()), (1024, 1024));
+        assert_eq!(image.texture_descriptor.format, TextureFormat::Rg8Unorm);
+        assert_eq!(image.texture_descriptor.mip_level_count, 11);
+        let mip_texels = (0..11)
+            .map(|level| (FOREST_SOIL_TEXTURE_SIZE >> level).pow(2))
+            .sum::<u32>();
+        assert_eq!(
+            image.data.as_ref().unwrap().len(),
+            (mip_texels * 2) as usize
+        );
+        assert_eq!(FOREST_SOIL_AO_SIZE, FOREST_SOIL_TEXTURE_SIZE / 2);
+    }
+
+    #[test]
+    fn forest_soil_height_is_periodic_deterministic_and_physically_scaled() {
+        for (u, v) in [(0.0, 0.13), (0.07, 0.61), (0.48, 0.94), (0.91, 0.22)] {
+            let height = forest_soil_height(u, v);
+            assert_eq!(height.to_bits(), forest_soil_height(u, v).to_bits());
+            assert!((height - forest_soil_height(u + 1.0, v)).abs() < 1.0e-5);
+            assert!((height - forest_soil_height(u, v + 1.0)).abs() < 1.0e-5);
+        }
+        let values = (0..128)
+            .flat_map(|y| {
+                (0..128).map(move |x| forest_soil_height(x as f32 / 128.0, y as f32 / 128.0))
+            })
+            .collect::<Vec<_>>();
+        let minimum = values.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(minimum < -0.08, "minimum forest-soil height: {minimum}");
+        assert!(maximum > 0.16, "maximum forest-soil height: {maximum}");
+        assert!((1.5..=2.5).contains(&FOREST_SOIL_TILE_METRES));
+        assert!((0.020..=0.035).contains(&FOREST_SOIL_HEIGHT_RANGE_METRES));
+        assert!(FOREST_SOIL_TILE_METRES / (FOREST_SOIL_TEXTURE_SIZE as f32) < 0.0021);
+    }
+
+    #[test]
+    fn forest_soil_ao_combines_half_resolution_horizons_with_local_cavities() {
+        let flat = vec![0.0; FOREST_SOIL_TEXTURE_SIZE.pow(2) as usize];
+        assert_eq!(forest_soil_horizon_ao(&flat, 17, 29), 1.0);
+        assert_eq!(forest_soil_local_cavity(&flat, 17, 29), 1.0);
+        let mut sharp_cavity = flat;
+        sharp_cavity[(29 * FOREST_SOIL_TEXTURE_SIZE + 17) as usize] = -0.5;
+        assert_eq!(forest_soil_local_cavity(&sharp_cavity, 17, 29), 0.78);
+        let horizon_samples = FOREST_SOIL_AO_SIZE.pow(2)
+            * FOREST_SOIL_AO_DIRECTIONS.len() as u32
+            * FOREST_SOIL_AO_STEPS.len() as u32;
+        assert_eq!(horizon_samples, 4_194_304);
     }
 
     #[test]

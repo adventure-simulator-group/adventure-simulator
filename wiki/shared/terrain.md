@@ -240,22 +240,26 @@ occlusion responses; a small solid-color palette and softened upward normals
 keep the dense field readable without making individual cards look heavily lit.
 A procedural terrain material selects hard-bounded forest floor, dry ground,
 mud, cultivation, stone, water, and snow albedo regions. Both playable and vista
-ground omit albedo textures, normal maps, and synthesized micro-normal detail;
-lighting uses terrain-geometry normals only. A camera-local 40-metre detail
-patch refines that geometric normal response to a 25-centimetre grid without
-changing the authoritative two-metre collider. Its world-space, centimetre-scale
-relief is deterministic and fades to the source surface over the outer 4.5
-metres. The residual height is signed and bounded to roughly seven centimetres
-down and ten centimetres up: broad soil undulation and sparse clods break up
-flat ground; local terrain gradients orient narrow drainage rills downhill and
-soil-creep ridges across slopes; concavity gathers a shallow sediment layer.
-Water stays flat. Road samples infer the local road axis and edges from
-authoritative ground semantics, then form a raised crown and paired compacted
-wheel ruts. Nearby replicated tree positions add a shallow mound, basin, and
-several long curved radial root ridges, tying the ground silhouette to the
-generated roots instead of applying unrelated noise. Stone and gravel suppress
-soil clods in favor of broad contour-following bedrock ledges and sparse
-intersecting fractures. Nearby replicated boulders carve a shallow visual
+ground omit sampled albedo. Near walkable soil adds one shared 1024-square RG8
+height/AO sample with a complete mip chain; world-XZ mapping and screen-space
+height derivatives perturb the geometric normal without storing a normal map.
+The two-metre tile represents sub-two-centimetre compacted earth, hollows,
+clods, and fine aggregate, then fades from 12 to 24 metres and is suppressed on
+steep, stone, gravel, water, and snow-covered surfaces. A camera-local 40-metre
+detail patch refines the underlying geometric normal response to a 25-centimetre
+grid without changing the authoritative two-metre collider. Its world-space,
+centimetre-scale relief is deterministic and fades to the source surface over
+the outer 4.5 metres. The residual height is signed and bounded to roughly seven
+centimetres down and ten centimetres up: broad soil undulation and sparse clods
+break up flat ground; local terrain gradients orient narrow drainage rills
+downhill and soil-creep ridges across slopes; concavity gathers a shallow
+sediment layer. Water stays flat. Road samples infer the local road axis and
+edges from authoritative ground semantics, then form a raised crown and paired
+compacted wheel ruts. Nearby replicated tree positions add a shallow mound,
+basin, and several long curved radial root ridges, tying the ground silhouette
+to the generated roots instead of applying unrelated noise. Stone and gravel
+suppress soil clods in favor of broad contour-following bedrock ledges and
+sparse intersecting fractures. Nearby replicated boulders carve a shallow visual
 socket, build a contact apron, and deposit a widening downhill debris tail, so
 the rock mass meets the landform instead of resting on a flat plane. These
 obstacle-aware residuals remain presentation-only and do not alter the
@@ -280,30 +284,30 @@ and open-soil colors, and grades grass density and height across a 4.8-metre
 exterior band. Sparse fallen leaves, twigs, and multi-segment shade-plant
 rosettes extend into the outer 3.2 metres while the deep core stays mostly bare.
 These remain solid molded-material regions and procedural meshes rather than
-ground texture detail. Tree sampling follows canopy coverage; rock sampling uses
-an independent deterministic roll scaled by hilly coverage, so the two features
-do not suppress one another. Weather affects ground wetness/snow tint, bounded
-rain or snow particles, wind drift, sunlight transmission, and distance fog.
-Clear weather retains a subtle kilometre-scale contrast haze beyond tactical
-gameplay range. At the playable boundary, the first vista ring reuses exact edge
-heights and eases the solid substrate pigment over several regional samples
-while preserving its independent geometric-sward coverage. Coarse vista samples
-preserve local peaks and render as seam-sharing rings of independently culled
-32-by-32-cell mesh chunks out to 50 km. Chunking changes only CPU/ECS submission
-and culling granularity, not regional sampling or visible tessellation, and
-avoids tens of thousands of startup-time entities; coarser rings leave the
-playable and finer-ring interiors open rather than overdrawing them. The
-50-metre and 250-metre regional rings also deterministically scatter bounded
-samples of the production whole-tree impostor over canopy-bearing cells; the
-outer ring relies on aggregate canopy colour. Those presentation-only trees
-share one cached atlas family, have no gameplay collider, and are seated on the
-same morphed vista surface as the terrain. Tree stand sampling scales with
-physical cell area instead of capping the first 250-metre ring to three
-silhouettes. Exposed terrain likewise continues rocks beyond the playable
-rectangle: a shared procedural mesh hands off to a twelve-face silhouette mesh,
-then to the vista terrain's aggregate rock palette before either representation
-becomes subpixel. None of this vista scatter gains collision or server
-authority.
+being baked into the soil texture. Tree sampling follows canopy coverage; rock
+sampling uses an independent deterministic roll scaled by hilly coverage, so the
+two features do not suppress one another. Weather affects ground wetness/snow
+tint, bounded rain or snow particles, wind drift, sunlight transmission, and
+distance fog. Clear weather retains a subtle kilometre-scale contrast haze
+beyond tactical gameplay range. At the playable boundary, the first vista ring
+reuses exact edge heights and eases the solid substrate pigment over several
+regional samples while preserving its independent geometric-sward coverage.
+Coarse vista samples preserve local peaks and render as seam-sharing rings of
+independently culled 32-by-32-cell mesh chunks out to 50 km. Chunking changes
+only CPU/ECS submission and culling granularity, not regional sampling or
+visible tessellation, and avoids tens of thousands of startup-time entities;
+coarser rings leave the playable and finer-ring interiors open rather than
+overdrawing them. The 50-metre and 250-metre regional rings also
+deterministically scatter bounded samples of the production whole-tree impostor
+over canopy-bearing cells; the outer ring relies on aggregate canopy colour.
+Those presentation-only trees share one cached atlas family, have no gameplay
+collider, and are seated on the same morphed vista surface as the terrain. Tree
+stand sampling scales with physical cell area instead of capping the first
+250-metre ring to three silhouettes. Exposed terrain likewise continues rocks
+beyond the playable rectangle: a shared procedural mesh hands off to a
+twelve-face silhouette mesh, then to the vista terrain's aggregate rock palette
+before either representation becomes subpixel. None of this vista scatter gains
+collision or server authority.
 
 Near-tree PBR leaf cards participate in the horizon-aware directional shadow
 map, producing both cast shadows and leaf-on-leaf self shadow. Their vertex data
