@@ -4,6 +4,7 @@
 //! plugin so screenshots cannot drift to a different camera, terrain mesh,
 //! lighting, or post-processing setup.
 
+mod clouds;
 mod environment;
 mod ground_scatter;
 mod obstacles;
@@ -15,6 +16,7 @@ mod vista;
 mod volumetric;
 mod weather;
 
+use clouds::*;
 use environment::*;
 use ground_scatter::*;
 use obstacles::on_scene_obstacle_added;
@@ -32,6 +34,8 @@ use weather::*;
 
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
+#[allow(unused_imports)]
+pub(crate) use clouds::{TacticalCloudCaptureOverride, TacticalCloudCaptureProfile};
 #[allow(unused_imports)]
 pub(crate) use environment::{
     TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
@@ -127,6 +131,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
             MaterialPlugin::<TacticalStarMaterial>::default(),
+            MaterialPlugin::<TacticalCloudMaterial>::default(),
         ))
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
@@ -151,6 +156,7 @@ impl Plugin for TacticalPresentationPlugin {
                 setup_procedural_environment_assets,
                 setup_tactical_presentation,
                 setup_tactical_sky,
+                setup_tactical_clouds,
             )
                 .chain(),
         )
@@ -165,6 +171,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<ActiveTacticalScene>()
         .init_resource::<PresentedCelestialLighting>()
         .init_resource::<AtmosphereIblAmbientHandoff>()
+        .init_resource::<TacticalCloudCaptureOverride>()
         .add_systems(
             Update,
             (
@@ -190,6 +197,7 @@ impl Plugin for TacticalPresentationPlugin {
                 )
                     .chain(),
                 keep_celestial_visuals_centered.after(update_presented_celestial_lighting),
+                update_tactical_clouds.after(update_presented_celestial_lighting),
                 update_global_ambient_policy.after(apply_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
                 (apply_active_scene_weather, advance_weather_particles)

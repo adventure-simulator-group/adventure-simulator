@@ -245,6 +245,7 @@ fn native_asset_root() -> std::path::PathBuf {
 fn validate_native_presentation_assets(asset_root: &std::path::Path) -> Result<(), String> {
     const REQUIRED_ASSETS: &[&str] = &[
         "shaders/tactical_foliage.wgsl",
+        "shaders/tactical_clouds.wgsl",
         "shaders/tactical_moon.wgsl",
         "shaders/tactical_stars.wgsl",
         "shaders/tactical_terrain.wgsl",
