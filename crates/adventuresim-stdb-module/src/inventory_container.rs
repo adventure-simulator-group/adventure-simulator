@@ -24,18 +24,22 @@ fn empty_container_can_stack(has_contents: bool, is_nested: bool, has_condition:
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = inventory_object, public)]
+#[table(
+    accessor = inventory_object,
+    public,
+    index(accessor = location_and_row, btree(columns = [location_kind, inventory_row_id]))
+)]
 pub struct InventoryObject {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
     pub item_id: String,
-    /// `personal`, `party`, or `fireplace`.
+    /// `personal`, `party`, `fireplace`, or temporary `repair` escrow.
     #[index(btree)]
     pub location_kind: String,
-    /// Character ID, party ID, or canonical fireplace fixture ID.
+    /// Character ID, party ID, canonical fixture ID, or repair settlement place ID.
     pub location_owner: String,
-    /// Current legacy inventory row while personal/party; zero at a fireplace.
+    /// Current inventory row while carried or in repair; zero at a fireplace.
     pub inventory_row_id: u64,
 }
 
@@ -144,6 +148,49 @@ pub(crate) fn object_is_nested(ctx: &ReducerContext, object_id: u64) -> bool {
         .is_some()
 }
 
+/// Delete a carried physical object and its complete backing subtree exactly
+/// once. Callers that otherwise delete an inventory row directly must use this
+/// first so per-object capability rows cannot be orphaned.
+pub(crate) fn delete_carried_object_for_row(
+    ctx: &ReducerContext,
+    kind: &str,
+    row_id: u64,
+) -> Result<bool, String> {
+    let Some(object) = object_for_row(ctx, kind, row_id)? else {
+        return Ok(false);
+    };
+    delete_subtree(ctx, object.id)?;
+    Ok(true)
+}
+
+/// Final deletion for an item in settlement repair escrow. Repair objects are
+/// intentionally outside operational carried custody and cannot contain
+/// children.
+pub(crate) fn delete_repair_object_for_row(
+    ctx: &ReducerContext,
+    row_id: u64,
+) -> Result<bool, String> {
+    let matches = ctx
+        .db
+        .inventory_object()
+        .location_and_row()
+        .filter(("repair", row_id))
+        .collect::<Vec<_>>();
+    if matches.len() > 1 {
+        return Err("Repair inventory row has duplicate physical objects".into());
+    }
+    let Some(object) = matches.into_iter().next() else {
+        return Ok(false);
+    };
+    crate::object_custody::resolve_object_custody(ctx, &object)?;
+    if object_is_nonempty(ctx, object.id) || object_is_nested(ctx, object.id) {
+        return Err("Repair escrow object has an invalid containment edge".into());
+    }
+    crate::weapon_instance::delete_for_object(ctx, object.id);
+    ctx.db.inventory_object().id().delete(object.id);
+    Ok(true)
+}
+
 pub(crate) fn reconcile_consumed_row(
     ctx: &ReducerContext,
     kind: &str,
@@ -167,6 +214,7 @@ pub(crate) fn reconcile_consumed_row(
             .inventory_containment()
             .child_object_id()
             .delete(object.id);
+        crate::weapon_instance::delete_for_object(ctx, object.id);
         ctx.db.inventory_object().id().delete(object.id);
         if let Some(parent_id) = parent {
             merge_empty_container(ctx, parent_id)?;
@@ -503,6 +551,7 @@ pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Resul
         crate::outbreak::delete_water_holding_contributions(ctx, "container", &id.to_string());
         crate::herbalism::delete_container_medicine(ctx, id);
         ctx.db.inventory_containment().child_object_id().delete(id);
+        crate::weapon_instance::delete_for_object(ctx, id);
         ctx.db.inventory_object().id().delete(id);
     }
     Ok(())

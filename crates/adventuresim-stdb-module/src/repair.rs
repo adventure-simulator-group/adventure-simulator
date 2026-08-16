@@ -2,6 +2,7 @@
 
 use adventuresim_core::durability::DamageBins;
 use adventuresim_core::durability::{DurabilityProfile, damage_from_impact};
+use adventuresim_core::strategic_place::StrategicPlaceId;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::character::{character, character_equipped_item, equipment_occupancy};
@@ -11,7 +12,7 @@ use crate::strategic::{
     PartyInventoryItem, PartyItemCondition, party_inventory_item, party_item_condition, settlement,
 };
 use crate::time::character_time;
-use crate::{InventoryItem, ItemKind};
+use crate::{InventoryItem, ItemKind, inventory_object};
 
 pub const REPAIR_MINUTES_PER_FULL_ITEM: u64 = 2 * 1_440;
 
@@ -376,7 +377,23 @@ fn submit(
     } else {
         Vec::new()
     };
-    crate::inventory_container::reconcile_consumed_row(ctx, "personal", inventory_item_id, true)?;
+    if let Some(mut object) =
+        crate::inventory_container::object_for_row(ctx, "personal", inventory_item_id)?
+    {
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        object.location_kind = "repair".into();
+        object.location_owner = StrategicPlaceId::settlement(settlement_id)
+            .map_err(|_| "Repair settlement identity is invalid")?
+            .to_string();
+        ctx.db.inventory_object().id().update(object);
+    } else {
+        crate::inventory_container::reconcile_consumed_row(
+            ctx,
+            "personal",
+            inventory_item_id,
+            true,
+        )?;
+    }
     crate::character::unequip_wearable(ctx, inventory_item_id);
     // Zero is reserved for smith custody and is excluded by every owner-scoped inventory path.
     inventory.character_id = 0;
@@ -534,6 +551,26 @@ fn retrieve(ctx: &ReducerContext, character_id: u64, order_id: u64) -> Result<()
         .update(condition);
     inventory.character_id = character_id;
     ctx.db.inventory_item().id().update(inventory);
+    let mut escrow_objects = ctx
+        .db
+        .inventory_object()
+        .location_and_row()
+        .filter(("repair", order.inventory_item_id))
+        .collect::<Vec<_>>();
+    if escrow_objects.len() > 1 {
+        return Err("Repair escrow has duplicate physical object identities".into());
+    }
+    if let Some(mut object) = escrow_objects.pop() {
+        let expected_place = StrategicPlaceId::settlement(&order.settlement_id)
+            .map_err(|_| "Repair settlement identity is invalid")?
+            .to_string();
+        if object.location_owner != expected_place || object.item_id != order.item_id {
+            return Err("Repair escrow physical object does not match its order".into());
+        }
+        object.location_kind = "personal".into();
+        object.location_owner = character_id.to_string();
+        ctx.db.inventory_object().id().update(object);
+    }
     if let Some(placement_id) = order.equipped_placement_id.as_deref() {
         crate::character::restore_equipment_placement(
             ctx,
@@ -822,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn repair_submission_releases_nested_object_custody() {
+    fn repair_submission_preserves_stable_object_in_explicit_escrow() {
         let source = include_str!("repair.rs");
         let submit = source
             .split("fn submit(")
@@ -831,8 +868,7 @@ mod tests {
             .split("fn saved_attachment_targets")
             .next()
             .unwrap();
-        assert!(
-            submit.contains("reconcile_consumed_row(ctx, \"personal\", inventory_item_id, true)")
-        );
+        assert!(submit.contains("object.location_kind = \"repair\".into()"));
+        assert!(submit.contains("detach_if_nested"));
     }
 }

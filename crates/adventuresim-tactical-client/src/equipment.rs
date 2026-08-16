@@ -1,11 +1,18 @@
 //! Tactical grab input, QWERTY slot HUD, and placeholder item presentation.
 
+use std::collections::HashMap;
+
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
     prelude::{EquipmentAction, EquipmentActionRequest, EquipmentHand},
 };
-use bevy::prelude::*;
+use adventuresim_weapon_model::{MaterialClass, decode, generate};
+use bevy::{
+    asset::RenderAssetUsages,
+    mesh::{Indices, PrimitiveTopology},
+    prelude::*,
+};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiTextureHandle, egui};
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
 
@@ -94,6 +101,7 @@ impl Plugin for TacticalEquipmentPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(OutlinePlugin::JUMP_FLOOD)
             .init_resource::<GrabSession>()
+            .init_resource::<WeaponMeshCache>()
             .add_systems(
                 PreUpdate,
                 update_grab_input.after(bevy::input::InputSystems),
@@ -127,6 +135,24 @@ struct GrabSession {
     repeated_input: Option<(&'static str, u16)>,
     invalid_flash_remaining: f32,
     next_sequence: u32,
+}
+
+#[derive(Clone)]
+struct CachedWeaponPart {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+}
+
+#[derive(Clone)]
+struct CachedWeapon {
+    parts: Vec<CachedWeaponPart>,
+    grip: Vec3,
+}
+
+#[derive(Resource, Default)]
+struct WeaponMeshCache {
+    weapons: HashMap<(u16, [u8; 32]), CachedWeapon>,
+    materials: HashMap<MaterialClass, Handle<StandardMaterial>>,
 }
 
 #[derive(Component)]
@@ -880,15 +906,120 @@ fn draw_slot_hud(
     });
 }
 
+fn weapon_material(
+    class: MaterialClass,
+    cache: &mut WeaponMeshCache,
+    materials: &mut Assets<StandardMaterial>,
+) -> Handle<StandardMaterial> {
+    cache
+        .materials
+        .entry(class)
+        .or_insert_with(|| {
+            let base_color = match class {
+                MaterialClass::Wood => Color::srgb(0.30, 0.18, 0.09),
+                MaterialClass::Leather => Color::srgb(0.16, 0.09, 0.05),
+                MaterialClass::DarkLeather => Color::srgb(0.055, 0.045, 0.038),
+                MaterialClass::Brass => Color::srgb(0.58, 0.42, 0.13),
+                MaterialClass::Steel => Color::srgb(0.55, 0.58, 0.60),
+                MaterialClass::DarkSteel => Color::srgb(0.22, 0.24, 0.26),
+            };
+            materials.add(StandardMaterial {
+                base_color,
+                metallic: if matches!(
+                    class,
+                    MaterialClass::Brass | MaterialClass::Steel | MaterialClass::DarkSteel
+                ) {
+                    0.82
+                } else {
+                    0.0
+                },
+                perceptual_roughness: if matches!(
+                    class,
+                    MaterialClass::Brass | MaterialClass::Steel | MaterialClass::DarkSteel
+                ) {
+                    0.34
+                } else {
+                    0.76
+                },
+                ..default()
+            })
+        })
+        .clone()
+}
+
+fn cached_weapon(
+    appearance: &WeaponAppearance,
+    cache: &mut WeaponMeshCache,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) -> Option<CachedWeapon> {
+    if appearance.recipe.len() > 16 * 1024 {
+        return None;
+    }
+    if appearance.generator_version != adventuresim_weapon_model::GENERATOR_VERSION {
+        return None;
+    }
+    let design = decode(&appearance.recipe).ok()?;
+    if adventuresim_weapon_model::design_hash(&design).0 != appearance.design_hash {
+        return None;
+    }
+    let key = (appearance.generator_version, appearance.design_hash);
+    if let Some(cached) = cache.weapons.get(&key) {
+        return Some(cached.clone());
+    }
+    let generated = generate(&design).ok()?;
+    let grip = Vec3::from_array(
+        generated
+            .anchors
+            .iter()
+            .find(|anchor| anchor.name == "weapon.grip")?
+            .position,
+    );
+    let parts = generated
+        .parts
+        .into_iter()
+        .map(|part| {
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+            );
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, part.positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, part.normals);
+            mesh.insert_indices(Indices::U32(part.indices));
+            CachedWeaponPart {
+                mesh: meshes.add(mesh),
+                material: weapon_material(part.material, cache, materials),
+            }
+        })
+        .collect();
+    let cached = CachedWeapon { parts, grip };
+    cache.weapons.insert(key, cached.clone());
+    Some(cached)
+}
+
 fn spawn_item_placeholders(
     mut commands: Commands,
-    added: Query<(Entity, &EquipmentPhysical), Added<EquipmentPhysical>>,
+    added: Query<
+        (Entity, &EquipmentPhysical, Option<&WeaponAppearance>),
+        Or<(
+            Added<EquipmentPhysical>,
+            Added<WeaponAppearance>,
+            Changed<WeaponAppearance>,
+        )>,
+    >,
+    existing: Query<(Entity, &ItemPlaceholder)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut cache: ResMut<WeaponMeshCache>,
 ) {
-    for (item, physical) in &added {
+    for (item, physical, appearance) in &added {
         if !physical.is_valid() {
             continue;
+        }
+        for (root, placeholder) in &existing {
+            if placeholder.0 == item {
+                commands.entity(root).despawn();
+            }
         }
         let root = commands
             .spawn((
@@ -900,28 +1031,51 @@ fn spawn_item_placeholders(
                 Visibility::Hidden,
             ))
             .id();
-        commands.entity(root).with_child((
-            Mesh3d(meshes.add(Cuboid::new(
-                physical.dimensions_m.x,
-                physical.dimensions_m.y,
-                physical.dimensions_m.z,
-            ))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(0.48, 0.34, 0.18),
-                perceptual_roughness: 0.8,
-                ..default()
-            })),
-            // The root is the authored grip. Box centre is offset from it;
-            // local +Y remains the weapon-tip direction.
-            Transform::from_translation(-physical.anchor_offset_m),
-            PickupOutline(item),
-            OutlineVolume {
-                visible: false,
-                colour: Color::WHITE,
-                width: 4.0,
-            },
-            OutlineMode::FloodFlat,
-        ));
+        if let Some(generated) = appearance.and_then(|appearance| {
+            cached_weapon(appearance, &mut cache, &mut meshes, &mut materials)
+        }) {
+            commands.entity(root).with_children(|parent| {
+                for part in generated.parts {
+                    parent.spawn((
+                        Name::new("Procedural weapon part"),
+                        Mesh3d(part.mesh),
+                        MeshMaterial3d(part.material),
+                        Transform::from_translation(-generated.grip),
+                        PickupOutline(item),
+                        OutlineVolume {
+                            visible: false,
+                            colour: Color::WHITE,
+                            width: 4.0,
+                        },
+                        OutlineMode::FloodFlat,
+                    ));
+                }
+            });
+        } else {
+            commands.entity(root).with_child((
+                Name::new("Tactical item fallback"),
+                Mesh3d(meshes.add(Cuboid::new(
+                    physical.dimensions_m.x,
+                    physical.dimensions_m.y,
+                    physical.dimensions_m.z,
+                ))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.48, 0.34, 0.18),
+                    perceptual_roughness: 0.8,
+                    ..default()
+                })),
+                // The root is the authored grip. Box centre is offset from it;
+                // local +Y remains the weapon-tip direction.
+                Transform::from_translation(-physical.anchor_offset_m),
+                PickupOutline(item),
+                OutlineVolume {
+                    visible: false,
+                    colour: Color::WHITE,
+                    width: 4.0,
+                },
+                OutlineMode::FloodFlat,
+            ));
+        }
     }
 }
 
@@ -1059,6 +1213,105 @@ fn holding_side(slot: Option<&EquipSlot>) -> Option<HandSide> {
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+
+    #[test]
+    fn identical_weapon_recipes_share_cached_mesh_handles() {
+        let design = adventuresim_weapon_model::default_design("longsword").unwrap();
+        let appearance = WeaponAppearance {
+            generator_version: adventuresim_weapon_model::GENERATOR_VERSION,
+            design_hash: adventuresim_weapon_model::design_hash(&design).0,
+            recipe: adventuresim_weapon_model::encode(&design).unwrap(),
+        };
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        let first = cached_weapon(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        let second = cached_weapon(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        assert_eq!(first.parts.len(), second.parts.len());
+        assert!(
+            first
+                .parts
+                .iter()
+                .zip(&second.parts)
+                .all(|(left, right)| left.mesh == right.mesh)
+        );
+        assert_eq!(cache.weapons.len(), 1);
+    }
+
+    #[test]
+    fn corrupt_weapon_recipe_falls_back_instead_of_panicking() {
+        let appearance = WeaponAppearance {
+            generator_version: adventuresim_weapon_model::GENERATOR_VERSION,
+            design_hash: [7; 32],
+            recipe: vec![0xff, 0x00],
+        };
+        assert!(
+            cached_weapon(
+                &appearance,
+                &mut WeaponMeshCache::default(),
+                &mut Assets::<Mesh>::default(),
+                &mut Assets::<StandardMaterial>::default(),
+            )
+            .is_none()
+        );
+    }
+
+    fn longsword_appearance() -> WeaponAppearance {
+        let design = adventuresim_weapon_model::default_design("longsword").unwrap();
+        WeaponAppearance {
+            generator_version: adventuresim_weapon_model::GENERATOR_VERSION,
+            design_hash: adventuresim_weapon_model::design_hash(&design).0,
+            recipe: adventuresim_weapon_model::encode(&design).unwrap(),
+        }
+    }
+
+    #[test]
+    fn warm_cache_does_not_accept_a_recipe_with_a_borrowed_hash() {
+        let valid = longsword_appearance();
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        assert!(cached_weapon(&valid, &mut cache, &mut meshes, &mut materials).is_some());
+        let mut tampered = valid;
+        tampered.recipe[4] ^= 0x5a;
+        assert!(cached_weapon(&tampered, &mut cache, &mut meshes, &mut materials).is_none());
+    }
+
+    fn valid_physical() -> EquipmentPhysical {
+        EquipmentPhysical {
+            dimensions_m: Vec3::new(0.25, 1.4, 0.08),
+            grip_to_tip_m: 1.15,
+            anchor_offset_m: Vec3::new(0.0, -0.45, 0.0),
+        }
+    }
+
+    #[test]
+    fn either_replication_arrival_order_builds_one_weapon_presentation() {
+        for appearance_first in [false, true] {
+            let mut world = World::new();
+            world.insert_resource(Assets::<Mesh>::default());
+            world.insert_resource(Assets::<StandardMaterial>::default());
+            world.init_resource::<WeaponMeshCache>();
+            let item = if appearance_first {
+                world.spawn(longsword_appearance()).id()
+            } else {
+                world.spawn(valid_physical()).id()
+            };
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            if appearance_first {
+                world.entity_mut(item).insert(valid_physical());
+            } else {
+                world.entity_mut(item).insert(longsword_appearance());
+            }
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            let roots = world
+                .query::<&ItemPlaceholder>()
+                .iter(&world)
+                .filter(|placeholder| placeholder.0 == item)
+                .count();
+            assert_eq!(roots, 1, "appearance_first={appearance_first}");
+        }
+    }
 
     #[test]
     fn pickup_outline_is_visible_only_for_the_selected_scene_item() {

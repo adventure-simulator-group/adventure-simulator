@@ -301,6 +301,7 @@ pub struct ConnectedPlayerItem {
     pub occupancies: Vec<ConnectedEquipmentOccupancy>,
     pub protected_body_parts: Vec<crate::item::EquipmentBodyPart>,
     pub condition: Option<ItemCondition>,
+    pub weapon_appearance: Option<crate::weapon_instance::ConnectedWeaponAppearance>,
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
@@ -400,7 +401,12 @@ fn connected_player_items(
         .character_id()
         .filter(character_id)
         .filter_map(move |inventory_item| {
-            let mut item = ctx.db.item().id().find(inventory_item.item_id)?;
+            let mut item = ctx.db.item().id().find(&inventory_item.item_id)?;
+            let weapon_appearance = crate::weapon_instance::connected_appearance(
+                ctx,
+                inventory_item.id,
+                &inventory_item.item_id,
+            );
             let condition = ctx
                 .db
                 .item_condition()
@@ -467,6 +473,7 @@ fn connected_player_items(
                 condition,
                 occupancies,
                 protected_body_parts,
+                weapon_appearance,
             })
         })
 }

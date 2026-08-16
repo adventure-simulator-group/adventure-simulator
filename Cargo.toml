@@ -8,6 +8,7 @@ members = [
     "crates/adventuresim-world-schema",
     "crates/adventuresim-world-import",
     "crates/adventuresim-terrain",
+    "crates/adventuresim-weapon-model",
     "crates/adventuresim-stdb-module",
     "crates/adventuresim-stdb-client",
     "crates/adventuresim-tactical-core",
@@ -38,6 +39,7 @@ adventuresim-puzzles = { version = "0.1.0", path = "crates/adventuresim-puzzles"
 adventuresim-dialogue = { version = "0.1.0", path = "crates/adventuresim-dialogue" }
 adventuresim-strategic-sim = { version = "0.1.0" }
 adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
+adventuresim-weapon-model = { version = "0.1.0", path = "crates/adventuresim-weapon-model" }
 
 bevy = { version = "0.19.0", default-features = false, features = [
   "reflect_auto_register",

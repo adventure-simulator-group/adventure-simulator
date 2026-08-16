@@ -18,6 +18,7 @@ bevy_egui.workspace = true
 bevy_mod_outline.workspace = true
 adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
+adventuresim-weapon-model.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

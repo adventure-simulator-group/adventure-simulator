@@ -1,0 +1,199 @@
+use std::collections::HashMap;
+
+use crate::{
+    Attachment, ComponentDesign, ComponentRole, ComponentShape, DerivedProperties, ValidationError,
+    WeaponDesign, validate,
+};
+
+fn origin_y<'a>(
+    component: &'a ComponentDesign,
+    by_id: &HashMap<&'a str, &'a ComponentDesign>,
+    cache: &mut HashMap<&'a str, f32>,
+) -> f32 {
+    if let Some(value) = cache.get(component.id.as_str()) {
+        return *value;
+    }
+    let mut value = component.offset.y as f32 / 1_000.0;
+    if let Attachment::TopOf {
+        component: parent,
+        insertion,
+    } = &component.attachment
+    {
+        let parent = by_id[parent.as_str()];
+        value += origin_y(parent, by_id, cache) + parent.shape.axial_length().meters()
+            - insertion.meters();
+    }
+    cache.insert(component.id.as_str(), value);
+    value
+}
+
+fn polygonal_tube(length: f32, radius: f32, segments: u16) -> f32 {
+    let n = segments as f32;
+    0.5 * n * (std::f32::consts::TAU / n).sin() * radius * radius * length
+}
+fn polygonal_frustum(length: f32, bottom: f32, top: f32, segments: u16) -> f32 {
+    let n = segments as f32;
+    0.5 * n
+        * (std::f32::consts::TAU / n).sin()
+        * length
+        * (bottom * bottom + bottom * top + top * top)
+        / 3.0
+}
+
+fn path_length(points: &[crate::OffsetMm], closed: bool) -> f32 {
+    let pairs = points.windows(2).map(|pair| {
+        let a = pair[0].meters();
+        let b = pair[1].meters();
+        ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2) + (b[2] - a[2]).powi(2)).sqrt()
+    });
+    let mut length: f32 = pairs.sum();
+    if closed {
+        let a = points[0].meters();
+        let b = points[points.len() - 1].meters();
+        length += ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2) + (b[2] - a[2]).powi(2)).sqrt();
+    }
+    length
+}
+
+fn volume(shape: &ComponentShape) -> f32 {
+    use ComponentShape::*;
+    match shape {
+        Cylinder(v) => polygonal_frustum(
+            v.length.meters(),
+            v.radius.meters() * v.bottom_scale.unit(),
+            v.radius.meters() * v.top_scale.unit(),
+            v.segments.0,
+        ),
+        Socket(v) => {
+            let outer = (v.outer_radius.meters() + v.top_radius.meters()) * 0.5;
+            let inner = outer - v.wall.meters();
+            polygonal_tube(v.length.meters(), outer, v.segments.0)
+                - polygonal_tube(v.length.meters(), inner, v.segments.0)
+        }
+        Blade(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.48,
+        SectionBlade(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.38,
+        Guard(v) => v.span.meters() * std::f32::consts::PI * v.radius.meters().powi(2),
+        Mace(v) => {
+            polygonal_tube(v.length.meters(), v.core_radius.meters(), v.segments.0)
+                + v.length.meters()
+                    * v.cusp_radius.meters()
+                    * v.flange_thickness.meters()
+                    * v.flanges as f32
+                    * 0.58
+        }
+        Langet(v) => v.length.meters() * v.width.meters() * v.thickness.meters(),
+        Axe(v) => v.reach.meters() * v.height.meters() * v.thickness.meters() * 0.58,
+        HammerPoll(v) => v.length.meters() * v.face.meters() * v.thickness.meters() * 0.68,
+        CurvedBeak(v) => {
+            v.length.meters()
+                * (v.root_section.meters() + v.tip_section.meters())
+                * 0.5
+                * v.thickness.meters()
+        }
+        FacetedBeak(v) => {
+            v.length.meters() * (v.root.meters() + v.tip.meters()) * 0.5 * v.thickness.meters()
+        }
+        Glaive(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.52,
+        Bill(v) => {
+            (v.length.meters() * v.width.meters() * 0.42
+                + v.hook.meters() * v.width.meters() * 0.55)
+                * v.thickness.meters()
+        }
+        Fork(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.44,
+        Partisan(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.46,
+        TubePath(v) => {
+            path_length(&v.points, v.closed) * std::f32::consts::PI * v.radius.meters().powi(2)
+        }
+        RingGuard(v) => {
+            ((v.arc_end.0 - v.arc_start.0).unsigned_abs() as f32 / 1_000.0)
+                * v.radius.meters()
+                * std::f32::consts::PI
+                * v.bar.meters().powi(2)
+        }
+        FigureEight(v) => {
+            // Ramanujan's ellipse circumference, doubled for the two lobes.
+            let a = v.width.meters() * 0.25;
+            let b = v.height.meters() * 0.25;
+            let h = ((a - b) / (a + b)).powi(2);
+            let length = 2.0
+                * std::f32::consts::PI
+                * (a + b)
+                * (1.0 + 3.0 * h / (10.0 + (4.0 - 3.0 * h).sqrt()));
+            length * std::f32::consts::PI * v.bar.meters().powi(2)
+        }
+        FanPommel(v) => v.width.meters() * v.height.meters() * v.thickness.meters() * 0.55,
+        Rondel(v) => polygonal_tube(v.thickness.meters(), v.radius.meters(), v.segments.0),
+        GothicMace(v) => {
+            polygonal_tube(
+                v.length.meters() + v.crown_length.meters(),
+                v.root_radius.meters(),
+                v.radial_segments.0,
+            ) + v.length.meters()
+                * (v.cusp_radius.meters() - v.root_radius.meters())
+                * v.flange_thickness.meters()
+                * v.flanges as f32
+                * (0.44 + 0.18 * (1.0 - v.concavity.unit()))
+        }
+        SlabGrip(v) => {
+            v.length.meters()
+                * v.width.meters()
+                * (v.thickness.meters() + v.scale_thickness.meters() * 2.0)
+        }
+        KnuckleBow(v) => {
+            v.length.meters().hypot(v.width.meters() * 2.0)
+                * std::f32::consts::PI
+                * v.bar.meters().powi(2)
+        }
+        Collar(v) => polygonal_tube(v.width.meters(), v.radius.meters(), v.segments.0),
+        Sleeve(v) => {
+            let outer = (v.radius.meters() + v.top_radius.meters()) * 0.5;
+            let inner = outer - v.wall.meters();
+            std::f32::consts::PI * (outer * outer - inner * inner) * v.length.meters()
+        }
+        Boss(v) => polygonal_tube(v.thickness.meters(), v.radius.meters(), v.segments.0),
+        Spear(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.45,
+        ProfiledPommel(v) => v
+            .profile
+            .windows(2)
+            .map(|pair| {
+                let h = (pair[1].y.0 - pair[0].y.0) as f32 / 1_000.0;
+                let a = pair[0].radius.meters();
+                let b = pair[1].radius.meters();
+                std::f32::consts::PI * h * (a * a + a * b + b * b) / 3.0
+            })
+            .sum(),
+    }
+}
+
+/// Computes gameplay-facing physical properties directly from the quantized recipe.
+///
+/// This intentionally does not generate vertices or indices. Rendering clients call
+/// [`crate::generate`] when they need the full mesh.
+pub fn derive_properties(design: &WeaponDesign) -> Result<DerivedProperties, Vec<ValidationError>> {
+    validate(design)?;
+    let by_id: HashMap<_, _> = design
+        .components
+        .iter()
+        .map(|component| (component.id.as_str(), component))
+        .collect();
+    let mut origins = HashMap::new();
+    let mut minimum = f32::INFINITY;
+    let mut maximum = f32::NEG_INFINITY;
+    let mut grip = 0.0;
+    let mut mass = 0.0;
+    for component in &design.components {
+        let origin = origin_y(component, &by_id, &mut origins);
+        let top = origin + component.shape.axial_length().meters();
+        minimum = minimum.min(origin);
+        maximum = maximum.max(top);
+        if component.role == ComponentRole::Grip {
+            grip = (origin + top) * 0.5;
+        }
+        mass += volume(&component.shape) * component.material.density_kg_m3();
+    }
+    Ok(DerivedProperties {
+        mass_kg: mass,
+        length_m: maximum - minimum,
+        grip_to_tip_m: maximum - grip,
+    })
+}

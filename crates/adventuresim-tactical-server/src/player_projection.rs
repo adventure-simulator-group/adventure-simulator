@@ -472,6 +472,14 @@ fn spawn_connected_player(
         };
         let item_entity = tactical_items[&item.inventory_item_id];
         let mut item_cmd = cmd.entity(item_entity);
+        let weapon_appearance = item.weapon_appearance.as_ref().and_then(|appearance| {
+            let design_hash: [u8; 32] = appearance.design_hash.as_slice().try_into().ok()?;
+            Some(WeaponAppearance {
+                generator_version: appearance.generator_version,
+                design_hash,
+                recipe: appearance.recipe.clone(),
+            })
+        });
         item_cmd.insert((
             Replicated,
             TacticalInventoryItemId(item.inventory_item_id),
@@ -492,6 +500,9 @@ fn spawn_connected_player(
                 grip_to_tip_m: physical.grip_to_tip_m,
                 anchor_offset_m: Vec3::from_array(physical.anchor_offset_m),
             });
+        }
+        if let Some(appearance) = weapon_appearance {
+            item_cmd.insert(appearance);
         }
         item_cmd.insert(EquipmentTopology {
             placement_id: item.selected_placement_id.clone(),

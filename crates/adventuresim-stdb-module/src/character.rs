@@ -1028,6 +1028,7 @@ fn delete_character_data(
         .filter(character.id)
         .collect::<Vec<_>>()
     {
+        crate::inventory_container::delete_repair_object_for_row(ctx, order.inventory_item_id)?;
         if ctx
             .db
             .item_condition()
@@ -1051,6 +1052,9 @@ fn delete_character_data(
         .filter(character.id)
         .collect::<Vec<_>>();
     for row in inventory {
+        if crate::inventory_container::delete_carried_object_for_row(ctx, "personal", row.id)? {
+            continue;
+        }
         if ctx
             .db
             .item_condition()
