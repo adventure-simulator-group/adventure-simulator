@@ -63,12 +63,14 @@ pub mod prelude {
         TerrainGenerator,
     };
     pub use crate::scene_input::{
-        EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
-        RockArchetype, RockLithology, RockRecipe, SceneEnvironment, SceneInputError, SceneObstacle,
-        SceneRepairReport, SceneSource, TACTICAL_SCENE_GENERATION_VERSION,
-        TACTICAL_SCENE_SCHEMA_VERSION, TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES,
-        TREE_TRUNK_RADIUS_METRES, TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod,
-        VistaSample,
+        EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, LandformRepresentability,
+        MAX_TERRAIN_PATCH_SAMPLES, MAX_TERRAIN_PATCH_TRIANGLES, ROCK_RADIUS_METRES,
+        RiverBluffRecipe, RockArchetype, RockLithology, RockRecipe, SceneEnvironment,
+        SceneInputError, SceneObstacle, SceneRepairReport, SceneSource,
+        TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
+        TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES,
+        TacticalSceneInput, TacticalSurface, TerrainPatchProxyBox, TerrainPatchRecipe,
+        TerrainRepresentation, TerrainSampleGrid, VistaLod, VistaSample, classify_landform,
     };
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};

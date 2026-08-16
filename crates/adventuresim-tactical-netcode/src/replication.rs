@@ -49,6 +49,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<SceneGround>()
             .replicate::<SceneEnvironment>()
             .replicate::<SceneObstacle>()
+            .replicate::<TerrainPatchRecipe>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_server_event::<ReconnectCapability>(Channel::Ordered)
             .add_server_event::<SceneVistaBundle>(Channel::Ordered)

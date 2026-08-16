@@ -80,6 +80,7 @@ pub fn build_imported_scene(
         absolute_minute,
         absolute_elevation_metres: center.elevation_m,
         playable,
+        terrain_patches: Vec::new(),
         vista,
         weather: weather_at(
             WORLD_WEATHER_SEED,

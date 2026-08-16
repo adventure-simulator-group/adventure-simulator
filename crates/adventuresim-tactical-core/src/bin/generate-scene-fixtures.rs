@@ -48,7 +48,7 @@ fn main() {
     }
 }
 
-fn fixtures() -> [Fixture; 13] {
+fn fixtures() -> [Fixture; 14] {
     [
         fixture(
             "flat-dry-grassland",
@@ -160,6 +160,14 @@ fn fixtures() -> [Fixture; 13] {
             water_dominated,
             rain(8_000, 3_000),
         ),
+        fixture(
+            "river-bluff-cliff",
+            "river-bluff",
+            47_112,
+            bluff_benches,
+            bluff_ground,
+            clear(),
+        ),
     ]
 }
 
@@ -194,12 +202,51 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
         absolute_minute: fixture.weather.interval_start_minute,
         absolute_elevation_metres: 42,
         playable: grid(9, 9, 12.5, fixture.terrain, fixture.environment),
+        terrain_patches: if fixture.name == "river-bluff-cliff" {
+            vec![TerrainPatchRecipe::RiverBluff(RiverBluffRecipe {
+                seed: fixture.seed ^ 0x6275_6e74_7361_6e64,
+                center_cm: [0, 0, 1_800],
+                yaw_milliradians: 0,
+                face_width_cm: 2_800,
+                face_height_cm: 900,
+                rock_depth_cm: 1_400,
+                curvature_cm: 420,
+                undercut_depth_cm: 130,
+                collapse_offset_cm: 180,
+                collapse_radius_cm: 300,
+                talus_depth_cm: 700,
+                heightfield_error_cm: 650,
+                error_tolerance_cm: 75,
+                vertical_intersections: 2,
+                sample_spacing_cm: 28,
+            })]
+        } else {
+            Vec::new()
+        },
         vista: vista(
             fixture.vista,
             fixture.environment,
             (fixture.terrain)(0.0, 0.0),
         ),
         weather: fixture.weather,
+    }
+}
+
+fn bluff_benches(x: f32, z: f32) -> f32 {
+    let rearward = ((z - 25.0) / 15.0).clamp(0.0, 1.0);
+    let terrace = rearward * rearward * (3.0 - 2.0 * rearward);
+    terrace * (8.25 + (x * 0.055).sin() * 0.18)
+}
+
+fn bluff_ground(x: f32, z: f32) -> EnvironmentalSample {
+    EnvironmentalSample {
+        hilly_bps: 3_200,
+        canopy_bps: if x.abs() < 28.0 && (-5.0..45.0).contains(&z) {
+            0
+        } else {
+            300
+        },
+        ..sample(TacticalSurface::Open, 0, 0, 0, 0)
     }
 }
 

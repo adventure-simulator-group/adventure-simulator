@@ -12,6 +12,7 @@ mod procedural;
 mod procedural_assets;
 mod sky;
 mod terrain;
+mod terrain_patch;
 mod vista;
 mod volumetric;
 mod weather;
@@ -65,6 +66,8 @@ pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSun
 pub(crate) use terrain::{
     TerrainDetailPatch, TerrainMaterialPresentation, terrain_heightmap_image,
 };
+#[allow(unused_imports)]
+pub(crate) use terrain_patch::{ImplicitTerrainPatchSurface, ImplicitTerrainPatchVisual};
 #[allow(unused_imports)]
 pub(crate) use vista::{VistaTerrain, VistaTreePresentation};
 #[allow(unused_imports)]
@@ -220,6 +223,7 @@ impl Plugin for TacticalPresentationPlugin {
         .add_observer(terrain::on_environment_added)
         .add_observer(terrain::on_ground_added)
         .add_observer(on_scene_obstacle_added)
+        .add_observer(terrain_patch::on_terrain_patch_added)
         .add_observer(on_scene_vista_bundle);
     }
 }

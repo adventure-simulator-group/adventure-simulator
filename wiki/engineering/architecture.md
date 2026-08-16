@@ -609,14 +609,46 @@ camera EV100 from -0.5 toward -1.25, modeling visual adaptation without any
 per-asset emission or brightness multipliers; a below-horizon Moon leaves
 exposure unchanged.
 
-The Surface Nets implementation is deliberately private to the tactical client
-and is the first bounded volumetric-meshing primitive, not a cave system. Future
-overhang, cliff, or cave patches must replicate a compact deterministic field
-recipe rather than a canonical render mesh. Their heightfield collar, removed
-terrain triangles, server collision representation, ground-query dispatch, and
-traversability contract remain unresolved and are not represented by the
-current scene schema. In particular, adding those patches must not move mesh
-extraction into the dispatcher or tactical server.
+The Surface Nets implementation remains private to the tactical client. Scene
+schema 2 adds bounded river-bluff recipes and a deterministic representability
+report: multiple vertical intersections or excessive heightfield approximation
+error select an implicit patch, independently of playable grade. The shared
+recipe supplies the finite scalar field, thin face-following compound collision
+proxy, and patch-aware nearest-surface-below query; the server replicates that
+recipe and never extracts or transmits render geometry. The ordinary
+heightfield is explicitly replaced by matching benches. In the central
+topologically complex sector its transition stays behind the shared
+conservative face envelope. Across the returned shoulder, the same implicit
+render surface remains the single visible owner and its crest converges to the
+lower bench before the finite field side. Heightfield collision owns that
+sector but its upper rise stays behind the rendered return. The old diagonal
+ramp does not remain beneath the central scarp.
+Client extraction retains only sampled triangles matching the shared authored
+face equation. Surface Nets top, back, bottom, side, and unexposed closure
+triangles remain discarded; ordinary heightfield terrain owns all horizontal
+upper and rear ground. The retained crest boundary is projected onto the smooth
+authored brink and its normals are recomputed. No separate collar mesh is
+rendered or replicated.
+Triangle normals are not an authority for
+a curved scarp. The replicated heightfield owns the rear upper bench and
+returned side terrain. Low returned ends converge to the lower terrain before
+the excluded finite implicit field boundary. The
+review manifest records a deterministic cyan-pixel gate plus quantitative
+proxy coverage, vertical-gap, crest-gap, face-offset, and undercut-clearance
+evidence for the collision-overlay plate.
+That plate renders thin cyan outlines for alternating retained proxy bands,
+projected onto their corresponding authored rock surface solely for visible
+depth-tested review, rather than filled proxy faces; returned shoulders are
+explicitly heightfield-owned.
+The proxy samples narrow horizontal and vertical face bands, starts each box
+behind the most recessed authored sample, and omits bands intersecting the
+failure scar or toe undercut. It therefore remains authoritative without
+turning the recipe's missing rock volume into a full-depth collision wall.
+Reserved deployment pads and the combat corridor are repaired through their
+local mask rather than globally flattening authored cliffs. This is an inland
+river bluff: a compact implicit scarp joins heightfield-owned floodplain,
+terrace, and feathered side shoulders. It is not a generic cave or
+adaptive-terrain system.
 
 A running tactical client receives a private, server-generated 256-bit
 reconnect capability after enrollment. The client retains it in process across

@@ -1,4 +1,4 @@
-use adventuresim_tactical_core::prelude::{SceneSource, WeatherSnapshot};
+use adventuresim_tactical_core::prelude::{SceneSource, TerrainRepresentation, WeatherSnapshot};
 use serde::Serialize;
 
 #[cfg(test)]
@@ -24,6 +24,7 @@ pub(super) struct CaptureRecord {
     pub(super) largest_visible_vista_tree_has_collider: Option<bool>,
     pub(super) foreground_pixel_bps: u16,
     pub(super) detail_pixel_bps: u16,
+    pub(super) cyan_overlay_pixel_bps: u16,
     pub(super) canopy_pixel_bps: u16,
     pub(super) forced_tree_lod: Option<u8>,
     pub(super) focused_tree_lod_queued: Option<bool>,
@@ -125,6 +126,46 @@ pub(super) struct VistaSummary {
 }
 
 #[derive(Serialize)]
+pub(super) struct TerrainPatchSummary {
+    pub(super) base_representation: TerrainRepresentation,
+    pub(super) generated: usize,
+    pub(super) presented: usize,
+    pub(super) collidable: usize,
+    pub(super) scalar_samples: u32,
+    pub(super) render_triangles: usize,
+    pub(super) within_meshing_budgets: bool,
+    pub(super) decisions: Vec<TerrainPatchDecision>,
+    pub(super) collision_evidence: Option<TerrainPatchCollisionEvidence>,
+    pub(super) debris_representation: &'static str,
+    pub(super) debris_heightfield_lobes: usize,
+    pub(super) debris_free_undercut_flank: bool,
+    pub(super) discrete_debris_entities: usize,
+    pub(super) discrete_debris_colliders: usize,
+}
+
+#[derive(Serialize)]
+pub(super) struct TerrainPatchDecision {
+    pub(super) kind: &'static str,
+    pub(super) chosen_representation: TerrainRepresentation,
+    pub(super) vertical_intersections: u8,
+    pub(super) heightfield_error_cm: u16,
+    pub(super) error_tolerance_cm: u16,
+    pub(super) sample_counts: [u16; 3],
+}
+
+#[derive(Serialize)]
+pub(super) struct TerrainPatchCollisionEvidence {
+    pub(super) proxy_boxes: usize,
+    pub(super) central_solid_columns_expected: u16,
+    pub(super) central_solid_columns_covered: u16,
+    pub(super) max_vertical_gap_cm: u16,
+    pub(super) max_crest_gap_cm: u16,
+    pub(super) max_front_offset_cm: u16,
+    pub(super) undercut_clearance_cm: u16,
+    pub(super) returned_shoulders_heightfield_owned: bool,
+}
+
+#[derive(Serialize)]
 pub(super) struct ValidationSummary {
     pub(super) all_views_captured: bool,
     pub(super) requested_views_captured_exactly_once: bool,
@@ -138,6 +179,10 @@ pub(super) struct ValidationSummary {
     pub(super) foliage_detail_present: bool,
     pub(super) all_obstacles_presented: bool,
     pub(super) all_obstacles_collidable: bool,
+    pub(super) terrain_patches_presented: bool,
+    pub(super) terrain_patches_collidable: bool,
+    pub(super) terrain_patch_meshing_within_budget: bool,
+    pub(super) terrain_patch_collision_proxy_fit: bool,
     pub(super) procedural_rocks_fit_colliders: bool,
     pub(super) trees_have_five_lods: bool,
     pub(super) tree_detail_captured_when_expected: bool,
@@ -192,6 +237,7 @@ pub(super) struct CaptureManifest {
     pub(super) tree_impostor_bakes: Vec<TreeBakeSummary>,
     pub(super) recursive_tree_lod: RecursiveTreeLodSummary,
     pub(super) vista: VistaSummary,
+    pub(super) terrain_patches: TerrainPatchSummary,
     pub(super) weather_particle_count: usize,
     pub(super) captures: Vec<CaptureRecord>,
     pub(super) validation: ValidationSummary,
@@ -403,6 +449,10 @@ pub(super) fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.foliage_detail_present
         && validation.all_obstacles_presented
         && validation.all_obstacles_collidable
+        && validation.terrain_patches_presented
+        && validation.terrain_patches_collidable
+        && validation.terrain_patch_meshing_within_budget
+        && validation.terrain_patch_collision_proxy_fit
         && validation.procedural_rocks_fit_colliders
         && validation.trees_have_five_lods
         && validation.tree_detail_captured_when_expected
@@ -440,6 +490,10 @@ mod tests {
             foliage_detail_present: false,
             all_obstacles_presented: true,
             all_obstacles_collidable: true,
+            terrain_patches_presented: true,
+            terrain_patches_collidable: true,
+            terrain_patch_meshing_within_budget: true,
+            terrain_patch_collision_proxy_fit: true,
             procedural_rocks_fit_colliders: true,
             trees_have_five_lods: true,
             tree_detail_captured_when_expected: true,
@@ -480,6 +534,7 @@ mod tests {
             largest_visible_vista_tree_has_collider: None,
             foreground_pixel_bps,
             detail_pixel_bps,
+            cyan_overlay_pixel_bps: 0,
             canopy_pixel_bps: 0,
             forced_tree_lod: None,
             focused_tree_lod_queued: None,

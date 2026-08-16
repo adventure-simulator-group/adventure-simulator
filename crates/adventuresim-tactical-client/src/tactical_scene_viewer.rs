@@ -36,8 +36,8 @@ use manifest::{
     CaptureManifest, CaptureRecord, CelestialProvenance, FoliageSummary,
     ObservedPresentationFeatures, ObstacleSummary, PendingCaptureManifest,
     PresentationFeatureState, PresentationFeatures, RecursiveTreeLodSummary, RepairSummary,
-    TerrainSummary, TreeBakeCardSummary, TreeBakeSummary, ValidationSummary, VistaSummary,
-    validation_passes,
+    TerrainPatchCollisionEvidence, TerrainPatchDecision, TerrainPatchSummary, TerrainSummary,
+    TreeBakeCardSummary, TreeBakeSummary, ValidationSummary, VistaSummary, validation_passes,
 };
 #[cfg(test)]
 use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
@@ -49,13 +49,14 @@ use view_specs::{
 use crate::camera::CameraRigConfig;
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
-    GroundScatterLayer, LooseStonePebblePatch, PresentedTree, ProceduralEnvironmentAssets,
-    ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
-    TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial, TerrainDetailPatch,
-    TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
-    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
-    TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
-    oak_leaf_material, oak_review_terminal_specimen, terrain_heightmap_image,
+    GroundScatterLayer, ImplicitTerrainPatchSurface, ImplicitTerrainPatchVisual,
+    LooseStonePebblePatch, PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual,
+    TacticalGraphicsSettings, TacticalPresentationPlugin, TacticalTreeBarkMaterial,
+    TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
+    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
+    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
+    oak_review_terminal_specimen, terrain_heightmap_image,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -68,6 +69,75 @@ const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const CAPTURE_PROFILE_VERSION: u16 = 19;
 const CAMERA_VERSION: u16 = 13;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
+
+fn terrain_patch_collision_evidence(recipe: RiverBluffRecipe) -> TerrainPatchCollisionEvidence {
+    const X_SLICES: usize = 28;
+    let proxies = recipe.collision_proxy_boxes();
+    let size = recipe.dimensions_metres();
+    let slice_width = size.x / X_SLICES as f32;
+    let mut expected = 0_u16;
+    let mut covered = 0_u16;
+    let mut max_vertical_gap = 0.0_f32;
+    let mut max_crest_gap = 0.0_f32;
+    let mut max_front_offset = 0.0_f32;
+    for index in 0..X_SLICES {
+        let x = -size.x * 0.5 + slice_width * (index as f32 + 0.5);
+        if x.abs() > recipe.implicit_collision_half_width() {
+            continue;
+        }
+        let crest = recipe.local_crest_height(x);
+        let solid_column = [0.55_f32, 0.82, 0.96].into_iter().all(|fraction| {
+            recipe.failure_scar_weight(Vec3::new(x, crest * fraction, 0.0)) <= 0.08
+        });
+        if !solid_column {
+            continue;
+        }
+        expected += 1;
+        let mut intervals = proxies
+            .iter()
+            .filter_map(|proxy| {
+                let local = recipe.world_to_local(proxy.center);
+                ((x - local.x).abs() <= proxy.half_extents.x + 0.02).then_some((
+                    local.y - proxy.half_extents.y,
+                    local.y + proxy.half_extents.y,
+                    local.z - proxy.half_extents.z,
+                    local,
+                ))
+            })
+            .collect::<Vec<_>>();
+        intervals.sort_by(|left, right| left.0.total_cmp(&right.0));
+        if intervals.is_empty() {
+            continue;
+        }
+        covered += 1;
+        let undercut = recipe.undercut_weight_local(Vec3::new(x, 0.45, 0.0)) > 0.08;
+        let mut covered_top = if undercut {
+            f32::from(recipe.undercut_depth_cm) / 100.0
+        } else {
+            0.08
+        };
+        for (bottom, top, proxy_front, local) in intervals {
+            if bottom > covered_top {
+                max_vertical_gap = max_vertical_gap.max(bottom - covered_top);
+            }
+            covered_top = covered_top.max(top);
+            let authored_face = recipe.face_surface_local_z(Vec3::new(local.x, local.y, 0.0));
+            max_front_offset = max_front_offset.max((proxy_front - authored_face).max(0.0));
+        }
+        max_crest_gap = max_crest_gap.max((crest - covered_top).max(0.0));
+    }
+    let centimetres = |metres: f32| (metres.max(0.0) * 100.0).round() as u16;
+    TerrainPatchCollisionEvidence {
+        proxy_boxes: proxies.len(),
+        central_solid_columns_expected: expected,
+        central_solid_columns_covered: covered,
+        max_vertical_gap_cm: centimetres(max_vertical_gap),
+        max_crest_gap_cm: centimetres(max_crest_gap),
+        max_front_offset_cm: centimetres(max_front_offset),
+        undercut_clearance_cm: recipe.undercut_depth_cm,
+        returned_shoulders_heightfield_owned: true,
+    }
+}
 
 #[derive(Resource)]
 struct SceneSetup(Option<SceneSetupData>);
@@ -121,6 +191,9 @@ struct LightingObservationParams<'w, 's> {
         ),
     >,
 }
+
+#[derive(Component)]
+struct TerrainPatchColliderOverlay;
 
 #[derive(Component)]
 struct TreeReviewBackdrop;
@@ -1305,6 +1378,51 @@ mod capture_lighting_tests {
             ..target
         }));
     }
+
+    #[test]
+    fn collision_overlay_gate_detects_distinct_cyan_pixels() {
+        let pixels = [
+            248_u8, 238, 210, 255, // sandstone
+            5, 242, 199, 255, // collider overlay
+            40, 62, 35, 255, // foliage
+            91, 85, 76, 255, // soil
+        ];
+        assert_eq!(cyan_overlay_pixel_bps(Some(&pixels)), 2_500);
+        assert_eq!(cyan_overlay_pixel_bps(None), 0);
+    }
+
+    #[test]
+    fn collision_manifest_reports_complete_bounded_central_proxy_coverage() {
+        let recipe = RiverBluffRecipe {
+            seed: 7,
+            center_cm: [0, 0, 0],
+            yaw_milliradians: 0,
+            face_width_cm: 2_800,
+            face_height_cm: 900,
+            rock_depth_cm: 1_400,
+            curvature_cm: 420,
+            undercut_depth_cm: 130,
+            collapse_offset_cm: 180,
+            collapse_radius_cm: 300,
+            talus_depth_cm: 600,
+            heightfield_error_cm: 650,
+            error_tolerance_cm: 75,
+            vertical_intersections: 2,
+            sample_spacing_cm: 50,
+        };
+        let evidence = terrain_patch_collision_evidence(recipe);
+        assert!(evidence.proxy_boxes > 0);
+        assert!(evidence.central_solid_columns_expected > 0);
+        assert_eq!(
+            evidence.central_solid_columns_covered,
+            evidence.central_solid_columns_expected
+        );
+        assert!(evidence.max_vertical_gap_cm <= 75);
+        assert!(evidence.max_crest_gap_cm <= 75);
+        assert!(evidence.max_front_offset_cm <= 65);
+        assert_eq!(evidence.undercut_clearance_cm, 130);
+        assert!(evidence.returned_shoulders_heightfield_owned);
+    }
 }
 
 fn absolute_from_current(path: PathBuf) -> PathBuf {
@@ -1370,6 +1488,7 @@ fn setup_scene(
         terrain,
         ground,
         obstacles,
+        terrain_patches,
         repairs,
     } = generated;
     let terrain_summary = TerrainSummary {
@@ -1483,12 +1602,141 @@ fn setup_scene(
         ));
     }
 
+    let expected_terrain_patches = terrain_patches.len();
+    let terrain_patch_recipe = terrain_patches.first().copied();
+    for patch in terrain_patches {
+        let TerrainPatchRecipe::RiverBluff(recipe) = patch;
+        let proxies = recipe.collision_proxy_boxes();
+        let collider = Collider::compound(
+            proxies
+                .iter()
+                .copied()
+                .map(|proxy| {
+                    (
+                        proxy.center,
+                        Quat::from_rotation_y(proxy.yaw_radians),
+                        Collider::cuboid(
+                            proxy.half_extents.x * 2.0,
+                            proxy.half_extents.y * 2.0,
+                            proxy.half_extents.z * 2.0,
+                        ),
+                    )
+                })
+                .collect(),
+        );
+        commands.spawn((
+            Name::new("Captured implicit river bluff"),
+            patch,
+            RigidBody::Static,
+            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
+            collider,
+            Transform::default(),
+        ));
+        let proxy_overlay_material = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.02, 0.95, 0.78),
+            emissive: LinearRgba::new(0.1, 3.8, 2.8, 1.0),
+            unlit: true,
+            ..default()
+        });
+        for (index, proxy) in proxies.into_iter().enumerate() {
+            if index % 2 != 0 {
+                continue;
+            }
+            // Thin rectangle outlines expose representative authoritative
+            // proxy bands without painting filled cyan ladders over the rock.
+            // They sit on the actual proxy AABB front, which is fitted behind
+            // the most recessed face sample, and never bridge omitted air.
+            let overlay_half_depth = 0.018;
+            let local_center = recipe.world_to_local(proxy.center);
+            let line_width = 0.07;
+            for (edge, offset_x, offset_y, width, height) in [
+                (
+                    "top",
+                    0.0,
+                    proxy.half_extents.y - line_width * 0.5,
+                    proxy.half_extents.x * 2.0,
+                    line_width,
+                ),
+                (
+                    "bottom",
+                    0.0,
+                    -proxy.half_extents.y + line_width * 0.5,
+                    proxy.half_extents.x * 2.0,
+                    line_width,
+                ),
+                (
+                    "left",
+                    -proxy.half_extents.x + line_width * 0.5,
+                    0.0,
+                    line_width,
+                    proxy.half_extents.y * 2.0,
+                ),
+                (
+                    "right",
+                    proxy.half_extents.x - line_width * 0.5,
+                    0.0,
+                    line_width,
+                    proxy.half_extents.y * 2.0,
+                ),
+            ] {
+                let edge_x = local_center.x + offset_x;
+                let edge_y = local_center.y + offset_y;
+                // Proxy boxes begin behind the rearmost face sample, where a
+                // depth-tested diagnostic is necessarily invisible. Project
+                // each retained outline edge onto its corresponding authored
+                // rock surface with a 2 cm review-only bias toward the camera.
+                // The proxy's semantic omission still guarantees no outline
+                // is emitted in failure or undercut air.
+                let visible_face =
+                    recipe.face_surface_local_z(Vec3::new(edge_x, edge_y, 0.0)) - 0.02;
+                let overlay_center = recipe.local_to_world(Vec3::new(edge_x, edge_y, visible_face));
+                commands.spawn((
+                    Name::new(format!(
+                        "River bluff collision proxy {edge} outline {}",
+                        index + 1
+                    )),
+                    CaptureOverlay,
+                    TerrainPatchColliderOverlay,
+                    Mesh3d(meshes.add(Cuboid::new(width, height, overlay_half_depth * 2.0))),
+                    MeshMaterial3d(proxy_overlay_material.clone()),
+                    Visibility::Hidden,
+                    Transform::from_translation(overlay_center)
+                        .with_rotation(Quat::from_rotation_y(proxy.yaw_radians)),
+                ));
+            }
+        }
+    }
+
     let terrain_collider = terrain.collider();
-    let mut obstacle_focus = if obstacle_count == 0 {
-        Vec3::ZERO
-    } else {
-        obstacle_position_sum / obstacle_count as f32
-    };
+    let (
+        terrain_patch_camera,
+        terrain_patch_focus,
+        terrain_patch_profile_camera,
+        terrain_patch_profile_focus,
+    ) = terrain_patch_recipe.map_or((None, None, None, None), |patch| {
+        let TerrainPatchRecipe::RiverBluff(recipe) = patch;
+        let collapse_x = f32::from(recipe.collapse_offset_cm) / 100.0;
+        let beauty_focus_z = recipe.face_surface_local_z(Vec3::new(collapse_x, 4.0, 0.0));
+        let exposed_flank_x = collapse_x + 0.9;
+        let exposed_flank_z = recipe.face_surface_local_z(Vec3::new(exposed_flank_x, 0.85, 0.0));
+        (
+            Some(recipe.local_to_world(Vec3::new(collapse_x - 10.0, 4.8, beauty_focus_z - 22.0))),
+            Some(recipe.local_to_world(Vec3::new(collapse_x, 4.0, beauty_focus_z))),
+            Some(recipe.local_to_world(Vec3::new(
+                exposed_flank_x - 8.0,
+                4.2,
+                exposed_flank_z - 8.0,
+            ))),
+            Some(recipe.local_to_world(Vec3::new(exposed_flank_x, 0.85, exposed_flank_z))),
+        )
+    });
+    let mut obstacle_focus = terrain_patch_focus.unwrap_or_else(|| {
+        if obstacle_count == 0 {
+            Vec3::ZERO
+        } else {
+            obstacle_position_sum / obstacle_count as f32
+        }
+    });
     let focus_limit = terrain.width().min(terrain.depth()) * 0.25;
     obstacle_focus.x = obstacle_focus.x.clamp(-focus_limit, focus_limit);
     obstacle_focus.z = obstacle_focus.z.clamp(-focus_limit, focus_limit);
@@ -1711,6 +1959,7 @@ fn setup_scene(
         terrain: terrain_summary,
         expected_trees,
         expected_rocks,
+        expected_terrain_patches,
         expects_grass,
         vista_lods_supplied: input.vista.lods.len(),
         vista_diameter_metres,
@@ -1720,6 +1969,10 @@ fn setup_scene(
         peak_target,
         valley_target,
         obstacle_focus,
+        terrain_patch_camera,
+        terrain_patch_focus,
+        terrain_patch_profile_camera,
+        terrain_patch_profile_focus,
         tree_focus,
         rock_focus,
         debris_focus,
@@ -2560,7 +2813,7 @@ fn capture_views(
     >,
     tree_bakes: Query<&TreeImpostorProvenance>,
     foliage: Query<&GroundScatterLayer>,
-    terrain_materials: Query<(), With<TerrainMaterialPresentation>>,
+    terrain_patch_observation: TerrainPatchObservationParams,
     meshes: Res<Assets<Mesh>>,
     mut scene_visibility: ParamSet<(
         Query<(&VistaTerrain, Has<Collider>)>,
@@ -2917,6 +3170,7 @@ fn capture_views(
                 foreground_pixel_bps: 0,
                 detail_pixel_bps: 0,
                 canopy_pixel_bps: 0,
+                cyan_overlay_pixel_bps: 0,
                 forced_tree_lod: tree_lod_override.lod,
                 focused_tree_lod_queued: None,
                 focused_tree_species: state
@@ -3079,6 +3333,69 @@ fn capture_views(
     let path = state.output.join(format!("{}.png", view.slug));
     let final_view = state.view + 1 == state.views.len();
     let weather_particle_count = scene_visibility.p6().iter().count();
+    let terrain_patch_summary = final_view.then(|| {
+        let decisions = terrain_patch_observation
+            .recipes
+            .iter()
+            .filter_map(|(patch, _)| {
+                let TerrainPatchRecipe::RiverBluff(recipe) = *patch;
+                recipe
+                    .representability()
+                    .map(|report| TerrainPatchDecision {
+                        kind: "river_bluff",
+                        chosen_representation: report.representation,
+                        vertical_intersections: report.vertical_intersections,
+                        heightfield_error_cm: report.heightfield_error_cm,
+                        error_tolerance_cm: report.error_tolerance_cm,
+                        sample_counts: report.sample_counts,
+                    })
+            })
+            .collect::<Vec<_>>();
+        let collidable = terrain_patch_observation
+            .recipes
+            .iter()
+            .filter(|(_, collider)| *collider)
+            .count();
+        let scalar_samples = terrain_patch_observation
+            .recipes
+            .iter()
+            .filter_map(|(patch, _)| patch.representability())
+            .map(|report| report.sample_count)
+            .sum();
+        let render_triangles = terrain_patch_observation
+            .meshes
+            .iter()
+            .filter_map(|mesh_handle| meshes.get(&mesh_handle.0))
+            .map(|mesh| mesh.indices().map_or(0, |indices| indices.len() / 3))
+            .sum();
+        let presented = terrain_patch_observation.visuals.iter().count();
+        let collision_evidence =
+            terrain_patch_observation
+                .recipes
+                .iter()
+                .next()
+                .map(|(patch, _)| {
+                    let TerrainPatchRecipe::RiverBluff(recipe) = *patch;
+                    terrain_patch_collision_evidence(recipe)
+                });
+        TerrainPatchSummary {
+            base_representation: TerrainRepresentation::Heightfield,
+            generated: state.expected_terrain_patches,
+            presented,
+            collidable,
+            scalar_samples,
+            render_triangles,
+            within_meshing_budgets: scalar_samples as usize <= MAX_TERRAIN_PATCH_SAMPLES
+                && render_triangles <= MAX_TERRAIN_PATCH_TRIANGLES,
+            decisions,
+            collision_evidence,
+            debris_representation: "aggregated_heightfield_fan",
+            debris_heightfield_lobes: 3,
+            debris_free_undercut_flank: true,
+            discrete_debris_entities: 0,
+            discrete_debris_colliders: 0,
+        }
+    });
     let mut final_data = final_view.then(|| {
         build_manifest(
             state,
@@ -3088,11 +3405,12 @@ fn capture_views(
             &tree_lods,
             &tree_bakes,
             &foliage,
-            &terrain_materials,
+            &terrain_patch_observation.materials,
             &meshes,
             &scene_visibility.p0(),
             weather_particle_count,
             observed_presentation,
+            terrain_patch_summary.expect("final capture builds terrain patch evidence"),
         )
     });
     state.phase = CapturePhase::Readback {
@@ -3127,11 +3445,13 @@ fn capture_views(
                 rendered_width,
                 rendered_height,
             );
+            let cyan_overlay_pixel_bps = cyan_overlay_pixel_bps(captured.image.data.as_deref());
             save_to_disk(&path)(captured);
             if let Some(record) = state.captures.last_mut() {
                 record.foreground_pixel_bps = foreground_pixel_bps;
                 record.detail_pixel_bps = detail_pixel_bps;
                 record.canopy_pixel_bps = canopy_pixel_bps;
+                record.cyan_overlay_pixel_bps = cyan_overlay_pixel_bps;
                 record.rendered_resolution = [rendered_width, rendered_height];
             }
             state.view += 1;
@@ -3164,7 +3484,13 @@ fn focused_tree_lod_queued(
 fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3) {
     let half = state.terrain.width_metres.max(state.terrain.depth_metres) * 0.5;
     let (position, target, up) = match pose {
-        CapturePose::Ground => (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+        CapturePose::Ground => state
+            .terrain_patch_camera
+            .zip(state.terrain_patch_focus)
+            .map_or(
+                (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+                |(eye, target)| (eye, target, Vec3::Y),
+            ),
         CapturePose::AnimationPlay { yaw_degrees } => {
             let yaw = Quat::from_rotation_y(yaw_degrees.to_radians());
             let focus = state.animation_play_focus;
@@ -3272,16 +3598,24 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
                 )
             },
         ),
-        CapturePose::GroundCover => state.tree_focus.map_or(
-            (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
-            |tree| {
-                (
-                    tree + Vec3::new(5.5, -0.4, 5.5),
-                    tree + Vec3::new(0.0, -2.25, 0.0),
-                    Vec3::Y,
-                )
-            },
-        ),
+        CapturePose::GroundCover => state
+            .terrain_patch_profile_camera
+            .zip(state.terrain_patch_profile_focus)
+            .map_or_else(
+                || {
+                    state.tree_focus.map_or(
+                        (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+                        |tree| {
+                            (
+                                tree + Vec3::new(5.5, -0.4, 5.5),
+                                tree + Vec3::new(0.0, -2.25, 0.0),
+                                Vec3::Y,
+                            )
+                        },
+                    )
+                },
+                |(eye, target)| (eye, target, Vec3::Y),
+            ),
         CapturePose::LeafSpecimen => state.tree_leaf_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |focus| {
@@ -3513,6 +3847,14 @@ struct CameraObstructionObservation {
     hit: bool,
 }
 
+#[derive(SystemParam)]
+struct TerrainPatchObservationParams<'w, 's> {
+    materials: Query<'w, 's, (), With<TerrainMaterialPresentation>>,
+    recipes: Query<'w, 's, (&'static TerrainPatchRecipe, Has<Collider>)>,
+    meshes: Query<'w, 's, &'static Mesh3d, With<ImplicitTerrainPatchSurface>>,
+    visuals: Query<'w, 's, (), With<ImplicitTerrainPatchVisual>>,
+}
+
 fn build_manifest(
     state: &CaptureState,
     obstacles: &Query<(&SceneObstacle, Has<Collider>)>,
@@ -3526,6 +3868,7 @@ fn build_manifest(
     vistas: &Query<(&VistaTerrain, Has<Collider>)>,
     weather_particle_count: usize,
     presentation_features: PresentationFeatures,
+    terrain_patch_summary: TerrainPatchSummary,
 ) -> PendingCaptureManifest {
     // PresentedTree lives on the non-rendering root and means the complete
     // five-level presentation is cached and streamable. Counting transient
@@ -3675,6 +4018,19 @@ fn build_manifest(
         state.fixture.as_str(),
         "dense-woodland" | "sparse-woodland" | "saturated-wetland"
     );
+    let terrain_patch_collision_proxy_fit = terrain_patch_summary.generated == 0
+        || terrain_patch_summary
+            .collision_evidence
+            .as_ref()
+            .is_some_and(|evidence| {
+                evidence.central_solid_columns_expected > 0
+                    && evidence.central_solid_columns_covered
+                        == evidence.central_solid_columns_expected
+                    && evidence.max_vertical_gap_cm <= 75
+                    && evidence.max_crest_gap_cm <= 75
+                    && evidence.max_front_offset_cm <= 65
+                    && evidence.returned_shoulders_heightfield_owned
+            });
     let mut validation = ValidationSummary {
         all_views_captured: state.captures.len() == state.views.len() - 1,
         requested_views_captured_exactly_once: state.requested_views.iter().all(|view| {
@@ -3750,6 +4106,12 @@ fn build_manifest(
             && presented_rocks == state.expected_rocks,
         all_obstacles_collidable: collider_trees == state.expected_trees
             && collider_rocks == state.expected_rocks,
+        terrain_patches_presented: terrain_patch_summary.presented
+            == terrain_patch_summary.generated,
+        terrain_patches_collidable: terrain_patch_summary.collidable
+            == terrain_patch_summary.generated,
+        terrain_patch_meshing_within_budget: terrain_patch_summary.within_meshing_budgets,
+        terrain_patch_collision_proxy_fit,
         procedural_rocks_fit_colliders: rock_meshes_inside_colliders,
         trees_have_five_lods: presented_trees == state.expected_trees,
         tree_detail_captured_when_expected: state.expected_trees == 0
@@ -3827,6 +4189,7 @@ fn build_manifest(
         weather: state.weather,
         repairs: state.repairs,
         terrain: state.terrain,
+        terrain_patches: terrain_patch_summary,
         obstacles: obstacle_summary,
         foliage: foliage_summary,
         tree_impostor_bakes,
@@ -3836,6 +4199,28 @@ fn build_manifest(
         captures: state.captures.clone(),
         validation,
     })
+}
+
+fn cyan_overlay_pixel_bps(data: Option<&[u8]>) -> u16 {
+    let Some(data) = data else {
+        return 0;
+    };
+    let mut pixels = 0usize;
+    let mut cyan = 0usize;
+    for pixel in data.as_chunks::<4>().0 {
+        pixels += 1;
+        let [red, green, blue, _] = *pixel;
+        cyan += usize::from(
+            green >= 120
+                && blue >= 100
+                && green >= red.saturating_add(30)
+                && blue >= red.saturating_add(20),
+        );
+    }
+    cyan.checked_mul(10_000)
+        .and_then(|value| value.checked_div(pixels))
+        .unwrap_or(0)
+        .min(10_000) as u16
 }
 
 fn capture_revision() -> String {

@@ -84,7 +84,11 @@ fn ground_allows_species(surface: GroundSurface, species: UnderstorySpecies) -> 
         // brighter gaps. Blackthorn remains biased to open scrub and edges.
         GroundCover::LeafLitter => species != UnderstorySpecies::Blackthorn,
         GroundCover::LooseStone => false,
-        GroundCover::Bare | GroundCover::TallGrass => true,
+        // Bare rock/soil is also the authoritative evidence and traversal
+        // corridor around implicit terrain patches; woody understory must not
+        // obscure their toe, undercut, or returned-shoulder contacts.
+        GroundCover::Bare => false,
+        GroundCover::TallGrass => true,
         GroundCover::Reeds => false,
     }
 }
@@ -270,6 +274,14 @@ mod tests {
         assert!(!ground_allows_species(
             GroundSurface {
                 substrate: GroundSubstrate::Water,
+                ..GroundSurface::default()
+            },
+            UnderstorySpecies::CommonHazel
+        ));
+        assert!(!ground_allows_species(
+            GroundSurface {
+                substrate: GroundSubstrate::Stone,
+                cover: GroundCover::Bare,
                 ..GroundSurface::default()
             },
             UnderstorySpecies::CommonHazel

@@ -267,6 +267,7 @@ fn on_server_started(
     let ground = generated.ground;
     let environment = input.environment_snapshot(generated.digest);
     let obstacles = generated.obstacles;
+    let terrain_patches = generated.terrain_patches;
     let obstacle_spacing = input.playable.spacing_metres;
     for obstacle in obstacles {
         let (grid_x, grid_z, kind, collider, height_offset, label) = match obstacle {
@@ -304,6 +305,35 @@ fn on_server_started(
             CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
             collider,
             Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw)),
+        ));
+    }
+    for patch in terrain_patches {
+        let TerrainPatchRecipe::RiverBluff(recipe) = patch;
+        let collider = Collider::compound(
+            recipe
+                .collision_proxy_boxes()
+                .into_iter()
+                .map(|proxy| {
+                    (
+                        proxy.center,
+                        Quat::from_rotation_y(proxy.yaw_radians),
+                        Collider::cuboid(
+                            proxy.half_extents.x * 2.0,
+                            proxy.half_extents.y * 2.0,
+                            proxy.half_extents.z * 2.0,
+                        ),
+                    )
+                })
+                .collect(),
+        );
+        commands.spawn((
+            Replicated,
+            Name::new("Tactical implicit river bluff"),
+            patch,
+            RigidBody::Static,
+            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
+            collider,
+            Transform::default(),
         ));
     }
     let terrain_collider = terrain.collider();

@@ -88,6 +88,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/light-rain-low-wind.json` — Repository support file.
 - `assets/tactical-scenes/narrow-peak-lod-boundary.json` — Repository support file.
 - `assets/tactical-scenes/playability-repair-required.json` — Repository support file.
+- `assets/tactical-scenes/river-bluff-cliff.json` — Repository support file.
 - `assets/tactical-scenes/saturated-wetland.json` — Repository support file.
 - `assets/tactical-scenes/severe-downpour.json` — Repository support file.
 - `assets/tactical-scenes/snow-covered-ground.json` — Repository support file.
@@ -1411,6 +1412,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/presentation/procedural_assets/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/sky/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/terrain.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/terrain_patch.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/vista.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/volumetric.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/weather.rs` — Rust source module.
