@@ -59,7 +59,6 @@ pub const TACTICAL_PRONE_LATERAL_SPEED_SCALE: f32 = 0.375;
 /// physical speed. Dividing the character's neutral jog by the same factor
 /// gives prone movement a breath-neutral middle pace.
 const TACTICAL_PRONE_EFFORT_SCALE: f32 = 3.0;
-pub const TACTICAL_SUPINE_SPEED_METRES_PER_SECOND: f32 = 2.4;
 pub const TACTICAL_ROLL_SPEED_METRES_PER_SECOND: f32 = 1.3;
 pub const TACTICAL_JUMP_HEIGHT_METRES: f32 = 1.8;
 pub const TACTICAL_DIVE_JUMP_HEIGHT_METRES: f32 = 0.65;
@@ -357,7 +356,8 @@ fn apply_analogue_movement_speed(
                         tactical_prone_speed_for_pace(MovementPace::Walk, 3.75) * input_magnitude;
                 }
                 Some(crate::animation::BodyState::Supine) => {
-                    controller.speed = TACTICAL_SUPINE_SPEED_METRES_PER_SECOND * input_magnitude;
+                    controller.speed =
+                        tactical_prone_speed_for_pace(MovementPace::Walk, 3.75) * input_magnitude;
                 }
                 _ => {}
             }
@@ -389,7 +389,7 @@ fn apply_analogue_movement_speed(
                 controller.speed = tactical_prone_speed_for_pace(*pace, jog) * input_magnitude;
             }
             Some(crate::animation::BodyState::Supine) => {
-                controller.speed = TACTICAL_SUPINE_SPEED_METRES_PER_SECOND * input_magnitude;
+                controller.speed = tactical_prone_speed_for_pace(*pace, jog) * input_magnitude;
             }
             _ => {}
         }
@@ -671,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn prone_honors_selected_pace_while_supine_owns_its_pace() {
+    fn prone_and_supine_share_selected_pace_after_directional_scaling() {
         let mut world = World::new();
         let prone = world
             .spawn((
@@ -799,7 +799,7 @@ mod tests {
         );
         assert_eq!(
             world.get::<CharacterController>(supine).unwrap().speed,
-            TACTICAL_SUPINE_SPEED_METRES_PER_SECOND
+            TACTICAL_PRONE_SPEED_METRES_PER_SECOND
         );
         assert_eq!(
             world.get::<CharacterController>(prone_walk).unwrap().speed,

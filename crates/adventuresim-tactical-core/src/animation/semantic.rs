@@ -12,14 +12,10 @@ pub enum SemanticPose {
     RunContact,
     RunFlight,
     CrouchIdle,
-    DuckLeadLeftForward,
-    DuckLeadLeftBackward,
-    DuckLeadLeftLeft,
-    DuckLeadLeftRight,
-    DuckLeadRightForward,
-    DuckLeadRightBackward,
-    DuckLeadRightLeft,
-    DuckLeadRightRight,
+    DuckForward,
+    DuckBackward,
+    DuckLeft,
+    DuckRight,
     DiveForward,
     DiveBackward,
     DiveLeft,
@@ -34,24 +30,13 @@ pub enum SemanticPose {
     ProneSupineRollLeft,
     ProneSupineRollRight,
     SupineTransition,
-    GuardLeadLeft,
-    GuardLeadRight,
-    GuardWalkLeadLeft,
-    GuardWalkLeadRight,
-    GuardStrafeLeadLeftLeft,
-    GuardStrafeLeadLeftRight,
-    GuardStrafeLeadRightLeft,
-    GuardStrafeLeadRightRight,
-    AttackThrustLeadLeftContact,
-    AttackThrustLeadRightContact,
-    AttackSlashLeadLeftContact,
-    AttackSlashLeadRightContact,
-    BlockCutLeftLeadLeft,
-    BlockCutLeftLeadRight,
-    BlockCutRightLeadLeft,
-    BlockCutRightLeadRight,
-    BlockThrustLeadLeft,
-    BlockThrustLeadRight,
+    Guard,
+    AttackSwing,
+    AttackSwingFollow,
+    AttackThrust,
+    BlockCutLeft,
+    BlockCutRight,
+    BlockThrust,
 }
 
 #[cfg(test)]
@@ -60,8 +45,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_thirty_one_authored_poses() {
-        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 40);
+    fn humanoid_contract_resolves_from_twenty_five_authored_poses() {
+        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 28);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -69,7 +54,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 31);
+        assert_eq!(authored.len(), 25);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -173,20 +158,17 @@ mod contract_tests {
         state.begin_attack(AttackSpec::default(), 0, 10);
         state.advance_action(5);
         let early = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(early.action[0].pose, SemanticPose::GuardLeadLeft);
+        assert_eq!(early.action[0].pose, SemanticPose::Guard);
         assert_eq!(
             early.action[0].sampling,
             PoseSampling::Span {
-                end: SemanticPose::AttackThrustLeadLeftContact,
+                end: SemanticPose::AttackThrust,
                 progress: 0.5,
             }
         );
         state.advance_action(15);
         let recovery = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(
-            recovery.action[0].pose,
-            SemanticPose::AttackThrustLeadLeftContact
-        );
+        assert_eq!(recovery.action[0].pose, SemanticPose::AttackThrust);
     }
 
     #[test]
@@ -392,8 +374,8 @@ mod contract_tests {
         assert!(toward_prone.downed_facing().is_none());
 
         let mut toward_supine = SkeletonState::default().with_body_state(BodyState::Prone);
-        toward_supine.advance_downed_facing(0.6, true, 1.0);
-        assert!(!toward_supine.advance_downed_facing(0.6, false, 1.0));
+        toward_supine.advance_downed_facing(1.0, true, 0.6);
+        assert!(!toward_supine.advance_downed_facing(0.0, false, 1.0));
         assert_eq!(toward_supine.body(), BodyState::Supine);
         assert!(toward_supine.downed_facing().is_none());
 
@@ -545,21 +527,17 @@ mod contract_tests {
 }
 
 impl SemanticPose {
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 31] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
         Self::CrouchIdle,
-        Self::DuckLeadLeftForward,
-        Self::DuckLeadLeftBackward,
-        Self::DuckLeadLeftLeft,
-        Self::DuckLeadLeftRight,
-        Self::DuckLeadRightForward,
-        Self::DuckLeadRightBackward,
-        Self::DuckLeadRightLeft,
-        Self::DuckLeadRightRight,
+        Self::DuckForward,
+        Self::DuckBackward,
+        Self::DuckLeft,
+        Self::DuckRight,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -574,42 +552,28 @@ impl SemanticPose {
         Self::ProneSupineRollLeft,
         Self::ProneSupineRollRight,
         Self::SupineTransition,
-        Self::GuardLeadLeft,
-        Self::GuardLeadRight,
-        Self::GuardWalkLeadLeft,
-        Self::GuardWalkLeadRight,
-        Self::GuardStrafeLeadLeftLeft,
-        Self::GuardStrafeLeadLeftRight,
-        Self::GuardStrafeLeadRightLeft,
-        Self::GuardStrafeLeadRightRight,
-        Self::AttackThrustLeadLeftContact,
-        Self::AttackThrustLeadRightContact,
-        Self::AttackSlashLeadLeftContact,
-        Self::AttackSlashLeadRightContact,
-        Self::BlockCutLeftLeadLeft,
-        Self::BlockCutLeftLeadRight,
-        Self::BlockCutRightLeadLeft,
-        Self::BlockCutRightLeadRight,
-        Self::BlockThrustLeadLeft,
-        Self::BlockThrustLeadRight,
+        Self::Guard,
+        Self::AttackSwing,
+        Self::AttackSwingFollow,
+        Self::AttackThrust,
+        Self::BlockCutLeft,
+        Self::BlockCutRight,
+        Self::BlockThrust,
     ];
-    /// The 40 semantics every complete humanoid family must resolve. A root
-    /// pack may author only 32 poses because eight pairs permit mirroring.
-    pub const HUMANOID_REQUIRED: [Self; 40] = [
+    /// Non-attack semantics every complete humanoid family must resolve.
+    /// Attack clips are capabilities: a pack may deliberately omit any or all
+    /// of them, and gameplay respects that absence.
+    pub const HUMANOID_REQUIRED: [Self; 28] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
         Self::CrouchIdle,
-        Self::DuckLeadLeftForward,
-        Self::DuckLeadLeftBackward,
-        Self::DuckLeadLeftLeft,
-        Self::DuckLeadLeftRight,
-        Self::DuckLeadRightForward,
-        Self::DuckLeadRightBackward,
-        Self::DuckLeadRightLeft,
-        Self::DuckLeadRightRight,
+        Self::DuckForward,
+        Self::DuckBackward,
+        Self::DuckLeft,
+        Self::DuckRight,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -624,18 +588,10 @@ impl SemanticPose {
         Self::ProneSupineRollLeft,
         Self::ProneSupineRollRight,
         Self::SupineTransition,
-        Self::GuardLeadLeft,
-        Self::GuardLeadRight,
-        Self::AttackThrustLeadLeftContact,
-        Self::AttackThrustLeadRightContact,
-        Self::AttackSlashLeadLeftContact,
-        Self::AttackSlashLeadRightContact,
-        Self::BlockCutLeftLeadLeft,
-        Self::BlockCutLeftLeadRight,
-        Self::BlockCutRightLeadLeft,
-        Self::BlockCutRightLeadRight,
-        Self::BlockThrustLeadLeft,
-        Self::BlockThrustLeadRight,
+        Self::Guard,
+        Self::BlockCutLeft,
+        Self::BlockCutRight,
+        Self::BlockThrust,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -647,14 +603,10 @@ impl SemanticPose {
             RunContact => "run_contact",
             RunFlight => "run_flight",
             CrouchIdle => "crouch_idle",
-            DuckLeadLeftForward => "duck_lead_left_forward",
-            DuckLeadLeftBackward => "duck_lead_left_backward",
-            DuckLeadLeftLeft => "duck_lead_left_left",
-            DuckLeadLeftRight => "duck_lead_left_right",
-            DuckLeadRightForward => "duck_lead_right_forward",
-            DuckLeadRightBackward => "duck_lead_right_backward",
-            DuckLeadRightLeft => "duck_lead_right_left",
-            DuckLeadRightRight => "duck_lead_right_right",
+            DuckForward => "duck_forward",
+            DuckBackward => "duck_backward",
+            DuckLeft => "duck_left",
+            DuckRight => "duck_right",
             DiveForward => "dive_forward",
             DiveBackward => "dive_backward",
             DiveLeft => "dive_left",
@@ -669,24 +621,13 @@ impl SemanticPose {
             ProneSupineRollLeft => "prone_supine_roll_left",
             ProneSupineRollRight => "prone_supine_roll_right",
             SupineTransition => "supine_transition",
-            GuardLeadLeft => "guard_lead_left",
-            GuardLeadRight => "guard_lead_right",
-            GuardWalkLeadLeft => "guard_walk_lead_left",
-            GuardWalkLeadRight => "guard_walk_lead_right",
-            GuardStrafeLeadLeftLeft => "guard_strafe_lead_left_left",
-            GuardStrafeLeadLeftRight => "guard_strafe_lead_left_right",
-            GuardStrafeLeadRightLeft => "guard_strafe_lead_right_left",
-            GuardStrafeLeadRightRight => "guard_strafe_lead_right_right",
-            AttackThrustLeadLeftContact => "attack_thrust_lead_left_contact",
-            AttackThrustLeadRightContact => "attack_thrust_lead_right_contact",
-            AttackSlashLeadLeftContact => "attack_slash_lead_left_contact",
-            AttackSlashLeadRightContact => "attack_slash_lead_right_contact",
-            BlockCutLeftLeadLeft => "block_cut_left_lead_left",
-            BlockCutLeftLeadRight => "block_cut_left_lead_right",
-            BlockCutRightLeadLeft => "block_cut_right_lead_left",
-            BlockCutRightLeadRight => "block_cut_right_lead_right",
-            BlockThrustLeadLeft => "block_thrust_lead_left",
-            BlockThrustLeadRight => "block_thrust_lead_right",
+            Guard => "guard",
+            AttackSwing => "swing",
+            AttackSwingFollow => "swing_follow",
+            AttackThrust => "thrust",
+            BlockCutLeft => "block_cut_left",
+            BlockCutRight => "block_cut_right",
+            BlockThrust => "block_thrust",
         }
     }
 
@@ -697,28 +638,10 @@ impl SemanticPose {
     pub fn mirrored_counterpart(self) -> Option<Self> {
         use SemanticPose::*;
         Some(match self {
-            DuckLeadLeftForward => DuckLeadRightForward,
-            DuckLeadLeftBackward => DuckLeadRightBackward,
-            DuckLeadLeftLeft => DuckLeadRightRight,
-            DuckLeadLeftRight => DuckLeadRightLeft,
-            DuckLeadRightForward => DuckLeadLeftForward,
-            DuckLeadRightBackward => DuckLeadLeftBackward,
-            DuckLeadRightLeft => DuckLeadLeftRight,
-            DuckLeadRightRight => DuckLeadLeftLeft,
+            DuckLeft => DuckRight,
+            DuckRight => DuckLeft,
             DiveLeft => DiveRight,
             DiveRight => DiveLeft,
-            GuardLeadLeft => GuardLeadRight,
-            GuardLeadRight => GuardLeadLeft,
-            GuardWalkLeadLeft => GuardWalkLeadRight,
-            GuardWalkLeadRight => GuardWalkLeadLeft,
-            GuardStrafeLeadLeftLeft => GuardStrafeLeadRightRight,
-            GuardStrafeLeadLeftRight => GuardStrafeLeadRightLeft,
-            GuardStrafeLeadRightLeft => GuardStrafeLeadLeftRight,
-            GuardStrafeLeadRightRight => GuardStrafeLeadLeftLeft,
-            AttackThrustLeadLeftContact => AttackThrustLeadRightContact,
-            AttackThrustLeadRightContact => AttackThrustLeadLeftContact,
-            AttackSlashLeadLeftContact => AttackSlashLeadRightContact,
-            AttackSlashLeadRightContact => AttackSlashLeadLeftContact,
             ProneSupineRollLeft => ProneSupineRollRight,
             ProneSupineRollRight => ProneSupineRollLeft,
             _ => return None,
@@ -736,13 +659,7 @@ impl SemanticPose {
             RunContact => WalkContact,
             RunFlight => WalkPassing,
             CrouchIdle => IdleRelaxed,
-            DuckLeadLeftForward | DuckLeadLeftBackward | DuckLeadLeftLeft | DuckLeadLeftRight => {
-                GuardLeadLeft
-            }
-            DuckLeadRightForward
-            | DuckLeadRightBackward
-            | DuckLeadRightLeft
-            | DuckLeadRightRight => GuardLeadRight,
+            DuckForward | DuckBackward | DuckLeft | DuckRight => Guard,
             DiveForward | DiveBackward | DiveLeft | DiveRight => AirborneTravel,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,
@@ -752,22 +669,10 @@ impl SemanticPose {
             ProneTransition => CrouchIdle,
             ProneSupineRollLeft | ProneSupineRollRight => ProneIdle,
             SupineTransition => CrouchIdle,
-            GuardLeadLeft => IdleRelaxed,
-            GuardLeadRight => IdleRelaxed,
-            GuardWalkLeadLeft => GuardLeadLeft,
-            GuardWalkLeadRight => GuardLeadRight,
-            GuardStrafeLeadLeftLeft | GuardStrafeLeadLeftRight => GuardWalkLeadLeft,
-            GuardStrafeLeadRightLeft | GuardStrafeLeadRightRight => GuardWalkLeadRight,
-            AttackThrustLeadLeftContact => AttackSlashLeadLeftContact,
-            AttackThrustLeadRightContact => AttackSlashLeadRightContact,
-            AttackSlashLeadLeftContact => GuardLeadLeft,
-            AttackSlashLeadRightContact => GuardLeadRight,
-            BlockCutLeftLeadLeft => BlockThrustLeadLeft,
-            BlockCutLeftLeadRight => BlockThrustLeadRight,
-            BlockCutRightLeadLeft => BlockCutLeftLeadLeft,
-            BlockCutRightLeadRight => BlockCutLeftLeadRight,
-            BlockThrustLeadLeft => GuardLeadLeft,
-            BlockThrustLeadRight => GuardLeadRight,
+            Guard => IdleRelaxed,
+            AttackSwing | AttackSwingFollow | AttackThrust => Guard,
+            BlockCutLeft | BlockCutRight => BlockThrust,
+            BlockThrust => Guard,
         })
     }
 }

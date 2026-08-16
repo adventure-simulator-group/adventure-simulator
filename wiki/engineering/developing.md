@@ -614,10 +614,14 @@ For deterministic animation preview evidence, run the gameplay capture fixture:
 
 ```powershell
 just animation-preview steady-walk-2.0 target/animation-captures/preview
+just animation-preview flat-grid-walk-2.0 target/animation-captures/flat-grid-walk
+just animation-preview flat-grid-run-5.5 target/animation-captures/flat-grid-run
 ```
 
 The output retains scenario telemetry, semantic-route counts, `manifest.json`,
 `failure.txt`, PNG sequences, and the HTML review surface.
+The two `flat-grid-*` scenarios use perfectly level terrain with visible
+quarter-metre grid lines for bounce and foot-sliding review.
 Use `just tactical-play diagnostic` to run the same native gameplay client
 with a bounded analogue-input script and a per-render-frame animation-state
 JSONL log. The generated script, `animation-state-<session>.jsonl`, and process

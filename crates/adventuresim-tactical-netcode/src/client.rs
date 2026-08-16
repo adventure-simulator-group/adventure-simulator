@@ -69,6 +69,8 @@ pub struct DirectControlState {
     posture_control_armed: bool,
     posture_control_consumed: bool,
     gamepad_roll_latched: bool,
+    keyboard_roll_pending: bool,
+    keyboard_dive_armed: bool,
     space_jump_armed: bool,
     jump_command: JumpCommand,
 }
@@ -91,6 +93,8 @@ impl Default for DirectControlState {
             posture_control_armed: false,
             posture_control_consumed: false,
             gamepad_roll_latched: false,
+            keyboard_roll_pending: false,
+            keyboard_dive_armed: false,
             space_jump_armed: false,
             jump_command: JumpCommand::default(),
         }
@@ -211,6 +215,17 @@ fn update_direct_control_input(
     let downed = controlled_players
         .iter()
         .any(|skeleton| skeleton.body().is_downed());
+    let roll_transitioning = controlled_players.iter().any(|skeleton| {
+        matches!(
+            skeleton
+                .posture_transition()
+                .map(|transition| transition.kind()),
+            Some(
+                PostureTransitionKind::ProneToSupine { .. }
+                    | PostureTransitionKind::SupineToProne { .. }
+            )
+        )
+    });
 
     let raised = mouse.pressed(MouseButton::Right) || left_trigger;
     if right_bumper && left_trigger_just_pressed {
@@ -230,46 +245,63 @@ fn update_direct_control_input(
         keys.just_pressed(KeyCode::ControlLeft) || keys.just_pressed(KeyCode::ControlRight);
     let control_just_released =
         keys.just_released(KeyCode::ControlLeft) || keys.just_released(KeyCode::ControlRight);
-    let keyboard_dive = control_pressed && keys.just_pressed(KeyCode::Space)
-        || keys.pressed(KeyCode::Space) && control_just_pressed;
-    let gamepad_dive =
-        left_thumb && right_trigger_just_pressed || right_trigger && left_thumb_just_pressed;
     if control_just_pressed || left_thumb_just_pressed {
         controls.posture_control_armed = true;
         controls.posture_control_consumed = false;
     }
+    let space_pressed = keys.pressed(KeyCode::Space);
+    let space_just_pressed = keys.just_pressed(KeyCode::Space);
+    let space_just_released = keys.just_released(KeyCode::Space);
+    if control_pressed && space_pressed && (space_just_pressed || control_just_pressed) {
+        controls.keyboard_dive_armed = true;
+        controls.posture_control_consumed = true;
+        controls.space_jump_armed = false;
+    }
+    let keyboard_dive = space_just_released && controls.keyboard_dive_armed;
+    if keyboard_dive {
+        controls.keyboard_dive_armed = false;
+    }
+    let gamepad_dive =
+        left_thumb && right_trigger_just_pressed || right_trigger && left_thumb_just_pressed;
     if keyboard_dive || gamepad_dive {
         let movement_direction = if keyboard_moving {
             keyboard_direction
         } else {
             gamepad_direction
         };
+        let travel_direction = dive_direction(movement_direction);
         queue_posture_action(
             &mut controls,
             PostureActionRequest::Dive {
-                direction: dive_direction(movement_direction),
+                animation_direction: if raised {
+                    travel_direction
+                } else {
+                    DiveDirection::Forward
+                },
+                travel_direction,
             },
         );
         controls.posture_control_consumed = true;
     }
 
-    let space_pressed = keys.pressed(KeyCode::Space);
-    let space_just_pressed = keys.just_pressed(KeyCode::Space);
-    let space_just_released = keys.just_released(KeyCode::Space);
     if space_just_pressed {
-        controls.space_jump_armed = !downed && !keyboard_dive;
+        controls.space_jump_armed = !downed && !controls.keyboard_dive_armed && !keyboard_dive;
     }
-    if keyboard_dive {
+    if keyboard_dive || controls.keyboard_dive_armed {
         controls.space_jump_armed = false;
     }
-    let keyboard_roll_chord = downed
+    let keyboard_roll_held = downed
+        && !controls.keyboard_dive_armed
         && !keyboard_dive
-        && (space_pressed
-            && (keys.just_pressed(KeyCode::KeyA) || keys.just_pressed(KeyCode::KeyD))
-            || space_just_pressed && (keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::KeyD)));
-    let keyboard_roll = keyboard_roll_chord
-        .then(|| lateral_roll_action(keyboard_direction.x))
-        .flatten();
+        && space_pressed
+        && (keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::KeyD));
+    if roll_transitioning || !keyboard_roll_held {
+        controls.keyboard_roll_pending = false;
+    }
+    let keyboard_roll =
+        (keyboard_roll_held && !roll_transitioning && !controls.keyboard_roll_pending)
+            .then(|| lateral_roll_action(keyboard_direction.x))
+            .flatten();
 
     let (gamepad_roll_modifier, gamepad_roll_modifier_just_pressed) = controller_roll_modifier(
         left_trigger,
@@ -291,14 +323,15 @@ fn update_direct_control_input(
     let roll_action = keyboard_roll.or(gamepad_roll);
     let rolling = roll_action.is_some();
     controls.roll_just_pressed = rolling;
-    controls.downed_align = downed_alignment_requested(
-        downed,
-        space_pressed,
-        gamepad_roll_modifier,
-        keyboard_dive || gamepad_dive,
-    );
+    controls.downed_align = downed
+        && !controls.keyboard_dive_armed
+        && !keyboard_dive
+        && !gamepad_dive
+        && ((space_pressed && keyboard_direction.x.abs() <= f32::EPSILON)
+            || (gamepad_roll_modifier && gamepad_lateral.abs() <= 0.35));
     if let Some(action) = roll_action {
         queue_posture_action(&mut controls, action);
+        controls.keyboard_roll_pending = keyboard_roll.is_some();
         controls.gamepad_roll_latched = gamepad_roll.is_some();
         controls.space_jump_armed = false;
     }
@@ -366,15 +399,6 @@ fn controller_roll_modifier(
     } else {
         (right_trigger, right_trigger_just_pressed)
     }
-}
-
-fn downed_alignment_requested(
-    downed: bool,
-    space_pressed: bool,
-    gamepad_roll_modifier: bool,
-    diving: bool,
-) -> bool {
-    downed && !diving && (space_pressed || gamepad_roll_modifier)
 }
 
 fn lateral_roll_action(lateral: f32) -> Option<PostureActionRequest> {
@@ -729,6 +753,97 @@ mod tests {
             JumpCommand::default()
         );
         assert!(world.resource::<DirectControlState>().roll_just_pressed);
+        assert!(!world.resource::<DirectControlState>().downed_align);
+    }
+
+    #[test]
+    fn space_without_lateral_input_requests_downed_camera_alignment() {
+        let (mut world, mut schedule) = input_fixture();
+        world.spawn((
+            ControlledPlayer::default(),
+            SkeletonState::default().with_body_state(BodyState::Prone),
+        ));
+        world
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Space);
+
+        schedule.run(&mut world);
+        let controls = world.resource::<DirectControlState>();
+        assert!(controls.downed_align);
+        assert!(!controls.roll_just_pressed);
+        assert_eq!(controls.posture_command, PostureCommand::default());
+    }
+
+    #[test]
+    fn held_space_and_lateral_direction_queues_each_roll_after_contact() {
+        let (mut world, mut schedule) = input_fixture();
+        let player = world
+            .spawn((
+                ControlledPlayer::default(),
+                SkeletonState::default().with_body_state(BodyState::Prone),
+            ))
+            .id();
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::Space);
+            keys.press(KeyCode::KeyD);
+        }
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .resource::<DirectControlState>()
+                .posture_command
+                .sequence,
+            1
+        );
+
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::Space);
+            keys.clear_just_pressed(KeyCode::KeyD);
+        }
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .resource::<DirectControlState>()
+                .posture_command
+                .sequence,
+            1
+        );
+
+        assert!(
+            world
+                .get_mut::<SkeletonState>(player)
+                .unwrap()
+                .begin_posture_transition(
+                    PostureTransitionKind::ProneToSupine {
+                        direction: RollDirection::Right,
+                    },
+                    0,
+                    2,
+                )
+        );
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .resource::<DirectControlState>()
+                .posture_command
+                .sequence,
+            1
+        );
+
+        world
+            .get_mut::<SkeletonState>(player)
+            .unwrap()
+            .advance_posture_transition(2);
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<DirectControlState>().posture_command,
+            PostureCommand {
+                sequence: 2,
+                action: Some(PostureActionRequest::RollRight),
+            }
+        );
     }
 
     #[test]
@@ -818,15 +933,6 @@ mod tests {
     }
 
     #[test]
-    fn held_roll_modifier_requests_downed_camera_alignment_only_while_held() {
-        assert!(downed_alignment_requested(true, true, false, false));
-        assert!(downed_alignment_requested(true, false, true, false));
-        assert!(!downed_alignment_requested(true, false, false, false));
-        assert!(!downed_alignment_requested(false, true, true, false));
-        assert!(!downed_alignment_requested(true, true, true, true));
-    }
-
-    #[test]
     fn dive_direction_uses_the_dominant_axis_and_defaults_forward() {
         assert_eq!(dive_direction(Vec2::ZERO), DiveDirection::Forward);
         assert_eq!(dive_direction(Vec2::new(0.2, 0.8)), DiveDirection::Forward);
@@ -839,7 +945,7 @@ mod tests {
     }
 
     #[test]
-    fn dive_chord_captures_held_movement_direction() {
+    fn dive_waits_for_space_release_and_defaults_forward_without_aim() {
         let (mut world, mut schedule) = input_fixture();
         {
             let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
@@ -851,16 +957,62 @@ mod tests {
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
+            PostureCommand::default()
+        );
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::ControlLeft);
+            keys.clear_just_pressed(KeyCode::Space);
+            keys.clear_just_pressed(KeyCode::KeyD);
+            keys.release(KeyCode::Space);
+        }
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<DirectControlState>().posture_command,
             PostureCommand {
                 sequence: 1,
                 action: Some(PostureActionRequest::Dive {
-                    direction: DiveDirection::Right,
+                    animation_direction: DiveDirection::Forward,
+                    travel_direction: DiveDirection::Right,
                 }),
             }
         );
         assert_eq!(
             world.resource::<DirectControlState>().jump_command,
             JumpCommand::default()
+        );
+    }
+
+    #[test]
+    fn aimed_dive_uses_held_movement_direction_on_space_release() {
+        let (mut world, mut schedule) = input_fixture();
+        world
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Right);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ControlLeft);
+            keys.press(KeyCode::Space);
+            keys.press(KeyCode::KeyD);
+        }
+        schedule.run(&mut world);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::ControlLeft);
+            keys.clear_just_pressed(KeyCode::Space);
+            keys.clear_just_pressed(KeyCode::KeyD);
+            keys.release(KeyCode::Space);
+        }
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .resource::<DirectControlState>()
+                .posture_command
+                .action,
+            Some(PostureActionRequest::Dive {
+                animation_direction: DiveDirection::Right,
+                travel_direction: DiveDirection::Right,
+            })
         );
     }
 }

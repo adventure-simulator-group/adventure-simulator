@@ -133,7 +133,10 @@ pub enum PostureActionRequest {
     Toggle,
     RollLeft,
     RollRight,
-    Dive { direction: DiveDirection },
+    Dive {
+        animation_direction: DiveDirection,
+        travel_direction: DiveDirection,
+    },
 }
 
 /// Debug-build request to run the tactical simulation at normal or quarter
@@ -245,7 +248,6 @@ mod equipment_action_mapping_tests {
 pub enum MeleeActionRequest {
     Start {
         strike_family: StrikeFamily,
-        footwork: Footwork,
     },
     Complete {
         #[entities]

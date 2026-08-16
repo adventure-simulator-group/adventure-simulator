@@ -14,11 +14,10 @@ mod procedural;
 
 #[allow(unused_imports)]
 pub(crate) use procedural::{
-    ArmIkState, AttackFootworkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint,
-    HumanoidBone, HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState,
-    LocomotionBodyResponseState, LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES,
-    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
-    locomotion_support_weights,
+    ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
+    HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
+    LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
+    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -215,33 +214,6 @@ fn evaluate_skeletons(
         } else {
             &evaluation.action
         };
-        let coherent_guard_parity = samples
-            .iter()
-            .map(guard_locomotion_resolution_pose)
-            .collect::<Option<Vec<_>>>()
-            .map(|resolution_poses| {
-                let exact = guard_parity_score(
-                    &runtime,
-                    &catalog,
-                    &skeleton.animation_pack,
-                    samples,
-                    &resolution_poses,
-                    false,
-                );
-                let mirrored = guard_parity_score(
-                    &runtime,
-                    &catalog,
-                    &skeleton.animation_pack,
-                    samples,
-                    &resolution_poses,
-                    true,
-                );
-                // Preserve the most requested directional semantics and guard
-                // endpoints. Exact orientation wins a complete tie, retaining
-                // exact cardinal authorship without sacrificing a coherent
-                // opposite-side diagonal set.
-                mirrored > exact
-            });
         let mut weighted = Vec::<WeightedClip>::new();
         let base_layer = if evaluation.action.is_empty() && !evaluation.lower_body.is_empty() {
             ClipLayer::Upper
@@ -255,7 +227,6 @@ fn evaluate_skeletons(
                 &catalog,
                 &skeleton.animation_pack,
                 *sample,
-                coherent_guard_parity,
                 base_layer,
             );
         }
@@ -267,7 +238,6 @@ fn evaluate_skeletons(
                     &catalog,
                     &skeleton.animation_pack,
                     *sample,
-                    None,
                     ClipLayer::Lower,
                 );
             }
@@ -493,137 +463,6 @@ fn select_gait_endpoint_parity<'a>(
     Some(ResolvedAnchor { clip, ..resolved })
 }
 
-fn is_guard_locomotion_pose(pose: SemanticPose) -> bool {
-    matches!(
-        pose,
-        SemanticPose::GuardLeadLeft
-            | SemanticPose::GuardLeadRight
-            | SemanticPose::GuardWalkLeadLeft
-            | SemanticPose::GuardWalkLeadRight
-            | SemanticPose::GuardStrafeLeadLeftLeft
-            | SemanticPose::GuardStrafeLeadLeftRight
-            | SemanticPose::GuardStrafeLeadRightLeft
-            | SemanticPose::GuardStrafeLeadRightRight
-    )
-}
-
-fn is_guard_movement_pose(pose: SemanticPose) -> bool {
-    matches!(
-        pose,
-        SemanticPose::GuardWalkLeadLeft
-            | SemanticPose::GuardWalkLeadRight
-            | SemanticPose::GuardStrafeLeadLeftLeft
-            | SemanticPose::GuardStrafeLeadLeftRight
-            | SemanticPose::GuardStrafeLeadRightLeft
-            | SemanticPose::GuardStrafeLeadRightRight
-    )
-}
-
-fn guard_locomotion_resolution_pose(sample: &PoseSample) -> Option<SemanticPose> {
-    if let PoseSampling::Span { end, .. } = sample.sampling
-        && is_guard_movement_pose(end)
-    {
-        Some(end)
-    } else {
-        is_guard_locomotion_pose(sample.pose).then_some(sample.pose)
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-struct GuardParityScore {
-    movement_semantics: usize,
-    guard_semantics: usize,
-    resolved_anchors: usize,
-}
-
-fn parity_pose(pose: SemanticPose, mirrored: bool) -> SemanticPose {
-    if mirrored {
-        pose.mirrored_counterpart().unwrap_or(pose)
-    } else {
-        pose
-    }
-}
-
-fn guard_parity_score(
-    runtime: &AnimationRuntime,
-    catalog: &AnimationPackCatalog,
-    pack: &str,
-    samples: &[PoseSample],
-    movement_poses: &[SemanticPose],
-    mirrored: bool,
-) -> GuardParityScore {
-    let movements = movement_poses.iter().copied().collect::<BTreeSet<_>>();
-    let guards = samples
-        .iter()
-        .map(|sample| sample.pose)
-        .collect::<BTreeSet<_>>();
-    let mut score = GuardParityScore::default();
-    for pose in movements {
-        if let Some(resolved) = resolve_anchor_with_parity(runtime, catalog, pack, pose, mirrored) {
-            score.resolved_anchors += 1;
-            score.movement_semantics += (resolved.semantic == parity_pose(pose, mirrored)) as usize;
-        }
-    }
-    for pose in guards {
-        if let Some(resolved) = resolve_anchor_with_parity(runtime, catalog, pack, pose, mirrored) {
-            score.resolved_anchors += 1;
-            score.guard_semantics += (resolved.semantic == parity_pose(pose, mirrored)) as usize;
-        }
-    }
-    score
-}
-
-fn resolve_anchor_with_parity<'a>(
-    runtime: &'a AnimationRuntime,
-    catalog: &'a AnimationPackCatalog,
-    requested_pack: &str,
-    requested_pose: SemanticPose,
-    mirrored: bool,
-) -> Option<ResolvedAnchor<'a>> {
-    // The core resolver deliberately chooses same-pack counterparts on a
-    // per-request basis. Guard diagonals instead require one forced parity for
-    // the post-FK whole-body mirror, so this centralized traversal preserves
-    // the core pack-before-semantic-fallback ordering while suppressing any
-    // per-contribution parity switch.
-    let mut semantic = Some(if mirrored {
-        requested_pose
-            .mirrored_counterpart()
-            .unwrap_or(requested_pose)
-    } else {
-        requested_pose
-    });
-    let mut semantic_seen = BTreeSet::new();
-    while let Some(pose) = semantic {
-        if !semantic_seen.insert(pose) {
-            break;
-        }
-        let mut pack_id = Some(requested_pack.to_owned());
-        let mut pack_seen = BTreeSet::new();
-        while let Some(id) = pack_id {
-            if !pack_seen.insert(id.clone()) {
-                break;
-            }
-            let (canonical_id, pack) = catalog.packs.get_key_value(&id)?;
-            if let Some(anchor) = pack.poses.get(&pose)
-                && let Some(clip) = runtime
-                    .clips
-                    .get(&(canonical_id.clone(), anchor.motion.clone()))
-            {
-                return Some(ResolvedAnchor {
-                    clip,
-                    anchor,
-                    pack_id: canonical_id,
-                    semantic: pose,
-                    mirrored,
-                });
-            }
-            pack_id = pack.fallback.clone();
-        }
-        semantic = pose.fallback();
-    }
-    None
-}
-
 fn append_weighted_anchor(
     weighted: &mut Vec<WeightedClip>,
     resolved: &ResolvedAnchor,
@@ -676,17 +515,8 @@ fn append_resolved_sample(
     catalog: &AnimationPackCatalog,
     pack: &str,
     sample: PoseSample,
-    forced_mirror_parity: Option<bool>,
 ) {
-    append_resolved_sample_layer(
-        weighted,
-        runtime,
-        catalog,
-        pack,
-        sample,
-        forced_mirror_parity,
-        ClipLayer::Whole,
-    );
+    append_resolved_sample_layer(weighted, runtime, catalog, pack, sample, ClipLayer::Whole);
 }
 
 fn append_resolved_sample_layer(
@@ -695,13 +525,9 @@ fn append_resolved_sample_layer(
     catalog: &AnimationPackCatalog,
     pack: &str,
     sample: PoseSample,
-    forced_mirror_parity: Option<bool>,
     layer: ClipLayer,
 ) {
-    let start = match forced_mirror_parity {
-        Some(mirrored) => resolve_anchor_with_parity(runtime, catalog, pack, sample.pose, mirrored),
-        None => resolve_anchor(runtime, catalog, pack, sample.pose),
-    };
+    let start = resolve_anchor(runtime, catalog, pack, sample.pose);
     let Some(start) = start.and_then(|resolved| {
         select_gait_endpoint_parity(runtime, resolved, sample.mirror_lower_body)
     }) else {
@@ -723,12 +549,7 @@ fn append_resolved_sample_layer(
         PoseSampling::Span { end, progress } => {
             let end_pose = end;
             let progress = progress.clamp(0.0, 1.0);
-            let end = match forced_mirror_parity {
-                Some(mirrored) => {
-                    resolve_anchor_with_parity(runtime, catalog, pack, end_pose, mirrored)
-                }
-                None => resolve_anchor(runtime, catalog, pack, end_pose),
-            };
+            let end = resolve_anchor(runtime, catalog, pack, end_pose);
             let Some(end) = end else {
                 append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer);
                 return;
@@ -911,34 +732,26 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn sparse_catalog_declares_only_current_airborne_and_attack_assets() {
+    fn sparse_catalog_declares_airborne_and_three_attack_assets() {
         let catalog = AnimationPackCatalog::biped_root().unwrap();
         let root = &catalog.packs[HUMANOID_UNARMED_PACK];
         assert!(root.motions.contains_key("airborne_center"));
         assert!(root.motions.contains_key("airborne_travel"));
-        assert!(root.motions.contains_key("attack_thrust_lead_left_contact"));
+        assert!(root.motions.contains_key("swing"));
+        assert!(root.motions.contains_key("swing_follow"));
+        assert!(root.motions.contains_key("thrust"));
         assert!(!root.motions.keys().any(|name| name.starts_with("jump_")));
-        assert!(
-            !root
-                .motions
-                .keys()
-                .any(|name| name.contains("follow_through"))
-        );
-        assert!(!root.motions.keys().any(|name| name.contains("_commit")));
     }
 
     #[test]
-    fn missing_runtime_art_preserves_graceful_semantic_fallback() {
+    fn attack_semantics_use_the_canonical_motion_names() {
         let catalog = AnimationPackCatalog::biped_root().unwrap();
         let root = &catalog.packs[HUMANOID_UNARMED_PACK];
+        assert_eq!(root.poses[&SemanticPose::AttackThrust].motion, "thrust");
+        assert_eq!(root.poses[&SemanticPose::AttackSwing].motion, "swing");
         assert_eq!(
-            root.poses[&SemanticPose::AttackThrustLeadLeftContact].motion,
-            "attack_thrust_lead_left_contact"
-        );
-        assert!(
-            !root
-                .poses
-                .contains_key(&SemanticPose::AttackThrustLeadRightContact)
+            root.poses[&SemanticPose::AttackSwingFollow].motion,
+            "swing_follow"
         );
     }
 }

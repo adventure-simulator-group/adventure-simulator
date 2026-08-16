@@ -152,8 +152,7 @@ impl AnimationPackCatalog {
         for pose in [
             "idle_relaxed",
             "crouch_idle",
-            "guard_lead_left",
-            "guard_lead_right",
+            "guard",
             "prone_idle",
             "supine_idle",
         ] {
@@ -162,21 +161,6 @@ impl AnimationPackCatalog {
                 pose,
                 0,
                 SemanticPose::from_str(pose).expect("typed catalog pose"),
-            )?;
-        }
-        for motion in [
-            "guard_walk_lead_left",
-            "guard_walk_lead_right",
-            "guard_strafe_lead_left_left",
-            "guard_strafe_lead_left_right",
-            "guard_strafe_lead_right_left",
-            "guard_strafe_lead_right_right",
-        ] {
-            builder.motion(motion, 0);
-            builder.pose(
-                motion,
-                0,
-                SemanticPose::from_str(motion).expect("typed catalog pose"),
             )?;
         }
         for (motion, last_frame, anchors) in [
@@ -210,10 +194,10 @@ impl AnimationPackCatalog {
         builder.motion("prone_crawl_mirrored", 0);
         builder.motion("supine_scamper_mirrored", 0);
         for (motion, pose) in [
-            ("duck_lead_left_forward", "duck_lead_left_forward"),
-            ("duck_lead_left_backward", "duck_lead_left_backward"),
-            ("duck_lead_left_left", "duck_lead_left_left"),
-            ("duck_lead_left_right", "duck_lead_left_right"),
+            ("duck_forward", "duck_forward"),
+            ("duck_backward", "duck_backward"),
+            ("duck_left", "duck_left"),
+            ("duck_right", "duck_right"),
         ] {
             builder.motion(motion, 0);
             builder.pose(
@@ -238,33 +222,23 @@ impl AnimationPackCatalog {
             builder.motion(motion, 0);
             builder.pose(motion, 0, pose)?;
         }
-        for family in ["thrust", "slash"] {
-            let contact_motion = format!("attack_{family}_lead_left_contact");
-            builder.motion(&contact_motion, 0);
-            let pose = SemanticPose::from_str(&contact_motion).expect("typed attack pose");
-            builder.pose(&contact_motion, 0, pose)?;
-        }
-        for motion in [
-            "block_cut_left_lead_left",
-            "block_cut_left_lead_right",
-            "block_cut_right_lead_left",
-            "block_cut_right_lead_right",
-            "block_thrust_lead_left",
-            "block_thrust_lead_right",
+        for (motion, pose) in [
+            ("swing", SemanticPose::AttackSwing),
+            ("swing_follow", SemanticPose::AttackSwingFollow),
+            ("thrust", SemanticPose::AttackThrust),
         ] {
+            builder.motion(motion, 0);
+            builder.pose(motion, 0, pose)?;
+        }
+        for motion in ["block_cut_left", "block_cut_right", "block_thrust"] {
             builder.motion(motion, 14);
             builder.pose(
                 motion,
                 6,
                 SemanticPose::from_str(motion).expect("typed block pose"),
             )?;
-            let lead = if motion.ends_with("lead_left") {
-                "guard_lead_left"
-            } else {
-                "guard_lead_right"
-            };
-            builder.reference(motion, 0, lead)?;
-            builder.reference(motion, 14, lead)?;
+            builder.reference(motion, 0, "guard")?;
+            builder.reference(motion, 14, "guard")?;
         }
         for (motion, pose) in [
             ("prone_transition", "prone_transition"),
@@ -368,7 +342,7 @@ pub(crate) fn validate_editor_asset_root(
     let ordinary = SkeletonState::default()
         .with_local_velocity(Vec3::NEG_Z * 2.0)
         .with_world_velocity(Vec3::NEG_Z * 2.0);
-    let mut raised_attack = SkeletonState::default().with_lead_foot(LeadFoot::Right);
+    let mut raised_attack = SkeletonState::default();
     raised_attack.begin_attack(AttackSpec::default(), 10, 20);
     raised_attack.advance_action(20);
 
@@ -433,16 +407,6 @@ pub(crate) fn validate_editor_asset_root(
                 }
             }
         }
-    }
-
-    // The raised/right attack deliberately proves same-pack semantic mirroring
-    // because the root pack authors the left contact and resolves its right
-    // counterpart without introducing an independent authority path.
-    if !route_resolutions
-        .iter()
-        .any(|resolution| resolution.route == "raised_guard_attack" && resolution.mirrored)
-    {
-        errors.push("raised_guard_attack did not exercise mirrored fallback resolution".into());
     }
 
     if errors.is_empty() {

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2011)
+## Files (2010)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -34,21 +34,16 @@ development, or other wiki document before changing a subsystem.
 - `assets/TownA.glb` — Binary game or UI asset.
 - `assets/TownB.glb` — Binary game or UI asset.
 - `assets/animations/biped/README.md` — Component overview and usage notes.
-- `assets/animations/biped/unarmed/attack_slash_lead_left_contact.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/attack_thrust_lead_left_contact.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/base.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/dive_backward.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/dive_forward.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/dive_left.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/dive_right.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/duck_lead_left_backward.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/duck_lead_left_forward.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/duck_lead_left_left.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/duck_lead_left_right.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/guard_lead_left.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/guard_strafe_lead_left_left.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/guard_strafe_lead_left_right.glb` — Binary game or UI asset.
-- `assets/animations/biped/unarmed/guard_walk_lead_left.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/duck_backward.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/duck_forward.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/duck_left.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/duck_right.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/guard.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/prone_crawl.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/prone_crawl_mirrored.glb` — Binary game or UI asset.
@@ -62,6 +57,9 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/supine_scamper.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/supine_scamper_mirrored.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/supine_transition.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/swing.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/swing_follow.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/thrust.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
 - `assets/data/hipparcos-bright-stars.csv` — Repository support file.
@@ -95,10 +93,9 @@ development, or other wiki document before changing a subsystem.
 - `assets_src/base.casc` — Repository support file.
 - `assets_src/base.glb` — Binary game or UI asset.
 - `assets_src/base.qrigcasc` — Repository support file.
-- `assets_src/biped/unarmed/attack_slash_lead_left_contact.casc` — Repository support file.
-- `assets_src/biped/unarmed/attack_slash_lead_left_contact.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/attack_thrust_lead_left_contact.casc` — Repository support file.
-- `assets_src/biped/unarmed/attack_thrust_lead_left_contact.glb` — Binary game or UI asset.
+- `assets_src/biped/1h_shield/base.casc` — Repository support file.
+- `assets_src/biped/1h_shield/guard.casc` — Repository support file.
+- `assets_src/biped/1h_shield/thrust.casc` — Repository support file.
 - `assets_src/biped/unarmed/base.casc` — Repository support file.
 - `assets_src/biped/unarmed/dive_backward.casc` — Repository support file.
 - `assets_src/biped/unarmed/dive_backward.glb` — Binary game or UI asset.
@@ -106,22 +103,16 @@ development, or other wiki document before changing a subsystem.
 - `assets_src/biped/unarmed/dive_forward.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/dive_left.casc` — Repository support file.
 - `assets_src/biped/unarmed/dive_left.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/duck_lead_left_backward.casc` — Repository support file.
-- `assets_src/biped/unarmed/duck_lead_left_backward.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/duck_lead_left_forward.casc` — Repository support file.
-- `assets_src/biped/unarmed/duck_lead_left_forward.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/duck_lead_left_left.casc` — Repository support file.
-- `assets_src/biped/unarmed/duck_lead_left_left.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/duck_lead_left_right.casc` — Repository support file.
-- `assets_src/biped/unarmed/duck_lead_left_right.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/guard_lead_left.casc` — Repository support file.
-- `assets_src/biped/unarmed/guard_lead_left.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/guard_strafe_lead_left_left.casc` — Repository support file.
-- `assets_src/biped/unarmed/guard_strafe_lead_left_left.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/guard_strafe_lead_left_right.casc` — Repository support file.
-- `assets_src/biped/unarmed/guard_strafe_lead_left_right.glb` — Binary game or UI asset.
-- `assets_src/biped/unarmed/guard_walk_lead_left.casc` — Repository support file.
-- `assets_src/biped/unarmed/guard_walk_lead_left.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_backward.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_backward.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_forward.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_forward.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_left.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_left.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_right.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_right.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/guard.casc` — Repository support file.
+- `assets_src/biped/unarmed/guard.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/idle_relaxed.casc` — Repository support file.
 - `assets_src/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/prone_crawl.casc` — Repository support file.
@@ -139,8 +130,16 @@ development, or other wiki document before changing a subsystem.
 - `assets_src/biped/unarmed/supine_scamper.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/supine_transition.casc` — Repository support file.
 - `assets_src/biped/unarmed/supine_transition.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/swing.casc` — Repository support file.
+- `assets_src/biped/unarmed/swing.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/swing_follow.casc` — Repository support file.
+- `assets_src/biped/unarmed/swing_follow.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/thrust.casc` — Repository support file.
+- `assets_src/biped/unarmed/thrust.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/walk.casc` — Repository support file.
 - `assets_src/biped/unarmed/walk.glb` — Binary game or UI asset.
+- `assets_src/shield.glb` — Binary game or UI asset.
+- `assets_src/weapon.glb` — Binary game or UI asset.
 - `book.toml` — Tooling or build configuration.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/organizations.yaml` — Repository support file.

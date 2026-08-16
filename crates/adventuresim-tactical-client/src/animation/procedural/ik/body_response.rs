@@ -15,8 +15,9 @@ pub(in crate::animation::procedural) fn presentation_tick_delta(
     }
 }
 
-/// Adds bounded inertial body response from server-observed world
-/// acceleration transformed through the current presentation body frame.
+/// Adds bounded travel and inertial body response from server-observed world
+/// velocity and acceleration transformed through the current presentation body
+/// frame.
 /// Retained angles are client presentation only.
 pub(in crate::animation) fn apply_locomotion_body_response(
     mut commands: Commands,
@@ -29,13 +30,19 @@ pub(in crate::animation) fn apply_locomotion_body_response(
         ),
         Without<HumanoidBone>,
     >,
-    mut bones: Query<(&HumanoidBone, &mut Transform), Without<PresentedSkeleton>>,
+    mut bones: Query<
+        (&HumanoidBone, &AuthoredBindTransform, &mut Transform),
+        Without<PresentedSkeleton>,
+    >,
 ) {
     let mut responses = BTreeMap::new();
     for (owner, skeleton, owner_transform, state) in &mut owners {
         let mut next = state.as_deref().copied().unwrap_or_default();
         let tick = skeleton.locomotion_sample_tick;
         let tick_delta = presentation_tick_delta(next.last_tick, tick);
+        let inverse_body_rotation = owner_transform.rotation.inverse();
+        let body_velocity = inverse_body_rotation * skeleton.world_velocity;
+        let body_acceleration = inverse_body_rotation * skeleton.world_acceleration;
         let discontinuous = tick_delta.is_none()
             || next
                 .last_posture
@@ -57,10 +64,14 @@ pub(in crate::animation) fn apply_locomotion_body_response(
             next.target_roll_radians = 0.0;
         } else if let Some(tick_delta @ 1..) = tick_delta {
             let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
-            let body_acceleration =
-                owner_transform.rotation.inverse() * skeleton.world_acceleration;
-            if body_acceleration.xz().length() > 0.5 {
-                let combined = body_response_target(body_acceleration);
+            if body_velocity.xz().length() > 0.05 || body_acceleration.xz().length() > 0.5 {
+                let braking_scale = deceleration_lean_scale(
+                    next.last_body_velocity,
+                    body_velocity,
+                    body_acceleration,
+                );
+                let combined =
+                    body_response_target(body_velocity, body_acceleration, braking_scale);
                 next.target_pitch_radians = combined.x;
                 next.target_roll_radians = combined.y;
             } else {
@@ -77,6 +88,9 @@ pub(in crate::animation) fn apply_locomotion_body_response(
             next.pitch_radians = advanced.x;
             next.roll_radians = advanced.y;
         }
+        if next.last_tick.is_none() || discontinuous || matches!(tick_delta, Some(1..)) {
+            next.last_body_velocity = body_velocity;
+        }
         next.last_tick = Some(tick);
         next.last_posture = Some(skeleton.posture());
         next.last_action = Some(skeleton.action_kind());
@@ -88,43 +102,154 @@ pub(in crate::animation) fn apply_locomotion_body_response(
             commands.entity(owner).insert(next);
         }
     }
-    for (bone, mut transform) in &mut bones {
+    let mut leg_compensations = BTreeMap::new();
+    for (bone, bind, mut transform) in &mut bones {
         let Some(response) = responses.get(&bone.owner) else {
             continue;
         };
-        let weight = match bone.role {
-            BoneRole::Pelvis => 0.20,
-            BoneRole::StomachOne => 0.25,
-            BoneRole::StomachTwo => 0.25,
-            BoneRole::Chest => 0.30,
-            _ => continue,
-        };
-        transform.rotation *= Quat::from_euler(
+        if bone.role != BoneRole::Pelvis {
+            continue;
+        }
+        let response_rotation = Quat::from_euler(
             EulerRot::XYZ,
-            response.pitch_radians * weight,
+            response.pitch_radians,
             0.0,
-            response.roll_radians * weight,
+            response.roll_radians,
         );
+        let (pelvis_rotation, leg_compensation) =
+            stable_pelvis_response(transform.rotation, bind.local.rotation, response_rotation);
+        // Apply the response in the pelvis's stable authored reference frame.
+        // Post-multiplying it into the live pelvis frame made ordinary gait
+        // twist steer forward pitch alternately left and right.
+        transform.rotation = pelvis_rotation;
+        leg_compensations.insert(bone.owner, leg_compensation);
+    }
+    for (bone, _, mut transform) in &mut bones {
+        if !matches!(bone.role, BoneRole::ThighLeft | BoneRole::ThighRight) {
+            continue;
+        }
+        let Some(&compensation) = leg_compensations.get(&bone.owner) else {
+            continue;
+        };
+        // The leg solver follows this pass. Exactly cancel the inherited
+        // parent-space response at each hip so the authored leg pose and IK
+        // targets are unchanged by torso lean.
+        transform.rotation = compensation * transform.rotation;
     }
 }
 
-pub(in crate::animation::procedural) fn body_response_target(acceleration: Vec3) -> Vec2 {
+fn stable_pelvis_response(
+    authored_rotation: Quat,
+    reference_rotation: Quat,
+    response_rotation: Quat,
+) -> (Quat, Quat) {
+    let parent_space_response =
+        (reference_rotation * response_rotation * reference_rotation.inverse()).normalize();
+    let leg_compensation =
+        (authored_rotation.inverse() * parent_space_response.inverse() * authored_rotation)
+            .normalize();
+    (
+        (parent_space_response * authored_rotation).normalize(),
+        leg_compensation,
+    )
+}
+
+pub(in crate::animation::procedural) fn body_response_target(
+    velocity: Vec3,
+    acceleration: Vec3,
+    braking_scale: f32,
+) -> Vec2 {
     // Tactical body forward is local +Z (the authored rig carries its own
-    // facing correction), so positive Z acceleration pitches into travel.
-    let pitch = if acceleration.z > 0.0 {
-        (-acceleration.z / 12.0 * 10.0_f32.to_radians()).clamp(-12.0_f32.to_radians(), 0.0)
+    // facing correction). Authored locomotion keeps a straight back, so steady
+    // travel supplies a pronounced base lean and acceleration adds a stronger
+    // short-lived inertial response, following Overgrowth's division of work.
+    let travel_pitch = (velocity.z / RUN_LOCOMOTION_PROFILE.reference_speed
+        * 12.0_f32.to_radians())
+    .clamp(-14.0_f32.to_radians(), 14.0_f32.to_radians());
+    let travel_roll = (-velocity.x / RUN_LOCOMOTION_PROFILE.reference_speed
+        * 12.0_f32.to_radians())
+    .clamp(-14.0_f32.to_radians(), 14.0_f32.to_radians());
+    let inertial_pitch = if acceleration.z > 0.0 {
+        (acceleration.z / 12.0 * 18.0_f32.to_radians()).clamp(0.0, 22.0_f32.to_radians())
     } else {
-        (-acceleration.z / 12.0 * 8.0_f32.to_radians()).clamp(0.0, 10.0_f32.to_radians())
+        (acceleration.z / 12.0 * 14.0_f32.to_radians()).clamp(-18.0_f32.to_radians(), 0.0)
+            * braking_scale.clamp(0.0, 1.0)
     };
-    let roll = (-acceleration.x / 10.0 * 8.0_f32.to_radians())
-        .clamp(-10.0_f32.to_radians(), 10.0_f32.to_radians());
+    // Turning should read clearly without the extreme motorcycle-like bank of
+    // the first stronger-lean pass. Keep lateral travel posture unchanged and
+    // scale only acceleration-driven turning response to 60% of that tuning.
+    let inertial_roll = (-acceleration.x / 10.0 * 9.6_f32.to_radians())
+        .clamp(-12.0_f32.to_radians(), 12.0_f32.to_radians());
+    let pitch = travel_pitch + inertial_pitch;
+    let roll = travel_roll + inertial_roll;
     let response = Vec2::new(pitch, roll);
     // Leave a sub-milliradian numerical margin so degree conversion cannot
-    // report a value microscopically above the documented 15-degree cap.
-    let maximum_response = 15.0_f32.to_radians() - 0.000001;
+    // report a value microscopically above the documented 30-degree cap.
+    let maximum_response = 30.0_f32.to_radians() - 0.000001;
     if response.length_squared() > maximum_response * maximum_response {
         response.normalize_or_zero() * maximum_response
     } else {
         response
+    }
+}
+
+fn deceleration_lean_scale(previous_velocity: Vec3, velocity: Vec3, acceleration: Vec3) -> f32 {
+    let previous_planar = previous_velocity.xz();
+    let planar = velocity.xz();
+    let planar_acceleration = acceleration.xz();
+    let is_decelerating = previous_planar.dot(planar_acceleration) < 0.0
+        && planar.length_squared() <= previous_planar.length_squared() + 0.000_1;
+    if is_decelerating {
+        (planar.length() / RUN_LOCOMOTION_PROFILE.reference_speed).clamp(0.0, 1.0)
+    } else {
+        1.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pelvis_response_uses_a_stable_reference_and_exactly_compensates_legs() {
+        let reference = Quat::from_euler(EulerRot::XYZ, 0.12, -0.08, 0.04);
+        let response = Quat::from_euler(EulerRot::XYZ, 0.21, 0.0, -0.09);
+        let expected_parent_response = (reference * response * reference.inverse()).normalize();
+
+        for authored in [
+            reference,
+            Quat::from_euler(EulerRot::XYZ, 0.35, 0.22, -0.18),
+        ] {
+            let (pelvis, leg_compensation) = stable_pelvis_response(authored, reference, response);
+            assert!(
+                (pelvis * authored.inverse()).angle_between(expected_parent_response) < 0.000_1
+            );
+            let compensation_error = (pelvis * leg_compensation).angle_between(authored);
+            assert!(compensation_error < 0.001, "{compensation_error}");
+        }
+    }
+
+    #[test]
+    fn deceleration_lean_follows_current_planar_speed_only_while_braking() {
+        let walking = Vec3::Z * WALK_LOCOMOTION_PROFILE.reference_speed;
+        let walking_scale = deceleration_lean_scale(walking, walking, Vec3::NEG_Z * 12.0);
+        assert!(
+            (walking_scale
+                - WALK_LOCOMOTION_PROFILE.reference_speed / RUN_LOCOMOTION_PROFILE.reference_speed)
+                .abs()
+                <= f32::EPSILON
+        );
+        assert_eq!(
+            deceleration_lean_scale(Vec3::Z * 0.5, Vec3::ZERO, Vec3::NEG_Z * 12.0),
+            0.0
+        );
+        assert_eq!(
+            deceleration_lean_scale(Vec3::ZERO, Vec3::NEG_Z, Vec3::NEG_Z * 12.0),
+            1.0
+        );
+        assert_eq!(
+            deceleration_lean_scale(Vec3::Z * 5.5, Vec3::Z * 5.5, Vec3::NEG_Z * 12.0),
+            1.0
+        );
     }
 }
