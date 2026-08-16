@@ -22,6 +22,9 @@ use bevy::{
 };
 use serde::Serialize;
 
+use crate::animation::jitter::{
+    JitterClass, JitterDiagnosticReport, JitterIncident, JointJitterDiagnostics,
+};
 use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
     AnimationPlayback, AnimationRuntime, ArmIkState, BoneRole, HumanoidBone, LegIkDiagnostics,
@@ -91,7 +94,13 @@ struct ScenarioMetadata {
 }
 
 fn scenario_metadata(name: &str) -> ScenarioMetadata {
-    if name == "quickstep-right" {
+    if name == "state-machine-traversal" {
+        ScenarioMetadata {
+            kind: ScenarioKind::Transition,
+            repeatable: false,
+            procedural_solver: true,
+        }
+    } else if name == "quickstep-right" {
         ScenarioMetadata {
             kind: ScenarioKind::Transition,
             repeatable: false,
@@ -177,6 +186,7 @@ pub(crate) fn run(
     asset_root: PathBuf,
     settle_frames: u32,
     scenario: Option<&str>,
+    diagnostics_only: bool,
 ) -> AppExit {
     fs::create_dir_all(&output).unwrap_or_else(|error| {
         panic!("failed to create animation capture directory {output:?}: {error}")
@@ -232,8 +242,14 @@ pub(crate) fn run(
         // Individual scenarios select terrain conformity explicitly so the
         // viewer can retain FK-only controls after the live default changed.
         .insert_resource(TerrainIkEnabled(initial_terrain_ik))
+        .insert_resource(JointJitterDiagnostics::enabled())
         .insert_resource(ClearColor(Color::srgb(0.08, 0.1, 0.13)))
-        .insert_resource(CaptureSequence::new(output, settle_frames, scenario))
+        .insert_resource(CaptureSequence::new(
+            output,
+            settle_frames,
+            scenario,
+            diagnostics_only,
+        ))
         .add_systems(Startup, setup_viewer)
         .add_systems(PreUpdate, (drive_sequence, freeze_capture_look).chain())
         .add_systems(
@@ -294,6 +310,155 @@ struct PlannedFrame {
     lead_foot: LeadFoot,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum TraversalRoute {
+    UprightIdle,
+    UprightStart,
+    UprightWalk,
+    UprightWalkRun,
+    UprightRun,
+    UprightStop,
+    UprightTurn,
+    Crouch,
+    Airborne,
+    Landing,
+    GuardPlanted,
+    GuardForward,
+    GuardBackward,
+    GuardLeft,
+    GuardRight,
+    GuardForwardLeft,
+    GuardForwardRight,
+    GuardBackwardLeft,
+    GuardBackwardRight,
+    GuardAcceleration,
+    GuardReversal,
+    GuardRelease,
+    Quickstep,
+    AttackLeftSupport,
+    AttackRightSupport,
+    BlockLeftSupport,
+    BlockRightSupport,
+    UprightToProne,
+    ProneIdle,
+    ProneForward,
+    ProneRightSector,
+    ProneBackwardSector,
+    ProneLeftSector,
+    ProneRollLeft,
+    ProneRollRight,
+    ProneGetUp,
+    SupineIdle,
+    SupineForward,
+    SupineRightSector,
+    SupineBackwardSector,
+    SupineLeftSector,
+    SupineRollLeft,
+    SupineRollRight,
+    SupineGetUp,
+    DiveForwardImpactRecovery,
+    DiveBackwardImpactRecovery,
+    DiveLeftImpactRecovery,
+    DiveRightImpactRecovery,
+    Ragdoll,
+}
+
+impl TraversalRoute {
+    const ALL: &'static [Self] = &[
+        Self::UprightIdle,
+        Self::UprightStart,
+        Self::UprightWalk,
+        Self::UprightWalkRun,
+        Self::UprightRun,
+        Self::UprightStop,
+        Self::UprightTurn,
+        Self::Crouch,
+        Self::Airborne,
+        Self::Landing,
+        Self::GuardPlanted,
+        Self::GuardForward,
+        Self::GuardBackward,
+        Self::GuardLeft,
+        Self::GuardRight,
+        Self::GuardForwardLeft,
+        Self::GuardForwardRight,
+        Self::GuardBackwardLeft,
+        Self::GuardBackwardRight,
+        Self::GuardAcceleration,
+        Self::GuardReversal,
+        Self::GuardRelease,
+        Self::Quickstep,
+        Self::AttackLeftSupport,
+        Self::AttackRightSupport,
+        Self::BlockLeftSupport,
+        Self::BlockRightSupport,
+        Self::UprightToProne,
+        Self::ProneIdle,
+        Self::ProneForward,
+        Self::ProneRightSector,
+        Self::ProneBackwardSector,
+        Self::ProneLeftSector,
+        Self::ProneRollLeft,
+        Self::ProneRollRight,
+        Self::ProneGetUp,
+        Self::SupineIdle,
+        Self::SupineForward,
+        Self::SupineRightSector,
+        Self::SupineBackwardSector,
+        Self::SupineLeftSector,
+        Self::SupineRollLeft,
+        Self::SupineRollRight,
+        Self::SupineGetUp,
+        Self::DiveForwardImpactRecovery,
+        Self::DiveBackwardImpactRecovery,
+        Self::DiveLeftImpactRecovery,
+        Self::DiveRightImpactRecovery,
+        Self::Ragdoll,
+    ];
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TraversalCommand {
+    SetBody(BodyState),
+    BeginTransition(PostureTransitionKind, u64),
+    BeginAttack(AttackAnimation),
+    BeginBlock,
+    BeginDodge(Vec2),
+}
+
+#[derive(Debug, Clone)]
+struct TraversalControl {
+    route: TraversalRoute,
+    commands: Vec<TraversalCommand>,
+    grounded: bool,
+    downed_aim: Option<DownedFacingPose>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum TraversalCoverageStatus {
+    Exercised {
+        first_frame: usize,
+        last_frame: usize,
+    },
+    Unassessable {
+        reason: &'static str,
+    },
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+struct TraversalCoverageReport {
+    routes: BTreeMap<TraversalRoute, TraversalCoverageStatus>,
+}
+
+#[derive(Debug, Default)]
+struct TraversalPlan {
+    frames: Vec<PlannedFrame>,
+    controls: BTreeMap<usize, TraversalControl>,
+    coverage: TraversalCoverageReport,
+}
+
 #[derive(Resource)]
 struct CaptureSequence {
     output: PathBuf,
@@ -316,11 +481,24 @@ struct CaptureSequence {
     motion_ready_frames: u32,
     simulation_tick: u64,
     scenario_distance: f32,
+    traversal_controls: BTreeMap<usize, TraversalControl>,
+    traversal_coverage: TraversalCoverageReport,
+    jitter_diagnostics: JitterDiagnosticReport,
+    diagnostics_only: bool,
 }
 
 impl CaptureSequence {
-    fn new(output: PathBuf, settle_frames: u32, scenario: Option<&str>) -> Self {
+    fn new(
+        output: PathBuf,
+        settle_frames: u32,
+        scenario: Option<&str>,
+        diagnostics_only: bool,
+    ) -> Self {
+        let traversal = (scenario == Some("state-machine-traversal"))
+            .then(state_machine_traversal_scenario)
+            .unwrap_or_default();
         let plan = match scenario {
+            Some("state-machine-traversal") => traversal.frames.clone(),
             Some("flat-grid-walk-2.0") => steady_scenario("flat-grid-walk-2.0", 2.0, 3.0),
             Some("flat-grid-run-5.5") => steady_scenario("flat-grid-run-5.5", 5.5, 3.0),
             Some("flat-grid-walk-stop") => flat_grid_walk_stop_scenario(),
@@ -354,6 +532,10 @@ impl CaptureSequence {
             motion_ready_frames: 0,
             simulation_tick: 0,
             scenario_distance: 0.0,
+            traversal_controls: traversal.controls,
+            traversal_coverage: traversal.coverage,
+            jitter_diagnostics: JitterDiagnosticReport::default(),
+            diagnostics_only,
         }
     }
 
@@ -434,6 +616,70 @@ struct CaptureManifest {
     frames: Vec<FrameSample>,
     presentation_events: Vec<PresentationEventSample>,
     semantic_route_path_counts: BTreeMap<String, u64>,
+    state_machine_traversal: TraversalCoverageReport,
+    jitter_diagnostics: JitterDiagnosticReport,
+    jitter_validation: JitterValidationSummary,
+    diagnostics_only: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum JitterJointClass {
+    Axial,
+    Arm,
+    Leg,
+    Weapon,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum JitterEnvelopeClass {
+    CleanAuthoredBaseline,
+    ProceduralStrict,
+    IntentionalHighEnergy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct JitterBucketKey {
+    from_route: Option<TraversalRoute>,
+    to_route: Option<TraversalRoute>,
+    envelope: JitterEnvelopeClass,
+    joint_class: JitterJointClass,
+    joint: String,
+    metric: JitterClass,
+}
+
+#[derive(Debug, Serialize)]
+struct JitterHistogramEntry {
+    from_route: Option<TraversalRoute>,
+    to_route: Option<TraversalRoute>,
+    envelope: JitterEnvelopeClass,
+    joint_class: JitterJointClass,
+    joint: String,
+    metric: JitterClass,
+    authored_sensitivity_count: usize,
+    final_sensitivity_count: usize,
+    unacceptable_final_count: usize,
+    authored_maximum: f32,
+    final_maximum: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AttributedJitterIncident {
+    from_route: Option<TraversalRoute>,
+    to_route: Option<TraversalRoute>,
+    envelope: JitterEnvelopeClass,
+    joint_class: JitterJointClass,
+    incident: JitterIncident,
+}
+
+#[derive(Debug, Serialize)]
+struct JitterValidationSummary {
+    diagnostics_complete: bool,
+    unacceptable_final_incident_count: usize,
+    worst_unacceptable: Option<AttributedJitterIncident>,
+    histogram: Vec<JitterHistogramEntry>,
+    policy: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -447,7 +693,15 @@ struct PresentationEventSample {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CaptureValidationProfile {
+    FocusedScenario,
+    StateMachineTraversal,
+}
+
+#[derive(Debug, Serialize)]
 struct CaptureValidation {
+    profile: CaptureValidationProfile,
     finite_transforms: bool,
     all_scenarios_complete: bool,
     all_artifacts_written: bool,
@@ -475,6 +729,8 @@ struct CaptureValidation {
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
     semantic_route_paths_exercised: bool,
+    joint_jitter_within_review_bounds: bool,
+    state_machine_routes_observed: bool,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -1222,6 +1478,691 @@ fn capture_plan() -> Vec<PlannedFrame> {
     .collect()
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TraversalPose {
+    speed: f32,
+    direction: Vec2,
+    yaw: f32,
+    crouching: bool,
+    action: SkeletonAction,
+    guard: WeaponGuardState,
+    lead: LeadFoot,
+    grounded: bool,
+    downed_aim: Option<DownedFacingPose>,
+}
+
+impl Default for TraversalPose {
+    fn default() -> Self {
+        Self {
+            speed: 0.0,
+            direction: Vec2::ZERO,
+            yaw: 0.0,
+            crouching: false,
+            action: SkeletonAction::None,
+            guard: WeaponGuardState::Lowered,
+            lead: LeadFoot::Left,
+            grounded: true,
+            downed_aim: None,
+        }
+    }
+}
+
+impl TraversalPose {
+    fn with_speed(mut self, speed: f32) -> Self {
+        self.speed = speed;
+        self
+    }
+}
+
+fn append_traversal_segment(
+    plan: &mut TraversalPlan,
+    route: TraversalRoute,
+    frame_count: usize,
+    pose_at: impl Fn(usize) -> TraversalPose,
+    commands: Vec<TraversalCommand>,
+) {
+    for local_frame in 0..frame_count {
+        let pose = pose_at(local_frame);
+        let scenario_frame = plan.frames.len();
+        plan.frames.push(PlannedFrame {
+            scenario: "state-machine-traversal",
+            scenario_frame,
+            speed: pose.speed,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: pose.direction,
+            camera_yaw: pose.yaw,
+            camera_pitch: 0.0,
+            crouching: pose.crouching,
+            action: pose.action,
+            weapon_guard: pose.guard,
+            lead_foot: pose.lead,
+        });
+        plan.controls.insert(
+            scenario_frame,
+            TraversalControl {
+                route,
+                commands: (local_frame == 0)
+                    .then(|| commands.clone())
+                    .unwrap_or_default(),
+                grounded: pose.grounded,
+                downed_aim: pose.downed_aim,
+            },
+        );
+    }
+}
+
+fn state_machine_traversal_scenario() -> TraversalPlan {
+    let mut plan = TraversalPlan::default();
+    let upright = BodyState::Grounded(GroundedPosture::Upright);
+    let base = TraversalPose::default();
+    append_traversal_segment(&mut plan, TraversalRoute::UprightIdle, 16, |_| base, vec![]);
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightStart,
+        24,
+        |frame| TraversalPose {
+            speed: 2.0 * smoothstep01(frame as f32 / 23.0),
+            direction: Vec2::NEG_Y,
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightWalk,
+        40,
+        |_| TraversalPose {
+            speed: 2.0,
+            direction: Vec2::NEG_Y,
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightWalkRun,
+        24,
+        |frame| TraversalPose {
+            speed: 2.0 + 3.5 * smoothstep01(frame as f32 / 23.0),
+            direction: Vec2::NEG_Y,
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightRun,
+        40,
+        |_| TraversalPose {
+            speed: 5.5,
+            direction: Vec2::NEG_Y,
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightStop,
+        32,
+        |frame| TraversalPose {
+            speed: 5.5 * (1.0 - smoothstep01(frame as f32 / 31.0)),
+            direction: Vec2::NEG_Y,
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightTurn,
+        32,
+        |frame| TraversalPose {
+            speed: 2.0,
+            direction: Vec2::NEG_Y,
+            yaw: std::f32::consts::FRAC_PI_2 * frame as f32 / 31.0,
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::Crouch,
+        32,
+        |_| TraversalPose {
+            speed: 1.5,
+            direction: Vec2::NEG_Y,
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::SetBody(BodyState::Grounded(
+            GroundedPosture::Crouched,
+        ))],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::Airborne,
+        20,
+        |_| TraversalPose {
+            speed: 2.0,
+            direction: Vec2::NEG_Y,
+            grounded: false,
+            ..base
+        },
+        vec![TraversalCommand::SetBody(BodyState::Airborne)],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::Landing,
+        20,
+        |_| TraversalPose {
+            speed: 2.0,
+            direction: Vec2::NEG_Y,
+            ..base
+        },
+        vec![TraversalCommand::SetBody(upright)],
+    );
+
+    let guard_pose = |direction: Vec2| TraversalPose {
+        speed: if direction == Vec2::ZERO { 0.0 } else { 2.0 },
+        direction,
+        guard: WeaponGuardState::Raised,
+        ..base
+    };
+    let mut previous_guard_direction = Vec2::ZERO;
+    for (route, direction) in [
+        (TraversalRoute::GuardPlanted, Vec2::ZERO),
+        (TraversalRoute::GuardForward, Vec2::NEG_Y),
+        (TraversalRoute::GuardBackward, Vec2::Y),
+        (TraversalRoute::GuardLeft, Vec2::NEG_X),
+        (TraversalRoute::GuardRight, Vec2::X),
+        (TraversalRoute::GuardForwardLeft, Vec2::new(-1.0, -1.0)),
+        (TraversalRoute::GuardForwardRight, Vec2::new(1.0, -1.0)),
+        (TraversalRoute::GuardBackwardLeft, Vec2::new(-1.0, 1.0)),
+        (TraversalRoute::GuardBackwardRight, Vec2::ONE),
+    ] {
+        let from = previous_guard_direction;
+        append_traversal_segment(
+            &mut plan,
+            route,
+            24,
+            |frame| {
+                let blend = smoothstep01(frame as f32 / 7.0);
+                let velocity = from.lerp(direction, blend) * 2.0;
+                guard_pose(velocity.normalize_or_zero()).with_speed(velocity.length())
+            },
+            vec![],
+        );
+        previous_guard_direction = direction;
+    }
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::GuardPlanted,
+        16,
+        |frame| {
+            guard_pose(previous_guard_direction)
+                .with_speed(2.0 * (1.0 - smoothstep01(frame as f32 / 15.0)))
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::GuardAcceleration,
+        28,
+        |frame| TraversalPose {
+            speed: 2.0 * smoothstep01(frame as f32 / 27.0),
+            ..guard_pose(Vec2::NEG_Y)
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::GuardReversal,
+        44,
+        |frame| {
+            let signed_speed = if frame < 8 {
+                2.0 * smoothstep01(frame as f32 / 7.0)
+            } else if frame < 26 {
+                2.0 * (1.0 - smoothstep01((frame - 8) as f32 / 17.0))
+            } else {
+                2.0 * smoothstep01((frame - 26) as f32 / 17.0)
+            };
+            if frame < 26 {
+                guard_pose(Vec2::NEG_X).with_speed(signed_speed)
+            } else {
+                guard_pose(Vec2::X).with_speed(signed_speed)
+            }
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::GuardRelease,
+        28,
+        |frame| TraversalPose {
+            speed: 2.0 * (1.0 - smoothstep01(frame as f32 / 27.0)),
+            direction: Vec2::X,
+            guard: WeaponGuardState::Lowered,
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::GuardPlanted,
+        16,
+        |_| guard_pose(Vec2::ZERO),
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::Quickstep,
+        40,
+        |frame| TraversalPose {
+            speed: if frame < 28 {
+                TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
+            } else {
+                TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
+                    * (1.0 - smoothstep01((frame - 28) as f32 / 11.0))
+            },
+            direction: Vec2::X,
+            action: SkeletonAction::Dodge,
+            guard: WeaponGuardState::Raised,
+            grounded: frame < 4 || frame >= 28,
+            ..base
+        },
+        vec![TraversalCommand::BeginDodge(Vec2::X)],
+    );
+    for (route, lead, action, command) in [
+        (
+            TraversalRoute::AttackLeftSupport,
+            LeadFoot::Left,
+            SkeletonAction::Attack,
+            TraversalCommand::BeginAttack(AttackAnimation::Thrust),
+        ),
+        (
+            TraversalRoute::AttackRightSupport,
+            LeadFoot::Right,
+            SkeletonAction::Attack,
+            TraversalCommand::BeginAttack(AttackAnimation::Swing),
+        ),
+        (
+            TraversalRoute::BlockLeftSupport,
+            LeadFoot::Left,
+            SkeletonAction::Block,
+            TraversalCommand::BeginBlock,
+        ),
+        (
+            TraversalRoute::BlockRightSupport,
+            LeadFoot::Right,
+            SkeletonAction::Block,
+            TraversalCommand::BeginBlock,
+        ),
+    ] {
+        append_traversal_segment(
+            &mut plan,
+            route,
+            40,
+            |_| TraversalPose {
+                speed: 1.0,
+                direction: Vec2::NEG_Y,
+                action,
+                guard: WeaponGuardState::Raised,
+                lead,
+                ..base
+            },
+            vec![command],
+        );
+    }
+
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::GuardRelease,
+        24,
+        |frame| TraversalPose {
+            speed: 1.0 - smoothstep01(frame as f32 / 23.0),
+            direction: Vec2::NEG_Y,
+            guard: WeaponGuardState::Lowered,
+            ..base
+        },
+        vec![],
+    );
+
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightToProne,
+        48,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::UprightToProne,
+            40,
+        )],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::ProneIdle,
+        20,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![],
+    );
+    for (route, direction, yaw) in [
+        (TraversalRoute::ProneForward, Vec2::NEG_Y, 0.0),
+        (
+            TraversalRoute::ProneRightSector,
+            Vec2::X,
+            std::f32::consts::FRAC_PI_2,
+        ),
+        (
+            TraversalRoute::ProneBackwardSector,
+            Vec2::Y,
+            std::f32::consts::PI,
+        ),
+        (
+            TraversalRoute::ProneLeftSector,
+            Vec2::NEG_X,
+            -std::f32::consts::FRAC_PI_2,
+        ),
+    ] {
+        append_traversal_segment(
+            &mut plan,
+            route,
+            56,
+            |_| TraversalPose {
+                speed: 1.0,
+                direction,
+                yaw,
+                crouching: true,
+                downed_aim: Some(match route {
+                    TraversalRoute::ProneForward => DownedFacingPose::Prone,
+                    TraversalRoute::ProneRightSector => DownedFacingPose::RollRight,
+                    TraversalRoute::ProneBackwardSector => DownedFacingPose::Supine,
+                    TraversalRoute::ProneLeftSector => DownedFacingPose::RollLeft,
+                    _ => unreachable!("prone sector table is exhaustive"),
+                }),
+                ..base
+            },
+            vec![],
+        );
+    }
+    // Complete the camera-owned half turn before authored rolls. This is a
+    // retained transition back to prone, not a fixture-only body rewrite.
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::ProneForward,
+        56,
+        |_| TraversalPose {
+            crouching: true,
+            downed_aim: Some(DownedFacingPose::Prone),
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::ProneRollLeft,
+        48,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Left,
+            },
+            40,
+        )],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::SupineRollLeft,
+        48,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::SupineToProne {
+                direction: RollDirection::Left,
+            },
+            40,
+        )],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::ProneRollRight,
+        48,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Right,
+            },
+            40,
+        )],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::SupineIdle,
+        20,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![],
+    );
+    for (route, direction, yaw) in [
+        (TraversalRoute::SupineForward, Vec2::NEG_Y, 0.0),
+        (
+            TraversalRoute::SupineRightSector,
+            Vec2::X,
+            std::f32::consts::FRAC_PI_2,
+        ),
+        (
+            TraversalRoute::SupineBackwardSector,
+            Vec2::Y,
+            std::f32::consts::PI,
+        ),
+        (
+            TraversalRoute::SupineLeftSector,
+            Vec2::NEG_X,
+            -std::f32::consts::FRAC_PI_2,
+        ),
+    ] {
+        append_traversal_segment(
+            &mut plan,
+            route,
+            56,
+            |_| TraversalPose {
+                speed: 0.8,
+                direction,
+                yaw,
+                crouching: true,
+                downed_aim: Some(match route {
+                    TraversalRoute::SupineForward => DownedFacingPose::Supine,
+                    TraversalRoute::SupineRightSector => DownedFacingPose::RollLeft,
+                    TraversalRoute::SupineBackwardSector => DownedFacingPose::Prone,
+                    TraversalRoute::SupineLeftSector => DownedFacingPose::RollRight,
+                    _ => unreachable!("supine sector table is exhaustive"),
+                }),
+                ..base
+            },
+            vec![],
+        );
+    }
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::SupineForward,
+        56,
+        |_| TraversalPose {
+            crouching: true,
+            downed_aim: Some(DownedFacingPose::Supine),
+            ..base
+        },
+        vec![],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::SupineRollRight,
+        48,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::SupineToProne {
+                direction: RollDirection::Right,
+            },
+            40,
+        )],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::ProneGetUp,
+        56,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::ProneToUpright,
+            48,
+        )],
+    );
+    // Re-enter supine through authored transitions so its get-up route starts
+    // from a state reachable by gameplay.
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::UprightToProne,
+        48,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::UprightToProne,
+            40,
+        )],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::ProneRollLeft,
+        48,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Left,
+            },
+            40,
+        )],
+    );
+    append_traversal_segment(
+        &mut plan,
+        TraversalRoute::SupineGetUp,
+        56,
+        |_| TraversalPose {
+            crouching: true,
+            ..base
+        },
+        vec![TraversalCommand::BeginTransition(
+            PostureTransitionKind::SupineToUpright,
+            48,
+        )],
+    );
+    for (index, (route, direction, local_direction)) in [
+        (
+            TraversalRoute::DiveForwardImpactRecovery,
+            DiveDirection::Forward,
+            Vec2::NEG_Y,
+        ),
+        (
+            TraversalRoute::DiveBackwardImpactRecovery,
+            DiveDirection::Backward,
+            Vec2::Y,
+        ),
+        (
+            TraversalRoute::DiveLeftImpactRecovery,
+            DiveDirection::Left,
+            Vec2::NEG_X,
+        ),
+        (
+            TraversalRoute::DiveRightImpactRecovery,
+            DiveDirection::Right,
+            Vec2::X,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index > 0 {
+            let (recovery_route, recovery_kind) = match direction {
+                DiveDirection::Backward | DiveDirection::Right => (
+                    TraversalRoute::ProneGetUp,
+                    PostureTransitionKind::ProneToUpright,
+                ),
+                DiveDirection::Left => (
+                    TraversalRoute::SupineGetUp,
+                    PostureTransitionKind::SupineToUpright,
+                ),
+                DiveDirection::Forward => unreachable!("the first dive needs no recovery"),
+            };
+            append_traversal_segment(
+                &mut plan,
+                recovery_route,
+                56,
+                |_| TraversalPose {
+                    crouching: true,
+                    ..base
+                },
+                vec![TraversalCommand::BeginTransition(recovery_kind, 48)],
+            );
+        }
+        append_traversal_segment(
+            &mut plan,
+            route,
+            64,
+            |frame| TraversalPose {
+                speed: if frame < 20 {
+                    TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND
+                } else {
+                    0.0
+                },
+                direction: local_direction,
+                crouching: true,
+                grounded: frame < 4 || frame >= 20,
+                ..base
+            },
+            vec![TraversalCommand::BeginTransition(
+                PostureTransitionKind::DiveToDowned { direction },
+                36,
+            )],
+        );
+    }
+    plan.coverage.routes.insert(
+        TraversalRoute::Ragdoll,
+        TraversalCoverageStatus::Unassessable {
+            reason: "ragdoll is physics-owned and the authored viewer disables simulation",
+        },
+    );
+    debug_assert!(TraversalRoute::ALL.iter().all(|route| {
+        *route == TraversalRoute::Ragdoll
+            || plan
+                .controls
+                .values()
+                .any(|control| control.route == *route)
+    }));
+    debug_assert_eq!(plan.coverage.routes.len(), 1);
+    plan
+}
+
 fn quickstep_scenario() -> Vec<PlannedFrame> {
     (0..72)
         .map(|scenario_frame| PlannedFrame {
@@ -1791,6 +2732,7 @@ fn freeze_capture_look(
 fn drive_sequence(
     mut sequence: ResMut<CaptureSequence>,
     mut procedural_clock: ResMut<ProceduralAnimationClock>,
+    mut jitter_diagnostics: ResMut<JointJitterDiagnostics>,
     mut terrain_ik: ResMut<TerrainIkEnabled>,
     mut guard_input: ResMut<WeaponGuardInputState>,
     animation_runtime: Res<AnimationRuntime>,
@@ -1815,6 +2757,8 @@ fn drive_sequence(
         return;
     }
     let frame = sequence.plan[sequence.index].clone();
+    let traversal_control = sequence.traversal_controls.get(&sequence.index).cloned();
+    let is_traversal = traversal_control.is_some();
     let metadata = scenario_metadata(frame.scenario);
     let mut gait_phase = 0.0;
     let mut presentation_settled = false;
@@ -1839,6 +2783,7 @@ fn drive_sequence(
         }
 
         if sequence.active_scenario != Some(frame.scenario) {
+            jitter_diagnostics.reset_histories();
             sequence.active_scenario = Some(frame.scenario);
             sequence.scenario_distance = 0.0;
             sequence.motion_ready_frames = 0;
@@ -1892,8 +2837,9 @@ fn drive_sequence(
         look.yaw = frame.camera_yaw;
         look.pitch = frame.camera_pitch;
         let attack_start_frame = frame.scenario.starts_with("attack-live-").then_some(8);
-        if frame.action != SkeletonAction::Attack
-            || attack_start_frame == Some(frame.scenario_frame)
+        if !is_traversal
+            && (frame.action != SkeletonAction::Attack
+                || attack_start_frame == Some(frame.scenario_frame))
         {
             skeleton.set_presentation_shadow_lead_foot(frame.lead_foot);
         }
@@ -1914,7 +2860,9 @@ fn drive_sequence(
         }
         let dive_impact = frame.scenario.ends_with("-impact");
         let quickstep = frame.scenario == "quickstep-right";
-        let grounded = if quickstep {
+        let grounded = if let Some(control) = &traversal_control {
+            control.grounded
+        } else if quickstep {
             frame.scenario_frame < 5 || frame.scenario_frame >= 41
         } else if dive_impact {
             frame.scenario_frame == 0 || frame.scenario_frame >= 17
@@ -1941,6 +2889,63 @@ fn drive_sequence(
             sequence.simulation_tick,
             sequence.index == 0 && sequence.warmup_frames == 0,
         );
+        if let Some(control) = &traversal_control {
+            for command in &control.commands {
+                match *command {
+                    TraversalCommand::SetBody(body) => skeleton.transition_body(body),
+                    TraversalCommand::BeginTransition(kind, duration) => {
+                        assert!(skeleton.begin_posture_transition(
+                            kind,
+                            sequence.simulation_tick,
+                            duration,
+                        ));
+                    }
+                    TraversalCommand::BeginAttack(animation) => {
+                        assert!(
+                            skeleton
+                                .begin_attack(
+                                    AttackSpec::new(animation),
+                                    sequence.simulation_tick,
+                                    sequence.simulation_tick + 16,
+                                )
+                                .is_ok()
+                        );
+                    }
+                    TraversalCommand::BeginBlock => {
+                        assert!(
+                            skeleton
+                                .begin_block(
+                                    BlockSpec::default(),
+                                    sequence.simulation_tick,
+                                    sequence.simulation_tick + 16,
+                                )
+                                .is_ok()
+                        );
+                    }
+                    TraversalCommand::BeginDodge(direction) => {
+                        assert!(
+                            skeleton
+                                .begin_dodge(
+                                    DodgeSpec { direction },
+                                    sequence.simulation_tick,
+                                    sequence.simulation_tick + 16,
+                                )
+                                .is_ok()
+                        );
+                    }
+                }
+            }
+            if let Some(target) = control.downed_aim {
+                skeleton.set_downed_turning(true);
+                let target_half_turns = match target {
+                    DownedFacingPose::Prone => 0.0,
+                    DownedFacingPose::RollRight => 0.5,
+                    DownedFacingPose::Supine => 1.0,
+                    DownedFacingPose::RollLeft => -0.5,
+                };
+                skeleton.advance_downed_facing(target_half_turns, true, 1.0 / 84.0);
+            }
+        }
         if sequence.warmup_frames == 0
             && frame.scenario_frame == 0
             && let Some((start_body, transition)) = transition_for_scenario(frame.scenario)
@@ -1981,7 +2986,8 @@ fn drive_sequence(
             transform.translation.y
         };
         transform.translation = Vec3::new(horizontal.x, vertical, horizontal.y);
-        if frame.action != SkeletonAction::None
+        if !is_traversal
+            && frame.action != SkeletonAction::None
             && (frame.action != SkeletonAction::Attack
                 || attack_start_frame == Some(frame.scenario_frame))
             && (!quickstep || frame.scenario_frame == 0)
@@ -2040,8 +3046,13 @@ fn drive_sequence(
                 tick: sequence.simulation_tick,
             },
         );
+        if is_traversal && frame.action != SkeletonAction::None {
+            skeleton.set_presentation_shadow_lead_foot(frame.lead_foot);
+        }
         skeleton.set_jump_anticipation(jump_charging);
-        if sequence.warmup_frames == 0 && transition_for_scenario(frame.scenario).is_some() {
+        if sequence.warmup_frames == 0
+            && (transition_for_scenario(frame.scenario).is_some() || is_traversal)
+        {
             let previous_transition = skeleton.posture_transition();
             skeleton.advance_posture_transition(sequence.simulation_tick);
             transform.rotation = (transform.rotation
@@ -2051,6 +3062,9 @@ fn drive_sequence(
                     skeleton.posture_transition(),
                 ))
             .normalize();
+        }
+        if is_traversal {
+            skeleton.advance_action(sequence.simulation_tick);
         }
         gait_phase = skeleton.gait_phase;
     }
@@ -2261,10 +3275,198 @@ fn collect_locomotion_presentation_events(
         }));
 }
 
+fn traversal_route_observed(
+    route: TraversalRoute,
+    skeleton: &PresentedSkeleton,
+    semantic_route: &SemanticRouteTrace,
+) -> bool {
+    let semantic_observed = semantic_route.requested_path == SemanticRoutePath::LegacyFallback
+        || (semantic_route.runtime_evaluated
+            && semantic_route.path == semantic_route.requested_path);
+    if !semantic_observed {
+        return false;
+    }
+    let transition = skeleton.posture_transition().map(|state| state.kind());
+    match route {
+        TraversalRoute::UprightIdle
+        | TraversalRoute::UprightStart
+        | TraversalRoute::UprightWalk
+        | TraversalRoute::UprightWalkRun
+        | TraversalRoute::UprightRun
+        | TraversalRoute::UprightStop
+        | TraversalRoute::UprightTurn => {
+            skeleton.body() == BodyState::Grounded(GroundedPosture::Upright)
+                && skeleton.action_kind() == SkeletonAction::None
+        }
+        TraversalRoute::Crouch => skeleton.body() == BodyState::Grounded(GroundedPosture::Crouched),
+        TraversalRoute::Airborne => skeleton.body() == BodyState::Airborne,
+        TraversalRoute::Landing => skeleton.body().is_grounded(),
+        TraversalRoute::GuardPlanted => {
+            skeleton.weapon_guard() == WeaponGuardState::Raised
+                && !skeleton.raised_locomotion().is_moving()
+        }
+        route @ (TraversalRoute::GuardForward
+        | TraversalRoute::GuardBackward
+        | TraversalRoute::GuardLeft
+        | TraversalRoute::GuardRight
+        | TraversalRoute::GuardForwardLeft
+        | TraversalRoute::GuardForwardRight
+        | TraversalRoute::GuardBackwardLeft
+        | TraversalRoute::GuardBackwardRight) => {
+            let expected = match route {
+                TraversalRoute::GuardForward => Vec2::NEG_Y,
+                TraversalRoute::GuardBackward => Vec2::Y,
+                TraversalRoute::GuardLeft => Vec2::NEG_X,
+                TraversalRoute::GuardRight => Vec2::X,
+                TraversalRoute::GuardForwardLeft => Vec2::new(-1.0, -1.0).normalize(),
+                TraversalRoute::GuardForwardRight => Vec2::new(1.0, -1.0).normalize(),
+                TraversalRoute::GuardBackwardLeft => Vec2::new(-1.0, 1.0).normalize(),
+                TraversalRoute::GuardBackwardRight => Vec2::ONE.normalize(),
+                _ => unreachable!("outer guard route pattern is exhaustive"),
+            };
+            skeleton.weapon_guard() == WeaponGuardState::Raised
+                && skeleton
+                    .raised_locomotion()
+                    .local_direction()
+                    .distance(expected)
+                    <= 0.01
+        }
+        TraversalRoute::GuardAcceleration | TraversalRoute::GuardReversal => {
+            skeleton.weapon_guard() == WeaponGuardState::Raised
+                && skeleton.raised_locomotion().is_moving()
+        }
+        TraversalRoute::GuardRelease => skeleton.weapon_guard() == WeaponGuardState::Lowered,
+        TraversalRoute::Quickstep => skeleton.action_kind() == SkeletonAction::Dodge,
+        TraversalRoute::AttackLeftSupport => {
+            skeleton.action_kind() == SkeletonAction::Attack
+                && skeleton.lead_foot() == LeadFoot::Left
+        }
+        TraversalRoute::AttackRightSupport => {
+            skeleton.action_kind() == SkeletonAction::Attack
+                && skeleton.lead_foot() == LeadFoot::Right
+        }
+        TraversalRoute::BlockLeftSupport => {
+            skeleton.action_kind() == SkeletonAction::Block
+                && skeleton.lead_foot() == LeadFoot::Left
+        }
+        TraversalRoute::BlockRightSupport => {
+            skeleton.action_kind() == SkeletonAction::Block
+                && skeleton.lead_foot() == LeadFoot::Right
+        }
+        TraversalRoute::UprightToProne => transition == Some(PostureTransitionKind::UprightToProne),
+        TraversalRoute::ProneRollLeft => {
+            transition
+                == Some(PostureTransitionKind::ProneToSupine {
+                    direction: RollDirection::Left,
+                })
+        }
+        TraversalRoute::ProneRollRight => {
+            transition
+                == Some(PostureTransitionKind::ProneToSupine {
+                    direction: RollDirection::Right,
+                })
+        }
+        TraversalRoute::ProneGetUp => transition == Some(PostureTransitionKind::ProneToUpright),
+        TraversalRoute::SupineRollLeft => {
+            transition
+                == Some(PostureTransitionKind::SupineToProne {
+                    direction: RollDirection::Left,
+                })
+        }
+        TraversalRoute::SupineRollRight => {
+            transition
+                == Some(PostureTransitionKind::SupineToProne {
+                    direction: RollDirection::Right,
+                })
+        }
+        TraversalRoute::SupineGetUp => transition == Some(PostureTransitionKind::SupineToUpright),
+        TraversalRoute::ProneIdle => skeleton.body() == BodyState::Prone,
+        route @ (TraversalRoute::ProneForward
+        | TraversalRoute::ProneRightSector
+        | TraversalRoute::ProneBackwardSector
+        | TraversalRoute::ProneLeftSector) => {
+            skeleton.body().downed_contact().is_some()
+                && skeleton.downed_facing().is_some_and(|facing| {
+                    facing.target()
+                        == match route {
+                            TraversalRoute::ProneForward => DownedFacingPose::Prone,
+                            TraversalRoute::ProneRightSector => DownedFacingPose::RollRight,
+                            TraversalRoute::ProneBackwardSector => DownedFacingPose::Supine,
+                            TraversalRoute::ProneLeftSector => DownedFacingPose::RollLeft,
+                            _ => unreachable!("outer prone sector pattern is exhaustive"),
+                        }
+                })
+        }
+        TraversalRoute::SupineIdle => skeleton.body() == BodyState::Supine,
+        route @ (TraversalRoute::SupineForward
+        | TraversalRoute::SupineRightSector
+        | TraversalRoute::SupineBackwardSector
+        | TraversalRoute::SupineLeftSector) => {
+            skeleton.body().downed_contact().is_some()
+                && skeleton.downed_facing().is_some_and(|facing| {
+                    facing.target()
+                        == match route {
+                            TraversalRoute::SupineForward => DownedFacingPose::Supine,
+                            TraversalRoute::SupineRightSector => DownedFacingPose::RollLeft,
+                            TraversalRoute::SupineBackwardSector => DownedFacingPose::Prone,
+                            TraversalRoute::SupineLeftSector => DownedFacingPose::RollRight,
+                            _ => unreachable!("outer supine sector pattern is exhaustive"),
+                        }
+                })
+        }
+        TraversalRoute::DiveForwardImpactRecovery => {
+            transition
+                == Some(PostureTransitionKind::DiveToDowned {
+                    direction: DiveDirection::Forward,
+                })
+        }
+        TraversalRoute::DiveBackwardImpactRecovery => {
+            transition
+                == Some(PostureTransitionKind::DiveToDowned {
+                    direction: DiveDirection::Backward,
+                })
+        }
+        TraversalRoute::DiveLeftImpactRecovery => {
+            transition
+                == Some(PostureTransitionKind::DiveToDowned {
+                    direction: DiveDirection::Left,
+                })
+        }
+        TraversalRoute::DiveRightImpactRecovery => {
+            transition
+                == Some(PostureTransitionKind::DiveToDowned {
+                    direction: DiveDirection::Right,
+                })
+        }
+        TraversalRoute::Ragdoll => false,
+    }
+}
+
+fn record_traversal_observation(
+    coverage: &mut TraversalCoverageReport,
+    control: &TraversalControl,
+    frame: usize,
+) {
+    match coverage.routes.get_mut(&control.route) {
+        Some(TraversalCoverageStatus::Exercised { last_frame, .. }) => *last_frame = frame,
+        Some(TraversalCoverageStatus::Unassessable { .. }) => {}
+        None => {
+            coverage.routes.insert(
+                control.route,
+                TraversalCoverageStatus::Exercised {
+                    first_frame: frame,
+                    last_frame: frame,
+                },
+            );
+        }
+    }
+}
+
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
     pose_buffer_metrics: Res<PoseBufferMetrics>,
+    jitter_diagnostics: Res<JointJitterDiagnostics>,
     terrain_ik: Res<TerrainIkEnabled>,
     subjects: Query<
         (
@@ -2304,6 +3506,7 @@ fn capture_frame(
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
         return;
     };
+    sequence.jitter_diagnostics = jitter_diagnostics.report_for_owner(subject);
     let Some(playback) = playback else {
         wait_or_fail(
             &mut sequence,
@@ -2330,14 +3533,17 @@ fn capture_frame(
     }
     sequence.waiting = 0;
     sequence.settled += 1;
-    let required = if sequence.index == 0 {
-        sequence.settle_frames.max(60)
-    } else {
-        // A view change needs one complete render before requesting the next
-        // asynchronous screenshot; otherwise two paths may receive the same
-        // previously rendered camera image.
-        sequence.settle_frames.max(2)
-    };
+    let required =
+        if sequence.index == 0 && (!sequence.diagnostics_only || sequence.view_index == 0) {
+            sequence.settle_frames.max(60)
+        } else if sequence.diagnostics_only {
+            1
+        } else {
+            // A view change needs one complete render before requesting the next
+            // asynchronous screenshot; otherwise two paths may receive the same
+            // previously rendered camera image.
+            sequence.settle_frames.max(2)
+        };
     if sequence.settled < required {
         return;
     }
@@ -2401,12 +3607,23 @@ fn capture_frame(
                 landing = skeleton.landing_sequence,
                 baseline_events = baseline.event_count,
                 events = sequence.presentation_events.len(),
+                baseline_leg_ik = ?baseline.leg_ik,
+                leg_ik = ?evaluation_leg_ik,
                 "repeated animation evaluation changed non-bone state"
             );
         }
         sequence.repeated_evaluation_valid &= repeated_evaluation_matches;
     }
     if sequence.view_index == 0 {
+        if let Some(control) = sequence.traversal_controls.get(&sequence.index).cloned()
+            && traversal_route_observed(control.route, skeleton, semantic_route)
+        {
+            record_traversal_observation(
+                &mut sequence.traversal_coverage,
+                &control,
+                frame.scenario_frame,
+            );
+        }
         let cadence_support = locomotion_support_weights(skeleton);
         let root_distance_metres = sequence.scenario_distance;
         let (desired_left_foot_target, desired_right_foot_target) = raised_footwork
@@ -2423,6 +3640,7 @@ fn capture_frame(
             .filter(|state| state.initialized)
             .map(|state| (state.left_support_weight, state.right_support_weight))
             .unwrap_or(ik_support);
+        let diagnostics_only = sequence.diagnostics_only;
         sequence.samples.push(FrameSample {
             scenario: frame.scenario.to_owned(),
             scenario_frame: frame.scenario_frame,
@@ -2498,22 +3716,47 @@ fn capture_frame(
             semantic_route_requested_path: semantic_route.requested_path,
             semantic_route_selected_path: semantic_route.path,
             semantic_route_runtime_evaluated: semantic_route.runtime_evaluated,
-            screenshots: VIEWS
-                .into_iter()
-                .map(|view| {
-                    (
-                        view.slug().to_owned(),
-                        format!(
-                            "{}-{:04}-{}.png",
-                            frame.scenario,
-                            frame.scenario_frame,
-                            view.slug()
-                        ),
-                    )
-                })
-                .collect(),
+            screenshots: if diagnostics_only {
+                BTreeMap::new()
+            } else {
+                VIEWS
+                    .into_iter()
+                    .map(|view| {
+                        (
+                            view.slug().to_owned(),
+                            format!(
+                                "{}-{:04}-{}.png",
+                                frame.scenario,
+                                frame.scenario_frame,
+                                view.slug()
+                            ),
+                        )
+                    })
+                    .collect()
+            },
             bones: evaluation_bones,
         });
+    }
+    if sequence.diagnostics_only {
+        // Preserve the normal three-view fixed-tick evaluation contract while
+        // skipping only the asynchronous image readback and disk write.
+        sequence.view_index += 1;
+        sequence.settled = 0;
+        if sequence.view_index < VIEWS.len() {
+            return;
+        }
+        sequence.view_index = 0;
+        sequence.index += 1;
+        sequence.applied = false;
+        if sequence.index == sequence.plan.len() {
+            finish_capture(
+                &mut sequence,
+                playback_backend,
+                pose_buffer_metrics,
+                &mut exit,
+            );
+        }
+        return;
     }
     sequence.capture_in_flight = true;
     let frame_key = format!("{}:{}", frame.scenario, frame.scenario_frame);
@@ -2644,6 +3887,271 @@ fn wait_or_fail(sequence: &mut CaptureSequence, reason: &str, exit: &mut Message
     exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
 }
 
+fn jitter_joint_class(joint: &str) -> JitterJointClass {
+    if joint.contains("weapon") {
+        JitterJointClass::Weapon
+    } else if joint.contains("hip")
+        || joint.contains("thigh")
+        || joint.contains("knee")
+        || joint.contains("shin")
+        || joint.contains("foot")
+        || joint.contains("toe")
+    {
+        JitterJointClass::Leg
+    } else if joint.contains("clavicle")
+        || joint.contains("shoulder")
+        || joint.contains("arm")
+        || joint.contains("elbow")
+        || joint.contains("forearm")
+        || joint.contains("hand")
+    {
+        JitterJointClass::Arm
+    } else {
+        JitterJointClass::Axial
+    }
+}
+
+fn jitter_envelope(
+    route: Option<TraversalRoute>,
+    joint_class: JitterJointClass,
+) -> JitterEnvelopeClass {
+    if (matches!(
+        route,
+        Some(
+            TraversalRoute::GuardPlanted
+                | TraversalRoute::GuardForward
+                | TraversalRoute::GuardBackward
+                | TraversalRoute::GuardLeft
+                | TraversalRoute::GuardRight
+                | TraversalRoute::GuardForwardLeft
+                | TraversalRoute::GuardForwardRight
+                | TraversalRoute::GuardBackwardLeft
+                | TraversalRoute::GuardBackwardRight
+                | TraversalRoute::GuardAcceleration
+                | TraversalRoute::GuardReversal
+                | TraversalRoute::GuardRelease
+        )
+    ) && joint_class == JitterJointClass::Leg)
+        || route == Some(TraversalRoute::Landing)
+    {
+        return JitterEnvelopeClass::ProceduralStrict;
+    }
+    match route {
+        Some(
+            TraversalRoute::Quickstep
+            | TraversalRoute::AttackLeftSupport
+            | TraversalRoute::AttackRightSupport
+            | TraversalRoute::BlockLeftSupport
+            | TraversalRoute::BlockRightSupport
+            | TraversalRoute::UprightToProne
+            | TraversalRoute::ProneRollLeft
+            | TraversalRoute::ProneRollRight
+            | TraversalRoute::ProneGetUp
+            | TraversalRoute::SupineRollLeft
+            | TraversalRoute::SupineRollRight
+            | TraversalRoute::SupineGetUp
+            | TraversalRoute::DiveForwardImpactRecovery
+            | TraversalRoute::DiveBackwardImpactRecovery
+            | TraversalRoute::DiveLeftImpactRecovery
+            | TraversalRoute::DiveRightImpactRecovery,
+        ) => JitterEnvelopeClass::IntentionalHighEnergy,
+        Some(
+            TraversalRoute::UprightIdle
+            | TraversalRoute::UprightStart
+            | TraversalRoute::UprightWalk
+            | TraversalRoute::UprightWalkRun
+            | TraversalRoute::UprightRun
+            | TraversalRoute::UprightStop
+            | TraversalRoute::UprightTurn
+            | TraversalRoute::Crouch
+            | TraversalRoute::Airborne
+            | TraversalRoute::Landing
+            | TraversalRoute::GuardPlanted
+            | TraversalRoute::GuardForward
+            | TraversalRoute::GuardBackward
+            | TraversalRoute::GuardLeft
+            | TraversalRoute::GuardRight
+            | TraversalRoute::GuardForwardLeft
+            | TraversalRoute::GuardForwardRight
+            | TraversalRoute::GuardBackwardLeft
+            | TraversalRoute::GuardBackwardRight
+            | TraversalRoute::GuardAcceleration
+            | TraversalRoute::GuardReversal
+            | TraversalRoute::GuardRelease
+            | TraversalRoute::ProneIdle
+            | TraversalRoute::ProneForward
+            | TraversalRoute::ProneRightSector
+            | TraversalRoute::ProneBackwardSector
+            | TraversalRoute::ProneLeftSector
+            | TraversalRoute::SupineIdle
+            | TraversalRoute::SupineForward
+            | TraversalRoute::SupineRightSector
+            | TraversalRoute::SupineBackwardSector
+            | TraversalRoute::SupineLeftSector
+            | TraversalRoute::Ragdoll,
+        ) => JitterEnvelopeClass::CleanAuthoredBaseline,
+        None => JitterEnvelopeClass::ProceduralStrict,
+    }
+}
+
+fn jitter_noise_floor(report: &JitterDiagnosticReport, class: JitterClass) -> f32 {
+    let Some(thresholds) = report.thresholds else {
+        return 0.0;
+    };
+    match class {
+        JitterClass::AngularAcceleration => thresholds.angular_acceleration.noise_floor,
+        JitterClass::AngularJerk => thresholds.angular_jerk.noise_floor,
+        JitterClass::LocalPositionAcceleration => {
+            thresholds.local_position_acceleration.noise_floor
+        }
+        JitterClass::LocalPositionJerk => thresholds.local_position_jerk.noise_floor,
+        JitterClass::AngularVelocity | JitterClass::LocalPositionVelocity => 0.0,
+    }
+}
+
+fn jitter_window_envelope(
+    from_route: Option<TraversalRoute>,
+    to_route: Option<TraversalRoute>,
+    joint_class: JitterJointClass,
+) -> JitterEnvelopeClass {
+    if from_route.is_none() && to_route.is_none() {
+        return JitterEnvelopeClass::ProceduralStrict;
+    }
+    let from = from_route.map(|route| jitter_envelope(Some(route), joint_class));
+    let to = to_route.map(|route| jitter_envelope(Some(route), joint_class));
+    if from == Some(JitterEnvelopeClass::ProceduralStrict)
+        || to == Some(JitterEnvelopeClass::ProceduralStrict)
+    {
+        JitterEnvelopeClass::ProceduralStrict
+    } else if from == Some(JitterEnvelopeClass::IntentionalHighEnergy)
+        || to == Some(JitterEnvelopeClass::IntentionalHighEnergy)
+    {
+        JitterEnvelopeClass::IntentionalHighEnergy
+    } else {
+        JitterEnvelopeClass::CleanAuthoredBaseline
+    }
+}
+
+fn validate_jitter(
+    report: &JitterDiagnosticReport,
+    controls: &BTreeMap<usize, TraversalControl>,
+) -> JitterValidationSummary {
+    let key_for = |incident: &JitterIncident| {
+        // Attribute the causative derivative interval, ignoring missing plan
+        // samples at a capture boundary. Review-only frames after the incident
+        // never change its route edge.
+        let mut causative_routes = (incident.frame_window[0]..=incident.frame)
+            .filter_map(|frame| controls.get(&(frame as usize)).map(|control| control.route));
+        let from_route = causative_routes.next();
+        let to_route = causative_routes.last().or(from_route);
+        let joint_class = jitter_joint_class(&incident.joint);
+        JitterBucketKey {
+            from_route,
+            to_route,
+            envelope: jitter_window_envelope(from_route, to_route, joint_class),
+            joint_class,
+            joint: incident.joint.clone(),
+            metric: incident.class,
+        }
+    };
+    let mut histogram = BTreeMap::<JitterBucketKey, JitterHistogramEntry>::new();
+    for incident in &report.authored.incidents {
+        let key = key_for(incident);
+        let bucket = histogram
+            .entry(key.clone())
+            .or_insert(JitterHistogramEntry {
+                from_route: key.from_route,
+                to_route: key.to_route,
+                envelope: key.envelope,
+                joint_class: key.joint_class,
+                joint: key.joint.clone(),
+                metric: key.metric,
+                authored_sensitivity_count: 0,
+                final_sensitivity_count: 0,
+                unacceptable_final_count: 0,
+                authored_maximum: 0.0,
+                final_maximum: 0.0,
+            });
+        bucket.authored_sensitivity_count += 1;
+        bucket.authored_maximum = bucket.authored_maximum.max(incident.value);
+    }
+    let diagnostics_complete =
+        report.authored.incidents_truncated == 0 && report.final_pose.incidents_truncated == 0;
+    let mut unacceptable_final_incident_count = report.final_pose.incidents_truncated;
+    let mut worst_unacceptable: Option<AttributedJitterIncident> = None;
+    let authored_keys = report
+        .authored
+        .incidents
+        .iter()
+        .map(|incident| key_for(incident))
+        .collect::<Vec<_>>();
+    let mut authored_matched = vec![false; report.authored.incidents.len()];
+    for incident in &report.final_pose.incidents {
+        let key = key_for(incident);
+        let baseline_index = report
+            .authored
+            .incidents
+            .iter()
+            .enumerate()
+            .filter(|(index, authored)| {
+                !authored_matched[*index]
+                    && authored_keys[*index] == key
+                    && authored.frame.abs_diff(incident.frame) <= 2
+            })
+            .max_by(|(_, left), (_, right)| left.value.total_cmp(&right.value))
+            .map(|(index, _)| index);
+        let baseline = baseline_index.map(|index| report.authored.incidents[index].value);
+        if let Some(index) = baseline_index {
+            authored_matched[index] = true;
+        }
+        let unacceptable = key.envelope == JitterEnvelopeClass::ProceduralStrict
+            || baseline.is_none_or(|maximum| {
+                incident.value > maximum + jitter_noise_floor(report, incident.class)
+            });
+        let bucket = histogram
+            .entry(key.clone())
+            .or_insert(JitterHistogramEntry {
+                from_route: key.from_route,
+                to_route: key.to_route,
+                envelope: key.envelope,
+                joint_class: key.joint_class,
+                joint: key.joint.clone(),
+                metric: key.metric,
+                authored_sensitivity_count: 0,
+                final_sensitivity_count: 0,
+                unacceptable_final_count: 0,
+                authored_maximum: 0.0,
+                final_maximum: 0.0,
+            });
+        bucket.final_sensitivity_count += 1;
+        bucket.final_maximum = bucket.final_maximum.max(incident.value);
+        if unacceptable {
+            bucket.unacceptable_final_count += 1;
+            unacceptable_final_incident_count += 1;
+            let attributed = AttributedJitterIncident {
+                from_route: key.from_route,
+                to_route: key.to_route,
+                envelope: key.envelope,
+                joint_class: key.joint_class,
+                incident: incident.clone(),
+            };
+            if worst_unacceptable
+                .as_ref()
+                .is_none_or(|worst| incident.severity > worst.incident.severity)
+            {
+                worst_unacceptable = Some(attributed);
+            }
+        }
+    }
+    JitterValidationSummary {
+        diagnostics_complete,
+        unacceptable_final_incident_count,
+        worst_unacceptable,
+        histogram: histogram.into_values().collect(),
+        policy: "clean authored traversal motion and documented high-energy envelopes require a one-to-one authored incident on the same joint and derivative within two frames and no larger than that authored value plus its existing noise floor; derivative windows crossing a route edge are attributed to the exact from-route/to-route pair; procedural guard legs, landing, and unattributed focused captures reject every threshold incident",
+    }
+}
+
 fn finish_capture(
     sequence: &mut CaptureSequence,
     playback_backend: &'static str,
@@ -2667,8 +4175,29 @@ fn finish_capture(
                     .iter()
                     .all(|name| frame.bones.contains_key(*name))
         });
-    let all_artifacts_written = capture_artifacts_written(&sequence.output, &frames);
+    let all_artifacts_written =
+        sequence.diagnostics_only || capture_artifacts_written(&sequence.output, &frames);
+    let state_machine_traversal = scenarios.len() == 1
+        && scenarios
+            .first()
+            .is_some_and(|metrics| metrics.scenario == "state-machine-traversal");
+    let validation_profile = if state_machine_traversal {
+        CaptureValidationProfile::StateMachineTraversal
+    } else {
+        CaptureValidationProfile::FocusedScenario
+    };
     let continuity_within_review_bounds = scenarios.iter().all(|metrics| {
+        if metrics.scenario == "state-machine-traversal" {
+            // A single traversal deliberately crosses standing, whole-body
+            // downed, rolling, and dive silhouettes. Retain a catastrophic
+            // discontinuity envelope here; the route-attributed derivative
+            // policy below remains the temporal-continuity contract.
+            return metrics.maximum_root_relative_step_metres <= 0.40
+                && metrics.maximum_foot_root_relative_step_metres <= 0.40
+                && metrics.maximum_knee_root_relative_step_metres <= 0.30
+                && metrics.maximum_bone_rotation_step_degrees <= 90.0
+                && metrics.maximum_pelvis_vertical_step_metres <= 0.08;
+        }
         metrics.maximum_root_relative_step_metres
             <= if metrics.scenario.starts_with("attack-live-") {
                 0.30
@@ -2699,7 +4228,12 @@ fn finish_capture(
                 || metrics.maximum_pelvis_vertical_step_metres <= 0.02)
     });
     let no_ground_penetration = scenarios.iter().all(|metrics| {
-        if metrics.scenario.starts_with("dive-") || metrics.scenario.ends_with("-get-up") {
+        if metrics.scenario == "state-machine-traversal" {
+            // Upright ankle/sole clearance is not defined while the same
+            // aggregate contains prone, supine, side-roll, and dive contacts.
+            // Focused posture captures retain their own visual/contact review.
+            true
+        } else if metrics.scenario.starts_with("dive-") || metrics.scenario.ends_with("-get-up") {
             // These authored whole-body poses intentionally put the character
             // on the surface. Ankle/sole contact metrics assume upright feet
             // and report false penetration once the feet rotate onto a side
@@ -2731,7 +4265,8 @@ fn finish_capture(
         }
     });
     let raised_guard_fixed_support = frames.windows(2).all(|pair| {
-        pair[0].scenario != pair[1].scenario
+        pair[0].scenario == "state-machine-traversal"
+            || pair[0].scenario != pair[1].scenario
             || pair[0].weapon_guard != WeaponGuardState::Raised
             || pair[1].weapon_guard != WeaponGuardState::Raised
             || pair[0].action == SkeletonAction::Attack
@@ -2795,6 +4330,12 @@ fn finish_capture(
     });
     let contact_sequences_valid =
         frames.windows(2).all(|pair| {
+            if pair[0].scenario == "state-machine-traversal" {
+                // The route intentionally crosses ordinary, guard, action,
+                // downed, and airborne contact owners. Their focused cadence
+                // fixtures retain the exact alternation/stationary contracts.
+                return true;
+            }
             if pair[0].scenario != pair[1].scenario {
                 return true;
             }
@@ -2930,7 +4471,8 @@ fn finish_capture(
         frame.body_lean_roll_degrees.abs()
     });
     let lean_step_valid = frames.windows(2).all(|pair| {
-        pair[0].scenario != pair[1].scenario
+        pair[0].scenario == "state-machine-traversal"
+            || pair[0].scenario != pair[1].scenario
             || Vec2::new(
                 pair[1].body_lean_pitch_degrees - pair[0].body_lean_pitch_degrees,
                 pair[1].body_lean_roll_degrees - pair[0].body_lean_roll_degrees,
@@ -3112,7 +4654,8 @@ fn finish_capture(
                 },
             )
         });
-    let reported_support_contacts_valid = reported_support_contacts_are_valid(&frames);
+    let reported_support_contacts_valid =
+        state_machine_traversal || reported_support_contacts_are_valid(&frames);
     let run_contact_acquisition_valid = terrain_run_contacts_are_valid(&frames);
     let stop_settle_scenarios = [
         "terrain-tap-stop-forward",
@@ -3149,6 +4692,14 @@ fn finish_capture(
     let hard_stop_height_continuity_valid =
         hard_stop_maximum_pelvis_step_metres.is_none_or(|maximum_step| maximum_step <= 0.02);
     let biomechanics_within_review_bounds = scenarios.iter().all(|metrics| {
+        if metrics.scenario == "state-machine-traversal" {
+            // Whole-body postures invalidate upright foot-track/separation
+            // ranges. The analytic knee orientation and authored dive axis
+            // remain meaningful throughout this mixed capture.
+            return metrics.minimum_knee_hemisphere_dot >= 0.0
+                && metrics.maximum_knee_foot_yaw_offset_degrees <= 22.6
+                && metrics.maximum_dive_axis_motion_error_degrees <= 20.0;
+        }
         if metrics.scenario.starts_with("dive-") {
             // Root forward is intentionally not the travel axis for lateral
             // dives. Judge the posed pelvis-to-head long axis instead.
@@ -3229,7 +4780,7 @@ fn finish_capture(
                         .is_some_and(|value| value <= 5.0)
             }
     });
-    let views_are_distinct = sequence.duplicate_view_frames.is_empty();
+    let views_are_distinct = sequence.diagnostics_only || sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
     let semantic_route_paths_exercised = frames.iter().all(|frame| {
         frame.semantic_route_requested_path == SemanticRoutePath::LegacyFallback
@@ -3242,6 +4793,20 @@ fn finish_capture(
             .or_insert(0) += 1;
         counts
     });
+    let jitter_validation =
+        validate_jitter(&sequence.jitter_diagnostics, &sequence.traversal_controls);
+    let joint_jitter_within_review_bounds = jitter_validation.diagnostics_complete
+        && jitter_validation.unacceptable_final_incident_count == 0;
+    let state_machine_routes_observed = sequence.traversal_controls.is_empty()
+        || TraversalRoute::ALL.iter().all(|route| {
+            matches!(
+                sequence.traversal_coverage.routes.get(route),
+                Some(
+                    TraversalCoverageStatus::Exercised { .. }
+                        | TraversalCoverageStatus::Unassessable { .. }
+                )
+            )
+        });
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
         playback_backend,
@@ -3249,6 +4814,7 @@ fn finish_capture(
         pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, direct semantic routing, fixed-rate pose-buffer FK with per-joint inertialization, and final procedural passes",
         views: VIEWS,
         validation: CaptureValidation {
+            profile: validation_profile,
             finite_transforms,
             all_scenarios_complete,
             all_artifacts_written,
@@ -3276,6 +4842,8 @@ fn finish_capture(
             hard_stop_height_continuity_valid,
             repeated_evaluation_valid,
             semantic_route_paths_exercised,
+            joint_jitter_within_review_bounds,
+            state_machine_routes_observed,
             views_are_distinct,
             duplicate_view_frames: sequence.duplicate_view_frames.clone(),
             note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
@@ -3284,6 +4852,10 @@ fn finish_capture(
         frames,
         presentation_events,
         semantic_route_path_counts,
+        state_machine_traversal: sequence.traversal_coverage.clone(),
+        jitter_diagnostics: sequence.jitter_diagnostics.clone(),
+        jitter_validation,
+        diagnostics_only: sequence.diagnostics_only,
     };
     let manifest_path = sequence.output.join("manifest.json");
     fs::write(
@@ -3291,10 +4863,14 @@ fn finish_capture(
         serde_json::to_string_pretty(&manifest).expect("capture manifest must serialize"),
     )
     .unwrap_or_else(|error| panic!("failed to write {manifest_path:?}: {error}"));
-    let index_path = sequence.output.join("index.html");
-    fs::write(&index_path, review_html(&manifest))
-        .unwrap_or_else(|error| panic!("failed to write {index_path:?}: {error}"));
-    info!(path = ?index_path, "Animation review capture completed");
+    if !sequence.diagnostics_only {
+        let index_path = sequence.output.join("index.html");
+        fs::write(&index_path, review_html(&manifest))
+            .unwrap_or_else(|error| panic!("failed to write {index_path:?}: {error}"));
+        info!(path = ?index_path, "Animation review capture completed");
+    } else {
+        info!(path = ?manifest_path, "Animation diagnostic capture completed");
+    }
     if finite_transforms
         && all_scenarios_complete
         && all_artifacts_written
@@ -3321,6 +4897,8 @@ fn finish_capture(
         && hard_stop_height_continuity_valid
         && repeated_evaluation_valid
         && semantic_route_paths_exercised
+        && joint_jitter_within_review_bounds
+        && state_machine_routes_observed
         && views_are_distinct
     {
         exit.write(AppExit::Success);
@@ -4621,6 +6199,551 @@ document.querySelectorAll('button').forEach(b=>b.onclick=()=>{{scenario=b.datase
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::jitter::{PoseDiagnosticSeam, SpikeEvidence};
+    use crate::animation::semantic_route::SemanticRouteInputs;
+
+    #[test]
+    fn final_joint_jitter_incident_fails_capture_validation() {
+        let mut report = JitterDiagnosticReport::default();
+        report.final_pose.incident_count = 1;
+        let incident = JitterIncident {
+            seam: PoseDiagnosticSeam::Final,
+            joint: "left_knee".into(),
+            class: JitterClass::AngularJerk,
+            frame: 42,
+            frame_window: [40, 44],
+            value: 20_000.0,
+            severity: 1.5,
+            evidence: SpikeEvidence {
+                absolute_exceeded: true,
+                relative_exceeded: true,
+                previous_value: 100.0,
+                relative_baseline: 400.0,
+            },
+        };
+        report.final_pose.worst = Some(incident.clone());
+        report.final_pose.incidents.push(incident);
+        let validation = validate_jitter(&report, &BTreeMap::new());
+        assert_eq!(validation.unacceptable_final_incident_count, 1);
+        assert_eq!(report.final_pose.worst.unwrap().frame_window, [40, 44]);
+    }
+
+    #[test]
+    fn intentional_envelope_accepts_only_motion_not_amplified_from_authored_input() {
+        let incident = |seam, value| JitterIncident {
+            seam,
+            joint: "left_knee".into(),
+            class: JitterClass::AngularJerk,
+            frame: 42,
+            frame_window: [40, 44],
+            value,
+            severity: value / 12_000.0,
+            evidence: SpikeEvidence {
+                absolute_exceeded: true,
+                relative_exceeded: true,
+                previous_value: 100.0,
+                relative_baseline: 400.0,
+            },
+        };
+        let mut report = JitterDiagnosticReport::default();
+        report
+            .authored
+            .incidents
+            .push(incident(PoseDiagnosticSeam::Authored, 20_000.0));
+        report
+            .final_pose
+            .incidents
+            .push(incident(PoseDiagnosticSeam::Final, 20_000.0));
+        let controls = (40..=44)
+            .map(|frame| {
+                (
+                    frame,
+                    TraversalControl {
+                        route: TraversalRoute::Quickstep,
+                        commands: vec![],
+                        grounded: false,
+                        downed_aim: None,
+                    },
+                )
+            })
+            .collect();
+        assert_eq!(
+            validate_jitter(&report, &controls).unacceptable_final_incident_count,
+            0
+        );
+        report.final_pose.incidents[0].value = 20_001.0;
+        assert_eq!(
+            validate_jitter(&report, &controls).unacceptable_final_incident_count,
+            1
+        );
+        report.final_pose.incidents[0].value = 20_000.0;
+        report
+            .final_pose
+            .incidents
+            .push(incident(PoseDiagnosticSeam::Final, 19_000.0));
+        assert_eq!(
+            validate_jitter(&report, &controls).unacceptable_final_incident_count,
+            1
+        );
+    }
+
+    #[test]
+    fn procedural_guard_leg_incidents_remain_strict_against_authored_input() {
+        let incident = |seam| JitterIncident {
+            seam,
+            joint: "left_knee".into(),
+            class: JitterClass::AngularJerk,
+            frame: 42,
+            frame_window: [40, 44],
+            value: 20_000.0,
+            severity: 20_000.0 / 12_000.0,
+            evidence: SpikeEvidence {
+                absolute_exceeded: true,
+                relative_exceeded: true,
+                previous_value: 100.0,
+                relative_baseline: 400.0,
+            },
+        };
+        let mut report = JitterDiagnosticReport::default();
+        report
+            .authored
+            .incidents
+            .push(incident(PoseDiagnosticSeam::Authored));
+        report
+            .final_pose
+            .incidents
+            .push(incident(PoseDiagnosticSeam::Final));
+        let controls = (40..=44)
+            .map(|frame| {
+                (
+                    frame,
+                    TraversalControl {
+                        route: TraversalRoute::GuardForward,
+                        commands: vec![],
+                        grounded: true,
+                        downed_aim: None,
+                    },
+                )
+            })
+            .collect();
+
+        let validation = validate_jitter(&report, &controls);
+        assert_eq!(validation.unacceptable_final_incident_count, 1);
+        assert_eq!(
+            validation.worst_unacceptable.unwrap().envelope,
+            JitterEnvelopeClass::ProceduralStrict
+        );
+    }
+
+    #[test]
+    fn derivative_windows_match_authored_motion_on_the_exact_route_edge_and_joint() {
+        let incident = |seam, frame, joint: &str| JitterIncident {
+            seam,
+            joint: joint.into(),
+            class: JitterClass::AngularJerk,
+            frame,
+            frame_window: [frame - 3, frame + 2],
+            value: 20_000.0,
+            severity: 2.0,
+            evidence: SpikeEvidence {
+                absolute_exceeded: true,
+                relative_exceeded: true,
+                previous_value: 100.0,
+                relative_baseline: 400.0,
+            },
+        };
+        let mut report = JitterDiagnosticReport::default();
+        report
+            .authored
+            .incidents
+            .push(incident(PoseDiagnosticSeam::Authored, 42, "head"));
+        report
+            .final_pose
+            .incidents
+            .push(incident(PoseDiagnosticSeam::Final, 43, "head"));
+        let controls = BTreeMap::from([
+            (
+                40,
+                TraversalControl {
+                    route: TraversalRoute::UprightStop,
+                    commands: vec![],
+                    grounded: true,
+                    downed_aim: None,
+                },
+            ),
+            (
+                41,
+                TraversalControl {
+                    route: TraversalRoute::UprightStop,
+                    commands: vec![],
+                    grounded: true,
+                    downed_aim: None,
+                },
+            ),
+            (
+                42,
+                TraversalControl {
+                    route: TraversalRoute::UprightTurn,
+                    commands: vec![],
+                    grounded: true,
+                    downed_aim: None,
+                },
+            ),
+            (
+                43,
+                TraversalControl {
+                    route: TraversalRoute::UprightTurn,
+                    commands: vec![],
+                    grounded: true,
+                    downed_aim: None,
+                },
+            ),
+        ]);
+        let validation = validate_jitter(&report, &controls);
+        assert_eq!(validation.unacceptable_final_incident_count, 0);
+        assert_eq!(
+            validation.histogram[0].from_route,
+            Some(TraversalRoute::UprightStop)
+        );
+        assert_eq!(
+            validation.histogram[0].to_route,
+            Some(TraversalRoute::UprightTurn)
+        );
+        assert_eq!(validation.histogram[0].joint, "head");
+    }
+
+    #[test]
+    fn guard_release_is_counted_only_after_lowered_presentation_is_observed() {
+        let lowered = PresentedSkeleton::new(SkeletonState::default(), None);
+        let evaluation = AnimationEvaluation::from_skeleton(&lowered);
+        let trace = SemanticRouteTrace {
+            inputs: SemanticRouteInputs::from_presented(&lowered, &evaluation),
+            requested_path: SemanticRoutePath::OrdinaryLocomotion,
+            path: SemanticRoutePath::OrdinaryLocomotion,
+            evaluation,
+            runtime_evaluated: true,
+        };
+        assert!(traversal_route_observed(
+            TraversalRoute::GuardRelease,
+            &lowered,
+            &trace
+        ));
+
+        let raised_state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        let raised = PresentedSkeleton::new(raised_state, None);
+        let raised_evaluation = AnimationEvaluation::from_skeleton(&raised);
+        let raised_trace = SemanticRouteTrace {
+            inputs: SemanticRouteInputs::from_presented(&raised, &raised_evaluation),
+            requested_path: SemanticRoutePath::RaisedGuardAttack,
+            path: SemanticRoutePath::RaisedGuardAttack,
+            evaluation: raised_evaluation,
+            runtime_evaluated: true,
+        };
+        assert!(!traversal_route_observed(
+            TraversalRoute::GuardRelease,
+            &raised,
+            &raised_trace
+        ));
+    }
+
+    #[test]
+    fn traversal_matches_are_exhaustive_over_core_state_variants() {
+        fn body(state: BodyState) {
+            match state {
+                BodyState::Grounded(GroundedPosture::Upright)
+                | BodyState::Grounded(GroundedPosture::Crouched)
+                | BodyState::Airborne
+                | BodyState::Prone
+                | BodyState::Supine
+                | BodyState::Ragdolled => {}
+            }
+        }
+        fn action(state: SkeletonAction) {
+            match state {
+                SkeletonAction::None
+                | SkeletonAction::Dodge
+                | SkeletonAction::Attack
+                | SkeletonAction::Block => {}
+            }
+        }
+        fn guard(state: WeaponGuardState) {
+            match state {
+                WeaponGuardState::Lowered | WeaponGuardState::Raised => {}
+            }
+        }
+        fn transition(kind: PostureTransitionKind) {
+            match kind {
+                PostureTransitionKind::UprightToProne
+                | PostureTransitionKind::ProneToUpright
+                | PostureTransitionKind::ProneToSupine { .. }
+                | PostureTransitionKind::SupineToProne { .. }
+                | PostureTransitionKind::SupineToUpright
+                | PostureTransitionKind::DiveToDowned { .. } => {}
+            }
+        }
+        fn dive(direction: DiveDirection) {
+            match direction {
+                DiveDirection::Forward
+                | DiveDirection::Backward
+                | DiveDirection::Left
+                | DiveDirection::Right => {}
+            }
+        }
+        fn roll(direction: RollDirection) {
+            match direction {
+                RollDirection::Left | RollDirection::Right => {}
+            }
+        }
+
+        body(BodyState::default());
+        action(SkeletonAction::default());
+        guard(WeaponGuardState::default());
+        transition(PostureTransitionKind::UprightToProne);
+        dive(DiveDirection::default());
+        roll(RollDirection::default());
+    }
+
+    #[test]
+    fn retained_traversal_has_machine_readable_coverage_for_every_route() {
+        let plan = state_machine_traversal_scenario();
+        assert!(!plan.frames.is_empty());
+        assert_eq!(plan.frames.len(), plan.controls.len());
+        assert!(plan.frames.iter().enumerate().all(|(index, frame)| {
+            frame.scenario == "state-machine-traversal"
+                && frame.scenario_frame == index
+                && plan.controls.get(&index).is_some()
+        }));
+        for route in TraversalRoute::ALL {
+            assert!(
+                *route == TraversalRoute::Ragdoll
+                    || plan
+                        .controls
+                        .values()
+                        .any(|control| control.route == *route)
+            );
+        }
+        assert!(matches!(
+            plan.coverage.routes.get(&TraversalRoute::Ragdoll),
+            Some(TraversalCoverageStatus::Unassessable { .. })
+        ));
+        assert!(plan.controls.values().any(|control| {
+            control.route == TraversalRoute::AttackLeftSupport
+                && control
+                    .commands
+                    .iter()
+                    .any(|command| matches!(command, TraversalCommand::BeginAttack(_)))
+        }));
+        let release_frames = plan
+            .frames
+            .iter()
+            .filter(|frame| {
+                plan.controls
+                    .get(&frame.scenario_frame)
+                    .is_some_and(|control| control.route == TraversalRoute::GuardRelease)
+            })
+            .collect::<Vec<_>>();
+        assert!(!release_frames.is_empty());
+        assert!(
+            release_frames
+                .iter()
+                .all(|frame| frame.weapon_guard == WeaponGuardState::Lowered)
+        );
+        assert!(plan.controls.values().any(|control| {
+            control.route == TraversalRoute::BlockRightSupport
+                && control
+                    .commands
+                    .iter()
+                    .any(|command| matches!(command, TraversalCommand::BeginBlock))
+        }));
+    }
+
+    #[test]
+    fn traversal_exercises_every_guard_octant_and_dive_direction() {
+        let plan = state_machine_traversal_scenario();
+        for direction in [
+            Vec2::NEG_Y,
+            Vec2::Y,
+            Vec2::NEG_X,
+            Vec2::X,
+            Vec2::new(-1.0, -1.0),
+            Vec2::new(1.0, -1.0),
+            Vec2::new(-1.0, 1.0),
+            Vec2::ONE,
+        ] {
+            assert!(plan.frames.iter().any(|frame| {
+                frame.weapon_guard == WeaponGuardState::Raised
+                    && frame.local_direction == direction.normalize_or_zero()
+            }));
+        }
+        for direction in [
+            DiveDirection::Forward,
+            DiveDirection::Backward,
+            DiveDirection::Left,
+            DiveDirection::Right,
+        ] {
+            assert!(plan.controls.values().any(|control| {
+                control.commands.iter().any(|command| {
+                    matches!(
+                        command,
+                        TraversalCommand::BeginTransition(
+                            PostureTransitionKind::DiveToDowned {
+                                direction: actual
+                            },
+                            _
+                        ) if *actual == direction
+                    )
+                })
+            }));
+        }
+        for expected in [
+            PostureTransitionKind::UprightToProne,
+            PostureTransitionKind::ProneToUpright,
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Left,
+            },
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Right,
+            },
+            PostureTransitionKind::SupineToProne {
+                direction: RollDirection::Left,
+            },
+            PostureTransitionKind::SupineToProne {
+                direction: RollDirection::Right,
+            },
+            PostureTransitionKind::SupineToUpright,
+        ] {
+            assert!(plan.controls.values().any(|control| {
+                control.commands.iter().any(|command| {
+                    matches!(
+                        command,
+                        TraversalCommand::BeginTransition(actual, _) if *actual == expected
+                    )
+                })
+            }));
+        }
+    }
+
+    #[test]
+    fn traversal_downed_and_dive_routes_use_only_lawful_retained_transitions() {
+        let plan = state_machine_traversal_scenario();
+        for control in plan.controls.values().filter(|control| {
+            matches!(
+                control.route,
+                TraversalRoute::ProneIdle
+                    | TraversalRoute::ProneForward
+                    | TraversalRoute::ProneRightSector
+                    | TraversalRoute::ProneBackwardSector
+                    | TraversalRoute::ProneLeftSector
+                    | TraversalRoute::ProneRollLeft
+                    | TraversalRoute::ProneRollRight
+                    | TraversalRoute::ProneGetUp
+                    | TraversalRoute::SupineIdle
+                    | TraversalRoute::SupineForward
+                    | TraversalRoute::SupineRightSector
+                    | TraversalRoute::SupineBackwardSector
+                    | TraversalRoute::SupineLeftSector
+                    | TraversalRoute::SupineRollLeft
+                    | TraversalRoute::SupineRollRight
+                    | TraversalRoute::SupineGetUp
+                    | TraversalRoute::DiveForwardImpactRecovery
+                    | TraversalRoute::DiveBackwardImpactRecovery
+                    | TraversalRoute::DiveLeftImpactRecovery
+                    | TraversalRoute::DiveRightImpactRecovery
+            )
+        }) {
+            assert!(
+                !control
+                    .commands
+                    .iter()
+                    .any(|command| matches!(command, TraversalCommand::SetBody(_)))
+            );
+        }
+        for route in [
+            TraversalRoute::ProneForward,
+            TraversalRoute::ProneRightSector,
+            TraversalRoute::ProneBackwardSector,
+            TraversalRoute::ProneLeftSector,
+            TraversalRoute::SupineForward,
+            TraversalRoute::SupineRightSector,
+            TraversalRoute::SupineBackwardSector,
+            TraversalRoute::SupineLeftSector,
+        ] {
+            assert!(
+                plan.controls
+                    .values()
+                    .any(|control| control.route == route && control.downed_aim.is_some())
+            );
+        }
+    }
+
+    #[test]
+    fn traversal_command_stream_is_admissible_without_fixture_body_rewrites() {
+        let plan = state_machine_traversal_scenario();
+        let mut skeleton = SkeletonState::default();
+        for (index, frame) in plan.frames.iter().enumerate() {
+            let tick = index as u64 + 1;
+            let control = &plan.controls[&index];
+            set_weapon_guard(&mut skeleton, frame.weapon_guard);
+            for command in &control.commands {
+                match *command {
+                    TraversalCommand::SetBody(body) => skeleton.transition_body(body),
+                    TraversalCommand::BeginTransition(kind, duration) => assert!(
+                        skeleton.begin_posture_transition(kind, tick, duration),
+                        "{kind:?} was rejected at traversal frame {index} from {:?}",
+                        skeleton.body()
+                    ),
+                    TraversalCommand::BeginAttack(animation) => assert!(
+                        skeleton
+                            .begin_attack(AttackSpec::new(animation), tick, tick + 16)
+                            .is_ok(),
+                        "attack was rejected at traversal frame {index}"
+                    ),
+                    TraversalCommand::BeginBlock => assert!(
+                        skeleton
+                            .begin_block(BlockSpec::default(), tick, tick + 16)
+                            .is_ok(),
+                        "block was rejected at traversal frame {index}"
+                    ),
+                    TraversalCommand::BeginDodge(direction) => assert!(
+                        skeleton
+                            .begin_dodge(DodgeSpec { direction }, tick, tick + 16)
+                            .is_ok(),
+                        "dodge was rejected at traversal frame {index}"
+                    ),
+                }
+            }
+            if let Some(target) = control.downed_aim {
+                skeleton.set_downed_turning(true);
+                let half_turns = match target {
+                    DownedFacingPose::Prone => 0.0,
+                    DownedFacingPose::RollRight => 0.5,
+                    DownedFacingPose::Supine => 1.0,
+                    DownedFacingPose::RollLeft => -0.5,
+                };
+                skeleton.advance_downed_facing(half_turns, true, 1.0 / 84.0);
+            }
+            let orientation = Quat::from_rotation_y(frame.camera_yaw);
+            let local_velocity = Vec3::new(
+                frame.local_direction.x * frame.speed,
+                0.0,
+                frame.local_direction.y * frame.speed,
+            );
+            project_skeleton_locomotion(
+                &mut skeleton,
+                SkeletonLocomotionInput {
+                    orientation,
+                    linear_velocity: controller_yaw(orientation) * local_velocity,
+                    grounded: control.grounded,
+                    crouching: frame.crouching,
+                    delta_seconds: 1.0 / SAMPLE_HZ,
+                    tick,
+                },
+            );
+            skeleton.set_presentation_shadow_lead_foot(frame.lead_foot);
+            skeleton.advance_posture_transition(tick);
+            skeleton.advance_action(tick);
+        }
+    }
 
     fn unique_test_output(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -4871,7 +6994,7 @@ mod tests {
     #[test]
     fn flat_grid_scenarios_are_opt_in_complete_cycles_with_terrain_ik() {
         for (scenario, speed) in [("flat-grid-walk-2.0", 2.0), ("flat-grid-run-5.5", 5.5)] {
-            let sequence = CaptureSequence::new(PathBuf::new(), 1, Some(scenario));
+            let sequence = CaptureSequence::new(PathBuf::new(), 1, Some(scenario), false);
             assert!(sequence.uses_flat_grid());
             assert!(sequence.plan.len() > 64);
             assert!(sequence.plan.iter().all(|frame| {
@@ -4881,10 +7004,10 @@ mod tests {
             }));
         }
 
-        let ordinary = CaptureSequence::new(PathBuf::new(), 1, Some("steady-walk-2.0"));
+        let ordinary = CaptureSequence::new(PathBuf::new(), 1, Some("steady-walk-2.0"), false);
         assert!(!ordinary.uses_flat_grid());
 
-        let stop = CaptureSequence::new(PathBuf::new(), 1, Some("flat-grid-walk-stop"));
+        let stop = CaptureSequence::new(PathBuf::new(), 1, Some("flat-grid-walk-stop"), false);
         assert!(stop.uses_flat_grid());
         assert!(stop.plan[..48].iter().all(|frame| frame.speed == 2.0));
         assert!(stop.plan[56..].iter().all(|frame| frame.speed == 0.0));

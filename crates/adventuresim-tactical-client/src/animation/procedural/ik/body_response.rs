@@ -65,10 +65,12 @@ pub(in crate::animation) fn apply_locomotion_body_response(
             || (skeleton.action_kind() != SkeletonAction::None && quickstep_target.is_none())
             || (!skeleton.is_grounded() && quickstep_target.is_none())
         {
-            next.pitch_radians = 0.0;
-            next.roll_radians = 0.0;
             next.target_pitch_radians = 0.0;
             next.target_roll_radians = 0.0;
+            let current = Vec2::new(next.pitch_radians, next.roll_radians);
+            let advanced = advance_body_response(current, Vec2::ZERO, tick_delta);
+            next.pitch_radians = advanced.x;
+            next.roll_radians = advanced.y;
         } else if let Some(target) = quickstep_target {
             next.target_pitch_radians = target.x;
             next.target_roll_radians = target.y;
@@ -80,10 +82,12 @@ pub(in crate::animation) fn apply_locomotion_body_response(
                 next.roll_radians = advanced.y;
             }
         } else if discontinuous {
-            next.pitch_radians = 0.0;
-            next.roll_radians = 0.0;
             next.target_pitch_radians = 0.0;
             next.target_roll_radians = 0.0;
+            let current = Vec2::new(next.pitch_radians, next.roll_radians);
+            let advanced = advance_body_response(current, Vec2::ZERO, tick_delta);
+            next.pitch_radians = advanced.x;
+            next.roll_radians = advanced.y;
         } else if let Some(tick_delta @ 1..) = tick_delta {
             let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
             if body_velocity.xz().length() > 0.05 || body_acceleration.xz().length() > 0.5 {
@@ -158,6 +162,14 @@ pub(in crate::animation) fn apply_locomotion_body_response(
         // targets are unchanged by torso lean.
         transform.rotation = compensation * transform.rotation;
     }
+}
+
+fn advance_body_response(current: Vec2, target: Vec2, tick_delta: Option<u64>) -> Vec2 {
+    let Some(tick_delta) = tick_delta else {
+        return target;
+    };
+    let maximum_step = 2.0_f32.to_radians() * tick_delta.max(1) as f32;
+    current + (target - current).clamp_length_max(maximum_step)
 }
 
 fn quickstep_lean_target(direction: Vec2, action_phase: f32) -> Vec2 {
@@ -267,6 +279,17 @@ mod tests {
         assert!(right.y < -15.0_f32.to_radians());
         assert!(right.x.abs() <= f32::EPSILON);
         assert_eq!(quickstep_lean_target(Vec2::Y, 1.0), Vec2::ZERO);
+    }
+
+    #[test]
+    fn posture_handoff_releases_body_response_without_a_one_tick_leg_impulse() {
+        let current = Vec2::new(12.0_f32.to_radians(), -8.0_f32.to_radians());
+        let first = advance_body_response(current, Vec2::ZERO, Some(1));
+        let second = advance_body_response(first, Vec2::ZERO, Some(1));
+        assert!(current.distance(first) <= 2.0_f32.to_radians() + 0.000_01);
+        assert!(first.distance(second) <= 2.0_f32.to_radians() + 0.000_01);
+        assert!(second.length() < first.length());
+        assert_ne!(first, Vec2::ZERO);
     }
 
     #[test]

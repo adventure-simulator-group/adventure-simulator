@@ -14,7 +14,10 @@ use bevy::{
 use serde::Deserialize;
 
 use crate::{
-    animation::{AnimationDiagnosticLog, DiagnosticInputStatus, RenderScheduleTelemetry},
+    animation::{
+        AnimationDiagnosticLog, DiagnosticInputStatus, JointJitterDiagnostics,
+        RenderScheduleTelemetry,
+    },
     player::ClientPlayer,
 };
 
@@ -152,7 +155,8 @@ impl Plugin for DiagnosticPlugin {
             app.insert_resource(AnimationDiagnosticLog {
                 writer: std::io::BufWriter::new(file),
                 frame: 0,
-            });
+            })
+            .insert_resource(JointJitterDiagnostics::enabled());
         }
         if let Some(telemetry) = &self.render_schedule {
             app.insert_resource(telemetry.clone());

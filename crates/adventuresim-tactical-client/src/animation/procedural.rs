@@ -12,7 +12,85 @@ pub(crate) use rig::*;
 pub(crate) struct ProceduralLookState {
     base_rotation: Quat,
     applied_rotation: Quat,
+    applied_offset: Quat,
+    offset_velocity: Vec3,
     evaluation_tick: u64,
+}
+
+const LOOK_TRACKING_FREQUENCY: f32 = 12.0;
+const MAXIMUM_LOOK_OFFSET_VELOCITY: f32 = 3.0;
+const MAXIMUM_LOOK_OFFSET_ACCELERATION: f32 = 20.0;
+const PRESENTATION_TICK_SECONDS: f32 = 1.0 / 64.0;
+
+fn quaternion_rotation_vector(rotation: Quat) -> Vec3 {
+    let mut rotation = rotation.normalize();
+    if rotation.w < 0.0 {
+        rotation = -rotation;
+    }
+    let vector = Vec3::new(rotation.x, rotation.y, rotation.z);
+    let length = vector.length();
+    if length <= 1.0e-7 {
+        return vector * 2.0;
+    }
+    vector / length * (2.0 * length.atan2(rotation.w.clamp(-1.0, 1.0)))
+}
+
+fn look_offset_error_angle(current: Quat, target: Quat) -> f32 {
+    quaternion_rotation_vector(target.normalize() * current.normalize().conjugate()).length()
+}
+
+fn advance_look_offset(
+    current: Quat,
+    velocity: Vec3,
+    target: Quat,
+    delta_seconds: f32,
+) -> (Quat, Vec3) {
+    let delta_seconds = delta_seconds.max(0.0);
+    if delta_seconds <= f32::EPSILON {
+        return (current, velocity);
+    }
+    // Keep the exact authored representatives for fixed points. Repeatedly
+    // normalizing a quaternion that is already within the arrival tolerance
+    // can alternate its last bits, which appears as a small angle increase to
+    // callers even though the represented rotation is unchanged.
+    let achieved = current;
+    let requested = target;
+    let current = achieved.normalize();
+    let target = requested.normalize();
+    let error = quaternion_rotation_vector(target * current.conjugate());
+    if error.length_squared() <= 1.0e-12 {
+        return (requested, Vec3::ZERO);
+    }
+    let acceleration = (error * LOOK_TRACKING_FREQUENCY * LOOK_TRACKING_FREQUENCY
+        - velocity * 2.0 * LOOK_TRACKING_FREQUENCY)
+        .clamp_length_max(MAXIMUM_LOOK_OFFSET_ACCELERATION);
+    let next_velocity =
+        (velocity + acceleration * delta_seconds).clamp_length_max(MAXIMUM_LOOK_OFFSET_VELOCITY);
+    let proposed_step = next_velocity * delta_seconds;
+    let step = proposed_step.clamp_length_max(error.length());
+    let progress = step.dot(error);
+    if progress <= 0.0 {
+        // A capped discrete damping step can reverse immediately before
+        // arrival. Stop at the nearest achieved offset instead of taking one
+        // frame away from the requested look; the next sample resumes toward
+        // the target from zero velocity.
+        (achieved, Vec3::ZERO)
+    } else {
+        let candidate = (Quat::from_scaled_axis(step) * current).normalize();
+        let current_error = error.length();
+        let candidate_error = look_offset_error_angle(candidate, target);
+        if candidate_error > current_error {
+            // A positive tangent-space projection is not sufficient when a
+            // retained velocity has a component across the current geodesic.
+            // Accept only a composed rotation that is actually no farther
+            // from the target on the quaternion sphere.
+            (achieved, Vec3::ZERO)
+        } else if candidate_error <= 1.0e-6 {
+            (requested, Vec3::ZERO)
+        } else {
+            (candidate, next_velocity)
+        }
+    }
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -76,12 +154,31 @@ fn additive_look_rotation(
             current
         }
     });
-    let applied_rotation = (base_rotation * offset).normalize();
+    let (applied_offset, offset_velocity) = previous.map_or((offset, Vec3::ZERO), |previous| {
+        if previous.evaluation_tick == evaluation_tick {
+            (previous.applied_offset, previous.offset_velocity)
+        } else {
+            let tick_delta = evaluation_tick.wrapping_sub(previous.evaluation_tick);
+            if !(1..=8).contains(&tick_delta) {
+                (offset, Vec3::ZERO)
+            } else {
+                advance_look_offset(
+                    previous.applied_offset,
+                    previous.offset_velocity,
+                    offset,
+                    tick_delta as f32 * PRESENTATION_TICK_SECONDS,
+                )
+            }
+        }
+    });
+    let applied_rotation = (base_rotation * applied_offset).normalize();
     (
         applied_rotation,
         ProceduralLookState {
             base_rotation,
             applied_rotation,
+            applied_offset,
+            offset_velocity,
             evaluation_tick,
         },
     )
@@ -1369,6 +1466,48 @@ mod legacy_tests {
         let authored_next = Quat::from_rotation_z(0.24);
         let (updated, _) = additive_look_rotation(authored_next, Some(repeated_state), 42, offset);
         assert!((authored_next * offset).angle_between(updated) <= 0.000_001);
+    }
+
+    #[test]
+    fn guard_look_activation_is_bounded_per_fixed_tick() {
+        let base = Quat::IDENTITY;
+        let (_, lowered) = additive_look_rotation(base, None, 40, Quat::IDENTITY);
+        let requested = Quat::from_rotation_y(std::f32::consts::PI / 8.0);
+        let (raised, state) = additive_look_rotation(base, Some(lowered), 41, requested);
+        assert!(
+            base.angle_between(raised)
+                <= MAXIMUM_LOOK_OFFSET_ACCELERATION * PRESENTATION_TICK_SECONDS.powi(2) + 0.000_001
+        );
+        let (repeated, _) = additive_look_rotation(raised, Some(state), 41, requested);
+        assert!(raised.angle_between(repeated) <= 0.000_001);
+
+        let mut offset = Quat::IDENTITY;
+        let mut velocity = Vec3::ZERO;
+        let mut previous_error = look_offset_error_angle(offset, requested);
+        for _ in 0..64 {
+            (offset, velocity) =
+                advance_look_offset(offset, velocity, requested, PRESENTATION_TICK_SECONDS);
+            let error = look_offset_error_angle(offset, requested);
+            assert!(error <= previous_error + 0.000_001);
+            assert!(velocity.length() <= MAXIMUM_LOOK_OFFSET_VELOCITY + 0.000_001);
+            previous_error = error;
+        }
+        assert!(look_offset_error_angle(offset, requested) < 0.001);
+    }
+
+    #[test]
+    fn look_tracker_never_accepts_a_tangential_step_that_increases_error() {
+        let current = Quat::from_rotation_y(0.2);
+        let target = Quat::from_rotation_y(0.21);
+        let (candidate, _) = advance_look_offset(
+            current,
+            Vec3::X * MAXIMUM_LOOK_OFFSET_VELOCITY,
+            target,
+            PRESENTATION_TICK_SECONDS,
+        );
+        assert!(
+            look_offset_error_angle(candidate, target) <= look_offset_error_angle(current, target)
+        );
     }
 
     #[test]

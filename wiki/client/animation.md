@@ -702,7 +702,92 @@ lean, landing compression, contact identity, landing identity, and fixed tick;
 those signals locate suspect frames but do not replace review of the rendered
 mesh. The manifest records baked clip count and bytes, sampled-pose count, and
 the final culled character count so representative CPU and memory measurements
-use the same fixture. For steady height scenarios, every complete cycle after
+use the same fixture.
+
+The manifest also records joint-jitter diagnostics at two local-pose seams:
+after authored FK and bind restoration, before procedural adjustment; and after
+the final gameplay presentation passes. The viewer uses its deterministic 64 Hz
+tick; live diagnostics use a monotonic 64 Hz accumulator and the actual elapsed
+interval between retained samples. Parent-local quaternion changes use a
+shortest-hemisphere quaternion logarithm expressed in the stable parent frame
+before deriving angular velocity, acceleration, and jerk; local joint-position
+acceleration and jerk are recorded alongside them. A reported spike must exceed
+both its typed physical threshold and a relative threshold based on the
+preceding sample plus a noise floor. The report names the worst joint, metric
+class, and surrounding frame window. A near-zero denominator is therefore never
+evidence by itself. Derivatives become valid in order: two poses establish
+velocity, two valid velocities establish acceleration, and two valid
+accelerations establish jerk. Tick gaps reset that chain. Reports are retained
+per character, and histories for absent bones and despawned characters are
+pruned. The raw sensitivity report retains every incident. Validation attributes
+those incidents by exact joint and derivative; windows crossing a traversal
+boundary derive their source and destination from the available causative
+derivative samples, rather than the later review-only frames, and retain both
+routes in a machine-readable histogram. Clean authored motion and the documented
+action, posture-transition, and dive envelopes accept a final-seam incident only
+when one unmatched authored incident on that joint and derivative occurs within
+two frames and the final value does not exceed it plus the derivative's existing
+noise floor. Procedural guard legs and landing accept no threshold incident.
+Focused captures have no traversal-route calibration and continue to reject
+every final-seam incident. This separates calibrated authored motion from
+presentation-amplified spikes without changing diagnostic thresholds. Per-owner
+incident detail is bounded; truncation itself fails validation instead of
+silently weakening the histogram.
+
+`state-machine-traversal` is one continuous, retained-state viewer scenario. The
+viewer's `--diagnostics-only` option evaluates the same three camera passes for
+every fixed-tick pose and writes the manifest without PNGs or the HTML review
+page. It is an iteration aid, not a visual-regression artifact; the normal mode
+remains required for visual acceptance. Typed commands begin its actions and
+posture transitions rather than rebuilding the skeleton for each pose. Its
+machine-readable route table covers upright start/stop/turn and walk/run states,
+crouch, airborne landing, planted and all eight directions of raised-guard
+movement, guard acceleration/reversal/release, quickstep, attacks and blocks on
+either support side, prone and supine movement sectors, rolls and get-ups, and
+four directional dive impact/recovery paths. Routes are marked exercised only
+after the captured presentation satisfies the route's body, action, guard,
+transition, and semantic predicates. Missing any assessable route fails the
+capture. The traversal changes downed contact only through authored roll/get-up
+transitions or the live camera-sector state machine; it does not force a body
+mode between routes. Each dive starts from an upright state reached through the
+same retained get-up path. Camera-owned downed rolls use the live
+1/84-half-turn-per-frame limit and settle at each sector. Guard direction
+changes use short acceleration and release intervals instead of zero-duration
+changes between planned octants, and guard is raised and settled before
+quickstep begins. Ragdoll is explicitly `unassessable` in that table because the
+authored fixture disables physics simulation; the physics-owned state is not
+represented as an authored pose. Presentation does not apply a generic post-pose
+joint filter: the first implementation increased final-seam torso incidents and
+was removed. Guard step, stationary pivot, and quickstep-release targets instead
+pass through a retained third-order tracker whose control input is bounded jerk
+and target error, with finite velocity and acceleration limits before the
+two-bone solve. The knee-facing cone preserves an identity region around the
+authored direction, then uses a smooth shoulder below the same hard anatomical
+bound. Guard look and quickstep directional look use a bounded critically damped
+angular tracker instead of applying their distributed neck offsets atomically.
+Quickstep takeoff begins from the preceding rendered foot endpoints and hands
+its reach-clamped analytic endpoints back to guard presentation. Terrain and
+anatomical IK ramp ownership after a get-up, including when the first observed
+pose was already downed, rather than snapping on when the authored transition
+clears, and locomotion body response releases over bounded samples when a dive,
+downed transition, or get-up takes ownership. Guard release retains the raised
+foot targets and displayed pelvis offset through a bounded solve until both
+ordinary authored feet converge, while its binary lower-body mirror remains
+fixed until the next authored contact. Authored downed posture transitions
+receive a short retained-foot release when procedural IK actually owned the
+preceding pose; zero-weight ordinary IK performs no solve. Their authored spans
+use quintic half-span timing so the middle anchor has continuous velocity and
+acceleration. Solved pelvis, leg, foot, toe, hand, and weapon transforms are
+never modified afterward. The traversal manifest selects a separate validation
+profile because one aggregate contains upright gait, guard, airborne, prone,
+supine, roll, and dive poses. It retains finite-output, artifact, distinct-view,
+route-observation, final-jitter, broad discontinuity, analytic-knee orientation,
+and dive-axis gates. Upright-only sole clearance, fixed-support, cadence, and
+foot-track metrics remain enforced by their focused scenarios rather than being
+applied to the mixed traversal aggregate. Run it with
+`just animation-preview state-machine-traversal target/animation-captures/state-machine-traversal`.
+
+For steady height scenarios, every complete cycle after
 warmup must contain exactly two prominent peaks in the phase 0.25 and 0.75
 passing windows. A 0.003 m prominence threshold filters sampling jitter while
 still rejecting an extra visible beat. The steady terrain run additionally

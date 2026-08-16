@@ -35,6 +35,10 @@ struct Args {
     /// Capture only one named scenario (for example `steady-walk-2.0`).
     #[arg(long)]
     scenario: Option<String>,
+
+    /// Evaluate every pose/view and write diagnostics without PNG or HTML output.
+    #[arg(long)]
+    diagnostics_only: bool,
 }
 
 fn main() {
@@ -51,6 +55,7 @@ fn main() {
         asset_root,
         args.frames_per_sample.max(1),
         args.scenario.as_deref(),
+        args.diagnostics_only,
     );
     if let bevy::app::AppExit::Error(code) = exit {
         std::process::exit(code.get() as i32);

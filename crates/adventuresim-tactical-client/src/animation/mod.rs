@@ -29,11 +29,13 @@ const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
 
 mod diagnostics;
 use diagnostics::log_animation_diagnostics;
+pub(crate) mod jitter;
 #[cfg(not(target_family = "wasm"))]
 #[allow(unused_imports)] // Gameplay diagnostics consume these; the viewer target does not.
 pub(crate) use diagnostics::{
     AnimationDiagnosticLog, DiagnosticInputStatus, RenderScheduleTelemetry,
 };
+pub(crate) use jitter::JointJitterDiagnostics;
 pub(crate) mod semantic_route;
 
 fn animation_asset_path(path: &str) -> String {
@@ -122,6 +124,7 @@ pub(super) struct AnimationPlayback {
     pub(super) foot_ik_weights: Vec2,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
+    mirror_handoff_contact_sequence: Option<u64>,
 }
 
 impl AnimationPlayback {
@@ -144,6 +147,7 @@ impl Default for AnimationPlayback {
             foot_ik_weights: Vec2::ZERO,
             weapon_guard: WeaponGuardState::Lowered,
             ordinary_locomotion_active: false,
+            mirror_handoff_contact_sequence: None,
         }
     }
 }
@@ -271,9 +275,17 @@ fn evaluate_skeletons(
             };
             let ordinary_locomotion_active =
                 ordinary_locomotion_candidate && skeleton.animation_speed() > locomotion_threshold;
-            playback.weapon_guard = skeleton.weapon_guard();
+            let guard_released = playback.weapon_guard == WeaponGuardState::Raised
+                && skeleton.weapon_guard() == WeaponGuardState::Lowered;
             playback.ordinary_locomotion_active = ordinary_locomotion_active;
-            apply_playback_pose(&mut playback, target);
+            apply_playback_pose(
+                &mut playback,
+                target,
+                guard_released,
+                skeleton.contact_sequence,
+                ordinary_locomotion_candidate,
+            );
+            playback.weapon_guard = skeleton.weapon_guard();
         } else {
             let ordinary_locomotion_active =
                 ordinary_locomotion_candidate && skeleton.animation_speed() > 0.05;
@@ -284,6 +296,7 @@ fn evaluate_skeletons(
                 foot_ik_weights: target.foot_ik_weights,
                 weapon_guard: skeleton.weapon_guard(),
                 ordinary_locomotion_active,
+                mirror_handoff_contact_sequence: None,
             });
         }
     }
@@ -297,10 +310,30 @@ fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
             || skeleton.downed_turning())
 }
 
-fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
+fn apply_playback_pose(
+    playback: &mut AnimationPlayback,
+    pose: PlaybackPose,
+    guard_released: bool,
+    contact_sequence: u64,
+    mirror_handoff_is_owned: bool,
+) {
     playback.clips = pose.clips;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
-    playback.whole_body_mirror = pose.whole_body_mirror;
+    if guard_released && mirror_handoff_is_owned {
+        playback.whole_body_mirror = (playback.whole_body_mirror >= 0.5) as u8 as f32;
+        playback.mirror_handoff_contact_sequence = Some(contact_sequence);
+    } else if mirror_handoff_is_owned
+        && playback
+            .mirror_handoff_contact_sequence
+            .is_some_and(|release_sequence| release_sequence == contact_sequence)
+    {
+        // Mirroring is a discrete lower-body ownership choice. Retain guard
+        // parity until the next authored contact rather than swapping every
+        // left/right bone at the release frame.
+    } else {
+        playback.whole_body_mirror = pose.whole_body_mirror;
+        playback.mirror_handoff_contact_sequence = None;
+    }
     playback.foot_ik_weights = pose.foot_ik_weights;
 }
 
@@ -753,6 +786,47 @@ mod contract_tests {
             root.poses[&SemanticPose::AttackSwingFollow].motion,
             "swing_follow"
         );
+    }
+
+    #[test]
+    fn guard_release_retains_binary_mirror_until_the_next_contact() {
+        let mut playback = AnimationPlayback {
+            whole_body_mirror: 0.8,
+            weapon_guard: WeaponGuardState::Raised,
+            ..default()
+        };
+        let target = || PlaybackPose {
+            clips: Vec::new(),
+            use_authored_bind_pose: false,
+            whole_body_mirror: 0.0,
+            foot_ik_weights: Vec2::ZERO,
+        };
+        apply_playback_pose(&mut playback, target(), true, 7, true);
+        assert_eq!(playback.whole_body_mirror, 1.0);
+        apply_playback_pose(&mut playback, target(), false, 7, true);
+        assert_eq!(playback.whole_body_mirror, 1.0);
+        apply_playback_pose(&mut playback, target(), false, 8, true);
+        assert_eq!(playback.whole_body_mirror, 0.0);
+    }
+
+    #[test]
+    fn guard_release_mirror_handoff_cannot_escape_ordinary_locomotion() {
+        let mut playback = AnimationPlayback {
+            whole_body_mirror: 1.0,
+            mirror_handoff_contact_sequence: Some(7),
+            ..default()
+        };
+        let target = PlaybackPose {
+            clips: Vec::new(),
+            use_authored_bind_pose: false,
+            whole_body_mirror: 0.0,
+            foot_ik_weights: Vec2::ZERO,
+        };
+
+        apply_playback_pose(&mut playback, target, false, 7, false);
+
+        assert_eq!(playback.whole_body_mirror, 0.0);
+        assert_eq!(playback.mirror_handoff_contact_sequence, None);
     }
 }
 

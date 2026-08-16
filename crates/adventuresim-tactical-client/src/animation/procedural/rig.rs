@@ -122,6 +122,45 @@ impl BoneRole {
         self as usize
     }
 
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Root => "root",
+            Self::Pelvis => "pelvis",
+            Self::StomachOne => "stomach_01",
+            Self::StomachTwo => "stomach_02",
+            Self::Chest => "chest",
+            Self::NeckOne => "neck_01",
+            Self::NeckTwo => "neck_02",
+            Self::Head => "head",
+            Self::ClavicleLeft => "clavicle_left",
+            Self::ClavicleRight => "clavicle_right",
+            Self::ThighLeft => "left_hip",
+            Self::ThighTwistLeft => "left_thigh_twist",
+            Self::ShinLeft => "left_knee",
+            Self::ShinTwistLeft => "left_shin_twist",
+            Self::FootLeft => "left_foot",
+            Self::ToeLeft => "left_toe",
+            Self::ThighRight => "right_hip",
+            Self::ThighTwistRight => "right_thigh_twist",
+            Self::ShinRight => "right_knee",
+            Self::ShinTwistRight => "right_shin_twist",
+            Self::FootRight => "right_foot",
+            Self::ToeRight => "right_toe",
+            Self::UpperArmLeft => "left_shoulder",
+            Self::UpperArmTwistLeft => "left_upper_arm_twist",
+            Self::ForearmLeft => "left_elbow",
+            Self::ForearmTwistLeft => "left_forearm_twist",
+            Self::HandLeft => "left_hand",
+            Self::WeaponLeft => "left_weapon",
+            Self::UpperArmRight => "right_shoulder",
+            Self::UpperArmTwistRight => "right_upper_arm_twist",
+            Self::ForearmRight => "right_elbow",
+            Self::ForearmTwistRight => "right_forearm_twist",
+            Self::HandRight => "right_hand",
+            Self::WeaponRight => "right_weapon",
+        }
+    }
+
     pub(super) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "root" => Self::Root,

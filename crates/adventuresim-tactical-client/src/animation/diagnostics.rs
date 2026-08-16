@@ -91,9 +91,11 @@ pub(super) fn log_animation_diagnostics(
     mut log: Option<ResMut<AnimationDiagnosticLog>>,
     input: Option<Res<DiagnosticInputStatus>>,
     render_schedule: Option<Res<RenderScheduleTelemetry>>,
+    jitter_diagnostics: Option<Res<JointJitterDiagnostics>>,
     terrains: Query<&SceneTerrain>,
     players: Query<
         (
+            Entity,
             &Transform,
             &GlobalTransform,
             Option<&Rotation>,
@@ -121,6 +123,7 @@ pub(super) fn log_animation_diagnostics(
         .unwrap_or_default();
     let terrain = terrains.iter().next();
     for (
+        entity,
         transform,
         global_transform,
         physics_rotation,
@@ -184,6 +187,9 @@ pub(super) fn log_animation_diagnostics(
                 "ordinary_locomotion_active": playback.ordinary_locomotion_active,
                 "clips": clips,
             },
+            "joint_jitter": jitter_diagnostics
+                .as_deref()
+                .map(|diagnostics| diagnostics.report_for_owner(entity)),
         }));
     }
 }

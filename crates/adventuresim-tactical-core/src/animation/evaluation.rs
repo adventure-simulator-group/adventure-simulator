@@ -143,9 +143,9 @@ fn posture_transition_samples(state: &SkeletonState) -> Option<Vec<PoseSample>> 
     };
     let phase = transition.phase().clamp(0.0, 1.0);
     let (pose, next, progress) = if phase < 0.5 {
-        (start, middle, phase * 2.0)
+        (start, middle, smootherstep01(phase * 2.0))
     } else {
-        (middle, end, (phase - 0.5) * 2.0)
+        (middle, end, smootherstep01((phase - 0.5) * 2.0))
     };
     Some(vec![PoseSample {
         pose,
@@ -414,6 +414,11 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
+fn smootherstep01(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * value * (value * (value * 6.0 - 15.0) + 10.0)
+}
+
 fn airborne_sample(horizontal_speed: f32) -> PoseSample {
     PoseSample {
         pose: SemanticPose::AirborneCenter,
@@ -507,6 +512,21 @@ fn attack_pose(state: &SkeletonState) -> SemanticPose {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn posture_transition_half_spans_arrive_with_zero_velocity_and_acceleration() {
+        let h = 1.0 / 64.0;
+        let end = smootherstep01(1.0);
+        let end_velocity = (end - smootherstep01(1.0 - h)) / h;
+        let end_acceleration =
+            (end - 2.0 * smootherstep01(1.0 - h) + smootherstep01(1.0 - 2.0 * h)) / (h * h);
+        let start_velocity = smootherstep01(h) / h;
+        let start_acceleration = (smootherstep01(2.0 * h) - 2.0 * smootherstep01(h)) / (h * h);
+        assert!(end_velocity.abs() < 0.01);
+        assert!(start_velocity.abs() < 0.01);
+        assert!(end_acceleration.abs() < 1.0);
+        assert!(start_acceleration.abs() < 1.0);
+    }
 
     #[test]
     fn dive_blends_from_guard_specific_duck_to_direction_only_airborne_pose() {

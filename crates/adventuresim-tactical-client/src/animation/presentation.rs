@@ -28,7 +28,7 @@ pub(crate) struct PresentedSkeleton {
 }
 
 impl PresentedSkeleton {
-    pub(super) fn new(state: SkeletonState, presentation_tick: Option<u64>) -> Self {
+    pub(crate) fn new(state: SkeletonState, presentation_tick: Option<u64>) -> Self {
         let source_tick = state.locomotion_sample_tick;
         Self {
             state,
@@ -253,6 +253,7 @@ impl Plugin for TacticalAnimationPlugin {
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
             .init_resource::<procedural::FixedTickPoseCache>()
+            .init_resource::<JointJitterDiagnostics>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
@@ -272,6 +273,7 @@ impl Plugin for TacticalAnimationPlugin {
                     log_animation_diagnostics,
                     tick_impact_reactions,
                     pose_buffer::update_pose_buffers,
+                    jitter::advance_jitter_diagnostic_clock,
                     update_rig_visibility,
                     emit_locomotion_presentation_events,
                     trace_locomotion_presentation_events,
@@ -283,6 +285,7 @@ impl Plugin for TacticalAnimationPlugin {
                 (
                     pose_buffer::apply_pose_buffers,
                     restore_authored_bind_pose,
+                    jitter::sample_authored_pose_jitter,
                     procedural::apply_pose_mirroring,
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_landing_leg_compression,
@@ -295,6 +298,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::apply_quickstep_ik,
                     procedural::enforce_anatomical_knee_yaw,
                     procedural::apply_arm_and_weapon_constraints,
+                    jitter::sample_final_pose_jitter,
                     procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()
