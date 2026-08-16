@@ -65,8 +65,8 @@ const PERFORMANCE_VIEW_HEIGHT: u32 = 1440;
 const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
-const CAPTURE_PROFILE_VERSION: u16 = 15;
-const CAMERA_VERSION: u16 = 9;
+const CAPTURE_PROFILE_VERSION: u16 = 19;
+const CAMERA_VERSION: u16 = 13;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
@@ -100,6 +100,7 @@ struct LightingObservationParams<'w, 's> {
     ambient_handoff: Res<'w, AtmosphereIblAmbientHandoff>,
     tree_trunks: Query<'w, 's, (), With<TreeTrunkLod>>,
     presented_tree_roots: Query<'w, 's, (), With<PresentedTree>>,
+    presented_tree_names: Query<'w, 's, &'static Name, With<PresentedTree>>,
     terrain: Query<'w, 's, &'static SceneTerrain>,
     litter_anchors: Query<'w, 's, &'static GroundLitterCaptureAnchors>,
     obstacle_transforms:
@@ -932,12 +933,37 @@ mod capture_lighting_tests {
     }
 
     #[test]
+    fn forced_tree_lod_comparison_views_share_the_lod0_projection() {
+        let canonical = CAPTURE_VIEWS
+            .iter()
+            .find(|spec| spec.slug == "tree-textured-leaf-lod")
+            .unwrap();
+        assert_eq!(canonical.pose, CapturePose::TreeReview);
+        for slug in [
+            "tree-leaf-card-lod",
+            "tree-twig-lod",
+            "tree-small-branch-lod",
+            "tree-crown-lod",
+            "tree-billboard-lod",
+        ] {
+            let spec = CAPTURE_VIEWS.iter().find(|spec| spec.slug == slug).unwrap();
+            // `camera_for_view` is a pure function of pose and capture state,
+            // so equal poses guarantee identical translation, target, and up.
+            assert_eq!(spec.pose, canonical.pose, "{slug} camera pose drifted");
+            assert_eq!(
+                spec.fov_degrees, canonical.fov_degrees,
+                "{slug} projection FOV drifted"
+            );
+        }
+    }
+
+    #[test]
     fn semantic_profile_records_lod_transition_controls() {
         let views = selected_capture_views("semantic", &[]).unwrap();
-        assert_eq!(views.len(), 29);
+        assert_eq!(views.len(), 32);
         assert_eq!(
             views.iter().filter(|view| view.slug != "warmup").count(),
-            28
+            31
         );
         assert!(
             views
@@ -972,6 +998,24 @@ mod capture_lighting_tests {
         assert!((1.69..1.71).contains(&effective_scales[0]));
         assert!((1.63..1.65).contains(&effective_scales[1]));
         assert!((1.57..1.59).contains(&effective_scales[2]));
+    }
+
+    #[test]
+    fn semantic_profile_isolates_each_supported_understory_species() {
+        let views = selected_capture_views("semantic", &[]).unwrap();
+        let expected = [
+            ("understory-common-hazel", "common hazel"),
+            ("understory-blackthorn", "blackthorn"),
+            ("understory-common-hawthorn", "common hawthorn"),
+        ];
+        for (slug, common_name) in expected {
+            let view = views.iter().find(|view| view.slug == slug).unwrap();
+            assert_eq!(view.pose, CapturePose::UnderstoryReview);
+            assert_eq!(view.understory_species, Some(common_name));
+            assert_eq!(view.detail_requirement, DetailRequirement::UnderstoryFocus);
+            assert!(view.hide_obstacles);
+            assert!(view.show_tree_backdrop);
+        }
     }
 
     #[test]
@@ -2526,7 +2570,7 @@ fn capture_views(
                 With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
             )>,
         >,
-        Query<(Entity, &GroundScatterLayer, &GlobalTransform), Without<Camera3d>>,
+        Query<(Entity, &GroundScatterLayer, &GlobalTransform, &Name), Without<Camera3d>>,
         Query<(), With<WeatherParticle>>,
         Query<
             &mut Visibility,
@@ -2590,8 +2634,30 @@ fn capture_views(
         let ground_scatter_entities = scene_visibility
             .p5()
             .iter()
-            .map(|(entity, layer, transform)| (entity, *layer, transform.translation()))
+            .map(|(entity, layer, transform, name)| {
+                (
+                    entity,
+                    *layer,
+                    transform.translation(),
+                    name.as_str().to_owned(),
+                )
+            })
             .collect::<Vec<_>>();
+        let understory_focus = view.understory_species.and_then(|common_name| {
+            ground_scatter_entities
+                .iter()
+                .filter(|(_, layer, _, name)| {
+                    *layer == GroundScatterLayer::Understory
+                        && name == &format!("Shared {common_name} shrub wood")
+                })
+                .min_by(|left, right| {
+                    left.2
+                        .xz()
+                        .length_squared()
+                        .total_cmp(&right.2.xz().length_squared())
+                })
+                .map(|(_, _, position, _)| *position)
+        });
         if view.debris_target {
             let pairs = lighting
                 .litter_anchors
@@ -2627,10 +2693,24 @@ fn capture_views(
                 state.debris_twig_distance_metres = None;
             }
         }
-        for (entity, layer, _) in ground_scatter_entities {
-            let hide_for_view =
-                (layer == GroundScatterLayer::Grass && suppress_grass) || view.hide_obstacles;
-            if layer == GroundScatterLayer::Grass || view.hide_obstacles {
+        for (entity, layer, position, name) in ground_scatter_entities {
+            let isolated_understory_visible = view
+                .understory_species
+                .zip(understory_focus)
+                .is_some_and(|(common_name, focus)| {
+                    layer == GroundScatterLayer::Understory
+                        && name.starts_with(&format!("Shared {common_name} "))
+                        && position.distance_squared(focus) <= 0.0001
+                });
+            let hide_for_view = if view.understory_species.is_some() {
+                !isolated_understory_visible
+            } else {
+                (layer == GroundScatterLayer::Grass && suppress_grass) || view.hide_obstacles
+            };
+            if layer == GroundScatterLayer::Grass
+                || view.hide_obstacles
+                || view.understory_species.is_some()
+            {
                 commands.entity(entity).insert(if hide_for_view {
                     Visibility::Hidden
                 } else {
@@ -2646,11 +2726,13 @@ fn capture_views(
             };
         }
         if let Some(entity) = state.tree_focus_entity {
-            commands.entity(entity).insert(if specimen_view {
-                Visibility::Hidden
-            } else {
-                Visibility::Visible
-            });
+            commands
+                .entity(entity)
+                .insert(if specimen_view || view.hide_obstacles {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Visible
+                });
         }
         for &entity in &state.tree_review_entities {
             commands
@@ -2686,6 +2768,67 @@ fn capture_views(
                 player_z,
                 yaw_degrees,
             ),
+            CapturePose::UnderstoryReview => {
+                let focus = understory_focus.unwrap_or(state.obstacle_focus);
+                let azimuth = state.tree_review_azimuth_degrees.to_radians();
+                let target = focus + Vec3::Y * 1.35;
+                let position = focus + Vec3::new(azimuth.sin() * 5.5, 1.9, azimuth.cos() * 5.5);
+                (
+                    Transform::from_translation(position).looking_at(target, Vec3::Y),
+                    target,
+                    None,
+                )
+            }
+            CapturePose::TreeReview => {
+                let tree = state.tree_focus.unwrap_or(state.obstacle_focus);
+                let species = state
+                    .tree_focus_entity
+                    .and_then(|entity| lighting.presented_tree_names.get(entity).ok())
+                    .map(Name::as_str)
+                    .unwrap_or_default();
+                let azimuth = state.tree_review_azimuth_degrees.to_radians();
+                let (radius, camera_height, target_height) = if species.ends_with("common beech") {
+                    (30.0, 10.0, 8.0)
+                } else {
+                    (18.0, 6.0, 4.5)
+                };
+                let target = tree + Vec3::Y * target_height;
+                let position = tree
+                    + Vec3::new(
+                        azimuth.sin() * radius,
+                        camera_height,
+                        azimuth.cos() * radius,
+                    );
+                (
+                    Transform::from_translation(position).looking_at(target, Vec3::Y),
+                    target,
+                    None,
+                )
+            }
+            CapturePose::BranchJunction => {
+                let tree = state.tree_focus.unwrap_or(state.obstacle_focus);
+                let species = state
+                    .tree_focus_entity
+                    .and_then(|entity| lighting.presented_tree_names.get(entity).ok())
+                    .map(Name::as_str)
+                    .unwrap_or_default();
+                let azimuth = state.tree_review_azimuth_degrees.to_radians();
+                let (height, radius, camera_lift) = if species.ends_with("common beech") {
+                    // Closed-canopy beech carries its first live scaffold limbs
+                    // well above the oak junction sampled by the old camera.
+                    (4.5, 8.0, 2.0)
+                } else {
+                    (0.8, 6.0, 1.4)
+                };
+                let target = tree + Vec3::Y * height;
+                let position =
+                    target + Vec3::new(azimuth.sin() * radius, camera_lift, azimuth.cos() * radius);
+                (
+                    Transform::from_translation(position).looking_at(target, Vec3::Y),
+                    target,
+                    None,
+                )
+            }
             _ => {
                 let (transform, target) = camera_for_view(view.pose, state);
                 (transform, target, None)
@@ -2769,6 +2912,14 @@ fn capture_views(
                 canopy_pixel_bps: 0,
                 forced_tree_lod: tree_lod_override.lod,
                 focused_tree_lod_queued: None,
+                focused_tree_species: state
+                    .tree_focus_entity
+                    .and_then(|entity| lighting.presented_tree_names.get(entity).ok())
+                    .and_then(|name| name.as_str().strip_prefix("Presented mature "))
+                    .map(str::to_owned),
+                focused_understory_species: understory_focus
+                    .and(view.understory_species)
+                    .map(str::to_owned),
                 diagnostic_leaf_suppression: suppress_leaves,
                 diagnostic_grass_suppression: suppress_grass,
                 debris_leaf_distance_metres: view
@@ -3024,10 +3175,13 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 let azimuth = state.tree_review_azimuth_degrees.to_radians();
-                let radius = 15.0 * core::f32::consts::SQRT_2;
+                // Frame both current mature-tree presentations, including the
+                // taller closed-canopy beech. The previous 21.2 m radius and
+                // 4.5 m target cropped its crown at every review azimuth.
+                let radius = 30.0;
                 (
-                    tree + Vec3::new(azimuth.sin() * radius, 7.0, azimuth.cos() * radius),
-                    tree + Vec3::new(0.0, 4.5, 0.0),
+                    tree + Vec3::new(azimuth.sin() * radius, 10.0, azimuth.cos() * radius),
+                    tree + Vec3::new(0.0, 8.0, 0.0),
                     Vec3::Y,
                 )
             },
@@ -3131,6 +3285,9 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
                 )
             },
         ),
+        CapturePose::UnderstoryReview => {
+            unreachable!("understory review requires the live production ground-scatter query")
+        }
         CapturePose::TreeLod { distance } => tree_lod_camera(state, distance),
         CapturePose::Overhead => (
             state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
@@ -3551,6 +3708,9 @@ fn build_manifest(
                         && dry_leaf_patches > 0
                         && twig_patches > 0
                 }
+                DetailRequirement::UnderstoryFocus => record
+                    .and_then(|capture| capture.focused_understory_species.as_deref())
+                    .is_some(),
                 DetailRequirement::None => true,
             }
         }),

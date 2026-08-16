@@ -37,6 +37,7 @@ pub(super) enum CapturePose {
     Debris,
     GroundCover,
     LeafSpecimen,
+    UnderstoryReview,
     TreeLod {
         distance: f32,
     },
@@ -55,6 +56,7 @@ pub(super) enum DetailRequirement {
     GrassSuppressed,
     GrassPresent,
     DebrisPair,
+    UnderstoryFocus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -70,6 +72,7 @@ pub(super) struct CaptureViewSpec {
     pub leaf_lod_override: Option<TreeLeafRepresentation>,
     pub projected_scale: Option<f32>,
     pub specimen_leaf: Option<TreeLeafRepresentation>,
+    pub understory_species: Option<&'static str>,
     pub suppress_leaves: bool,
     pub suppress_grass: bool,
     pub vista_visible: bool,
@@ -102,6 +105,7 @@ impl CaptureViewSpec {
             leaf_lod_override: None,
             projected_scale: None,
             specimen_leaf: None,
+            understory_species: None,
             suppress_leaves: false,
             suppress_grass: false,
             vista_visible: false,
@@ -140,6 +144,10 @@ impl CaptureViewSpec {
     }
     pub const fn specimen(mut self, value: TreeLeafRepresentation) -> Self {
         self.specimen_leaf = Some(value);
+        self
+    }
+    pub const fn understory(mut self, common_name: &'static str) -> Self {
+        self.understory_species = Some(common_name);
         self
     }
     pub const fn suppress_leaves(mut self) -> Self {
@@ -186,7 +194,7 @@ macro_rules! v {
     };
 }
 
-pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 29] = [
+pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
     v!(
         "warmup",
         "Render-pipeline warmup",
@@ -270,7 +278,7 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 29] = [
         "Eight-triangle cambered PBR terminal-shoot close-up",
         CapturePose::LeafSpecimen,
         30.0,
-        1000
+        600
     )
     .specimen(TreeLeafRepresentation::TexturedMesh),
     v!(
@@ -278,7 +286,7 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 29] = [
         "Two-triangle textured terminal-shoot close-up",
         CapturePose::LeafSpecimen,
         30.0,
-        1000
+        600
     )
     .specimen(TreeLeafRepresentation::AlphaCard),
     v!(
@@ -326,36 +334,36 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 29] = [
     v!(
         "tree-twig-lod",
         "Leafed-twig tree LOD view",
-        CapturePose::TreeLod { distance: 30.0 },
-        30.0,
-        200
+        CapturePose::TreeReview,
+        48.0,
+        1000
     )
     .render_lod(1)
     .validated_lod(1),
     v!(
         "tree-small-branch-lod",
         "Small-branch tree LOD view",
-        CapturePose::TreeLod { distance: 48.0 },
-        19.0,
-        200
+        CapturePose::TreeReview,
+        48.0,
+        1000
     )
     .render_lod(2)
     .validated_lod(2),
     v!(
         "tree-crown-lod",
         "Crown-branch tree LOD view",
-        CapturePose::TreeLod { distance: 72.0 },
-        13.0,
-        200
+        CapturePose::TreeReview,
+        48.0,
+        1000
     )
     .render_lod(3)
     .validated_lod(3),
     v!(
         "tree-billboard-lod",
         "Whole-tree billboard LOD view",
-        CapturePose::TreeLod { distance: 118.0 },
-        8.0,
-        200
+        CapturePose::TreeReview,
+        48.0,
+        1000
     )
     .render_lod(4)
     .validated_lod(4),
@@ -401,6 +409,39 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 29] = [
         200
     )
     .scale(TREE_BILLBOARD_TRANSITION_SCALES[2]),
+    v!(
+        "understory-common-hazel",
+        "Isolated common hazel review",
+        CapturePose::UnderstoryReview,
+        38.0,
+        100
+    )
+    .understory("common hazel")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus),
+    v!(
+        "understory-blackthorn",
+        "Isolated blackthorn review",
+        CapturePose::UnderstoryReview,
+        38.0,
+        100
+    )
+    .understory("blackthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus),
+    v!(
+        "understory-common-hawthorn",
+        "Isolated common hawthorn review",
+        CapturePose::UnderstoryReview,
+        38.0,
+        100
+    )
+    .understory("common hawthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus),
     v!(
         "beauty-overhead",
         "Overhead distribution view",

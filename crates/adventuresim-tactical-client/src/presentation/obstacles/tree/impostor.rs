@@ -7,10 +7,10 @@ use raster::*;
 use super::super::super::*;
 use super::geometry::*;
 
-pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 9;
+pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 14;
 pub(in crate::presentation) const TREE_IMPOSTOR_RENDER_METHOD: &str =
-    "deterministic software triangle render with coverage-preserving leaf proxies";
-const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 0.95;
+    "deterministic software triangle render with species-calibrated crown coverage";
+const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 1.0;
 const WHOLE_TREE_BAKE_EXPOSURE: f32 = 0.91;
 
 #[derive(Component, Clone, Debug)]
@@ -56,12 +56,56 @@ pub(in crate::presentation) struct TreeBakeStyle {
     pub(in crate::presentation) bark_srgb: [f32; 3],
     pub(in crate::presentation) leaf_srgb: [f32; 3],
     pub(in crate::presentation) crown_radius_metres: f32,
+    /// Sampling strides for aggregate LODs 1 through 4. Keeping this in the
+    /// species style prevents one leaf-cluster topology from defining every
+    /// crown's bake density.
+    pub(in crate::presentation) aggregate_leaf_strides: [u8; 4],
+    /// Linear proxy scales for aggregate LODs 1 through 4. These are
+    /// calibrated together with the strides so projected crown occupancy,
+    /// rather than raw retained-leaf count, stays close to the source.
+    pub(in crate::presentation) aggregate_leaf_scales: [f32; 4],
+    /// Oak's low lateral scaffolds need world-vertical near cards so their
+    /// projected crown does not rotate downward around each shoot axis.
+    pub(in crate::presentation) lod1_world_vertical: bool,
+    /// A small horizontal-only runtime correction preserves the outer crown
+    /// envelope after source depth is flattened into the near card.
+    pub(in crate::presentation) lod1_runtime_width_scale: f32,
+}
+
+impl TreeBakeStyle {
+    fn aggregate_leaf_recipe(self, lod: u8) -> (usize, f32) {
+        let index = usize::from(lod.saturating_sub(1)).min(3);
+        (
+            usize::from(self.aggregate_leaf_strides[index]).max(1),
+            self.aggregate_leaf_scales[index].max(0.01),
+        )
+    }
 }
 
 pub(in crate::presentation) const OAK_TREE_BAKE_STYLE: TreeBakeStyle = TreeBakeStyle {
     bark_srgb: [116.0, 103.0, 82.0],
     leaf_srgb: super::materials::OAK_LEAF_IMPOSTOR_BASE_SRGB,
     crown_radius_metres: ENGLISH_OAK_PARAMETERS.crown_radius_metres,
+    aggregate_leaf_strides: [3, 4, 8, 16],
+    // Oak's terminal flushes contain many small leaves. Square-root area
+    // replacement made their overlapping coarse proxies nearly solid, so the
+    // scale falls progressively below pure area preservation.
+    aggregate_leaf_scales: [1.0, 1.72, 2.16, 2.65],
+    lod1_world_vertical: true,
+    lod1_runtime_width_scale: 1.10,
+};
+
+pub(in crate::presentation) const BEECH_TREE_BAKE_STYLE: TreeBakeStyle = TreeBakeStyle {
+    bark_srgb: [145.0, 145.0, 135.0],
+    leaf_srgb: [91.0, 119.0, 70.0],
+    crown_radius_metres: COMMON_BEECH_PARAMETERS.crown_radius_metres,
+    // Beech uses sparse eight-leaf spray proxies. Retaining multiple smaller
+    // representatives per spray preserves its tall, continuous crown instead
+    // of enlarging a few horizontal leaves into disconnected shelves.
+    aggregate_leaf_strides: [2, 3, 4, 4],
+    aggregate_leaf_scales: [1.05, 1.90, 2.25, 2.45],
+    lod1_world_vertical: false,
+    lod1_runtime_width_scale: 1.0,
 };
 
 pub(in crate::presentation) fn validate_tree_bake_provenance(provenance: &TreeImpostorProvenance) {
@@ -142,7 +186,7 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
     style: TreeBakeStyle,
 ) -> TreeLodBake {
     let started = std::time::Instant::now();
-    let cards = tree_bake_cards(seed, branches, leaves, lod);
+    let cards = tree_bake_cards_with_style(seed, branches, leaves, lod, style);
     let tile_size = match lod {
         1 => 96,
         2 => 144,
@@ -204,10 +248,10 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
                 card.right,
                 card.up,
                 card.width
-                    * if lod == 4 {
-                        WHOLE_TREE_RUNTIME_WIDTH_SCALE
-                    } else {
-                        1.0
+                    * match lod {
+                        1 => style.lod1_runtime_width_scale,
+                        4 => WHOLE_TREE_RUNTIME_WIDTH_SCALE,
+                        _ => 1.0,
                     },
                 card.height,
                 mesh_uv_min,
@@ -382,6 +426,16 @@ pub(in crate::presentation) fn tree_bake_cards(
     leaves: &[TreeLeaf],
     lod: u8,
 ) -> Vec<TreeBakeCard> {
+    tree_bake_cards_with_style(seed, branches, leaves, lod, OAK_TREE_BAKE_STYLE)
+}
+
+fn tree_bake_cards_with_style(
+    seed: u64,
+    branches: &[TreeBranchSegment],
+    leaves: &[TreeLeaf],
+    lod: u8,
+    style: TreeBakeStyle,
+) -> Vec<TreeBakeCard> {
     let mut cards = Vec::new();
     match lod {
         1 => {
@@ -400,17 +454,40 @@ pub(in crate::presentation) fn tree_bake_cards(
                     })
                     .map(|branch| (branch.end - branch.start).normalize())
                     .unwrap_or(Vec3::Y);
-                let phase = unit_hash(splitmix64(seed ^ u64::from(group))) * core::f32::consts::TAU;
-                for facing in 0..3 {
-                    let angle = phase + facing as f32 * core::f32::consts::FRAC_PI_3;
+                // All aggregate tiers inherit the source primary-sector
+                // orientation. This prevents each LOD from rotating the same
+                // crown mass into a visibly different silhouette at handoff.
+                let (card_up, frame_right, rotation_axis) = if style.lod1_world_vertical {
+                    let horizontal_axis = Vec3::new(axis.x, 0.0, axis.z).normalize_or_zero();
+                    let frame_right = if horizontal_axis.length_squared() > 0.25 {
+                        horizontal_axis
+                    } else {
+                        Vec3::X
+                    };
+                    (Vec3::Y, frame_right, Vec3::Y)
+                } else {
+                    let frame_reference = if axis.y.abs() < 0.9 { Vec3::Y } else { Vec3::X };
+                    (axis, axis.cross(frame_reference).normalize(), axis)
+                };
+                let phase =
+                    unit_hash(splitmix64(seed ^ u64::from(group))) * core::f32::consts::FRAC_PI_2;
+                // Two perpendicular views preserve the shoot's spatial
+                // extent from any approach. A third view repeated the same
+                // foliage once more at the first aggregate handoff, closing
+                // oak's airy gaps and turning beech sprays into a dense mass.
+                for facing in 0..2 {
+                    let right = bevy::math::Quat::from_axis_angle(
+                        rotation_axis,
+                        phase + facing as f32 * core::f32::consts::FRAC_PI_2,
+                    ) * frame_right;
                     cards.push(fit_tree_bake_card(
                         branches,
                         leaves,
-                        Vec3::new(angle.cos(), 0.0, angle.sin()),
-                        axis,
+                        right,
+                        card_up,
                         0,
                         Some(group),
-                        group * 3 + facing,
+                        group * 2 + facing,
                         3,
                     ));
                 }
@@ -418,14 +495,17 @@ pub(in crate::presentation) fn tree_bake_cards(
         }
         2 => {
             for group in 0..TREE_PRIMARY_GROUP_COUNT {
-                let phase = unit_hash(splitmix64(seed ^ u64::from(group) ^ 0x4a17))
-                    * core::f32::consts::TAU;
+                let right = crown_group_right(branches, group);
                 for facing in 0..2 {
-                    let angle = phase + facing as f32 * core::f32::consts::FRAC_PI_2;
+                    let right = if facing == 0 {
+                        right
+                    } else {
+                        Vec3::Y.cross(right).normalize()
+                    };
                     cards.push(fit_tree_bake_card(
                         branches,
                         leaves,
-                        Vec3::new(angle.cos(), 0.0, angle.sin()),
+                        right,
                         Vec3::Y,
                         1 << group,
                         None,
@@ -437,13 +517,17 @@ pub(in crate::presentation) fn tree_bake_cards(
         }
         3 => {
             for group in 0..TREE_PRIMARY_GROUP_COUNT {
-                let phase = crown_group_phase(seed, group);
+                let right = crown_group_right(branches, group);
                 for facing in 0..2 {
-                    let angle = phase + facing as f32 * core::f32::consts::FRAC_PI_2;
+                    let right = if facing == 0 {
+                        right
+                    } else {
+                        Vec3::Y.cross(right).normalize()
+                    };
                     let mut card = fit_tree_bake_card(
                         branches,
                         leaves,
-                        Vec3::new(angle.cos(), 0.0, angle.sin()),
+                        right,
                         Vec3::Y,
                         1 << group,
                         None,
@@ -485,8 +569,25 @@ pub(in crate::presentation) fn tree_bake_cards(
     cards
 }
 
-pub(in crate::presentation) fn crown_group_phase(seed: u64, group: u8) -> f32 {
-    unit_hash(splitmix64(seed ^ u64::from(group) ^ 0x7c31)) * core::f32::consts::TAU
+fn crown_group_right(branches: &[TreeBranchSegment], group: u8) -> Vec3 {
+    branches
+        .iter()
+        .filter(|branch| branch.depth == 1 && branch.primary_group == group)
+        .max_by(|left, right| {
+            left.end
+                .xz()
+                .length_squared()
+                .total_cmp(&right.end.xz().length_squared())
+        })
+        .map(|branch| {
+            let horizontal = branch.end.xz().normalize_or_zero();
+            if horizontal.length_squared() > 0.25 {
+                Vec3::new(horizontal.x, 0.0, horizontal.y)
+            } else {
+                Vec3::X
+            }
+        })
+        .unwrap_or(Vec3::X)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -747,7 +848,7 @@ mod tests {
         assert_eq!(first.provenance.records.len(), 8);
         assert_eq!(first.provenance.bake_version, TREE_IMPOSTOR_BAKE_VERSION);
         assert_eq!(first.image.data, second.image.data);
-        assert!((WHOLE_TREE_RUNTIME_WIDTH_SCALE - 0.95).abs() < f32::EPSILON);
+        assert!((WHOLE_TREE_RUNTIME_WIDTH_SCALE - 1.0).abs() < f32::EPSILON);
         assert!((WHOLE_TREE_BAKE_EXPOSURE - 0.91).abs() < f32::EPSILON);
         assert_eq!(
             tree_impostor_material(42, 4, Handle::default()).alpha_mode(),
@@ -793,7 +894,7 @@ mod tests {
     fn tree_lods_collapse_one_botanical_order_at_a_time() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
-        let expected_cards = [348, 14, 14, 8];
+        let expected_cards = [210, 14, 14, 8];
         for (index, expected) in expected_cards.into_iter().enumerate() {
             assert_eq!(
                 tree_bake_cards(42, &branches, &leaves, index as u8 + 1).len(),
@@ -805,6 +906,33 @@ mod tests {
             .map(|depth| procedural_tree_branch_mesh(&branches, depth).count_vertices())
             .collect::<Vec<_>>();
         assert!(branch_vertices.windows(2).all(|pair| pair[0] > pair[1]));
+    }
+
+    #[test]
+    fn adjacent_aggregate_lods_keep_primary_crown_planes_aligned() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let small_branches = tree_bake_cards(42, &branches, &leaves, 2);
+        let crown_branches = tree_bake_cards(42, &branches, &leaves, 3);
+
+        for group in 0..TREE_PRIMARY_GROUP_COUNT {
+            let lower = small_branches
+                .iter()
+                .filter(|card| card.primary_mask == 1 << group)
+                .collect::<Vec<_>>();
+            let upper = crown_branches
+                .iter()
+                .filter(|card| card.primary_mask == 1 << group)
+                .collect::<Vec<_>>();
+            assert_eq!(lower.len(), 2);
+            assert_eq!(upper.len(), 2);
+            assert!(
+                lower
+                    .iter()
+                    .zip(upper)
+                    .all(|(a, b)| a.right.dot(b.right) > 0.999)
+            );
+        }
     }
 
     #[test]
