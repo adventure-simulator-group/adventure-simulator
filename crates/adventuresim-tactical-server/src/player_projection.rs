@@ -871,6 +871,14 @@ pub(crate) fn on_player_input(
         posture_intent.last_jump_sequence = validated.jump.sequence;
     }
     if combat_state.is_incapacitated() {
+        if skeleton.body() == BodyState::Ragdolled
+            && sequence_is_newer(
+                validated.posture.sequence,
+                posture_intent.last_command_sequence,
+            )
+        {
+            posture_intent.last_command_sequence = validated.posture.sequence;
+        }
         accumulated_input.last_movement = None;
         movement_intent.0 = None;
         accumulated_input.jumped = None;
@@ -889,6 +897,23 @@ pub(crate) fn on_player_input(
         "DEBUG on_player_input entity={entity:?} input.look={:?} validated.yaw={}",
         input.look, validated.yaw
     );
+    if skeleton.body() == BodyState::Ragdolled {
+        if sequence_is_newer(
+            validated.posture.sequence,
+            posture_intent.last_command_sequence,
+        ) {
+            posture_intent.last_command_sequence = validated.posture.sequence;
+        }
+        accumulated_input.last_movement = None;
+        movement_intent.0 = None;
+        accumulated_input.jumped = None;
+        accumulated_input.crouched = false;
+        posture_intent.crouch = false;
+        posture_intent.facing = CameraFacingIntent::Free;
+        posture_intent.quickstep_launch_tick = None;
+        skeleton.set_jump_anticipation(false);
+        return;
+    }
     look.yaw = validated.yaw;
     look.pitch = validated.pitch;
     accumulated_input.last_movement = validated.movement;
@@ -912,8 +937,9 @@ pub(crate) fn on_player_input(
             velocity.z = horizontal.z;
         }
     }
-    accumulated_input.crouched =
-        validated.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
+    accumulated_input.crouched = validated.crouch
+        || skeleton.body().downed_contact().is_some()
+        || skeleton.is_posture_transitioning();
     movement_intent.0 = validated.movement;
     posture_intent.crouch = validated.crouch;
     posture_intent.facing =
@@ -934,12 +960,17 @@ pub(crate) fn on_player_input(
                     && skeleton.body() == BodyState::Grounded(GroundedPosture::Upright) =>
             {
                 let start = skeleton.locomotion_sample_tick;
-                skeleton.begin_dodge(
-                    DodgeSpec { direction },
-                    start,
-                    start + QUICKSTEP_CONTACT_TICKS,
-                );
-                posture_intent.quickstep_launch_tick = Some(start + QUICKSTEP_PREPARATION_TICKS);
+                if skeleton
+                    .begin_dodge(
+                        DodgeSpec { direction },
+                        start,
+                        start + QUICKSTEP_CONTACT_TICKS,
+                    )
+                    .is_ok()
+                {
+                    posture_intent.quickstep_launch_tick =
+                        Some(start + QUICKSTEP_PREPARATION_TICKS);
+                }
                 false
             }
             Some(_) => false,
@@ -1138,9 +1169,9 @@ fn advance_downed_facing_for_camera(
 pub(crate) fn restore_authoritative_movement_intent(
     mut players: Query<
         (
-            &AuthoritativeMovementIntent,
+            &mut AuthoritativeMovementIntent,
             &SkeletonState,
-            &AuthoritativePostureIntent,
+            &mut AuthoritativePostureIntent,
             Option<&CharacterControllerState>,
             Option<&Transform>,
             &mut AccumulatedInput,
@@ -1148,22 +1179,39 @@ pub(crate) fn restore_authoritative_movement_intent(
         With<Player>,
     >,
 ) {
-    for (movement_intent, skeleton, posture, controller, transform, mut accumulated_input) in
-        &mut players
+    for (
+        mut movement_intent,
+        skeleton,
+        mut posture,
+        controller,
+        transform,
+        mut accumulated_input,
+    ) in &mut players
     {
+        if skeleton.body() == BodyState::Ragdolled {
+            movement_intent.0 = None;
+            posture.crouch = false;
+            posture.facing = CameraFacingIntent::Free;
+            posture.quickstep_launch_tick = None;
+            accumulated_input.last_movement = None;
+            accumulated_input.jumped = None;
+            accumulated_input.crouched = false;
+            continue;
+        }
         accumulated_input.last_movement = movement_intent.0;
+        let dodge_direction = skeleton.dodge_view().map(|(direction, _)| direction);
         if skeleton.action_kind() == SkeletonAction::Dodge
-            && skeleton.action_direction() != Vec2::ZERO
+            && dodge_direction.is_some_and(|direction| direction != Vec2::ZERO)
             && skeleton.quickstep_is_launched()
             && skeleton.body() == BodyState::Airborne
         {
-            accumulated_input.last_movement = Some(skeleton.action_direction());
+            accumulated_input.last_movement = dodge_direction;
         } else if skeleton.action_kind() == SkeletonAction::Dodge
-            && skeleton.action_direction() != Vec2::ZERO
+            && dodge_direction.is_some_and(|direction| direction != Vec2::ZERO)
         {
             accumulated_input.last_movement = None;
         }
-        if skeleton.body().is_downed()
+        if skeleton.body().downed_contact().is_some()
             && let (Some(controller), Some(transform), Some(movement)) =
                 (controller, transform, accumulated_input.last_movement)
         {
@@ -1177,8 +1225,9 @@ pub(crate) fn restore_authoritative_movement_intent(
         if skeleton.body() == BodyState::Prone && posture.facing == CameraFacingIntent::Aim {
             accumulated_input.last_movement = None;
         }
-        accumulated_input.crouched =
-            posture.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
+        accumulated_input.crouched = posture.crouch
+            || skeleton.body().downed_contact().is_some()
+            || skeleton.is_posture_transitioning();
         let roll_motion = skeleton.downed_lateral_motion();
         if roll_motion.abs() > f32::EPSILON {
             accumulated_input.last_movement = match (controller, transform) {
@@ -1214,7 +1263,10 @@ pub(crate) fn launch_pending_quicksteps(
         if skeleton.action_kind() != SkeletonAction::Dodge {
             posture.quickstep_launch_tick = None;
         } else if skeleton.locomotion_sample_tick >= launch_tick {
-            let direction = skeleton.action_direction();
+            let Some((direction, _)) = skeleton.dodge_view() else {
+                posture.quickstep_launch_tick = None;
+                continue;
+            };
             let world_direction =
                 controller_yaw(controller.orientation) * Vec3::new(direction.x, 0.0, -direction.y);
             velocity.x = world_direction.x * TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
@@ -1260,7 +1312,9 @@ fn brake_quickstep_horizontal_velocity(
     velocity: &mut LinearVelocity,
 ) {
     if skeleton.action_kind() == SkeletonAction::Dodge
-        && skeleton.action_direction() != Vec2::ZERO
+        && skeleton
+            .dodge_view()
+            .is_some_and(|(direction, _)| direction != Vec2::ZERO)
         && skeleton.body() == BodyState::Airborne
         && grounded
     {
@@ -1319,6 +1373,9 @@ pub(crate) fn update_skeleton_locomotion(
         posture,
     ) in &mut players
     {
+        if skeleton.body() == BodyState::Ragdolled {
+            continue;
+        }
         if combat_state.is_incapacitated() {
             let lowered = authoritative_weapon_guard(skeleton.weapon_guard(), true);
             set_weapon_guard(&mut skeleton, lowered);
@@ -1329,7 +1386,8 @@ pub(crate) fn update_skeleton_locomotion(
             // Authored transitions own their direction relative to a fixed
             // root until a roll or get-up has reached its endpoint.
             skeleton.set_downed_turning(false);
-        } else if skeleton.body().is_downed() && !skeleton.is_posture_transitioning() {
+        } else if skeleton.body().downed_contact().is_some() && !skeleton.is_posture_transitioning()
+        {
             let target = downed_camera_roll_target(transform.rotation, controller.orientation);
             if posture.facing == CameraFacingIntent::DownedAlign {
                 let next = advance_downed_body_facing(
@@ -1948,19 +2006,20 @@ mod tests {
         mission_enemy_health_scale, mission_enemy_scale, posture_transition_locks_body_facing,
         queue_replication_rebind, reconnect_matches, restore_authoritative_movement_intent,
         sequence_is_newer, tactical_movement_speed_for_guard, try_claim_reconnect,
-        validate_player_input,
+        update_skeleton_locomotion, validate_player_input,
     };
     use adventuresim_tactical_core::prelude::{
         BodyState, CharacterControllerState, CharacterId, DiveDirection, DodgeSpec,
         GroundedPosture, LinearVelocity, MovementPace, PostureTransitionKind, RollDirection,
         Rotation, SkeletonAction, SkeletonState, TACTICAL_PRONE_LATERAL_SPEED_SCALE,
-        advance_body_facing, controller_yaw, downed_camera_roll_target,
+        TacticalCombatState, advance_body_facing, controller_yaw, downed_camera_roll_target,
     };
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
     use adventuresim_tactical_netcode::prelude::{
         JumpCommand, PostureActionRequest, PostureCommand, ReconnectToken,
     };
     use bevy::prelude::*;
+    use bevy::time::Stopwatch;
 
     #[derive(Resource)]
     struct RebindTarget(Entity);
@@ -2226,6 +2285,55 @@ mod tests {
     }
 
     #[test]
+    fn ragdoll_update_preserves_render_and_physics_root_rotation() {
+        let mut world = World::new();
+        world.insert_resource(Time::<Fixed>::default());
+        let render_rotation = Quat::from_rotation_y(0.37);
+        let physics_rotation = Quat::from_rotation_y(-0.81);
+        let player = world
+            .spawn((
+                Player::default(),
+                CharacterControllerState {
+                    orientation: Quat::from_rotation_y(2.4),
+                    ..default()
+                },
+                LinearVelocity(Vec3::new(4.0, -1.0, 3.0)),
+                SkeletonState::default().with_body_state(BodyState::Ragdolled),
+                Transform::from_rotation(render_rotation),
+                Rotation(physics_rotation),
+                TacticalCombatState::default(),
+                MovementPace::Sprint,
+                AuthoritativePostureIntent {
+                    facing: CameraFacingIntent::DownedAlign,
+                    ..default()
+                },
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(update_skeleton_locomotion);
+        schedule.run(&mut world);
+
+        assert!(
+            world
+                .get::<Transform>(player)
+                .unwrap()
+                .rotation
+                .abs_diff_eq(render_rotation, 0.000_001)
+        );
+        assert!(
+            world
+                .get::<Rotation>(player)
+                .unwrap()
+                .0
+                .abs_diff_eq(physics_rotation, 0.000_001)
+        );
+        assert_eq!(
+            world.get::<SkeletonState>(player).unwrap().body(),
+            BodyState::Ragdolled
+        );
+    }
+
+    #[test]
     fn guarded_backward_dive_then_get_up_commits_the_supine_counter_yaw() {
         let mut skeleton = SkeletonState::default();
         assert!(skeleton.begin_posture_transition(
@@ -2465,9 +2573,48 @@ mod tests {
     }
 
     #[test]
+    fn ragdoll_discards_stale_authoritative_movement_input() {
+        let mut world = World::new();
+        let player = world
+            .spawn((
+                Player::default(),
+                AuthoritativeMovementIntent(Some(Vec2::Y)),
+                SkeletonState::default().with_body_state(BodyState::Ragdolled),
+                AuthoritativePostureIntent {
+                    crouch: true,
+                    ..default()
+                },
+                input::AccumulatedInput {
+                    last_movement: Some(Vec2::X),
+                    crouched: true,
+                    jumped: Some(Stopwatch::new()),
+                    ..default()
+                },
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(restore_authoritative_movement_intent);
+        schedule.run(&mut world);
+
+        let accumulated = world.get::<input::AccumulatedInput>(player).unwrap();
+        assert_eq!(accumulated.last_movement, None);
+        assert!(!accumulated.crouched);
+        assert!(accumulated.jumped.is_none());
+        assert_eq!(
+            world.get::<AuthoritativeMovementIntent>(player).unwrap().0,
+            None
+        );
+        let posture = world.get::<AuthoritativePostureIntent>(player).unwrap();
+        assert!(!posture.crouch);
+        assert_eq!(posture.facing, CameraFacingIntent::Free);
+    }
+
+    #[test]
     fn pending_quickstep_launches_only_after_the_procedural_load() {
         let mut skeleton = SkeletonState::default();
-        skeleton.begin_dodge(DodgeSpec { direction: Vec2::Y }, 0, 20);
+        skeleton
+            .begin_dodge(DodgeSpec { direction: Vec2::Y }, 0, 20)
+            .unwrap();
         skeleton.advance_action(4);
         skeleton.locomotion_sample_tick = 4;
         let mut world = World::new();
@@ -2524,7 +2671,9 @@ mod tests {
     #[test]
     fn quickstep_brakes_horizontal_velocity_over_multiple_grounded_ticks() {
         let mut skeleton = SkeletonState::default();
-        skeleton.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 20);
+        skeleton
+            .begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 20)
+            .unwrap();
         skeleton.advance_action(10);
         skeleton.transition_body(BodyState::Airborne);
         let mut velocity = LinearVelocity(Vec3::new(5.0, -1.0, 0.0));

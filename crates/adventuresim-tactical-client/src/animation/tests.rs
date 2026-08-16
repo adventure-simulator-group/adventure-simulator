@@ -27,7 +27,9 @@ mod legacy_tests {
             .with_weapon_guard(WeaponGuardState::Raised)
             .with_local_velocity(Vec3::NEG_Z * 3.0)
             .with_world_velocity(Vec3::NEG_Z * 3.0);
-        skeleton.begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20);
+        skeleton
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
+            .unwrap();
         skeleton.advance_action(15);
         let before = serde_json::to_vec(&skeleton).unwrap();
         let presented = PresentedSkeleton::new(skeleton, None);
@@ -47,7 +49,9 @@ mod legacy_tests {
             let mut skeleton = SkeletonState::default()
                 .with_weapon_guard(WeaponGuardState::Raised)
                 .with_lead_foot(LeadFoot::Left);
-            skeleton.begin_attack(AttackSpec::default(), 10, 20);
+            skeleton
+                .begin_attack(AttackSpec::default(), 10, 20)
+                .unwrap();
             skeleton.advance_action(tick);
             let presented = PresentedSkeleton::new(skeleton.clone(), None);
             let legacy = AnimationEvaluation::from_skeleton(&skeleton);

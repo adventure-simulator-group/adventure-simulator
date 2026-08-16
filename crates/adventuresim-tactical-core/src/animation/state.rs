@@ -22,6 +22,14 @@ pub enum BodyState {
     Ragdolled,
 }
 
+/// A deliberate authored body-to-ground contact. Ragdoll is excluded: it is
+/// physics-owned and cannot participate in prone/supine controls or rolls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum DownedContact {
+    Prone,
+    Supine,
+}
+
 impl Default for BodyState {
     fn default() -> Self {
         Self::Grounded(GroundedPosture::Upright)
@@ -62,6 +70,14 @@ impl BodyState {
 
     pub fn is_downed(self) -> bool {
         matches!(self, Self::Prone | Self::Supine | Self::Ragdolled)
+    }
+
+    pub fn downed_contact(self) -> Option<DownedContact> {
+        match self {
+            Self::Prone => Some(DownedContact::Prone),
+            Self::Supine => Some(DownedContact::Supine),
+            Self::Grounded(_) | Self::Airborne | Self::Ragdolled => None,
+        }
     }
 
     pub fn is_surface_supported(self) -> bool {
@@ -360,44 +376,185 @@ impl DownedFacingState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum TimedPostureTransitionKind {
+    UprightToProne,
+    ProneToUpright,
+    ProneToSupine { direction: RollDirection },
+    SupineToProne { direction: RollDirection },
+    SupineToUpright,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct PostureTransitionState {
-    kind: PostureTransitionKind,
-    start_tick: u64,
-    duration_ticks: u64,
-    phase: f32,
-    dive_was_airborne: bool,
-    dive_landing_tick: Option<u64>,
+enum PostureTransitionProgress {
+    Timed {
+        kind: TimedPostureTransitionKind,
+        start_tick: u64,
+        duration_ticks: u64,
+        phase: f32,
+    },
+    Dive {
+        direction: DiveDirection,
+        start_tick: u64,
+        duration_ticks: u64,
+        phase: f32,
+        was_airborne: bool,
+        landing_tick: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct PostureTransitionState(PostureTransitionProgress);
+
+impl<'de> Deserialize<'de> for PostureTransitionState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Self(PostureTransitionProgress::deserialize(deserializer)?).normalized())
+    }
 }
 
 impl PostureTransitionState {
     fn new(kind: PostureTransitionKind, start_tick: u64, duration_ticks: u64) -> Self {
-        Self {
-            kind,
-            start_tick,
-            duration_ticks: duration_ticks.max(1),
-            phase: 0.0,
-            dive_was_airborne: false,
-            dive_landing_tick: None,
+        let duration_ticks = duration_ticks.max(1);
+        match kind {
+            PostureTransitionKind::DiveToDowned { direction } => {
+                Self(PostureTransitionProgress::Dive {
+                    direction,
+                    start_tick,
+                    duration_ticks,
+                    phase: 0.0,
+                    was_airborne: false,
+                    landing_tick: None,
+                })
+            }
+            kind => Self(PostureTransitionProgress::Timed {
+                kind: match kind {
+                    PostureTransitionKind::UprightToProne => {
+                        TimedPostureTransitionKind::UprightToProne
+                    }
+                    PostureTransitionKind::ProneToUpright => {
+                        TimedPostureTransitionKind::ProneToUpright
+                    }
+                    PostureTransitionKind::ProneToSupine { direction } => {
+                        TimedPostureTransitionKind::ProneToSupine { direction }
+                    }
+                    PostureTransitionKind::SupineToProne { direction } => {
+                        TimedPostureTransitionKind::SupineToProne { direction }
+                    }
+                    PostureTransitionKind::SupineToUpright => {
+                        TimedPostureTransitionKind::SupineToUpright
+                    }
+                    PostureTransitionKind::DiveToDowned { .. } => unreachable!(),
+                },
+                start_tick,
+                duration_ticks,
+                phase: 0.0,
+            }),
         }
     }
 
-    fn normalized(mut self) -> Self {
-        self.duration_ticks = self.duration_ticks.max(1);
-        self.phase = if self.phase.is_finite() {
-            self.phase.clamp(0.0, 1.0)
-        } else {
-            0.0
+    fn normalized(self) -> Self {
+        let normalized_phase = |phase: f32| {
+            if phase.is_finite() {
+                phase.clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
         };
-        self
+        Self(match self.0 {
+            PostureTransitionProgress::Timed {
+                kind,
+                start_tick,
+                duration_ticks,
+                phase,
+            } => PostureTransitionProgress::Timed {
+                kind,
+                start_tick,
+                duration_ticks: duration_ticks.max(1),
+                phase: normalized_phase(phase),
+            },
+            PostureTransitionProgress::Dive {
+                direction,
+                start_tick,
+                duration_ticks,
+                phase,
+                was_airborne,
+                landing_tick,
+            } => PostureTransitionProgress::Dive {
+                direction,
+                start_tick,
+                duration_ticks: duration_ticks.max(1),
+                phase: normalized_phase(phase),
+                was_airborne,
+                landing_tick: landing_tick.map(|tick| tick.max(start_tick)),
+            },
+        })
     }
 
     pub fn kind(self) -> PostureTransitionKind {
-        self.kind
+        match self.0 {
+            PostureTransitionProgress::Timed { kind, .. } => match kind {
+                TimedPostureTransitionKind::UprightToProne => PostureTransitionKind::UprightToProne,
+                TimedPostureTransitionKind::ProneToUpright => PostureTransitionKind::ProneToUpright,
+                TimedPostureTransitionKind::ProneToSupine { direction } => {
+                    PostureTransitionKind::ProneToSupine { direction }
+                }
+                TimedPostureTransitionKind::SupineToProne { direction } => {
+                    PostureTransitionKind::SupineToProne { direction }
+                }
+                TimedPostureTransitionKind::SupineToUpright => {
+                    PostureTransitionKind::SupineToUpright
+                }
+            },
+            PostureTransitionProgress::Dive { direction, .. } => {
+                PostureTransitionKind::DiveToDowned { direction }
+            }
+        }
     }
 
     pub fn phase(self) -> f32 {
-        self.phase
+        match self.0 {
+            PostureTransitionProgress::Timed { phase, .. }
+            | PostureTransitionProgress::Dive { phase, .. } => phase,
+        }
+    }
+
+    fn normalized_for_body(mut self, body: BodyState) -> Option<Self> {
+        let kind = self.kind();
+        if matches!(self.0, PostureTransitionProgress::Timed { .. }) {
+            return kind.accepts(body).then_some(self);
+        }
+        let PostureTransitionProgress::Dive {
+            phase,
+            was_airborne,
+            landing_tick,
+            ..
+        } = &mut self.0
+        else {
+            unreachable!("timed transition returned above")
+        };
+        match body {
+            BodyState::Airborne => {
+                *was_airborne = true;
+                *landing_tick = None;
+                *phase = 0.5;
+                Some(self)
+            }
+            BodyState::Grounded(_) => {
+                if landing_tick.is_some() {
+                    *was_airborne = true;
+                    *phase = (*phase).max(0.5);
+                } else if *was_airborne {
+                    *phase = 0.5;
+                } else {
+                    *phase = (*phase).min(0.5);
+                }
+                Some(self)
+            }
+            BodyState::Prone | BodyState::Supine | BodyState::Ragdolled => None,
+        }
     }
 
     /// Returns the authored dive recovery progress after terrain contact.
@@ -405,10 +562,12 @@ impl PostureTransitionState {
     /// airborne endpoint until impact; only the second half transfers the
     /// directional pose into its canonical downed contact pose.
     pub fn dive_recovery(self) -> Option<(DiveDirection, f32)> {
-        let PostureTransitionKind::DiveToDowned { direction } = self.kind else {
-            return None;
-        };
-        Some((direction, ((self.phase - 0.5) * 2.0).clamp(0.0, 1.0)))
+        match self.0 {
+            PostureTransitionProgress::Dive {
+                direction, phase, ..
+            } => Some((direction, ((phase - 0.5) * 2.0).clamp(0.0, 1.0))),
+            PostureTransitionProgress::Timed { .. } => None,
+        }
     }
 }
 
@@ -520,7 +679,7 @@ enum ActionKind {
 /// available only through the typed transition methods on `SkeletonState`.
 /// It intentionally omits reflection for the same reason as raised locomotion.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct ActionState(ActionKind);
+pub(crate) struct ActionState(ActionKind);
 
 impl<'de> Deserialize<'de> for ActionState {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -622,6 +781,62 @@ impl ActionState {
             | Self(ActionKind::Block { timeline, .. }) => timeline.phase,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ActionTimelineView {
+    pub start_tick: u64,
+    pub preparation_ticks: u64,
+    pub phase: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ActionView {
+    Dodge {
+        direction: Vec2,
+        timeline: ActionTimelineView,
+    },
+    Attack {
+        target_height: f32,
+        animation: AttackAnimation,
+        timeline: ActionTimelineView,
+    },
+    Block {
+        incoming_line: AttackLine,
+        timeline: ActionTimelineView,
+    },
+}
+
+impl ActionTimeline {
+    fn view(self) -> ActionTimelineView {
+        ActionTimelineView {
+            start_tick: self.start_tick,
+            preparation_ticks: self.preparation_ticks,
+            phase: self.phase,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AcceptedAction {
+    kind: SkeletonAction,
+    start_tick: u64,
+}
+
+impl AcceptedAction {
+    pub fn kind(self) -> SkeletonAction {
+        self.kind
+    }
+
+    pub fn start_tick(self) -> u64 {
+        self.start_tick
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionAdmissionError {
+    BodyCannotAct(BodyState),
+    PostureTransitionInProgress,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
@@ -743,7 +958,7 @@ pub struct SkeletonState {
     pub contact_foot: LeadFoot,
     pub landing_sequence: u64,
     pub landing_impact_speed: f32,
-    pub lead_foot: LeadFoot,
+    lead_foot: LeadFoot,
     guarded_sprint_locomotion: bool,
     stance: StanceState,
     action: ActionState,
@@ -811,7 +1026,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
             action: wire.action,
             posture_transition: wire
                 .posture_transition
-                .map(PostureTransitionState::normalized),
+                .and_then(|transition| transition.normalized_for_body(wire.body)),
             downed_facing: wire.downed_facing.map(DownedFacingState::normalized),
             downed_turning: wire.downed_turning,
             animation_pack: wire.animation_pack,
@@ -916,24 +1131,41 @@ impl SkeletonState {
         self.lead_foot = lead;
         self
     }
-    /// Atomically changes physical mode. Raised movement is valid only while
-    /// grounded upright; other non-downed modes retain the guard but plant it.
-    /// Entering a downed mode also cancels presentation actions.
+    pub fn lead_foot(&self) -> LeadFoot {
+        self.lead_foot
+    }
+    /// Overrides replicated semantic support only in a client presentation
+    /// fixture. Gameplay authority must use locomotion observations instead.
+    pub fn set_presentation_shadow_lead_foot(&mut self, lead: LeadFoot) {
+        self.lead_foot = lead;
+    }
+    /// Atomically changes physical mode. Incompatible authored transitions are
+    /// cancelled; a dive alone retains its explicit grounded/airborne stages.
+    /// Raised movement is valid only while grounded upright. Entering authored
+    /// downed contact or ragdoll also cancels presentation actions.
     pub fn transition_body(&mut self, body: BodyState) {
+        self.posture_transition = self
+            .posture_transition
+            .and_then(|transition| transition.normalized_for_body(body));
         self.body = body;
         if body != BodyState::Grounded(GroundedPosture::Upright) {
             self.jump_anticipation = JumpAnticipation::Inactive;
         }
-        if !body.is_downed() {
+        if body.downed_contact().is_none() {
             self.downed_facing = None;
             self.downed_turning = false;
         }
         if body != BodyState::Grounded(GroundedPosture::Upright) {
             self.guarded_sprint_locomotion = false;
         }
-        if body.is_downed() {
+        if body.is_downed() || self.posture_transition.is_some() {
             self.stance = StanceState::Lowered;
             self.action = ActionState::default();
+            self.jump_anticipation = JumpAnticipation::Inactive;
+            self.guarded_sprint_locomotion = false;
+        }
+        if body == BodyState::Ragdolled {
+            self.downed_turning = false;
         } else if body != BodyState::Grounded(GroundedPosture::Upright)
             && let StanceState::Raised { locomotion } = self.stance
             && locomotion.is_moving()
@@ -1010,14 +1242,17 @@ impl SkeletonState {
         self.downed_facing
     }
     pub fn downed_turning(&self) -> bool {
-        self.downed_turning && self.body.is_downed() && self.posture_transition.is_none()
+        self.downed_turning
+            && self.body.downed_contact().is_some()
+            && self.posture_transition.is_none()
     }
     pub fn set_downed_turning(&mut self, turning: bool) {
-        self.downed_turning = turning && self.body.is_downed() && self.posture_transition.is_none();
+        self.downed_turning =
+            turning && self.body.downed_contact().is_some() && self.posture_transition.is_none();
     }
     pub fn downed_lateral_motion(&self) -> f32 {
         if let Some(transition) = self.posture_transition {
-            return match transition.kind {
+            return match transition.kind() {
                 PostureTransitionKind::ProneToSupine { direction }
                 | PostureTransitionKind::SupineToProne { direction } => match direction {
                     RollDirection::Left => -1.0,
@@ -1056,40 +1291,53 @@ impl SkeletonState {
         let Some(mut transition) = self.posture_transition else {
             return;
         };
-        let elapsed = current_tick.saturating_sub(transition.start_tick);
-        if matches!(transition.kind, PostureTransitionKind::DiveToDowned { .. }) {
-            if !self.body.is_surface_supported() {
-                transition.dive_was_airborne = true;
-                transition.phase = 0.5;
-                self.posture_transition = Some(transition);
-                return;
+        let transition_kind = transition.kind();
+        match &mut transition.0 {
+            PostureTransitionProgress::Dive {
+                direction,
+                start_tick,
+                duration_ticks,
+                phase,
+                was_airborne,
+                landing_tick,
+            } => {
+                let kind = PostureTransitionKind::DiveToDowned {
+                    direction: *direction,
+                };
+                let elapsed = current_tick.saturating_sub(*start_tick);
+                if !self.body.is_surface_supported() {
+                    *was_airborne = true;
+                    *phase = 0.5;
+                } else if *was_airborne {
+                    let landed_at = *landing_tick.get_or_insert(current_tick);
+                    let recovery_elapsed = current_tick.saturating_sub(landed_at);
+                    if recovery_elapsed >= *duration_ticks {
+                        self.finish_posture_transition(kind);
+                        return;
+                    }
+                    *phase = 0.5 + 0.5 * recovery_elapsed as f32 / *duration_ticks as f32;
+                } else if elapsed >= *duration_ticks {
+                    self.finish_posture_transition(kind);
+                    return;
+                } else {
+                    *phase = 0.5 * elapsed as f32 / *duration_ticks as f32;
+                }
             }
-            if transition.dive_was_airborne {
-                let landing_tick = *transition.dive_landing_tick.get_or_insert(current_tick);
-                let recovery_elapsed = current_tick.saturating_sub(landing_tick);
-                if recovery_elapsed >= transition.duration_ticks {
-                    self.finish_posture_transition(transition.kind);
+            PostureTransitionProgress::Timed {
+                kind: _,
+                start_tick,
+                duration_ticks,
+                phase,
+            } => {
+                let elapsed = current_tick.saturating_sub(*start_tick);
+                if elapsed >= *duration_ticks {
+                    self.posture_transition = None;
+                    self.transition_body(transition_kind.target());
                     return;
                 }
-                transition.phase =
-                    0.5 + 0.5 * recovery_elapsed as f32 / transition.duration_ticks as f32;
-                self.posture_transition = Some(transition);
-                return;
+                *phase = elapsed as f32 / *duration_ticks as f32;
             }
-            if elapsed >= transition.duration_ticks {
-                self.finish_posture_transition(transition.kind);
-                return;
-            }
-            transition.phase = 0.5 * elapsed as f32 / transition.duration_ticks as f32;
-            self.posture_transition = Some(transition);
-            return;
         }
-        if elapsed >= transition.duration_ticks {
-            self.posture_transition = None;
-            self.transition_body(transition.kind.target());
-            return;
-        }
-        transition.phase = elapsed as f32 / transition.duration_ticks as f32;
         self.posture_transition = Some(transition);
     }
     fn finish_posture_transition(&mut self, kind: PostureTransitionKind) {
@@ -1131,7 +1379,7 @@ impl SkeletonState {
         aim_held: bool,
         maximum_step: f32,
     ) -> bool {
-        if !self.body.is_downed() || self.posture_transition.is_some() {
+        if self.body.downed_contact().is_none() || self.posture_transition.is_some() {
             self.downed_facing = None;
             return false;
         }
@@ -1140,10 +1388,13 @@ impl SkeletonState {
         } else {
             0.0
         };
-        let initial_target = match self.body {
-            BodyState::Prone => DownedFacingPose::Prone,
-            BodyState::Supine => DownedFacingPose::Supine,
-            _ => unreachable!("downed body checked above"),
+        let Some(contact) = self.body.downed_contact() else {
+            self.downed_facing = None;
+            return false;
+        };
+        let initial_target = match contact {
+            DownedContact::Prone => DownedFacingPose::Prone,
+            DownedContact::Supine => DownedFacingPose::Supine,
         };
         let initial = initial_target.half_turns_near(camera_target);
         let previous = self.downed_facing;
@@ -1168,10 +1419,9 @@ impl SkeletonState {
         } else {
             let lower = current.floor();
             if (current - lower - 0.5).abs() <= 1.0e-4 {
-                match self.body {
-                    BodyState::Prone => (current / 2.0).round() * 2.0,
-                    BodyState::Supine => ((current - 1.0) / 2.0).round() * 2.0 + 1.0,
-                    _ => unreachable!("downed body checked above"),
+                match contact {
+                    DownedContact::Prone => (current / 2.0).round() * 2.0,
+                    DownedContact::Supine => ((current - 1.0) / 2.0).round() * 2.0 + 1.0,
                 }
             } else {
                 current.round()
@@ -1220,38 +1470,70 @@ impl SkeletonState {
     pub fn is_surface_supported(&self) -> bool {
         self.body.is_surface_supported()
     }
-    pub fn action(&self) -> ActionState {
-        self.action
-    }
     pub fn action_kind(&self) -> SkeletonAction {
         self.action.kind()
     }
     pub fn action_phase(&self) -> f32 {
         self.action.phase()
     }
-    pub fn action_direction(&self) -> Vec2 {
+    pub fn action_view(&self) -> Option<ActionView> {
         match self.action {
-            ActionState(ActionKind::Dodge { direction, .. }) => direction,
-            _ => Vec2::ZERO,
+            ActionState(ActionKind::Idle) => None,
+            ActionState(ActionKind::Dodge {
+                direction,
+                timeline,
+            }) => Some(ActionView::Dodge {
+                direction,
+                timeline: timeline.view(),
+            }),
+            ActionState(ActionKind::Attack {
+                target_height,
+                animation,
+                timeline,
+            }) => Some(ActionView::Attack {
+                target_height,
+                animation,
+                timeline: timeline.view(),
+            }),
+            ActionState(ActionKind::Block {
+                incoming_line,
+                timeline,
+            }) => Some(ActionView::Block {
+                incoming_line,
+                timeline: timeline.view(),
+            }),
         }
     }
-    pub fn attack_target_height(&self) -> f32 {
-        match self.action {
-            ActionState(ActionKind::Attack { target_height, .. }) => target_height,
-            _ => 0.5,
+    pub fn dodge_view(&self) -> Option<(Vec2, ActionTimelineView)> {
+        match self.action_view()? {
+            ActionView::Dodge {
+                direction,
+                timeline,
+            } => Some((direction, timeline)),
+            ActionView::Attack { .. } | ActionView::Block { .. } => None,
         }
     }
-    pub fn strike_family(&self) -> StrikeFamily {
-        match self.action {
-            ActionState(ActionKind::Attack { animation, .. }) => animation.strike_family(),
-            _ => StrikeFamily::Thrust,
+    pub fn attack_view(&self) -> Option<(f32, AttackAnimation, ActionTimelineView)> {
+        match self.action_view()? {
+            ActionView::Attack {
+                target_height,
+                animation,
+                timeline,
+            } => Some((target_height, animation, timeline)),
+            ActionView::Dodge { .. } | ActionView::Block { .. } => None,
+        }
+    }
+    pub fn block_view(&self) -> Option<(AttackLine, ActionTimelineView)> {
+        match self.action_view()? {
+            ActionView::Block {
+                incoming_line,
+                timeline,
+            } => Some((incoming_line, timeline)),
+            ActionView::Dodge { .. } | ActionView::Attack { .. } => None,
         }
     }
     pub fn attack_animation(&self) -> Option<AttackAnimation> {
-        match self.action {
-            ActionState(ActionKind::Attack { animation, .. }) => Some(animation),
-            _ => None,
-        }
+        self.attack_view().map(|(_, animation, _)| animation)
     }
     pub fn available_strike_family(&self, preferred: StrikeFamily) -> Option<StrikeFamily> {
         if self.attack_animations.supports_family(preferred) {
@@ -1281,29 +1563,6 @@ impl SkeletonState {
             _ => None,
         }
     }
-    pub fn action_start_tick(&self) -> Option<u64> {
-        match self.action {
-            ActionState(ActionKind::Idle) => None,
-            ActionState(ActionKind::Dodge { timeline, .. })
-            | ActionState(ActionKind::Attack { timeline, .. })
-            | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.start_tick),
-        }
-    }
-    pub fn action_preparation_ticks(&self) -> Option<u64> {
-        match self.action {
-            ActionState(ActionKind::Idle) => None,
-            ActionState(ActionKind::Dodge { timeline, .. })
-            | ActionState(ActionKind::Attack { timeline, .. })
-            | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.preparation_ticks),
-        }
-    }
-    pub fn incoming_attack_line(&self) -> AttackLine {
-        match self.action {
-            ActionState(ActionKind::Block { incoming_line, .. }) => incoming_line,
-            _ => AttackLine::Thrust,
-        }
-    }
-
     /// Presentation motion finishes an in-flight raised-guard step after
     /// gameplay velocity stops. Speed otherwise follows authoritative motion.
     pub fn animation_local_velocity(&self) -> Vec3 {
@@ -1325,51 +1584,84 @@ impl SkeletonState {
     }
 
     pub fn quickstep_is_launched(&self) -> bool {
-        self.action_kind() == SkeletonAction::Dodge && self.action_phase() >= 0.125
+        self.dodge_view()
+            .is_some_and(|(_, timeline)| timeline.phase >= 0.125)
     }
 
     /// Replaces the current action. This deliberately preserves the existing
     /// last-writer-wins compatibility policy until gameplay defines rejection
     /// or cancellation rules between actions.
-    fn replace_action(&mut self, action: ActionState) {
-        self.action = if self.body.is_downed() || self.posture_transition.is_some() {
-            ActionState::default()
-        } else {
-            action
-        };
+    fn replace_action(
+        &mut self,
+        action: ActionState,
+        start_tick: u64,
+    ) -> Result<AcceptedAction, ActionAdmissionError> {
+        if self.posture_transition.is_some() {
+            return Err(ActionAdmissionError::PostureTransitionInProgress);
+        }
+        if self.body.is_downed() {
+            return Err(ActionAdmissionError::BodyCannotAct(self.body));
+        }
+        let kind = action.kind();
+        self.action = action;
+        Ok(AcceptedAction { kind, start_tick })
     }
 
-    pub fn begin_dodge(&mut self, spec: DodgeSpec, start_tick: u64, contact_tick: u64) {
+    pub fn begin_dodge(
+        &mut self,
+        spec: DodgeSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<AcceptedAction, ActionAdmissionError> {
         let timeline = ActionTimeline::new(start_tick, contact_tick);
         let direction = if spec.direction.is_finite() {
             spec.direction.normalize_or_zero()
         } else {
             Vec2::ZERO
         };
-        self.replace_action(ActionState(ActionKind::Dodge {
-            direction,
-            timeline,
-        }));
+        self.replace_action(
+            ActionState(ActionKind::Dodge {
+                direction,
+                timeline,
+            }),
+            start_tick,
+        )
     }
 
-    pub fn begin_attack(&mut self, spec: AttackSpec, start_tick: u64, contact_tick: u64) {
+    pub fn begin_attack(
+        &mut self,
+        spec: AttackSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<AcceptedAction, ActionAdmissionError> {
         let target_height = if spec.target_height.is_finite() {
             spec.target_height.clamp(0.0, 1.0)
         } else {
             AttackSpec::default().target_height
         };
-        self.replace_action(ActionState(ActionKind::Attack {
-            target_height,
-            animation: spec.animation,
-            timeline: ActionTimeline::new(start_tick, contact_tick),
-        }));
+        self.replace_action(
+            ActionState(ActionKind::Attack {
+                target_height,
+                animation: spec.animation,
+                timeline: ActionTimeline::new(start_tick, contact_tick),
+            }),
+            start_tick,
+        )
     }
 
-    pub fn begin_block(&mut self, spec: BlockSpec, start_tick: u64, contact_tick: u64) {
-        self.replace_action(ActionState(ActionKind::Block {
-            incoming_line: spec.incoming_line,
-            timeline: ActionTimeline::new(start_tick, contact_tick),
-        }));
+    pub fn begin_block(
+        &mut self,
+        spec: BlockSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<AcceptedAction, ActionAdmissionError> {
+        self.replace_action(
+            ActionState(ActionKind::Block {
+                incoming_line: spec.incoming_line,
+                timeline: ActionTimeline::new(start_tick, contact_tick),
+            }),
+            start_tick,
+        )
     }
 
     /// Advances an action whose contact is the midpoint of its visual
@@ -1518,6 +1810,9 @@ pub fn downed_camera_roll_target(body_rotation: Quat, controller_orientation: Qu
 /// Bone evaluation remains client-only; this is the shared server seam that
 /// keeps deterministic captures on the same stride and posture rules.
 pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: SkeletonLocomotionInput) {
+    if skeleton.body == BodyState::Ragdolled {
+        return;
+    }
     let linear_velocity = if input.linear_velocity.is_finite() {
         input.linear_velocity
     } else {

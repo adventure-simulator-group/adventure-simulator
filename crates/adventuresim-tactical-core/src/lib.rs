@@ -19,19 +19,20 @@ pub use avian3d;
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
-        ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackAnimation,
-        AttackAnimations, AttackLine, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
-        CROUCH_LOCOMOTION_PROFILE, DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec,
-        DownedFacingPose, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
-        LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile,
-        PackValidationError, PoseSample, PoseSampling, Posture, PostureTransitionKind,
-        PostureTransitionState, RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE,
-        RaisedLocomotionIntent, ResolvedPose, RollDirection, SemanticPose, SkeletonAction,
-        SkeletonLocomotionInput, SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE,
-        WeaponGuardState, advance_body_facing, advance_downed_body_facing, controller_yaw,
-        dive_landing_facing_delta, downed_camera_roll_target, gait_cycle_phase_delta,
-        gait_support_weights, guard_step_length, locomotion_profile, ordinary_step_distance,
-        project_skeleton_locomotion, set_weapon_guard, supine_get_up_counter_yaw_delta,
+        AcceptedAction, ActionAdmissionError, ActionTimelineView, ActionView, AnimationEvaluation,
+        AnimationPack, AnimationPackLibrary, AttackAnimation, AttackAnimations, AttackLine,
+        AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState, CROUCH_LOCOMOTION_PROFILE,
+        DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec, DownedContact, DownedFacingPose,
+        GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation, LOCOMOTION_SAMPLE_HZ,
+        LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile, PackValidationError,
+        PoseSample, PoseSampling, Posture, PostureTransitionKind, PostureTransitionState,
+        RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE, RaisedLocomotionIntent,
+        ResolvedPose, RollDirection, SemanticPose, SkeletonAction, SkeletonLocomotionInput,
+        SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE, WeaponGuardState,
+        advance_body_facing, advance_downed_body_facing, controller_yaw, dive_landing_facing_delta,
+        downed_camera_roll_target, gait_cycle_phase_delta, gait_support_weights, guard_step_length,
+        locomotion_profile, ordinary_step_distance, project_skeleton_locomotion, set_weapon_guard,
+        supine_get_up_counter_yaw_delta,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{

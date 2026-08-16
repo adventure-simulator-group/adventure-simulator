@@ -40,7 +40,7 @@ impl SemanticRouteInputs {
             crouch: evaluation.crouch_amount,
             airborne: !skeleton.is_grounded(),
             target_height: evaluation.attack_target_height,
-            lead: skeleton.lead_foot,
+            lead: skeleton.lead_foot(),
             support: skeleton.contact_foot,
             contact_sequence: skeleton.contact_sequence,
             pack: skeleton.animation_pack.clone(),

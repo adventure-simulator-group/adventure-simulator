@@ -93,7 +93,10 @@ impl AnimationEvaluation {
             crouch_amount,
             airborne_phase: (0.5 - state.local_velocity.y * 0.2).clamp(0.0, 1.0),
             action_phase: state.action_phase().clamp(0.0, 1.0),
-            attack_target_height: state.attack_target_height().clamp(0.0, 1.0),
+            attack_target_height: state
+                .attack_view()
+                .map_or(0.5, |(height, _, _)| height)
+                .clamp(0.0, 1.0),
         }
     }
 }
@@ -103,7 +106,7 @@ fn posture_transition_samples(state: &SkeletonState) -> Option<Vec<PoseSample>> 
     use PostureTransitionKind::*;
     if let DiveToDowned { direction } = transition.kind() {
         return Some(dive_transition_samples(
-            state.lead_foot,
+            state.lead_foot(),
             direction,
             transition.phase(),
         ));
@@ -445,7 +448,11 @@ fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
         SkeletonAction::Attack => attack_samples(state),
         SkeletonAction::Block => vec![out_and_back(
             SemanticPose::Guard,
-            block_pose(state.incoming_attack_line()),
+            block_pose(
+                state
+                    .block_view()
+                    .map_or(AttackLine::Thrust, |(line, _)| line),
+            ),
             state.action_phase(),
         )],
     }

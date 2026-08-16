@@ -26,14 +26,19 @@ pub(super) fn on_defender_response(
         return;
     };
     let start = animation_tick(&time);
-    match **event {
-        DefendRequest::Dodge if skeleton.action_kind() != SkeletonAction::Dodge => {
-            skeleton.begin_dodge(DodgeSpec::default(), start, start + 8)
-        }
-        DefendRequest::Dodge => {}
+    let admitted = match **event {
+        DefendRequest::Dodge if skeleton.action_kind() != SkeletonAction::Dodge => skeleton
+            .begin_dodge(DodgeSpec::default(), start, start + 8)
+            .is_ok(),
+        DefendRequest::Dodge => true,
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
-        DefendRequest::Roll => {}
-        DefendRequest::Parry => skeleton.begin_block(BlockSpec::default(), start, start + 8),
+        DefendRequest::Roll => true,
+        DefendRequest::Parry => skeleton
+            .begin_block(BlockSpec::default(), start, start + 8)
+            .is_ok(),
+    };
+    if !admitted {
+        return;
     }
 
     cmd.entity(entity).insert(PendingDefenderResponse {
@@ -60,17 +65,22 @@ pub(super) fn on_melee_attack_started(
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
+    let start = animation_tick(&time);
+    if skeleton
+        .begin_attack(
+            AttackSpec::new(animation),
+            start,
+            start + duration_ticks(event.windup),
+        )
+        .is_err()
+    {
+        return;
+    }
     authority.observe(
         Some(event.target),
         CombatInstant::from_elapsed(&time),
         event.windup,
         MELEE_WINDUP_NETWORK_ALLOWANCE,
-    );
-    let start = animation_tick(&time);
-    skeleton.begin_attack(
-        AttackSpec::new(animation),
-        start,
-        start + duration_ticks(event.windup),
     );
 }
 
@@ -113,13 +123,14 @@ fn roll_dodge_reflex(input_reflex: f32) -> f32 {
 }
 
 fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
-    skeleton.body().is_downed()
+    skeleton.body().downed_contact().is_some()
 }
 
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod roll_tests {
     use super::*;
+    use adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId;
 
     #[test]
     fn roll_is_a_bounded_fraction_of_an_ordinary_dodge() {
@@ -137,6 +148,96 @@ mod roll_tests {
         assert!(accepts_roll_dodge(
             &SkeletonState::default().with_body_state(BodyState::Supine)
         ));
+        assert!(!accepts_roll_dodge(
+            &SkeletonState::default().with_body_state(BodyState::Ragdolled)
+        ));
+    }
+
+    #[test]
+    fn rejected_melee_start_cannot_create_windup_authority() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(on_melee_action_request);
+        let attacker = app
+            .world_mut()
+            .spawn((
+                MeleeAttackAuthority::default(),
+                SkeletonState::default().with_body_state(BodyState::Ragdolled),
+            ))
+            .id();
+        app.world_mut().trigger(FromClient {
+            client_id: ClientId::Client(attacker),
+            message: MeleeActionRequest::Start {
+                strike_family: StrikeFamily::Thrust,
+            },
+        });
+        let ready = CombatInstant::default() + CLIENT_MELEE_WINDUP;
+        assert!(
+            !app.world()
+                .entity(attacker)
+                .get::<MeleeAttackAuthority>()
+                .unwrap()
+                .permits(attacker, ready)
+        );
+        assert!(
+            app.world()
+                .entity(attacker)
+                .get::<SkeletonState>()
+                .unwrap()
+                .action_view()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn rejected_parry_cannot_create_pending_defense() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(on_defender_response);
+        let defender = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default().with_body_state(BodyState::Ragdolled),
+            ))
+            .id();
+        app.world_mut().trigger(FromClient {
+            client_id: ClientId::Client(defender),
+            message: DefendRequest::Parry,
+        });
+        assert!(
+            app.world()
+                .entity(defender)
+                .get::<PendingDefenderResponse>()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn rejected_ranged_start_cannot_create_windup_authority() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(on_ranged_attack_started);
+        let attacker = app
+            .world_mut()
+            .spawn((
+                RangedAttackAuthority::default(),
+                SkeletonState::default().with_body_state(BodyState::Ragdolled),
+            ))
+            .id();
+        app.world_mut().trigger(RangedAttackStartedIntent {
+            attacker,
+            target: None,
+            windup: CLIENT_RANGED_WINDUP,
+        });
+        let ready = CombatInstant::default() + CLIENT_RANGED_WINDUP;
+        assert!(
+            !app.world()
+                .entity(attacker)
+                .get::<RangedAttackAuthority>()
+                .unwrap()
+                .permits(ready)
+        );
     }
 }
 
@@ -179,17 +280,22 @@ pub(super) fn on_melee_action_request(
                 .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
                 .unwrap_or_default()
                 .saturating_sub(WINDUP_JITTER_TOLERANCE);
+            let start = animation_tick(&time);
+            if skeleton
+                .begin_attack(
+                    AttackSpec::new(animation),
+                    start,
+                    start + duration_ticks(windup),
+                )
+                .is_err()
+            {
+                return;
+            }
             authority.observe(
                 None,
                 CombatInstant::from_elapsed(&time),
                 windup,
                 MELEE_WINDUP_NETWORK_ALLOWANCE,
-            );
-            let start = animation_tick(&time);
-            skeleton.begin_attack(
-                AttackSpec::new(animation),
-                start,
-                start + duration_ticks(windup),
             );
         }
         MeleeActionRequest::Complete {
@@ -205,7 +311,9 @@ pub(super) fn on_melee_action_request(
             // animation and secondary physics remain client-owned.
             let strike_family = skeletons
                 .get_mut(attacker)
-                .map(|skeleton| skeleton.strike_family())
+                .ok()
+                .and_then(|skeleton| skeleton.attack_view())
+                .map(|(_, animation, _)| animation.strike_family())
                 .unwrap_or(StrikeFamily::Thrust);
             cmd.trigger(MeleeAttackIntent {
                 attacker,
@@ -221,9 +329,7 @@ pub(super) fn on_melee_action_request(
 pub(super) fn on_ranged_action_request(
     event: On<FromClient<RangedActionRequest>>,
     mut cmd: Commands,
-    time: Res<Time<()>>,
     viewer: TacticalPlayerViewer,
-    mut skeletons: Query<&mut SkeletonState>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
         debug!(
@@ -241,10 +347,6 @@ pub(super) fn on_ranged_action_request(
                 .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
                 .unwrap_or_default()
                 .saturating_sub(WINDUP_JITTER_TOLERANCE);
-            if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
-                let start = animation_tick(&time);
-                skeleton.begin_attack(AttackSpec::default(), start, start + duration_ticks(windup));
-            }
             cmd.trigger(RangedAttackStartedIntent {
                 attacker,
                 target: None,
@@ -289,19 +391,25 @@ pub(super) fn on_ranged_attack_started(
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
+    let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
+        return;
+    };
+    let start = animation_tick(&time);
+    if skeleton
+        .begin_attack(
+            AttackSpec::default(),
+            start,
+            start + duration_ticks(event.windup),
+        )
+        .is_err()
+    {
+        return;
+    }
     authority.observe(
         CombatInstant::from_elapsed(&time),
         event.windup,
         RANGED_NETWORK_ALLOWANCE,
     );
-    if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
-        let start = animation_tick(&time);
-        skeleton.begin_attack(
-            AttackSpec::default(),
-            start,
-            start + duration_ticks(event.windup),
-        );
-    }
 }
 
 fn animation_tick(time: &Time<()>) -> u64 {

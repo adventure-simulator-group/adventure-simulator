@@ -141,11 +141,7 @@ mod legacy_tests {
             ))
             .unwrap();
         library
-            .insert(pack(
-                "sword",
-                Some("unarmed"),
-                [SemanticPose::AttackSwing],
-            ))
+            .insert(pack("sword", Some("unarmed"), [SemanticPose::AttackSwing]))
             .unwrap();
         library
             .insert(pack("shield", Some("unarmed"), [SemanticPose::Guard]))
@@ -219,7 +215,7 @@ mod legacy_tests {
                 .abs()
                 < 0.0001
         );
-        assert_eq!(state.lead_foot, LeadFoot::Left);
+        assert_eq!(state.lead_foot(), LeadFoot::Left);
     }
 
     #[test]
@@ -318,7 +314,9 @@ mod legacy_tests {
             .with_locomotion_sample_tick(10)
             .with_world_velocity(Vec3::new(3.0, -2.0, 0.0))
             .with_body_state(BodyState::Airborne);
-        state.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100);
+        state
+            .begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100)
+            .unwrap();
 
         project_skeleton_locomotion(
             &mut state,
@@ -405,15 +403,15 @@ mod legacy_tests {
         project_skeleton_locomotion(&mut forward, input(Vec3::NEG_Z * 2.0));
         project_skeleton_locomotion(&mut retreat, input(Vec3::Z * 2.0));
 
-        assert_eq!(forward.lead_foot, LeadFoot::Left);
-        assert_eq!(retreat.lead_foot, LeadFoot::Left);
+        assert_eq!(forward.lead_foot(), LeadFoot::Left);
+        assert_eq!(retreat.lead_foot(), LeadFoot::Left);
         assert!((forward.gait_phase - retreat.gait_phase).abs() < 0.0001);
 
         let mut lowered = SkeletonState::default()
             .with_lead_foot(LeadFoot::Left)
             .with_gait_phase(0.49);
         project_skeleton_locomotion(&mut lowered, input(Vec3::NEG_Z * 2.0));
-        assert_eq!(lowered.lead_foot, LeadFoot::Right);
+        assert_eq!(lowered.lead_foot(), LeadFoot::Right);
     }
 
     #[test]
@@ -465,20 +463,14 @@ mod legacy_tests {
         let same_heading = Quat::from_rotation_y(std::f32::consts::PI);
         let side_heading = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
         assert!(downed_camera_roll_target(body, same_heading).abs() < 0.0001);
-        assert!(
-            (downed_camera_roll_target(body, side_heading).abs() - 0.5).abs() < 0.0001
-        );
+        assert!((downed_camera_roll_target(body, side_heading).abs() - 0.5).abs() < 0.0001);
         assert!((downed_camera_roll_target(body, Quat::IDENTITY) - 1.0).abs() < 0.0001);
     }
 
     #[test]
     fn lateral_dive_lands_at_its_half_roll_without_crossing_prone_idle() {
         for (direction, expected_half_turns, expected_pose) in [
-            (
-                DiveDirection::Left,
-                -0.5,
-                SemanticPose::ProneSupineRollLeft,
-            ),
+            (DiveDirection::Left, -0.5, SemanticPose::ProneSupineRollLeft),
             (
                 DiveDirection::Right,
                 0.5,
@@ -676,7 +668,7 @@ mod legacy_tests {
             .with_lead_foot(LeadFoot::Right);
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         assert_eq!(state.gait_phase, 0.0);
-        assert_eq!(state.lead_foot, LeadFoot::Right);
+        assert_eq!(state.lead_foot(), LeadFoot::Right);
 
         state.gait_phase = 0.25;
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
@@ -728,7 +720,7 @@ mod legacy_tests {
         project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.15));
         assert_eq!(state.raised_locomotion().local_direction(), Vec2::NEG_Y);
         assert!(state.gait_phase > 0.5);
-        assert_eq!(state.lead_foot, LeadFoot::Left);
+        assert_eq!(state.lead_foot(), LeadFoot::Left);
     }
 
     #[test]
@@ -843,7 +835,12 @@ mod legacy_tests {
         );
         assert!(evaluation.base.len() >= 2);
         assert!(!evaluation.base[0].mirror_lower_body);
-        assert!(evaluation.base.iter().all(|sample| !sample.mirror_lower_body));
+        assert!(
+            evaluation
+                .base
+                .iter()
+                .all(|sample| !sample.mirror_lower_body)
+        );
         assert!(evaluation.base.iter().any(|sample| matches!(
             sample.sampling,
             PoseSampling::Cycle { phase } if (phase - 0.375).abs() < 0.0001
@@ -895,7 +892,11 @@ mod legacy_tests {
             );
             assert!(samples.len() <= 2);
             assert!((samples.iter().map(|sample| sample.weight).sum::<f32>() - 1.0).abs() < 0.0001);
-            assert!(samples.iter().all(|sample| sample.sampling == PoseSampling::Anchor));
+            assert!(
+                samples
+                    .iter()
+                    .all(|sample| sample.sampling == PoseSampling::Anchor)
+            );
         }
     }
 
@@ -907,11 +908,8 @@ mod legacy_tests {
                 .map(|frame| {
                     let phase = frame as f32 * step;
                     let quarter = phase.rem_euclid(1.0) * 4.0;
-                    let gait = gait_pair(
-                        phase,
-                        SemanticPose::WalkContact,
-                        SemanticPose::WalkPassing,
-                    );
+                    let gait =
+                        gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing);
                     let end_weight = gait.get(1).map_or(0.0, |sample| sample.weight);
                     (quarter.floor() as u8, end_weight)
                 })
@@ -945,14 +943,19 @@ mod legacy_tests {
             );
             let middle_delta = near_middle.get(1).map_or(0.0, |sample| sample.weight)
                 - middle.get(1).map_or(0.0, |sample| sample.weight);
-            assert!(start_delta < middle_delta, "Hermite endpoints ease into motion");
+            assert!(
+                start_delta < middle_delta,
+                "Hermite endpoints ease into motion"
+            );
         }
     }
 
     #[test]
     fn attack_blends_guard_contact_and_end_guard() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::new(AttackAnimation::Swing), 0, 100);
+        state
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 0, 100)
+            .unwrap();
         state.advance_action(100);
         let evaluation = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(
@@ -1003,7 +1006,9 @@ mod legacy_tests {
             swing_follow: true,
             thrust: true,
         };
-        state.begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20);
+        state
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
+            .unwrap();
         state.advance_action(19);
         assert_eq!(state.select_attack_animation(StrikeFamily::Swing), None);
         state.advance_action(20);
@@ -1011,7 +1016,9 @@ mod legacy_tests {
             state.select_attack_animation(StrikeFamily::Swing),
             Some(AttackAnimation::SwingFollow)
         );
-        state.begin_attack(AttackSpec::new(AttackAnimation::SwingFollow), 20, 30);
+        state
+            .begin_attack(AttackSpec::new(AttackAnimation::SwingFollow), 20, 30)
+            .unwrap();
         state.advance_action(30);
         assert_eq!(state.select_attack_animation(StrikeFamily::Swing), None);
     }
@@ -1020,7 +1027,9 @@ mod legacy_tests {
     fn attacking_and_ordinary_raised_guard_use_identical_locomotion() {
         let mut guard = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
         let mut attack = guard.clone();
-        attack.begin_attack(AttackSpec::new(AttackAnimation::Thrust), 10, 1000);
+        attack
+            .begin_attack(AttackSpec::new(AttackAnimation::Thrust), 10, 1000)
+            .unwrap();
 
         for tick in 11..80 {
             let input = SkeletonLocomotionInput {
@@ -1037,13 +1046,14 @@ mod legacy_tests {
             assert_eq!(attack.local_velocity, guard.local_velocity);
             assert_eq!(attack.gait_phase, guard.gait_phase);
             assert_eq!(attack.raised_locomotion(), guard.raised_locomotion());
-            assert_eq!(attack.lead_foot, guard.lead_foot);
+            assert_eq!(attack.lead_foot(), guard.lead_foot());
         }
         assert_eq!(attack.action_kind(), SkeletonAction::Attack);
         assert_eq!(attack.attack_animation(), Some(AttackAnimation::Thrust));
     }
 
-    #[test]    fn horizontal_speed_drives_continuous_airborne_span() {
+    #[test]
+    fn horizontal_speed_drives_continuous_airborne_span() {
         for (speed, progress) in [(0.0, 0.0), (2.0, 1.0)] {
             let evaluation = AnimationEvaluation::from_skeleton(
                 &SkeletonState::default()
@@ -1063,20 +1073,24 @@ mod legacy_tests {
     #[test]
     fn quickstep_holds_guard_while_block_returns_to_guard() {
         let mut dodge_state = SkeletonState::default();
-        dodge_state.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100);
+        dodge_state
+            .begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100)
+            .unwrap();
         dodge_state.advance_action(150);
         let dodge = AnimationEvaluation::from_skeleton(&dodge_state);
         assert_eq!(dodge.base[0].pose, SemanticPose::Guard);
         assert!(dodge.action.is_empty());
 
         let mut right_lead_dodge_state = SkeletonState::default().with_lead_foot(LeadFoot::Right);
-        right_lead_dodge_state.begin_dodge(
-            DodgeSpec {
-                direction: Vec2::NEG_X,
-            },
-            0,
-            100,
-        );
+        right_lead_dodge_state
+            .begin_dodge(
+                DodgeSpec {
+                    direction: Vec2::NEG_X,
+                },
+                0,
+                100,
+            )
+            .unwrap();
         right_lead_dodge_state.advance_action(50);
         let right_lead_dodge = AnimationEvaluation::from_skeleton(&right_lead_dodge_state);
         assert_eq!(right_lead_dodge.base[0].pose, SemanticPose::Guard);
@@ -1089,7 +1103,9 @@ mod legacy_tests {
         );
 
         let mut block_state = SkeletonState::default().with_lead_foot(LeadFoot::Left);
-        block_state.begin_block(BlockSpec::default(), 0, 100);
+        block_state
+            .begin_block(BlockSpec::default(), 0, 100)
+            .unwrap();
         block_state.advance_action(150);
         let block = AnimationEvaluation::from_skeleton(&block_state);
         assert_eq!(block.action[0].pose, SemanticPose::BlockThrust);
@@ -1105,7 +1121,7 @@ mod legacy_tests {
     #[test]
     fn authoritative_action_clock_centers_contact_and_finishes_recovery() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         state.advance_action(15);
         assert_eq!(state.action_phase(), 0.25);
         state.advance_action(20);
@@ -1115,7 +1131,7 @@ mod legacy_tests {
         state.advance_action(30);
         assert_eq!(state.action_phase(), 1.0);
         state.advance_action(31);
-        assert_eq!(state.action(), ActionState::default());
+        assert!(state.action_view().is_none());
     }
 
     #[test]
@@ -1123,10 +1139,7 @@ mod legacy_tests {
         let mut state = SkeletonState::default();
         state.set_jump_anticipation(true);
         assert_eq!(state.jump_anticipation(), JumpAnticipation::Charging);
-        assert_eq!(
-            state.body(),
-            BodyState::Grounded(GroundedPosture::Upright)
-        );
+        assert_eq!(state.body(), BodyState::Grounded(GroundedPosture::Upright));
         assert_eq!(state.posture(), Posture::Upright);
 
         state.transition_body(BodyState::Airborne);

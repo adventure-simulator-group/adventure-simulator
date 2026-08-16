@@ -38,7 +38,11 @@ pub(in crate::animation) fn apply(
             }
             continue;
         }
-        let action_start_tick = skeleton.action_start_tick();
+        let action_start_tick = skeleton.action_view().map(|action| match action {
+            ActionView::Dodge { timeline, .. }
+            | ActionView::Attack { timeline, .. }
+            | ActionView::Block { timeline, .. } => timeline.start_tick,
+        });
         if state.action_start_tick != action_start_tick {
             state = QuickstepIkState {
                 action_start_tick,

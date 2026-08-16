@@ -1432,7 +1432,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             );
             let skipped_handoff = footwork.initialized && sequence_delta > 1;
             if !footwork.initialized
-                || footwork.lead != skeleton.lead_foot
+                || footwork.lead != skeleton.lead_foot()
                 || discontinuous
                 || skipped_handoff
             {
@@ -1441,7 +1441,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     was_moving: skeleton.raised_locomotion().is_moving(),
                     awaiting_step_sequence: false,
                     half_step,
-                    lead: skeleton.lead_foot,
+                    lead: skeleton.lead_foot(),
                     swing_left,
                     step_origin: rig_origin,
                     step_rotation: rig_rotation,
@@ -8537,7 +8537,9 @@ mod slope_cache_tests {
                 7,
             ));
         let guard_weights = locomotion_support_weights(&skeleton);
-        skeleton.begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20);
+        skeleton
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
+            .unwrap();
         assert_eq!(locomotion_support_weights(&skeleton), guard_weights);
     }
 

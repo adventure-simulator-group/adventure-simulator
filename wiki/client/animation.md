@@ -53,7 +53,9 @@ active action owns its own timeline and parameters. State-changing methods
 preserve these invariants rather than exposing a public property bag:
 
 - **Body:** grounded upright/crouched, airborne, prone, supine, or ragdolled;
-  this tagged value owns the ground-contact/posture relationship.
+  this tagged value owns the ground-contact/posture relationship. A typed
+  `DownedContact` view exposes only prone and supine authored contact, so
+  physics-owned ragdoll cannot enter downed roll or facing controls.
 - **Locomotion:** local/world velocity, acceleration, gait phase, and the
   currently leading or planted foot.
 - **Stance:** lowered, or raised with validated planted/moving footwork intent.
@@ -63,7 +65,8 @@ preserve these invariants rather than exposing a public property bag:
   typed transitions. Additional actions require an authoritative producer.
 - **Action payload:** dodge direction, block line, or selected attack contact,
   target height, and a saturating authoritative timeline, carried only by the
-  corresponding action variant.
+  corresponding action variant. Consumers read typed optional action views
+  rather than sentinel directions, heights, or attack lines.
 
 This state is synchronized over the network. A client does not need to know
 whether another character is an NPC or player; it needs only the replicated
@@ -116,13 +119,32 @@ screen rather than either original endpoint.
 The server owns movement, body mode, authoritative action timing, gameplay
 position, attack timing, hits, damage, and other outcomes. Typed action starts
 currently preserve the established last-writer-wins replacement behavior; there
-is no invented action-vs-action rejection table. Entering a downed body mode
-atomically lowers guard and cancels the presentation action. A client may begin
-an animation immediately in response to local input, then reconcile it with the
-server's accepted skeleton state. Bone transforms, terrain-adjusted foot
-positions, and secondary motion are presentation and are not authoritative. This
-follows the tactical trust boundary described in
+is no invented action-vs-action rejection table. Each start returns an accepted
+token or a body/transition rejection. Combat windup authority and pending parry
+state are written only after that admission succeeds. Entering a downed body
+mode atomically lowers guard and cancels the presentation action. A client may
+begin an animation immediately in response to local input, then reconcile it
+with the server's accepted skeleton state. Bone transforms, terrain-adjusted
+foot positions, and secondary motion are presentation and are not authoritative.
+This follows the tactical trust boundary described in
 [Networking](../engineering/networking.md#tactical-experience).
+
+Posture-transition state stores ordinary timed transitions separately from the
+dive variant, so airborne and landing bookkeeping cannot exist on a non-dive
+transition. Replication reconstruction normalizes finite phase and duration
+values through one path and handles a body/transition pair that could not be
+produced by the state machine by cancelling the incompatible transition. That
+same reconstruction clears action, raised stance, jump anticipation, and
+downed-facing payloads when an active transition or body mode excludes them. A
+dive remains valid while authoritative physics moves its body from launch
+support through airborne motion and back to grounded landing support. Its
+airborne and landing flags are normalized to those physical stages.
+
+Entering ragdoll cancels authored posture transitions, actions, downed-facing
+state, and downed turning. Replicated controller samples cannot replace the
+ragdoll body mode, and stale movement input is not restored while ragdoll owns
+the character. Prone/supine tank controls and camera alignment require a
+`DownedContact`; they do not run for ragdoll.
 
 For remote characters, an action start tick and a gait/lead-foot anchor are
 enough to advance the animation locally. Individual bone transforms should not

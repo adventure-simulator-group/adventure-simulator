@@ -53,8 +53,14 @@ pub(in crate::animation) fn apply_locomotion_body_response(
             || next
                 .last_grounded
                 .is_some_and(|value| value != skeleton.is_grounded());
-        let quickstep_target = (skeleton.action_kind() == SkeletonAction::Dodge)
-            .then(|| quickstep_lean_target(skeleton.action_direction(), skeleton.action_phase()));
+        let quickstep_target = (skeleton.action_kind() == SkeletonAction::Dodge).then(|| {
+            quickstep_lean_target(
+                skeleton
+                    .dodge_view()
+                    .map_or(Vec2::ZERO, |(direction, _)| direction),
+                skeleton.action_phase(),
+            )
+        });
         if skeleton.is_posture_transitioning()
             || (skeleton.action_kind() != SkeletonAction::None && quickstep_target.is_none())
             || (!skeleton.is_grounded() && quickstep_target.is_none())

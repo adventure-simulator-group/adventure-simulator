@@ -312,7 +312,14 @@ fn apply_analogue_movement_speed(
     viewer: TacticalPlayerViewer,
 ) {
     for (entity, input, mut controller, skeleton, pace) in &mut controllers {
-        let is_downed = skeleton.is_some_and(|skeleton| skeleton.body().is_downed());
+        if skeleton
+            .is_some_and(|skeleton| skeleton.body() == crate::animation::BodyState::Ragdolled)
+        {
+            controller.speed = 0.0;
+            controller.jump_height = 0.0;
+            continue;
+        }
+        let is_downed = skeleton.is_some_and(|skeleton| skeleton.body().downed_contact().is_some());
         // Ahoy uses the crouch flag for both its shortened collision shape and
         // a one-third upright crouch speed penalty. Downed postures need the
         // short collider, but their configured crawl/scamper speeds already
@@ -352,7 +359,9 @@ fn apply_analogue_movement_speed(
         }
         if skeleton.is_some_and(|skeleton| {
             skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
-                && skeleton.action_direction() != Vec2::ZERO
+                && skeleton
+                    .dodge_view()
+                    .is_some_and(|(direction, _)| direction != Vec2::ZERO)
                 && skeleton.quickstep_is_launched()
                 && skeleton.body() == crate::animation::BodyState::Airborne
         }) {
@@ -505,7 +514,9 @@ mod tests {
     #[test]
     fn launched_quickstep_uses_the_short_hop_and_dodge_speed() {
         let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        skeleton.begin_dodge(crate::animation::DodgeSpec { direction: Vec2::Y }, 0, 20);
+        skeleton
+            .begin_dodge(crate::animation::DodgeSpec { direction: Vec2::Y }, 0, 20)
+            .unwrap();
         skeleton.advance_action(5);
         skeleton.transition_body(crate::animation::BodyState::Airborne);
         assert!(skeleton.quickstep_is_launched());

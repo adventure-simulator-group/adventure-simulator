@@ -97,11 +97,11 @@ mod contract_tests {
         let mut state = SkeletonState::default();
         assert_eq!(state.body(), BodyState::Grounded(GroundedPosture::Upright));
         assert!(state.is_grounded());
-        assert_eq!(state.action(), ActionState::default());
+        assert!(state.action_view().is_none());
 
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Attack);
-        state.begin_dodge(DodgeSpec::default(), 12, 13);
+        state.begin_dodge(DodgeSpec::default(), 12, 13).unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Dodge);
     }
 
@@ -127,9 +127,11 @@ mod contract_tests {
     #[test]
     fn action_timeline_uses_saturating_arithmetic_at_u64_max() {
         let mut state = SkeletonState::default();
-        state.begin_block(BlockSpec::default(), u64::MAX, u64::MAX);
+        state
+            .begin_block(BlockSpec::default(), u64::MAX, u64::MAX)
+            .unwrap();
         state.advance_action(u64::MAX);
-        assert_eq!(state.action(), ActionState::default());
+        assert!(state.action_view().is_none());
         assert_eq!(state.action_phase(), 0.0);
     }
 
@@ -155,7 +157,7 @@ mod contract_tests {
     #[test]
     fn sparse_attack_evaluation_uses_guard_contact_guard() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 0, 10);
+        state.begin_attack(AttackSpec::default(), 0, 10).unwrap();
         state.advance_action(5);
         let early = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(early.action[0].pose, SemanticPose::Guard);
@@ -204,14 +206,17 @@ mod contract_tests {
     #[test]
     fn downed_body_transition_clears_action_and_raised_stance() {
         let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        state.begin_attack(AttackSpec::default(), 1, 2);
+        state.begin_attack(AttackSpec::default(), 1, 2).unwrap();
         state.transition_body(BodyState::Prone);
         assert_eq!(state.stance(), StanceState::Lowered);
-        assert_eq!(state.action(), ActionState::default());
+        assert!(state.action_view().is_none());
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         assert_eq!(state.stance(), StanceState::Lowered);
-        state.begin_attack(AttackSpec::default(), 3, 4);
-        assert_eq!(state.action(), ActionState::default());
+        assert_eq!(
+            state.begin_attack(AttackSpec::default(), 3, 4),
+            Err(ActionAdmissionError::BodyCannotAct(BodyState::Prone))
+        );
+        assert!(state.action_view().is_none());
     }
 
     #[test]
@@ -473,10 +478,273 @@ mod contract_tests {
     #[test]
     fn action_replacement_is_explicitly_last_writer_wins() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 10, 20);
-        state.begin_dodge(DodgeSpec { direction: Vec2::X }, 11, 12);
+        let first = state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
+        let replacement = state
+            .begin_dodge(DodgeSpec { direction: Vec2::X }, 11, 12)
+            .unwrap();
+        assert_eq!(first.kind(), SkeletonAction::Attack);
+        assert_eq!(first.start_tick(), 10);
+        assert_eq!(replacement.kind(), SkeletonAction::Dodge);
         assert_eq!(state.action_kind(), SkeletonAction::Dodge);
-        assert_eq!(state.action_direction(), Vec2::X);
+        assert_eq!(
+            state.dodge_view().map(|(direction, _)| direction),
+            Some(Vec2::X)
+        );
+    }
+
+    #[test]
+    fn action_admission_rejects_all_downed_bodies_without_mutating_action() {
+        for body in [BodyState::Prone, BodyState::Supine, BodyState::Ragdolled] {
+            let mut state = SkeletonState::default().with_body_state(body);
+            assert_eq!(
+                state.begin_attack(AttackSpec::default(), 10, 20),
+                Err(ActionAdmissionError::BodyCannotAct(body))
+            );
+            assert!(state.action_view().is_none());
+        }
+    }
+
+    #[test]
+    fn ragdoll_never_enters_authored_downed_controls() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Ragdolled);
+        assert_eq!(state.body().downed_contact(), None);
+        assert!(!state.advance_downed_facing(0.5, true, 0.1));
+        assert!(!state.begin_posture_transition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Left,
+            },
+            0,
+            10,
+        ));
+        assert!(state.posture_transition().is_none());
+
+        let mut interrupted = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(interrupted.advance_downed_facing(0.5, true, 0.5));
+        interrupted.set_downed_turning(true);
+        assert!(interrupted.downed_facing().is_some());
+        assert!(interrupted.downed_turning());
+        interrupted.transition_body(BodyState::Ragdolled);
+        assert!(interrupted.downed_facing().is_none());
+        assert!(!interrupted.downed_turning());
+
+        let mut acting = SkeletonState::default();
+        acting.begin_attack(AttackSpec::default(), 1, 4).unwrap();
+        acting.transition_body(BodyState::Ragdolled);
+        assert!(acting.action_view().is_none());
+    }
+
+    #[test]
+    fn typed_action_views_expose_only_the_active_payload() {
+        let mut state = SkeletonState::default();
+        state
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
+            .unwrap();
+        assert_eq!(
+            state.attack_view(),
+            Some((
+                0.5,
+                AttackAnimation::Swing,
+                ActionTimelineView {
+                    start_tick: 10,
+                    preparation_ticks: 10,
+                    phase: 0.0,
+                }
+            ))
+        );
+        assert!(state.dodge_view().is_none());
+        assert!(state.block_view().is_none());
+    }
+
+    #[test]
+    fn transition_body_matrix_round_trips_and_normalizes_invalid_wire_pairs() {
+        let cases = [
+            (BodyState::default(), PostureTransitionKind::UprightToProne),
+            (BodyState::Prone, PostureTransitionKind::ProneToUpright),
+            (
+                BodyState::Prone,
+                PostureTransitionKind::ProneToSupine {
+                    direction: RollDirection::Left,
+                },
+            ),
+            (
+                BodyState::Supine,
+                PostureTransitionKind::SupineToProne {
+                    direction: RollDirection::Right,
+                },
+            ),
+            (BodyState::Supine, PostureTransitionKind::SupineToUpright),
+        ];
+        for (body, transition) in cases {
+            let mut state = SkeletonState::default().with_body_state(body);
+            assert!(state.begin_posture_transition(transition, 4, 12));
+            let mut wire = serde_json::to_value(&state).unwrap();
+            wire["posture_transition"]["Timed"]["duration_ticks"] = serde_json::json!(0);
+            wire["posture_transition"]["Timed"]["phase"] = serde_json::json!(2.0);
+            let rebuilt: SkeletonState = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(rebuilt.body(), body);
+            assert_eq!(rebuilt.posture_transition().unwrap().kind(), transition);
+            assert_eq!(rebuilt.posture_transition().unwrap().phase(), 1.0);
+
+            let mut invalid = wire;
+            invalid["body"] = serde_json::to_value(BodyState::Ragdolled).unwrap();
+            let interrupted: SkeletonState = serde_json::from_value(invalid).unwrap();
+            assert_eq!(interrupted.body(), BodyState::Ragdolled);
+            assert!(interrupted.posture_transition().is_none());
+        }
+
+        let mut dive = SkeletonState::default();
+        assert!(dive.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Forward,
+            },
+            4,
+            12,
+        ));
+        dive.transition_body(BodyState::Airborne);
+        let wire = serde_json::to_value(&dive).unwrap();
+        assert!(serde_json::from_value::<SkeletonState>(wire).is_ok());
+    }
+
+    #[test]
+    fn public_body_interruptions_keep_every_reachable_state_round_trippable() {
+        let mut ledge_fall = SkeletonState::default();
+        assert!(ledge_fall.begin_posture_transition(PostureTransitionKind::UprightToProne, 0, 10,));
+        ledge_fall.transition_body(BodyState::Airborne);
+        assert!(ledge_fall.posture_transition().is_none());
+        let encoded = postcard::to_allocvec(&ledge_fall).unwrap();
+        assert_eq!(
+            postcard::from_bytes::<SkeletonState>(&encoded).unwrap(),
+            ledge_fall
+        );
+
+        let mut ragdoll = SkeletonState::default();
+        assert!(ragdoll.begin_posture_transition(PostureTransitionKind::UprightToProne, 0, 10,));
+        ragdoll.transition_body(BodyState::Ragdolled);
+        assert!(ragdoll.posture_transition().is_none());
+        assert!(ragdoll.action_view().is_none());
+        assert!(ragdoll.downed_facing().is_none());
+        assert!(!ragdoll.downed_turning());
+        let encoded = postcard::to_allocvec(&ragdoll).unwrap();
+        assert_eq!(
+            postcard::from_bytes::<SkeletonState>(&encoded).unwrap(),
+            ragdoll
+        );
+
+        let mut dive = SkeletonState::default();
+        assert!(dive.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Left,
+            },
+            0,
+            10,
+        ));
+        dive.transition_body(BodyState::Airborne);
+        assert!(dive.posture_transition().is_some());
+        dive.transition_body(BodyState::Ragdolled);
+        assert!(dive.posture_transition().is_none());
+    }
+
+    #[test]
+    fn transition_reconstruction_clears_forbidden_orthogonal_dimensions() {
+        let mut active = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        active.set_jump_anticipation(true);
+        active
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 2, 8)
+            .unwrap();
+        let mut transition = SkeletonState::default();
+        assert!(transition.begin_posture_transition(PostureTransitionKind::UprightToProne, 3, 12,));
+
+        let mut adversarial = serde_json::to_value(&active).unwrap();
+        adversarial["posture_transition"] =
+            serde_json::to_value(transition.posture_transition()).unwrap();
+        adversarial["jump_anticipation"] = serde_json::json!("Charging");
+        let rebuilt: SkeletonState = serde_json::from_value(adversarial).unwrap();
+        assert!(rebuilt.posture_transition().is_some());
+        assert_eq!(rebuilt.stance(), StanceState::Lowered);
+        assert_eq!(rebuilt.jump_anticipation(), JumpAnticipation::Inactive);
+        assert!(rebuilt.action_view().is_none());
+
+        let encoded = postcard::to_allocvec(&rebuilt).unwrap();
+        let replicated: SkeletonState = postcard::from_bytes(&encoded).unwrap();
+        assert_eq!(replicated, rebuilt);
+    }
+
+    #[test]
+    fn valid_dive_lifecycle_stages_round_trip_through_postcard() {
+        let mut dive = SkeletonState::default();
+        assert!(dive.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+            },
+            4,
+            12,
+        ));
+        for stage in 0..3 {
+            if stage == 1 {
+                dive.transition_body(BodyState::Airborne);
+                dive.advance_posture_transition(5);
+            } else if stage == 2 {
+                dive.transition_body(BodyState::Grounded(GroundedPosture::Upright));
+                dive.advance_posture_transition(20);
+            }
+            let encoded = postcard::to_allocvec(&dive).unwrap();
+            let rebuilt: SkeletonState = postcard::from_bytes(&encoded).unwrap();
+            assert_eq!(rebuilt, dive);
+        }
+    }
+
+    #[test]
+    fn impossible_dive_bookkeeping_is_normalized_for_the_physical_body() {
+        let mut dive = SkeletonState::default();
+        assert!(dive.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Forward,
+            },
+            4,
+            12,
+        ));
+        let mut wire = serde_json::to_value(&dive).unwrap();
+        wire["body"] = serde_json::to_value(BodyState::Airborne).unwrap();
+        wire["posture_transition"]["Dive"]["phase"] = serde_json::json!(0.9);
+        wire["posture_transition"]["Dive"]["was_airborne"] = serde_json::json!(false);
+        wire["posture_transition"]["Dive"]["landing_tick"] = serde_json::json!(8);
+
+        let rebuilt: SkeletonState = serde_json::from_value(wire).unwrap();
+        assert_eq!(rebuilt.body(), BodyState::Airborne);
+        assert_eq!(rebuilt.posture_transition().unwrap().phase(), 0.5);
+        let normalized = serde_json::to_value(&rebuilt).unwrap();
+        assert_eq!(
+            normalized["posture_transition"]["Dive"]["was_airborne"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            normalized["posture_transition"]["Dive"]["landing_tick"],
+            serde_json::Value::Null
+        );
+
+        let encoded = postcard::to_allocvec(&rebuilt).unwrap();
+        assert_eq!(
+            postcard::from_bytes::<SkeletonState>(&encoded).unwrap(),
+            rebuilt
+        );
+    }
+
+    #[test]
+    fn ragdoll_locomotion_projection_is_inert() {
+        let mut ragdoll = SkeletonState::default().with_body_state(BodyState::Ragdolled);
+        let before = ragdoll.clone();
+        project_skeleton_locomotion(
+            &mut ragdoll,
+            SkeletonLocomotionInput {
+                orientation: Quat::from_rotation_y(1.0),
+                linear_velocity: Vec3::new(3.0, -2.0, 1.0),
+                grounded: true,
+                crouching: true,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 99,
+            },
+        );
+        assert_eq!(ragdoll, before);
     }
 
     #[test]
@@ -496,7 +764,7 @@ mod contract_tests {
         );
 
         let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         let mut wire = serde_json::to_value(&state).unwrap();
         wire["body"] = serde_json::json!("Prone");
         wire["action"]["Attack"]["timeline"]["preparation_ticks"] = serde_json::json!(0);
@@ -507,7 +775,7 @@ mod contract_tests {
         let normalized: SkeletonState = serde_json::from_value(wire).unwrap();
         assert_eq!(normalized.body(), BodyState::Prone);
         assert_eq!(normalized.stance(), StanceState::Lowered);
-        assert_eq!(normalized.action(), ActionState::default());
+        assert!(normalized.action_view().is_none());
     }
 
     #[test]

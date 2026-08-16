@@ -1895,7 +1895,7 @@ fn drive_sequence(
         if frame.action != SkeletonAction::Attack
             || attack_start_frame == Some(frame.scenario_frame)
         {
-            skeleton.lead_foot = frame.lead_foot;
+            skeleton.set_presentation_shadow_lead_foot(frame.lead_foot);
         }
         terrain_ik.0 = terrain_ik_enabled_for_frame(&frame);
         guard_input.desired = frame.weapon_guard;
@@ -2000,16 +2000,20 @@ fn drive_sequence(
                     } else {
                         AttackSpec::new(AttackAnimation::Thrust)
                     };
-                    skeleton.begin_attack(attack, start, contact)
+                    let _ = skeleton.begin_attack(attack, start, contact);
                 }
-                SkeletonAction::Dodge => skeleton.begin_dodge(
-                    DodgeSpec {
-                        direction: frame.local_direction,
-                    },
-                    start,
-                    if quickstep { start + 20 } else { contact },
-                ),
-                SkeletonAction::Block => skeleton.begin_block(BlockSpec::default(), start, contact),
+                SkeletonAction::Dodge => {
+                    let _ = skeleton.begin_dodge(
+                        DodgeSpec {
+                            direction: frame.local_direction,
+                        },
+                        start,
+                        if quickstep { start + 20 } else { contact },
+                    );
+                }
+                SkeletonAction::Block => {
+                    let _ = skeleton.begin_block(BlockSpec::default(), start, contact);
+                }
                 SkeletonAction::None => {}
             }
         }
@@ -2457,11 +2461,15 @@ fn capture_frame(
             body_forward_direction: (subject_global.rotation() * Vec3::Z).to_array(),
             body_rotation_xyzw: subject_global.rotation().to_array(),
             weapon_guard: frame.weapon_guard,
-            lead_foot: skeleton.lead_foot,
+            lead_foot: skeleton.lead_foot(),
             action: skeleton.action_kind(),
             action_phase: skeleton.action_phase(),
             attack_animation: skeleton.attack_animation(),
-            strike_family: skeleton.strike_family(),
+            strike_family: skeleton
+                .attack_view()
+                .map_or(StrikeFamily::Thrust, |(_, animation, _)| {
+                    animation.strike_family()
+                }),
             guard_action: frame.weapon_guard == WeaponGuardState::Raised
                 || matches!(
                     frame.action,
@@ -5043,7 +5051,7 @@ mod tests {
                         tick: frame.scenario_frame as u64,
                     },
                 );
-                assert_eq!(skeleton.lead_foot, frame.lead_foot);
+                assert_eq!(skeleton.lead_foot(), frame.lead_foot);
                 let evaluation = AnimationEvaluation::from_skeleton(&skeleton);
                 assert_eq!(evaluation.base.len(), 1);
                 assert_eq!(evaluation.base[0].pose, SemanticPose::Guard);
