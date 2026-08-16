@@ -171,7 +171,7 @@ pub(in crate::presentation) struct CelestialLightingSnapshot {
     pub(in crate::presentation) moon_altitude_degrees: f32,
     pub(in crate::presentation) lunar_illumination: f32,
     lunar_phase: f32,
-    weather_transmission: f32,
+    pub(in crate::presentation) weather_transmission: f32,
     equatorial_to_world: Mat4,
     exposure_ev100: f32,
     pub(in crate::presentation) ambient_color: Vec3,

@@ -21,6 +21,11 @@ enum SkyView {
     Twilight,
     Moon,
     Stars,
+    CloudCumulus,
+    CloudStratocumulus,
+    CloudCirrus,
+    CloudOvercast,
+    CloudStorm,
 }
 
 #[cfg(not(target_family = "wasm"))]

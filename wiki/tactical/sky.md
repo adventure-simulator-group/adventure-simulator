@@ -59,21 +59,38 @@ Regenerate the catalog from the official CDS VizieR endpoint with:
 python scripts/import_hipparcos_stars.py
 ```
 
-## Deferred clouds
+## Procedural clouds
 
-Clouds remain deliberately separate from this module while terrain foliage is
-under parallel development. The intended quality path is volumetric clouds,
-with a later browser fallback using a lower-cost procedural sky layer. Both
-paths should consume the same normalized coverage, density, wind, and lighting
-inputs so graphics presets can switch implementations without changing the
-amount or broad silhouette of cloud cover. Clouds should not be baked into an
-environment map.
+The default tactical presentation renders clouds as a bounded atmospheric
+slab. A camera-centred hemisphere supplies rasterization geometry, but the
+fragment shader intersects each view ray with the cloud layer and integrates
+twelve procedural density samples through it. Height profiles distinguish
+cumulus, stratocumulus, cirrus, and storm clouds. Wind moves the density field
+without simulating tactical fluid state.
+
+Strategic precipitation, intensity, time, and location determine the broad
+coverage and profile. Clear-weather variation is derived deterministically
+from the scene digest and weather interval because the strategic weather
+snapshot does not yet carry an authoritative cloud-cover measurement. Rain and
+snow force denser, lower layers. These values remain transient presentation
+state and are never written back to SpacetimeDB.
+
+Cloud lighting reuses the production Sun direction, exposure, and weather
+transmission. The shader uses bounded optical depth, an inexpensive
+forward-scattering approximation, and denser undersides instead of secondary
+shadow rays. Clouds remain separate from the atmosphere-generated environment
+map; they neither trigger environment-map regeneration nor bake their moving
+shape into image-based lighting.
 
 ## Verification
 
-Use `just tactical-sky-capture` with `sun`, `sun-detail`, `twilight`, `moon`, or
-`stars`. `sun-detail` is a clearly labeled 20-degree-FOV diagnostic of the same
-unchanged production `SunDisk::EARTH` and natural bloom at low solar altitude;
+Use `just tactical-sky-capture` with `sun`, `sun-detail`, `twilight`, `moon`,
+`stars`, `cloud-cumulus`, `cloud-stratocumulus`, `cloud-cirrus`,
+`cloud-overcast`, or `cloud-storm`. Cloud captures use a diagnostics-only
+profile override and a longer warm-up so shader and atmosphere pipelines have
+settled before validation. `sun-detail` remains a clearly labeled 20-degree-FOV
+diagnostic of the unchanged production `SunDisk::EARTH` and natural bloom at
+low solar altitude;
 it must not be interpreted as gameplay-scale disc size.
 These deterministic native views run the production presentation plugin. The
 Moon view uses a narrow verification field of view so the first-quarter

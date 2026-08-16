@@ -1053,6 +1053,11 @@ just tactical-sky-capture sun-detail target/tactical-sky-captures/sun-detail.png
 just tactical-sky-capture twilight target/tactical-sky-captures/twilight.png
 just tactical-sky-capture moon target/tactical-sky-captures/moon.png
 just tactical-sky-capture stars target/tactical-sky-captures/stars.png
+just tactical-sky-capture cloud-cumulus target/tactical-sky-captures/cloud-cumulus.png
+just tactical-sky-capture cloud-stratocumulus target/tactical-sky-captures/cloud-stratocumulus.png
+just tactical-sky-capture cloud-cirrus target/tactical-sky-captures/cloud-cirrus.png
+just tactical-sky-capture cloud-overcast target/tactical-sky-captures/cloud-overcast.png
+just tactical-sky-capture cloud-storm target/tactical-sky-captures/cloud-storm.png
 ```
 
 Each capture primes one disposable GPU readback after its settle interval,

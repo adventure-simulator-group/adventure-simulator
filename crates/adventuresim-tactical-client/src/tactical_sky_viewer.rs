@@ -26,7 +26,10 @@ use serde::Serialize;
 
 use crate::{
     SkyView,
-    presentation::{TacticalCameraSetup, TacticalPresentationPlugin},
+    presentation::{
+        TacticalCameraSetup, TacticalCloudCaptureOverride, TacticalCloudCaptureProfile,
+        TacticalPresentationPlugin,
+    },
 };
 
 const VIEW_WIDTH: u32 = 1600;
@@ -113,6 +116,7 @@ struct SkyManifest {
     horizon_sky_red_blue_delta: f32,
     sun_disk_angular_diameter_degrees: f32,
     diagnostic_magnification: bool,
+    cloud_profile: Option<&'static str>,
     exposure_ev100: f32,
     solar_source_illuminance_lux: f32,
     atmosphere_enabled: bool,
@@ -123,6 +127,11 @@ struct SkyManifest {
 }
 
 pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
+    let settle_frames = if is_cloud_view(view) {
+        settle_frames.max(60)
+    } else {
+        settle_frames
+    };
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).expect("create sky capture output directory");
     }
@@ -167,6 +176,9 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
         bloom_enabled: true,
         max_vista_lods: 0,
     })
+    .insert_resource(TacticalCloudCaptureOverride(Some(cloud_capture_profile(
+        view,
+    ))))
     .insert_resource(ClearColor(Color::BLACK))
     .insert_resource(CaptureState {
         output,
@@ -211,6 +223,11 @@ fn sky_view_configuration(view: SkyView) -> SkyViewConfiguration {
         SkyView::Moon => 359_940,
         // Canonical new moon at 23:00 on day 77.
         SkyView::Stars => 637_860,
+        SkyView::CloudCumulus
+        | SkyView::CloudStratocumulus
+        | SkyView::CloudCirrus
+        | SkyView::CloudOvercast
+        | SkyView::CloudStorm => 172 * MINUTES_PER_DAY + 15 * 60,
     };
     let celestial = celestial_directions(
         absolute_minute,
@@ -225,6 +242,11 @@ fn sky_view_configuration(view: SkyView) -> SkyViewConfiguration {
         SkyView::Twilight => horizon_view(sun, 0.03),
         SkyView::Moon => moon,
         SkyView::Stars => Vec3::new(0.15, 0.55, -0.82).normalize(),
+        SkyView::CloudCumulus
+        | SkyView::CloudStratocumulus
+        | SkyView::CloudCirrus
+        | SkyView::CloudOvercast
+        | SkyView::CloudStorm => horizon_view(sun, 0.34),
     };
     SkyViewConfiguration {
         absolute_minute,
@@ -237,6 +259,8 @@ fn sky_view_configuration(view: SkyView) -> SkyViewConfiguration {
             12.0
         } else if matches!(view, SkyView::SunDetail) {
             20.0
+        } else if is_cloud_view(view) {
+            72.0
         } else {
             80.0
         },
@@ -442,6 +466,11 @@ fn capture_view(
                 }
                 SkyView::Twilight => twilight_subject_content(&metrics),
                 SkyView::Stars => metrics.bright_pixel_count >= 8,
+                SkyView::CloudCumulus
+                | SkyView::CloudStratocumulus
+                | SkyView::CloudCirrus
+                | SkyView::CloudOvercast
+                | SkyView::CloudStorm => metrics.upper_sky_luma_variance >= 12.0,
             };
             let validation = SkyValidation {
                 expected_dimensions,
@@ -460,7 +489,7 @@ fn capture_view(
                 render_observations: 0,
             });
             let manifest = SkyManifest {
-                pipeline: "tactical_sky_native_capture_v3",
+                pipeline: "tactical_sky_native_capture_v4",
                 view: sky_view_slug(state.view),
                 absolute_minute: state.absolute_minute,
                 resolution: [VIEW_WIDTH, VIEW_HEIGHT],
@@ -487,6 +516,7 @@ fn capture_view(
                 horizon_sky_red_blue_delta: metrics.horizon_sky_red_blue_delta,
                 sun_disk_angular_diameter_degrees: SunDisk::EARTH.angular_size.to_degrees(),
                 diagnostic_magnification: matches!(state.view, SkyView::SunDetail),
+                cloud_profile: cloud_profile_slug(state.view),
                 exposure_ev100,
                 solar_source_illuminance_lux,
                 atmosphere_enabled: true,
@@ -612,6 +642,44 @@ fn sky_view_slug(view: SkyView) -> &'static str {
         SkyView::Twilight => "twilight",
         SkyView::Moon => "moon",
         SkyView::Stars => "stars",
+        SkyView::CloudCumulus => "cloud-cumulus",
+        SkyView::CloudStratocumulus => "cloud-stratocumulus",
+        SkyView::CloudCirrus => "cloud-cirrus",
+        SkyView::CloudOvercast => "cloud-overcast",
+        SkyView::CloudStorm => "cloud-storm",
+    }
+}
+
+fn is_cloud_view(view: SkyView) -> bool {
+    matches!(
+        view,
+        SkyView::CloudCumulus
+            | SkyView::CloudStratocumulus
+            | SkyView::CloudCirrus
+            | SkyView::CloudOvercast
+            | SkyView::CloudStorm
+    )
+}
+
+fn cloud_capture_profile(view: SkyView) -> TacticalCloudCaptureProfile {
+    match view {
+        SkyView::CloudCumulus => TacticalCloudCaptureProfile::Cumulus,
+        SkyView::CloudStratocumulus => TacticalCloudCaptureProfile::Stratocumulus,
+        SkyView::CloudCirrus => TacticalCloudCaptureProfile::Cirrus,
+        SkyView::CloudOvercast => TacticalCloudCaptureProfile::Overcast,
+        SkyView::CloudStorm => TacticalCloudCaptureProfile::Storm,
+        _ => TacticalCloudCaptureProfile::Clear,
+    }
+}
+
+fn cloud_profile_slug(view: SkyView) -> Option<&'static str> {
+    match view {
+        SkyView::CloudCumulus => Some("cumulus"),
+        SkyView::CloudStratocumulus => Some("stratocumulus"),
+        SkyView::CloudCirrus => Some("cirrus"),
+        SkyView::CloudOvercast => Some("overcast"),
+        SkyView::CloudStorm => Some("storm"),
+        _ => None,
     }
 }
 

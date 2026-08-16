@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2010)
+## Files (2012)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -63,6 +63,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
 - `assets/data/hipparcos-bright-stars.csv` — Repository support file.
+- `assets/shaders/tactical_clouds.wgsl` — Repository support file.
 - `assets/shaders/tactical_foliage.wgsl` — Repository support file.
 - `assets/shaders/tactical_moon.wgsl` — Repository support file.
 - `assets/shaders/tactical_pebble_billboard.wgsl` — Repository support file.
@@ -1369,6 +1370,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/presentation/clouds.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/environment.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/ground_scatter/grass.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/ground_scatter/litter.rs` — Rust source module.
