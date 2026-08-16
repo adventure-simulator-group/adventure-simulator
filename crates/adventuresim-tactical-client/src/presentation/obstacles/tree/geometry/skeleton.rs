@@ -9,9 +9,9 @@ use super::{
     branch_frame,
 };
 
-const OAK_ROOT_MIN_COUNT: usize = 5;
-const OAK_ROOT_MAX_COUNT: usize = 10;
-const OAK_ROOT_MAX_FORKS: usize = 2;
+const OAK_ROOT_MIN_COUNT: usize = 4;
+const OAK_ROOT_MAX_COUNT: usize = 5;
+const OAK_ROOT_MAX_FORKS: usize = 1;
 const OAK_ROOT_MAX_SEGMENTS: usize = OAK_ROOT_MAX_COUNT * 2 + OAK_ROOT_MAX_FORKS;
 const OAK_ROOT_MIN_ANGULAR_GAP: f32 = 0.22;
 
@@ -84,7 +84,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             counts,
-            vec![6 + oak_root_segment_count(&roots), 70, 348, 8_704]
+            vec![6 + oak_root_segment_count(&roots), 70, 315, 6_348]
         );
         assert!(branches.iter().all(|branch| branch.start.is_finite()
             && branch.end.is_finite()
@@ -106,10 +106,10 @@ mod tests {
             assert!(oak_root_segment_count(&roots) <= OAK_ROOT_MAX_SEGMENTS);
             assert!(roots.iter().filter(|root| root.fork.is_some()).count() <= OAK_ROOT_MAX_FORKS);
             assert!((2..=3).contains(&roots.iter().filter(|root| root.dominant).count()));
-            assert!(roots.iter().all(|root| (0.82..=1.48).contains(&root.reach)
-                && (0.25..=0.42).contains(&root.base_radius)
-                && (0.04..=0.065).contains(&root.tip_radius)
-                && (0.11..=0.2).contains(&root.burial)));
+            assert!(roots.iter().all(|root| (0.55..=1.04).contains(&root.reach)
+                && (0.14..=0.27).contains(&root.base_radius)
+                && (0.008..=0.02).contains(&root.tip_radius)
+                && (0.24..=0.36).contains(&root.burial)));
             let mut angles = roots
                 .iter()
                 .map(|root| root.angle.rem_euclid(core::f32::consts::TAU))
@@ -154,7 +154,7 @@ mod tests {
             assert!(
                 dominant
                     .iter()
-                    .all(|root| root.reach >= 1.18 && root.base_radius >= 0.34)
+                    .all(|root| root.reach >= 0.88 && root.base_radius >= 0.22)
             );
             let span = |values: Vec<f32>| {
                 let bounds = values
@@ -164,8 +164,8 @@ mod tests {
                     });
                 bounds.1 - bounds.0
             };
-            assert!(span(roots.iter().map(|root| root.reach).collect()) > 0.18);
-            assert!(span(roots.iter().map(|root| root.base_radius).collect()) > 0.06);
+            assert!(span(roots.iter().map(|root| root.reach).collect()) > 0.12);
+            assert!(span(roots.iter().map(|root| root.base_radius).collect()) > 0.035);
         }
     }
 
@@ -191,7 +191,7 @@ mod tests {
                 }
             }
             for (index, points) in root_points.iter().enumerate() {
-                assert!(points[0].length() >= 0.47);
+                assert!(points[0].length() >= 0.35);
                 assert!(
                     root_points[index + 1..]
                         .iter()
@@ -200,6 +200,29 @@ mod tests {
             }
         }
         assert!(observed_forks > 0);
+    }
+
+    #[test]
+    fn natural_oak_roots_have_no_above_grade_continuations() {
+        for seed in 0..256 {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            for root in procedural_oak_root_specs(seed, crown_phase) {
+                let points = oak_root_points(-Vec3::Y * 0.07, root, NATURAL_OAK_GNARLING);
+                // The contact capsule may break grade as a short trunk flare;
+                // both continuation controls and their conservative radii
+                // remain below grade, so no radial toe can terminate visibly.
+                assert!(points[1].y + root.base_radius * 0.65 < 0.0);
+                assert!(points[2].y + root.tip_radius < 0.0);
+                if let Some(fork) = root.fork {
+                    let fork_points = oak_root_fork_points(&points, root, fork);
+                    assert!(
+                        fork_points
+                            .iter()
+                            .all(|point| point.y + root.base_radius * 0.34 < 0.0)
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -304,14 +327,28 @@ mod tests {
         );
         let trunk = branches
             .iter()
-            .filter(|branch| branch.depth == 0)
+            .filter(|branch| branch.depth == 0 && (branch.end - branch.start).normalize().y > 0.9)
             .collect::<Vec<_>>();
-        assert_eq!(trunk.len(), 8);
+        assert_eq!(trunk.len(), 10);
         assert!(
             (trunk[0].start.y + TREE_TRUNK_HEIGHT_METRES * 0.5).abs() < f32::EPSILON,
             "the beech mesh root must share the collider-centred tree origin"
         );
-        assert!(trunk.iter().all(|segment| segment.end.xz().length() < 0.09));
+        assert!(
+            trunk
+                .iter()
+                .all(|segment| segment.end.xz().length() < 0.075)
+        );
+        let basal_roots = branches
+            .iter()
+            .filter(|branch| {
+                branch.depth == 0
+                    && branch.end.y < -TREE_TRUNK_HEIGHT_METRES * 0.5
+                    && branch.end_radius < 0.03
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(basal_roots.len(), 3);
+        assert!(basal_roots.iter().all(|root| root.end.xz().length() < 0.55));
         let crown_base = branches
             .iter()
             .filter(|branch| branch.depth == 1)
@@ -323,12 +360,41 @@ mod tests {
         );
         assert!(COMMON_BEECH_BARK.fissure_depth_metres < 0.0005);
         assert_eq!(COMMON_BEECH_BARK.root_lobe_height_metres, 0.003);
+        let branch_counts = (0..=3)
+            .map(|depth| {
+                branches
+                    .iter()
+                    .filter(|branch| branch.depth == depth)
+                    .count()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(branch_counts, vec![16, 100, 200, 1_200]);
+        assert!((0..TREE_PRIMARY_GROUP_COUNT).all(|group| {
+            branches
+                .iter()
+                .any(|branch| branch.depth == 1 && branch.primary_group == group)
+        }));
+        assert!(
+            branches
+                .iter()
+                .filter(|branch| (branch.depth == 1 || branch.depth == 2) && branch.is_limb_tip)
+                .all(|branch| branch.end.y > branch.start.y)
+        );
         let leaves = procedural_woody_plant_leaves(91, &branches, 0.65, COMMON_BEECH_PARAMETERS);
-        assert!(!leaves.is_empty());
+        assert_eq!(leaves.len(), 4_800);
         assert!(leaves.iter().all(|leaf| {
-            (0.055..=0.1).contains(&leaf.length)
+            (0.165..=0.301).contains(&leaf.length)
                 && (0.48..=0.66).contains(&(leaf.width / leaf.length))
         }));
+        let horizontal_laminae = leaves
+            .iter()
+            .filter(|leaf| leaf.right.cross(leaf.up).normalize().dot(Vec3::Y).abs() > 0.72)
+            .count();
+        assert!(horizontal_laminae * 5 > leaves.len() * 2);
+        let crown = tree_crown_bounds(&branches, |branch| branch.depth > 0);
+        // A closed-stand beech crown should remain a coherent dome, but need
+        // not be taller than its maximum lateral scaffold span.
+        assert!(crown.vertical_span() > crown.horizontal_span() * 0.65);
     }
 
     #[test]
@@ -428,7 +494,7 @@ mod tests {
                 .map(|branch| branch.end.xz().length())
                 .fold(0.0_f32, f32::max)
         };
-        assert!(root_span(&extreme) > root_span(&baseline) * 1.7);
+        assert!(root_span(&extreme) > root_span(&baseline) * 1.3);
         let trunk_horizontal_span = |branches: &[TreeBranchSegment]| {
             branches
                 .iter()
@@ -558,14 +624,14 @@ fn procedural_oak_root_specs_with_gnarling(
             let root_seed = splitmix64(plan_seed ^ 0x300 ^ index as u64);
             let is_dominant = dominant[index];
             let reach = (if is_dominant {
-                1.18 + unit_hash(root_seed ^ 0x01) * 0.3
+                0.88 + unit_hash(root_seed ^ 0x01) * 0.16
             } else {
-                0.82 + unit_hash(root_seed ^ 0x01) * 0.4
-            }) * (1.0 + gnarling.root_spread.clamp(0.0, 1.0) * 1.15);
+                0.55 + unit_hash(root_seed ^ 0x01) * 0.3
+            }) * (1.0 + gnarling.root_spread.clamp(0.0, 1.0) * 0.45);
             let base_radius = if is_dominant {
-                0.34 + unit_hash(root_seed ^ 0x02) * 0.08
+                0.22 + unit_hash(root_seed ^ 0x02) * 0.05
             } else {
-                0.25 + unit_hash(root_seed ^ 0x02) * 0.075
+                0.14 + unit_hash(root_seed ^ 0x02) * 0.05
             };
             let fork_threshold = 0.82 - gnarling.root_forking.clamp(0.0, 1.0) * 0.72;
             let fork = (fork_count < OAK_ROOT_MAX_FORKS
@@ -579,16 +645,16 @@ fn procedural_oak_root_specs_with_gnarling(
                         } else {
                             -0.5 - unit_hash(root_seed ^ 0x08) * 0.35
                         },
-                        reach: 0.24 + unit_hash(root_seed ^ 0x09) * 0.23,
+                        reach: 0.16 + unit_hash(root_seed ^ 0x09) * 0.16,
                     }
                 });
             OakRootSpec {
                 angle: angle.rem_euclid(core::f32::consts::TAU),
                 reach,
                 base_radius,
-                tip_radius: 0.04 + unit_hash(root_seed ^ 0x03) * 0.025,
-                shoulder_lift: 0.015 + unit_hash(root_seed ^ 0x04) * 0.045,
-                burial: 0.11 + unit_hash(root_seed ^ 0x05) * 0.09,
+                tip_radius: 0.008 + unit_hash(root_seed ^ 0x03) * 0.012,
+                shoulder_lift: unit_hash(root_seed ^ 0x04) * 0.012,
+                burial: 0.24 + unit_hash(root_seed ^ 0x05) * 0.12,
                 dominant: is_dominant,
                 fork,
             }
@@ -617,7 +683,7 @@ fn oak_root_points(
 ) -> [Vec3; 3] {
     let outward = Vec3::new(root.angle.cos(), 0.0, root.angle.sin());
     let tangent = Vec3::new(-root.angle.sin(), 0.0, root.angle.cos());
-    let contact_radius = 0.48 + (root.base_radius - 0.25) * 0.35;
+    let contact_radius = 0.36 + (root.base_radius - 0.14) * 0.32;
     let meander = (gnarling.root_meander.clamp(0.0, 1.0) * root.reach * 0.32)
         * (root.angle * 2.7 + root.reach * 3.1).sin();
     let exposure = gnarling.root_exposure.clamp(0.0, 1.0);
@@ -627,10 +693,13 @@ fn oak_root_points(
         contact,
         contact
             + outward * (0.19 + root.reach * 0.18)
-            + tangent * ((root.tip_radius - 0.0525) * 2.2 + meander)
-            + Vec3::Y * (root.shoulder_lift + exposure * 0.16),
+            + tangent * ((root.tip_radius - 0.016) * 3.0 + meander)
+            // Keep only the buttress shoulder visible. The continuation
+            // descends immediately so a smooth root capsule cannot read as a
+            // long toe laid on top of the soil.
+            + Vec3::Y * (root.shoulder_lift - 0.16 + exposure * 0.03),
         trunk_base + outward * root.reach + tangent * meander * 0.42
-            - Vec3::Y * root.burial * (1.0 - exposure * 0.82),
+            - Vec3::Y * root.burial * (1.0 - exposure * 0.3),
     ]
 }
 
@@ -713,7 +782,10 @@ pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
     let root_specs = procedural_oak_root_specs_with_gnarling(seed, crown_phase, gnarling);
     debug_assert!(oak_root_segment_count(&root_specs) <= OAK_ROOT_MAX_SEGMENTS);
     for root in root_specs {
-        let points = oak_root_points(trunk_points[0] + Vec3::Y * 0.09, root, gnarling);
+        // Root capsules begin just below grade. Their smooth union leaves an
+        // irregular trunk flare, while every radial continuation and fork is
+        // buried before it can terminate as a visible toe.
+        let points = oak_root_points(trunk_points[0] - Vec3::Y * 0.07, root, gnarling);
         append_branch_curve(
             &mut branches,
             &points,
@@ -779,9 +851,9 @@ pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
             // shorter upper axes close a deep, layered dome. Equal reaches
             // make the crown read as stacked shelves around a horizontal
             // beam, which is especially unconvincing in open-grown oaks.
-            let reach_profile = [5.25, 4.95, 4.55, 3.8][primary_index as usize];
-            let lift_profile = [1.35, 1.7, 1.55, 2.1][primary_index as usize];
-            let sag_profile = [0.48, 0.38, 0.32, 0.24][primary_index as usize];
+            let reach_profile = [5.55, 5.15, 4.65, 3.75][primary_index as usize];
+            let lift_profile = [0.72, 1.0, 1.2, 1.55][primary_index as usize];
+            let sag_profile = [0.62, 0.52, 0.4, 0.28][primary_index as usize];
             (
                 reach_profile + unit_hash(primary_seed ^ 1) * 0.28,
                 lift_profile + unit_hash(primary_seed ^ 2) * 0.24,
@@ -789,9 +861,9 @@ pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
             )
         } else {
             (
-                2.7 - rank * 0.1 + unit_hash(primary_seed ^ 1) * 0.3,
-                1.2 + rank * 0.2 + unit_hash(primary_seed ^ 2) * 0.18,
-                0.28,
+                2.9 - rank * 0.14 + unit_hash(primary_seed ^ 1) * 0.28,
+                0.78 + rank * 0.18 + unit_hash(primary_seed ^ 2) * 0.16,
+                0.36,
             )
         };
         let (competitive_reach, competitive_lift) = if dominant {
@@ -898,9 +970,9 @@ pub(in crate::presentation) fn procedural_oak_skeleton_with_gnarling(
                 * (inherited_weight + unit_hash(secondary_seed) * 0.16)
                 + radial * (lateral_weight + unit_hash(secondary_seed ^ 1) * 0.2)
                 + outward * 0.2
-                + Vec3::Y * (0.18 + unit_hash(secondary_seed ^ 2) * 0.34))
+                + Vec3::Y * (0.08 + unit_hash(secondary_seed ^ 2) * 0.26))
                 .normalize();
-            let maximum_rise = 0.62_f32.lerp(0.72, canopy_competition);
+            let maximum_rise = 0.5_f32.lerp(0.68, canopy_competition);
             if secondary_direction.y > maximum_rise {
                 let horizontal = secondary_direction.xz().normalize_or_zero();
                 secondary_direction =
@@ -1080,17 +1152,18 @@ fn procedural_beech_skeleton(
 ) -> Vec<TreeBranchSegment> {
     let mut branches = Vec::new();
     let competition = canopy_competition.clamp(0.0, 1.0);
-    let height = parameters.height_metres * (1.0 + competition * 0.16);
-    let crown_radius = parameters.crown_radius_metres * (1.0 - competition * 0.2);
-    let clear_bole = height * (0.34 + competition * 0.18);
+    let height = parameters.height_metres * (1.0 + competition * 0.13);
+    let crown_radius = parameters.crown_radius_metres * (1.0 - competition * 0.18);
+    let clear_bole_fraction = 0.38 + competition * 0.14;
     let crown_phase = unit_hash(seed ^ 0xbeec_0001) * core::f32::consts::TAU;
-    let trunk_points = (0..=8)
+    let trunk_base = Vec3::new(0.0, -TREE_TRUNK_HEIGHT_METRES * 0.5, 0.0);
+    let trunk_points = (0..=10)
         .map(|index| {
-            let t = index as f32 / 8.0;
-            let sweep = (core::f32::consts::PI * t).sin() * 0.08;
+            let t = index as f32 / 10.0;
+            let sweep = (core::f32::consts::PI * t).sin() * (0.045 + 0.025 * competition);
             Vec3::new(
                 crown_phase.cos() * sweep,
-                -TREE_TRUNK_HEIGHT_METRES * 0.5 + height * t,
+                trunk_base.y + height * t,
                 crown_phase.sin() * sweep,
             )
         })
@@ -1105,77 +1178,127 @@ fn procedural_beech_skeleton(
         u16::MAX,
     );
 
-    for primary_index in 0..7_u64 {
+    // Beech commonly shows a broad, shallow root plate rather than a set of
+    // exposed radial cables. A few low shoulders taper below the soil within
+    // a metre, softening the trunk-ground junction without creating oak-like
+    // buttresses or changing the authoritative cylindrical collider.
+    for root_index in 0..3_u64 {
+        let root_seed = splitmix64(seed ^ 0xbeec_5000 ^ root_index);
+        let phase =
+            crown_phase + root_index as f32 * 2.399_963_1 + (unit_hash(root_seed) - 0.5) * 0.32;
+        let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
+        let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
+        let reach = 0.3 + unit_hash(root_seed ^ 1) * 0.16;
+        let shoulder = trunk_base
+            + outward * (0.3 + unit_hash(root_seed ^ 2) * 0.025)
+            + Vec3::Y * (0.004 + unit_hash(root_seed ^ 3) * 0.008);
+        let root_points = [
+            shoulder,
+            shoulder + outward * reach * 0.42 + tangent * (unit_hash(root_seed ^ 4) - 0.5) * 0.08
+                - Vec3::Y * 0.11,
+            trunk_base + outward * reach + tangent * (unit_hash(root_seed ^ 5) - 0.5) * 0.12
+                - Vec3::Y * (0.25 + unit_hash(root_seed ^ 6) * 0.08),
+        ];
+        append_branch_curve(
+            &mut branches,
+            &root_points,
+            0.11 + unit_hash(root_seed ^ 7) * 0.025,
+            0.006 + unit_hash(root_seed ^ 8) * 0.004,
+            0,
+            u8::MAX,
+            u16::MAX,
+        );
+    }
+
+    for primary_index in 0..20_u64 {
         let primary_seed = splitmix64(seed ^ 0xbeec_1000 ^ primary_index);
-        let height_fraction = clear_bole / height + primary_index as f32 * 0.075;
-        let start = sample_polyline(&trunk_points, height_fraction.min(0.88));
+        let layer = primary_index as f32 / 19.0;
+        let height_fraction = (clear_bole_fraction
+            + layer.powf(0.88) * (0.95 - clear_bole_fraction)
+            + (unit_hash(primary_seed ^ 0x19) - 0.5) * 0.032)
+            .clamp(clear_bole_fraction, 0.96);
+        let start = sample_polyline(&trunk_points, height_fraction);
         let phase = crown_phase
             + primary_index as f32 * 2.399_963_1
-            + (unit_hash(primary_seed) - 0.5) * 0.3;
+            + (unit_hash(primary_seed) - 0.5) * 0.42;
         let radial = Vec3::new(phase.cos(), 0.0, phase.sin());
         let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
-        let reach = crown_radius
-            * (0.72 + unit_hash(primary_seed ^ 1) * 0.28)
-            * (1.0 - primary_index as f32 * 0.045);
-        let primary_points = (0..=4)
+        // A continuous ovate crown is widest below mid-crown and closes
+        // steadily toward the leader. Unequal reach prevents shelf tiers from
+        // reading as repeated horizontal plates.
+        let crown_profile = (core::f32::consts::PI * (0.12 + layer * 0.8))
+            .sin()
+            .max(0.28);
+        let reach = crown_radius * crown_profile * (0.78 + unit_hash(primary_seed ^ 1) * 0.36);
+        let primary_points = (0..=5)
             .map(|index| {
-                let t = index as f32 / 4.0;
+                let t = index as f32 / 5.0;
+                let arch = (core::f32::consts::PI * t).sin();
                 start
-                    + radial * reach * t
-                    + Vec3::Y * reach * (0.12 * t + 0.16 * t * t)
-                    + tangent
-                        * (unit_hash(primary_seed ^ 2) - 0.5)
-                        * 0.32
-                        * (core::f32::consts::PI * t).sin()
+                    + radial * reach * (t * (0.86 + 0.14 * t))
+                    + Vec3::Y * (reach * (0.18 * arch + (0.5 + layer * 0.3) * t.powf(1.35)))
+                    + tangent * (unit_hash(primary_seed ^ 2) - 0.5) * 0.42 * arch
             })
             .collect::<Vec<_>>();
+        // LOD clusters are spatial crown sectors, not every seventh scaffold
+        // in generation order. The latter mixed opposing azimuths into each
+        // card and made a beech collapse into repeated full-height shelves at
+        // aggregate distances.
+        let primary_group = ((phase.rem_euclid(core::f32::consts::TAU) / core::f32::consts::TAU
+            * f32::from(TREE_PRIMARY_GROUP_COUNT))
+        .floor() as u8)
+            .min(TREE_PRIMARY_GROUP_COUNT - 1);
         append_branch_curve(
             &mut branches,
             &primary_points,
-            0.22 - primary_index as f32 * 0.014,
-            0.025,
+            0.24 - layer * 0.095,
+            0.018,
             1,
-            primary_index as u8,
+            primary_group,
             u16::MAX,
         );
 
-        for secondary_index in 0..6_u64 {
+        for secondary_index in 0..5_u64 {
             let secondary_seed = splitmix64(primary_seed ^ 0xbeec_2000 ^ secondary_index);
-            let along = 0.2 + secondary_index as f32 * 0.13;
+            let along = (0.12
+                + secondary_index as f32 * 0.17
+                + (unit_hash(secondary_seed ^ 0x17) - 0.5) * 0.055)
+                .clamp(0.08, 0.84);
             let secondary_start = sample_polyline(&primary_points, along);
             let side = if secondary_index & 1 == 0 { 1.0 } else { -1.0 };
-            let direction = (radial * 0.42
-                + tangent * side * (0.65 + unit_hash(secondary_seed) * 0.18)
-                + Vec3::Y * (0.26 + unit_hash(secondary_seed ^ 1) * 0.18))
+            let vertical_bias = 0.06 + unit_hash(secondary_seed ^ 1) * 0.42 + layer * 0.12;
+            let direction = (radial * (0.38 + along * 0.25)
+                + tangent * side * (0.62 + unit_hash(secondary_seed) * 0.22)
+                + Vec3::Y * vertical_bias)
                 .normalize();
-            let length = crown_radius * (0.3 + unit_hash(secondary_seed ^ 2) * 0.16);
+            let length =
+                crown_radius * crown_profile * (0.3 + unit_hash(secondary_seed ^ 2) * 0.15);
             let secondary_points = [
                 secondary_start,
-                secondary_start + direction * length * 0.52 + Vec3::Y * 0.08,
-                secondary_start + direction * length + Vec3::Y * 0.2,
+                secondary_start + direction * length * 0.5 + Vec3::Y * 0.04,
+                secondary_start + direction * length + Vec3::Y * (0.16 + layer * 0.12),
             ];
             let secondary_group = (primary_index * 8 + secondary_index) as u16;
             append_branch_curve(
                 &mut branches,
                 &secondary_points,
-                0.052,
-                0.009,
+                0.048,
+                0.007,
                 2,
-                primary_index as u8,
+                primary_group,
                 secondary_group,
             );
-            for twig_index in 0..7_u64 {
+            for twig_index in 0..6_u64 {
                 let twig_seed = splitmix64(secondary_seed ^ 0xbeec_3000 ^ twig_index);
-                let twig_start =
-                    sample_polyline(&secondary_points, 0.18 + twig_index as f32 * 0.12);
+                let twig_start = sample_polyline(&secondary_points, 0.1 + twig_index as f32 * 0.15);
                 let (right, up) = branch_frame(direction);
                 let phase = twig_index as f32 * 2.399_963_1 + unit_hash(twig_seed);
-                let twig_direction = (direction * 0.38
-                    + right * phase.cos() * 0.54
-                    + up * phase.sin() * 0.38
-                    + Vec3::Y * 0.24)
+                let twig_direction = (direction * 0.48
+                    + right * phase.cos() * 0.52
+                    + up * phase.sin() * 0.3
+                    + Vec3::Y * (0.08 + layer * 0.08))
                     .normalize();
-                let twig_length = 0.34 + unit_hash(twig_seed ^ 1) * 0.24;
+                let twig_length = 0.4 + unit_hash(twig_seed ^ 1) * 0.27;
                 append_branch_curve(
                     &mut branches,
                     &[
@@ -1186,7 +1309,7 @@ fn procedural_beech_skeleton(
                     0.008,
                     0.002,
                     3,
-                    primary_index as u8,
+                    primary_group,
                     secondary_group,
                 );
             }

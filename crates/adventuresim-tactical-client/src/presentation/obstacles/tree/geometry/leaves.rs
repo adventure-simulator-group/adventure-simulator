@@ -125,10 +125,96 @@ pub(in crate::presentation) fn procedural_woody_plant_leaves(
 ) -> Vec<TreeLeaf> {
     match parameters.form {
         WoodyPlantForm::MatureOak => procedural_oak_leaves(seed, branches, canopy_competition),
-        WoodyPlantForm::MatureBeech | WoodyPlantForm::MultiStemShrub => {
+        WoodyPlantForm::MatureBeech => procedural_beech_leaves(seed, branches, parameters),
+        WoodyPlantForm::MultiStemShrub => {
             procedural_multistem_shrub_leaves(seed, branches, parameters)
         }
     }
+}
+
+/// Arranges beech leaves in overlapping, approximately two-ranked sprays.
+/// The broad, mostly horizontal leaf planes build a closed shade-casting crown
+/// from the existing twig and leaf budget instead of filling it by count.
+fn procedural_beech_leaves(
+    seed: u64,
+    branches: &[TreeBranchSegment],
+    parameters: WoodyPlantParameters,
+) -> Vec<TreeLeaf> {
+    let mut leaves = Vec::new();
+    let leaves_per_shoot = u64::from(parameters.leaves_per_shoot.max(4));
+    for (shoot_index, shoot) in branches
+        .iter()
+        .filter(|branch| branch.depth == 3 && branch.is_limb_tip)
+        .enumerate()
+    {
+        let direction = (shoot.end - shoot.start).normalize();
+        let horizontal = Vec3::new(direction.x, 0.0, direction.z).normalize_or_zero();
+        let spray_forward = if horizontal.length_squared() > 0.25 {
+            horizontal
+        } else {
+            branch_frame(direction).0
+        };
+        let spray_side = Vec3::Y.cross(spray_forward).normalize();
+        for leaf_index in 0..leaves_per_shoot {
+            let leaf_seed =
+                splitmix64(seed ^ shoot_index as u64 ^ leaf_index.wrapping_mul(0x91e1_0da5));
+            let along = (0.1
+                + leaf_index as f32 / (leaves_per_shoot - 1) as f32 * 0.84
+                + (unit_hash(leaf_seed ^ 1) - 0.5) * 0.018)
+                .clamp(0.06, 0.97);
+            let side = if leaf_index & 1 == 0 { 1.0 } else { -1.0 };
+            let blade_outward = (spray_forward * (0.56 + unit_hash(leaf_seed ^ 2) * 0.18)
+                + spray_side * side * (0.7 + unit_hash(leaf_seed ^ 3) * 0.16)
+                + Vec3::Y * (0.06 + unit_hash(leaf_seed ^ 4) * 0.1))
+                .normalize();
+            // Keep the lamina close to horizontal while allowing a small,
+            // deterministic ripple through each spray.
+            let horizontal_weight = if leaf_index & 3 < 2 { 1.0 } else { 0.62 };
+            let posture_normal = (Vec3::Y * horizontal_weight
+                + spray_forward * (1.0 - horizontal_weight) * 1.35
+                + spray_side * (unit_hash(leaf_seed ^ 5) - 0.5) * 0.28
+                + spray_forward * (unit_hash(leaf_seed ^ 6) - 0.5) * 0.18)
+                .normalize();
+            let right = blade_outward.cross(posture_normal).normalize_or_zero();
+            let right = if right.length_squared() > 0.25 {
+                right
+            } else {
+                branch_frame(blade_outward).0
+            };
+            let petiole_start = shoot.start.lerp(shoot.end, along);
+            let petiole_length = parameters.petiole_length_metres[0]
+                + unit_hash(leaf_seed ^ 7)
+                    * (parameters.petiole_length_metres[1] - parameters.petiole_length_metres[0]);
+            // At mature-tree scale this card represents a small overlapping
+            // beech spray, not a single isolated lamina. Keeping the card
+            // count bounded while expanding the spray footprint produces the
+            // species' closed, shade-casting crown without multiplying draw
+            // and streaming work across a dense stand.
+            let length = (parameters.leaf_length_metres[0]
+                + unit_hash(leaf_seed ^ 8)
+                    * (parameters.leaf_length_metres[1] - parameters.leaf_length_metres[0]))
+                * 3.0;
+            let width = length
+                * (parameters.leaf_width_ratio[0]
+                    + unit_hash(leaf_seed ^ 9)
+                        * (parameters.leaf_width_ratio[1] - parameters.leaf_width_ratio[0]));
+            let blade_base = petiole_start + blade_outward * petiole_length;
+            leaves.push(TreeLeaf {
+                petiole_start,
+                center: blade_base + blade_outward * length * 0.5,
+                right,
+                up: blade_outward,
+                length,
+                width,
+                primary_group: shoot.primary_group,
+                secondary_group: shoot.secondary_group,
+                shoot_id: shoot_index as u16,
+                shade: 0.7 + unit_hash(leaf_seed ^ 10) * 0.2,
+                torsion: (unit_hash(leaf_seed ^ 11) - 0.5) * 0.18,
+            });
+        }
+    }
+    leaves
 }
 
 fn procedural_multistem_shrub_leaves(

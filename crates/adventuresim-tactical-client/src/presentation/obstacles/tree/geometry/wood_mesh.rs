@@ -216,14 +216,21 @@ impl RootFlareField {
                 (axis.length_squared() > 0.04).then(|| Vec3::new(axis.x, 0.0, axis.y).normalize())
             })
             .collect();
+        let smooth_thin_bark =
+            bark.fissure_depth_metres < 0.001 && bark.root_lobe_height_metres > 0.0;
         Some(Self {
             segments,
             minimum,
             maximum,
             // Each polygon is subdivided once, producing roughly seven
             // centimetre surface edges from this fourteen-centimetre field.
-            cell: 0.14,
-            blend: 0.18,
+            // Beech's smooth bark makes both Surface-Nets facets and the
+            // repeated smooth-union bulge at trunk segment joints much more
+            // legible than on fissured oak. Give that smaller root plate a
+            // finer field with a quieter union; oak retains its established
+            // coarser molded relief and broader buttress blend.
+            cell: if smooth_thin_bark { 0.1 } else { 0.14 },
+            blend: if smooth_thin_bark { 0.09 } else { 0.18 },
             bark,
             bark_phase,
             root_directions,
@@ -881,7 +888,10 @@ fn append_branch_curve_tube(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::presentation::obstacles::tree::geometry::procedural_tree_skeleton;
+    use crate::presentation::obstacles::tree::geometry::{
+        COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, procedural_tree_skeleton,
+        procedural_woody_plant_skeleton,
+    };
     use bevy::{math::Vec3, mesh::VertexAttributeValues};
 
     #[test]
@@ -986,6 +996,30 @@ mod tests {
                 .iter()
                 .all(|normal| { (Vec3::from_array(*normal).length() - 1.0).abs() < 1.0e-3 })
         );
+    }
+
+    #[test]
+    fn smooth_beech_base_uses_a_finer_quieter_union_than_oak() {
+        let oak = procedural_tree_skeleton(42, 0.0);
+        let oak_field = RootFlareField::from_branches(
+            &oak,
+            0,
+            ENGLISH_OAK_BARK,
+            bark_phase_from_branches(&oak),
+        )
+        .expect("oak has a root flare");
+        let beech = procedural_woody_plant_skeleton(42, 0.65, COMMON_BEECH_PARAMETERS);
+        let beech_field = RootFlareField::from_branches(
+            &beech,
+            0,
+            COMMON_BEECH_BARK,
+            bark_phase_from_branches(&beech),
+        )
+        .expect("beech has a root flare");
+
+        assert!(beech_field.cell < oak_field.cell);
+        assert!(beech_field.blend < oak_field.blend);
+        assert_eq!(beech_field.segments.len(), 16);
     }
 
     #[test]

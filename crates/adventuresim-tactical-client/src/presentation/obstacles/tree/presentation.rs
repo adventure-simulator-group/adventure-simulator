@@ -1,8 +1,8 @@
 use super::geometry::BarkRecipe;
 use super::impostor::{
-    OAK_TREE_BAKE_STYLE, TreeBakeStyle, TreeImpostorProvenance, TreeLodBake, bake_tree_lod,
-    bake_tree_lod_with_style, tree_impostor_material, tree_leaf_visibility, tree_lod_name,
-    tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
+    BEECH_TREE_BAKE_STYLE, OAK_TREE_BAKE_STYLE, TreeBakeStyle, TreeImpostorProvenance, TreeLodBake,
+    bake_tree_lod, bake_tree_lod_with_style, tree_impostor_material, tree_leaf_visibility,
+    tree_lod_name, tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
     COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
@@ -135,11 +135,7 @@ impl TreePresentationSpecies {
     fn bake_style(self) -> TreeBakeStyle {
         match self {
             Self::EnglishOak => OAK_TREE_BAKE_STYLE,
-            Self::CommonBeech => TreeBakeStyle {
-                bark_srgb: [145.0, 145.0, 135.0],
-                leaf_srgb: [91.0, 119.0, 70.0],
-                crown_radius_metres: COMMON_BEECH_PARAMETERS.crown_radius_metres,
-            },
+            Self::CommonBeech => BEECH_TREE_BAKE_STYLE,
         }
     }
 }
@@ -948,6 +944,15 @@ fn oak_gnarling_for_site(
     );
     recipe.crown_asymmetry = add(recipe.crown_asymmetry, wind_exposure * 0.82);
     recipe
+}
+
+#[cfg(test)]
+pub(super) fn oak_gnarling_for_test_site(
+    recipe: OakGnarlingParameters,
+    environment: &SceneEnvironment,
+    tree_seed: u64,
+) -> OakGnarlingParameters {
+    oak_gnarling_for_site(recipe, environment, tree_seed)
 }
 
 #[cfg(test)]
