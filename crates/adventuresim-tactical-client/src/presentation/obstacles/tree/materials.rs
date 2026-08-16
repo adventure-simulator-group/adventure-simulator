@@ -1,5 +1,5 @@
 use bevy::{
-    pbr::Material,
+    pbr::{ExtendedMaterial, Material, MaterialExtension},
     prelude::*,
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -17,6 +17,7 @@ use crate::presentation::{LeafTextureSet, ProceduralEnvironmentAssets};
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
+const TREE_BARK_SHADER: &str = "shaders/tactical_tree_bark.wgsl";
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(crate) struct TacticalTreeLeafCardMaterial {
@@ -70,15 +71,77 @@ pub(crate) fn oak_leaf_material(
     )
 }
 
-pub(crate) fn oak_bark_material(_assets: &ProceduralEnvironmentAssets) -> StandardMaterial {
-    StandardMaterial {
-        // The molded bark colour is uniform. Structural relief comes from the
-        // unified trunk/root mesh, so no UV-dependent channel can reveal the
-        // branch-influence handoff across the implicit flare.
-        base_color: Color::srgb_u8(70, 50, 30),
-        perceptual_roughness: 241.0 / 255.0,
-        metallic: 0.0,
-        ..default()
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(crate) struct TacticalTreeBarkExtension {
+    /// Canonical scalar relief: normalized height in R and horizon AO in G.
+    #[texture(100)]
+    #[sampler(101)]
+    height_ao: Handle<Image>,
+    /// Tiles/metre, physical height range, normal strength, and AO strength.
+    #[uniform(102)]
+    relief: Vec4,
+    /// Triplanar exponent, branch alignment, parallax fraction, fade distance.
+    #[uniform(102)]
+    projection: Vec4,
+    /// Direction toward dominant light and normalized directional strength.
+    #[uniform(102)]
+    pub(in crate::presentation) lighting: Vec4,
+}
+
+impl MaterialExtension for TacticalTreeBarkExtension {
+    fn fragment_shader() -> ShaderRef {
+        TREE_BARK_SHADER.into()
+    }
+
+    fn deferred_fragment_shader() -> ShaderRef {
+        TREE_BARK_SHADER.into()
+    }
+}
+
+pub(crate) type TacticalTreeBarkMaterial =
+    ExtendedMaterial<StandardMaterial, TacticalTreeBarkExtension>;
+
+pub(crate) fn oak_bark_material(assets: &ProceduralEnvironmentAssets) -> TacticalTreeBarkMaterial {
+    bark_material(
+        assets,
+        Color::srgb_u8(96, 68, 43),
+        180.0 / 255.0,
+        Vec4::new(2.0, 0.032, 1.30, 0.95),
+    )
+}
+
+pub(in crate::presentation) fn beech_bark_material(
+    assets: &ProceduralEnvironmentAssets,
+) -> TacticalTreeBarkMaterial {
+    // Beech shares the pipeline so streamed wood remains one material type,
+    // but its smooth bark deliberately bypasses oak relief and cavity AO.
+    bark_material(
+        assets,
+        Color::srgb_u8(145, 145, 135),
+        0.9,
+        Vec4::new(2.0, 0.0, 0.0, 0.0),
+    )
+}
+
+fn bark_material(
+    assets: &ProceduralEnvironmentAssets,
+    base_color: Color,
+    perceptual_roughness: f32,
+    relief: Vec4,
+) -> TacticalTreeBarkMaterial {
+    TacticalTreeBarkMaterial {
+        base: StandardMaterial {
+            base_color,
+            perceptual_roughness,
+            metallic: 0.0,
+            ..default()
+        },
+        extension: TacticalTreeBarkExtension {
+            height_ao: assets.oak_bark.height_ao.clone(),
+            relief,
+            projection: Vec4::new(4.0, 0.92, 0.52, 12.0),
+            lighting: Vec3::new(0.25, 0.92, 0.3).normalize().extend(1.0),
+        },
     }
 }
 
@@ -304,13 +367,40 @@ mod tests {
         );
         let bark = oak_bark_material(&assets);
 
-        assert_eq!(bark.base_color, Color::srgb_u8(70, 50, 30));
-        assert!(bark.base_color_texture.is_none());
-        assert!(bark.normal_map_texture.is_none());
-        assert!(bark.metallic_roughness_texture.is_none());
-        assert!(bark.occlusion_texture.is_none());
-        assert_eq!(bark.metallic, 0.0);
-        assert_eq!(bark.perceptual_roughness, 241.0 / 255.0);
+        assert_eq!(bark.base.base_color, Color::srgb_u8(96, 68, 43));
+        assert!(bark.base.base_color_texture.is_none());
+        assert!(bark.base.normal_map_texture.is_none());
+        assert!(bark.base.metallic_roughness_texture.is_none());
+        assert!(bark.base.occlusion_texture.is_none());
+        assert_eq!(bark.base.metallic, 0.0);
+        assert_eq!(bark.base.perceptual_roughness, 180.0 / 255.0);
+        assert_eq!(bark.extension.relief, Vec4::new(2.0, 0.032, 1.30, 0.95));
+        assert_eq!(bark.extension.projection, Vec4::new(4.0, 0.92, 0.52, 12.0));
+        assert!(bark.extension.lighting.xyz().is_normalized());
+    }
+
+    #[test]
+    fn bark_shader_blends_scalar_height_before_surface_gradient_normals() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_tree_bark.wgsl"
+        ));
+        assert!(shader.contains("fn triplanar_height_ao"));
+        assert!(shader.contains("let height_metres = (sample.r - 0.5)"));
+        assert!(shader.contains("let height_dx = dpdx(height_metres)"));
+        assert!(shader.contains("let height_dy = dpdy(height_metres)"));
+        assert!(shader.contains("pbr_input.N = composed_normal"));
+        assert!(shader.contains("fn parallax_branch_coordinates"));
+        assert!(shader.contains("branch_texture_coordinates(in.uv)"));
+        assert!(shader.contains("view.lod_view_world_position"));
+        assert!(shader.contains("if bark.relief.y <= 0.0001 || fade <= 0.001"));
+        assert!(shader.contains("textureSampleGrad"));
+        assert!(!shader.contains("textureSampleLevel"));
+        assert!(shader.contains("fn directional_horizon_visibility"));
+        assert!(shader.contains("layer < 6"));
+        assert!(shader.contains("horizon_step <= 3"));
+        assert!(shader.contains("pbr_input.material.perceptual_roughness = clamp"));
+        assert!(!shader.contains("normal_map"));
     }
 
     #[test]

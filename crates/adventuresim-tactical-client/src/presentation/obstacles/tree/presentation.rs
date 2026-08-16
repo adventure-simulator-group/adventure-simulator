@@ -6,9 +6,10 @@ use super::impostor::{
 };
 use super::{
     COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
-    OakGnarlingParameters, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    beech_leaf_material, oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
+    OakGnarlingParameters, TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial,
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    TreeLodRenderOverride, TreeTrunkLod, beech_bark_material, beech_leaf_material,
+    oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
     procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
     procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
@@ -41,8 +42,8 @@ pub(crate) struct TreeLeafTriangleCount(pub(crate) usize);
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct TreePresentationCache {
     variants: std::collections::HashMap<u64, CachedTreePresentation>,
-    oak_bark_material: Option<Handle<StandardMaterial>>,
-    beech_bark_material: Option<Handle<StandardMaterial>>,
+    oak_bark_material: Option<Handle<TacticalTreeBarkMaterial>>,
+    beech_bark_material: Option<Handle<TacticalTreeBarkMaterial>>,
 }
 
 /// Live accounting for procedurally generated playable-tree render assets.
@@ -90,7 +91,7 @@ struct CachedTreePresentation {
     clusters: Option<Vec<CachedTreeClusterPresentation>>,
     aggregate_branch_meshes: [Option<Handle<Mesh>>; 2],
     lod_cards: [Option<CachedTreeCardPresentation>; 4],
-    bark_material: Handle<StandardMaterial>,
+    bark_material: Handle<TacticalTreeBarkMaterial>,
     leaf_material: Handle<TacticalTreeLeafCardMaterial>,
     bud_material: Handle<StandardMaterial>,
 }
@@ -748,6 +749,7 @@ pub(in crate::presentation) fn present_pending_trees(
     active: Res<ActiveTacticalScene>,
     environments: Query<&SceneEnvironment>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut tree_cache: ResMut<TreePresentationCache>,
     mut residency: ResMut<TreeAssetResidencyDiagnostics>,
@@ -810,18 +812,14 @@ pub(in crate::presentation) fn present_pending_trees(
             let bark_material = match species {
                 TreePresentationSpecies::EnglishOak => {
                     tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
-                        let material = materials.add(oak_bark_material(&procedural_assets));
+                        let material = bark_materials.add(oak_bark_material(&procedural_assets));
                         tree_cache.oak_bark_material = Some(material.clone());
                         material
                     })
                 }
                 TreePresentationSpecies::CommonBeech => {
                     tree_cache.beech_bark_material.clone().unwrap_or_else(|| {
-                        let material = materials.add(StandardMaterial {
-                            base_color: Color::srgb_u8(145, 145, 135),
-                            perceptual_roughness: 0.9,
-                            ..default()
-                        });
+                        let material = bark_materials.add(beech_bark_material(&procedural_assets));
                         tree_cache.beech_bark_material = Some(material.clone());
                         material
                     })

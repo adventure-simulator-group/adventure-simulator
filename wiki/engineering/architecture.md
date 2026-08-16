@@ -378,60 +378,84 @@ is no independently contoured flare surface or trunk handoff. Successive upper
 branch orders still collapse across the pre-impostor wood LODs. Oak and hazel
 branch recipes also cap each child base at 80% of its local parent-axis radius.
 The existing bounded basal ring therefore cannot become wider than its trunk or
-parent limb. Near woody meshes use one solid molded-brown dielectric material
-with uniform roughness. They deliberately omit geometric bark fissures and
-tangent generation: smooth sweep normals carry the visible form without
-per-vertex micro-displacement work. Sweep UVs retain physical scale and a
-duplicated wrap seam, but the current untextured bark material does not consume
-them. Oak architecture separately exposes an `OakGnarlingParameters`
-growth-history recipe. Its normalized controls independently cover root spread,
-meander, exposure, and forking; trunk lean, sweep, twist, crooks, and taper
-irregularity; knot frequency and size, burl swelling; scaffold droop, sweep, and
-contortion; and crown asymmetry. Zero preserves the established open-grown
-English oak. Authored wind-shaped, ancient, and extreme presets exercise
-increasingly gnarled forms while retaining deterministic seeds, connected branch
-axes, bounded presentation geometry, solid bark albedo, and the ordinary
-tactical collider. Tree instantiation derives additional growth stress only from
-stable site signals: canopy shelter, hill exposure, elevation, wetland coverage,
-cultivation, geographic cell, and the individual tree seed. Exposed trees share
-a deterministic prevailing-stress azimuth, with small individual bias, so
-wind-shaped trunks and crowns lean coherently. The current weather snapshot is
-deliberately excluded: a six-hour gust or rain event may animate foliage but
-cannot rewrite decades of woody growth. Until imported climatology carries
-historical wind roses and soil depth, hill/open/elevation values remain bounded
-exposure proxies rather than claims of measured local wind history. Living oak
-and hazel cards are presets over one structural leaf generator. Binary
-silhouettes and parameterized blade, petiole, midrib, lobe/tooth, and vein
-fields produce discrete front/back albedo, detailed normal and AO, and
-low-detail roughness while sharing a crown-size Beer--Lambert response for only
-the self-occlusion unresolved by explicit cards and screen-space AO. An
-empirically bounded 0.11-per-metre coefficient yields about 48% mature-oak and
-16% hazel unresolved occlusion under the production atmosphere IBL. Oak diffuse
-transmission is 0.40 versus hazel's 0.46, preserving the smaller, thinner
-crown's greater transmission. The custom material explicitly enables Bevy's
-diffuse-transmission lighting path so this energy is added on the back side
-rather than merely removed from reflected diffuse. This does not change leaf
-topology, alpha coverage, entity count, draw count, exposure, or global
-lighting. Non-colliding grass and understory use automatically instanced shared
-meshes, layered shader wind, and root-to-tip shading. Grass cross-fades from a
-9,216-blade, fifteen-vertex near-field macro patch to a stable 1,600-blade,
-seven-vertex subset at distance; rejected blades are absent from the far mesh
-rather than collapsed after vertex shading. The 3.2-metre patch spacing cuts
-grass render entities by roughly an order of magnitude while retaining the
-original macro-patch footprint at four times the authored blade density near the
-player and camera. The distant mesh retains the earlier density because
-individual blades are subpixel there. The 4x near mesh cross-fades to the
-original far topology over 18--26 metres rather than paying four times the
-vertex cost throughout the former 34--44 metre high-detail radius. A
-deterministic scalar mask derived from the same authoritative ground-cover
-contour as the terrain rejects blades on dirt and leaf litter and progressively
-thins the grass-side boundary. Tree crowns guarantee a compact litter core at
-the trunk, then use a deterministic radially tapered litter mosaic beneath the
-outer crown. Overlapping crowns therefore accumulate a closed forest floor while
-sparse woodland keeps dappled grass instead of stamping one grass-free disc per
-tree. Boundary macro patches remain present, while patches fully inside
-non-grass cover are omitted. Near and far LODs use the same stable per-blade
-thresholds, so the organic edge does not change at the cross-fade. The
+parent limb. Near woody meshes use one solid molded-brown dielectric base color.
+Oak bark adds material-only relief from a periodic directional crack field.
+Meandering longitudinal valleys with narrow cores divide asymmetric raised
+crowns; staggered partial closures, sparse terminating branches, fractured
+shoulder notches, convex faces, local chips, and two finer grain layers keep the
+intervening strips from reading as parallel ribs. Stable hashes vary fissure
+depth and plate response without opening a discontinuity between the two sides
+of a crack. A slow continuous world-space warp breaks exact half-metre
+repetition without adding a sample or disturbing a cylindrical wrap. The shader
+uses the sweep UV only as a metric growth-axis frame: its three projections
+still blend packed scalar height and ambient occlusion before deriving the
+perturbed normal, but their vertical coordinates follow each trunk, branch, and
+root axis rather than world up. A bounded six-layer, explicit-gradient parallax
+search offsets that frame near the camera and fades out by 12 metres. A
+three-step height horizon follows the same authoritative sun or moon direction
+as the rest of the scene. Both searches exit before sampling for smooth bark or
+distant fragments, bounding detailed oak at twelve height reads and ordinary
+distant bark at three. Cavity-correlated roughness, parallax occlusion, and the
+directional horizon, rather than an albedo texture, supply local tonal variation
+under lighting. Consequently, projection boundaries cannot blend incompatible
+tangent-space normals. Ambient occlusion combines a bilinearly upsampled
+512-by-512 four-direction height horizon with a four-neighbor 1024-by-1024
+cavity term. The broad search therefore performs one twelfth as many height
+probes as the earlier full-resolution, eight-direction version without softening
+narrow fissures. Bark generation retains only the resulting packed linear RG8
+image at 1024 by 1024 pixels and supplies a complete box-filtered mip chain; it
+does not retain the intermediate albedo, normal, height, or ARM images. Beech
+uses the same material path with relief disabled. Neither species adds geometric
+micro-displacement or mesh tangents, and bark relief never changes the tactical
+silhouette or collider. Oak architecture separately exposes an
+`OakGnarlingParameters` growth-history recipe. Its normalized controls
+independently cover root spread, meander, exposure, and forking; trunk lean,
+sweep, twist, crooks, and taper irregularity; knot frequency and size, burl
+swelling; scaffold droop, sweep, and contortion; and crown asymmetry. Zero
+preserves the established open-grown English oak. Authored wind-shaped, ancient,
+and extreme presets exercise increasingly gnarled forms while retaining
+deterministic seeds, connected branch axes, bounded presentation geometry, solid
+bark albedo, and the ordinary tactical collider. Tree instantiation derives
+additional growth stress only from stable site signals: canopy shelter, hill
+exposure, elevation, wetland coverage, cultivation, geographic cell, and the
+individual tree seed. Exposed trees share a deterministic prevailing-stress
+azimuth, with small individual bias, so wind-shaped trunks and crowns lean
+coherently. The current weather snapshot is deliberately excluded: a six-hour
+gust or rain event may animate foliage but cannot rewrite decades of woody
+growth. Until imported climatology carries historical wind roses and soil depth,
+hill/open/elevation values remain bounded exposure proxies rather than claims of
+measured local wind history. Living oak and hazel cards are presets over one
+structural leaf generator. Binary silhouettes and parameterized blade, petiole,
+midrib, lobe/tooth, and vein fields produce discrete front/back albedo, detailed
+normal and AO, and low-detail roughness while sharing a crown-size Beer--Lambert
+response for only the self-occlusion unresolved by explicit cards and
+screen-space AO. An empirically bounded 0.11-per-metre coefficient yields about
+48% mature-oak and 16% hazel unresolved occlusion under the production
+atmosphere IBL. Oak diffuse transmission is 0.40 versus hazel's 0.46, preserving
+the smaller, thinner crown's greater transmission. The custom material
+explicitly enables Bevy's diffuse-transmission lighting path so this energy is
+added on the back side rather than merely removed from reflected diffuse. This
+does not change leaf topology, alpha coverage, entity count, draw count,
+exposure, or global lighting. Non-colliding grass and understory use
+automatically instanced shared meshes, layered shader wind, and root-to-tip
+shading. Grass cross-fades from a 9,216-blade, fifteen-vertex near-field macro
+patch to a stable 1,600-blade, seven-vertex subset at distance; rejected blades
+are absent from the far mesh rather than collapsed after vertex shading. The
+3.2-metre patch spacing cuts grass render entities by roughly an order of
+magnitude while retaining the original macro-patch footprint at four times the
+authored blade density near the player and camera. The distant mesh retains the
+earlier density because individual blades are subpixel there. The 4x near mesh
+cross-fades to the original far topology over 18--26 metres rather than paying
+four times the vertex cost throughout the former 34--44 metre high-detail
+radius. A deterministic scalar mask derived from the same authoritative
+ground-cover contour as the terrain rejects blades on dirt and leaf litter and
+progressively thins the grass-side boundary. Tree crowns guarantee a compact
+litter core at the trunk, then use a deterministic radially tapered litter
+mosaic beneath the outer crown. Overlapping crowns therefore accumulate a closed
+forest floor while sparse woodland keeps dappled grass instead of stamping one
+grass-free disc per tree. Boundary macro patches remain present, while patches
+fully inside non-grass cover are omitted. Near and far LODs use the same stable
+per-blade thresholds, so the organic edge does not change at the cross-fade. The
 visibility-range lookup uses each blade's world-space root and the foliage
 fragment stage applies the complementary dither, preventing a whole macro patch
 from changing as a square. At the playable edge, one continuous mask preserves
