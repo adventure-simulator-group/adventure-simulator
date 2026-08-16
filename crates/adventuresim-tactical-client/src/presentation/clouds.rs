@@ -6,7 +6,9 @@ const CLOUD_SHADER: &str = "shaders/tactical_clouds.wgsl";
 const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
 
 #[derive(Component)]
-pub(crate) struct TacticalCloudLayer;
+pub(crate) struct TacticalCloudLayer {
+    slot: usize,
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[allow(dead_code)] // Named variants are consumed by the native capture binary.
@@ -25,6 +27,7 @@ pub(crate) struct TacticalCloudCaptureOverride(pub(crate) Option<TacticalCloudCa
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalCloudMaterial {
+    sort_bias: f32,
     /// Direction toward the Sun and scene-referred cloud luminance.
     #[uniform(0)]
     lighting: Vec4,
@@ -37,6 +40,9 @@ pub(in crate::presentation) struct TacticalCloudMaterial {
     /// Wind offset in metres, direct-light fraction, weather transmission.
     #[uniform(3)]
     motion: Vec4,
+    /// Solar RGB chroma derived from altitude; alpha is reserved.
+    #[uniform(4)]
+    spectral: Vec4,
 }
 
 impl Material for TacticalCloudMaterial {
@@ -50,6 +56,10 @@ impl Material for TacticalCloudMaterial {
 
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Premultiplied
+    }
+
+    fn depth_bias(&self) -> f32 {
+        self.sort_bias
     }
 
     fn specialize(
@@ -77,34 +87,23 @@ struct CloudLayerParameters {
 }
 
 impl CloudLayerParameters {
-    fn from_environment(
+    fn layers_from_environment(
         environment: &SceneEnvironment,
         capture: Option<TacticalCloudCaptureProfile>,
-    ) -> Self {
+    ) -> [Option<Self>; 3] {
         if let Some(profile) = capture {
-            return Self::capture(profile);
+            return [Self::capture(profile), None, None];
         }
-
-        let seed = cloud_seed(environment);
-        let random = ((seed >> 16) & 0xffff) as f32 / 65_535.0;
-        let clear_profile = (seed % 3) as f32;
-        match environment.weather.precipitation {
-            Precipitation::Clear => {
-                let coverage = 0.28 + random * 0.34;
-                Self::for_profile(clear_profile, coverage, 0.82, seed)
-            }
-            Precipitation::Rain => {
-                let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
-                Self::for_profile(3.0, 0.78 + intensity * 0.18, 1.0 + intensity * 0.35, seed)
-            }
-            Precipitation::Snow => {
-                let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
-                Self::for_profile(1.0, 0.76 + intensity * 0.18, 0.92 + intensity * 0.2, seed)
-            }
-        }
+        let atmosphere = environment.weather.atmosphere;
+        [
+            atmosphere.low_cloud,
+            atmosphere.middle_cloud,
+            atmosphere.high_cloud,
+        ]
+        .map(|layer| layer.map(Self::from_layer))
     }
 
-    fn capture(profile: TacticalCloudCaptureProfile) -> Self {
+    fn capture(profile: TacticalCloudCaptureProfile) -> Option<Self> {
         let seed = match profile {
             TacticalCloudCaptureProfile::Clear => 0,
             TacticalCloudCaptureProfile::Cumulus => 117,
@@ -113,30 +112,72 @@ impl CloudLayerParameters {
             TacticalCloudCaptureProfile::Overcast => 631,
             TacticalCloudCaptureProfile::Storm => 887,
         };
-        match profile {
-            TacticalCloudCaptureProfile::Clear => Self::for_profile(0.0, 0.0, 0.0, seed),
-            TacticalCloudCaptureProfile::Cumulus => Self::for_profile(0.0, 0.48, 0.9, seed),
-            TacticalCloudCaptureProfile::Stratocumulus => Self::for_profile(1.0, 0.68, 0.9, seed),
-            TacticalCloudCaptureProfile::Cirrus => Self::for_profile(2.0, 0.42, 0.64, seed),
-            TacticalCloudCaptureProfile::Overcast => Self::for_profile(1.0, 0.94, 1.1, seed),
-            TacticalCloudCaptureProfile::Storm => Self::for_profile(3.0, 0.91, 1.32, seed),
-        }
+        let layer = match profile {
+            TacticalCloudCaptureProfile::Clear => return None,
+            TacticalCloudCaptureProfile::Cumulus => CloudLayerSnapshot {
+                form: CloudForm::Cumulus,
+                coverage_bps: 4_800,
+                optical_density_bps: 5_000,
+                base_metres: 1_250,
+                top_metres: 3_100,
+            },
+            TacticalCloudCaptureProfile::Stratocumulus => CloudLayerSnapshot {
+                form: CloudForm::Stratocumulus,
+                coverage_bps: 5_700,
+                optical_density_bps: 5_500,
+                base_metres: 1_050,
+                top_metres: 1_950,
+            },
+            TacticalCloudCaptureProfile::Cirrus => CloudLayerSnapshot {
+                form: CloudForm::Cirrus,
+                coverage_bps: 4_200,
+                optical_density_bps: 2_000,
+                base_metres: 5_500,
+                top_metres: 8_500,
+            },
+            TacticalCloudCaptureProfile::Overcast => CloudLayerSnapshot {
+                form: CloudForm::Stratus,
+                coverage_bps: 9_400,
+                optical_density_bps: 7_000,
+                base_metres: 700,
+                top_metres: 1_350,
+            },
+            TacticalCloudCaptureProfile::Storm => CloudLayerSnapshot {
+                form: CloudForm::Cumulonimbus,
+                coverage_bps: 7_200,
+                optical_density_bps: 9_000,
+                base_metres: 720,
+                top_metres: 10_500,
+            },
+        };
+        let mut parameters = Self::from_layer(layer);
+        parameters.seed = (seed % 4_096) as f32;
+        Some(parameters)
     }
 
-    fn for_profile(profile: f32, coverage: f32, density: f32, seed: u64) -> Self {
-        let (bottom_metres, thickness_metres, horizontal_scale) = match profile as u32 {
-            0 => (1_250.0, 1_850.0, 0.000_34),
-            1 => (1_050.0, 900.0, 0.000_25),
-            2 => (5_500.0, 520.0, 0.000_18),
-            _ => (720.0, 2_600.0, 0.000_28),
+    fn from_layer(layer: CloudLayerSnapshot) -> Self {
+        let (profile, horizontal_scale) = match layer.form {
+            CloudForm::Cumulus => (0.0, 0.000_52),
+            CloudForm::Stratocumulus => (1.0, 0.000_62),
+            CloudForm::Cirrus => (2.0, 0.000_27),
+            CloudForm::Cumulonimbus => (3.0, 0.000_34),
+            CloudForm::Stratus => (4.0, 0.000_25),
+            CloudForm::Altocumulus => (5.0, 0.000_58),
+            CloudForm::Altostratus => (6.0, 0.000_22),
+            CloudForm::Nimbostratus => (7.0, 0.000_21),
+            CloudForm::Cirrocumulus => (8.0, 0.000_68),
+            CloudForm::Cirrostratus => (9.0, 0.000_16),
+            CloudForm::CumulusCongestus => (10.0, 0.000_48),
         };
         Self {
-            coverage: coverage.clamp(0.0, 1.0),
-            density,
+            coverage: f32::from(layer.coverage_bps) / 10_000.0,
+            density: 0.4 + f32::from(layer.optical_density_bps) / 10_000.0,
             profile,
-            seed: (seed % 4_096) as f32,
-            bottom_metres,
-            thickness_metres,
+            seed: 0.0,
+            bottom_metres: f32::from(layer.base_metres),
+            thickness_metres: f32::from(
+                layer.top_metres.saturating_sub(layer.base_metres).max(100),
+            ),
             horizontal_scale,
         }
     }
@@ -147,25 +188,34 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
 ) {
-    commands.spawn((
-        Name::new("Procedural tactical cloud slab"),
-        TacticalCloudLayer,
-        NoFrustumCulling,
-        NotShadowCaster,
-        Mesh3d(meshes.add(cloud_hemisphere_mesh())),
-        MeshMaterial3d(materials.add(TacticalCloudMaterial {
-            lighting: Vec4::new(0.0, 1.0, 0.0, 1.43),
-            shape: Vec4::new(0.45, 0.9, 0.0, 0.0),
-            layer: Vec4::new(1_250.0, 1_850.0, 0.000_34, 48_000.0),
-            motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
-        })),
-        Transform::default(),
-    ));
+    let mesh = meshes.add(cloud_hemisphere_mesh());
+    for slot in 0..3 {
+        commands.spawn((
+            Name::new(format!("Procedural tactical cloud deck {slot}")),
+            TacticalCloudLayer { slot },
+            NoFrustumCulling,
+            NotShadowCaster,
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(materials.add(TacticalCloudMaterial {
+                sort_bias: cloud_sort_bias(slot),
+                lighting: Vec4::new(0.0, 1.0, 0.0, 1.43),
+                shape: Vec4::new(0.45, 0.9, 0.0, 0.0),
+                layer: Vec4::new(1_250.0, 1_850.0, 0.000_34, 24_000.0),
+                motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
+                spectral: Vec4::ONE,
+            })),
+            Transform::default(),
+        ));
+    }
 }
 
 fn cloud_hemisphere_mesh() -> Mesh {
-    const AZIMUTH_SEGMENTS: u32 = 64;
-    const ELEVATION_SEGMENTS: u32 = 20;
+    // Ray directions are interpolated across this shell in the fragment
+    // shader. Dense elevation tessellation is especially important near the
+    // horizon: coarse rings become visible as horizontal density bands long
+    // before their polygon silhouettes are otherwise noticeable.
+    const AZIMUTH_SEGMENTS: u32 = 128;
+    const ELEVATION_SEGMENTS: u32 = 64;
     let mut positions =
         Vec::with_capacity(((AZIMUTH_SEGMENTS + 1) * (ELEVATION_SEGMENTS + 1)) as usize);
     let mut normals = Vec::with_capacity(positions.capacity());
@@ -215,6 +265,13 @@ fn cloud_hemisphere_mesh() -> Mesh {
     mesh
 }
 
+fn cloud_sort_bias(slot: usize) -> f32 {
+    // Bevy's transparent sort values increase toward the camera. The shells
+    // share one camera-centred origin, so an explicit bias makes high cloud
+    // render first and low cloud composite over it last.
+    (2_usize.saturating_sub(slot) as f32) * 1_000.0
+}
+
 pub(in crate::presentation) fn update_tactical_clouds(
     time: Res<Time>,
     active: Res<ActiveTacticalScene>,
@@ -222,66 +279,82 @@ pub(in crate::presentation) fn update_tactical_clouds(
     celestial: Res<PresentedCelestialLighting>,
     capture: Res<TacticalCloudCaptureOverride>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
-    mut clouds: Single<
-        (
-            &MeshMaterial3d<TacticalCloudMaterial>,
-            &mut Transform,
-            &mut Visibility,
-        ),
-        With<TacticalCloudLayer>,
-    >,
+    mut clouds: Query<(
+        &TacticalCloudLayer,
+        &MeshMaterial3d<TacticalCloudMaterial>,
+        &mut Transform,
+        &mut Visibility,
+    )>,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
 ) {
-    clouds.1.translation = camera.translation();
     let Some(environment) = active
         .entity
         .and_then(|entity| environments.get(entity).ok())
     else {
-        *clouds.2 = Visibility::Hidden;
+        for (_, _, _, mut visibility) in &mut clouds {
+            *visibility = Visibility::Hidden;
+        }
         return;
     };
     let Some(celestial) = celestial.snapshot.as_ref() else {
-        *clouds.2 = Visibility::Hidden;
+        for (_, _, _, mut visibility) in &mut clouds {
+            *visibility = Visibility::Hidden;
+        }
         return;
     };
-    let Some(mut material) = materials.get_mut(&clouds.0.0) else {
-        return;
-    };
-
-    let parameters = CloudLayerParameters::from_environment(environment, capture.0);
-    if parameters.coverage <= 0.001 || parameters.density <= 0.001 {
-        *clouds.2 = Visibility::Hidden;
-        return;
-    }
     let seed = cloud_seed(environment);
-    let wind_angle = ((seed >> 32) as f32 / u32::MAX as f32) * core::f32::consts::TAU;
+    let layers = CloudLayerParameters::layers_from_environment(environment, capture.0);
+    let bearing = f32::from(environment.weather.atmosphere.wind_direction_degrees).to_radians();
+    let base_wind_direction = Vec2::new(bearing.sin(), -bearing.cos());
     let wind_speed = 2.0 + f32::from(environment.weather.wind_speed_bps) / 10_000.0 * 16.0;
     let elapsed =
         time.elapsed_secs() + (environment.absolute_minute % (7 * MINUTES_PER_DAY)) as f32 * 60.0;
-    let wind_offset = Vec2::from_angle(wind_angle) * wind_speed * elapsed;
     let daylight = smoothstep(-8.0, 8.0, celestial.sun_altitude_degrees);
     let scene_luminance = 0.08 + daylight * 1.35;
+    let solar_color = cloud_solar_color(celestial.sun_altitude_degrees);
+    let shear = f32::from(environment.weather.atmosphere.wind_shear_bps) / 10_000.0;
 
-    material.lighting = celestial.sun_direction.extend(scene_luminance);
-    material.shape = Vec4::new(
-        parameters.coverage,
-        parameters.density,
-        parameters.profile,
-        parameters.seed,
-    );
-    material.layer = Vec4::new(
-        parameters.bottom_metres,
-        parameters.thickness_metres,
-        parameters.horizontal_scale,
-        48_000.0,
-    );
-    material.motion = Vec4::new(
-        wind_offset.x,
-        wind_offset.y,
-        daylight,
-        celestial.weather_transmission,
-    );
-    *clouds.2 = Visibility::Inherited;
+    for (cloud, handle, mut transform, mut visibility) in &mut clouds {
+        transform.translation = camera.translation();
+        let Some(mut parameters) = layers[cloud.slot] else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        if parameters.coverage <= 0.001 || parameters.density <= 0.001 {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+        let Some(mut material) = materials.get_mut(&handle.0) else {
+            continue;
+        };
+        parameters.seed = ((seed.wrapping_add(cloud.slot as u64 * 1_013)) % 4_096) as f32;
+        let altitude_fraction = cloud.slot as f32 * 0.5;
+        let wind_direction =
+            Mat2::from_angle(shear * altitude_fraction * 0.7) * base_wind_direction;
+        let layer_wind_speed = wind_speed * (1.0 + altitude_fraction * (0.35 + shear * 0.65));
+        let wind_offset = wind_direction * layer_wind_speed * elapsed;
+        material.lighting = celestial.sun_direction.extend(scene_luminance);
+        material.shape = Vec4::new(
+            parameters.coverage,
+            parameters.density,
+            parameters.profile,
+            parameters.seed,
+        );
+        material.layer = Vec4::new(
+            parameters.bottom_metres,
+            parameters.thickness_metres,
+            parameters.horizontal_scale,
+            24_000.0,
+        );
+        material.motion = Vec4::new(
+            wind_offset.x,
+            wind_offset.y,
+            daylight,
+            celestial.weather_transmission,
+        );
+        material.spectral = solar_color.extend(1.0);
+        *visibility = Visibility::Inherited;
+    }
 }
 
 fn cloud_seed(environment: &SceneEnvironment) -> u64 {
@@ -301,11 +374,20 @@ fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+fn cloud_solar_color(sun_altitude_degrees: f32) -> Vec3 {
+    // Atmospheric extinction warms direct sunlight only near the horizon.
+    // Above 22 degrees the tactical cloud light is effectively neutral;
+    // retaining a permanent golden tint made daytime storm clouds olive when
+    // composited over the blue atmosphere.
+    let warmth = 1.0 - smoothstep(4.0, 22.0, sun_altitude_degrees);
+    Vec3::ONE.lerp(Vec3::new(1.0, 0.78, 0.60), warmth)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn environment(precipitation: Precipitation, intensity_bps: u16) -> SceneEnvironment {
+    fn environment() -> SceneEnvironment {
         SceneEnvironment {
             scene_digest: "cloud-parameter-test".into(),
             generation_version: TACTICAL_SCENE_GENERATION_VERSION,
@@ -320,10 +402,36 @@ mod tests {
                 cell_longitude: 0,
                 temperature_deci_c: 150,
                 wind_speed_bps: 2_000,
-                precipitation,
-                intensity_bps,
+                precipitation: Precipitation::Rain,
+                intensity_bps: 8_000,
                 ground_moisture_bps: 0,
                 snow_cover_bps: 0,
+                atmosphere: AtmosphericSnapshot {
+                    wind_direction_degrees: 240,
+                    wind_shear_bps: 4_000,
+                    low_cloud: Some(CloudLayerSnapshot {
+                        form: CloudForm::Cumulonimbus,
+                        coverage_bps: 8_500,
+                        optical_density_bps: 9_000,
+                        base_metres: 700,
+                        top_metres: 10_500,
+                    }),
+                    middle_cloud: Some(CloudLayerSnapshot {
+                        form: CloudForm::Altostratus,
+                        coverage_bps: 6_000,
+                        optical_density_bps: 4_000,
+                        base_metres: 2_800,
+                        top_metres: 5_200,
+                    }),
+                    high_cloud: Some(CloudLayerSnapshot {
+                        form: CloudForm::Cirrus,
+                        coverage_bps: 4_000,
+                        optical_density_bps: 2_000,
+                        base_metres: 6_200,
+                        top_metres: 10_500,
+                    }),
+                    ..Default::default()
+                },
             },
             canopy_bps: 0,
             wetland_bps: 0,
@@ -334,26 +442,60 @@ mod tests {
     }
 
     #[test]
-    fn precipitation_produces_dense_low_clouds() {
-        let clear =
-            CloudLayerParameters::from_environment(&environment(Precipitation::Clear, 0), None);
-        let rain =
-            CloudLayerParameters::from_environment(&environment(Precipitation::Rain, 8_000), None);
-        assert!(rain.coverage > clear.coverage);
-        assert!(rain.density > clear.density);
-        assert_eq!(rain.profile, 3.0);
-        assert!(rain.bottom_metres < clear.bottom_metres);
+    fn authoritative_weather_produces_three_distinct_cloud_decks() {
+        let layers = CloudLayerParameters::layers_from_environment(&environment(), None);
+        let low = layers[0].unwrap();
+        let middle = layers[1].unwrap();
+        let high = layers[2].unwrap();
+        assert_eq!(low.profile, 3.0);
+        assert_eq!(middle.profile, 6.0);
+        assert_eq!(high.profile, 2.0);
+        assert!(low.bottom_metres < middle.bottom_metres);
+        assert!(middle.bottom_metres < high.bottom_metres);
     }
 
     #[test]
     fn capture_profiles_cover_distinct_altitude_and_density_families() {
-        let cumulus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cumulus);
-        let cirrus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cirrus);
-        let storm = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Storm);
+        let cumulus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cumulus).unwrap();
+        let cirrus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cirrus).unwrap();
+        let storm = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Storm).unwrap();
         assert!(cirrus.bottom_metres > cumulus.bottom_metres);
-        assert!(cirrus.thickness_metres < cumulus.thickness_metres);
+        assert!(cirrus.density < cumulus.density);
         assert!(storm.density > cumulus.density);
         assert!(storm.coverage > cumulus.coverage);
+    }
+
+    #[test]
+    fn every_diagnosed_cloud_form_has_a_distinct_shader_profile() {
+        let forms = [
+            CloudForm::Cumulus,
+            CloudForm::Stratocumulus,
+            CloudForm::Cirrus,
+            CloudForm::Cumulonimbus,
+            CloudForm::Stratus,
+            CloudForm::Altocumulus,
+            CloudForm::Altostratus,
+            CloudForm::Nimbostratus,
+            CloudForm::Cirrocumulus,
+            CloudForm::Cirrostratus,
+            CloudForm::CumulusCongestus,
+        ];
+        let mut profiles = forms
+            .map(|form| {
+                CloudLayerParameters::from_layer(CloudLayerSnapshot {
+                    form,
+                    coverage_bps: 5_000,
+                    optical_density_bps: 5_000,
+                    base_metres: 1_000,
+                    top_metres: 3_000,
+                })
+                .profile as u8
+            })
+            .to_vec();
+        profiles.sort_unstable();
+        profiles.dedup();
+        assert_eq!(profiles.len(), forms.len());
+        assert!(CloudLayerParameters::capture(TacticalCloudCaptureProfile::Clear).is_none());
     }
 
     #[test]
@@ -371,5 +513,21 @@ mod tests {
                 .iter()
                 .any(|position| position[1] >= CLOUD_DOME_DISTANCE_METRES * 0.99)
         );
+    }
+
+    #[test]
+    fn solar_chroma_is_neutral_by_day_and_warm_only_near_the_horizon() {
+        let midday = cloud_solar_color(38.0);
+        let low_sun = cloud_solar_color(6.0);
+        assert!(midday.abs_diff_eq(Vec3::ONE, 1e-6));
+        assert!(low_sun.x > low_sun.y);
+        assert!(low_sun.y > low_sun.z);
+        assert!(low_sun.z < midday.z);
+    }
+
+    #[test]
+    fn cloud_decks_composite_high_to_low() {
+        assert!(cloud_sort_bias(2) < cloud_sort_bias(1));
+        assert!(cloud_sort_bias(1) < cloud_sort_bias(0));
     }
 }

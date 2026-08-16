@@ -1404,6 +1404,7 @@ fn clear_vista_weather() -> WeatherSnapshot {
         intensity_bps: 0,
         ground_moisture_bps: 0,
         snow_cover_bps: 0,
+        atmosphere: Default::default(),
     }
 }
 

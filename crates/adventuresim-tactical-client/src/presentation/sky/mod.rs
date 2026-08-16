@@ -629,11 +629,12 @@ pub(super) fn to_bevy_direction(east_up_north: [f32; 3]) -> Vec3 {
 
 fn sky_weather_transmission(environment: &SceneEnvironment) -> f32 {
     let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
-    match environment.weather.precipitation {
+    let precipitation = match environment.weather.precipitation {
         Precipitation::Clear => 1.0,
         Precipitation::Rain => 0.12 * (1.0 - intensity * 0.7),
         Precipitation::Snow => 0.2 * (1.0 - intensity * 0.6),
-    }
+    };
+    precipitation * cloud_solar_transmission(environment.weather)
 }
 
 pub(super) fn scene_exposure_ev100(
@@ -843,6 +844,7 @@ mod tests {
                 intensity_bps: 0,
                 ground_moisture_bps: 0,
                 snow_cover_bps: 0,
+                atmosphere: Default::default(),
             },
             canopy_bps: 0,
             wetland_bps: 0,

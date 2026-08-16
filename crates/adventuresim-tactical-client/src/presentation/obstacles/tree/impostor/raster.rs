@@ -795,7 +795,7 @@ mod tests {
             absolute_minute: 340_440,
             absolute_elevation_metres: 42,
             weather: WeatherSnapshot {
-                rules_version: 2,
+                rules_version: adventuresim_tactical_core::prelude::WEATHER_RULES_VERSION,
                 interval_start_minute: 340_440,
                 cell_latitude: 214,
                 cell_longitude: 40,
@@ -805,6 +805,7 @@ mod tests {
                 intensity_bps: 0,
                 ground_moisture_bps: 100,
                 snow_cover_bps: 0,
+                atmosphere: Default::default(),
             },
             canopy_bps: 3_500,
             wetland_bps: 300,

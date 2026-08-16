@@ -37,7 +37,8 @@ pub(super) fn spawn_weather_particles(
     };
     let count = 24 + usize::from(environment.weather.intensity_bps) * 104 / 10_000;
     let wind = f32::from(environment.weather.wind_speed_bps) / 10_000.0 * 8.0;
-    let velocity = Vec3::new(wind, -fall_speed, wind * 0.27);
+    let bearing = f32::from(environment.weather.atmosphere.wind_direction_degrees).to_radians();
+    let velocity = Vec3::new(bearing.sin() * wind, -fall_speed, -bearing.cos() * wind);
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Y, velocity.normalize_or_zero());
     for index in 0..count {
         let x = fixture_coordinate(index as u64, 0) * 110.0;

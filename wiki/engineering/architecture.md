@@ -490,8 +490,9 @@ adds no entity, material slot, draw call, gameplay collider, or placement rule.
 The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or tactical
 authority. The immutable environment and weather snapshots control the
-procedural ground material, precipitation particles, fog distance, wind drift,
-and sunlight. The Earth-atmosphere path keeps top-of-atmosphere solar source
+procedural ground material, diagnosed low/middle/high cloud decks, directional
+precipitation particles, fog distance, wind drift, and cloud-attenuated
+sunlight. The Earth-atmosphere path keeps top-of-atmosphere solar source
 energy available after the Sun crosses the geometric horizon. Bevy's atmospheric
 transmittance and visible-disc calculation then suppress direct surface
 illumination while retaining directional civil and nautical twilight scattering.

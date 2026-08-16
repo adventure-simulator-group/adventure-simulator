@@ -61,26 +61,38 @@ python scripts/import_hipparcos_stars.py
 
 ## Procedural clouds
 
-The default tactical presentation renders clouds as a bounded atmospheric
-slab. A camera-centred hemisphere supplies rasterization geometry, but the
-fragment shader intersects each view ray with the cloud layer and integrates
-twelve procedural density samples through it. Height profiles distinguish
-cumulus, stratocumulus, cirrus, and storm clouds. Wind moves the density field
-without simulating tactical fluid state.
+The default tactical presentation renders up to three bounded atmospheric
+decks. Camera-centred hemispheres supply rasterization geometry, but the
+fragment shader intersects each view ray with the corresponding cloud layer
+and integrates sixty-four procedural density samples through it. Short
+sun-facing shadow probes provide internal self-shadowing, while multi-scale
+edge erosion and distance fading preserve cloud detail without a hard horizon
+cutoff. Solar chroma follows Sun altitude rather than applying a permanent
+gold cast; dense storm cores converge toward neutral gray-blue multiple
+scattering while low-Sun cloud edges can remain warm. Distinct profiles
+cover cirrus, cirrocumulus, cirrostratus, altocumulus, altostratus,
+nimbostratus, stratocumulus, stratus, cumulus, cumulus congestus, and
+cumulonimbus. The decks can coexist, so high ice cloud need not disappear when
+lower cloud develops.
 
-Strategic precipitation, intensity, time, and location determine the broad
-coverage and profile. Clear-weather variation is derived deterministically
-from the scene digest and weather interval because the strategic weather
-snapshot does not yet carry an authoritative cloud-cover measurement. Rain and
-snow force denser, lower layers. These values remain transient presentation
-state and are never written back to SpacetimeDB.
+The strategic weather snapshot authoritatively supplies each deck's form,
+coverage, optical density, base, and top. Those layers are diagnosed from
+spatially and temporally correlated humidity, dew point, pressure, wind,
+vertical wind shear, instability, and broad lift fields. Precipitation follows
+only from a sufficiently moist and ascending nimbostratus or cumulonimbus
+state. Wind advects each density field in the authoritative direction; higher
+decks move faster and turn with shear. This is a bounded procedural weather
+model rather than numerical fluid dynamics: the strategic authority evaluates
+the fields from time and location without storing continental atmospheric rows,
+and the tactical client does not mutate them.
 
 Cloud lighting reuses the production Sun direction, exposure, and weather
-transmission. The shader uses bounded optical depth, an inexpensive
-forward-scattering approximation, and denser undersides instead of secondary
-shadow rays. Clouds remain separate from the atmosphere-generated environment
-map; they neither trigger environment-map regeneration nor bake their moving
-shape into image-based lighting.
+transmission. Cloud amount and optical density attenuate direct sunlight and
+star visibility even when no precipitation reaches the ground. The shader uses
+bounded optical depth, an inexpensive forward-scattering approximation, and
+denser undersides instead of secondary shadow rays. Clouds remain separate from
+the atmosphere-generated environment map; they neither trigger environment-map
+regeneration nor bake their moving shape into image-based lighting.
 
 ## Verification
 

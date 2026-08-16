@@ -307,6 +307,11 @@ fn setup_view(world: &mut World, view: SkyView) {
             perceptual_roughness: 0.95,
             ..default()
         });
+    let (capture_precipitation, capture_intensity_bps) = if matches!(view, SkyView::CloudStorm) {
+        (Precipitation::Rain, 9_500)
+    } else {
+        (Precipitation::Clear, 0)
+    };
     world.spawn((
         Name::new("Sky verification horizon plane"),
         Mesh3d(ground_mesh),
@@ -330,10 +335,11 @@ fn setup_view(world: &mut World, view: SkyView) {
                 cell_longitude: 0,
                 temperature_deci_c: 150,
                 wind_speed_bps: 0,
-                precipitation: Precipitation::Clear,
-                intensity_bps: 0,
+                precipitation: capture_precipitation,
+                intensity_bps: capture_intensity_bps,
                 ground_moisture_bps: 0,
                 snow_cover_bps: 0,
+                atmosphere: Default::default(),
             },
             canopy_bps: 0,
             wetland_bps: 0,

@@ -1055,6 +1055,7 @@ pub(in crate::presentation) fn legacy_scene_environment(id: &SceneId) -> SceneEn
             intensity_bps: 0,
             ground_moisture_bps: 0,
             snow_cover_bps: 0,
+            atmosphere: Default::default(),
         },
         canopy_bps,
         wetland_bps: 0,
