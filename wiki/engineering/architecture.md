@@ -465,20 +465,22 @@ per patch. Macro patches remain unit-scale and nearly gridded, with boundary
 blade rows constrained to wander outward to mitigate square seams on near-flat
 and ordinary sloped terrain. This is a continuity mitigation rather than a
 guarantee across sharp terrain-normal discontinuities. Within the unchanged
-topology, deterministic mixed-age height, independent width, clumping,
-three-class pigment, lean, and curvature variation avoids a repeated
-vertical-curtain silhouette. A shared world-space meadow field keeps the full
+topology, deterministic mixed-age height, independent width, clumping, lean,
+and curvature variation avoids a repeated vertical-curtain silhouette. A shared
+world-space meadow field keeps the full
 authored density within seven metres, then introduces short juvenile pockets and
 irregular occupancy before the 18--26 metre cross-fade. The authoritative
 grass-side mask uses a broader nonlinear feather, and surviving boundary blades
 shorten with coverage, so dirt and leaf-litter transitions do not terminate as a
 same-height wall. This composition also derives a stable age cohort from the
 existing per-blade LOD threshold: a bounded minority of mature blades develops
-one hard-edged, desaturated straw-tip region while juvenile cohorts retain one
-of three green pigments. Root shading and rib definition are occlusion responses
-rather than albedo gradients. Near and far LODs therefore preserve the same age
-identity without another vertex attribute, texture read, transcendental
-evaluation, mesh, entity, material, or draw. Beneath and beyond the geometric
+one hard-edged, desaturated straw-tip region while healthy blades share their
+species pigment. A 0.60 perceptual roughness gives the differently oriented
+blades a waxy, view-dependent highlight instead of randomized albedo. Root
+shading and rib definition remain occlusion responses rather than color
+gradients. Near and far LODs therefore preserve the same age identity without
+another vertex attribute, texture read, transcendental evaluation, mesh,
+entity, material, or draw. Beneath and beyond the geometric
 range, tall-grass terrain uses an optical-average solid albedo derived from the
 same environment pigment as the blades. The compensation accounts for
 categorical blade darkening, occlusion, and thin-foliage lighting; copying the

@@ -640,24 +640,14 @@ fn grass_ribbon_patch_mesh(
         let normal = Vec3::Y.cross(half_width).normalize_or_zero().to_array();
         let blade_threshold = unit_hash(splitmix64(hash ^ 0x3d91_02ea_61b8_7c45));
         let age = unit_hash(splitmix64(hash ^ 0x1b47_c95a_622d_41e3));
-        // Each blade is one molded pigment. Variation is categorical rather
-        // than continuous noise, and senescent tips use a hard color region.
-        let pigment = splitmix64(hash ^ 0x76b3_144d) % 3;
-        let cohort_scale = match pigment {
-            0 => [0.82, 0.90, 0.78],
-            1 => [1.0, 1.0, 1.0],
-            _ => [1.08, 1.02, 0.82],
-        };
+        // Healthy blades share their species pigment. Senescent tips retain a
+        // hard straw region, while blade separation comes from the material's
+        // specular response rather than randomized albedo.
         let species_scale = species.pigment_scale();
-        let pigment_scale = [
-            cohort_scale[0] * species_scale[0],
-            cohort_scale[1] * species_scale[1],
-            cohort_scale[2] * species_scale[2],
-        ];
         let blade_color = [
-            (linear[0] * pigment_scale[0]).clamp(0.0, 1.0),
-            (linear[1] * pigment_scale[1]).clamp(0.0, 1.0),
-            (linear[2] * pigment_scale[2]).clamp(0.0, 1.0),
+            (linear[0] * species_scale[0]).clamp(0.0, 1.0),
+            (linear[1] * species_scale[1]).clamp(0.0, 1.0),
+            (linear[2] * species_scale[2]).clamp(0.0, 1.0),
             blade_threshold,
         ];
         let luminance = blade_color[0] * 0.2126 + blade_color[1] * 0.7152 + blade_color[2] * 0.0722;
@@ -1217,7 +1207,7 @@ mod tests {
             .iter()
             .map(|color| [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()])
             .collect::<BTreeSet<_>>();
-        assert!(distinct_pigments.len() <= 12);
+        assert!(distinct_pigments.len() <= 4);
         assert!(distinct_pigments.len() >= 3);
     }
 
@@ -1353,6 +1343,8 @@ mod tests {
         assert!(shader.contains("abs(f32(in.visibility_range_dither)) / 16.0"));
         assert!(!shader.contains("visibility_range_dither(in.position"));
         assert!(shader.contains("vec4<f32>(root_world, 1.0)"));
+        assert!(shader.contains("0.60,"));
+        assert!(shader.contains("foliage.shading.w > 0.5"));
 
         let near = grass_patch_mesh(
             Color::WHITE,
