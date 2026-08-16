@@ -370,34 +370,20 @@ five-to-ten-root visual flare from the same tree seed. Unequal angular gaps,
 reach, radius, and burial break up radial repetition; two or three broader
 buttresses follow the main scaffold-load azimuths, and at most two roots add a
 short lateral fork. This presentation detail remains capped at 22 segments and
-does not expand the server's cylindrical trunk collider. The lower trunk and
-proximal roots are converted into a bounded smooth-union capsule field and
-contoured as one watertight near-LOD flare; ordinary woody runs remain cheap
-generalized-cylinder sweeps. The same flare is retained across the pre-impostor
-wood LODs while successive upper branch orders collapse. Oak and hazel branch
-recipes also cap each child base at 80% of its local parent-axis radius. The
-existing bounded basal ring therefore cannot become wider than its trunk or
+does not expand the server's cylindrical trunk collider. The visible roots use
+flattened, low-sided generalized-cylinder sweeps. Their bases begin inside the
+continuous 16-sided trunk, while a presentation-only radius-scaled lift keeps
+their authored main runs and short forks readable at the terrain surface. There
+is no independently contoured flare surface or trunk handoff. Successive upper
+branch orders still collapse across the pre-impostor wood LODs. Oak and hazel
+branch recipes also cap each child base at 80% of its local parent-axis radius.
+The existing bounded basal ring therefore cannot become wider than its trunk or
 parent limb. Near woody meshes use one solid molded-brown dielectric material
-with uniform roughness. Trunk/root relief comes from the unified geometry and
-scene lighting, so no UV-dependent albedo, normal, roughness, or AO channel can
-reveal the branch-influence handoff across the implicit flare. Ordinary sweep
-UVs still duplicate the wrap seam and parallel-transport their tangent frame for
-future branch-space channels. Near oak wood instead evaluates deterministic
-longitudinal fissures directly in branch space: irregular streamlines wander
-along each woody axis, a narrow inset groove is bordered by two raised lips, and
-smooth proximity weights blend the relief wherever root capsules join the trunk.
-The periodic angular calculation has no texture wrap, and only the extracted
-surface is displaced, avoiding microdetail evaluation throughout the bounded
-flare volume. The displaced surface retains the exact branch-space relief, but
-its vertex normals reuse the generalized-cylinder frame or smooth-union field
-normal instead of sampling the relief six additional times per vertex. Species
-bark recipes control fissure width/depth, lip and plate height, minimum mature
-radius, branch-order attenuation, and root-profile lobing. Oak therefore
-develops raised, transversely broken plates between
-asymmetrical crack lips on the old trunk and major limbs while young shoots fade
-toward smooth wood; hazel uses the same mesher with a restrained smooth-bark
-preset. Root-profile lobes align with generated buttress directions and fade
-with height. Oak architecture separately exposes an `OakGnarlingParameters`
+with uniform roughness. They deliberately omit geometric bark fissures and
+tangent generation: smooth sweep normals carry the visible form without
+per-vertex micro-displacement work. Sweep UVs retain physical scale and a
+duplicated wrap seam, but the current untextured bark material does not consume
+them. Oak architecture separately exposes an `OakGnarlingParameters`
 growth-history recipe. Its normalized controls independently cover root spread,
 meander, exposure, and forking; trunk lean, sweep, twist, crooks, and taper
 irregularity; knot frequency and size, burl swelling; scaffold droop, sweep, and
