@@ -569,11 +569,15 @@ detail, entity, draw call, displacement, or authoritative silhouette change.
 
 Playable and vista ground use solid molded-material palette regions with hard
 boundaries for substrate, cover, exposed stone, water, and snow. Ground has no
-sampled albedo texture, normal map, or synthesized micro-normal detail; its
-only surface normal comes from terrain geometry. The retained ground map is a
-discrete gameplay-data mask that selects those regions, not visual texture
-detail. Weather may still change the uniform wetness, roughness, and snow
-response without modifying the authoritative heightfield.
+sampled albedo texture or stored normal map. Near walkable soil uses one global
+packed RG8 height/AO texture; world-XZ mapping and fragment derivatives compose
+its sub-two-centimetre relief with the terrain-geometry normal. The complete mip
+chain and a 12-to-24-metre fade bound minification cost, while slope and
+substrate masks keep planar soil detail off cliffs, stone, gravel, and water.
+The retained per-scene ground map remains a discrete gameplay-data mask that
+selects palette regions, not visual texture detail. Weather may still change
+wetness, roughness, snow coverage, and the detail mask without modifying the
+authoritative heightfield.
 
 The Moon is the deliberate procedural exception: its LRO reference map keeps
 real crater geography, while the Moon shader quantizes reflectance into four
