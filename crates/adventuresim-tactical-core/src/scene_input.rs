@@ -7,7 +7,7 @@
 
 use std::{fs, path::Path};
 
-use adventuresim_core::weather::{Precipitation, WeatherSnapshot};
+use adventuresim_core::weather::{Precipitation, WEATHER_RULES_VERSION, WeatherSnapshot};
 use bevy::prelude::Component;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -15,8 +15,8 @@ use thiserror::Error;
 
 use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 1;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 8;
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 2;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 9;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -834,11 +834,33 @@ fn validate_grid(
 }
 
 fn validate_weather(weather: WeatherSnapshot) -> Result<(), SceneInputError> {
-    if weather.wind_speed_bps > 10_000
+    if weather.rules_version != WEATHER_RULES_VERSION
+        || weather.wind_speed_bps > 10_000
         || weather.intensity_bps > 10_000
         || weather.ground_moisture_bps > 10_000
         || weather.snow_cover_bps > 10_000
+        || weather.atmosphere.relative_humidity_bps > 10_000
+        || weather.atmosphere.dew_point_deci_c > weather.temperature_deci_c + 5
+        || !(8_700..=10_850).contains(&weather.atmosphere.sea_level_pressure_deci_hpa)
+        || weather.atmosphere.wind_direction_degrees >= 360
+        || weather.atmosphere.wind_shear_bps > 10_000
+        || weather.atmosphere.instability_bps > 10_000
+        || !(-10_000..=10_000).contains(&weather.atmosphere.lift_bps)
+        || weather.cloud_layers().any(|layer| {
+            layer.coverage_bps > 10_000
+                || layer.optical_density_bps > 10_000
+                || layer.top_metres <= layer.base_metres
+        })
         || (matches!(weather.precipitation, Precipitation::Clear) && weather.intensity_bps != 0)
+        || (!matches!(weather.precipitation, Precipitation::Clear)
+            && (weather.intensity_bps == 0
+                || !weather.cloud_layers().any(|layer| {
+                    matches!(
+                        layer.form,
+                        adventuresim_core::weather::CloudForm::Cumulonimbus
+                            | adventuresim_core::weather::CloudForm::Nimbostratus
+                    )
+                })))
     {
         return invalid("weather snapshot is invalid");
     }

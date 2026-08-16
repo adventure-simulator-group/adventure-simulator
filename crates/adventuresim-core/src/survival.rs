@@ -234,7 +234,7 @@ mod tests {
 
     fn weather(temp: i32, wind: u16, rain: bool) -> WeatherSnapshot {
         WeatherSnapshot {
-            rules_version: 2,
+            rules_version: crate::weather::WEATHER_RULES_VERSION,
             interval_start_minute: 0,
             cell_latitude: 0,
             cell_longitude: 0,
@@ -248,6 +248,7 @@ mod tests {
             intensity_bps: if rain { 8_000 } else { 0 },
             ground_moisture_bps: 0,
             snow_cover_bps: 0,
+            atmosphere: Default::default(),
         }
     }
 

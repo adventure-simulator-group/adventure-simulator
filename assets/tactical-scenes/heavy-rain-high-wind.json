@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "generation_version": 8,
+  "schema_version": 2,
+  "generation_version": 9,
   "seed": 47108,
   "scene_key": "storm",
   "source": {
@@ -32101,7 +32101,7 @@
     ]
   },
   "weather": {
-    "rules_version": 2,
+    "rules_version": 3,
     "interval_start_minute": 340440,
     "cell_latitude": 214,
     "cell_longitude": 40,
@@ -32110,6 +32110,30 @@
     "precipitation": "rain",
     "intensity_bps": 9500,
     "ground_moisture_bps": 8000,
-    "snow_cover_bps": 0
+    "snow_cover_bps": 0,
+    "atmosphere": {
+      "relative_humidity_bps": 9500,
+      "dew_point_deci_c": 65,
+      "sea_level_pressure_deci_hpa": 9920,
+      "wind_direction_degrees": 70,
+      "wind_shear_bps": 7500,
+      "instability_bps": 8200,
+      "lift_bps": 7000,
+      "low_cloud": {
+        "form": "cumulonimbus",
+        "coverage_bps": 8800,
+        "optical_density_bps": 9000,
+        "base_metres": 500,
+        "top_metres": 10500
+      },
+      "middle_cloud": null,
+      "high_cloud": {
+        "form": "cirrus",
+        "coverage_bps": 3500,
+        "optical_density_bps": 2000,
+        "base_metres": 6500,
+        "top_metres": 10500
+      }
+    }
   }
 }

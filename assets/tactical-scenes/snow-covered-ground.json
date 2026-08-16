@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "generation_version": 8,
+  "schema_version": 2,
+  "generation_version": 9,
   "seed": 47107,
   "scene_key": "snowfield",
   "source": {
@@ -32101,7 +32101,7 @@
     ]
   },
   "weather": {
-    "rules_version": 2,
+    "rules_version": 3,
     "interval_start_minute": 340440,
     "cell_latitude": 214,
     "cell_longitude": 40,
@@ -32110,6 +32110,30 @@
     "precipitation": "snow",
     "intensity_bps": 6500,
     "ground_moisture_bps": 2000,
-    "snow_cover_bps": 8500
+    "snow_cover_bps": 8500,
+    "atmosphere": {
+      "relative_humidity_bps": 9200,
+      "dew_point_deci_c": -56,
+      "sea_level_pressure_deci_hpa": 10020,
+      "wind_direction_degrees": 110,
+      "wind_shear_bps": 3500,
+      "instability_bps": 2500,
+      "lift_bps": 4000,
+      "low_cloud": {
+        "form": "stratocumulus",
+        "coverage_bps": 8200,
+        "optical_density_bps": 6500,
+        "base_metres": 550,
+        "top_metres": 1800
+      },
+      "middle_cloud": {
+        "form": "nimbostratus",
+        "coverage_bps": 8800,
+        "optical_density_bps": 8000,
+        "base_metres": 1800,
+        "top_metres": 5500
+      },
+      "high_cloud": null
+    }
   }
 }

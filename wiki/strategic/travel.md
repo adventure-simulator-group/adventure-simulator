@@ -7,9 +7,14 @@ stops at camp, or is interrupted.
 ## Departure weather
 
 Strategic weather is evaluated from absolute minute, coarse geographic cell,
-and elevation using a versioned deterministic authority. Conditions are clear,
-rain, or snow with bounded intensity. Recent intervals deterministically
-produce ground moisture and snow cover; there are no per-tile weather rows.
+and elevation using a versioned deterministic authority. Advecting
+synoptic-scale fields provide spatially and temporally correlated temperature,
+humidity, dew point, pressure, wind direction and speed, shear, instability,
+and broad lift. Those conditions diagnose low, middle, and high cloud decks;
+sufficiently moist ascending nimbostratus or cumulonimbus produces bounded rain
+or snow. Recent intervals deterministically produce ground moisture and snow
+cover. The authority reconstructs these conditions from its world seed rather
+than storing per-tile weather rows.
 
 Routing snapshots the weather rules version, interval, precipitation,
 intensity, moisture, and snow cover at departure. The snapshot participates in
