@@ -53,9 +53,9 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
-    PresentedTree, TacticalTreeLeafCardMaterial, TreeAssetResidencyDiagnostics,
-    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
-    TreeTrunkLod, oak_bark_material, oak_leaf_material,
+    PresentedTree, TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial,
+    TreeAssetResidencyDiagnostics, TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod,
+    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
 };
 pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
@@ -127,6 +127,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalRockMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
             MaterialPlugin::<TacticalPebbleBillboardMaterial>::default(),
+            MaterialPlugin::<TacticalTreeBarkMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
@@ -191,7 +192,9 @@ impl Plugin for TacticalPresentationPlugin {
                     apply_presented_celestial_lighting,
                 )
                     .chain(),
-                update_celestial_material_lighting.after(update_presented_celestial_lighting),
+                update_celestial_material_lighting
+                    .after(update_presented_celestial_lighting)
+                    .after(present_pending_trees),
                 (
                     present_pending_trees,
                     stream_tree_lod_children,

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2016)
+## Files (2017)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -70,10 +70,14 @@ development, or other wiki document before changing a subsystem.
 - `assets/shaders/tactical_rock.wgsl` — Repository support file.
 - `assets/shaders/tactical_stars.wgsl` — Repository support file.
 - `assets/shaders/tactical_terrain.wgsl` — Repository support file.
+- `assets/shaders/tactical_tree_bark.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_impostor.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_leaf_card.wgsl` — Repository support file.
 - `assets/shaders/tactical_vista.wgsl` — Repository support file.
 - `assets/shaders/tactical_weather.wgsl` — Repository support file.
+- `assets/tactical-art-goals/pedunculate-oak-ground-goal-v2.png` — Binary game or UI asset.
+- `assets/tactical-art-goals/pedunculate-oak-ground-goal.png` — Binary game or UI asset.
+- `assets/tactical-art-goals/pedunculate-oak-trunk-goal.png` — Binary game or UI asset.
 - `assets/tactical-equipment-icons.png` — Binary game or UI asset.
 - `assets/tactical-scenes/cultivated-roadside.json` — Repository support file.
 - `assets/tactical-scenes/dense-woodland.json` — Repository support file.
