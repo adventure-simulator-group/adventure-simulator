@@ -132,6 +132,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalMoonMaterial>::default(),
             MaterialPlugin::<TacticalStarMaterial>::default(),
             MaterialPlugin::<TacticalCloudMaterial>::default(),
+            MaterialPlugin::<TacticalWeatherMaterial>::default(),
         ))
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
@@ -200,9 +201,7 @@ impl Plugin for TacticalPresentationPlugin {
                 update_tactical_clouds.after(update_presented_celestial_lighting),
                 update_global_ambient_policy.after(apply_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
-                (apply_active_scene_weather, advance_weather_particles)
-                    .chain()
-                    .after(refresh_active_tactical_scene),
+                apply_active_scene_weather.after(refresh_active_tactical_scene),
             ),
         )
         .add_observer(on_game_scene_added)

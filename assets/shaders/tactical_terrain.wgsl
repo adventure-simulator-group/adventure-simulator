@@ -140,7 +140,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     pbr_input.material.base_color = vec4<f32>(color, 1.0);
     let dry_roughness = select(0.84, 0.9, terrain.detail_patch.x > 0.5);
-    let base_roughness = dry_roughness + wetness * 0.07 - water * 0.19;
+    // A continuous film darkens porous ground and narrows its highlights.
+    // Snow remains a rough dielectric unless the underlying surface is water.
+    let base_roughness = dry_roughness - wetness * 0.22 + snow_mask * 0.08 - water * 0.19;
     pbr_input.material.perceptual_roughness = clamp(base_roughness, 0.55, 1.0);
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
