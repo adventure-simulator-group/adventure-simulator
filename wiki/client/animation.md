@@ -141,8 +141,8 @@ The animation evaluator consumes skeleton state in this order:
    flinches.
 6. For ordinary locomotion, apply contact-weighted terrain correction, one
    shared hip correction, and one two-bone solve per leg. Raised-guard foot
-   planning, hand/weapon constraints, and head/torso look follow. Body facing is already
-   present on the replicated root.
+   planning, hand/weapon constraints, and head/torso look follow. Body facing is
+   already present on the replicated root.
 7. Apply optional secondary animation.
 
 The semantic router reads a read-only snapshot of `PresentedSkeleton` and its
