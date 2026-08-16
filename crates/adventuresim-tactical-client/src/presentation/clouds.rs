@@ -1,9 +1,13 @@
-//! Bounded procedural cloud slab for the grounded tactical camera.
+//! Bounded procedural cloud shells for the grounded tactical camera.
 
 use super::*;
 
 const CLOUD_SHADER: &str = "shaders/tactical_clouds.wgsl";
 const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
+/// Deliberately smaller than Earth's radius so cloud decks bend into the
+/// tactical horizon within the renderer's bounded trace distance.
+const CLOUD_CURVATURE_RADIUS_METRES: f32 = 180_000.0;
+const CLOUD_AERIAL_EXTINCTION_PER_METRE: f32 = 0.000_025;
 
 #[derive(Component)]
 pub(crate) struct TacticalCloudLayer {
@@ -43,6 +47,9 @@ pub(in crate::presentation) struct TacticalCloudMaterial {
     /// Solar RGB chroma derived from altitude; alpha is reserved.
     #[uniform(4)]
     spectral: Vec4,
+    /// Fixed scene anchor X/Z, curvature radius, aerial extinction.
+    #[uniform(5)]
+    geometry: Vec4,
 }
 
 impl Material for TacticalCloudMaterial {
@@ -203,6 +210,7 @@ pub(in crate::presentation) fn setup_tactical_clouds(
                 layer: Vec4::new(1_250.0, 1_850.0, 0.000_34, 24_000.0),
                 motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
                 spectral: Vec4::ONE,
+                geometry: cloud_shell_geometry(),
             })),
             Transform::default(),
         ));
@@ -353,8 +361,30 @@ pub(in crate::presentation) fn update_tactical_clouds(
             celestial.weather_transmission,
         );
         material.spectral = solar_color.extend(1.0);
+        material.geometry = cloud_shell_geometry();
         *visibility = Visibility::Inherited;
     }
+}
+
+fn cloud_shell_geometry() -> Vec4 {
+    // Tactical world coordinates are local to the scene. Anchoring the shell
+    // below that origin keeps its curvature stable as the camera crosses the
+    // playable area; the camera-following mesh remains only a raster proxy.
+    Vec4::new(
+        0.0,
+        0.0,
+        CLOUD_CURVATURE_RADIUS_METRES,
+        CLOUD_AERIAL_EXTINCTION_PER_METRE,
+    )
+}
+
+#[cfg(test)]
+fn cloud_shell_altitude_at_distance(base_metres: f32, horizontal_metres: f32) -> f32 {
+    let radius = CLOUD_CURVATURE_RADIUS_METRES + base_metres;
+    (radius * radius - horizontal_metres * horizontal_metres)
+        .max(0.0)
+        .sqrt()
+        - CLOUD_CURVATURE_RADIUS_METRES
 }
 
 fn cloud_seed(environment: &SceneEnvironment) -> u64 {
@@ -529,5 +559,28 @@ mod tests {
     fn cloud_decks_composite_high_to_low() {
         assert!(cloud_sort_bias(2) < cloud_sort_bias(1));
         assert!(cloud_sort_bias(1) < cloud_sort_bias(0));
+    }
+
+    #[test]
+    fn cloud_shell_is_locally_flat_but_bends_into_the_horizon() {
+        let base_metres = 1_250.0;
+        let nearby = cloud_shell_altitude_at_distance(base_metres, 1_000.0);
+        let distant = cloud_shell_altitude_at_distance(base_metres, 20_000.0);
+
+        assert!((nearby - base_metres).abs() < 4.0);
+        assert!(distant < base_metres - 1_000.0);
+        assert!(distant > 0.0);
+        assert_eq!(cloud_shell_geometry().xy(), Vec2::ZERO);
+    }
+
+    #[test]
+    fn cloud_shader_intersects_shells_and_adapts_its_sampling() {
+        let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
+
+        assert!(shader.contains("ray_sphere_roots"));
+        assert!(shader.contains("altitude_in_shell"));
+        assert!(shader.contains("let ray_jitter"));
+        assert!(shader.contains("var fine_marching = false"));
+        assert!(!shader.contains("(cloud_layer.x - ray_origin.y) / ray_direction.y"));
     }
 }

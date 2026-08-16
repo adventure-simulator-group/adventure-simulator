@@ -63,14 +63,23 @@ python scripts/import_hipparcos_stars.py
 
 The default tactical presentation renders up to three bounded atmospheric
 decks. Camera-centred hemispheres supply rasterization geometry, but the
-fragment shader intersects each view ray with the corresponding cloud layer
-and integrates sixty-four procedural density samples through it. Short
-sun-facing shadow probes provide internal self-shadowing, while multi-scale
-edge erosion and distance fading preserve cloud detail without a hard horizon
-cutoff. Solar chroma follows Sun altitude rather than applying a permanent
-gold cast; dense storm cores converge toward neutral gray-blue multiple
-scattering while low-Sun cloud edges can remain warm. Distinct profiles
-cover cirrus, cirrocumulus, cirrostratus, altocumulus, altostratus,
+fragment shader intersects each view ray with scene-anchored concentric
+spherical shells. Their deliberately exaggerated local curvature is negligible
+across the playable area but bends distant clouds into the tactical horizon.
+The shells remain stationary; wind and vertical shear advect each procedural
+density field through its layer instead of moving a finite volume past the
+camera.
+
+The ray marcher searches empty air in coarse steps, backtracks and switches to
+quarter-sized steps after finding density, and returns to coarse search after
+leaving a cloud. A deterministic per-pixel starting offset prevents coherent
+sampling bands along the curved shell. Short sun-facing shadow probes provide
+internal self-shadowing, while multi-scale edge erosion, bounded trace distance,
+and stronger grazing-angle aerial extinction keep distant layers from forming
+a hard horizon cutoff. Solar chroma follows Sun altitude rather than applying a
+permanent gold cast; dense storm cores converge toward neutral gray-blue
+multiple scattering while low-Sun cloud edges can remain warm. Distinct
+profiles cover cirrus, cirrocumulus, cirrostratus, altocumulus, altostratus,
 nimbostratus, stratocumulus, stratus, cumulus, cumulus congestus, and
 cumulonimbus. The decks can coexist, so high ice cloud need not disappear when
 lower cloud develops.

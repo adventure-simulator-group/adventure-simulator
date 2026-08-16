@@ -16,6 +16,9 @@ var<uniform> cloud_motion: vec4<f32>;
 /// Solar chroma derived from altitude; kept separate from scalar illuminance.
 @group(#{MATERIAL_BIND_GROUP}) @binding(4)
 var<uniform> cloud_spectral: vec4<f32>;
+/// Fixed scene anchor X/Z, shell curvature radius, aerial extinction.
+@group(#{MATERIAL_BIND_GROUP}) @binding(5)
+var<uniform> cloud_geometry: vec4<f32>;
 
 fn hash13(position: vec3<f32>) -> f32 {
     var p = fract(position * 0.1031);
@@ -93,8 +96,36 @@ fn cloud_profile(height: f32, family: f32, noise_value: f32) -> f32 {
     return bottom * top;
 }
 
+fn shell_center() -> vec3<f32> {
+    return vec3<f32>(
+        cloud_geometry.x,
+        -cloud_geometry.z,
+        cloud_geometry.y,
+    );
+}
+
+fn altitude_in_shell(world_position: vec3<f32>) -> f32 {
+    return length(world_position - shell_center()) - cloud_geometry.z;
+}
+
+fn ray_sphere_roots(
+    ray_origin: vec3<f32>,
+    ray_direction: vec3<f32>,
+    radius: f32,
+) -> vec2<f32> {
+    let relative_origin = ray_origin - shell_center();
+    let projected = dot(relative_origin, ray_direction);
+    let discriminant = projected * projected
+        - (dot(relative_origin, relative_origin) - radius * radius);
+    if discriminant < 0.0 {
+        return vec2<f32>(-1.0, -1.0);
+    }
+    let root = sqrt(discriminant);
+    return vec2<f32>(-projected - root, -projected + root);
+}
+
 fn sample_density(world_position: vec3<f32>) -> f32 {
-    let height = (world_position.y - cloud_layer.x) / cloud_layer.y;
+    let height = (altitude_in_shell(world_position) - cloud_layer.x) / cloud_layer.y;
     if height <= 0.0 || height >= 1.0 {
         return 0.0;
     }
@@ -196,31 +227,77 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let ray_origin = view.world_position;
     let ray_direction = normalize(in.world_position.xyz - ray_origin);
-    if ray_direction.y <= 0.008 {
+    if ray_direction.y < -0.001 {
         discard;
     }
-    let layer_top = cloud_layer.x + cloud_layer.y;
-    var trace_start = max((cloud_layer.x - ray_origin.y) / ray_direction.y, 0.0);
-    var trace_end = (layer_top - ray_origin.y) / ray_direction.y;
+
+    let centre = shell_center();
+    let origin_radius = length(ray_origin - centre);
+    let inner_radius = cloud_geometry.z + cloud_layer.x;
+    let outer_radius = inner_radius + cloud_layer.y;
+    let outer_roots = ray_sphere_roots(ray_origin, ray_direction, outer_radius);
+    if outer_roots.y <= 0.0 {
+        discard;
+    }
+
+    var trace_start = 0.0;
+    var trace_end = outer_roots.y;
+    if origin_radius < inner_radius {
+        // The ordinary grounded-camera case: begin where the ray exits the
+        // empty space below the cloud shell.
+        let inner_roots = ray_sphere_roots(ray_origin, ray_direction, inner_radius);
+        trace_start = max(inner_roots.y, 0.0);
+    } else if origin_radius > outer_radius {
+        // Retain a well-defined interval for diagnostic cameras outside the
+        // shell, even though tactical play normally remains below it.
+        trace_start = max(outer_roots.x, 0.0);
+        let inner_roots = ray_sphere_roots(ray_origin, ray_direction, inner_radius);
+        if inner_roots.x > trace_start {
+            trace_end = inner_roots.x;
+        }
+    }
     trace_end = min(trace_end, cloud_layer.w);
     if trace_end <= trace_start {
         discard;
     }
-    let step_length = (trace_end - trace_start) / 64.0;
-    var distance = trace_start + step_length * 0.5;
+
+    // Empty air is searched in large steps. Once density is found, backtrack
+    // and integrate in quarter-sized steps until the ray is clear again.
+    // Pixel-stable jitter prevents the curved shell from resolving into
+    // coherent marching bands without requiring more samples everywhere.
+    let coarse_step = (trace_end - trace_start) / 40.0;
+    let fine_step = coarse_step * 0.25;
+    let ray_jitter = hash13(vec3<f32>(floor(in.position.xy), cloud_shape.w));
+    var step_length = coarse_step;
+    var distance = trace_start + coarse_step * ray_jitter;
+    var fine_marching = false;
+    var fine_empty_steps = 0u;
     var transmittance = 1.0;
+    var visible_opacity = 0.0;
     var radiance = vec3<f32>(0.0);
     let sun_direction = normalize(cloud_lighting.xyz);
     let forward_phase = min(henyey_greenstein(dot(ray_direction, sun_direction), 0.55), 4.0);
     let kind = u32(cloud_shape.z + 0.5);
     let storminess = select(0.0, 1.0, kind == 3u || kind == 7u);
     let sun_color = cloud_spectral.xyz;
+    let horizon_haze = 1.0 - smoothstep(0.02, 0.22, ray_direction.y);
+    let aerial_extinction = cloud_geometry.w * mix(0.65, 4.5, horizon_haze);
 
-    for (var step = 0u; step < 64u; step += 1u) {
+    for (var step = 0u; step < 80u; step += 1u) {
+        if distance >= trace_end {
+            break;
+        }
         let position = ray_origin + ray_direction * distance;
         let distance_fade = 1.0 - smoothstep(cloud_layer.w * 0.68, cloud_layer.w, distance);
         let density = sample_density(position) * distance_fade;
         if density > 0.002 {
+            if !fine_marching {
+                fine_marching = true;
+                fine_empty_steps = 0u;
+                step_length = fine_step;
+                distance = max(distance - coarse_step, trace_start) + fine_step * ray_jitter;
+                continue;
+            }
             // Deep precipitating clouds extinguish the warm atmospheric
             // aureole behind them. Without this storm-specific optical-depth
             // boost, a physically neutral core could still appear olive from
@@ -228,7 +305,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let extinction_scale = mix(1.0, 1.65, storminess);
             let sample_opacity = 1.0
                 - exp(-density * step_length * 0.00142 * extinction_scale);
-            let height = clamp((position.y - cloud_layer.x) / cloud_layer.y, 0.0, 1.0);
+            let height = clamp(
+                (altitude_in_shell(position) - cloud_layer.x) / cloud_layer.y,
+                0.0,
+                1.0,
+            );
             let sun_visibility = sunlight_transmittance(position, sun_direction);
             let powder = 1.0 - exp(-density * 2.4);
             let clear_ambient = mix(
@@ -265,20 +346,31 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 * storm_direct;
             let sample_color = ambient_color * ambient_variation + direct_light;
             let weight = transmittance * sample_opacity;
-            radiance += sample_color * weight;
+            let aerial_transmission = exp(-distance * aerial_extinction);
+            radiance += sample_color * weight * aerial_transmission;
+            visible_opacity += weight * aerial_transmission;
             transmittance *= 1.0 - sample_opacity;
+            fine_empty_steps = 0u;
             if transmittance < 0.012 {
                 break;
+            }
+        } else if fine_marching {
+            fine_empty_steps += 1u;
+            if fine_empty_steps >= 3u {
+                fine_marching = false;
+                fine_empty_steps = 0u;
+                step_length = coarse_step;
             }
         }
         distance += step_length;
     }
 
-    let opacity = 1.0 - transmittance;
+    let cloud_opacity = 1.0 - transmittance;
+    let opacity = clamp(visible_opacity, 0.0, 1.0);
     if opacity < 0.002 {
         discard;
     }
-    let silver_lining = pow(1.0 - opacity, 2.2)
+    let silver_lining = pow(1.0 - cloud_opacity, 2.2)
         * forward_phase
         * cloud_motion.z
         * cloud_motion.w
