@@ -1324,6 +1324,10 @@ impl SkeletonState {
         }
     }
 
+    pub fn quickstep_is_launched(&self) -> bool {
+        self.action_kind() == SkeletonAction::Dodge && self.action_phase() >= 0.125
+    }
+
     /// Replaces the current action. This deliberately preserves the existing
     /// last-writer-wins compatibility policy until gameplay defines rejection
     /// or cancellation rules between actions.
@@ -1422,6 +1426,14 @@ pub fn controller_yaw(orientation: Quat) -> Quat {
         return Quat::IDENTITY;
     };
     Quat::from_rotation_y((-flat_forward.x).atan2(-flat_forward.y))
+}
+
+/// Root orientation committed when an authored directional dive launches.
+/// Dive travel and pose selection are both camera-relative, so they must
+/// capture the same controller frame before posture-transition facing locks.
+pub fn dive_launch_root_rotation(controller_orientation: Quat) -> Quat {
+    let forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
+    Quat::from_rotation_y(forward.x.atan2(forward.z))
 }
 
 /// Advances the authored body's +Z forward axis toward its single desired
@@ -1534,7 +1546,8 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.local_velocity = local_velocity;
     skeleton.world_velocity = linear_velocity;
     skeleton.locomotion_sample_tick = input.tick;
-    if !was_supported && input.grounded {
+    let landed = !was_supported && input.grounded;
+    if landed {
         skeleton.landing_sequence = skeleton.landing_sequence.wrapping_add(1);
         skeleton.landing_impact_speed = (-previous_world_velocity.y).max(0.0);
     }
@@ -1547,6 +1560,12 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     } else {
         BodyState::Airborne
     });
+    if landed && skeleton.action_kind() == SkeletonAction::Dodge {
+        // Contact ends presentation ownership immediately. Residual horizontal
+        // velocity remains authoritative and can continue through ordinary
+        // raised locomotion while the server applies its landing drag.
+        skeleton.action = ActionState::default();
+    }
 
     let ground_speed = if skeleton.downed_turning() {
         // Turning in place has no physical velocity, but its crawl/scamper

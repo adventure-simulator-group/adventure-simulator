@@ -117,9 +117,12 @@ pub enum EquipmentAction {
 /// Durable edge identity for jumping over the unreliable continuous-input
 /// channel. The latest sequence is repeated in every input packet, so dropping
 /// the release packet delays a jump rather than losing it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct JumpCommand {
     pub sequence: u32,
+    /// Camera-relative quickstep direction selected on this edge. `None`
+    /// requests an ordinary jump.
+    pub quickstep: Option<Vec2>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
-    client::DirectControlState,
+    client::{DirectControlState, WeaponGuardInputState},
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest},
 };
 use bevy::prelude::*;
@@ -73,6 +73,10 @@ impl Plugin for PlayerPlugin {
                     flush_buffered_melee_attacks,
                 )
                     .chain(),
+            )
+            .add_systems(
+                PostUpdate,
+                predict_local_body_facing.before(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -85,6 +89,15 @@ pub struct LocalCharacterId(pub u64);
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ClientPlayer;
+
+/// Render-frame facing state for the locally controlled character. Replicated
+/// transforms remain authoritative; this state hides the gaps between their
+/// rotation samples for both camera-facing guard and velocity-facing travel.
+#[derive(Component, Debug, Clone, Copy, Default)]
+struct LocalBodyFacing {
+    rotation: Quat,
+    initialized: bool,
+}
 
 #[derive(EntityEvent)]
 pub struct HitPerformed {
@@ -144,6 +157,7 @@ fn on_new_player_added_hook(
         commands.entity(event.entity).insert((
             tactical_character_controller(),
             ClientPlayer,
+            LocalBodyFacing::default(),
             GrassInteractor,
             actions!(Player[
                 (
@@ -205,6 +219,47 @@ fn on_new_player_added_hook(
     });
 
     Ok(())
+}
+
+fn predict_local_body_facing(
+    time: Res<Time>,
+    guard: Res<WeaponGuardInputState>,
+    mut players: Query<
+        (
+            &CharacterControllerCamera,
+            &SkeletonState,
+            &mut Transform,
+            &mut LocalBodyFacing,
+        ),
+        With<ClientPlayer>,
+    >,
+    cameras: Query<&Transform, (With<Camera3d>, Without<ClientPlayer>)>,
+) {
+    for (camera, skeleton, mut transform, mut facing) in &mut players {
+        if skeleton.body().is_downed() || skeleton.is_posture_transitioning() {
+            facing.rotation = transform.rotation;
+            facing.initialized = false;
+            continue;
+        }
+
+        let Ok(camera_transform) = cameras.get(camera.get()) else {
+            continue;
+        };
+        if !facing.initialized {
+            facing.rotation = transform.rotation;
+            facing.initialized = true;
+        }
+
+        facing.rotation = advance_body_facing(
+            facing.rotation,
+            camera_transform.rotation,
+            skeleton.world_velocity,
+            skeleton.action_kind(),
+            guard.desired,
+            time.delta_secs(),
+        );
+        transform.rotation = facing.rotation;
+    }
 }
 
 fn update_attack_state_system(
@@ -464,7 +519,13 @@ fn apply_direct_combat_controls(
         if controls.dodge_just_pressed {
             if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
                 let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-                skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
+                skeleton.begin_dodge(
+                    DodgeSpec {
+                        direction: controls.quickstep_direction,
+                    },
+                    start,
+                    start + 20,
+                );
             }
             cmd.client_trigger(DefendRequest::Dodge);
         }
@@ -508,5 +569,60 @@ mod tests {
     fn gamepad_look_keeps_horizontal_and_reverses_vertical_input() {
         assert!(GAMEPAD_LOOK_SCALE.x.is_sign_positive());
         assert!(GAMEPAD_LOOK_SCALE.y.is_sign_negative());
+    }
+
+    #[test]
+    fn local_aim_facing_advances_on_every_render_frame() {
+        let camera = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let target = advance_body_facing(
+            Quat::IDENTITY,
+            camera,
+            Vec3::ZERO,
+            SkeletonAction::None,
+            WeaponGuardState::Raised,
+            1.0,
+        );
+        let mut facing = Quat::IDENTITY;
+        let mut previous_distance = facing.angle_between(target);
+
+        for _ in 0..4 {
+            facing = advance_body_facing(
+                facing,
+                camera,
+                Vec3::ZERO,
+                SkeletonAction::None,
+                WeaponGuardState::Raised,
+                1.0 / 60.0,
+            );
+            let distance = facing.angle_between(target);
+            assert!(distance < previous_distance);
+            previous_distance = distance;
+        }
+
+        assert!(previous_distance > 0.0);
+    }
+
+    #[test]
+    fn local_travel_facing_advances_toward_world_velocity() {
+        let velocity = Vec3::X * 3.0;
+        let target = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            velocity,
+            SkeletonAction::None,
+            WeaponGuardState::Lowered,
+            1.0,
+        );
+        let next = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            velocity,
+            SkeletonAction::None,
+            WeaponGuardState::Lowered,
+            1.0 / 60.0,
+        );
+
+        assert!(next.angle_between(target) < Quat::IDENTITY.angle_between(target));
+        assert!(next.angle_between(target) > 0.0);
     }
 }

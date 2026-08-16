@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2012)
+## Files (2013)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1358,6 +1358,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/hands.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/locomotion.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/mod.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/animation/procedural/ik/quickstep.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/solver.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/rig.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/semantic_route.rs` — Rust source module.

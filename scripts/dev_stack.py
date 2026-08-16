@@ -1510,6 +1510,25 @@ def launch_recorded_tactical_client(
                 "type": "move", "direction": "forward",
                 "input_speed": 1.0, "duration_seconds": 2.0,
             },
+            {
+                "type": "dive", "direction": "forward",
+                "duration_seconds": 1.5,
+            },
+            {"type": "toggle_posture", "duration_seconds": 1.2},
+            {
+                "type": "dive", "direction": "backward",
+                "duration_seconds": 1.5,
+            },
+            {"type": "toggle_posture", "duration_seconds": 1.2},
+            {
+                "type": "dive", "direction": "left",
+                "duration_seconds": 1.5,
+            },
+            {"type": "toggle_posture", "duration_seconds": 1.2},
+            {
+                "type": "dive", "direction": "right",
+                "duration_seconds": 1.5,
+            },
             {"type": "guard", "raised": False},
             {"type": "wait", "duration_seconds": 0.5},
         ])

@@ -3,6 +3,7 @@ use super::*;
 mod body_response;
 mod hands;
 mod locomotion;
+mod quickstep;
 mod solver;
 
 pub(in crate::animation) use body_response::apply_locomotion_body_response;
@@ -13,6 +14,7 @@ pub(in crate::animation) use hands::apply_arm_and_weapon_constraints;
 #[cfg(test)]
 pub(super) use hands::secondary_grip_world;
 pub(in crate::animation) use locomotion::apply as apply_ordinary_locomotion_ik;
+pub(in crate::animation) use quickstep::apply as apply_quickstep_ik;
 pub(super) use solver::*;
 
 /// Final lower-body invariant pass. Pose owners and terrain alignment may
@@ -187,6 +189,13 @@ struct LegIkMemory {
     right_foot_target: Option<Vec3>,
     left_foot_world_target: Option<Vec3>,
     right_foot_world_target: Option<Vec3>,
+    // The quickstep solver writes its final visible landing stance here. The
+    // ordinary raised-guard follower consumes it on the first post-action
+    // frame instead of reacquiring the authored feet from scratch.
+    quickstep_handoff_pending: bool,
+    quickstep_guard_stance_held: bool,
+    quickstep_left_landing_local: Option<Vec3>,
+    quickstep_right_landing_local: Option<Vec3>,
     // The last propagated ankle positions are the last pose the player
     // actually saw. At the start of a stop, FK has already restored the new
     // idle sample before IK runs, so sampling globals in the IK pass would
@@ -237,6 +246,25 @@ struct LegIkMemory {
     evaluation_tick: Option<u64>,
     recent_movement_velocity: Vec3,
     settle: Option<LocomotionSettleState>,
+}
+
+fn discard_quickstep_contact_handoff(memory: &mut LegIkMemory) {
+    memory.quickstep_handoff_pending = false;
+    memory.quickstep_guard_stance_held = false;
+    memory.quickstep_left_landing_local = None;
+    memory.quickstep_right_landing_local = None;
+    memory.left_foot_plant = None;
+    memory.right_foot_plant = None;
+    memory.left_foot_plant_acquired = false;
+    memory.right_foot_plant_acquired = false;
+    memory.left_foot_target = None;
+    memory.right_foot_target = None;
+    memory.left_foot_world_target = None;
+    memory.right_foot_world_target = None;
+    memory.left_authored_world_target = None;
+    memory.right_authored_world_target = None;
+    memory.left_support_weight = None;
+    memory.right_support_weight = None;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -329,7 +357,6 @@ const MIN_TERRAIN_KNEE_FLEXION: f32 = 12.0_f32.to_radians();
 // recovery-frame foot lift or snap without introducing a straight-leg target.
 const LANDING_KNEE_RESERVE_RELEASE_COMPRESSION: f32 = 0.012;
 const LANDING_KNEE_RESERVE_FULL_COMPRESSION: f32 = 0.04;
-const RAISED_GUARD_PELVIS_DROP: f32 = 0.14;
 /// Measured vertical distance from the Cascadeur ankle bone to its sole.
 pub(crate) const MEASURED_ANKLE_SOLE_OFFSET_METRES: f32 = 0.085;
 /// Maximum rendered ankle-to-terrain residual that still represents sole
@@ -916,6 +943,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 true,
             ),
         };
+        if raised_guard_follower && memory.quickstep_handoff_pending && skeleton.is_grounded() {
+            // Contact returns directly to ordinary raised locomotion. Do not
+            // let residual physical speed keep the former landing handoff
+            // alive; the guard follower can present that momentum itself.
+            discard_quickstep_contact_handoff(&mut memory);
+            if let Ok(mut state) = raised_states.get_mut(owner) {
+                *state = RaisedFootworkState::default();
+            }
+        }
         let (state_delta_seconds, evaluation_advances) = match clock.fixed_tick {
             Some((tick, _)) if memory.evaluation_tick == Some(tick) => (0.0, false),
             Some((tick, delta_seconds)) => {
@@ -959,6 +995,16 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             .and_then(|entity| transforms.p0().compute_global_transform(entity).ok())
             .map(|global| (global.translation(), global.rotation()))
             .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
+        if memory.quickstep_handoff_pending || memory.quickstep_guard_stance_held {
+            memory.left_foot_world_target = memory
+                .quickstep_left_landing_local
+                .map(|local| rig_origin + rig_rotation * local)
+                .or(memory.left_foot_world_target);
+            memory.right_foot_world_target = memory
+                .quickstep_right_landing_local
+                .map(|local| rig_origin + rig_rotation * local)
+                .or(memory.right_foot_world_target);
+        }
         if state_delta_seconds > 0.0 {
             let previous_rig_origin = memory.rig_origin;
             let owner_discontinuous = previous_rig_origin.is_some_and(|previous| {
@@ -1203,11 +1249,57 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             legs[1].3 = right_weight;
             memory.settle = Some(settle);
         }
-        let desired_raised_pelvis_shift = if raised_guard_follower {
-            -RAISED_GUARD_PELVIS_DROP
-        } else {
-            0.0
-        };
+        let mut desired_raised_pelvis_shift: f32 = 0.0;
+        if raised_guard_follower {
+            // Guard already has useful authored knee flexion. Lower the pelvis
+            // only when a retained world-space ankle target would otherwise be
+            // outside the analytic chain's reach; a fixed stance drop created
+            // a second, delayed crouch after quickstep contact.
+            for (upper_role, lower_role, foot_role, target) in [
+                (
+                    BoneRole::ThighLeft,
+                    BoneRole::ShinLeft,
+                    BoneRole::FootLeft,
+                    memory.left_foot_world_target,
+                ),
+                (
+                    BoneRole::ThighRight,
+                    BoneRole::ShinRight,
+                    BoneRole::FootRight,
+                    memory.right_foot_world_target,
+                ),
+            ] {
+                let (Some(&upper), Some(&lower), Some(&foot), Some(target)) = (
+                    rig.get(&upper_role),
+                    rig.get(&lower_role),
+                    rig.get(&foot_role),
+                    target,
+                ) else {
+                    continue;
+                };
+                let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
+                    snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
+                else {
+                    continue;
+                };
+                let upper_length = upper_snapshot
+                    .global
+                    .translation()
+                    .distance(lower_snapshot.global.translation());
+                let lower_length = lower_snapshot
+                    .global
+                    .translation()
+                    .distance(foot_snapshot.global.translation());
+                desired_raised_pelvis_shift = desired_raised_pelvis_shift.min(
+                    required_hip_shift_for_reach(
+                        upper_snapshot.global.translation(),
+                        target,
+                        maximum_reach(upper_length, lower_length),
+                    )
+                    .clamp(-0.25, 0.0),
+                );
+            }
+        }
         if state_delta_seconds > 0.0 {
             memory.raised_pelvis_shift = advance_pelvis_shift(
                 memory.raised_pelvis_shift,
@@ -1241,9 +1333,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
         }
         if raised_guard_follower {
             prepare_slope_rotation_cache(&mut memory, SlopeAlignmentMode::Raised);
-            // The authored guard is nearly straight-legged. Smoothly lower its
-            // pelvis so a world-planted support foot remains within physical
-            // reach without a one-frame stance-height snap at starts or stops.
+            // Retained plants may request the minimum pelvis correction needed
+            // for reach, but the authored guard stance owns the resting height.
             let left = (
                 rig.get(&BoneRole::ThighLeft),
                 rig.get(&BoneRole::ShinLeft),
@@ -1300,8 +1391,39 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 left_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
             let right_authored =
                 right_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
-            let visible_left = memory.left_foot_world_target.unwrap_or(left_authored);
-            let visible_right = memory.right_foot_world_target.unwrap_or(right_authored);
+            let live_speed = skeleton.world_velocity.with_y(0.0).length();
+            let visible_left = if memory.quickstep_handoff_pending {
+                let landing_local = memory
+                    .quickstep_left_landing_local
+                    .unwrap_or_else(|| rig_rotation.inverse() * (left_authored - rig_origin));
+                let authored_local = rig_rotation.inverse() * (left_authored - rig_origin);
+                let landing_local =
+                    landing_local + (authored_local - landing_local).clamp_length_max(0.015);
+                memory.quickstep_left_landing_local = Some(landing_local);
+                rig_origin + rig_rotation * landing_local
+            } else {
+                memory.left_foot_world_target.unwrap_or(left_authored)
+            };
+            let visible_right = if memory.quickstep_handoff_pending {
+                let landing_local = memory
+                    .quickstep_right_landing_local
+                    .unwrap_or_else(|| rig_rotation.inverse() * (right_authored - rig_origin));
+                let authored_local = rig_rotation.inverse() * (right_authored - rig_origin);
+                let landing_local =
+                    landing_local + (authored_local - landing_local).clamp_length_max(0.015);
+                memory.quickstep_right_landing_local = Some(landing_local);
+                rig_origin + rig_rotation * landing_local
+            } else {
+                memory.right_foot_world_target.unwrap_or(right_authored)
+            };
+            if memory.quickstep_handoff_pending {
+                memory.left_foot_world_target = Some(visible_left);
+                memory.right_foot_world_target = Some(visible_right);
+                memory.left_foot_plant = Some(visible_left);
+                memory.right_foot_plant = Some(visible_right);
+                memory.left_foot_plant_acquired = true;
+                memory.right_foot_plant_acquired = true;
+            }
             let discontinuous =
                 footwork.initialized && rig_origin.distance_squared(footwork.step_origin) > 4.0;
             let sequence_delta = guard_step_sequence_delta(
@@ -1391,10 +1513,28 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // axes. The owner carries the single 180-degree body conversion.
             let rig_local_direction = -local_direction;
             let latched_speed = skeleton.raised_locomotion().speed();
-            let live_speed = skeleton.world_velocity.with_y(0.0).length();
+            let quickstep_handoff_active = memory.quickstep_handoff_pending;
+            if memory.quickstep_guard_stance_held && live_speed > 0.05 {
+                memory.quickstep_guard_stance_held = false;
+                memory.quickstep_left_landing_local = None;
+                memory.quickstep_right_landing_local = None;
+            }
             let live_step_scale = (live_speed / latched_speed.max(0.01)).clamp(0.0, 1.0);
             let step_length = guard_step_length(latched_speed) * live_step_scale;
-            let stationary_guard = !skeleton.raised_locomotion().is_moving();
+            let quickstep_stance_held = memory.quickstep_guard_stance_held;
+            let stationary_guard = !skeleton.raised_locomotion().is_moving()
+                || quickstep_handoff_active
+                || quickstep_stance_held;
+            if quickstep_handoff_active {
+                // Residual velocity is the quickstep's landing brake, not a new
+                // guard step. Carry the already completed guard stance with the
+                // body until braking ends, then return it to stationary guard.
+                footwork.left_plant = visible_left;
+                footwork.right_plant = visible_right;
+                footwork.was_moving = false;
+                footwork.pivot_active = false;
+                footwork.pivot_progress = 0.0;
+            }
             if !stationary_guard && !footwork.was_moving {
                 // Begin a new cadence from the feet that were actually
                 // rendered during idle. A stationary pivot or initial guard
@@ -1517,7 +1657,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 // a time once the rotated authored stance is far enough away.
                 // The endpoint is latched so continued camera motion cannot
                 // make the foot chase a target that never lands.
-                if advances {
+                if advances && !quickstep_handoff_active && !quickstep_stance_held {
                     if footwork.pivot_active {
                         footwork.pivot_progress = (footwork.pivot_progress
                             + state_delta_seconds.max(0.0) / GUARD_PIVOT_STEP_SECONDS)
@@ -1617,6 +1757,19 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 footwork.pivot_active = false;
             }
             footwork.was_moving = !stationary_guard;
+            let quickstep_handoff_converged =
+                memory.quickstep_left_landing_local.is_some_and(|local| {
+                    let authored_local = rig_rotation.inverse() * (left_authored - rig_origin);
+                    local.distance(authored_local) <= 0.001
+                }) && memory.quickstep_right_landing_local.is_some_and(|local| {
+                    let authored_local = rig_rotation.inverse() * (right_authored - rig_origin);
+                    local.distance(authored_local) <= 0.001
+                });
+            if memory.quickstep_handoff_pending && live_speed <= 0.05 && quickstep_handoff_converged
+            {
+                memory.quickstep_handoff_pending = false;
+                memory.quickstep_guard_stance_held = true;
+            }
 
             let mut airborne_orientation_owned = [true; 2];
             for (leg_index, (upper, lower, foot, target, left, support)) in [
@@ -5870,6 +6023,34 @@ pub(super) fn slope_aligned_world_rotation(
 #[cfg(test)]
 mod slope_cache_tests {
     use super::*;
+
+    #[test]
+    fn quickstep_contact_discards_the_landing_handoff_regardless_of_speed() {
+        let mut memory = LegIkMemory {
+            quickstep_handoff_pending: true,
+            quickstep_guard_stance_held: true,
+            quickstep_left_landing_local: Some(Vec3::X),
+            quickstep_right_landing_local: Some(Vec3::NEG_X),
+            left_foot_world_target: Some(Vec3::new(4.0, 0.0, 0.0)),
+            right_foot_world_target: Some(Vec3::new(-4.0, 0.0, 0.0)),
+            left_foot_plant_acquired: true,
+            right_foot_plant_acquired: true,
+            measured_owner_planar_speed: 5.0,
+            ..default()
+        };
+
+        discard_quickstep_contact_handoff(&mut memory);
+
+        assert!(!memory.quickstep_handoff_pending);
+        assert!(!memory.quickstep_guard_stance_held);
+        assert!(memory.quickstep_left_landing_local.is_none());
+        assert!(memory.quickstep_right_landing_local.is_none());
+        assert!(memory.left_foot_world_target.is_none());
+        assert!(memory.right_foot_world_target.is_none());
+        assert!(!memory.left_foot_plant_acquired);
+        assert!(!memory.right_foot_plant_acquired);
+        assert_eq!(memory.measured_owner_planar_speed, 5.0);
+    }
 
     #[test]
     fn slope_rotation_cache_is_preserved_within_tick_and_cleared_between_modes() {

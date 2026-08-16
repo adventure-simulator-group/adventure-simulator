@@ -53,11 +53,27 @@ pub(in crate::animation) fn apply_locomotion_body_response(
             || next
                 .last_grounded
                 .is_some_and(|value| value != skeleton.is_grounded());
-        if discontinuous
-            || !skeleton.is_grounded()
-            || skeleton.is_posture_transitioning()
-            || skeleton.action_kind() != SkeletonAction::None
+        let quickstep_target = (skeleton.action_kind() == SkeletonAction::Dodge)
+            .then(|| quickstep_lean_target(skeleton.action_direction(), skeleton.action_phase()));
+        if skeleton.is_posture_transitioning()
+            || (skeleton.action_kind() != SkeletonAction::None && quickstep_target.is_none())
+            || (!skeleton.is_grounded() && quickstep_target.is_none())
         {
+            next.pitch_radians = 0.0;
+            next.roll_radians = 0.0;
+            next.target_pitch_radians = 0.0;
+            next.target_roll_radians = 0.0;
+        } else if let Some(target) = quickstep_target {
+            next.target_pitch_radians = target.x;
+            next.target_roll_radians = target.y;
+            if tick_delta != Some(0) {
+                let maximum_step = 2.0_f32.to_radians() * tick_delta.unwrap_or(1).max(1) as f32;
+                let current = Vec2::new(next.pitch_radians, next.roll_radians);
+                let advanced = current + (target - current).clamp_length_max(maximum_step);
+                next.pitch_radians = advanced.x;
+                next.roll_radians = advanced.y;
+            }
+        } else if discontinuous {
             next.pitch_radians = 0.0;
             next.roll_radians = 0.0;
             next.target_pitch_radians = 0.0;
@@ -136,6 +152,13 @@ pub(in crate::animation) fn apply_locomotion_body_response(
         // targets are unchanged by torso lean.
         transform.rotation = compensation * transform.rotation;
     }
+}
+
+fn quickstep_lean_target(direction: Vec2, action_phase: f32) -> Vec2 {
+    let direction = direction.normalize_or_zero();
+    let envelope =
+        smoothstep(0.0, 0.18, action_phase) * (1.0 - smoothstep(0.65, 1.0, action_phase));
+    Vec2::new(direction.y, -direction.x) * 18.0_f32.to_radians() * envelope
 }
 
 fn stable_pelvis_response(
@@ -227,6 +250,17 @@ mod tests {
             let compensation_error = (pelvis * leg_compensation).angle_between(authored);
             assert!(compensation_error < 0.001, "{compensation_error}");
         }
+    }
+
+    #[test]
+    fn quickstep_lean_follows_the_dodge_direction_and_recovers() {
+        let forward = quickstep_lean_target(Vec2::Y, 0.4);
+        let right = quickstep_lean_target(Vec2::X, 0.4);
+        assert!(forward.x > 15.0_f32.to_radians());
+        assert!(forward.y.abs() <= f32::EPSILON);
+        assert!(right.y < -15.0_f32.to_radians());
+        assert!(right.x.abs() <= f32::EPSILON);
+        assert_eq!(quickstep_lean_target(Vec2::Y, 1.0), Vec2::ZERO);
     }
 
     #[test]

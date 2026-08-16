@@ -27,7 +27,10 @@ pub(super) fn on_defender_response(
     };
     let start = animation_tick(&time);
     match **event {
-        DefendRequest::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, start + 8),
+        DefendRequest::Dodge if skeleton.action_kind() != SkeletonAction::Dodge => {
+            skeleton.begin_dodge(DodgeSpec::default(), start, start + 8)
+        }
+        DefendRequest::Dodge => {}
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
         DefendRequest::Roll => {}
         DefendRequest::Parry => skeleton.begin_block(BlockSpec::default(), start, start + 8),
