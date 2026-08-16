@@ -48,7 +48,7 @@ fn main() {
     }
 }
 
-fn fixtures() -> [Fixture; 11] {
+fn fixtures() -> [Fixture; 13] {
     [
         fixture(
             "flat-dry-grassland",
@@ -107,12 +107,28 @@ fn fixtures() -> [Fixture; 11] {
             snow(6_500, 2_500),
         ),
         fixture(
+            "light-rain-low-wind",
+            "rain",
+            47_112,
+            rolling,
+            wet_open,
+            rain(2_500, 2_000),
+        ),
+        fixture(
             "heavy-rain-high-wind",
             "storm",
             47_108,
             rolling,
             wet_open,
             rain(9_500, 9_000),
+        ),
+        fixture(
+            "severe-downpour",
+            "severe-storm",
+            47_113,
+            rolling,
+            wet_open,
+            rain(10_000, 10_000),
         ),
         Fixture {
             vista: VistaKind::ValleyRidge,

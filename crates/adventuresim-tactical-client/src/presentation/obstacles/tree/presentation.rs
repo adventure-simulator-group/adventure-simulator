@@ -46,6 +46,17 @@ pub(in crate::presentation) struct TreePresentationCache {
     beech_bark_material: Option<Handle<TacticalTreeBarkMaterial>>,
 }
 
+impl TreePresentationCache {
+    pub(in crate::presentation) fn weather_occlusion_branches(
+        &self,
+        cache_key: u64,
+    ) -> Option<&[super::TreeBranchSegment]> {
+        self.variants
+            .get(&cache_key)
+            .map(|cached| cached.branches.as_slice())
+    }
+}
+
 /// Live accounting for procedurally generated playable-tree render assets.
 ///
 /// Unlike `Assets` totals, these counters separate the representations that
@@ -200,6 +211,12 @@ pub(in crate::presentation) struct StreamedTreePresentation {
     resident_leaf_mask: u8,
     active_mask: u8,
     active_leaf: Option<TreeLeafRepresentation>,
+}
+
+impl StreamedTreePresentation {
+    pub(in crate::presentation) fn weather_occlusion_cache_key(&self) -> u64 {
+        self.cache_key
+    }
 }
 
 #[derive(Component)]

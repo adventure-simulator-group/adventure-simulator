@@ -114,11 +114,20 @@ pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog 
             42_000.0 + (1_800.0 - 42_000.0) * clear_air_fog,
             Color::srgb_u8(188, 201, 207),
         ),
-        Precipitation::Rain => (
-            800.0 + 3_500.0 * (1.0 - intensity),
-            3_000.0 + 14_000.0 * (1.0 - intensity),
-            Color::srgb_u8(112, 126, 135),
-        ),
+        Precipitation::Rain => {
+            // Rain curtains provide structured mid-distance extinction, while
+            // this ordinary depth fog supplies the unresolved droplets between
+            // them. Pull it into tactical range only for genuinely heavy rain;
+            // light showers retain long visibility without volumetric lighting.
+            let downpour = smoothstep(0.45, 0.92, intensity);
+            let ordinary_start = 800.0 + 3_500.0 * (1.0 - intensity);
+            let ordinary_end = 3_000.0 + 14_000.0 * (1.0 - intensity);
+            (
+                ordinary_start + (40.0 - ordinary_start) * downpour,
+                ordinary_end + (340.0 - ordinary_end) * downpour,
+                Color::srgb_u8(112, 126, 135),
+            )
+        }
         Precipitation::Snow => (
             600.0 + 2_500.0 * (1.0 - intensity),
             2_500.0 + 10_000.0 * (1.0 - intensity),
@@ -367,6 +376,30 @@ mod tests {
         };
         assert!(fog_end(&rain) < fog_end(&clear));
         assert!(fog_end(&snow) < fog_end(&clear));
+    }
+
+    #[test]
+    fn severe_rain_uses_bounded_tactical_distance_fog() {
+        let severe = scene_distance_fog(&environment(Precipitation::Rain, 10_000));
+        let light = scene_distance_fog(&environment(Precipitation::Rain, 2_500));
+        let FogFalloff::Linear {
+            start: severe_start,
+            end: severe_end,
+        } = severe.falloff
+        else {
+            panic!("rain must use bounded linear fog");
+        };
+        let FogFalloff::Linear {
+            start: light_start,
+            end: light_end,
+        } = light.falloff
+        else {
+            panic!("rain must use bounded linear fog");
+        };
+        assert!(severe_start <= 45.0);
+        assert!(severe_end <= 350.0);
+        assert!(light_start > 3_000.0);
+        assert!(light_end > 12_000.0);
     }
 
     #[test]

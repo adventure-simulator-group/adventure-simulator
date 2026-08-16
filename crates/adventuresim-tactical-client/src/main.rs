@@ -249,6 +249,7 @@ fn validate_native_presentation_assets(asset_root: &std::path::Path) -> Result<(
         "shaders/tactical_moon.wgsl",
         "shaders/tactical_stars.wgsl",
         "shaders/tactical_terrain.wgsl",
+        "shaders/tactical_weather.wgsl",
         "shaders/tactical_tree_impostor.wgsl",
         "shaders/tactical_tree_leaf_card.wgsl",
         "tactical-equipment-icons.png",

@@ -74,6 +74,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/shaders/tactical_tree_impostor.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_leaf_card.wgsl` — Repository support file.
 - `assets/shaders/tactical_vista.wgsl` — Repository support file.
+- `assets/shaders/tactical_weather.wgsl` — Repository support file.
 - `assets/tactical-art-goals/pedunculate-oak-ground-goal-v2.png` — Binary game or UI asset.
 - `assets/tactical-art-goals/pedunculate-oak-ground-goal.png` — Binary game or UI asset.
 - `assets/tactical-art-goals/pedunculate-oak-trunk-goal.png` — Binary game or UI asset.
@@ -84,9 +85,11 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/environment-review-ledger.template.json` — Repository support file.
 - `assets/tactical-scenes/flat-dry-grassland.json` — Repository support file.
 - `assets/tactical-scenes/heavy-rain-high-wind.json` — Repository support file.
+- `assets/tactical-scenes/light-rain-low-wind.json` — Repository support file.
 - `assets/tactical-scenes/narrow-peak-lod-boundary.json` — Repository support file.
 - `assets/tactical-scenes/playability-repair-required.json` — Repository support file.
 - `assets/tactical-scenes/saturated-wetland.json` — Repository support file.
+- `assets/tactical-scenes/severe-downpour.json` — Repository support file.
 - `assets/tactical-scenes/snow-covered-ground.json` — Repository support file.
 - `assets/tactical-scenes/sparse-woodland.json` — Repository support file.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.

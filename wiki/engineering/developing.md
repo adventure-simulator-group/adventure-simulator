@@ -738,10 +738,10 @@ separate synthetic terrain fallback.
 
 The committed catalog under `assets/tactical-scenes/` covers flat grassland,
 steep slopes, dense and sparse woodland, wetlands, cultivated roadside, snow,
-heavy rain and wind, distant valley ridges, a narrow LOD-boundary peak, and a
-scene requiring playability repair. Their shared test clock and weather
-interval start at 10:00 on the canonical fixture day so default interactive
-runs use mid-morning light. Regenerate the catalog with
+light rain, heavy rain and wind, a severe downpour, distant valley ridges, a
+narrow LOD-boundary peak, and a scene requiring playability repair. Their shared
+test clock and weather interval start at 10:00 on the canonical fixture day so
+default interactive runs use mid-morning light. Regenerate the catalog with
 `cargo run -p adventuresim-tactical-core --bin generate-scene-fixtures`; add
 `-- --check` in verification. The isolated and supervised workflows accept a
 fixture path as their final argument:
@@ -757,6 +757,7 @@ presentation plugin:
 
 ```powershell
 just tactical-scene-capture dense-woodland
+just tactical-scene-capture light-rain-low-wind target/tactical-scene-captures/light-rain-review
 just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
 just tactical-scene-capture sparse-woodland target/tactical-scene-captures/daylight-review 12 340560
 just tactical-animation-play-capture target/tactical-scene-captures/animation-play

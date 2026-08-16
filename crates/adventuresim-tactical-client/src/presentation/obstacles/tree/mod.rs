@@ -32,9 +32,9 @@ pub(in crate::presentation) use materials::{
 };
 pub(in crate::presentation) use presentation::canopy_competition;
 pub(in crate::presentation) use presentation::{
-    PendingTreePresentation, TreePresentationCache, TreePresentationSpecies,
-    VistaTreePresentationCache, ensure_vista_tree_variant, present_pending_trees,
-    stream_tree_lod_children, tree_species_for_site,
+    PendingTreePresentation, StreamedTreePresentation, TreePresentationCache,
+    TreePresentationSpecies, VistaTreePresentationCache, ensure_vista_tree_variant,
+    present_pending_trees, stream_tree_lod_children, tree_species_for_site,
 };
 pub(crate) use presentation::{
     PresentedTree, TreeAssetResidencyDiagnostics, TreeLeafTriangleCount,

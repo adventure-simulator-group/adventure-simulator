@@ -516,41 +516,59 @@ cosmetic interaction is neither replicated nor included in collision or tactical
 authority. The immutable environment and weather snapshots control the
 procedural ground material, diagnosed low/middle/high cloud decks, directional
 precipitation particles, fog distance, wind drift, and cloud-attenuated
-sunlight. The Earth-atmosphere path keeps top-of-atmosphere solar source
-energy available after the Sun crosses the geometric horizon. Bevy's atmospheric
-transmittance and visible-disc calculation then suppress direct surface
-illumination while retaining directional civil and nautical twilight scattering.
-The no-atmosphere fallback retains an explicit zero-below-horizon direct-light
-curve because it has no planetary occlusion. Exposure transitions continuously
-from nautical twilight to the moon-conditioned night target between -12 and -18
-degrees solar altitude; the physical 0.533-degree solar disc, ACES tonemapping,
-natural bloom, and bounded lookup-table atmosphere stay unchanged. The filtered
-64-pixel atmosphere environment map is the full preset's canonical indirect PBR
-source. `GlobalAmbientLight` provides the complete altitude-aware fallback until
-that map is allocated and a bounded four-frame handoff grace elapses, or
-whenever a preset disables it; afterward only the authored moonless/moonlit
-visibility floor and a bounded 10,500-cd/m2 unresolved multi-bounce term remain.
-Bevy therefore no longer adds the full 30,000-cd/m2 isotropic daylight
-approximation on top of directional atmosphere IBL, while shaded bark and
-foliage retain readable outdoor bounce light. Large vista grids are deliberately
-not ordinary replicated ECS components. The server sends each accepted client
-one immutable, ordered `SceneVistaBundle`; the client builds seam-sharing LOD
-rings split into independently frustum-culled mesh chunks without inner-area
-overdraw, colliders, or shadows. Each finer ring geomorphs its outermost sample
-row onto the next coarser height surface, with a one-fine-cell inward blend;
-this removes cracks and T-junction wedges without adding skirts, overlap, or
-gameplay geometry. Vista vertices reuse the ordinary ground palette in linear
-color space, preserving regional forest, wetland, cultivation, and water
-variation instead of assigning one average color per LOD; the same boundary
-interval morphs both height and reflectance. This adds one vertex attribute but
-no material, texture sample, draw call, collider, or replicated state per
-region. Synthetic review fixtures normalize each vista LOD to the playable
-terrain's origin height, preventing coarse one-sided rings from becoming an
-invisible ceiling above the player. Production-composition review cameras keep
-these vistas visible rather than reserving them for an isolated horizon plate.
-The dispatcher samples the final continental terrain pack at the request's
-authoritative case-site coordinates and character minute, materializes the
-validated document atomically, and passes only its path to the child. A
+sunlight. Falling precipitation is one camera-local indexed quad batch rather
+than one entity per drop or flake. Its WebGPU vertex shader derives
+deterministic rain streaks or fluttering snow from the weather snapshot and
+samples a compact copy of the authoritative playable heightfield. Rain adds one
+bounded batch of terrain-conforming impact rings. Rain streaks use two
+soft-alpha profiles and analytic normal-shaped lighting rather than scene-color
+refraction. A 512-pixel top-down shelter-height map rasterizes the actual
+procedural trunk and depth-one/two branch capsules when presented trees change.
+Falling rain and snow test four upwind points against that map in the vertex
+shader, and sheltered terrain impacts are suppressed; this adds no shadow
+camera, collision query, or per-particle CPU work. Heavy rain adds one batch of
+six concentric, 16-panel camera-local shells for the distant curtain. Their
+depth-tested fragment path synthesizes broad irregular falling bands from 2D
+functions, fades them through the final 4.5 metres above terrain, and uses the
+existing non-volumetric linear distance fog for unresolved tactical-range rain.
+It uses no volume texture, raymarch, blur pass, or scene-color copy. Intensity
+changes how much of each fixed batch is visible, while the CPU performs no
+per-particle simulation or transform updates.
+The Earth-atmosphere path keeps top-of-atmosphere solar
+source energy available after the Sun crosses the geometric horizon. Bevy's
+atmospheric transmittance and visible-disc calculation then suppress direct
+surface illumination while retaining directional civil and nautical twilight
+scattering. The no-atmosphere fallback retains an explicit zero-below-horizon
+direct-light curve because it has no planetary occlusion. Exposure transitions
+continuously from nautical twilight to the moon-conditioned night target between
+-12 and -18 degrees solar altitude; the physical 0.533-degree solar disc, ACES
+tonemapping, natural bloom, and bounded lookup-table atmosphere stay unchanged.
+The filtered 64-pixel atmosphere environment map is the full preset's canonical
+indirect PBR source. `GlobalAmbientLight` provides the complete altitude-aware
+fallback until that map is allocated and a bounded four-frame handoff grace
+elapses, or whenever a preset disables it; afterward only the authored
+moonless/moonlit visibility floor and a bounded 10,500-cd/m2 unresolved
+multi-bounce term remain. Bevy therefore no longer adds the full 30,000-cd/m2
+isotropic daylight approximation on top of directional atmosphere IBL, while
+shaded bark and foliage retain readable outdoor bounce light. Large vista grids
+are deliberately not ordinary replicated ECS components. The server sends each
+accepted client one immutable, ordered `SceneVistaBundle`; the client builds
+seam-sharing LOD rings split into independently frustum-culled mesh chunks
+without inner-area overdraw, colliders, or shadows. Each finer ring geomorphs
+its outermost sample row onto the next coarser height surface, with a
+one-fine-cell inward blend; this removes cracks and T-junction wedges without
+adding skirts, overlap, or gameplay geometry. Vista vertices reuse the ordinary
+ground palette in linear color space, preserving regional forest, wetland,
+cultivation, and water variation instead of assigning one average color per LOD;
+the same boundary interval morphs both height and reflectance. This adds one
+vertex attribute but no material, texture sample, draw call, collider, or
+replicated state per region. Synthetic review fixtures normalize each vista LOD
+to the playable terrain's origin height, preventing coarse one-sided rings from
+becoming an invisible ceiling above the player. Production-composition review
+cameras keep these vistas visible rather than reserving them for an isolated
+horizon plate. The dispatcher samples the final continental terrain pack at the
+request's authoritative case-site coordinates and character minute, materializes
+the validated document atomically, and passes only its path to the child. A
 tactical-only workflow may instead supply the identical format with
 `--scene-input`, so tactical processes never load the continental pack.
 Standalone tactical development defaults to the committed `dense-woodland` input
