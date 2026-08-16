@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2013)
+## Files (2026)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1945,6 +1945,19 @@ development, or other wiki document before changing a subsystem.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_runtime_release.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
+- `tools/weapon-modeler/.gitignore` — Repository support file.
+- `tools/weapon-modeler/README.md` — Component overview and usage notes.
+- `tools/weapon-modeler/index.html` — Browser UI page.
+- `tools/weapon-modeler/package.json` — Repository support file.
+- `tools/weapon-modeler/server.mjs` — Repository support file.
+- `tools/weapon-modeler/src/app.js` — Repository support file.
+- `tools/weapon-modeler/src/math.js` — Repository support file.
+- `tools/weapon-modeler/src/mesh.js` — Repository support file.
+- `tools/weapon-modeler/src/presets.js` — Repository support file.
+- `tools/weapon-modeler/src/renderer.js` — Repository support file.
+- `tools/weapon-modeler/styles.css` — Browser UI styling.
+- `tools/weapon-modeler/tests/mesh.test.mjs` — Repository support file.
+- `tools/weapon-modeler/tests/structure.test.mjs` — Repository support file.
 - `utils/generate_certificates.py` — Development or documentation automation script.
 - `wiki/SUMMARY.md` — Project documentation.
 - `wiki/client/animation.md` — Project documentation.
