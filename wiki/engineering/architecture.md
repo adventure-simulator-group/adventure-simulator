@@ -613,27 +613,36 @@ The Surface Nets implementation remains private to the tactical client. Scene
 schema 2 adds bounded river-bluff recipes and a deterministic representability
 report: multiple vertical intersections or excessive heightfield approximation
 error select an implicit patch, independently of playable grade. The shared
-recipe supplies the finite scalar field, thin face-following compound collision
-proxy, and patch-aware nearest-surface-below query; the server replicates that
-recipe and never extracts or transmits render geometry. The ordinary
-heightfield is explicitly replaced by matching benches. In the central
-topologically complex sector its transition stays behind the shared
-conservative face envelope. Across the returned shoulder, the same implicit
-render surface remains the single visible owner and its crest converges to the
-lower bench before the finite field side. Heightfield collision owns that
-sector but its upper rise stays behind the rendered return. The old diagonal
-ramp does not remain beneath the central scarp.
-Client extraction retains only sampled triangles matching the shared authored
-face equation. Surface Nets top, back, bottom, side, and unexposed closure
-triangles remain discarded; ordinary heightfield terrain owns all horizontal
-upper and rear ground. The retained crest boundary is projected onto the smooth
-authored brink and its normals are recomputed. No separate collar mesh is
-rendered or replicated.
-Triangle normals are not an authority for
-a curved scarp. The replicated heightfield owns the rear upper bench and
-returned side terrain. Low returned ends converge to the lower terrain before
-the excluded finite implicit field boundary. The
-review manifest records a deterministic cyan-pixel gate plus quantitative
+recipe supplies the multi-valued bluff scalar, thin face-following compound
+collision proxy, and patch-aware nearest-surface-below query; the server
+replicates that compact recipe and never extracts or transmits render geometry.
+The ordinary authoritative heightfield is explicitly replaced by matching
+benches and the aggregated debris fan, and continues to own collision and
+ground queries. Its central upper-bench rise remains buried behind the implicit
+scarp; across the heightfield-owned returned shoulders, the rise is distributed
+over a multi-metre transition derived from the authored elevation so coarse
+terrain cells cannot expose a lateral step wall.
+
+The client evaluates one bounded implicit terrain tile from the authored bluff
+solid and solid-below the replicated heightfield. The bluff is a genuine
+unbounded-downward, rearward terrace mass defined by the authored crest and
+curved scarp, so it has no finite recipe side, back, or bottom planes. The tile spans
+well beyond the topologically complex scarp, so every outer edge is ordinary
+single-valued terrain. Surface Nets consequently produces the face, crest,
+terrace, floodplain, returned shoulders, and debris contact as one connected
+surface rather than cutting a facade from a finite box. The regular base and
+detail terrain renderers omit cells strictly inside the tile and resume at its
+distant rectangular perimeter. Open tile-boundary vertices are projected onto
+the same `SceneTerrain` surface, producing an exact shared boundary without a
+collar, cap, stitch, finite back, or side shell. Pending tile presentation waits
+for `SceneTerrain` and its terrain material, so replication insertion order
+cannot lose the visual. Ground and rock triangle sets share the exact extracted
+positions and normals: single-valued ground reuses the ordinary tactical terrain
+material, while only the scarp uses the sandstone material. The tile clone
+retains the base material's normal and roughness mode and disables only the
+camera-detail cutout; the ground/rock split follows the authored scarp envelope
+rather than quantized three-vertex heightfield agreement.
+The review manifest records a deterministic cyan-pixel gate plus quantitative
 proxy coverage, vertical-gap, crest-gap, face-offset, and undercut-clearance
 evidence for the collision-overlay plate.
 That plate renders thin cyan outlines for alternating retained proxy bands,

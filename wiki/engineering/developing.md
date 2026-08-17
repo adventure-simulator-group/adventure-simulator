@@ -1046,17 +1046,22 @@ Use [the environment review rubric](world-data/environment-visual-review.md)
 and copy the checked-in ledger template for severity, cost/benefit triage,
 independent reassessment, and stopping criteria.
 
-`river-bluff-cliff` is the focused implicit-terrain fixture. Its off-frame
-river has undercut the central sector of a concave 28-metre-wide, 9-metre-high
+`river-bluff-cliff` is the focused implicit-terrain fixture. Its off-frame river
+has undercut the central sector of a concave 28-metre-wide, 9-metre-high
 Buntsandstein terrace boundary with projecting resistant beds, recessed weak
-interbeds, a localized crest-open failure scar, and blocky loose-stone talus.
-Review the clear oblique face and exterior grazing side/profile views, the localized
-1.3-metre toe undercut, the upper and lower benches, the terrain-covered
-heightfield collar, tapered olive crest cap, and thin cyan face-following
-collider outlines together. The collision plate uses the same low grazing
-profile as the contact view. Its manifest requires measurable cyan coverage
-and reports proxy fit and completeness statistics, but those semantic gates do
-not replace checking proxy alignment in the rendered plate.
+interbeds, a localized crest-open failure scar, and a three-lobed collapsed
+debris fan aggregated directly into the authoritative heightfield. Review the
+clear oblique face and exterior grazing side/profile views, the localized
+0.8-metre toe undercut, the upper and lower benches, the one connected implicit
+terrain tile, its distant heightfield-matched perimeter, and thin cyan
+face-following collider outlines together. The regular heightfield renderer is
+absent only inside the tile; collision and queries stay authoritative there.
+The collision plate uses the same low grazing
+profile as the contact view. Its manifest requires measurable cyan coverage and
+reports proxy fit and completeness statistics, but those semantic gates do not
+replace checking proxy alignment in the rendered plate. The debris fan has
+ordinary heightfield collision and no discrete debris entities, rigid bodies,
+or colliders.
 
 The focused sky viewer captures the production atmosphere and celestial
 materials without loading terrain, foliage, or a tactical server. Its five

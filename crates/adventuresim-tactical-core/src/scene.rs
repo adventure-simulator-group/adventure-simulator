@@ -379,7 +379,14 @@ impl SceneTerrain {
 
     #[cfg(feature = "meshgen")]
     pub fn mesh(&self) -> Mesh {
-        let (positions, indices, uvs) = self.mesh_components();
+        self.mesh_with_cell_filter(|_| true)
+    }
+
+    /// Builds the client render mesh while allowing a presentation-owned tile to replace whole
+    /// heightfield cells. Collision and terrain queries continue to use the unfiltered surface.
+    #[cfg(feature = "meshgen")]
+    pub fn mesh_with_cell_filter(&self, include_cell: impl Fn(Vec2) -> bool) -> Mesh {
+        let (positions, indices, uvs) = self.mesh_components_with_cell_filter(include_cell);
 
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -393,6 +400,13 @@ impl SceneTerrain {
     }
 
     fn mesh_components(&self) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+        self.mesh_components_with_cell_filter(|_| true)
+    }
+
+    fn mesh_components_with_cell_filter(
+        &self,
+        include_cell: impl Fn(Vec2) -> bool,
+    ) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
         let mesh_offset = Vec2::new(
             self.grid_width().saturating_sub(1) as f32,
             self.grid_depth().saturating_sub(1) as f32,
@@ -423,6 +437,13 @@ impl SceneTerrain {
         let mut indices = Vec::with_capacity((self.grid_width() - 1) * (self.grid_depth() - 1) * 6);
         for x in 0..self.grid_width() - 1 {
             for z in 0..self.grid_depth() - 1 {
+                let cell_center = Vec2::new(
+                    (x as f32 + 0.5 + mesh_offset.x) * self.scale,
+                    (z as f32 + 0.5 + mesh_offset.y) * self.scale,
+                );
+                if !include_cell(cell_center) {
+                    continue;
+                }
                 let i = (z * self.grid_width() + x) as u32;
 
                 indices.extend_from_slice(&[
@@ -513,5 +534,17 @@ mod tests {
             assert!((normal.length() - 1.0).abs() < 0.0001);
             assert!(normal.y > 0.0);
         }
+    }
+
+    #[test]
+    fn render_cell_filter_removes_only_strict_tile_interior() {
+        let terrain = SceneTerrain::new(4, 4, 2.0, |_| 0.0);
+        let (_, all_indices, _) = terrain.mesh_components();
+        let (_, filtered_indices, _) = terrain.mesh_components_with_cell_filter(|center| {
+            !(center.x > -2.0 && center.x < 2.0 && center.y > -2.0 && center.y < 2.0)
+        });
+        assert_eq!(all_indices.len(), 4 * 4 * 6);
+        assert_eq!(filtered_indices.len(), (4 * 4 - 4) * 6);
+        assert_eq!(terrain.height_at(Vec2::ZERO), Some(0.0));
     }
 }

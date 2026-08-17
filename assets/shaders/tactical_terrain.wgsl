@@ -71,7 +71,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // old surface would depth-occlude every drainage channel and wheel rut.
     // A 1.5 m overlap remains before the circular patch edge, where relief is
     // already morphed almost completely back to the authoritative surface.
-    if terrain.detail_patch.x > 0.5
+    if terrain.detail_patch.z > 0.5
         && distance(position.xz, view.lod_view_world_position.xz) < terrain.detail_patch.y {
         discard;
     }

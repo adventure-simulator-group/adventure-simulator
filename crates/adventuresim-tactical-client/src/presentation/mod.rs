@@ -187,6 +187,8 @@ impl Plugin for TacticalPresentationPlugin {
                 update_tree_leaf_wind,
                 (
                     present_pending_terrain,
+                    terrain_patch::present_pending_implicit_tiles,
+                    terrain_patch::synchronize_implicit_tile_ground_materials,
                     update_terrain_detail_patch,
                     present_ground_scatter,
                 )

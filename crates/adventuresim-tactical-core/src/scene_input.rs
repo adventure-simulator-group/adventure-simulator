@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 2;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 61;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 77;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -32,7 +32,7 @@ const MAX_VISTA_SAMPLES: usize = 2_000_000;
 const MAX_TEMPLATE_BYTES: usize = 128;
 const MAX_SOURCE_ID_BYTES: usize = 128;
 const MAX_PLAYABLE_GRADE: f32 = 0.65;
-pub const MAX_TERRAIN_PATCH_SAMPLES: usize = 262_144;
+pub const MAX_TERRAIN_PATCH_SAMPLES: usize = 524_288;
 pub const MAX_TERRAIN_PATCH_TRIANGLES: usize = 100_000;
 const MAX_TERRAIN_PATCHES: usize = 8;
 
@@ -237,12 +237,33 @@ impl RiverBluffRecipe {
     }
 
     pub fn sample_counts(self) -> [u16; 3] {
-        let dimensions_cm = [
-            self.face_width_cm,
-            self.face_height_cm + 200,
-            self.rock_depth_cm + self.undercut_depth_cm + 200,
-        ];
-        dimensions_cm.map(|length| length.div_ceil(self.sample_spacing_cm) + 1)
+        let [minimum_x, maximum_x, minimum_z, maximum_z] = self.implicit_tile_bounds_local();
+        let lateral_spacing_cm = self.sample_spacing_cm.saturating_mul(5).div_ceil(4);
+        let x_count =
+            (((maximum_x - minimum_x) * 100.0).ceil() as u16).div_ceil(lateral_spacing_cm) + 1;
+        let y_count = (self.face_height_cm + 200).div_ceil(self.sample_spacing_cm) + 1;
+        let desired_z =
+            (((maximum_z - minimum_z) * 100.0).ceil() as u16).div_ceil(self.sample_spacing_cm) + 1;
+        let affordable_z = (MAX_TERRAIN_PATCH_SAMPLES
+            / (usize::from(x_count) * usize::from(y_count)))
+        .min(usize::from(u16::MAX)) as u16;
+        [x_count, y_count, desired_z.min(affordable_z).max(2)]
+    }
+
+    /// Distant, axis-aligned local bounds of the continuous implicit terrain tile. Every edge is
+    /// ordinary single-valued ground; the client samples the replicated heightfield there and the
+    /// regular terrain renderer resumes on the same boundary.
+    pub fn implicit_tile_bounds_local(self) -> [f32; 4] {
+        let size = self.dimensions_metres();
+        let lateral = size.x * 0.5 + 6.0;
+        let front = -(f32::from(self.talus_depth_cm) / 100.0) - 5.0;
+        let back = size.z + 12.0;
+        [-lateral, lateral, front, back]
+    }
+
+    pub fn implicit_tile_contains_local_xz(self, local_x: f32, local_z: f32) -> bool {
+        let [minimum_x, maximum_x, minimum_z, maximum_z] = self.implicit_tile_bounds_local();
+        (minimum_x..=maximum_x).contains(&local_x) && (minimum_z..=maximum_z).contains(&local_z)
     }
 
     pub fn representability(self) -> Option<LandformRepresentability> {
@@ -283,7 +304,7 @@ impl RiverBluffRecipe {
         };
         let notch = 1.0 - smoothstep(((notch_distance - 0.08) / 0.92).clamp(0.0, 1.0));
         let finite_side_closure = 1.0 - smoothstep(((across.abs() - 0.80) / 0.20).clamp(0.0, 1.0));
-        (broad_crest - notch * (0.50 + notch_x.clamp(-0.5, 0.7) * 0.14)).max(0.0)
+        (broad_crest - notch * (0.24 + notch_x.clamp(-0.5, 0.7) * 0.06)).max(0.0)
             * finite_side_closure
     }
 
@@ -309,30 +330,31 @@ impl RiverBluffRecipe {
     }
 
     /// Narrow, sheared toe-undercut weight shared by geometry, collision, and
-    /// presentation. The opening is at most 4.5 metres wide and 1.3 metres
-    /// high; its irregular roof follows the lowest resistant-bed zone.
+    /// presentation. The opening is a shallow, asymmetrically feathered bed
+    /// recess rather than a cave mouth; its irregular roof follows the lowest
+    /// resistant-bed zone.
     pub fn undercut_weight_local(self, local: bevy::math::Vec3) -> f32 {
         if local.y < 0.0 {
             return 0.0;
         }
         let collapse_center = f32::from(self.collapse_offset_cm) / 100.0;
         let sheared_center = collapse_center
-            + (local.y - 0.65) * 0.16
+            + (local.y - 0.45) * 0.14
             + (local.y * 2.7 + collapse_center * 0.3).sin() * 0.08;
-        let half_width = 2.18 + (local.y * 1.9 + self.seed as f32 * 0.001).sin() * 0.10;
+        let half_width = 1.48 + (local.y * 1.9 + self.seed as f32 * 0.001).sin() * 0.08;
         let lateral_position = (local.x - sheared_center) / half_width;
         let lateral = if lateral_position < 0.0 {
-            1.0 - smoothstep((((-lateral_position) - 0.25) / 0.75).clamp(0.0, 1.0))
+            1.0 - smoothstep((((-lateral_position) - 0.20) / 0.80).clamp(0.0, 1.0))
         } else {
-            1.0 - smoothstep(((lateral_position - 0.32) / 0.48).clamp(0.0, 1.0))
+            1.0 - smoothstep(((lateral_position - 0.26) / 0.58).clamp(0.0, 1.0))
         };
         let roof_x = local.x - collapse_center;
-        let roof = (0.55
-            + (-(roof_x / 0.95).powi(2)).exp() * 0.56
-            + (roof_x * 1.35).sin() * 0.08
-            + (roof_x * 2.4 + 0.6).sin() * 0.035)
-            .clamp(0.45, 1.18);
-        let vertical = 1.0 - smoothstep(((local.y / roof - 0.62) / 0.38).clamp(0.0, 1.0));
+        let roof = (0.34
+            + (-(roof_x / 0.72).powi(2)).exp() * 0.34
+            + (roof_x * 1.35).sin() * 0.055
+            + (roof_x * 2.4 + 0.6).sin() * 0.025)
+            .clamp(0.30, 0.76);
+        let vertical = 1.0 - smoothstep(((local.y / roof - 0.55) / 0.45).clamp(0.0, 1.0));
         lateral * vertical
     }
 
@@ -345,24 +367,25 @@ impl RiverBluffRecipe {
     pub fn debris_fan_height_local(self, local_x: f32, local_z: f32) -> f32 {
         let collapse_x = f32::from(self.collapse_offset_cm) / 100.0;
         let talus_depth = f32::from(self.talus_depth_cm) / 100.0;
-        let talus_half_width = f32::from(self.collapse_radius_cm) / 100.0 * 2.15;
         let talus_toe_z = self.talus_toe_local_z();
-        if !(talus_toe_z - talus_depth..talus_toe_z).contains(&local_z)
-            || (local_x - collapse_x).abs() >= talus_half_width
-        {
-            return 0.0;
-        }
         let toward_face = ((local_z - (talus_toe_z - talus_depth)) / talus_depth).clamp(0.0, 1.0);
-        let lateral = (1.0 - (local_x - collapse_x).abs() / talus_half_width).clamp(0.0, 1.0);
         let across_fan = local_x - collapse_x;
-        let ridge = (1.05 * (-(((across_fan + 3.6 + toward_face * 0.25) / 0.92).powi(2))).exp())
-            .max(0.98 * (-(((across_fan - 0.20 + toward_face * 0.18) / 0.82).powi(2))).exp())
-            .max(0.90 * (-(((across_fan - 3.8 - toward_face * 0.22) / 0.96).powi(2))).exp());
+        let ridge = 1.00 * (-(((across_fan + 4.4 + toward_face * 0.25) / 1.55).powi(2))).exp()
+            + 0.92 * (-(((across_fan - 0.10 + toward_face * 0.18) / 1.45).powi(2))).exp()
+            + 0.78 * (-(((across_fan - 4.5 - toward_face * 0.22) / 1.60).powi(2))).exp();
+        // Put the aggregated mass clearly downslope of the intact toe. Besides matching how a
+        // collapse spreads, this keeps its upper tail below the visible-scarp ownership band.
+        let downslope_center = talus_toe_z - talus_depth * 0.55;
+        let longitudinal = (-(((local_z - downslope_center) / (talus_depth * 0.42)).powi(2))).exp();
         let clear_flank = 1.0
-            - (1.0 - smoothstep((((across_fan - 0.9).abs() - 0.45) / 0.55).clamp(0.0, 1.0)))
+            - (1.0 - smoothstep((((across_fan - 0.35).abs() - 0.35) / 0.50).clamp(0.0, 1.0)))
                 * smoothstep(((toward_face - 0.42) / 0.30).clamp(0.0, 1.0));
-        let fan_envelope = smoothstep(toward_face) * smoothstep(lateral);
-        (fan_envelope * (0.12 + ridge * 0.96) * clear_flank).clamp(0.0, 1.10)
+        let face_clearance = 1.0 - smoothstep(((toward_face - 0.52) / 0.32).clamp(0.0, 1.0));
+        // Gaussian tails settle into the inherited floodplain instead of ending at a compact
+        // polygon. The old zero contour exposed the last sloped heightfield triangle as a dark
+        // line around the deposit.
+        let height = (longitudinal * ridge * clear_flank * face_clearance * 1.20).min(1.80);
+        if height < 0.001 { 0.0 } else { height }
     }
 
     pub fn failure_scar_weight(self, local: bevy::math::Vec3) -> f32 {
@@ -501,10 +524,10 @@ impl RiverBluffRecipe {
 
     /// Authored front surface in patch-local coordinates.
     ///
-    /// The client uses this same equation to distinguish the exposed scarp
-    /// from the finite scalar field's buried top, back, bottom, and side
-    /// closures. Keeping the evaluator here prevents render extraction from
-    /// guessing exposure from triangle normals on a deliberately curved face.
+    /// The client and collision proxy use this same equation for the exposed
+    /// multi-valued scarp inside the continuous terrain tile. Keeping the
+    /// evaluator here prevents presentation or collision from guessing the
+    /// authored surface from triangle normals on a deliberately curved face.
     pub fn face_surface_local_z(self, point: bevy::math::Vec3) -> f32 {
         let size = self.dimensions_metres();
         let half_width = size.x * 0.5;
@@ -529,9 +552,9 @@ impl RiverBluffRecipe {
         let scar_weight = self.failure_scar_weight(point);
         let facet_a = smoothstep(((point.x + point.y * 0.24 + 0.8) / 1.4).clamp(0.0, 1.0));
         let facet_b = smoothstep(((-point.x * 0.55 + point.y * 0.18 - 0.2) / 1.2).clamp(0.0, 1.0));
-        let failure_facets = ((facet_a - 0.5) * 0.16 + (facet_b - 0.5) * 0.10) * scar_weight;
-        let failure_rim = (-((scar_weight - 0.30) / 0.24).powi(2)).exp() * 0.08;
-        let failure_recess = scar_weight * 1.22 + failure_facets - failure_rim;
+        let failure_facets = ((facet_a - 0.5) * 0.06 + (facet_b - 0.5) * 0.04) * scar_weight;
+        let failure_rim = (-((scar_weight - 0.30) / 0.24).powi(2)).exp() * 0.04;
+        let failure_recess = scar_weight * 0.45 + failure_facets - failure_rim;
         let bedding_displacement = self.bedding_displacement_local_z(point);
         let undercut_lateral = self
             .undercut_weight_local(bevy::math::Vec3::new(point.x, 0.45, 0.0))
@@ -561,6 +584,32 @@ impl RiverBluffRecipe {
         maximum + 0.75
     }
 
+    /// Shared rear edge of the fully authored terrace cap. A single
+    /// conservative value across the bluff prevents neighbouring heightfield
+    /// columns from beginning their rear convergence at different depths and
+    /// forming a lateral wall.
+    pub fn rear_terrace_convergence_start_local_z(self) -> f32 {
+        const LATERAL_SAMPLES: u16 = 28;
+        let half_width = self.dimensions_metres().x * 0.5;
+        (0..=LATERAL_SAMPLES)
+            .map(|index| {
+                let x =
+                    -half_width + half_width * 2.0 * f32::from(index) / f32::from(LATERAL_SAMPLES);
+                self.maximum_face_local_z(x)
+            })
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
+
+    /// Monotone rear inheritance shared by authoritative heightfield collision
+    /// and the client terrain-solid cap. Its softened-linear profile keeps the
+    /// maximum grade below a cubic smoothstep while avoiding a hard height
+    /// discontinuity at either end.
+    pub fn rear_terrace_inheritance(self, local_z: f32, convergence_start: f32) -> f32 {
+        let t = ((local_z - convergence_start) / 11.5).clamp(0.0, 1.0);
+        let shoulder = t * (1.0 - t) * (1.0 - 2.0 * t);
+        t - shoulder * 0.5
+    }
+
     /// Conservative frontmost face extent used by the static proxy and its
     /// diagnostic overlay.
     pub fn minimum_face_local_z(self, local_x: f32) -> f32 {
@@ -575,24 +624,17 @@ impl RiverBluffRecipe {
         minimum - 0.25
     }
 
-    /// Finite shared scalar field. Negative values are the sandstone mass.
+    /// Shared terrain-solid scalar field. Negative values are the terrace mass.
+    ///
+    /// This is deliberately unbounded downward and rearward. The upper surface
+    /// is the authored crest and the front surface is the multi-valued scarp;
+    /// their intersection produces a real terrace edge without a finite box
+    /// bottom, back, or side closure. The client unions this mass with the
+    /// authoritative heightfield, which already converges to the same crest at
+    /// the distant implicit-tile boundary.
     pub fn signed_distance(self, world: bevy::math::Vec3) -> f32 {
         let point = self.world_to_local(world);
-        let size = self.dimensions_metres();
-        let half_width = size.x * 0.5;
-        let depth = size.z;
-        let local_height = self.local_crest_height(point.x);
-        let face = self.face_surface_local_z(point);
-        let buried_bottom = -1.0;
-        let bounded_height = local_height - buried_bottom;
-        let box_distance = bevy::math::Vec3::new(
-            point.x.abs() - half_width,
-            (point.y - (local_height + buried_bottom) * 0.5).abs() - bounded_height * 0.5,
-            (point.z - depth * 0.5).abs() - depth * 0.5,
-        );
-        let bounded_mass =
-            box_distance.max(bevy::math::Vec3::ZERO).length() + box_distance.max_element().min(0.0);
-        bounded_mass.max(face - point.z)
+        (point.y - self.local_crest_height(point.x)).max(self.face_surface_local_z(point) - point.z)
     }
 
     fn collision_proxy_band(
@@ -1349,7 +1391,7 @@ fn apply_terrain_patch_heightfield_replacement(
     depth: usize,
     spacing: f32,
     heights: &mut [f32],
-    environment: &mut [EnvironmentalSample],
+    _environment: &mut [EnvironmentalSample],
     patches: &[TerrainPatchRecipe],
 ) {
     let half_width = (width - 1) as f32 * spacing * 0.5;
@@ -1358,6 +1400,8 @@ fn apply_terrain_patch_heightfield_replacement(
         let TerrainPatchRecipe::RiverBluff(recipe) = *patch;
         let size = recipe.dimensions_metres();
         let patch_half_width = size.x * 0.5;
+        let rear_convergence_start =
+            recipe.rear_terrace_convergence_start_local_z() + spacing * 1.1;
         // The implicit mass owns the central non-heightfield topology. Beyond
         // its low returned-face contact, an ordinary front-facing heightfield
         // ramp replaces the face and tapers into inherited shoulder terrain.
@@ -1385,62 +1429,86 @@ fn apply_terrain_patch_heightfield_replacement(
                 {
                     let inherited_height = heights[z * width + x];
                     let clamped_x = local.x.clamp(-patch_half_width, patch_half_width);
-                    let native_crest = recipe.local_crest_height(clamped_x);
-                    // A forward overlap may begin only after the complete
-                    // adjacent heightfield column has left the exposed face.
-                    // Otherwise one grid triangle can join a low returned-end
-                    // vertex to a still-visible scarp vertex and cut across
-                    // the authored face envelope.
-                    let transition_start = neighbour_envelope + spacing;
-                    let transition_length = spacing * 0.10;
+                    let returned_shoulder_weight = smoothstep(
+                        ((local.x.abs() - recipe.implicit_collision_half_width())
+                            / (spacing * 0.5))
+                            .clamp(0.0, 1.0),
+                    );
+                    let central_upper =
+                        recipe.center_metres().y + recipe.local_crest_height(clamped_x);
+                    let collision_half_width = recipe.implicit_collision_half_width();
+                    let returned_contact_x = collision_half_width.copysign(local.x);
+                    let returned_contact_upper =
+                        recipe.center_metres().y + recipe.local_crest_height(returned_contact_x);
+                    let returned_fade = 1.0
+                        - smoothstep(
+                            ((local.x.abs() - collision_half_width)
+                                / (patch_half_width + shoulder_width - collision_half_width))
+                                .clamp(0.0, 1.0),
+                        );
+                    let returned_upper = returned_contact_upper * returned_fade
+                        + inherited_height * (1.0 - returned_fade);
+                    let authored_upper = central_upper * (1.0 - returned_shoulder_weight)
+                        + returned_upper * returned_shoulder_weight;
+                    // The central heightfield step stays tightly buried behind the
+                    // topologically complex implicit scarp. Across the heightfield-owned
+                    // returned shoulders, however, the same rise is spread over enough depth
+                    // to remain an ordinary single-valued slope. The blend completes within
+                    // half a coarse cell beyond the collision boundary; the central owner
+                    // hides that handoff while every visible returned column uses the ramp.
+                    let smoothed_returned_envelope = [
+                        (-spacing * 2.0, 1.0),
+                        (-spacing, 2.0),
+                        (0.0, 3.0),
+                        (spacing, 2.0),
+                        (spacing * 2.0, 1.0),
+                    ]
+                    .into_iter()
+                    .map(|(offset, weight)| {
+                        recipe.maximum_face_local_z(
+                            (local.x + offset).clamp(-patch_half_width, patch_half_width),
+                        ) * weight
+                    })
+                    .sum::<f32>()
+                        / 9.0;
+                    let transition_start = neighbour_envelope * (1.0 - returned_shoulder_weight)
+                        + smoothed_returned_envelope * returned_shoulder_weight
+                        + spacing * (1.0 - returned_shoulder_weight * 5.0);
+                    let authored_rise = (authored_upper - recipe.center_metres().y).abs();
+                    let returned_transition_length =
+                        (authored_rise * 2.2).clamp(spacing * 4.0, spacing * 9.0);
+                    let transition_length = spacing * 0.10 * (1.0 - returned_shoulder_weight)
+                        + returned_transition_length * returned_shoulder_weight;
                     let buried_transition =
                         ((local.z - transition_start) / transition_length).clamp(0.0, 1.0);
-                    let shoulder = 1.0
-                        - smoothstep(
-                            ((local.x.abs() - patch_half_width) / shoulder_width).clamp(0.0, 1.0),
-                        );
-                    let authored_upper = (recipe.center_metres().y + native_crest) * shoulder
-                        + inherited_height * (1.0 - shoulder);
+                    // The heightfield owns upper/rear collision, but it must not preserve a
+                    // constant-height rectangular plateau behind the rendered scarp. Begin
+                    // inheriting the native terrain immediately behind the conservative face
+                    // envelope and finish over the same eight-metre landform-scale distance as
+                    // the client terrain-solid cap. The visible brink remains fully authored;
+                    // the remote tile perimeter is ordinary terrain again.
                     let rear_inheritance =
-                        smoothstep(((local.z - size.z - 2.0) / 10.0).clamp(0.0, 1.0));
+                        recipe.rear_terrace_inheritance(local.z, rear_convergence_start);
                     let upper = authored_upper * (1.0 - rear_inheritance)
                         + inherited_height * rear_inheritance;
                     heights[z * width + x] = recipe.center_metres().y
                         + (upper - recipe.center_metres().y) * smoothstep(buried_transition);
                 }
 
-                let collapse_x = f32::from(recipe.collapse_offset_cm) / 100.0;
-                let evidence_brink =
-                    recipe.top_front_local_z(local.x.clamp(-patch_half_width, patch_half_width));
-                if (local.x - collapse_x).abs() <= patch_half_width + 5.0
-                    && local.z >= evidence_brink - 30.0
-                    && local.z <= evidence_brink + 2.0
-                    && !reserved
-                {
-                    let sample = &mut environment[z * width + x];
-                    sample.hilly_bps = sample.hilly_bps.max(9_000);
-                    sample.canopy_bps = 0;
-                    sample.wetland_bps = 0;
-                    sample.water_bps = 0;
-                    sample.surface = TacticalSurface::Open;
-                }
-                let talus_half_width = f32::from(recipe.collapse_radius_cm) / 100.0 * 2.15;
-                let talus_toe_z = recipe.talus_toe_local_z();
-                if (talus_toe_z - talus_depth..talus_toe_z).contains(&local.z)
-                    && (local.x - collapse_x).abs() < talus_half_width
-                    && !reserved
-                {
+                if !reserved {
                     let apron_height = recipe.debris_fan_height_local(local.x, local.z);
-                    heights[z * width + x] =
-                        heights[z * width + x].max(recipe.center_metres().y + apron_height);
-                    let sample = &mut environment[z * width + x];
-                    if apron_height >= 0.10 {
-                        sample.hilly_bps = 9_800;
+                    // The simulated collapse deposits onto the inherited lower surface. Adding
+                    // its smooth height contribution avoids the hard polygon produced when the
+                    // old fan replaced terrain with an absolute patch-local height.
+                    heights[z * width + x] += apron_height;
+                    let near_visible_face = local.z
+                        >= recipe.minimum_face_local_z(local.x) - spacing * 1.5
+                        && local.z <= recipe.maximum_face_local_z(local.x)
+                        && local.x.abs() <= recipe.implicit_collision_half_width();
+                    if near_visible_face {
+                        heights[z * width + x] =
+                            heights[z * width + x].min(recipe.center_metres().y + 0.48);
                     }
-                    sample.canopy_bps = 0;
-                    sample.wetland_bps = 0;
-                    sample.water_bps = 0;
-                    sample.surface = TacticalSurface::Open;
                 }
             }
         }
@@ -1455,7 +1523,7 @@ fn build_scene_ground(
     terrain: &SceneTerrain,
     obstacles: &[GeneratedObstacle],
     obstacle_spacing: f32,
-    terrain_patches: &[TerrainPatchRecipe],
+    _terrain_patches: &[TerrainPatchRecipe],
 ) -> Result<SceneGround, SceneInputError> {
     let mut samples = environment
         .iter()
@@ -1502,58 +1570,6 @@ fn build_scene_ground(
                     sample.cover_density_bps = 9_200;
                     sample.cover_height_cm = 6;
                 }
-            }
-        }
-    }
-    for patch in terrain_patches {
-        let TerrainPatchRecipe::RiverBluff(recipe) = *patch;
-        let size = recipe.dimensions_metres();
-        let half_patch_width = size.x * 0.5;
-        for sample_z in 0..depth {
-            for sample_x in 0..width {
-                let position = bevy::math::Vec2::new(
-                    sample_x as f32 * spacing - half_width,
-                    sample_z as f32 * spacing - half_depth,
-                );
-                let height = terrain
-                    .height_at(position)
-                    .unwrap_or(recipe.center_metres().y);
-                let local =
-                    recipe.world_to_local(bevy::math::Vec3::new(position.x, height, position.y));
-                if local.x.abs() > half_patch_width + 7.0 {
-                    continue;
-                }
-                let clamped_x = local.x.clamp(-half_patch_width, half_patch_width);
-                let brink = recipe.top_front_local_z(clamped_x);
-                let collapse_x = f32::from(recipe.collapse_offset_cm) / 100.0;
-                // Include a full source-grid footprint beyond each requested
-                // camera ray; `ground_at` samples the nearest generated cell,
-                // not the exact floating-point review target.
-                let evidence_corridor = (local.x - collapse_x).abs() <= half_patch_width + 5.0
-                    && local.z >= brink - 30.0
-                    && local.z <= brink + 1.5;
-                if (local.z < brink - 2.5 && !evidence_corridor) || local.z > size.z + 4.0 {
-                    continue;
-                }
-                let talus_half_width = f32::from(recipe.collapse_radius_cm) / 100.0 * 2.15;
-                let talus_depth = f32::from(recipe.talus_depth_cm) / 100.0;
-                let talus_toe = recipe.talus_toe_local_z();
-                let inside_lower_apron = (talus_toe - talus_depth..=talus_toe).contains(&local.z)
-                    && (local.x - collapse_x).abs() < talus_half_width
-                    && local.y <= 0.75;
-                let sample = &mut samples[sample_z * width + sample_x];
-                if sample.cover == GroundCover::LooseStone && inside_lower_apron {
-                    continue;
-                }
-                sample.substrate =
-                    if local.z <= brink + 5.0 || local.x.abs() >= half_patch_width * 0.60 {
-                        GroundSubstrate::Stone
-                    } else {
-                        GroundSubstrate::Gravel
-                    };
-                sample.cover = GroundCover::Bare;
-                sample.cover_density_bps = 0;
-                sample.cover_height_cm = 0;
             }
         }
     }
@@ -2052,7 +2068,7 @@ mod tests {
             face_height_cm: 900,
             rock_depth_cm: 1_400,
             curvature_cm: 420,
-            undercut_depth_cm: 130,
+            undercut_depth_cm: 80,
             collapse_offset_cm: 180,
             collapse_radius_cm: 300,
             talus_depth_cm: 600,
@@ -2080,7 +2096,32 @@ mod tests {
             undercut.representation,
             TerrainRepresentation::ImplicitSurface
         );
-        assert!(classify_landform(1, 0, 10, [65; 3]).is_none());
+        assert!(classify_landform(1, 0, 10, [81; 3]).is_none());
+    }
+
+    #[test]
+    fn river_bluff_scalar_is_an_unbounded_terrain_mass_without_box_closures() {
+        let recipe = bluff_recipe();
+        let size = recipe.dimensions_metres();
+        let behind = |local| recipe.signed_distance(recipe.local_to_world(local));
+        assert!(
+            behind(bevy::math::Vec3::new(0.0, size.y * 0.5, size.z + 50.0)) < 0.0,
+            "terrace mass must not close on the obsolete finite back plane"
+        );
+        assert!(
+            behind(bevy::math::Vec3::new(0.0, -50.0, size.z * 0.5)) < 0.0,
+            "terrain mass must remain solid downward without a finite bottom plane"
+        );
+        let outer_x = size.x * 0.5 + 4.0;
+        assert!(
+            behind(bevy::math::Vec3::new(outer_x, -0.5, size.z + 4.0)) < 0.0
+                && behind(bevy::math::Vec3::new(outer_x, 0.5, size.z + 4.0)) > 0.0,
+            "lateral crest fade must converge to ordinary solid-below-ground terrain"
+        );
+        assert!(
+            behind(bevy::math::Vec3::new(0.0, 0.5, -50.0)) > 0.0,
+            "front floodplain must remain outside the rearward terrace mass"
+        );
     }
 
     #[test]
@@ -2288,15 +2329,12 @@ mod tests {
         };
         input.terrain_patches = vec![TerrainPatchRecipe::RiverBluff(recipe)];
         let generated = input.generate().unwrap();
-        let render_half_width = collision_half_width;
-        let returned_x = render_half_width + 1.0;
-        let returned_z = recipe
-            .maximum_face_local_z(render_half_width)
-            .max(recipe.maximum_face_local_z(returned_x))
-            + 10.0;
+        let boundary_x = collision_half_width - 1.0;
+        let returned_x = collision_half_width + 1.0;
+        let returned_z =
+            recipe.rear_terrace_convergence_start_local_z() + input.playable.spacing_metres * 1.1;
         let returned = recipe.local_to_world(bevy::math::Vec3::new(returned_x, 0.0, returned_z));
-        let boundary =
-            recipe.local_to_world(bevy::math::Vec3::new(render_half_width, 0.0, returned_z));
+        let boundary = recipe.local_to_world(bevy::math::Vec3::new(boundary_x, 0.0, returned_z));
         let returned_height = generated
             .terrain
             .height_at(bevy::math::Vec2::new(returned.x, returned.z))
@@ -2307,15 +2345,18 @@ mod tests {
             .unwrap();
         assert!(returned_height > 0.5);
         assert!(
-            (boundary_height - recipe.local_crest_height(render_half_width)).abs() <= 0.75,
-            "heightfield returned ramp must meet the low implicit crest contact"
+            (boundary_height - recipe.local_crest_height(boundary_x)).abs() <= 0.75,
+            "last central heightfield column must meet the implicit crest from behind: height={boundary_height}, crest={}, x={boundary_x}, z={returned_z}, rear_start={}, envelope={}",
+            recipe.local_crest_height(boundary_x),
+            recipe.rear_terrace_convergence_start_local_z(),
+            recipe.maximum_face_local_z(boundary_x),
         );
         assert!(
-            (returned_height - boundary_height).abs() <= 1.5,
+            (returned_height - boundary_height).abs() <= 2.0,
             "heightfield collision must remain continuous across implicit/returned ownership boundary: returned={returned_height}, boundary={boundary_height}, delta={}, z={returned_z}, native returned crest={}, boundary crest={}, returned envelope={}",
             (returned_height - boundary_height).abs(),
             recipe.local_crest_height(returned_x),
-            recipe.local_crest_height(render_half_width),
+            recipe.local_crest_height(boundary_x),
             recipe.maximum_face_local_z(returned_x),
         );
         assert_eq!(
@@ -2350,7 +2391,7 @@ mod tests {
             .collect::<Vec<_>>();
         let opening_width = *opening_x.last().unwrap() - *opening_x.first().unwrap();
         assert!(
-            (2.8..=4.0).contains(&opening_width),
+            (1.5..=2.6).contains(&opening_width),
             "shallow feathered mouth must remain broader than the full-depth core without reading as a cave: {opening_width}"
         );
         let full_depth_x = (-80_i16..=80)
@@ -2359,15 +2400,15 @@ mod tests {
             .collect::<Vec<_>>();
         let full_depth_width = *full_depth_x.last().unwrap() - *full_depth_x.first().unwrap();
         assert!(
-            (1.0..=1.7).contains(&full_depth_width),
+            (0.5..=1.2).contains(&full_depth_width),
             "full-depth mouth must stay narrow and asymmetrically feathered: {full_depth_width}"
         );
         let opening_height = (0_u16..=160)
             .map(|step| f32::from(step) * 0.01)
             .filter(|y| recipe.undercut_weight_local(bevy::math::Vec3::new(0.0, *y, 0.0)) > 0.08)
             .fold(0.0_f32, f32::max);
-        assert!((1.0..=1.30).contains(&opening_height));
-        let roof_heights = [-1.5_f32, 0.0, 1.5].map(|x| {
+        assert!((0.55..=0.82).contains(&opening_height));
+        let roof_heights = [-0.8_f32, 0.0, 0.8].map(|x| {
             (0_u16..=140)
                 .map(|step| f32::from(step) * 0.01)
                 .filter(|y| recipe.undercut_weight_local(bevy::math::Vec3::new(x, *y, 0.0)) > 0.08)
@@ -2375,7 +2416,10 @@ mod tests {
         });
         let roof_min = roof_heights.into_iter().fold(f32::INFINITY, f32::min);
         let roof_max = roof_heights.into_iter().fold(f32::NEG_INFINITY, f32::max);
-        assert!(roof_min >= 0.40 && roof_max <= 1.18 && roof_max - roof_min >= 0.35);
+        assert!(
+            roof_min >= 0.25 && roof_max <= 0.78 && roof_max - roof_min >= 0.15,
+            "undercut roof must stay low and visibly irregular: min={roof_min}, max={roof_max}"
+        );
 
         let scar_span = |y: f32| {
             let xs = (-80_i16..=80)
@@ -2434,11 +2478,11 @@ mod tests {
             bevy::math::Vec3::new(-4.0, 5.5, recipe.top_front_local_z(-4.0) + 1.0),
         ));
         assert!(
-            scar > intact_face + 0.65 && scar > left_intact_face + 0.65,
+            scar > intact_face + 0.35 && scar > left_intact_face + 0.35,
             "failure plane should be materially recessed from both intact sides: scar={scar}, left={left_intact_face}, right={intact_face}"
         );
         assert!(
-            scar < intact_face + 1.55,
+            scar < intact_face + 0.85,
             "failure plane must remain a shallow recess rather than splitting the scarp"
         );
         assert!(
@@ -2511,8 +2555,8 @@ mod tests {
         let toe_recess =
             recipe.face_surface_local_z(toe) - without_undercut.face_surface_local_z(toe);
         assert!(
-            (1.2..=1.4).contains(&toe_recess),
-            "localized toe undercut should be legible without becoming a cavern"
+            (0.45..=0.80).contains(&toe_recess),
+            "localized toe undercut should be legible without becoming a cavern: {toe_recess}"
         );
         let quiet_toe = bevy::math::Vec3::new(collapse_x - 9.0, 0.5, 0.0);
         assert!(
@@ -2521,20 +2565,20 @@ mod tests {
             .abs()
                 < 0.01
         );
-        let review_flank_x = collapse_x + 0.80;
+        let review_flank_x = collapse_x + 0.35;
         let flank_lower =
             recipe.face_surface_local_z(bevy::math::Vec3::new(review_flank_x, 0.55, 0.0));
         let flank_lip =
             recipe.face_surface_local_z(bevy::math::Vec3::new(review_flank_x, 1.42, 0.0));
         assert!(
-            flank_lower - flank_lip >= 1.0,
-            "review flank must expose at least one metre of lip-to-recess setback: lower={flank_lower}, lip={flank_lip}"
+            flank_lower - flank_lip >= 0.30,
+            "review flank must expose a shallow lip-to-recess setback: lower={flank_lower}, lip={flank_lip}"
         );
-        let side_x = collapse_x + 2.15;
+        let side_x = collapse_x + 1.45;
         let side_lower = recipe.face_surface_local_z(bevy::math::Vec3::new(side_x, 0.55, 0.0));
         let side_lip = recipe.face_surface_local_z(bevy::math::Vec3::new(side_x, 1.42, 0.0));
         assert!(
-            (flank_lower - flank_lip) - (side_lower - side_lip) >= 0.45,
+            (flank_lower - flank_lip) - (side_lower - side_lip) >= 0.25,
             "undercut must end in a readable shallow side silhouette rather than a tunnel mouth"
         );
         let mut strongest_projection = f32::INFINITY;
@@ -2698,17 +2742,20 @@ mod tests {
                 .terrain
                 .height_at(bevy::math::Vec2::new(world.x, world.z))
                 .unwrap();
-            assert!(height.is_finite() && height <= 1.10);
+            assert!(height.is_finite() && height <= 1.85);
             if height > 0.08 {
                 elevated_samples += 1;
             }
             if let Some(previous) = previous_column {
-                assert!((height - previous).abs() <= 0.85);
+                assert!((height - previous).abs() <= 1.30);
             }
             previous_column = Some(height);
             maximum_apron = maximum_apron.max(height);
         }
-        assert!(elevated_samples >= 5 && maximum_apron >= 0.30);
+        assert!(
+            elevated_samples >= 5 && maximum_apron >= 0.45,
+            "aggregate fan lost coarse-grid mass: elevated={elevated_samples}, maximum={maximum_apron}"
+        );
         let fan_profile = [-4.0_f32, -2.0, 0.0, 2.0, 4.0].map(|local_x| {
             let world = recipe.local_to_world(bevy::math::Vec3::new(local_x, 0.0, talus_mid_z));
             generated
@@ -2723,23 +2770,21 @@ mod tests {
                 && fan_profile[4] > fan_profile[3],
             "aggregated debris must preserve three separated coarse-grid lobes: {fan_profile:?}"
         );
+        let inherited_ground = generated.ground.ground_at(outside).unwrap();
         assert_eq!(
-            generated.ground.ground_at(apron).unwrap().cover,
-            GroundCover::LooseStone
-        );
-        assert_ne!(
-            generated.ground.ground_at(outside).unwrap().cover,
-            GroundCover::LooseStone
+            generated.ground.ground_at(apron).unwrap(),
+            inherited_ground,
+            "aggregate fan geometry must not create a categorical material patch"
         );
         let clear_flank_world = recipe.local_to_world(bevy::math::Vec3::new(
-            collapse_x + 0.9,
+            collapse_x + 0.35,
             0.0,
             talus_toe_z - f32::from(recipe.talus_depth_cm) / 100.0 * 0.15,
         ));
         let clear_flank = bevy::math::Vec2::new(clear_flank_world.x, clear_flank_world.z);
         assert_eq!(
             recipe.debris_fan_height_local(
-                collapse_x + 0.9,
+                collapse_x + 0.35,
                 talus_toe_z - f32::from(recipe.talus_depth_cm) / 100.0 * 0.15,
             ),
             0.0,
@@ -2750,25 +2795,10 @@ mod tests {
             "the debris-free flank must remain on the ordinary lower bench"
         );
         assert_eq!(
-            generated.ground.ground_at(clear_flank).unwrap().cover,
-            GroundCover::Bare,
-            "the tangent undercut flank must remain free of aggregate debris"
+            generated.ground.ground_at(clear_flank).unwrap(),
+            inherited_ground,
+            "the debris-free flank must inherit ordinary surrounding ground"
         );
-        for local_x in [-10.0_f32, -7.1, -2.0, 0.0, 2.0] {
-            for forward in [4.0_f32, 8.0, 22.0, 25.0] {
-                let local_z = recipe.top_front_local_z(local_x) - forward;
-                let world = recipe.local_to_world(bevy::math::Vec3::new(local_x, 0.0, local_z));
-                let ground = generated
-                    .ground
-                    .ground_at(bevy::math::Vec2::new(world.x, world.z))
-                    .unwrap();
-                assert!(
-                    matches!(ground.cover, GroundCover::Bare | GroundCover::LooseStone),
-                    "beauty/profile evidence corridor admitted occluding vegetation at local ({local_x}, {local_z}): {:?}",
-                    ground.cover
-                );
-            }
-        }
         for obstacle in &generated.obstacles {
             let GeneratedObstacle::Tree { x, z } = *obstacle else {
                 continue;
@@ -2785,36 +2815,6 @@ mod tests {
                     || local.z < brink - 30.0
                     || local.z > recipe.dimensions_metres().z + 5.0,
                 "generated woody obstacle entered the beauty/profile evidence corridor: {local:?}"
-            );
-        }
-        for x in [-12.0_f32, 0.0, 12.0] {
-            // The ordinary heightfield is deliberately the lower bench at
-            // the implicit face's x/z projection. Sample behind the complete
-            // face envelope, where the heightfield actually owns the rocky
-            // upper brink, rather than misclassifying the lower talus floor.
-            let contact_z =
-                (recipe.maximum_face_local_z(x) + 8.0).min(recipe.dimensions_metres().z + 3.0);
-            let contact = recipe.local_to_world(bevy::math::Vec3::new(x, 0.0, contact_z));
-            let ground = generated
-                .ground
-                .ground_at(bevy::math::Vec2::new(contact.x, contact.z))
-                .unwrap();
-            assert_eq!(
-                ground.cover,
-                GroundCover::Bare,
-                "rocky contact x={x} world=({:.3},{:.3}) local_z={:.3} toe={:.3} must not inherit talus",
-                contact.x,
-                contact.z,
-                contact_z,
-                recipe.talus_toe_local_z(),
-            );
-            assert!(
-                matches!(
-                    ground.substrate,
-                    GroundSubstrate::Stone | GroundSubstrate::Gravel
-                ),
-                "rocky collar must use stone or gravel, got {:?}",
-                ground.substrate,
             );
         }
     }
@@ -2870,21 +2870,18 @@ mod tests {
             .terrain
             .height_at(bevy::math::Vec2::new(outer.x, outer.z))
             .unwrap();
+        let returned_contact_upper = recipe.center_metres().y
+            + recipe.local_crest_height(-recipe.implicit_collision_half_width());
         assert!(
-            recipe.local_crest_height(-implicit_termination) < 0.5
-                && termination_height <= visible_toe
-                && (termination_height - recipe.local_crest_height(-implicit_termination)).abs()
-                    <= 0.65,
-            "implicit return and lower heightfield bench must converge before the finite side: height={termination_height}, crest={}, x={implicit_termination}, z={termination_z}",
-            recipe.local_crest_height(-implicit_termination),
+            termination_height.is_finite() && termination_height <= returned_contact_upper + 0.5,
+            "heightfield-owned returned shoulder exceeded its central contact elevation: height={termination_height}, contact={returned_contact_upper}, x={implicit_termination}, z={termination_z}",
         );
         assert!(
-            (termination_height - outer_height).abs() <= 1.5,
-            "lower heightfield bench must remain continuous beyond the implicit return: termination={termination_height}, outer={outer_height}"
+            (termination_height - outer_height).abs() <= spacing,
+            "heightfield-owned returned shoulder must remain continuous toward inherited terrain: termination={termination_height}, outer={outer_height}"
         );
 
         for sign in [-1.0_f32, 1.0] {
-            let mut previous_height = f32::INFINITY;
             for distance in [8.0_f32, 10.0, 12.0, 14.0] {
                 let local_x = sign * distance;
                 let crest = recipe.local_crest_height(local_x);
@@ -2896,37 +2893,50 @@ mod tests {
                     .height_at(bevy::math::Vec2::new(world.x, world.z))
                     .unwrap();
                 assert!(
-                    height <= visible_toe,
-                    "heightfield projected in front of the single-owner implicit return: x={local_x}, height={height}, crest={crest}"
+                    height <= returned_contact_upper + 0.5,
+                    "heightfield-owned returned shoulder exceeded its shared contact elevation: x={local_x}, height={height}, crest={crest}, contact={returned_contact_upper}"
                 );
-                assert!(
-                    height <= previous_height + 0.35,
-                    "returned shoulder rose outward instead of tapering: x={local_x}, height={height}, previous={previous_height}"
-                );
-                previous_height = height;
-                if distance <= implicit_termination {
-                    let middle_y = crest * 0.5;
-                    let face_z =
-                        recipe.face_surface_local_z(bevy::math::Vec3::new(local_x, middle_y, 0.0));
-                    let face_world =
-                        recipe.local_to_world(bevy::math::Vec3::new(local_x, 0.0, face_z));
-                    let cover_height = generated
-                        .terrain
-                        .height_at(bevy::math::Vec2::new(face_world.x, face_world.z))
-                        .unwrap();
+            }
+        }
+
+        // Returned shoulders are ordinary heightfield terrain. Every coarse-grid edge in
+        // their visible rise must therefore remain a slope rather than reproducing the
+        // central buried near-step as a grass-topped wall or lateral slab.
+        for z in 0..depth {
+            for x in 0..width {
+                let point = vertex(x, z);
+                if !(8.0..=21.0).contains(&point.x.abs())
+                    || !(ownership_front..=recipe.dimensions_metres().z + 12.0).contains(&point.z)
+                {
+                    continue;
+                }
+                for (next_x, next_z) in [(x + 1, z), (x, z + 1)] {
+                    if next_x >= width || next_z >= depth {
+                        continue;
+                    }
+                    let next = vertex(next_x, next_z);
+                    if !(8.0..=21.0).contains(&next.x.abs())
+                        || !(ownership_front..=recipe.dimensions_metres().z + 12.0)
+                            .contains(&next.z)
+                    {
+                        continue;
+                    }
+                    let rise = (next.y - point.y).abs();
                     assert!(
-                        cover_height <= visible_toe,
-                        "heightfield overlapped the visible implicit return at x={local_x}: cover={cover_height}, face y={middle_y}"
+                        rise <= spacing,
+                        "heightfield-owned returned shoulder formed a steep wall: {point:?} -> {next:?}, rise={rise}"
+                    );
+                }
+                if point.x.abs() >= 20.0 {
+                    assert!(
+                        point.y.abs() <= 0.35,
+                        "returned shoulder failed to converge to inherited terrain: {point:?}"
                     );
                 }
             }
-            assert!(
-                previous_height <= 2.0,
-                "camera-side outer shoulder must remain low and traversable"
-            );
         }
 
-        for local_x in [-8.0_f32, -4.0, 0.0, 4.0, 8.0] {
+        for local_x in [-4.0_f32, 0.0, 4.0] {
             let crest = recipe.local_crest_height(local_x);
             let brink = recipe.crest_brink_local_z(local_x);
             let neighbour_envelope = [-spacing, 0.0, spacing]
@@ -2967,7 +2977,8 @@ mod tests {
                 for triangle in [[0, 1, 2], [1, 3, 2]] {
                     let points = triangle.map(|index| corners[index]);
                     if !points.iter().all(|point| {
-                        point.x.abs() <= half_patch_width && point.z >= ownership_front
+                        point.x.abs() <= recipe.implicit_collision_half_width()
+                            && point.z >= ownership_front
                     }) {
                         continue;
                     }
@@ -2985,8 +2996,11 @@ mod tests {
                     let behind_face = points
                         .iter()
                         .all(|point| point.z > recipe.maximum_face_local_z(point.x));
+                    let safely_in_front_of_face = points
+                        .iter()
+                        .all(|point| point.z < recipe.minimum_face_local_z(point.x) - 0.75);
                     assert!(
-                        below_toe || behind_face,
+                        below_toe || behind_face || safely_in_front_of_face,
                         "heightfield triangle crossed the visible scarp: {points:?}"
                     );
                 }

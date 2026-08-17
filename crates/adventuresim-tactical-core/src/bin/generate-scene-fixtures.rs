@@ -211,7 +211,7 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
                 face_height_cm: 900,
                 rock_depth_cm: 1_400,
                 curvature_cm: 420,
-                undercut_depth_cm: 130,
+                undercut_depth_cm: 80,
                 collapse_offset_cm: 180,
                 collapse_radius_cm: 300,
                 talus_depth_cm: 700,
