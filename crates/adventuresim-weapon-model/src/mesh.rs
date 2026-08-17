@@ -1,12 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 
 use crate::{
     Anchor, Attachment, AxeSpec, BillSpec, BladeProfile, BladeSection, BladeSpec, Bounds,
     ComponentDesign, ComponentRole, ComponentShape, CurvedBeakSpec, FigureEightSpec,
-    GeneratedWeapon, GlaiveSpec, GothicMaceSpec, GuardSpec, MaceSpec, MeshPart, PartisanSpec,
-    SectionBladeSpec, SocketSpec, TubePathSpec, ValidationError, WeaponDesign, derive_properties,
-    design_hash, validate,
+    GeneratedWeapon, GeneratedWeaponHolder, GlaiveSpec, GothicMaceSpec, GuardSpec, MaceSpec,
+    MaterialClass, MeshPart, PartisanSpec, SectionBladeSpec, SocketSpec, TubePathSpec,
+    ValidationError, WeaponDesign, WeaponHolderDesign, WeaponHolderKind, derive_holder_properties,
+    derive_properties, design_hash, holder_design_hash, validate, validate_holder,
 };
 
 #[derive(Debug, Error)]
@@ -15,6 +16,8 @@ pub enum GenerateError {
     Invalid(Vec<ValidationError>),
     #[error("attachment graph could not resolve component `{0}`")]
     UnresolvedAttachment(String),
+    #[error("weapon cannot provide required {0} holder geometry")]
+    MissingHolderGeometry(&'static str),
 }
 
 #[derive(Default)]
@@ -1170,6 +1173,209 @@ fn bounds(points: &[[f32; 3]]) -> Bounds {
     result
 }
 
+fn elliptical_loft(stations: &[([f32; 3], f32, f32)], segments: usize) -> RawMesh {
+    let mut mesh = RawMesh::default();
+    for (center, radius_x, radius_z) in stations {
+        for segment in 0..segments {
+            let angle = segment as f32 / segments as f32 * std::f32::consts::TAU;
+            mesh.positions.push([
+                center[0] + angle.cos() * radius_x,
+                center[1],
+                center[2] + angle.sin() * radius_z,
+            ]);
+        }
+    }
+    for station in 0..stations.len() - 1 {
+        for segment in 0..segments {
+            let next = (segment + 1) % segments;
+            let a = (station * segments + segment) as u32;
+            let b = (station * segments + next) as u32;
+            let c = ((station + 1) * segments + next) as u32;
+            let d = ((station + 1) * segments + segment) as u32;
+            mesh.triangle(a, b, c);
+            mesh.triangle(a, c, d);
+        }
+    }
+    let bottom = mesh.positions.len() as u32;
+    mesh.positions.push(stations[0].0);
+    let top = mesh.positions.len() as u32;
+    mesh.positions.push(stations[stations.len() - 1].0);
+    for segment in 0..segments {
+        let next = (segment + 1) % segments;
+        mesh.triangle(bottom, next as u32, segment as u32);
+        let a = ((stations.len() - 1) * segments + segment) as u32;
+        let b = ((stations.len() - 1) * segments + next) as u32;
+        mesh.triangle(top, a, b);
+    }
+    mesh.orient_positive();
+    mesh
+}
+
+fn holder_part(
+    component_id: &str,
+    material: MaterialClass,
+    raw: RawMesh,
+    crease_cosine: f32,
+) -> MeshPart {
+    let part_bounds = bounds(&raw.positions);
+    let (positions, indices, normals) = shaded(&raw, crease_cosine, None);
+    MeshPart {
+        component_id: component_id.into(),
+        material,
+        positions,
+        normals,
+        indices,
+        bounds: part_bounds,
+    }
+}
+
+fn sheath_parts(
+    blade: &MeshPart,
+    design: &WeaponHolderDesign,
+) -> Result<Vec<MeshPart>, GenerateError> {
+    let mut layers = BTreeMap::<i32, Vec<[f32; 3]>>::new();
+    for position in &blade.positions {
+        layers
+            .entry((position[1] * 1_000_000.0).round() as i32)
+            .or_default()
+            .push(*position);
+    }
+    if layers.len() < 3 {
+        return Err(GenerateError::MissingHolderGeometry("blade"));
+    }
+    let mut stations = layers
+        .into_values()
+        .map(|points| {
+            let layer = bounds(&points);
+            let center = [
+                (layer.min[0] + layer.max[0]) * 0.5,
+                (layer.min[1] + layer.max[1]) * 0.5,
+                (layer.min[2] + layer.max[2]) * 0.5,
+            ];
+            (
+                center,
+                ((layer.max[0] - layer.min[0]) * 0.5 + design.clearance.meters()).max(0.008),
+                ((layer.max[2] - layer.min[2]) * 0.5 + design.clearance.meters() * 0.8).max(0.006),
+            )
+        })
+        .collect::<Vec<_>>();
+    stations.sort_by(|left, right| left.0[1].total_cmp(&right.0[1]));
+    let mut throat = stations[0];
+    throat.0[1] -= 0.004;
+    stations.insert(0, throat);
+    let mut tip = *stations.last().expect("blade layers");
+    tip.0[1] += 0.008;
+    tip.1 = (tip.1 * 0.82).max(0.007);
+    tip.2 = (tip.2 * 0.82).max(0.005);
+    stations.push(tip);
+
+    let body = holder_part(
+        "scabbard-body",
+        design.body_material,
+        elliptical_loft(&stations, 16),
+        0.82,
+    );
+    let fitting = |name: &str, station: ([f32; 3], f32, f32), half: f32| {
+        let lower = (
+            [station.0[0], station.0[1] - half, station.0[2]],
+            station.1 + 0.002,
+            station.2 + 0.002,
+        );
+        let upper = (
+            [station.0[0], station.0[1] + half, station.0[2]],
+            station.1 + 0.002,
+            station.2 + 0.002,
+        );
+        holder_part(
+            name,
+            design.fitting_material,
+            elliptical_loft(&[lower, upper], 16),
+            0.82,
+        )
+    };
+    let throat_fitting = fitting(
+        "scabbard-throat",
+        stations[0],
+        design.throat_length.meters() * 0.5,
+    );
+    let chape_index = stations.len().saturating_sub(2);
+    let chape = fitting(
+        "scabbard-chape",
+        stations[chape_index],
+        design.chape_length.meters() * 0.5,
+    );
+    let hanger_half_width = design.hanger_width.meters() * 0.5;
+    let hanger_half_height = design.hanger_height.meters() * 0.5;
+    let hanger_center = [
+        stations[0].0[0] - stations[0].1 - hanger_half_width,
+        stations[0].0[1] + hanger_half_height * 0.35,
+        stations[0].0[2],
+    ];
+    let hanger_centers = (0..28)
+        .map(|index| {
+            let angle = index as f32 / 28.0 * std::f32::consts::TAU;
+            [
+                hanger_center[0] + angle.cos() * hanger_half_width,
+                hanger_center[1] + angle.sin() * hanger_half_height,
+                hanger_center[2],
+            ]
+        })
+        .collect::<Vec<_>>();
+    let suspension = holder_part(
+        "scabbard-suspension",
+        design.body_material,
+        tube_centers(&hanger_centers, design.loop_bar_radius.meters(), 10, true),
+        0.65,
+    );
+    Ok(vec![body, throat_fitting, chape, suspension])
+}
+
+fn haft_loop_parts(grip: &MeshPart, design: &WeaponHolderDesign) -> Vec<MeshPart> {
+    let center_x = (grip.bounds.min[0] + grip.bounds.max[0]) * 0.5;
+    let center_z = (grip.bounds.min[2] + grip.bounds.max[2]) * 0.5;
+    let grip_length = grip.bounds.max[1] - grip.bounds.min[1];
+    let y = grip.bounds.min[1] + grip_length * design.loop_position.unit();
+    let radius_x = (grip.bounds.max[0] - grip.bounds.min[0]) * 0.5 + design.clearance.meters();
+    let radius_z = (grip.bounds.max[2] - grip.bounds.min[2]) * 0.5 + design.clearance.meters();
+    let ring_centers = (0..24)
+        .map(|index| {
+            let angle = index as f32 / 24.0 * std::f32::consts::TAU;
+            [
+                center_x + angle.cos() * radius_x,
+                y,
+                center_z + angle.sin() * radius_z,
+            ]
+        })
+        .collect::<Vec<_>>();
+    let hanger_half_width = design.hanger_width.meters() * 0.5;
+    let hanger_half_height = design.hanger_height.meters() * 0.5;
+    let hanger_center = [center_x - radius_x - hanger_half_width, y, center_z];
+    let hanger_centers = (0..28)
+        .map(|index| {
+            let angle = index as f32 / 28.0 * std::f32::consts::TAU;
+            [
+                hanger_center[0] + angle.cos() * hanger_half_width,
+                hanger_center[1] + angle.sin() * hanger_half_height,
+                hanger_center[2],
+            ]
+        })
+        .collect::<Vec<_>>();
+    vec![
+        holder_part(
+            "haft-frog",
+            design.body_material,
+            tube_centers(&ring_centers, design.loop_bar_radius.meters(), 10, true),
+            0.65,
+        ),
+        holder_part(
+            "belt-loop",
+            design.body_material,
+            tube_centers(&hanger_centers, design.loop_bar_radius.meters(), 10, true),
+            0.65,
+        ),
+    ]
+}
+
 fn resolve_origin<'a>(
     component: &'a ComponentDesign,
     by_id: &HashMap<&'a str, &'a ComponentDesign>,
@@ -1386,5 +1592,71 @@ pub fn generate(design: &WeaponDesign) -> Result<GeneratedWeapon, GenerateError>
         bounds: overall,
         anchors,
         derived,
+    })
+}
+
+/// Generate the body-mounted fixture recommended for this weapon chassis.
+/// Holder coordinates intentionally share the weapon's grip frame so a
+/// contained weapon and its parent holder align without durable transform
+/// state or client-side geometric inference.
+pub fn generate_holder(
+    design: &WeaponHolderDesign,
+) -> Result<GeneratedWeaponHolder, GenerateError> {
+    validate_holder(design).map_err(GenerateError::Invalid)?;
+    let weapon = generate(&design.fitted_weapon)?;
+    let grip = weapon
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == "weapon.grip")
+        .ok_or(GenerateError::MissingHolderGeometry("grip"))?
+        .position;
+    let parts = match design.kind {
+        WeaponHolderKind::BladeSheath => {
+            let blade_id = design
+                .fitted_weapon
+                .components
+                .iter()
+                .find(|component| {
+                    matches!(
+                        &component.shape,
+                        ComponentShape::Blade(_) | ComponentShape::SectionBlade(_)
+                    )
+                })
+                .map(|component| component.id.as_str())
+                .ok_or(GenerateError::MissingHolderGeometry("blade"))?;
+            let blade = weapon
+                .parts
+                .iter()
+                .find(|part| part.component_id == blade_id)
+                .ok_or(GenerateError::MissingHolderGeometry("blade"))?;
+            sheath_parts(blade, design)?
+        }
+        WeaponHolderKind::HaftLoop => {
+            let grip_id = design
+                .fitted_weapon
+                .components
+                .iter()
+                .find(|component| component.role == ComponentRole::Grip)
+                .map(|component| component.id.as_str())
+                .ok_or(GenerateError::MissingHolderGeometry("grip"))?;
+            let grip_part = weapon
+                .parts
+                .iter()
+                .find(|part| part.component_id == grip_id)
+                .ok_or(GenerateError::MissingHolderGeometry("grip"))?;
+            haft_loop_parts(grip_part, design)
+        }
+    };
+    let all_positions = parts
+        .iter()
+        .flat_map(|part| part.positions.iter().copied())
+        .collect::<Vec<_>>();
+    Ok(GeneratedWeaponHolder {
+        design_hash: holder_design_hash(design),
+        kind: design.kind,
+        grip,
+        bounds: bounds(&all_positions),
+        parts,
+        derived: derive_holder_properties(design).map_err(GenerateError::Invalid)?,
     })
 }

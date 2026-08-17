@@ -294,7 +294,7 @@ client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_defau
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
 # .env.tactical so a bare `just tactical` / `just client` (no arguments) in
 # other terminals targets it automatically.
-tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="0" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client build-tactical
+tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="1" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client build-tactical
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }} --scene-input {{ quote(scene_input) }}
 
 # Build and supervise a complete disposable native tactical test session.

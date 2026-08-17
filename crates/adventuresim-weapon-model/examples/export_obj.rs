@@ -2,24 +2,37 @@
 
 use std::{env, fmt::Write as _, fs, path::PathBuf};
 
-use adventuresim_weapon_model::{MaterialClass, default_design, generate, preset_design};
+use adventuresim_weapon_model::{
+    MaterialClass, default_design, default_holder_design, generate, generate_holder, preset_design,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     let id = args
         .next()
-        .ok_or("usage: export_obj <preset-or-catalog-id> <output.obj>")?;
+        .ok_or("usage: export_obj <preset-or-catalog-id> <output.obj> [--holder]")?;
     let output = PathBuf::from(
         args.next()
-            .ok_or("usage: export_obj <preset-or-catalog-id> <output.obj>")?,
+            .ok_or("usage: export_obj <preset-or-catalog-id> <output.obj> [--holder]")?,
     );
+    let holder = match args.next().as_deref() {
+        None => false,
+        Some("--holder") => true,
+        _ => return Err("usage: export_obj <preset-or-catalog-id> <output.obj> [--holder]".into()),
+    };
     if args.next().is_some() {
-        return Err("usage: export_obj <preset-or-catalog-id> <output.obj>".into());
+        return Err("usage: export_obj <preset-or-catalog-id> <output.obj> [--holder]".into());
     }
     let design = preset_design(&id)
         .or_else(|| default_design(&id))
         .ok_or_else(|| format!("unknown weapon preset or catalog ID `{id}`"))?;
-    let weapon = generate(&design)?;
+    let parts = if holder {
+        let holder = default_holder_design(&design)
+            .ok_or("this weapon is hand-only and has no body-mounted holder")?;
+        generate_holder(&holder)?.parts
+    } else {
+        generate(&design)?.parts
+    };
     let material_path = output.with_extension("mtl");
     let material_name = material_path
         .file_name()
@@ -28,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut obj = format!("mtllib {material_name}\no {id}\n");
     let mut vertex_base = 1_u32;
-    for part in &weapon.parts {
+    for part in &parts {
         writeln!(obj, "g {}", part.component_id)?;
         writeln!(obj, "usemtl {}", material_label(part.material))?;
         for position in &part.positions {
@@ -47,11 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     fs::write(&output, obj)?;
     fs::write(material_path, material_library())?;
-    println!(
-        "exported {} parts to {}",
-        weapon.parts.len(),
-        output.display()
-    );
+    println!("exported {} parts to {}", parts.len(), output.display());
     Ok(())
 }
 

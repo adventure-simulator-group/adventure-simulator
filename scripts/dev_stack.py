@@ -2016,7 +2016,8 @@ def tactical_play(
     data_dir = ensure_secure_directory(profile_dir / "spacetimedb-data", state_root)
     session_id = secrets.token_hex(16)
     mission_id = f"mission:{mode.value}-{session_id[:12]}"
-    character_id = 0
+    # Physical custody deliberately reserves zero as an invalid identity.
+    character_id = 1
     enemy_count = 1
     config = tactical_session_config(
         values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
@@ -2383,7 +2384,7 @@ def create_parser() -> argparse.ArgumentParser:
     runner.add_argument("--mission-id", default="mission:test-mission")
     runner.add_argument("--scene-key", default="woodland")
     runner.add_argument("--scene-input", default="assets/tactical-scenes/dense-woodland.json")
-    runner.add_argument("--character-id", type=int, default=0)
+    runner.add_argument("--character-id", type=int, default=1)
     runner.add_argument("--enemy-count", type=int, default=3)
     runner.add_argument("name")
     runner.add_argument("base_port", type=int)

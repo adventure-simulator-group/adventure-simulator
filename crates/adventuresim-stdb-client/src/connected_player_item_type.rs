@@ -21,6 +21,7 @@ pub struct ConnectedPlayerItem {
     pub protected_body_parts: Vec<EquipmentBodyPart>,
     pub condition: Option<ItemCondition>,
     pub weapon_appearance: Option<ConnectedWeaponAppearance>,
+    pub weapon_holder_appearance: Option<ConnectedWeaponAppearance>,
 }
 
 impl __sdk::InModule for ConnectedPlayerItem {

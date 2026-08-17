@@ -76,6 +76,15 @@ tactical client expands that recipe into cached meshes keyed by generator
 version and design hash; corrupt or unsupported recipes fall back to the
 ordinary equipment box without affecting authoritative combat state.
 
+Each generated scabbard or haft loop is a first-class parametric object with a
+versioned `WeaponHolderDesign` template and a private `WeaponHolderInstance`
+keyed by its stable physical object. Its recipe captures the fitted weapon
+shape plus independent clearance, furniture, material, and suspension
+parameters. Drawing or later altering the weapon therefore does not silently
+change the holder; refitting is an explicit smithing/leatherworking operation.
+Deleting the holder cascades its instance row, while deleting the original
+weapon leaves the independently reproducible holder intact.
+
 Equipment authors one or more stable-ID placements. Root placements claim
 physical body locations in an explicit occupancy channel and order; attached
 placements require compatible points on already equipped parents. A placement
@@ -86,18 +95,19 @@ armor channel. A multi-location equip or reparent either claims every
 destination or changes nothing; conflicts are reported before mutation.
 Sided pieces provide explicit left and right placement alternatives.
 
-The normalized equipment graph supports body → belt → sheath → weapon,
-body → belt → bag → contents, and body → forearm/boot sheath → weapon.
+The normalized equipment graph supports body → belt → fitted sheath or haft loop
+→ weapon, body → belt → bag → contents, and body → forearm/boot sheath → weapon.
 The catalog sword sheath uses two belt mount requirements, exercising
-multi-point attachment against the belt's ordered mount points.
-Generated non-newborn characters whose loadout contains a sheathable weapon
-receive a worn belt and attached sheath. An initially held weapon stays held;
-an unequipped sidearm begins inside the sheath. Hand-only loadouts receive no
-irrelevant carry kit. This materialization is deterministic and versioned with
-the starting-character generator.
-Attachment points have an authored channel, traversal order, capacity, and
-optional accepted child tags. Removing or moving an item with children is
-rejected in player-facing reducers, so no operation can orphan descendants.
+multi-point attachment against the belt's ordered mount points. Generated
+non-newborn characters whose loadout contains a sheathable weapon receive a worn
+belt and one fitted holder per weapon. Blades use generated scabbards; compact
+axes, clubs, maces, and hammers use generated haft loops. An initially held
+weapon stays held; an unequipped sidearm begins inside its holder. Polearm
+loadouts receive no irrelevant carry kit. This materialization is deterministic
+and versioned with the starting-character generator. Attachment points have an
+authored channel, traversal order, capacity, and optional accepted child tags.
+Removing or moving an item with children is rejected in player-facing reducers,
+so no operation can orphan descendants.
 
 The equipment topology is finer than the stable seven-part combat and health
 model. Each placement explicitly lists the stable body parts it protects;
