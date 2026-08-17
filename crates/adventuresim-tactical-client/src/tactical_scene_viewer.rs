@@ -1124,6 +1124,19 @@ mod capture_lighting_tests {
     }
 
     #[test]
+    fn root_detail_suppresses_only_occluding_floor_vegetation() {
+        let views = selected_capture_views("environment-review", &[]).unwrap();
+        let root = views
+            .iter()
+            .find(|view| view.slug == "tree-root-detail")
+            .unwrap();
+        assert!(root.suppress_grass);
+        assert!(root.suppress_understory);
+        assert!(!root.suppress_leaves);
+        assert!(!root.hide_obstacles);
+    }
+
+    #[test]
     fn environment_profile_has_deterministic_grazing_debris_target() {
         let views = selected_capture_views("environment-review", &[]).unwrap();
         assert_eq!(views.len(), 12);
@@ -2629,7 +2642,11 @@ fn capture_views(
         let specimen_representation = view.specimen_leaf;
         let specimen_view = specimen_representation.is_some();
         let specimen_pipeline_warmup = view.warmup;
-        let (suppress_leaves, suppress_grass) = (view.suppress_leaves, view.suppress_grass);
+        let (suppress_leaves, suppress_grass, suppress_understory) = (
+            view.suppress_leaves,
+            view.suppress_grass,
+            view.suppress_understory,
+        );
         let production_leaves = scene_visibility.p4().iter().collect::<Vec<_>>();
         for entity in production_leaves {
             commands.entity(entity).insert(if suppress_leaves {
@@ -2712,10 +2729,14 @@ fn capture_views(
             let hide_for_view = if view.understory_species.is_some() {
                 !isolated_understory_visible
             } else {
-                (layer == GroundScatterLayer::Grass && suppress_grass) || view.hide_obstacles
+                (layer == GroundScatterLayer::Grass && suppress_grass)
+                    || (layer == GroundScatterLayer::Understory && suppress_understory)
+                    || view.hide_obstacles
             };
-            if layer == GroundScatterLayer::Grass
-                || view.hide_obstacles
+            if matches!(
+                layer,
+                GroundScatterLayer::Grass | GroundScatterLayer::Understory
+            ) || view.hide_obstacles
                 || view.understory_species.is_some()
             {
                 commands.entity(entity).insert(if hide_for_view {
