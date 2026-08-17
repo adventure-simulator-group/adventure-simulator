@@ -2571,7 +2571,7 @@ def create_parser() -> argparse.ArgumentParser:
     reseeder = sub.add_parser("reseed-tactical-mission")
     reseeder.add_argument("--mission-id-prefix", default="mission:test-mission")
     reseeder.add_argument("--scene-key", default="hills")
-    reseeder.add_argument("--character-id", type=int, default=0)
+    reseeder.add_argument("--character-id", type=int, default=1)
     reseeder.add_argument("--enemy-count", type=int, default=3)
     reseeder.add_argument(
         "--if-live", action="store_true",

@@ -44,6 +44,7 @@ pub struct SceneVistaBundle {
 }
 
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
+#[reflect(Default)]
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,

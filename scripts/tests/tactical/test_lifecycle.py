@@ -28,6 +28,9 @@ LIFECYCLE_MISSION_ID = "mission:lifecycle-test"
 LIFECYCLE_SERVER_BRP_PORT = 15704
 LIFECYCLE_CLIENT_BRP_PORT = 15705
 LIFECYCLE_ENEMY_COUNT = "2"
+# Custody of any carried item (including the generated weapon-carry loadout)
+# requires a nonzero character identity - see `CustodyCharacterId`.
+LIFECYCLE_CHARACTER_ID = "1"
 
 # A real client disconnect isn't detected instantly - the transport needs to
 # notice the connection is gone - so this gets a longer timeout than the
@@ -73,7 +76,7 @@ def test_character_count_reflects_bot_and_client_connect_disconnect_lifecycle(
             LIFECYCLE_BASE_PORT,
             LIFECYCLE_MISSION_ID,
             "hills",
-            "0",
+            LIFECYCLE_CHARACTER_ID,
             LIFECYCLE_ENEMY_COUNT,
         ],
         log_dir / "tactical-isolated.log",

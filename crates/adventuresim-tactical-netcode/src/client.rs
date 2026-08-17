@@ -162,7 +162,7 @@ impl SprintInputState {
 /// crosses the ordinary client/server transport and authoritative controller;
 /// only the physical keyboard/gamepad sampling is replaced.
 #[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(Resource)]
+#[reflect(Resource, Default)]
 pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
 
 fn update_direct_control_input(

@@ -40,6 +40,18 @@ class BrpClient:
         self.timeout = timeout
         self._next_id = 1
 
+    # Transport-level hiccups (connection refused/reset, a response that's
+    # slow enough to cross `self.timeout`) get a few quick retries here -
+    # the server/client can genuinely be busy with expensive startup work
+    # (procedural texture generation, world-dump loading) for longer than
+    # any single request should wait, but that's not the same as actually
+    # being down. JSON-RPC application errors (`"error" in payload`, e.g.
+    # "Entity not found") are deliberately NOT retried: those are meaningful
+    # answers, not transport flakiness, and callers (e.g. `_toughen_bot` in
+    # test_combat_defense.py) rely on getting one promptly.
+    _TRANSPORT_RETRY_ATTEMPTS = 3
+    _TRANSPORT_RETRY_DELAY_SECS = 1.0
+
     def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
         request_id = self._next_id
         self._next_id += 1
@@ -49,11 +61,24 @@ class BrpClient:
         request = urllib.request.Request(
             self.url, data=body, headers={"content-type": "application/json"}
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                payload = json.loads(response.read())
-        except urllib.error.URLError as error:
-            raise BrpError(f"{method} against {self.url} failed: {error}") from error
+        payload = None
+        last_error: Exception | None = None
+        for attempt in range(self._TRANSPORT_RETRY_ATTEMPTS):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    payload = json.loads(response.read())
+                break
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                # A connect-time timeout/refusal comes back wrapped in
+                # URLError, but a slow *response* (e.g. the server is still
+                # busy with expensive startup work when this fires) raises a
+                # bare TimeoutError from the socket read instead - both are
+                # handled the same way here.
+                last_error = error
+                if attempt + 1 < self._TRANSPORT_RETRY_ATTEMPTS:
+                    time.sleep(self._TRANSPORT_RETRY_DELAY_SECS)
+        if payload is None:
+            raise BrpError(f"{method} against {self.url} failed: {last_error}") from last_error
         if "error" in payload:
             raise BrpError(f"{method} against {self.url} returned error: {payload['error']}")
         return payload.get("result")
@@ -116,7 +141,14 @@ def wait_for_entity_with_component(
 ) -> int:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        entity = find_entity_with_component(client, component_type)
+        # Swallows `BrpError` (not just an empty query result) so a
+        # transient timeout/connection hiccup while the client is still
+        # busy starting up gets retried like everything else here, instead
+        # of aborting the whole wait on the first attempt.
+        try:
+            entity = find_entity_with_component(client, component_type)
+        except BrpError:
+            entity = None
         if entity is not None:
             return entity
         time.sleep(0.25)

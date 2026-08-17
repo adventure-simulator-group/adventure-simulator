@@ -157,7 +157,7 @@ def _move_bot_within_melee_range(server_brp: tactical_brp.BrpClient, bot_entity:
     server_brp.call("world.insert_components", {"entity": bot_entity, "components": {tactical_brp.Transform.type_path: transform.to_brp()}})
 
 
-def _toughen_bot(server_brp: tactical_brp.BrpClient, bot_entity: int) -> None:
+def _toughen_bot(server_brp: tactical_brp.BrpClient, bot_entity: int, bot_body_weight_kg: float) -> None:
     """Raises every limb's health to `BOT_LIMB_HEALTH` and resets
     `TacticalCombatState` to a fresh, non-incapacitated baseline.
 
@@ -179,29 +179,47 @@ def _toughen_bot(server_brp: tactical_brp.BrpClient, bot_entity: int) -> None:
     live: raising only limb health still stopped every attempt after the
     first landed hit. Called before every attempt (not just once) so it
     also undoes whatever landed *this* attempt for the next retry.
+
+    Takes the bot's `body_weight_kg` as a caller-supplied constant (fetched
+    once, before combat starts) rather than reading `Limbs` back first: the
+    despawn that follows a landed undefended hit has only a ~0.3s grace
+    period (see `_run_scripted_attack`), and a `get_components` round trip
+    ahead of the writes below left a real window for that despawn to land
+    first - confirmed live as "Entity ... not found" from *this* function's
+    own read, not just the next attempt's. `Limbs`/`TacticalCombatState` are
+    now set together in one `world.insert_components` call for the same
+    reason: two separate round trips doubled that window.
     """
-    limbs = server_brp.get_components(bot_entity, [tactical_brp.Limbs])[tactical_brp.Limbs]
-    for field in ("left_arm", "right_arm", "left_leg", "right_leg", "chest", "stomach", "head"):
-        setattr(limbs, field, BOT_LIMB_HEALTH)
-    server_brp.call("world.insert_components", {"entity": bot_entity, "components": {tactical_brp.Limbs.type_path: limbs.to_brp()}})
+    limbs = tactical_brp.Limbs(
+        body_weight_kg=bot_body_weight_kg,
+        left_arm=BOT_LIMB_HEALTH,
+        right_arm=BOT_LIMB_HEALTH,
+        left_leg=BOT_LIMB_HEALTH,
+        right_leg=BOT_LIMB_HEALTH,
+        chest=BOT_LIMB_HEALTH,
+        stomach=BOT_LIMB_HEALTH,
+        head=BOT_LIMB_HEALTH,
+    )
+    combat_state = tactical_brp.TacticalCombatState(
+        starting_incapacitation=0.0,
+        starting_blood_fraction=1.0,
+        starting_fear=0.0,
+        starting_fatigue=0.0,
+        starting_hunger=0.0,
+        starting_thirst=0.0,
+        starting_thermal=0.0,
+        blood_loss_fraction=0.0,
+        exhaustion=0.0,
+        imbalance=0.0,
+        incapacitation=0.0,
+    )
     server_brp.call(
         "world.insert_components",
         {
             "entity": bot_entity,
             "components": {
-                tactical_brp.TacticalCombatState.type_path: tactical_brp.TacticalCombatState(
-                    starting_incapacitation=0.0,
-                    starting_blood_fraction=1.0,
-                    starting_fear=0.0,
-                    starting_fatigue=0.0,
-                    starting_hunger=0.0,
-                    starting_thirst=0.0,
-                    starting_thermal=0.0,
-                    blood_loss_fraction=0.0,
-                    exhaustion=0.0,
-                    imbalance=0.0,
-                    incapacitation=0.0,
-                ).to_brp()
+                tactical_brp.Limbs.type_path: limbs.to_brp(),
+                tactical_brp.TacticalCombatState.type_path: combat_state.to_brp(),
             },
         },
     )
@@ -306,6 +324,11 @@ def _run_scripted_attack(
         wait_for(server, SERVER_TIMEOUT, ready=lambda: "Server opened on" in server.log_text(), what="the tactical server to open")
         server_brp = tactical_brp.BrpClient(server_brp_port)
         bot_entity = _find_bot(server_brp)
+        # Fetched once, before combat starts (no despawn race here yet) -
+        # `body_weight_kg` is a static physical property, so every later
+        # `_toughen_bot` call in the retry loop below reuses this instead of
+        # reading it back under time pressure. See `_toughen_bot`.
+        bot_body_weight_kg = server_brp.get_components(bot_entity, [tactical_brp.Limbs])[tactical_brp.Limbs].body_weight_kg
 
         server_brp.call("world.insert_components", {"entity": bot_entity, "components": {tactical_brp.DefenseChances.type_path: chances.to_brp()}})
         _move_bot_within_melee_range(server_brp, bot_entity)
@@ -316,7 +339,7 @@ def _run_scripted_attack(
         # through. Dodge-plus-armor preventing damage (and dodge alone
         # merely mitigating) is the intended combat design, and it's what
         # makes the two scenarios distinguishable by health at all.
-        _toughen_bot(server_brp, bot_entity)
+        _toughen_bot(server_brp, bot_entity, bot_body_weight_kg)
         _disarm_bot(server_brp, bot_entity)
         bot_before = server_brp.get_components(bot_entity, [tactical_brp.Limbs])[tactical_brp.Limbs]
 
@@ -370,17 +393,31 @@ def _run_scripted_attack(
                 if not resolved:
                     continue
 
-                bot_after = server_brp.get_components(bot_entity, [tactical_brp.Limbs])[tactical_brp.Limbs]
-                # Restore the bot to full health/combat-readiness right
-                # away, not at the top of the next loop iteration ~0.6s from
-                # now: a landed undefended hit crosses this fixture's
-                # incapacitation threshold from blood loss alone (see
-                # `_toughen_bot`'s docstring), and the resulting despawn's
-                # grace period is only 0.3s - waiting for the next iteration
-                # loses the race and leaves nothing left to retry against
-                # (confirmed live: subsequent BRP calls against the bot
-                # started failing with "Entity ... not found").
-                _toughen_bot(server_brp, bot_entity)
+                # A landed undefended hit can incapacitate the bot from
+                # blood loss alone (see `_toughen_bot`'s docstring) even
+                # toughened to `BOT_LIMB_HEALTH`, and the resulting despawn
+                # has only a ~0.3s grace period - short enough that either
+                # BRP call below can lose the race and find the entity
+                # already gone (confirmed live). That outcome is itself
+                # conclusive proof the hit landed (nothing left to read
+                # health *from* is a stronger signal than any health
+                # delta), so it's treated as zeroed-out health rather than
+                # letting the `BrpError` abort the test - and if the entity
+                # is gone there's nothing left to toughen either.
+                try:
+                    bot_after = server_brp.get_components(bot_entity, [tactical_brp.Limbs])[tactical_brp.Limbs]
+                    _toughen_bot(server_brp, bot_entity, bot_body_weight_kg)
+                except tactical_brp.BrpError:
+                    bot_after = tactical_brp.Limbs(
+                        body_weight_kg=bot_body_weight_kg,
+                        left_arm=0.0,
+                        right_arm=0.0,
+                        left_leg=0.0,
+                        right_leg=0.0,
+                        chest=0.0,
+                        stomach=0.0,
+                        head=0.0,
+                    )
                 if retry_while_damaged and bot_after != bot_before:
                     continue
                 break

@@ -329,7 +329,7 @@ client-headless id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
 # .env.tactical so a bare `just tactical` / `just client` (no arguments) in
 # other terminals targets it automatically.
-tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="0" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight _build-tactical-unverified
+tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="1" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight _build-tactical-unverified
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }} --scene-input {{ quote(scene_input) }}
 
 # Seed a fresh standalone tactical mission against an already-running
@@ -338,7 +338,7 @@ tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:t
 # `spacetime publish`. Mission gets a randomized ID suffix each call so it
 # never collides with a still-bound mission from a prior/crashed attempt.
 # Rewrites .env.tactical so `just tactical` / `just client` pick it up.
-tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="mission:test-mission" scene_key="hills" character_id="0" bots="3":
+tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="mission:test-mission" scene_key="hills" character_id="1" bots="3":
     @{{ python_bin }} scripts/dev_stack.py reseed-tactical-mission {{ quote(profile) }} {{ quote(base_port) }} --mission-id-prefix {{ quote(mission_id_prefix) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
 
 # Build and supervise a complete disposable native tactical test session.
