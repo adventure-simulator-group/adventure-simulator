@@ -449,6 +449,12 @@ tactical-environment-review-ledger ledger="assets/tactical-scenes/environment-re
 tactical-sky-capture view="sun" output="target/tactical-sky-captures/sun.png" settle_frames="24":
     @cargo run -p adventuresim-tactical-client --bin tactical-sky-viewer -- --view {{ quote(view) }} --output {{ quote(output) }} --settle-frames {{ quote(settle_frames) }}
 
+# Generate and capture one standalone procedural-building prototype. Exterior
+# captures show massing; cutaway captures omit the south/east shell and roofs
+# so room boundaries and vertical circulation remain assessable.
+building-capture fixture="town-house" view="exterior" output="target/building-captures/town-house-exterior.png" seed="42" settle_frames="240":
+    @cargo run -p adventuresim-building-generator --bin building-viewer -- --fixture {{ quote(fixture) }} --view {{ quote(view) }} --seed {{ seed }} --output {{ quote(output) }} --settle-frames {{ quote(settle_frames) }}
+
 # Capture a deterministic semantic-route preview through pose-buffer playback.
 animation-preview scenario="steady-walk-2.0" output="target/animation-captures/animation-preview":
     @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
