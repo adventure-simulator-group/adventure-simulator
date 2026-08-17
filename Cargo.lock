@@ -143,6 +143,7 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-core",
  "adventuresim-dialogue",
+ "adventuresim-weapon-model",
  "adventuresim-world-schema",
  "log",
  "petname",
@@ -176,6 +177,7 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",
+ "adventuresim-weapon-model",
  "bevy",
  "bevy_egui",
  "bevy_flair",
@@ -264,6 +266,16 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tiff",
+]
+
+[[package]]
+name = "adventuresim-weapon-model"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
+ "sha2",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

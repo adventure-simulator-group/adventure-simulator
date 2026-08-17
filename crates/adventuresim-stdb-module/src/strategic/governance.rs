@@ -595,6 +595,9 @@ pub(crate) fn delete_temporary_character_party(
         .filter(party_id)
         .collect::<Vec<_>>()
     {
+        if crate::inventory_container::delete_carried_object_for_row(ctx, "party", row.id)? {
+            continue;
+        }
         if let Some(condition) = ctx
             .db
             .party_item_condition()
@@ -1481,8 +1484,19 @@ pub fn accept_party_join_request(
         .collect::<Vec<_>>()
     {
         if item_is_durable(ctx, &entry.item_id) {
-            entry.party_id = request.party_id.clone();
-            ctx.db.party_inventory_item().id().update(entry);
+            if let Some(object) =
+                crate::inventory_container::object_for_row(ctx, "party", entry.id)?
+            {
+                crate::inventory_container::rehome_subtree(
+                    ctx,
+                    object.id,
+                    "party",
+                    &request.party_id,
+                )?;
+            } else {
+                entry.party_id = request.party_id.clone();
+                ctx.db.party_inventory_item().id().update(entry);
+            }
         } else {
             add_to_party_inventory(ctx, &request.party_id, &entry.item_id, entry.quantity);
             ctx.db.party_inventory_item().id().delete(entry.id);

@@ -807,3 +807,14 @@ entity receives the existing combat/controller components and every tactical
 item relationship, so topology and scene state survive without durable writes.
 Grace expiry performs the ordinary strategic leave and discards the abandoned
 tactical projection. Starting a new mission projects the durable graph again.
+
+Parametric melee weapons follow that boundary at the recipe/mesh seam. A
+versioned, quantized recipe and its derived geometric summary are durable
+strategic state attached to the stable inventory object. Mission bootstrap
+projects the validated recipe into the tactical ECS. Authored catalog weight,
+reach, and equipment dimensions remain authoritative gameplay data until the
+procedural measurements are separately calibrated and adopted by every
+strategic and tactical consumer. Triangle expansion and GPU mesh/material
+caching happen only in the tactical client, keyed by generator version and
+design hash; generated vertices and cache handles are transient and are never
+persisted to SpacetimeDB.

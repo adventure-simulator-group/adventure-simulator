@@ -38,7 +38,8 @@ pub mod prelude {
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
         EquipmentTopology, EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties,
         ItemQuantity, ShieldItem, TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER,
-        TacticalEquipmentAnchor, TacticalSceneItem, WeaponItem, rebuild_inventory_holding_cache,
+        TacticalEquipmentAnchor, TacticalSceneItem, WeaponAppearance, WeaponItem,
+        rebuild_inventory_holding_cache,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, MovementPace,
