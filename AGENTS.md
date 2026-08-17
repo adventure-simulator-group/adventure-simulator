@@ -34,6 +34,30 @@ documentation is intentionally changed as part of the task.
   through Iconify (`@iconify-json/game-icons`) and update both that directory's
   `ATTRIBUTION.md` and `THIRD_PARTY_NOTICES.md`.
 
+## Efficient iteration
+
+- Validate in stages. Start with the narrowest compile or deterministic test
+  that can falsify the current hypothesis, then use a small representative
+  demonstration, and run exhaustive suites only after those gates pass.
+- Name the current formulation and its decisive failure condition before
+  editing. After two rejected revisions of the same formulation, stop adjusting
+  constants and either change the formulation or ask for direction.
+- Do not send a candidate to an independent reviewer when the implementer has
+  already found a decisive failure. Reserve independent review for plausible
+  candidates and keep reviewer handoffs focused on raw evidence and deltas.
+- Keep tool output and agent context bounded. Prefer `rg`, narrow line ranges,
+  summaries, and artifact paths over dumping whole large files, generated maps,
+  manifests, or logs. Re-read stable instructions only when their applicability
+  changes.
+- Keep agent handoffs delta-only: state the hypothesis, changed files, exact
+  gates, results, and artifact paths without retelling the entire task history.
+  Give new subagents the smallest context that lets them work independently.
+- Serialize compiler, capture, and benchmark workloads. Poll an existing
+  process instead of launching a duplicate.
+- During exploratory work, defer fixture-wide regeneration, exhaustive
+  manifests, broad documentation updates, and unrelated hardening until the
+  underlying behavior or presentation passes its cheap screening gate.
+
 ## Database schema evolution
 
 This project is pre-launch. During feature development, existing database and
