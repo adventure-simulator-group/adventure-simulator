@@ -1,3 +1,5 @@
+use bevy::ecs::entity::MapEntities;
+
 use super::*;
 
 const AI_HIT_PRECISION: f32 = 1.0;
@@ -10,8 +12,10 @@ const AI_RANGED_STANDOFF_SLOP: f32 = 0.5;
 
 /// Enables server-owned offensive control, preferring ranged fire while a
 /// usable ranged weapon and arrows are available and otherwise using melee.
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Reflect, MapEntities)]
+#[reflect(Component)]
 pub struct OffensiveCombatAi {
+    #[entities]
     target: Option<Entity>,
     phase: OffensiveCombatPhase,
 }
@@ -32,7 +36,7 @@ impl OffensiveCombatAi {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Reflect)]
 enum OffensiveCombatPhase {
     Pursuing,
     MeleeWindup {

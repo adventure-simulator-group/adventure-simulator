@@ -51,6 +51,7 @@ impl Plugin for UiPlugin {
                     update_connection_ui,
                     update_skills_ui.run_if(any_with_component::<ClientPlayer>),
                     update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_incapacitation_ui.run_if(any_with_component::<ClientPlayer>),
                     update_combat_state_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
@@ -192,6 +193,23 @@ struct StomachSpan;
 
 #[derive(Component)]
 struct HeadSpan;
+
+/// Which incapacitation factor a meter-bar fill node visualizes.
+#[derive(Clone, Copy)]
+enum IncapacitationFactor {
+    Pain,
+    BloodLoss,
+    Imbalance,
+}
+
+#[derive(Component)]
+struct IncapacitationBarFill(IncapacitationFactor);
+
+#[derive(Component)]
+struct IncapacitationTotalSpan;
+
+#[derive(Component)]
+struct IncapacitationStatusSpan;
 
 #[derive(Component)]
 struct AttackTimerSpan;
@@ -424,6 +442,48 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 Name::new("right-leg"),
                                 Text::new("Right Leg: "),
                                 children![(RightLegSpan, TextSpan::default())]
+                            ),
+                        ]
+                    ),
+                    (
+                        Name::new("incapacitation"),
+                        Node::default(),
+                        children![
+                            Text::new("Incapacitation"),
+                            (
+                                Name::new("incap-meter"),
+                                Node::default(),
+                                children![
+                                    (
+                                        IncapacitationBarFill(IncapacitationFactor::Pain),
+                                        ClassList::new("incap-pain"),
+                                        Node::default()
+                                    ),
+                                    (
+                                        IncapacitationBarFill(IncapacitationFactor::BloodLoss),
+                                        ClassList::new("incap-blood"),
+                                        Node::default()
+                                    ),
+                                    (
+                                        IncapacitationBarFill(IncapacitationFactor::Imbalance),
+                                        ClassList::new("incap-imbalance"),
+                                        Node::default()
+                                    ),
+                                ]
+                            ),
+                            (
+                                Name::new("incap-total"),
+                                Text::new("Total: "),
+                                children![(IncapacitationTotalSpan, TextSpan::default())]
+                            ),
+                            (
+                                Name::new("incap-status"),
+                                Text::new("Status: "),
+                                children![(
+                                    IncapacitationStatusSpan,
+                                    ClassList::default(),
+                                    TextSpan::default()
+                                )]
                             ),
                         ]
                     ),
@@ -708,6 +768,52 @@ fn update_limbs_ui(
     spans.p4().0 = format!("{:.0}%", limbs.right_arm * 100.0);
     spans.p5().0 = format!("{:.0}%", limbs.left_leg * 100.0);
     spans.p6().0 = format!("{:.0}%", limbs.right_leg * 100.0);
+}
+
+/// Mirrors the "wheel" incapacitation meter from `wiki/tactical/combat.md` as
+/// a segmented bar (pain/blood loss/imbalance) plus a total/status readout,
+/// since the current HUD has no radial-gauge rendering path.
+fn update_incapacitation_ui(
+    player: Single<
+        (Entity, &TacticalCombatState, &Limbs, &CharacterId),
+        (With<ClientPlayer>, Changed<TacticalCombatState>),
+    >,
+    viewer: TacticalPlayerViewer,
+    mut bars: Query<(&IncapacitationBarFill, &mut Node)>,
+    mut spans: ParamSet<(
+        Single<&mut TextSpan, With<IncapacitationTotalSpan>>,
+        Single<(&mut TextSpan, &mut ClassList), With<IncapacitationStatusSpan>>,
+    )>,
+) -> Result {
+    let (entity, state, limbs, _player_id) = player.into_inner();
+    let view = viewer.get(entity)?;
+    let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
+    let sources = state.incapacitation_sources(limbs.total_damage(), will);
+
+    for (fill, mut node) in &mut bars {
+        let value = match fill.0 {
+            IncapacitationFactor::Pain => sources.pain,
+            IncapacitationFactor::BloodLoss => sources.blood_loss,
+            IncapacitationFactor::Imbalance => sources.imbalance,
+        };
+        node.width = Val::Percent((value * 100.0).clamp(0.0, 100.0));
+    }
+
+    spans.p0().0 = format!("{:.0}%", state.incapacitation * 100.0);
+
+    let (status_text, status_class) = match state.incapacitation_status() {
+        IncapacitationStatus::Ready => ("Ready", "success"),
+        IncapacitationStatus::Staggered => ("Staggered", "primary"),
+        IncapacitationStatus::Incapacitated => ("Incapacitated", "error"),
+    };
+    let mut status_span = spans.p1();
+    if status_span.0.0 != status_text {
+        status_span.0.0 = status_text.to_string();
+    }
+    if !status_span.1.contains(status_class) {
+        *status_span.1 = ClassList::new(status_class);
+    }
+    Ok(())
 }
 
 fn item_display_name(item: &ItemQueryItem) -> String {

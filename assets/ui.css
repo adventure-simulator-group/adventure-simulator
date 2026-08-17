@@ -145,11 +145,35 @@ text,span {
   &>#limbs>:nth-child(1) {
     color: var(--success);
   }
+  &>#incapacitation>:nth-child(1) {
+    color: rgb(240, 98, 146);
+  }
+  &>#incapacitation>#incap-meter {
+    width: 100%;
+    height: 14px;
+    background: #0006;
+    border-radius: 7px;
+  }
   &>#equipped-items>:nth-child(1) {
     color: rgb(200, 200, 50);
   }
   &>#inventory-items>:nth-child(1) {
     color: rgb(130, 130, 120);
+  }
+}
+
+#incap-meter {
+  &>.incap-pain {
+    height: 100%;
+    background: rgb(240, 98, 146);
+  }
+  &>.incap-blood {
+    height: 100%;
+    background: var(--error);
+  }
+  &>.incap-imbalance {
+    height: 100%;
+    background: #fffc;
   }
 }
 

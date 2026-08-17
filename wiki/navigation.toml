@@ -78,6 +78,11 @@ title = "Puzzle laboratory"
 path = "engineering/puzzle-lab.md"
 
 [[item]]
+kind = "page"
+title = "Tactical automated testing"
+path = "engineering/tactical-testing.md"
+
+[[item]]
 kind = "part"
 title = "Generated reference"
 

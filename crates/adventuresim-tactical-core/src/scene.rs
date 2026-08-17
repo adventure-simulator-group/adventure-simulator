@@ -57,6 +57,7 @@ impl TerrainGenerator {
 
 /// Id of the scene in which the game takes place.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
+#[reflect(Component)]
 #[component(immutable)]
 pub struct SceneId(pub String);
 
@@ -229,6 +230,7 @@ impl SceneGround {
 }
 
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 pub struct SceneTerrain {
     heightmap: Vec<f32>,
     width: usize,

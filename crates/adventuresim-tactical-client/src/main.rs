@@ -10,6 +10,7 @@
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
+use bevy::image::BevyDefault;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
@@ -63,6 +64,15 @@ struct Args {
     /// Swapchain presentation strategy for frame-pacing diagnostics.
     #[arg(long, value_enum, default_value_t)]
     present_mode: ClientPresentMode,
+    /// Run without opening an OS window, for CLI-driven automated testing.
+    #[cfg(feature = "debug")]
+    #[arg(long)]
+    headless: bool,
+    /// Port to expose the Bevy Remote Protocol (BRP) HTTP JSON-RPC endpoint
+    /// on for CLI-driven inspection/testing. Disabled unless set.
+    #[cfg(feature = "debug")]
+    #[arg(long)]
+    brp_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -146,24 +156,39 @@ fn run(args: Args) {
         "workspace",
         AssetSourceBuilder::platform_default(&asset_root.to_string_lossy(), None),
     );
+    #[cfg(feature = "debug")]
+    let headless = args.headless;
+    #[cfg(not(feature = "debug"))]
+    let headless = false;
     #[cfg(not(target_family = "wasm"))]
-    let default_plugins = DefaultPlugins
-        .set(AssetPlugin {
+    let default_plugins = {
+        let with_asset_plugin = DefaultPlugins.set(AssetPlugin {
             file_path: asset_root.to_string_lossy().into_owned(),
             ..default()
-        })
-        .set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Fabelgeist - Tactical".into(),
-                canvas: Some("#game-canvas".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                present_mode: args.present_mode.into(),
-                decorations: false,
-                ..default()
-            }),
-            ..default()
         });
+        if headless {
+            with_asset_plugin
+                .set(WindowPlugin {
+                    primary_window: None,
+                    exit_condition: bevy::window::ExitCondition::DontExit,
+                    ..default()
+                })
+                .disable::<bevy::winit::WinitPlugin>()
+        } else {
+            with_asset_plugin.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Fabelgeist - Tactical".into(),
+                    canvas: Some("#game-canvas".into()),
+                    fit_canvas_to_parent: true,
+                    prevent_default_event_handling: true,
+                    present_mode: args.present_mode.into(),
+                    decorations: false,
+                    ..default()
+                }),
+                ..default()
+            })
+        }
+    };
     #[cfg(target_family = "wasm")]
     let default_plugins = DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -197,7 +222,15 @@ fn run(args: Args) {
         equipment::TacticalEquipmentPlugin,
         animation::TacticalAnimationPlugin,
         camera::TacticalCameraPlugin,
-        args.graphics_preset.presentation(),
+        // Headless runs have no window/swapchain, and some render features
+        // (e.g. the atmosphere environment probe) crash without one, so
+        // force every optional GPU effect off regardless of the requested
+        // preset - there's nothing to present them to anyway.
+        if headless {
+            GraphicsPreset::Minimal.presentation()
+        } else {
+            args.graphics_preset.presentation()
+        },
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
     .add_systems(Startup, setup_client)
@@ -230,7 +263,54 @@ fn run(args: Args) {
         .unwrap_or_else(|error| panic!("invalid tactical client diagnostics: {error}")),
     );
 
+    #[cfg(not(target_family = "wasm"))]
+    if headless {
+        app.add_plugins(bevy::app::ScheduleRunnerPlugin {
+            run_mode: bevy::app::RunMode::Loop {
+                wait: Some(std::time::Duration::from_secs_f64(1.0 / 60.0)),
+            },
+        });
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+    if let Some(port) = args.brp_port {
+        app.add_plugins((
+            bevy::remote::RemotePlugin::default(),
+            bevy::remote::http::RemoteHttpPlugin::default().with_port(port),
+        ));
+    }
+
+    // Headless has no window to screenshot (F12, see `debug.rs`), so point
+    // the gameplay camera at an off-screen render target instead.
+    #[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+    if headless {
+        app.add_systems(Update, configure_headless_render_target);
+    }
+
     app.run();
+}
+
+#[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+const HEADLESS_SCREENSHOT_SIZE: (u32, u32) = (1280, 720);
+
+#[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+fn configure_headless_render_target(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    cameras: Query<Entity, Added<Camera3d>>,
+) {
+    for entity in &cameras {
+        let image = images.add(Image::new_target_texture(
+            HEADLESS_SCREENSHOT_SIZE.0,
+            HEADLESS_SCREENSHOT_SIZE.1,
+            bevy::render::render_resource::TextureFormat::bevy_default(),
+            None,
+        ));
+        commands
+            .entity(entity)
+            .insert(bevy::camera::RenderTarget::Image(image.clone().into()));
+        commands.insert_resource(debug::HeadlessScreenshotTarget(image));
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]

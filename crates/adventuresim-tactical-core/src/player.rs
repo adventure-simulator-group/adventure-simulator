@@ -11,6 +11,7 @@ pub type ControlledPlayer = Actions<Player>;
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq, Eq)]
+#[reflect(Component)]
 #[require(
     CharacterId,
     Limbs,
@@ -41,6 +42,7 @@ impl Default for Player {
 #[derive(
     Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq, Eq, Hash,
 )]
+#[reflect(Component)]
 #[component(immutable)]
 pub struct CharacterId(pub u64);
 
@@ -77,6 +79,7 @@ impl Default for BestiaryCategories {
 
 /// General player stats.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 pub struct Stats {
     pub calories_used: f32,
     pub focus: f32,
@@ -104,6 +107,7 @@ impl PlayerEssentials for Stats {
 /// Live, server-authoritative combat effects. This component is replicated for
 /// presentation but remains transient and is never written to SpacetimeDB.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 pub struct TacticalCombatState {
     pub starting_incapacitation: f32,
     pub starting_blood_fraction: f32,
@@ -207,6 +211,7 @@ impl TacticalIncapacitationSources {
 
 /// Limb health status.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 pub struct Limbs {
     pub body_weight_kg: f32,
     pub left_arm: f32,
@@ -245,21 +250,6 @@ impl Limbs {
             BodyPart::Head => &mut self.head,
         }
     }
-
-    pub fn total_damage(&self) -> f32 {
-        [
-            self.left_arm,
-            self.right_arm,
-            self.left_leg,
-            self.right_leg,
-            self.chest,
-            self.stomach,
-            self.head,
-        ]
-        .into_iter()
-        .map(|health| (1.0 - health).max(0.0))
-        .sum()
-    }
 }
 
 impl PlayerBody for Limbs {
@@ -285,8 +275,46 @@ impl PlayerBody for Limbs {
     }
 }
 
+impl Limbs {
+    /// Applies up to `damage` (0-1 scale) to `part`'s health, clamped to what
+    /// remains, and returns how much was actually applied. Mirrors
+    /// `CombatBody::apply_damage` in `adventuresim_core::autoresolve`.
+    pub fn apply_damage(&mut self, part: BodyPart, damage: f32) -> f32 {
+        let health = match part {
+            BodyPart::LeftArm => &mut self.left_arm,
+            BodyPart::RightArm => &mut self.right_arm,
+            BodyPart::LeftLeg => &mut self.left_leg,
+            BodyPart::RightLeg => &mut self.right_leg,
+            BodyPart::Chest => &mut self.chest,
+            BodyPart::Stomach => &mut self.stomach,
+            BodyPart::Head => &mut self.head,
+        };
+        let applied = damage.max(0.0).min(health.max(0.0));
+        *health = (*health - applied).max(0.0);
+        applied
+    }
+
+    /// Aggregate health deficit across all body parts, used as the `pain`
+    /// input to [`TacticalCombatState::incapacitation_sources`].
+    pub fn total_damage(&self) -> f32 {
+        [
+            self.left_arm,
+            self.right_arm,
+            self.left_leg,
+            self.right_leg,
+            self.chest,
+            self.stomach,
+            self.head,
+        ]
+        .into_iter()
+        .map(|health| (1.0 - health).max(0.0))
+        .sum()
+    }
+}
+
 /// Physical and mental skills of a [`Player`].
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 #[component(immutable)]
 pub struct Skills {
     pub polearm_hours: f32,
@@ -447,6 +475,7 @@ impl PlayerSkills for Skills {
 
 /// Genetic attributes of a [`Player`].
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+#[reflect(Component)]
 #[component(immutable)]
 pub struct Attributes {
     pub endurance: f32,

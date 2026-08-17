@@ -1,8 +1,17 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::ClientTriggerExt, prelude::DebugGameTimeScaleRequest,
+    bevy_replicon::prelude::ClientTriggerExt,
+    prelude::{DebugDumpWorldRequest, DebugGameTimeScaleRequest},
 };
-use bevy::{color::palettes::tailwind, prelude::*};
+use bevy::{
+    color::palettes::tailwind,
+    prelude::*,
+    render::view::screenshot::{Screenshot, save_to_disk},
+};
+// Not a wildcard import: `adventuresim_tactical_core::prelude` already
+// exports its own, unrelated `ActionState` (animation-system playback
+// state), which would collide with this crate's.
+use bevy_enhanced_input::prelude::{ActionMock, Actions};
 
 use crate::{
     animation::TerrainIkEnabled,
@@ -16,18 +25,48 @@ impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DebugVisualsConfig>()
             .init_resource::<DebugGameSpeed>()
+            .init_resource::<DebugDumpWorldTrigger>()
             .register_required_components_with::<Collider, _>(DebugRender::none)
             .add_systems(Update, toggle_debug_visuals)
             .add_systems(Update, draw_debug_rays)
             .add_systems(Update, draw_camera_rig)
+            .add_systems(Update, trigger_debug_dump_from_brp)
             .add_observer(on_hit_performed);
+        register_input_mock_types(app);
     }
+}
+
+/// `bevy_enhanced_input`'s action components (`Actions<C>`, `ActionMock`)
+/// derive `Reflect` but don't attach `#[reflect(Component)]` themselves (as
+/// of 0.23), so BRP can't see them without this - it doesn't touch the
+/// external crate, just fills in the missing type data on our own
+/// `App`. Also used by `crates/adventuresim-tactical-brp-generator` so
+/// `ActionMock`/`Actions<Player>` show up as generated Python classes.
+///
+/// Inserting `ActionMock` via BRP is how tests simulate an attack/dodge/
+/// parry: it reproduces the *real* input-processing pipeline
+/// (`bevy_enhanced_input::action::mock` - `Fire<A>`/`Start<A>`/etc all still
+/// fire), not a bypass of it. Finding the right action entity to insert it
+/// on still needs `Actions<Player>` (this client's `Player` input context,
+/// `adventuresim_tactical_core::player::Player`) read via BRP.
+pub fn register_input_mock_types(app: &mut App) {
+    app.register_type::<Actions<Player>>();
+    app.register_type_data::<Actions<Player>, ReflectComponent>();
+    app.register_type::<ActionMock>();
+    app.register_type_data::<ActionMock, ReflectComponent>();
 }
 
 #[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct DebugGameSpeed {
     pub(crate) quarter_speed: bool,
 }
+
+/// Present only in `--headless` mode (see `configure_headless_render_target`
+/// in `main.rs`), once the gameplay camera has been pointed at an
+/// off-screen render target instead of a (nonexistent) window - F12 has
+/// nothing to capture from otherwise.
+#[derive(Resource)]
+pub(crate) struct HeadlessScreenshotTarget(pub(crate) Handle<Image>);
 
 #[derive(Resource)]
 struct DebugVisualsConfig {
@@ -59,6 +98,7 @@ fn toggle_debug_visuals(
     mut game_speed: ResMut<DebugGameSpeed>,
     mut virtual_time: ResMut<Time<Virtual>>,
     q_colliders: Query<(Entity, Option<&LimbHitbox>), (With<Collider>, Without<ClientPlayer>)>,
+    headless_target: Option<Res<HeadlessScreenshotTarget>>,
     mut cmd: Commands,
 ) {
     if keyboard.just_pressed(KeyCode::F7) {
@@ -107,6 +147,58 @@ fn toggle_debug_visuals(
         terrain_ik.0 = !terrain_ik.0;
         info!(enabled = terrain_ik.0, "Terrain leg IK toggled");
     }
+
+    if keyboard.just_pressed(KeyCode::F10) {
+        cmd.client_trigger(DebugDumpWorldRequest);
+        info!("Requested a server-side world dump");
+    }
+
+    if keyboard.just_pressed(KeyCode::F12) {
+        request_screenshot(&mut cmd, headless_target.as_deref());
+    }
+}
+
+/// Captures whatever the gameplay camera currently sees, windowed or
+/// headless. In headless mode there's no window to capture from - see
+/// `configure_headless_render_target` in `main.rs`, which points the camera
+/// at an off-screen render target instead and publishes it here as
+/// [`HeadlessScreenshotTarget`].
+fn request_screenshot(cmd: &mut Commands, headless_target: Option<&HeadlessScreenshotTarget>) {
+    let dir = std::path::Path::new("screenshots");
+    if let Err(error) = std::fs::create_dir_all(dir) {
+        error!(?error, "Failed to create screenshots directory");
+        return;
+    }
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let path = dir.join(format!("screenshot_{timestamp}.png"));
+
+    let screenshot = match headless_target {
+        Some(target) => Screenshot::image(target.0.clone()),
+        None => Screenshot::primary_window(),
+    };
+    cmd.spawn(screenshot).observe(save_to_disk(path.clone()));
+    info!(path = %path.display(), "Requested a screenshot");
+}
+
+/// Debug-only: a BRP-settable equivalent of the F10 keypress
+/// (`DebugDumpWorldRequest`) - lets tests request a server-side world dump
+/// without simulating a key event. Set to `true` via BRP
+/// (`world.insert_resources`); `trigger_debug_dump_from_brp` sends the
+/// request on the next frame and resets this back to `false`.
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource)]
+pub(crate) struct DebugDumpWorldTrigger(pub(crate) bool);
+
+fn trigger_debug_dump_from_brp(mut cmd: Commands, mut trigger: ResMut<DebugDumpWorldTrigger>) {
+    if !trigger.0 {
+        return;
+    }
+    trigger.0 = false;
+    cmd.client_trigger(DebugDumpWorldRequest);
+    info!("Debug: requested a server-side world dump via BRP");
 }
 
 fn limb_hitbox_color(body_part: BodyPart) -> Color {

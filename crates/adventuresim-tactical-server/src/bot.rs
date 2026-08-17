@@ -24,6 +24,7 @@ use defense::{
     on_attack_started, on_tactical_combatant_defeated, on_targeted_attack_started,
     on_targeted_ranged_attack_started, tick_bot_reactions,
 };
+pub use defense::DefenseChances;
 pub use offense::OffensiveCombatAi;
 #[cfg(test)]
 use offense::ranged_weapon_needs_ammo_lookup;
@@ -31,8 +32,33 @@ use offense::{compare_target, drive_offensive_combat_ai};
 
 /// Marks a server-controlled bot filling in for a temporary (non-connected)
 /// mission character.
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct MissionEnemy;
+
+/// Real-time grace period between a bot dying and its ECS despawn. See
+/// [`PendingRemoval`] for why this exists; it has nothing to do with the
+/// client's (much longer, purely cosmetic) fade-out duration.
+const DESPAWN_REPLICATION_GRACE_SECONDS: f32 = 0.3;
+
+/// Marks a dead bot for removal after [`DESPAWN_REPLICATION_GRACE_SECONDS`]
+/// of real time, rather than despawning it the instant it dies.
+///
+/// This has nothing to do with the client's cosmetic fade (that lives
+/// entirely in the tactical client's `player::start_fade_on_incapacitation`
+/// and is invisible to the server, and lasts far longer). It exists because
+/// bevy_replicon sends this bot's killing-blow `SuccessfulAttackResponse` and
+/// its eventual despawn as separate messages, and an event referencing an
+/// already-despawned entity fails to deserialize client-side ("unable to map
+/// entities ... from the server"). Rather than relying on exact same-frame
+/// scheduling order against bevy_replicon's internal tick/send machinery (an
+/// assumption two earlier attempts got wrong in practice), this just waits
+/// long enough in wall-clock time that several replication sends have
+/// unambiguously happened first, however that machinery is actually timed.
+#[derive(Component)]
+struct PendingRemoval {
+    timer: Timer,
+}
 
 pub struct BotPlugin;
 
@@ -44,8 +70,27 @@ impl Plugin for BotPlugin {
             .add_observer(on_targeted_ranged_attack_started)
             .add_systems(
                 Update,
-                (drive_offensive_combat_ai, tick_bot_reactions).after(CombatSet::Condition),
+                (
+                    drive_offensive_combat_ai,
+                    tick_bot_reactions,
+                    despawn_pending_removals,
+                )
+                    .after(CombatSet::Condition),
             );
+    }
+}
+
+/// Despawns bots marked [`PendingRemoval`] once their grace timer elapses.
+fn despawn_pending_removals(
+    mut commands: Commands,
+    time: Res<Time<()>>,
+    mut q: Query<(Entity, &mut PendingRemoval)>,
+) {
+    for (entity, mut pending) in &mut q {
+        pending.timer.tick(time.delta());
+        if pending.timer.is_finished() {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -133,6 +178,7 @@ mod tests {
             blunt: false,
             slash: true,
             pierce: false,
+            windup_secs: 0.3,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         actor
@@ -172,6 +218,7 @@ mod tests {
             blunt: false,
             slash: false,
             pierce: true,
+            windup_secs: 0.3,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         let ammo = world

@@ -8,8 +8,10 @@ license.workspace = true
 
 [features]
 default = ["debug"]
-debug = ["bevy/debug", "adventuresim-tactical-core/avian_debug"]
+debug = ["bevy/debug", "bevy/bevy_remote", "adventuresim-tactical-core/avian_debug"]
 tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
+# See src/lib.rs - only used by crates/adventuresim-tactical-brp-generator.
+remote-types = ["debug"]
 
 [dependencies]
 bevy.workspace = true
@@ -53,6 +55,10 @@ wasm-bindgen.workspace = true
 
 [lints]
 workspace = true
+
+[lib]
+name = "adventuresim_tactical_client"
+path = "src/lib.rs"
 
 [[bin]]
 name = "adventuresim-tactical-client"

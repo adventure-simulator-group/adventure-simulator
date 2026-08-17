@@ -19,6 +19,7 @@ impl Plugin for AdventureSimulatorClientPlugin {
         app.init_resource::<WeaponGuardInputState>()
             .init_resource::<ReconnectCredential>()
             .init_resource::<DirectControlState>()
+            .init_resource::<DebugForceAttackTrigger>()
             .init_resource::<PlayerInputOverride>()
             .add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
             .add_observer(on_client_added)
@@ -52,7 +53,22 @@ pub struct WeaponGuardInputState {
     pub desired: WeaponGuardState,
 }
 
-#[derive(Resource, Debug, Clone, Copy)]
+/// Set via BRP by native diagnostic tooling to force `attack_just_pressed`
+/// for one frame without needing real mouse/gamepad input.
+/// `update_direct_control_input` recomputes `attack_just_pressed` from raw
+/// input unconditionally every frame with no override-checking otherwise, so
+/// a plain BRP `insert_resources` on `DirectControlState` itself would get
+/// silently clobbered by the very next frame's real (absent) input before
+/// `apply_direct_combat_controls` ever reads it - this is a dedicated,
+/// consumed-and-cleared trigger instead, the same pattern
+/// `DebugDumpWorldTrigger` (`adventuresim-tactical-client/src/debug.rs`)
+/// already uses for the same reason.
+#[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
+#[reflect(Resource)]
+pub struct DebugForceAttackTrigger(pub bool);
+
+#[derive(Resource, Debug, Clone, Copy, Reflect)]
+#[reflect(Resource)]
 pub struct DirectControlState {
     pub pace: MovementPace,
     pub crouch: bool,
@@ -105,7 +121,7 @@ impl Default for DirectControlState {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Reflect)]
 struct SprintInputState {
     active: bool,
     shift_down: bool,
@@ -145,7 +161,8 @@ impl SprintInputState {
 /// Optional input supplied by native diagnostic tooling. The request still
 /// crosses the ordinary client/server transport and authoritative controller;
 /// only the physical keyboard/gamepad sampling is replaced.
-#[derive(Resource, Debug, Clone, Copy, Default)]
+#[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
+#[reflect(Resource, Default)]
 pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
 
 fn update_direct_control_input(
@@ -156,6 +173,7 @@ fn update_direct_control_input(
     controlled_players: Query<&SkeletonState, With<ControlledPlayer>>,
     mut guard: ResMut<WeaponGuardInputState>,
     mut controls: ResMut<DirectControlState>,
+    mut force_attack: ResMut<DebugForceAttackTrigger>,
 ) {
     if keys.just_pressed(KeyCode::CapsLock) {
         controls.caps_jog = !controls.caps_jog;
@@ -356,7 +374,8 @@ fn update_direct_control_input(
     let mouse_alternate_attack = mouse_guard && mouse.just_pressed(MouseButton::Middle);
     let controller_attack = left_trigger && right_trigger_just_pressed && !rolling;
     controls.attack_just_pressed =
-        mouse_preferred_attack || mouse_alternate_attack || controller_attack;
+        mouse_preferred_attack || mouse_alternate_attack || controller_attack || force_attack.0;
+    force_attack.0 = false;
     controls.alternate_attack =
         mouse_alternate_attack || (controller_attack && left_trigger_value < 0.95);
     let gamepad_quickstep = left_trigger

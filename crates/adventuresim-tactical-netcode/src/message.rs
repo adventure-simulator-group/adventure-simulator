@@ -43,7 +43,8 @@ pub struct SceneVistaBundle {
     pub lods: Vec<VistaLod>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
+#[reflect(Default)]
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
@@ -117,7 +118,7 @@ pub enum EquipmentAction {
 /// Durable edge identity for jumping over the unreliable continuous-input
 /// channel. The latest sequence is repeated in every input packet, so dropping
 /// the release packet delays a jump rather than losing it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, Reflect)]
 pub struct JumpCommand {
     pub sequence: u32,
     /// Camera-relative quickstep direction selected on this edge. `None`
@@ -125,13 +126,13 @@ pub struct JumpCommand {
     pub quickstep: Option<Vec2>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub struct PostureCommand {
     pub sequence: u32,
     pub action: Option<PostureActionRequest>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum PostureActionRequest {
     Toggle,
     RollLeft,
@@ -148,6 +149,13 @@ pub enum PostureActionRequest {
 pub struct DebugGameTimeScaleRequest {
     pub quarter_speed: bool,
 }
+
+/// Debug-build request to serialize the server's entire world (every entity's
+/// reflected components, plus reflected resources) to a `.scn.ron` file for
+/// offline inspection or replay as a test fixture. Production servers
+/// intentionally do not install a handler for it.
+#[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
+pub struct DebugDumpWorldRequest;
 
 impl DebugGameTimeScaleRequest {
     pub const fn relative_speed(self) -> f32 {

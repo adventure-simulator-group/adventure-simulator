@@ -256,9 +256,22 @@ load-viabundus-world server=spacetime_url database=spacetime_module: spacetime-v
     @{{ python_bin }} scripts/just_tasks.py recreate-world-database --server {{ server }} --database {{ database }} --module-dir {{ quote(strategic_dir) }}
     @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
 
-# Build the tactical server and spawner
+# Build the tactical server and spawner. Uses the same feature set as `just
+# tactical`/`client`/`client-headless` (--features debug) so this build and
+# those `cargo run`s share one `target/debug` build of the server instead of
+# fighting over it: since they select different features for the same crate,
+# cargo would otherwise recompile the whole dependency chain (bevy and
+# everything downstream) every time you switched between building here and
+# running there.
 build-tactical: verify-db-client
-    @cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
+    @cargo build --package adventuresim-tactical-server --features adventuresim-tactical-server/debug --package adventuresim-tactical-server-dispatcher
+
+# Same build as build-tactical, without first re-verifying bindings freshness
+# (a CI-hygiene check against the schema, not something a mission needs at
+# runtime). Used only by tactical-isolated so repeated combat-testing restarts
+# don't pay for a redundant module build/introspection every time.
+_build-tactical-unverified:
+    @cargo build --package adventuresim-tactical-server --features adventuresim-tactical-server/debug --package adventuresim-tactical-server-dispatcher
 
 # Build the WASM client
 build-wasm: verify-db-client
@@ -282,20 +295,51 @@ _spawner-stop:
 # Run a single tactical server (for testing). Defaults come from `.env.tactical`
 # (written by `tactical-isolated`) when present, otherwise from the canonical
 # stack - so a bare `just tactical` targets whichever is currently running.
-tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "woodland") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", "assets/tactical-scenes/dense-woodland.json"):
-    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout
+# Always reseeds a fresh mission first against a live `tactical-isolated`
+# instance (see `tactical-reseed`) - no-op if none is running, so this still
+# works unmodified against a non-isolated/canonical database. Because that
+# reseed rewrites .env.tactical *during* this recipe, `just` (which resolves
+# {{mission_id}} from the file's content before the recipe runs, and won't
+# see the rewrite) can't be relied on for the resulting value, so the second
+# line re-reads the file directly instead of trusting {{mission_id}}. This
+# means an explicitly-passed `mission_id=...` is only honored when no live
+# instance is found; get in touch if that trips you up.
+# Set brp_port to expose the Bevy Remote Protocol endpoint for CLI-driven
+# inspection/testing (see `scripts/tactical_brp.py`). Set world_dump to a
+# `.scn.ron` path (see `DebugDumpWorldRequest`, F10 in a debug client) to run
+# fully standalone instead: the server loads that reflected world state at
+# startup rather than generating fresh procedural terrain, and never
+# connects to SpacetimeDB at all (no `tactical-isolated` needed first).
+tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "woodland") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") brp_port=env_var_or_default("TACTICAL_BRP_PORT", "") world_dump=env_var_or_default("TACTICAL_WORLD_DUMP", "") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", "assets/tactical-scenes/dense-woodland.json"):
+    @if [ {{ quote(world_dump) }} = "" ]; then {{ python_bin }} scripts/dev_stack.py reseed-tactical-mission --if-live --scene-key {{ quote(scene_key) }} --enemy-count {{ quote(bots) }} tactical-dev 23200; fi
+    @MISSION_ID={{ quote(mission_id) }}; if [ -f .env.tactical ] && [ {{ quote(world_dump) }} = "" ]; then FRESH=$(grep '^TACTICAL_MISSION_ID=' .env.tactical | cut -d= -f2-); [ -n "$FRESH" ] && MISSION_ID="$FRESH"; FRESH_CLAIM=$(grep '^ADVENTURESIM_TACTICAL_CLAIM=' .env.tactical | cut -d= -f2-); [ -n "$FRESH_CLAIM" ] && export ADVENTURESIM_TACTICAL_CLAIM="$FRESH_CLAIM"; fi; cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id "$MISSION_ID" --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }} {{ if world_dump != "" { "--world-dump " + quote(world_dump) } else { "" } }}
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
-# from `.env.tactical` when present, same as `tactical` above.
-client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="":
-    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
+# from `.env.tactical` when present, same as `tactical` above. Set brp_port
+# to expose the Bevy Remote Protocol endpoint for CLI-driven inspection/testing.
+client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="" brp_port=env_var_or_default("TACTICAL_BRP_PORT", ""):
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }}
+
+# Run a native tactical client with no OS window, driven entirely over BRP
+# (see `scripts/tactical_brp.py`) - for CLI-only automated testing.
+client-headless id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) brp_port=env_var_or_default("TACTICAL_CLIENT_BRP_PORT", "15703"):
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" --headless --brp-port {{ brp_port }}
 
 # Start an isolated SpacetimeDB seeded with a standalone tactical mission.
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
 # .env.tactical so a bare `just tactical` / `just client` (no arguments) in
 # other terminals targets it automatically.
-tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="1" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client build-tactical
+tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="1" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight _build-tactical-unverified
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }} --scene-input {{ quote(scene_input) }}
+
+# Seed a fresh standalone tactical mission against an already-running
+# `tactical-isolated` instance (leave that one running in its terminal),
+# without touching the SpacetimeDB module at all: no cargo build, no
+# `spacetime publish`. Mission gets a randomized ID suffix each call so it
+# never collides with a still-bound mission from a prior/crashed attempt.
+# Rewrites .env.tactical so `just tactical` / `just client` pick it up.
+tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="mission:test-mission" scene_key="hills" character_id="1" bots="3":
+    @{{ python_bin }} scripts/dev_stack.py reseed-tactical-mission {{ quote(profile) }} {{ quote(base_port) }} --mission-id-prefix {{ quote(mission_id_prefix) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
 
 # Build and supervise a complete disposable native tactical test session.
 # animation disables combat, diagnostic runs scripted real-client input and
@@ -417,6 +461,31 @@ tactical-status:
 # Relaunch only the native client after validating the supervised server.
 tactical-client:
     @{{ python_bin }} scripts/dev_stack.py tactical-client
+
+# Drive a running `just tactical brp_port=...` + `just client-headless` pair
+# over BRP: finds the local player, moves it, and asserts it moved. Both
+# processes must already be running (see scripts/tactical_brp.py).
+tactical-brp-smoke-test server_brp_port="15702" client_brp_port="15703":
+    @{{ python_bin }} scripts/tactical_brp.py smoke-test --server-brp-port {{ server_brp_port }} --client-brp-port {{ client_brp_port }}
+
+# Regenerates scripts/adventuresim_brp_lib.py: every BRP-queryable
+# (`ReflectComponent`/`ReflectResource`) type linked into the tactical
+# server/client, discovered dynamically from the real type registry (see
+# crates/adventuresim-tactical-brp-generator) rather than hand-copied - re-run
+# after adding, renaming, or moving a `#[reflect(Component)]`/
+# `#[reflect(Resource)]` type `scripts/tactical_brp.py` might want.
+generate-brp-types:
+    @cargo run --package adventuresim-tactical-brp-generator > scripts/adventuresim_brp_lib.py
+
+# End-to-end pytest suite: boots an isolated SpacetimeDB + tactical mission,
+# the tactical server, and a headless client itself, then drives them over
+# BRP. Slower than the unit-test recipes (real compile/bootstrap cost) - not
+# part of the default `test` recipe. Runs every pytest module under
+# scripts/tests/tactical/, so new tactical E2E suites just need to land there.
+# Pass `test` to run only tests whose name contains it (pytest -k), e.g.
+# `just tactical-test movement`.
+tactical-test test="":
+    @{{ python_bin }} -B -m pytest scripts/tests/tactical -v {{ if test != "" { "-k " + quote(test) } else { "" } }}
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":

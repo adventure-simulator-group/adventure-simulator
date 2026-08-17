@@ -13,7 +13,8 @@ pub(crate) struct PendingDefenderResponse {
 }
 
 /// Transient allegiance is independent from connectivity and bot control.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Reflect)]
+#[reflect(Component)]
 pub(crate) enum TacticalCombatSide {
     Party,
     Enemy,

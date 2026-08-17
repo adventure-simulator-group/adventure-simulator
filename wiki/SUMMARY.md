@@ -25,6 +25,7 @@
 - [Strategic read cache](engineering/strategic-read-cache.md)
 - [Strategic NPC simulation](engineering/strategic-simulation.md)
 - [Puzzle laboratory](engineering/puzzle-lab.md)
+- [Tactical automated testing](engineering/tactical-testing.md)
 
 # Generated reference
 

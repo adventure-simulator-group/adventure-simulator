@@ -15,7 +15,8 @@ members = [
     "crates/adventuresim-tactical-netcode",
     "crates/adventuresim-tactical-client",
     "crates/adventuresim-tactical-server",
-    "crates/adventuresim-tactical-server-dispatcher", 
+    "crates/adventuresim-tactical-server-dispatcher",
+    "crates/adventuresim-tactical-brp-generator",
     "crates/strategic-web",
 ]
 exclude = [
@@ -58,7 +59,9 @@ avian3d = { version = "0.7.0", default-features = false, features = [
     "default-collider",
 ] }
 bevy_ahoy = { version = "0.2.0", default-features = false, features = ["serialize"] }
-bevy_enhanced_input = { version = "0.26.0", default-features = false }
+bevy_enhanced_input = { version = "0.26.0", default-features = false, features = [
+  "reflect",
+] }
 bevy_flair = "0.8.0"
 bevy_egui = { version = "0.40.1", default-features = false, features = ["bevy_ui", "default_fonts"] }
 bevy_mod_outline = { version = "0.13", default-features = false, features = ["flood"] }
@@ -92,6 +95,7 @@ rusqlite = { version = "0.37.0", features = ["bundled"] }
 shapefile = { version = "0.9.0", features = ["geo-types"] }
 zip = { version = "3.0.0", default-features = false, features = ["deflate"] }
 flate2 = "1.1"
+ron = "0.12"
 wasm-bindgen = "=0.2.108"
 spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"

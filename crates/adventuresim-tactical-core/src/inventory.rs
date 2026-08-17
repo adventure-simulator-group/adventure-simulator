@@ -21,6 +21,7 @@ pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Deref, DerefMut)]
+#[reflect(Component)]
 pub struct ItemQuantity(pub NonZeroU32);
 
 impl Default for ItemQuantity {
@@ -30,20 +31,43 @@ impl Default for ItemQuantity {
 }
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, MapEntities)]
+#[reflect(Component)]
 #[require(ItemProperties, ItemQuantity)]
 #[relationship(relationship_target = InventoryItems)]
 pub struct ItemOf(#[entities] pub Entity);
 
+/// Reflectable so world dumps capture it alongside `ItemOf`, mirroring how
+/// bevy's own `ChildOf`/`Children` pair works with dynamic scenes: a scene
+/// carries *both* sides of a relationship and restores them verbatim
+/// (entity-mapped), which is exactly why `DynamicScene::write_to_world`
+/// silences relationship hooks. Capturing only the `ItemOf` side leaves
+/// loaded owners with no inventory at all - and every after-the-fact repair
+/// of that gap has proven fragile (a non-idempotent rebuild once wiped a
+/// bot's whole inventory on client join).
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Default)]
+#[reflect(Component)]
 #[relationship_target(relationship = ItemOf)]
 pub struct InventoryItems {
     #[relationship]
     items: Vec<Entity>,
+    #[entities]
     holding_weapon: Option<Entity>,
+    #[entities]
     holding_shield: Option<Entity>,
 }
 
+impl InventoryItems {
+    pub fn holding_weapon(&self) -> Option<Entity> {
+        self.holding_weapon
+    }
+
+    pub fn holding_shield(&self) -> Option<Entity> {
+        self.holding_shield
+    }
+}
+
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct ArmorItem {
     pub range_of_motion: f32,
     pub coverage: f32,
@@ -70,6 +94,7 @@ pub enum ArmorSide {
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct WeaponItem {
     pub skill_weights: [f32; 9],
     pub accuracy: f32,
@@ -85,14 +110,20 @@ pub struct WeaponItem {
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
+    /// Real-time seconds between committing to a swing and the hit actually
+    /// landing. The single source of truth for this weapon's windup pacing -
+    /// see `PlayerEquipment::weapon_windup_secs`.
+    pub windup_secs: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct ShieldItem {
     pub block: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct ItemProperties {
     pub id: String,
     pub weight: f32,
@@ -223,6 +254,7 @@ pub struct EquipmentActionState {
     VariantArray,
     Display,
 )]
+#[reflect(Component)]
 #[component(on_insert = on_equip_slot_replaced, on_remove = on_equip_slot_removed)]
 pub enum EquipSlot {
     HoldingLeft,
@@ -465,6 +497,13 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or(crate::combat::HANDS_REACH)
     }
 
+    fn weapon_windup_secs(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.windup_secs)
+            .unwrap_or_default()
+    }
+
     fn weapon_is_precise(&self) -> bool {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
@@ -546,6 +585,13 @@ fn body_part_index(part: BodyPart) -> usize {
     }
 }
 
+/// Requires `ItemOf` to already be on the entity: single-component inserts
+/// in every live equip path place `ItemOf` first, and batched inserts
+/// (spawn bundles, replication) run hooks only after the whole batch has
+/// landed. The one path where neither holds - `bevy_scene` applying
+/// components one at a time in an order that puts `EquipSlot` before
+/// `ItemOf` - doesn't need this hook at all, because scenes capture and
+/// restore `InventoryItems` (holding fields included) as data.
 fn on_equip_slot_replaced(mut world: DeferredWorld, ctx: HookContext) {
     match world.get::<EquipSlot>(ctx.entity) {
         Some(EquipSlot::HoldingLeft | EquipSlot::HoldingRight)
@@ -590,6 +636,7 @@ fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -617,6 +664,7 @@ mod tests {
                     blunt: false,
                     slash: true,
                     pierce: false,
+                    windup_secs: 0.0,
                 },
             ))
             .id();
