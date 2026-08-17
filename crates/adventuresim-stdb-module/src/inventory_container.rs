@@ -74,8 +74,8 @@ pub(crate) fn object_for_row(
     let mut matches = ctx
         .db
         .inventory_object()
-        .iter()
-        .filter(|object| object.location_kind == kind && object.inventory_row_id == row_id);
+        .location_and_row()
+        .filter((kind, row_id));
     let first = matches.next();
     if matches.next().is_some() {
         return Err("Inventory row has duplicate physical object identities".into());
@@ -860,6 +860,17 @@ mod tests {
         let source = include_str!("inventory_container.rs");
         assert!(source.contains("parent_definition.container_capacity_ml == 0"));
         assert!(!source.contains("GENERIC_CONTAINER_IDS"));
+    }
+
+    #[test]
+    fn physical_object_row_lookup_uses_the_compound_index() {
+        let lookup = include_str!("inventory_container.rs")
+            .split("pub(crate) fn object_for_row")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn object_is_nonempty").next())
+            .expect("physical object row lookup");
+        assert!(lookup.contains(".location_and_row()"));
+        assert!(!lookup.contains(".inventory_object()\n        .iter()"));
     }
 
     #[test]
