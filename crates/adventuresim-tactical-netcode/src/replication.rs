@@ -39,6 +39,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<EquipmentTopology>()
             .replicate::<EquipmentPhysical>()
             .replicate_once::<WeaponAppearance>()
+            .replicate_once::<WeaponHolderAppearance>()
             .replicate::<EquipmentActionState>()
             .replicate::<TacticalSceneItem>()
             .replicate::<EquipSlot>()

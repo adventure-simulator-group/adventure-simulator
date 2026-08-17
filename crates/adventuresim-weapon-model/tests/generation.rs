@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use adventuresim_weapon_model::{
     Attachment, CodecError, ComponentDesign, ComponentRole, ComponentShape, CylinderSpec,
     MELEE_CATALOG_IDS, MaceSpec, MaterialClass, Millimeters, OffsetMm, PRESET_IDS, Permille,
-    Segments, ValidationError, WeaponDesign, decode, default_design, derive_properties,
-    design_hash, encode, generate, preset_design, validate,
+    Segments, ValidationError, WeaponDesign, WeaponHolderKind, decode, decode_holder,
+    default_design, default_holder_design, derive_properties, design_hash, encode, encode_holder,
+    generate, generate_holder, holder_design_hash, preset_design, recommended_holder, validate,
+    validate_holder,
 };
 
 fn signed_volume(positions: &[[f32; 3]], indices: &[u32]) -> f32 {
@@ -27,7 +29,11 @@ fn signed_volume(positions: &[[f32; 3]], indices: &[u32]) -> f32 {
 
 fn assert_closed_and_outward(design: &WeaponDesign) {
     let generated = generate(design).expect("generated weapon");
-    for part in &generated.parts {
+    assert_parts_closed_and_outward(&generated.parts);
+}
+
+fn assert_parts_closed_and_outward(parts: &[adventuresim_weapon_model::MeshPart]) {
+    for part in parts {
         assert_eq!(
             part.positions.len(),
             part.normals.len(),
@@ -91,6 +97,159 @@ fn assert_closed_and_outward(design: &WeaponDesign) {
                 part.component_id
             );
         }
+    }
+}
+
+#[test]
+fn every_non_polearm_has_a_fitted_closed_holder() {
+    let mut blade_sheaths = 0;
+    let mut haft_loops = 0;
+    let mut polearms = 0;
+    for id in MELEE_CATALOG_IDS {
+        let design = default_design(id).unwrap();
+        let generated = default_holder_design(&design);
+        assert_eq!(
+            generated.as_ref().map(|holder| holder.kind),
+            recommended_holder(id)
+        );
+        match generated {
+            Some(holder_design) => {
+                let holder = generate_holder(&holder_design).unwrap();
+                assert_eq!(holder.design_hash, holder_design_hash(&holder_design));
+                assert!(!holder.parts.is_empty(), "{id}");
+                assert_parts_closed_and_outward(&holder.parts);
+                assert!(holder.bounds.max[1] > holder.bounds.min[1], "{id}");
+                match holder.kind {
+                    WeaponHolderKind::BladeSheath => blade_sheaths += 1,
+                    WeaponHolderKind::HaftLoop => haft_loops += 1,
+                }
+            }
+            None => polearms += 1,
+        }
+    }
+    assert_eq!((blade_sheaths, haft_loops, polearms), (14, 4, 5));
+}
+
+#[test]
+fn sheath_tracks_blade_dimensions_and_leaves_the_hilt_exposed() {
+    let design = default_design("longsword").unwrap();
+    let weapon = generate(&design).unwrap();
+    let holder = generate_holder(&default_holder_design(&design).unwrap()).unwrap();
+    assert_eq!(holder.kind, WeaponHolderKind::BladeSheath);
+    let blade = weapon
+        .parts
+        .iter()
+        .find(|part| part.component_id == "blade")
+        .unwrap();
+    assert!(holder.bounds.min[0] < blade.bounds.min[0]);
+    assert!(holder.bounds.max[0] > blade.bounds.max[0]);
+    assert!(holder.bounds.min[2] < blade.bounds.min[2]);
+    assert!(holder.bounds.max[2] > blade.bounds.max[2]);
+    assert!(holder.bounds.min[1] > holder.grip[1]);
+
+    let mut longer = design.clone();
+    let blade = longer
+        .components
+        .iter_mut()
+        .find(|part| part.id == "blade")
+        .unwrap();
+    match &mut blade.shape {
+        ComponentShape::SectionBlade(spec) => spec.length = Millimeters(spec.length.0 + 120),
+        _ => panic!("longsword blade changed shape"),
+    }
+    let longer_holder = generate_holder(&default_holder_design(&longer).unwrap()).unwrap();
+    assert!(longer_holder.bounds.max[1] > holder.bounds.max[1] + 0.10);
+}
+
+#[test]
+fn haft_loop_tracks_the_grip_instead_of_the_head() {
+    let design = default_design("flanged_mace").unwrap();
+    let holder = generate_holder(&default_holder_design(&design).unwrap()).unwrap();
+    assert_eq!(holder.kind, WeaponHolderKind::HaftLoop);
+    assert!(holder.bounds.min[1] < holder.grip[1]);
+    assert!(holder.bounds.max[1] > holder.grip[1]);
+
+    let mut wider = design.clone();
+    let grip = wider
+        .components
+        .iter_mut()
+        .find(|part| part.role == ComponentRole::Grip)
+        .unwrap();
+    match &mut grip.shape {
+        ComponentShape::Cylinder(spec) => spec.radius = Millimeters(spec.radius.0 + 4),
+        _ => panic!("mace grip changed shape"),
+    }
+    let wider_holder = generate_holder(&default_holder_design(&wider).unwrap()).unwrap();
+    assert!(wider_holder.bounds.max[0] > holder.bounds.max[0] + 0.003);
+}
+
+#[test]
+fn holder_templates_encode_independent_per_instance_parameters() {
+    let weapon = default_design("longsword").unwrap();
+    let first = default_holder_design(&weapon).unwrap();
+    validate_holder(&first).unwrap();
+    let bytes = encode_holder(&first).unwrap();
+    assert_eq!(decode_holder(&bytes).unwrap(), first);
+
+    let mut second = first.clone();
+    second.clearance = Millimeters(first.clearance.0 + 3);
+    second.chape_length = Millimeters(first.chape_length.0 + 8);
+    assert_ne!(holder_design_hash(&first), holder_design_hash(&second));
+    assert_ne!(
+        encode_holder(&first).unwrap(),
+        encode_holder(&second).unwrap()
+    );
+    let first_mesh = generate_holder(&first).unwrap();
+    let second_mesh = generate_holder(&second).unwrap();
+    assert!(second_mesh.bounds.max[0] > first_mesh.bounds.max[0]);
+
+    let mut invalid = first;
+    invalid.clearance = Millimeters(0);
+    assert!(validate_holder(&invalid).is_err());
+    assert!(encode_holder(&invalid).is_err());
+    assert!(default_holder_design(&default_design("halberd").unwrap()).is_none());
+
+    let mut hostile = default_holder_design(&weapon).unwrap();
+    hostile.hanger_height = Millimeters(u32::MAX);
+    let result = std::panic::catch_unwind(|| generate_holder(&hostile));
+    assert!(matches!(result, Ok(Err(_))));
+}
+
+#[test]
+fn holder_parameter_extremes_stay_valid_closed_and_distinct() {
+    for id in MELEE_CATALOG_IDS {
+        let weapon = default_design(id).unwrap();
+        let Some(default) = default_holder_design(&weapon) else {
+            continue;
+        };
+        let mut minimum = default.clone();
+        minimum.clearance = Millimeters(2);
+        minimum.throat_length = Millimeters(4);
+        minimum.chape_length = Millimeters(6);
+        minimum.loop_position = Permille(0);
+        minimum.loop_bar_radius = Millimeters(2);
+        minimum.hanger_width = Millimeters(20);
+        minimum.hanger_height = Millimeters(30);
+        let mut maximum = default;
+        maximum.clearance = Millimeters(20);
+        maximum.throat_length = Millimeters(40);
+        maximum.chape_length = Millimeters(60);
+        maximum.loop_position = Permille(1_000);
+        maximum.loop_bar_radius = Millimeters(12);
+        maximum.hanger_width = Millimeters(120);
+        maximum.hanger_height = Millimeters(180);
+        for design in [&minimum, &maximum] {
+            validate_holder(design).unwrap_or_else(|errors| panic!("{id}: {errors:?}"));
+            let holder = generate_holder(design).unwrap();
+            assert_parts_closed_and_outward(&holder.parts);
+            assert!(holder.derived.mass_kg.is_finite() && holder.derived.mass_kg > 0.0);
+            assert!(holder.derived.length_m.is_finite() && holder.derived.length_m > 0.0);
+        }
+        assert_ne!(
+            holder_design_hash(&minimum),
+            holder_design_hash(&maximum),
+            "{id}"
+        );
     }
 }
 

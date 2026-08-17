@@ -152,6 +152,7 @@ struct CachedWeapon {
 #[derive(Resource, Default)]
 struct WeaponMeshCache {
     weapons: HashMap<(u16, [u8; 32]), CachedWeapon>,
+    holders: HashMap<(u16, [u8; 32]), CachedWeapon>,
     materials: HashMap<MaterialClass, Handle<StandardMaterial>>,
 }
 
@@ -1005,14 +1006,67 @@ fn cached_weapon(
     Some(cached)
 }
 
+fn cached_holder(
+    appearance: &WeaponHolderAppearance,
+    cache: &mut WeaponMeshCache,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) -> Option<CachedWeapon> {
+    if appearance.recipe.len() > 16 * 1024
+        || appearance.generator_version != adventuresim_weapon_model::HOLDER_GENERATOR_VERSION
+    {
+        return None;
+    }
+    let design = adventuresim_weapon_model::decode_holder(&appearance.recipe).ok()?;
+    if adventuresim_weapon_model::holder_design_hash(&design).0 != appearance.design_hash {
+        return None;
+    }
+    let key = (appearance.generator_version, appearance.design_hash);
+    if let Some(cached) = cache.holders.get(&key) {
+        return Some(cached.clone());
+    }
+    let generated = adventuresim_weapon_model::generate_holder(&design).ok()?;
+    let parts = generated
+        .parts
+        .into_iter()
+        .map(|part| {
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+            );
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, part.positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, part.normals);
+            mesh.insert_indices(Indices::U32(part.indices));
+            CachedWeaponPart {
+                mesh: meshes.add(mesh),
+                material: weapon_material(part.material, cache, materials),
+            }
+        })
+        .collect();
+    let cached = CachedWeapon {
+        parts,
+        grip: Vec3::from_array(generated.grip),
+    };
+    cache.holders.insert(key, cached.clone());
+    Some(cached)
+}
+
 fn spawn_item_placeholders(
     mut commands: Commands,
     added: Query<
-        (Entity, &EquipmentPhysical, Option<&WeaponAppearance>),
+        (
+            Entity,
+            &EquipmentPhysical,
+            Option<&ItemProperties>,
+            Option<&WeaponAppearance>,
+            Option<&WeaponHolderAppearance>,
+        ),
         Or<(
             Added<EquipmentPhysical>,
             Added<WeaponAppearance>,
             Changed<WeaponAppearance>,
+            Added<WeaponHolderAppearance>,
+            Changed<WeaponHolderAppearance>,
         )>,
     >,
     existing: Query<(Entity, &ItemPlaceholder)>,
@@ -1020,7 +1074,7 @@ fn spawn_item_placeholders(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cache: ResMut<WeaponMeshCache>,
 ) {
-    for (item, physical, appearance) in &added {
+    for (item, physical, properties, appearance, holder_appearance) in &added {
         if !physical.is_valid() {
             continue;
         }
@@ -1039,13 +1093,34 @@ fn spawn_item_placeholders(
                 Visibility::Hidden,
             ))
             .id();
-        if let Some(generated) = appearance.and_then(|appearance| {
-            cached_weapon(appearance, &mut cache, &mut meshes, &mut materials)
+        let (generated, part_name) = if let Some(holder) =
+            holder_appearance.and_then(|appearance| {
+                cached_holder(appearance, &mut cache, &mut meshes, &mut materials)
+            }) {
+            (Some(holder), "Procedural weapon holder part")
+        } else if properties.is_some_and(|properties| {
+            matches!(
+                properties.id.as_str(),
+                "scabbard" | "sword_sheath" | "boot_sheath" | "forearm_holster" | "weapon_loop"
+            )
         }) {
+            // Holder catalog rows are semantic chassis, not renderable generic
+            // boxes. An absent, corrupt, or unsupported holder instance stays
+            // visually absent until a valid first-class recipe arrives.
+            continue;
+        } else {
+            (
+                appearance.and_then(|appearance| {
+                    cached_weapon(appearance, &mut cache, &mut meshes, &mut materials)
+                }),
+                "Procedural weapon part",
+            )
+        };
+        if let Some(generated) = generated {
             commands.entity(root).with_children(|parent| {
                 for part in generated.parts {
                     parent.spawn((
-                        Name::new("Procedural weapon part"),
+                        Name::new(part_name),
                         Mesh3d(part.mesh),
                         MeshMaterial3d(part.material),
                         Transform::from_translation(-generated.grip),
@@ -1273,6 +1348,64 @@ mod tests {
         }
     }
 
+    fn longsword_holder_appearance() -> WeaponHolderAppearance {
+        let design = adventuresim_weapon_model::default_design("longsword").unwrap();
+        let holder = adventuresim_weapon_model::default_holder_design(&design).unwrap();
+        WeaponHolderAppearance {
+            generator_version: adventuresim_weapon_model::HOLDER_GENERATOR_VERSION,
+            design_hash: adventuresim_weapon_model::holder_design_hash(&holder).0,
+            recipe: adventuresim_weapon_model::encode_holder(&holder).unwrap(),
+        }
+    }
+
+    #[test]
+    fn identical_holder_recipes_share_a_separate_cache() {
+        let appearance = longsword_holder_appearance();
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        let first = cached_holder(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        let second = cached_holder(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        assert!(
+            first
+                .parts
+                .iter()
+                .zip(&second.parts)
+                .all(|(left, right)| left.mesh == right.mesh)
+        );
+        assert_eq!(cache.holders.len(), 1);
+        assert!(cache.weapons.is_empty());
+    }
+
+    #[test]
+    fn warm_holder_cache_reauthenticates_recipe_and_hash() {
+        let valid = longsword_holder_appearance();
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        assert!(cached_holder(&valid, &mut cache, &mut meshes, &mut materials).is_some());
+        let mut tampered = valid;
+        tampered.recipe[5] ^= 0x3c;
+        assert!(cached_holder(&tampered, &mut cache, &mut meshes, &mut materials).is_none());
+    }
+
+    #[test]
+    fn holder_chassis_without_an_instance_never_renders_a_generic_box() {
+        let mut world = World::new();
+        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.init_resource::<WeaponMeshCache>();
+        world.spawn((
+            valid_physical(),
+            ItemProperties {
+                weight: 0.3,
+                id: "scabbard".into(),
+            },
+        ));
+        world.run_system_once(spawn_item_placeholders).unwrap();
+        assert_eq!(world.query::<&Mesh3d>().iter(&world).count(), 0);
+    }
+
     #[test]
     fn warm_cache_does_not_accept_a_recipe_with_a_borrowed_hash() {
         let valid = longsword_appearance();
@@ -1318,6 +1451,35 @@ mod tests {
                 .filter(|placeholder| placeholder.0 == item)
                 .count();
             assert_eq!(roots, 1, "appearance_first={appearance_first}");
+        }
+    }
+
+    #[test]
+    fn either_replication_arrival_order_builds_one_holder_presentation() {
+        for appearance_first in [false, true] {
+            let mut world = World::new();
+            world.insert_resource(Assets::<Mesh>::default());
+            world.insert_resource(Assets::<StandardMaterial>::default());
+            world.init_resource::<WeaponMeshCache>();
+            let item = if appearance_first {
+                world.spawn(longsword_holder_appearance()).id()
+            } else {
+                world.spawn(valid_physical()).id()
+            };
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            if appearance_first {
+                world.entity_mut(item).insert(valid_physical());
+            } else {
+                world.entity_mut(item).insert(longsword_holder_appearance());
+            }
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            let roots = world
+                .query::<&ItemPlaceholder>()
+                .iter(&world)
+                .filter(|placeholder| placeholder.0 == item)
+                .count();
+            assert_eq!(roots, 1, "appearance_first={appearance_first}");
+            assert_eq!(world.resource::<WeaponMeshCache>().holders.len(), 1);
         }
     }
 

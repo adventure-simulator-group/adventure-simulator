@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     Attachment, ComponentDesign, ComponentRole, ComponentShape, DerivedProperties, ValidationError,
-    WeaponDesign, validate,
+    WeaponDesign, WeaponHolderDesign, WeaponHolderKind, validate, validate_holder,
 };
 
 fn origin_y<'a>(
@@ -25,6 +25,47 @@ fn origin_y<'a>(
     }
     cache.insert(component.id.as_str(), value);
     value
+}
+
+pub fn derive_holder_properties(
+    design: &WeaponHolderDesign,
+) -> Result<DerivedProperties, Vec<ValidationError>> {
+    validate_holder(design)?;
+    let weapon = derive_properties(&design.fitted_weapon)?;
+    let (mass_kg, length_m) = match design.kind {
+        WeaponHolderKind::BladeSheath => {
+            let blade_volume = design
+                .fitted_weapon
+                .components
+                .iter()
+                .filter(|component| {
+                    matches!(
+                        &component.shape,
+                        ComponentShape::Blade(_) | ComponentShape::SectionBlade(_)
+                    )
+                })
+                .map(|component| volume(&component.shape))
+                .sum::<f32>();
+            let length = weapon.grip_to_tip_m + design.chape_length.meters() * 0.5;
+            let leather = blade_volume * 0.22 * design.body_material.density_kg_m3();
+            let fittings = blade_volume * 0.035 * design.fitting_material.density_kg_m3();
+            ((leather + fittings).max(0.08), length)
+        }
+        WeaponHolderKind::HaftLoop => {
+            let bar = design.loop_bar_radius.meters();
+            let path = std::f32::consts::PI
+                * (design.hanger_width.meters() + design.hanger_height.meters())
+                + 0.16;
+            let mass =
+                path * std::f32::consts::PI * bar.powi(2) * design.body_material.density_kg_m3();
+            (mass.max(0.04), design.hanger_height.meters())
+        }
+    };
+    Ok(DerivedProperties {
+        mass_kg,
+        length_m,
+        grip_to_tip_m: 0.0,
+    })
 }
 
 fn polygonal_tube(length: f32, radius: f32, segments: u16) -> f32 {

@@ -100,9 +100,9 @@ mod tests {
 
     #[test]
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
-        // Eight public herb-grade identities were removed and three shared
-        // preparation/container tools were added.
-        assert_eq!(catalog().len(), 158);
+        // The source catalog expands each availability epoch into a compiled
+        // definition; the generated weapon loop adds four epoch rows.
+        assert_eq!(catalog().len(), 162);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -134,8 +134,8 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "33c24085395b9870669395937afb7a9af75a4e5dc78e345029143765617d6829",
-            "stable-ID golden changed intentionally: herb grade IDs were removed and shared preparation tools added; development data must be reseeded"
+            "625651f17a65235325cd40524c06f007f7365ac0f72b2989d32782ecd50b1595",
+            "stable-ID golden changed intentionally: the generated weapon loop was added; development data must be reseeded"
         );
 
         let counts = catalog().iter().fold([0_u16; 10], |mut counts, item| {
@@ -154,9 +154,9 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        // Bottle, jar, and mortar are shared Simple tools; eight public
-        // medicinal grade variants no longer occupy Ingredient identities.
-        assert_eq!(counts, [45, 6, 12, 14, 1, 1, 5, 24, 29, 21]);
+        // Holder chassis are simple catalog rows; their individual procedural
+        // identities live in WeaponHolderInstance.
+        assert_eq!(counts, [48, 6, 12, 14, 1, 1, 5, 25, 29, 21]);
     }
 
     #[test]
@@ -238,9 +238,18 @@ mod tests {
             "hunting_spear",
             "military_pike",
             "spear",
-            "zweihander",
+            "walking_staff",
         ] {
             assert_eq!(weapon_carry(item_id), Some(WeaponCarry::HandOnly));
+        }
+        for item_id in [
+            "club",
+            "flanged_mace",
+            "hand_axe",
+            "war_hammer",
+            "zweihander",
+        ] {
+            assert_eq!(weapon_carry(item_id), Some(WeaponCarry::Sheathable));
         }
     }
 
@@ -293,6 +302,18 @@ mod tests {
             .as_ref()
             .unwrap();
         assert!(sheath.attachment_tags.contains(&"sheath".to_owned()));
+        let weapon_loop = definition("weapon_loop")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap();
+        assert!(weapon_loop.attachment_tags.contains(&"sheath".to_owned()));
+        assert!(
+            weapon_loop
+                .attachment_points
+                .iter()
+                .any(|point| { point.accepts_tags.contains(&"sheathable_weapon".to_owned()) })
+        );
         assert!(
             sheath
                 .attachment_points
@@ -412,7 +433,7 @@ mod tests {
             .iter()
             .filter_map(|item| item.equipment.as_ref().map(|equipment| (item, equipment)))
             .collect();
-        assert_eq!(equipment.len(), 64);
+        assert_eq!(equipment.len(), 68);
         for (item, equipment) in equipment {
             assert!(
                 equipment

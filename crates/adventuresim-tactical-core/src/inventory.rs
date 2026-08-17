@@ -178,6 +178,16 @@ pub struct WeaponAppearance {
     pub recipe: Vec<u8>,
 }
 
+/// Immutable recipe used to derive a fitted sheath, scabbard, or haft loop.
+/// This is attached to the holder entity, while [`WeaponAppearance`] remains
+/// attached to the contained weapon entity.
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WeaponHolderAppearance {
+    pub generator_version: u16,
+    pub design_hash: [u8; 32],
+    pub recipe: Vec<u8>,
+}
+
 impl EquipmentPhysical {
     pub fn is_valid(self) -> bool {
         self.dimensions_m.is_finite()

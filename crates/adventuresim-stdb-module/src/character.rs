@@ -1943,6 +1943,7 @@ pub(crate) fn insert_new_character(
             origin_settlement_id: None,
             mode,
             create_solo_party: true,
+            materialize_generated_carry: true,
             stable_seed: id,
             initial_time_minute: None,
             field_actor: false,
@@ -1982,6 +1983,10 @@ pub(crate) struct CharacterCreationOptions<'a> {
     pub origin_settlement_id: Option<&'a str>,
     pub mode: CharacterCreationMode,
     pub create_solo_party: bool,
+    /// Build the physical belt/holder graph for this character's generated
+    /// loadout. Bulk settlement residents defer this until they become active
+    /// actors so world seeding does not eagerly objectify thousands of items.
+    pub materialize_generated_carry: bool,
     pub stable_seed: u64,
     pub initial_time_minute: Option<u64>,
     pub field_actor: bool,
@@ -2035,6 +2040,7 @@ pub(crate) fn insert_new_npc_character(
             origin_settlement_id: None,
             mode,
             create_solo_party: temporary,
+            materialize_generated_carry: temporary,
             stable_seed: id,
             initial_time_minute: None,
             field_actor: false,
@@ -2063,6 +2069,7 @@ pub(crate) fn insert_persistent_npc_character(
             origin_settlement_id: Some(origin_settlement_id),
             mode: CharacterCreationMode::PersistentNpc,
             create_solo_party: false,
+            materialize_generated_carry: false,
             stable_seed,
             initial_time_minute,
             field_actor: false,
@@ -2090,6 +2097,7 @@ pub(crate) fn insert_persistent_field_character(
             origin_settlement_id: None,
             mode: CharacterCreationMode::PersistentNpc,
             create_solo_party: false,
+            materialize_generated_carry: true,
             stable_seed,
             initial_time_minute,
             field_actor: true,
@@ -2111,6 +2119,7 @@ pub(crate) fn insert_starting_character(
             origin_settlement_id: None,
             mode: CharacterCreationMode::Player,
             create_solo_party: true,
+            materialize_generated_carry: true,
             stable_seed: spec.id,
             initial_time_minute: None,
             field_actor: false,
@@ -2694,7 +2703,7 @@ pub(crate) fn insert_character_with_origin(
             add_and_equip_item(ctx, character.id, item, slot)?;
         }
     }
-    if !newborn {
+    if !newborn && options.materialize_generated_carry {
         provision_generated_weapon_carry(ctx, character.id)?;
     }
 
@@ -3448,49 +3457,26 @@ fn provision_generated_weapon_carry(ctx: &ReducerContext, character_id: u64) -> 
         false,
     )?;
 
-    if sheathable.len() == 1 {
-        let sheath = add_inventory_item(ctx, character_id, "sword_sheath", 1)
-            .ok_or("Could not add generated sword sheath")?;
-        let sheath_placement = authored_placement_index(ctx, "sword_sheath", "attached")?;
+    for (weapon, hip) in sheathable.iter().zip(["right", "left"]) {
+        let holder_id = match adventuresim_weapon_model::recommended_holder(&weapon.item_id) {
+            Some(adventuresim_weapon_model::WeaponHolderKind::BladeSheath) => "scabbard",
+            Some(adventuresim_weapon_model::WeaponHolderKind::HaftLoop) => "weapon_loop",
+            None => {
+                return Err(format!(
+                    "Sheathable weapon {} has no procedural holder",
+                    weapon.item_id
+                ));
+            }
+        };
+        let holder = add_inventory_item(ctx, character_id, holder_id, 1)
+            .ok_or_else(|| format!("Could not add generated {holder_id}"))?;
+        crate::weapon_instance::fit_personal_holder(ctx, character_id, holder, weapon.id)?;
+        let holder_placement = authored_placement_index(ctx, holder_id, hip)?;
         equip_equipment_internal(
             ctx,
             character_id,
-            sheath,
-            sheath_placement,
-            vec![
-                EquipmentAttachmentTargetSelection {
-                    requirement_index: 0,
-                    parent_inventory_item_id: belt,
-                    attachment_point_id: "left".into(),
-                },
-                EquipmentAttachmentTargetSelection {
-                    requirement_index: 1,
-                    parent_inventory_item_id: belt,
-                    attachment_point_id: "right".into(),
-                },
-            ],
-            false,
-            false,
-        )?;
-        place_unheld_weapon_in_sheath(ctx, character_id, &sheathable[0], sheath)?;
-        return Ok(());
-    }
-
-    for (weapon_id, hip) in [("longsword", "right"), ("rondel_dagger", "left")] {
-        let weapon = sheathable
-            .iter()
-            .find(|item| item.item_id == weapon_id)
-            .ok_or_else(|| {
-                "The two-weapon default carry kit requires a longsword and rondel dagger".to_owned()
-            })?;
-        let scabbard = add_inventory_item(ctx, character_id, "scabbard", 1)
-            .ok_or("Could not add default scabbard")?;
-        let scabbard_placement = authored_placement_index(ctx, "scabbard", hip)?;
-        equip_equipment_internal(
-            ctx,
-            character_id,
-            scabbard,
-            scabbard_placement,
+            holder,
+            holder_placement,
             vec![EquipmentAttachmentTargetSelection {
                 requirement_index: 0,
                 parent_inventory_item_id: belt,
@@ -3499,7 +3485,7 @@ fn provision_generated_weapon_carry(ctx: &ReducerContext, character_id: u64) -> 
             false,
             false,
         )?;
-        place_unheld_weapon_in_sheath(ctx, character_id, weapon, scabbard)?;
+        place_unheld_weapon_in_sheath(ctx, character_id, weapon, holder)?;
     }
     Ok(())
 }
@@ -3800,7 +3786,7 @@ mod starting_character_boundary_tests {
     }
 
     #[test]
-    fn non_newborn_materialization_adds_one_authored_belt_sheath_kit() {
+    fn active_non_newborn_materialization_adds_one_authored_belt_sheath_kit() {
         let source = include_str!("character.rs");
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
@@ -3810,7 +3796,7 @@ mod starting_character_boundary_tests {
             .next()
             .unwrap();
         assert!(insertion.contains(
-            "if !newborn {\n        provision_generated_weapon_carry(ctx, character.id)?;\n    }"
+            "if !newborn && options.materialize_generated_carry {\n        provision_generated_weapon_carry(ctx, character.id)?;\n    }"
         ));
         let helper = source
             .split("fn provision_generated_weapon_carry")
@@ -3822,7 +3808,9 @@ mod starting_character_boundary_tests {
         for evidence in [
             "is_sheathable_weapon",
             "leather_belt",
-            "sword_sheath",
+            "recommended_holder",
+            "scabbard",
+            "weapon_loop",
             "attachment_point_id: \"left\"",
             "attachment_point_id: \"right\"",
             "attachment_point_id: \"blade\"",

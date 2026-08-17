@@ -49,6 +49,39 @@ pub const MELEE_CATALOG_IDS: &[&str] = &[
     "zweihander",
 ];
 
+pub fn recommended_holder(catalog_id: &str) -> Option<WeaponHolderKind> {
+    match catalog_id {
+        "arming_sword" | "baselard" | "bauernwehr" | "falchion" | "katzbalger" | "knife"
+        | "kriegsmesser" | "longsword" | "messer" | "misericorde" | "rapier" | "rondel_dagger"
+        | "utility_knife" | "zweihander" => Some(WeaponHolderKind::BladeSheath),
+        "club" | "flanged_mace" | "hand_axe" | "war_hammer" => Some(WeaponHolderKind::HaftLoop),
+        "halberd" | "hunting_spear" | "military_pike" | "spear" | "walking_staff" => None,
+        _ => None,
+    }
+}
+
+pub fn default_holder_design(weapon: &WeaponDesign) -> Option<WeaponHolderDesign> {
+    let kind = recommended_holder(&weapon.catalog_id)?;
+    Some(WeaponHolderDesign {
+        catalog_id: match kind {
+            WeaponHolderKind::BladeSheath => "scabbard",
+            WeaponHolderKind::HaftLoop => "weapon_loop",
+        }
+        .into(),
+        kind,
+        fitted_weapon: weapon.clone(),
+        body_material: MaterialClass::DarkLeather,
+        fitting_material: MaterialClass::Brass,
+        clearance: Millimeters(5),
+        throat_length: Millimeters(12),
+        chape_length: Millimeters(20),
+        loop_position: Permille(280),
+        loop_bar_radius: Millimeters(4),
+        hanger_width: Millimeters(42),
+        hanger_height: Millimeters(76),
+    })
+}
+
 fn component(
     id: &str,
     role: ComponentRole,

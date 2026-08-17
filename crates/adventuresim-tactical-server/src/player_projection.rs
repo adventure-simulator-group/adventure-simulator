@@ -480,6 +480,18 @@ fn spawn_connected_player(
                 recipe: appearance.recipe.clone(),
             })
         });
+        let weapon_holder_appearance =
+            item.weapon_holder_appearance
+                .as_ref()
+                .and_then(|appearance| {
+                    let design_hash: [u8; 32] =
+                        appearance.design_hash.as_slice().try_into().ok()?;
+                    Some(WeaponHolderAppearance {
+                        generator_version: appearance.generator_version,
+                        design_hash,
+                        recipe: appearance.recipe.clone(),
+                    })
+                });
         item_cmd.insert((
             Replicated,
             TacticalInventoryItemId(item.inventory_item_id),
@@ -502,6 +514,9 @@ fn spawn_connected_player(
             });
         }
         if let Some(appearance) = weapon_appearance {
+            item_cmd.insert(appearance);
+        }
+        if let Some(appearance) = weapon_holder_appearance {
             item_cmd.insert(appearance);
         }
         item_cmd.insert(EquipmentTopology {

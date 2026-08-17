@@ -68,6 +68,36 @@ pub enum MaterialClass {
     DarkSteel,
 }
 
+/// Render-only carry fixture derived from the complete weapon recipe.
+///
+/// Blade weapons receive a fitted, full-length sheath or scabbard. Compact
+/// hafted weapons receive a leather frog/loop around the grip. Long polearms
+/// deliberately have no body-mounted holder.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub enum WeaponHolderKind {
+    BladeSheath,
+    HaftLoop,
+}
+
+/// A durable, smithable holder recipe. The fitted weapon recipe is captured
+/// at fitting time so the holder remains independently reproducible even when
+/// it is empty or the weapon later changes custody.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct WeaponHolderDesign {
+    pub catalog_id: String,
+    pub kind: WeaponHolderKind,
+    pub fitted_weapon: WeaponDesign,
+    pub body_material: MaterialClass,
+    pub fitting_material: MaterialClass,
+    pub clearance: Millimeters,
+    pub throat_length: Millimeters,
+    pub chape_length: Millimeters,
+    pub loop_position: Permille,
+    pub loop_bar_radius: Millimeters,
+    pub hanger_width: Millimeters,
+    pub hanger_height: Millimeters,
+}
+
 impl MaterialClass {
     pub const fn density_kg_m3(self) -> f32 {
         match self {
@@ -536,5 +566,16 @@ pub struct GeneratedWeapon {
     pub parts: Vec<MeshPart>,
     pub bounds: Bounds,
     pub anchors: Vec<Anchor>,
+    pub derived: DerivedProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GeneratedWeaponHolder {
+    pub design_hash: crate::DesignHash,
+    pub kind: WeaponHolderKind,
+    /// Holder coordinates use the same recipe-local frame as the weapon.
+    pub grip: [f32; 3],
+    pub parts: Vec<MeshPart>,
+    pub bounds: Bounds,
     pub derived: DerivedProperties,
 }

@@ -255,6 +255,7 @@ fn ensure_scenario_character_at(
             origin_settlement_id: Some(settlement_id),
             mode: crate::character::CharacterCreationMode::Player,
             create_solo_party: true,
+            materialize_generated_carry: true,
             stable_seed: character_id,
             initial_time_minute: None,
             field_actor: false,

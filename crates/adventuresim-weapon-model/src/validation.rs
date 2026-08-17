@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
-use crate::{Attachment, ComponentShape, WeaponDesign};
+use crate::{
+    Attachment, ComponentRole, ComponentShape, WeaponDesign, WeaponHolderDesign, WeaponHolderKind,
+    recommended_holder,
+};
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ValidationError {
@@ -616,6 +619,56 @@ pub fn validate(design: &WeaponDesign) -> Result<(), Vec<ValidationError>> {
             };
             current = next;
         }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+pub fn validate_holder(design: &WeaponHolderDesign) -> Result<(), Vec<ValidationError>> {
+    let mut errors = validate(&design.fitted_weapon).err().unwrap_or_default();
+    if design.catalog_id.is_empty() {
+        errors.push(ValidationError::EmptyCatalogId);
+    }
+    let expected = recommended_holder(&design.fitted_weapon.catalog_id);
+    if expected != Some(design.kind)
+        || !matches!(
+            (design.kind, design.catalog_id.as_str()),
+            (WeaponHolderKind::BladeSheath, "scabbard")
+                | (WeaponHolderKind::HaftLoop, "weapon_loop")
+        )
+    {
+        errors.push(ValidationError::InvalidDimensions("holder kind".into()));
+    }
+    if !(2..=20).contains(&design.clearance.0)
+        || !(4..=40).contains(&design.throat_length.0)
+        || !(6..=60).contains(&design.chape_length.0)
+        || design.loop_position.0 > 1_000
+        || !(2..=12).contains(&design.loop_bar_radius.0)
+        || !(20..=120).contains(&design.hanger_width.0)
+        || !(30..=180).contains(&design.hanger_height.0)
+    {
+        errors.push(ValidationError::InvalidDimensions(
+            "holder parameters".into(),
+        ));
+    }
+    let has_grip = design
+        .fitted_weapon
+        .components
+        .iter()
+        .any(|part| part.role == ComponentRole::Grip);
+    let has_blade = design.fitted_weapon.components.iter().any(|part| {
+        matches!(
+            part.shape,
+            ComponentShape::Blade(_) | ComponentShape::SectionBlade(_)
+        )
+    });
+    if !has_grip || (design.kind == WeaponHolderKind::BladeSheath && !has_blade) {
+        errors.push(ValidationError::InvalidDimensions(
+            "holder source geometry".into(),
+        ));
     }
     if errors.is_empty() {
         Ok(())

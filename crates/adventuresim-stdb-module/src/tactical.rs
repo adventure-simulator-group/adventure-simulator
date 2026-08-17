@@ -302,6 +302,7 @@ pub struct ConnectedPlayerItem {
     pub protected_body_parts: Vec<crate::item::EquipmentBodyPart>,
     pub condition: Option<ItemCondition>,
     pub weapon_appearance: Option<crate::weapon_instance::ConnectedWeaponAppearance>,
+    pub weapon_holder_appearance: Option<crate::weapon_instance::ConnectedWeaponAppearance>,
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
@@ -407,6 +408,11 @@ fn connected_player_items(
                 inventory_item.id,
                 &inventory_item.item_id,
             );
+            let weapon_holder_appearance = crate::weapon_instance::connected_holder_appearance(
+                ctx,
+                inventory_item.id,
+                &inventory_item.item_id,
+            );
             let condition = ctx
                 .db
                 .item_condition()
@@ -474,6 +480,7 @@ fn connected_player_items(
                 occupancies,
                 protected_body_parts,
                 weapon_appearance,
+                weapon_holder_appearance,
             })
         })
 }
