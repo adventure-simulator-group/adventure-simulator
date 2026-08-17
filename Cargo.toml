@@ -9,6 +9,7 @@ members = [
   "crates/adventuresim-world-import",
   "crates/adventuresim-terrain",
   "crates/adventuresim-weapon-model",
+  "crates/adventuresim-building-generator",
   "crates/adventuresim-stdb-module",
   "crates/adventuresim-stdb-client",
   "crates/adventuresim-tactical-core",

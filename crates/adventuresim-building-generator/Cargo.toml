@@ -1,0 +1,25 @@
+[package]
+name = "adventuresim-building-generator"
+description = "Standalone procedural building-layout and coarse-geometry prototype"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[target."cfg(not(target_family = \"wasm\"))".dependencies]
+bevy = { workspace = true, default-features = true, features = ["png"] }
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "building-viewer"
+path = "src/main.rs"
+doc = false
