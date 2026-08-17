@@ -4087,10 +4087,10 @@
           ]
         }],
         "attachment_points": [
-          {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "accepts_tags": ["sheath", "bag"]},
-          {"id": "right", "channel": "mount", "capacity": 1, "order": 1, "accepts_tags": ["sheath", "bag"]},
-          {"id": "front", "channel": "mount", "capacity": 1, "order": 2, "accepts_tags": ["bag"]},
-          {"id": "back", "channel": "mount", "capacity": 1, "order": 3, "accepts_tags": ["bag"]}
+          {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "locations": ["left_belt"], "accepts_tags": ["sheath", "bag"]},
+          {"id": "right", "channel": "mount", "capacity": 1, "order": 1, "locations": ["right_belt"], "accepts_tags": ["sheath", "bag"]},
+          {"id": "front", "channel": "mount", "capacity": 1, "order": 2, "locations": ["front_belt"], "accepts_tags": ["bag"]},
+          {"id": "back", "channel": "mount", "capacity": 1, "order": 3, "locations": ["back_belt"], "accepts_tags": ["bag"]}
         ]
       },
       "kind": "simple"

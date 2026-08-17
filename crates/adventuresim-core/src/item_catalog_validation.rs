@@ -904,7 +904,14 @@ fn validate_equipment(
             };
             reject_unknown(
                 point,
-                &["id", "channel", "capacity", "order", "accepts_tags"],
+                &[
+                    "id",
+                    "channel",
+                    "capacity",
+                    "order",
+                    "locations",
+                    "accepts_tags",
+                ],
                 file,
                 &format!("{path}.attachment_points.{index}"),
                 errors,
@@ -933,6 +940,18 @@ fn validate_equipment(
                     "{file}: {path}.attachment_points.{index}.capacity: expected 1..={}",
                     u16::MAX
                 ));
+            }
+            if let Some(locations) = point.get("locations").and_then(Value::as_array) {
+                let mut seen = BTreeSet::new();
+                for location in locations {
+                    if !location.as_str().is_some_and(|location| {
+                        valid_locations.contains(location) && seen.insert(location)
+                    }) {
+                        errors.push(format!(
+                            "{file}: {path}.attachment_points.{index}.locations: invalid or duplicate location"
+                        ));
+                    }
+                }
             }
             if let Some(tags) = point.get("accepts_tags").and_then(Value::as_array) {
                 for tag in tags {
