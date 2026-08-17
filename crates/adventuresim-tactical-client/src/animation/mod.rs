@@ -14,10 +14,11 @@ mod procedural;
 
 #[allow(unused_imports)]
 pub(crate) use procedural::{
-    ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
-    HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
-    LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
+    ArmIkState, BoneRole, ContactMotionEvent, FootMotionDiagnostic, FootMotionOwnerKind,
+    HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets, HumanoidRig,
+    LegIkDiagnostics, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";

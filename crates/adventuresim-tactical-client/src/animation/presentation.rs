@@ -20,6 +20,7 @@ pub(crate) struct PresentedSkeleton {
     pub(crate) state: SkeletonState,
     source_tick: u64,
     presentation_tick: Option<u64>,
+    raised_phase_ahead: f32,
     pub(crate) phase_error_remaining: f32,
     pub(crate) last_phase_prediction_delta: f32,
     pub(crate) last_phase_correction_delta: f32,
@@ -34,12 +35,26 @@ impl PresentedSkeleton {
             state,
             source_tick,
             presentation_tick,
+            raised_phase_ahead: 0.0,
             phase_error_remaining: 0.0,
             last_phase_prediction_delta: 0.0,
             last_phase_correction_delta: 0.0,
             last_phase_measurement_error: None,
             last_phase_source_changed: false,
         }
+    }
+
+    pub(crate) fn cadence_diagnostic_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "source_tick": self.source_tick,
+            "presentation_tick": self.presentation_tick,
+            "source_age_ticks": self.presentation_tick.map(|tick| tick.saturating_sub(self.source_tick)),
+            "raised_phase_ahead": self.raised_phase_ahead,
+            "authoritative_sample_tick": self.state.locomotion_sample_tick,
+            "raised_step_sequence": self.state.raised_locomotion().step_sequence(),
+            "raised_swing_foot": format!("{:?}", self.state.raised_locomotion().swing_foot()),
+            "raised_phase": self.state.gait_phase,
+        })
     }
 }
 
@@ -85,6 +100,8 @@ pub(super) fn advance_presented_skeleton(
         .checked_sub(presented.source_tick);
     let previous = presented.state.clone();
     let mut next = authoritative.clone();
+    let authoritative_phase = authoritative.gait_phase;
+    let authoritative_raised = authoritative.raised_locomotion();
 
     let source_is_contiguous =
         source_gap.is_some_and(|gap| gap <= MAX_PRESENTATION_SOURCE_GAP_TICKS);
@@ -131,8 +148,25 @@ pub(super) fn advance_presented_skeleton(
             presented.phase_error_remaining -= correction;
             presented.last_phase_correction_delta = correction;
         }
+        let newly_presented_phase = if source_changed {
+            circular_phase_delta(authoritative_phase, next.gait_phase).max(0.0)
+        } else {
+            circular_phase_delta(previous.gait_phase, next.gait_phase).max(0.0)
+        };
+        presented.raised_phase_ahead = if source_changed {
+            newly_presented_phase
+        } else {
+            presented.raised_phase_ahead + newly_presented_phase
+        };
+        predict_raised_cadence_identity(
+            authoritative_phase,
+            authoritative_raised,
+            presented.raised_phase_ahead,
+            &mut next,
+        );
     } else {
         presented.phase_error_remaining = 0.0;
+        presented.raised_phase_ahead = 0.0;
     }
 
     presented.state = next;
@@ -158,7 +192,6 @@ fn presentation_phase_speed(skeleton: &SkeletonState) -> f32 {
 
 pub(super) fn update_presented_skeletons(
     mut commands: Commands,
-    time: Res<Time>,
     procedural_clock: Res<ProceduralAnimationClock>,
     mut players: Query<(Entity, &SkeletonState, Option<&mut PresentedSkeleton>), With<Player>>,
 ) {
@@ -166,18 +199,16 @@ pub(super) fn update_presented_skeletons(
         let Some(mut presented) = presented else {
             commands.entity(entity).insert(PresentedSkeleton::new(
                 authoritative.clone(),
-                procedural_clock.fixed_step().map(|(tick, _)| tick),
+                Some(procedural_clock.semantic_step().0),
             ));
             continue;
         };
-        let delta_seconds = if let Some((tick, fixed_delta)) = procedural_clock.fixed_step() {
-            let advances = presented.presentation_tick != Some(tick);
+        let (tick, semantic_delta) = procedural_clock.semantic_step();
+        let advances = presented.presentation_tick != Some(tick);
+        if advances {
             presented.presentation_tick = Some(tick);
-            if advances { fixed_delta } else { 0.0 }
-        } else {
-            time.delta_secs()
-        };
-        advance_presented_skeleton(&mut presented, authoritative, delta_seconds);
+            advance_presented_skeleton(&mut presented, authoritative, semantic_delta);
+        }
     }
 }
 
@@ -262,6 +293,7 @@ impl Plugin for TacticalAnimationPlugin {
                 (
                     collect_loaded_packs,
                     attach_loaded_rig_scenes,
+                    procedural::advance_procedural_animation_clock,
                     update_presented_skeletons,
                     establish_animation_targets,
                     procedural::bind_humanoid_bones,
@@ -270,7 +302,6 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::capture_humanoid_rig_axes,
                     semantic_route::evaluate_semantic_route_paths,
                     evaluate_skeletons,
-                    log_animation_diagnostics,
                     tick_impact_reactions,
                     pose_buffer::update_pose_buffers,
                     jitter::advance_jitter_diagnostic_clock,
@@ -285,6 +316,7 @@ impl Plugin for TacticalAnimationPlugin {
                 (
                     pose_buffer::apply_pose_buffers,
                     restore_authored_bind_pose,
+                    procedural::stabilize_repeated_fixed_tick_pose,
                     jitter::sample_authored_pose_jitter,
                     procedural::apply_pose_mirroring,
                     procedural::stabilize_locomotion_torso,
@@ -299,14 +331,17 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::enforce_anatomical_knee_yaw,
                     procedural::apply_arm_and_weapon_constraints,
                     jitter::sample_final_pose_jitter,
-                    procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()
                     .before(TransformSystems::Propagate),
             )
             .add_systems(
                 PostUpdate,
-                procedural::refresh_raised_support_after_propagation
+                (
+                    procedural::refresh_raised_support_after_propagation,
+                    log_animation_diagnostics,
+                )
+                    .chain()
                     .after(TransformSystems::Propagate),
             );
     }
@@ -323,6 +358,63 @@ pub(super) fn trace_locomotion_presentation_events(
             kind = ?message.kind,
             "locomotion presentation event"
         );
+    }
+}
+
+fn predict_raised_cadence_identity(
+    authoritative_phase: f32,
+    authoritative_intent: RaisedLocomotionIntent,
+    presented_phase_ahead: f32,
+    next: &mut SkeletonState,
+) {
+    if next.weapon_guard() != WeaponGuardState::Raised || !next.raised_locomotion().is_moving() {
+        return;
+    }
+    // Never replace a newly replicated sequence/swing with the preceding
+    // predicted identity. Predict only the bounded forward phase remaining
+    // beyond this authoritative sample.
+    let mut intent = authoritative_intent;
+    let handoffs = (((authoritative_phase + presented_phase_ahead.max(0.0)) * 2.0).floor()
+        - (authoritative_phase * 2.0).floor())
+    .max(0.0) as u32;
+    if handoffs % 2 == 1 {
+        let swing = match intent.swing_foot().unwrap_or(next.lead_foot()) {
+            LeadFoot::Left => LeadFoot::Right,
+            LeadFoot::Right => LeadFoot::Left,
+        };
+        intent = RaisedLocomotionIntent::moving(
+            intent.local_direction(),
+            intent.speed(),
+            swing,
+            intent.step_sequence().wrapping_add(handoffs),
+        );
+    } else if handoffs > 0 {
+        intent = RaisedLocomotionIntent::moving(
+            intent.local_direction(),
+            intent.speed(),
+            intent.swing_foot().unwrap_or(next.lead_foot()),
+            intent.step_sequence().wrapping_add(handoffs),
+        );
+    }
+    *next = next.clone().with_raised_locomotion(intent);
+}
+
+#[cfg(test)]
+mod schedule_contract_tests {
+    #[test]
+    fn repeated_authored_input_is_restored_before_procedural_evaluation() {
+        let source = include_str!("presentation.rs");
+        let bind_restore = source.find("restore_authored_bind_pose,").unwrap();
+        let fixed_input = source
+            .find("procedural::stabilize_repeated_fixed_tick_pose,")
+            .unwrap();
+        let authored_sample = source.find("jitter::sample_authored_pose_jitter,").unwrap();
+        let first_procedural = source.find("procedural::apply_pose_mirroring,").unwrap();
+        let final_sample = source.find("jitter::sample_final_pose_jitter,").unwrap();
+        assert!(bind_restore < fixed_input);
+        assert!(fixed_input < authored_sample);
+        assert!(authored_sample < first_procedural);
+        assert!(fixed_input < final_sample);
     }
 }
 

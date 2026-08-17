@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -92,6 +93,146 @@ class ProfileTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_diagnostic_client_completion_wins_server_disconnect_race(self):
+        client = mock.Mock()
+        client.wait.return_value = 0
+        self.assertEqual(
+            dev_stack.await_diagnostic_client_after_server_exit(client, 0.25), 0
+        )
+        client.wait.assert_called_once_with(timeout=0.25)
+
+        client.wait.side_effect = subprocess.TimeoutExpired("client", 0.25)
+        self.assertIsNone(
+            dev_stack.await_diagnostic_client_after_server_exit(client, 0.25)
+        )
+
+    def test_guard_footwork_repro_script_matches_live_cadence(self):
+        commands = dev_stack.guard_footwork_repro_commands()
+        self.assertEqual(commands[0], {"type": "pace", "pace": "walk"})
+        self.assertEqual(commands[1], {"type": "guard", "raised": True})
+        self.assertEqual(commands[2]["duration_seconds"], 2.3)
+        self.assertEqual(commands[3]["duration_seconds"], 0.45)
+        self.assertEqual(commands[4]["duration_seconds"], 0.65)
+        self.assertEqual(commands[5]["duration_seconds"], 0.3)
+        self.assertEqual(commands[6]["type"], "move_vector")
+        self.assertEqual((commands[6]["local_x"], commands[6]["local_y"]), (1.0, 1.0))
+        self.assertEqual(commands[6]["duration_seconds"], 5.75)
+        self.assertEqual(commands[-2], {"type": "guard", "raised": False})
+
+    def test_guard_footwork_analyzer_reports_known_failure_without_accepting_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "animation.jsonl"
+            manifest = root / "manifest.json"
+            records = [{
+                "record_type": "session_header",
+                "schema": "adventuresim.animation.live",
+            }]
+            for frame in range(100):
+                guard = "Raised" if frame < 60 else "Lowered"
+                records.append({
+                    "record_type": "frame",
+                    "frame": frame,
+                    "elapsed_seconds": frame / 60.0,
+                    "authoritative": {"locomotion_sample_tick": frame // 6},
+                    "cadence_identity": {"source_tick": frame // 6},
+                    "controller_global_transform": {
+                        "translation": [frame * 0.02, 0.0, 0.0],
+                    },
+                    "last_emitted_player_input": {"weapon_guard": guard},
+                    "input": {
+                        "command_kind": "move_vector",
+                        "request": {"movement": [0.707, 0.707]},
+                    },
+                    "raised_ownership": {
+                        "left_support_weight": 0.0,
+                        "right_support_weight": 0.0,
+                        "awaiting_step_sequence": True,
+                        "was_moving": True,
+                        "release_handoff_active": frame >= 60,
+                    },
+                    "foot_motion": {
+                        "selected_source": "raised_footwork",
+                        "left": {"selected": {"diagnostic": {
+                            "owner": "emergency_recovery",
+                            "owner_epoch": 7 if frame < 35 else 8,
+                        }, "reach_disposition": "warning"}},
+                        "right": {"selected": {"diagnostic": {
+                            "owner": "emergency_recovery", "owner_epoch": 9,
+                        }, "reach_disposition": "within"}},
+                    },
+                    "lower_body": {
+                        side: {
+                            "ankle_from_visual_pelvis_world": [-0.7, -0.8, 0.7],
+                            "ankle": {"clearance": 0.08},
+                            "toe": {"clearance": 0.04},
+                        } for side in ("left", "right")
+                    },
+                })
+            log.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+            result = dev_stack.analyze_guard_footwork_repro(log, manifest)
+            self.assertTrue(result["harness_completed"])
+            self.assertTrue(result["known_failure_reproduced"])
+            self.assertFalse(result["animation_acceptance_passed"])
+            self.assertTrue(result["signatures"]["body_relative_trailing"])
+            self.assertTrue(result["signatures"]["long_awaiting_step_sequence"])
+            self.assertEqual(json.loads(manifest.read_text()), result)
+
+    def test_guard_footwork_acceptance_rejects_partial_visible_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "animation.jsonl"
+            records = [{"record_type": "session_header"}]
+            for frame in range(80):
+                records.append({
+                    "record_type": "frame",
+                    "frame": frame,
+                    "elapsed_seconds": frame / 60.0,
+                    "authoritative": {"locomotion_sample_tick": frame // 5},
+                    "cadence_identity": {"source_tick": frame // 5},
+                    "controller_global_transform": {
+                        "translation": [frame * 0.02, 0.0, 0.0],
+                    },
+                    "last_emitted_player_input": {
+                        "weapon_guard": "Raised" if frame < 60 else "Lowered",
+                    },
+                    "input": {
+                        "command_kind": "move_vector",
+                        "request": {"movement": [0.707, 0.707]},
+                    },
+                    "raised_ownership": {
+                        "left_support_weight": 0.0,
+                        "right_support_weight": 0.0,
+                        "awaiting_step_sequence": True,
+                        "was_moving": True,
+                        "release_handoff_active": False,
+                    },
+                    "foot_motion": {
+                        "selected_source": "raised_footwork",
+                        **{
+                            side: {"selected": {"diagnostic": {
+                                "owner": "guard_cadence", "owner_epoch": 4,
+                            }, "reach_disposition": "within"}}
+                            for side in ("left", "right")
+                        },
+                    },
+                    "lower_body": {
+                        side: {
+                            "ankle_from_visual_pelvis_world": [-0.7, -0.8, 0.7],
+                            "ankle": {"clearance": 0.12},
+                            "toe": {"clearance": 0.04},
+                        } for side in ("left", "right")
+                    },
+                })
+            log.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+            result = dev_stack.analyze_guard_footwork_repro(
+                log, root / "manifest.json"
+            )
+            self.assertTrue(result["harness_completed"])
+            self.assertFalse(result["known_failure_reproduced"])
+            self.assertTrue(result["visual_or_lifecycle_failure"])
+            self.assertFalse(result["animation_acceptance_passed"])
+
     @mock.patch.object(dev_stack, "run_checked")
     def test_authenticated_cli_token_is_forwarded_without_logging(self, run_checked):
         token = "header.payload.signature"
@@ -418,7 +559,7 @@ class WorkflowTests(unittest.TestCase):
                 "high-environment-light",
             ])
 
-    def test_animation_profile_does_not_enable_unbounded_frame_logging(self):
+    def test_animation_profile_records_bounded_manual_animation_log(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             executable = root / "adventuresim-tactical-client.exe"
@@ -440,9 +581,13 @@ class WorkflowTests(unittest.TestCase):
             ) as spawn, mock.patch.object(dev_stack.time, "sleep"):
                 dev_stack.launch_recorded_tactical_client(root, config)
             command = spawn.call_args.args[0]
-            self.assertNotIn("--animation-log", command)
+            self.assertIn("--animation-log", command)
             self.assertNotIn("--input-script", command)
-            self.assertNotIn("animation_log", config)
+            self.assertIn("animation_log", config)
+            self.assertEqual(
+                Path(config["animation_log"]).parent,
+                root,
+            )
 
     def test_diagnostic_profile_waits_for_capture_before_scripted_motion(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -472,6 +617,33 @@ class WorkflowTests(unittest.TestCase):
             )
             self.assertEqual(script["commands"][1]["type"], "rotate")
             self.assertIn("animation_log", config)
+
+    def test_named_guard_repro_is_written_to_existing_diagnostic_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "diagnostic",
+                "window_capture": "off",
+                "diagnostic_scenario": dev_stack.GUARD_FOOTWORK_REPRO_SCENARIO,
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ), mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ), mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+            script = json.loads(Path(config["input_script"]).read_text())
+            self.assertEqual(
+                script["commands"], dev_stack.guard_footwork_repro_commands()
+            )
 
     def test_presentmon_path_can_be_configured(self):
         with tempfile.TemporaryDirectory() as directory:

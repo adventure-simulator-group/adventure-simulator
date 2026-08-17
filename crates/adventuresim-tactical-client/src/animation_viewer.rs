@@ -27,8 +27,9 @@ use crate::animation::jitter::{
 };
 use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
-    AnimationPlayback, AnimationRuntime, ArmIkState, BoneRole, HumanoidBone, LegIkDiagnostics,
-    LegIkState, LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
+    AnimationPlayback, AnimationRuntime, ArmIkState, BoneRole, ContactMotionEvent,
+    FootMotionDiagnostic, FootMotionOwnerKind, HumanoidBone, LegIkDiagnostics, LegIkState,
+    LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
     LocomotionPresentationEventKind, MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton,
     ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
     TacticalAnimationPlugin, TerrainIkEnabled, locomotion_support_weights,
@@ -41,6 +42,10 @@ use crate::{
 };
 
 const SAMPLE_HZ: f32 = LOCOMOTION_SAMPLE_HZ;
+const TRAVERSAL_CONTROLLER_MAXIMUM_ACCELERATION: f32 = 96.0;
+const TRAVERSAL_CONTROLLER_MAXIMUM_JERK: f32 = 3_072.0;
+const TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_ACCELERATION: f32 = 80.0;
+const TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_JERK: f32 = 1_024.0;
 const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
 const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
@@ -639,10 +644,18 @@ enum JitterEnvelopeClass {
     IntentionalHighEnergy,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(tag = "kind", content = "route", rename_all = "snake_case")]
+enum RouteEndpoint {
+    PreRoll,
+    Route(TraversalRoute),
+    Missing,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct JitterBucketKey {
-    from_route: Option<TraversalRoute>,
-    to_route: Option<TraversalRoute>,
+    from_route: RouteEndpoint,
+    to_route: RouteEndpoint,
     envelope: JitterEnvelopeClass,
     joint_class: JitterJointClass,
     joint: String,
@@ -651,8 +664,8 @@ struct JitterBucketKey {
 
 #[derive(Debug, Serialize)]
 struct JitterHistogramEntry {
-    from_route: Option<TraversalRoute>,
-    to_route: Option<TraversalRoute>,
+    from_route: RouteEndpoint,
+    to_route: RouteEndpoint,
     envelope: JitterEnvelopeClass,
     joint_class: JitterJointClass,
     joint: String,
@@ -660,22 +673,71 @@ struct JitterHistogramEntry {
     authored_sensitivity_count: usize,
     final_sensitivity_count: usize,
     unacceptable_final_count: usize,
+    accepted_authored_count: usize,
+    accepted_justified_chain_count: usize,
+    accepted_controller_count: usize,
+    accepted_preroll_count: usize,
     authored_maximum: f32,
     final_maximum: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
 struct AttributedJitterIncident {
-    from_route: Option<TraversalRoute>,
-    to_route: Option<TraversalRoute>,
+    from_route: RouteEndpoint,
+    to_route: RouteEndpoint,
     envelope: JitterEnvelopeClass,
     joint_class: JitterJointClass,
     incident: JitterIncident,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum MotionContractViolationKind {
+    NonFinite,
+    AccelerationLimit,
+    JerkLimit,
+    PositionDerivativeMismatch,
+    OwnerEpochRegression,
+    OwnerTransitionWithoutSeed,
+    MissingOwner,
+    MissingInteriorControl,
+    ControllerIntegrationMismatch,
+    ControllerAccelerationLimit,
+    ControllerJerkLimit,
+    ControllerAngularAccelerationLimit,
+    ControllerAngularJerkLimit,
+    ReachClamp,
+    HardReachWithoutRecovery,
+    TargetRenderMismatch,
+    ContactEnvelopeExceeded,
+    NonzeroContactLag,
+    ContactDerivativeMismatch,
+    ContactTickMismatch,
+    ContactAbortWithoutRecovery,
+    PoleHemisphereDiscontinuity,
+    PoleAccelerationLimit,
+    PoleJerkLimit,
+    UnjustifiedChainAmplification,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct MotionContractViolation {
+    frame: usize,
+    side: Option<&'static str>,
+    kind: MotionContractViolationKind,
+    measured: Option<f32>,
+    limit: Option<f32>,
+}
+
 #[derive(Debug, Serialize)]
 struct JitterValidationSummary {
     diagnostics_complete: bool,
+    raw_final_incident_count: usize,
+    accepted_authored_count: usize,
+    accepted_justified_chain_count: usize,
+    accepted_controller_count: usize,
+    accepted_preroll_count: usize,
+    contract_violations: Vec<MotionContractViolation>,
     unacceptable_final_incident_count: usize,
     worst_unacceptable: Option<AttributedJitterIncident>,
     histogram: Vec<JitterHistogramEntry>,
@@ -692,7 +754,7 @@ struct PresentationEventSample {
     kind: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum CaptureValidationProfile {
     FocusedScenario,
@@ -794,6 +856,7 @@ struct ScenarioMetrics {
     minimum_knee_flexion_degrees: f32,
     minimum_knee_hemisphere_dot: f32,
     maximum_knee_foot_yaw_offset_degrees: f32,
+    maximum_transition_band_knee_foot_yaw_offset_degrees: f32,
     maximum_facing_motion_error_degrees: f32,
     maximum_facing_tracking_excess_degrees: f32,
     maximum_guard_facing_error_degrees: f32,
@@ -812,6 +875,75 @@ struct ContinuityLocation {
     value: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum FootMotionOwnerSample {
+    StatefulFollower,
+    GuardCadence,
+    AdmittedC2,
+    EmergencyRecovery,
+    TerminalHold,
+    ReleaseHandoff,
+}
+
+impl FootMotionOwnerSample {
+    fn from_production(owner: FootMotionOwnerKind) -> Option<Self> {
+        match owner {
+            FootMotionOwnerKind::None => None,
+            FootMotionOwnerKind::StatefulFollower => Some(Self::StatefulFollower),
+            FootMotionOwnerKind::GuardCadence => Some(Self::GuardCadence),
+            FootMotionOwnerKind::AdmittedC2 => Some(Self::AdmittedC2),
+            FootMotionOwnerKind::EmergencyRecovery => Some(Self::EmergencyRecovery),
+            FootMotionOwnerKind::TerminalHold => Some(Self::TerminalHold),
+            FootMotionOwnerKind::ReleaseHandoff => Some(Self::ReleaseHandoff),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ReachDisposition {
+    Within,
+    WarningOwned,
+    HardRecoveryOwned,
+    Clamped,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FootMotionEvidenceSample {
+    owner: FootMotionOwnerSample,
+    owner_epoch: u64,
+    presented_position: [f32; 3],
+    presented_velocity: [f32; 3],
+    presented_acceleration: [f32; 3],
+    commanded_target: Option<[f32; 3]>,
+    retained_pole: Option<[f32; 3]>,
+    solve_hip: Option<[f32; 3]>,
+    upper_length: Option<f32>,
+    lower_length: Option<f32>,
+    commanded_pole: Option<[f32; 3]>,
+    pole_tracking_active: bool,
+    pole_angular_velocity: f32,
+    pole_angular_acceleration: f32,
+    maximum_acceleration: f32,
+    maximum_jerk: f32,
+    maximum_pole_angular_acceleration: f32,
+    maximum_pole_angular_jerk: f32,
+    reach_disposition: ReachDisposition,
+    target_render_error_metres: f32,
+    contact_endpoint: Option<[f32; 3]>,
+    contact_progress: Option<f32>,
+    contact_tick: Option<u64>,
+    contact_ticks_remaining: Option<u64>,
+    permitted_contact_lag_metres: Option<f32>,
+    actual_contact_lag_metres: Option<f32>,
+    contact_envelope_excess_metres: Option<f32>,
+    contact_promised: bool,
+    contact_aborted: bool,
+    aborted_contact_owner_epoch: Option<u64>,
+    contact_completed: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct FrameSample {
     scenario: String,
@@ -820,6 +952,7 @@ struct FrameSample {
     speed_metres_per_second: f32,
     gait_phase: f32,
     locomotion_sample_tick: u64,
+    raised_step_sequence: u32,
     body_acceleration: [f32; 3],
     world_acceleration: [f32; 3],
     contact_sequence: u64,
@@ -831,6 +964,7 @@ struct FrameSample {
     landing_compression_metres: f32,
     root_distance_metres: f32,
     root_position_metres: [f32; 3],
+    commanded_root_velocity: [f32; 3],
     world_travel_direction: [f32; 3],
     desired_body_forward_direction: [f32; 3],
     body_forward_direction: [f32; 3],
@@ -862,6 +996,8 @@ struct FrameSample {
     ik_settle_progress: Option<f32>,
     ik_left_knee_foot_yaw_offset_degrees: f32,
     ik_right_knee_foot_yaw_offset_degrees: f32,
+    left_foot_motion: Option<FootMotionEvidenceSample>,
+    right_foot_motion: Option<FootMotionEvidenceSample>,
     semantic_route_requested_path: SemanticRoutePath,
     semantic_route_selected_path: SemanticRoutePath,
     semantic_route_runtime_evaluated: bool,
@@ -1231,6 +1367,33 @@ fn airborne_landing_scenario() -> Vec<PlannedFrame> {
 fn smoothstep01(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
+}
+
+fn quintic01(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * value * (value * (value * 6.0 - 15.0) + 10.0)
+}
+
+fn c2_guard_velocity(from: Vec2, to: Vec2, progress: f32, speed: f32) -> Vec2 {
+    if progress <= 0.0 {
+        return from.normalize_or_zero() * speed;
+    }
+    if progress >= 1.0 {
+        return to.normalize_or_zero() * speed;
+    }
+    let progress = quintic01(progress);
+    let from = from.normalize_or_zero();
+    let to = to.normalize_or_zero();
+    match (from == Vec2::ZERO, to == Vec2::ZERO) {
+        (true, true) => Vec2::ZERO,
+        (true, false) => to * speed * progress,
+        (false, true) => from * speed * (1.0 - progress),
+        (false, false) => {
+            let signed_angle = from.perp_dot(to).atan2(from.dot(to));
+            let (sin, cos) = (signed_angle * progress).sin_cos();
+            Vec2::new(from.x * cos - from.y * sin, from.x * sin + from.y * cos) * speed
+        }
+    }
 }
 
 fn attack_live_scenario(
@@ -1683,10 +1846,9 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
         append_traversal_segment(
             &mut plan,
             route,
-            24,
+            48,
             |frame| {
-                let blend = smoothstep01(frame as f32 / 7.0);
-                let velocity = from.lerp(direction, blend) * 2.0;
+                let velocity = c2_guard_velocity(from, direction, frame as f32 / 15.0, 2.0);
                 guard_pose(velocity.normalize_or_zero()).with_speed(velocity.length())
             },
             vec![],
@@ -1696,10 +1858,10 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
     append_traversal_segment(
         &mut plan,
         TraversalRoute::GuardPlanted,
-        16,
+        48,
         |frame| {
             guard_pose(previous_guard_direction)
-                .with_speed(2.0 * (1.0 - smoothstep01(frame as f32 / 15.0)))
+                .with_speed(2.0 * (1.0 - quintic01(frame as f32 / 15.0)))
         },
         vec![],
     );
@@ -1708,7 +1870,7 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
         TraversalRoute::GuardAcceleration,
         28,
         |frame| TraversalPose {
-            speed: 2.0 * smoothstep01(frame as f32 / 27.0),
+            speed: 2.0 * quintic01(frame as f32 / 27.0),
             ..guard_pose(Vec2::NEG_Y)
         },
         vec![],
@@ -1716,19 +1878,24 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
     append_traversal_segment(
         &mut plan,
         TraversalRoute::GuardReversal,
-        44,
+        60,
         |frame| {
             let signed_speed = if frame < 8 {
-                2.0 * smoothstep01(frame as f32 / 7.0)
+                2.0 * quintic01(frame as f32 / 7.0)
             } else if frame < 26 {
-                2.0 * (1.0 - smoothstep01((frame - 8) as f32 / 17.0))
+                2.0 * (1.0 - quintic01((frame - 8) as f32 / 17.0))
             } else {
-                2.0 * smoothstep01((frame - 26) as f32 / 17.0)
+                2.0 * quintic01((frame - 26) as f32 / 33.0)
             };
             if frame < 26 {
                 guard_pose(Vec2::NEG_X).with_speed(signed_speed)
             } else {
-                guard_pose(Vec2::X).with_speed(signed_speed)
+                TraversalPose {
+                    // The global command conditioner owns the C2 turn and
+                    // needs the final heading as its fixed semantic target.
+                    yaw: std::f32::consts::FRAC_PI_2,
+                    ..guard_pose(Vec2::X).with_speed(signed_speed)
+                }
             }
         },
         vec![],
@@ -1737,11 +1904,20 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
         &mut plan,
         TraversalRoute::GuardRelease,
         28,
-        |frame| TraversalPose {
-            speed: 2.0 * (1.0 - smoothstep01(frame as f32 / 27.0)),
-            direction: Vec2::X,
-            guard: WeaponGuardState::Lowered,
-            ..base
+        |frame| {
+            let progress = frame as f32 / 27.0;
+            // Raised guard faces with the camera while ordinary locomotion
+            // faces its velocity. The preceding route turns camera-facing to
+            // +X; rotate both camera and velocity back to camera-forward over
+            // the release rather than injecting a 90-degree ownership step.
+            let blend = quintic01(progress);
+            TraversalPose {
+                speed: 2.0 * (1.0 - quintic01(progress)),
+                direction: Vec2::X.lerp(Vec2::NEG_Y, blend).normalize_or_zero(),
+                yaw: std::f32::consts::FRAC_PI_2 * (1.0 - blend),
+                guard: WeaponGuardState::Lowered,
+                ..base
+            }
         },
         vec![],
     );
@@ -1758,10 +1934,10 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
         40,
         |frame| TraversalPose {
             speed: if frame < 28 {
-                TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
+                TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND * quintic01(frame as f32 / 7.0)
             } else {
                 TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
-                    * (1.0 - smoothstep01((frame - 28) as f32 / 11.0))
+                    * (1.0 - quintic01((frame - 28) as f32 / 11.0))
             },
             direction: Vec2::X,
             action: SkeletonAction::Dodge,
@@ -1801,8 +1977,12 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
             &mut plan,
             route,
             40,
-            |_| TraversalPose {
-                speed: 1.0,
+            |frame| TraversalPose {
+                speed: if route == TraversalRoute::AttackLeftSupport {
+                    quintic01(frame as f32 / 7.0)
+                } else {
+                    1.0
+                },
                 direction: Vec2::NEG_Y,
                 action,
                 guard: WeaponGuardState::Raised,
@@ -1818,7 +1998,7 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
         TraversalRoute::GuardRelease,
         24,
         |frame| TraversalPose {
-            speed: 1.0 - smoothstep01(frame as f32 / 23.0),
+            speed: 1.0 - quintic01(frame as f32 / 23.0),
             direction: Vec2::NEG_Y,
             guard: WeaponGuardState::Lowered,
             ..base
@@ -2128,16 +2308,16 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
         append_traversal_segment(
             &mut plan,
             route,
-            64,
+            65,
             |frame| TraversalPose {
-                speed: if frame < 20 {
+                speed: if frame < 28 {
                     TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND
                 } else {
                     0.0
                 },
                 direction: local_direction,
                 crouching: true,
-                grounded: frame < 4 || frame >= 20,
+                grounded: frame < 20 || frame >= 28,
                 ..base
             },
             vec![TraversalCommand::BeginTransition(
@@ -2160,7 +2340,57 @@ fn state_machine_traversal_scenario() -> TraversalPlan {
                 .any(|control| control.route == *route)
     }));
     debug_assert_eq!(plan.coverage.routes.len(), 1);
+    smooth_traversal_controller_commands(&mut plan.frames);
     plan
+}
+
+fn smooth_traversal_controller_commands(frames: &mut [PlannedFrame]) {
+    let dt = SAMPLE_HZ.recip();
+    let mut velocity = Vec3::ZERO;
+    let mut acceleration = Vec3::ZERO;
+    let mut yaw = frames.first().map_or(0.0, |frame| frame.camera_yaw);
+    let mut yaw_velocity = 0.0_f32;
+    let mut yaw_acceleration = 0.0_f32;
+    for frame in frames {
+        let desired_yaw = yaw + shortest_angle_delta(yaw, frame.camera_yaw);
+        let yaw_error = desired_yaw - yaw;
+        let desired_yaw_acceleration = (yaw_error * 64.0 - yaw_velocity * 16.0).clamp(
+            -TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_ACCELERATION,
+            TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_ACCELERATION,
+        );
+        yaw_acceleration += (desired_yaw_acceleration - yaw_acceleration).clamp(
+            -(TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_JERK - 1.0) * dt,
+            (TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_JERK - 1.0) * dt,
+        );
+        yaw_velocity += yaw_acceleration * dt;
+        yaw += yaw_velocity * dt;
+        frame.camera_yaw = yaw;
+
+        let desired_orientation = controller_yaw(Quat::from_rotation_y(desired_yaw));
+        let desired_velocity = desired_orientation
+            * Vec3::new(
+                frame.local_direction.x * frame.speed,
+                0.0,
+                frame.local_direction.y * frame.speed,
+            );
+        let requested_jerk =
+            (desired_velocity - velocity) * (20.0 * 20.0) - acceleration * (2.0 * 20.0);
+        acceleration += requested_jerk.clamp_length_max(TRAVERSAL_CONTROLLER_MAXIMUM_JERK) * dt;
+        acceleration = acceleration.clamp_length_max(TRAVERSAL_CONTROLLER_MAXIMUM_ACCELERATION);
+        velocity += acceleration * dt;
+
+        let presented_orientation = controller_yaw(Quat::from_rotation_y(frame.camera_yaw));
+        let local_velocity = presented_orientation.inverse() * velocity;
+        let planar = local_velocity.xz();
+        frame.speed = planar.length();
+        if frame.speed > 0.0001 {
+            frame.local_direction = planar / frame.speed;
+        }
+    }
+}
+
+fn shortest_angle_delta(from: f32, to: f32) -> f32 {
+    (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
 
 fn quickstep_scenario() -> Vec<PlannedFrame> {
@@ -3462,6 +3692,102 @@ fn record_traversal_observation(
     }
 }
 
+fn chain_reach_for_knee_flexion(upper: f32, lower: f32, flexion_degrees: f32) -> f32 {
+    (upper * upper + lower * lower + 2.0 * upper * lower * flexion_degrees.to_radians().cos())
+        .max(0.0)
+        .sqrt()
+}
+
+fn foot_motion_evidence(
+    diagnostic: FootMotionDiagnostic,
+    sample_tick: u64,
+    left: bool,
+    bones: &BTreeMap<String, BoneSample>,
+) -> Option<FootMotionEvidenceSample> {
+    let owner = FootMotionOwnerSample::from_production(diagnostic.owner)?;
+    let prefix = if left { "left" } else { "right" };
+    let hip = Vec3::from_array(bones.get(&format!("{prefix}_hip"))?.position);
+    let knee = Vec3::from_array(bones.get(&format!("{prefix}_knee"))?.position);
+    let rendered = Vec3::from_array(bones.get(&format!("{prefix}_foot"))?.position);
+    let upper = hip.distance(knee);
+    let lower = knee.distance(rendered);
+    let target_render_error = diagnostic.presented.distance(rendered);
+    let warning_reach = chain_reach_for_knee_flexion(upper, lower, 30.0);
+    let hard_reach = chain_reach_for_knee_flexion(upper, lower, 20.0);
+    let commanded_reach = diagnostic.presented.distance(hip);
+    let recovery_owned = matches!(
+        owner,
+        FootMotionOwnerSample::EmergencyRecovery | FootMotionOwnerSample::TerminalHold
+    );
+    let reach_disposition = if target_render_error > f32::EPSILON * 256.0 {
+        ReachDisposition::Clamped
+    } else if commanded_reach >= hard_reach {
+        if recovery_owned {
+            ReachDisposition::HardRecoveryOwned
+        } else {
+            ReachDisposition::Clamped
+        }
+    } else if commanded_reach >= warning_reach {
+        ReachDisposition::WarningOwned
+    } else {
+        ReachDisposition::Within
+    };
+    let actual_contact_lag = diagnostic
+        .contact_endpoint
+        .map(|endpoint| diagnostic.presented.distance(endpoint));
+    let envelope_excess = actual_contact_lag
+        .zip(diagnostic.permitted_contact_lag)
+        .map(|(actual, permitted)| (actual - permitted).max(0.0));
+    let contact_promised = matches!(
+        diagnostic.contact_event,
+        Some(ContactMotionEvent::Promised | ContactMotionEvent::Completed)
+    );
+    let contact_completed = diagnostic.contact_event == Some(ContactMotionEvent::Completed);
+    Some(FootMotionEvidenceSample {
+        owner,
+        owner_epoch: diagnostic.owner_epoch,
+        presented_position: diagnostic.presented.to_array(),
+        presented_velocity: diagnostic.velocity.to_array(),
+        presented_acceleration: diagnostic.acceleration.to_array(),
+        commanded_target: diagnostic.commanded.map(|value| value.to_array()),
+        retained_pole: diagnostic.pole.map(|value| value.to_array()),
+        solve_hip: diagnostic.solve_hip.map(|value| value.to_array()),
+        upper_length: diagnostic.upper_length,
+        lower_length: diagnostic.lower_length,
+        commanded_pole: diagnostic.commanded_pole.map(|value| value.to_array()),
+        pole_tracking_active: diagnostic.pole_tracking_active,
+        pole_angular_velocity: diagnostic.pole_angular_velocity,
+        pole_angular_acceleration: diagnostic.pole_angular_acceleration,
+        maximum_acceleration: diagnostic.maximum_acceleration,
+        maximum_jerk: diagnostic.maximum_jerk,
+        maximum_pole_angular_acceleration: diagnostic.maximum_pole_angular_acceleration,
+        maximum_pole_angular_jerk: diagnostic.maximum_pole_angular_jerk,
+        reach_disposition,
+        target_render_error_metres: target_render_error,
+        contact_endpoint: diagnostic.contact_endpoint.map(|value| value.to_array()),
+        contact_progress: diagnostic.contact_progress,
+        contact_tick: diagnostic.contact_tick,
+        contact_ticks_remaining: diagnostic
+            .contact_tick
+            .map(|contact_tick| contact_tick.saturating_sub(sample_tick)),
+        permitted_contact_lag_metres: diagnostic.permitted_contact_lag,
+        actual_contact_lag_metres: actual_contact_lag,
+        contact_envelope_excess_metres: envelope_excess,
+        contact_promised,
+        contact_aborted: matches!(
+            diagnostic.contact_event,
+            Some(ContactMotionEvent::AbortedLiveReach { .. })
+        ),
+        aborted_contact_owner_epoch: match diagnostic.contact_event {
+            Some(ContactMotionEvent::AbortedLiveReach {
+                aborted_owner_epoch,
+            }) => Some(aborted_owner_epoch),
+            _ => None,
+        },
+        contact_completed,
+    })
+}
+
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
@@ -3640,6 +3966,61 @@ fn capture_frame(
             .filter(|state| state.initialized)
             .map(|state| (state.left_support_weight, state.right_support_weight))
             .unwrap_or(ik_support);
+        let mut left_motion_diagnostic = raised_footwork
+            .and_then(|state| state.foot_motion_diagnostic(true))
+            .or(leg_ik.left_presented_motion);
+        let mut right_motion_diagnostic = raised_footwork
+            .and_then(|state| state.foot_motion_diagnostic(false))
+            .or(leg_ik.right_presented_motion);
+        // Quickstep runs after raised terrain IK. On the one route-exit tick,
+        // its epoch-specific abort is published through LegIkMemory while an
+        // initialized raised owner may already be the selected pose source.
+        // Overlay only that retirement event onto the actually captured
+        // owner evidence; quickstep clears the shared event next tick.
+        if let Some(event @ ContactMotionEvent::AbortedLiveReach { .. }) = leg_ik
+            .left_presented_motion
+            .and_then(|motion| motion.contact_event)
+            && let Some(selected) = &mut left_motion_diagnostic
+        {
+            selected.contact_event = Some(event);
+        }
+        if let (Some(selected), Some(solved)) =
+            (&mut left_motion_diagnostic, leg_ik.left_presented_motion)
+        {
+            selected.pole_angular_velocity = solved.pole_angular_velocity;
+            selected.pole_angular_acceleration = solved.pole_angular_acceleration;
+            selected.pole_tracking_active = solved.pole_tracking_active;
+        }
+        if let Some(event @ ContactMotionEvent::AbortedLiveReach { .. }) = leg_ik
+            .right_presented_motion
+            .and_then(|motion| motion.contact_event)
+            && let Some(selected) = &mut right_motion_diagnostic
+        {
+            selected.contact_event = Some(event);
+        }
+        if let (Some(selected), Some(solved)) =
+            (&mut right_motion_diagnostic, leg_ik.right_presented_motion)
+        {
+            selected.pole_angular_velocity = solved.pole_angular_velocity;
+            selected.pole_angular_acceleration = solved.pole_angular_acceleration;
+            selected.pole_tracking_active = solved.pole_tracking_active;
+        }
+        let left_foot_motion = left_motion_diagnostic.and_then(|motion| {
+            foot_motion_evidence(
+                motion,
+                skeleton.locomotion_sample_tick,
+                true,
+                &evaluation_bones,
+            )
+        });
+        let right_foot_motion = right_motion_diagnostic.and_then(|motion| {
+            foot_motion_evidence(
+                motion,
+                skeleton.locomotion_sample_tick,
+                false,
+                &evaluation_bones,
+            )
+        });
         let diagnostics_only = sequence.diagnostics_only;
         sequence.samples.push(FrameSample {
             scenario: frame.scenario.to_owned(),
@@ -3648,6 +4029,7 @@ fn capture_frame(
             speed_metres_per_second: frame.speed,
             gait_phase: skeleton.gait_phase,
             locomotion_sample_tick: skeleton.locomotion_sample_tick,
+            raised_step_sequence: skeleton.raised_locomotion().step_sequence(),
             body_acceleration: (subject_global.rotation().inverse() * skeleton.world_acceleration)
                 .to_array(),
             world_acceleration: skeleton.world_acceleration.to_array(),
@@ -3662,6 +4044,13 @@ fn capture_frame(
             landing_compression_metres: height_state.map_or(0.0, |state| state.landing_compression),
             root_distance_metres,
             root_position_metres: subject_global.translation().to_array(),
+            commanded_root_velocity: (controller_yaw(Quat::from_rotation_y(frame.camera_yaw))
+                * Vec3::new(
+                    frame.local_direction.x * frame.speed,
+                    0.0,
+                    frame.local_direction.y * frame.speed,
+                ))
+            .to_array(),
             world_travel_direction: (controller_yaw(Quat::from_rotation_y(frame.camera_yaw))
                 * Vec3::new(frame.local_direction.x, 0.0, frame.local_direction.y))
             .normalize_or_zero()
@@ -3713,6 +4102,8 @@ fn capture_frame(
             ik_settle_progress: leg_ik.settle_progress,
             ik_left_knee_foot_yaw_offset_degrees: leg_ik.left_knee_foot_yaw_offset_degrees,
             ik_right_knee_foot_yaw_offset_degrees: leg_ik.right_knee_foot_yaw_offset_degrees,
+            left_foot_motion,
+            right_foot_motion,
             semantic_route_requested_path: semantic_route.requested_path,
             semantic_route_selected_path: semantic_route.path,
             semantic_route_runtime_evaluated: semantic_route.runtime_evaluated,
@@ -4010,10 +4401,16 @@ fn jitter_noise_floor(report: &JitterDiagnosticReport, class: JitterClass) -> f3
 }
 
 fn jitter_window_envelope(
-    from_route: Option<TraversalRoute>,
-    to_route: Option<TraversalRoute>,
+    from_route: RouteEndpoint,
+    to_route: RouteEndpoint,
     joint_class: JitterJointClass,
 ) -> JitterEnvelopeClass {
+    let route = |endpoint| match endpoint {
+        RouteEndpoint::Route(route) => Some(route),
+        RouteEndpoint::PreRoll | RouteEndpoint::Missing => None,
+    };
+    let from_route = route(from_route);
+    let to_route = route(to_route);
     if from_route.is_none() && to_route.is_none() {
         return JitterEnvelopeClass::ProceduralStrict;
     }
@@ -4032,31 +4429,707 @@ fn jitter_window_envelope(
     }
 }
 
+fn jitter_derivative_order(class: JitterClass) -> usize {
+    match class {
+        JitterClass::AngularVelocity | JitterClass::LocalPositionVelocity => 1,
+        JitterClass::AngularAcceleration | JitterClass::LocalPositionAcceleration => 2,
+        JitterClass::AngularJerk | JitterClass::LocalPositionJerk => 3,
+    }
+}
+
+fn route_endpoint(controls: &BTreeMap<usize, TraversalControl>, frame: isize) -> RouteEndpoint {
+    if frame < 0 {
+        RouteEndpoint::PreRoll
+    } else {
+        controls
+            .get(&(frame as usize))
+            .map_or(RouteEndpoint::Missing, |control| {
+                RouteEndpoint::Route(control.route)
+            })
+    }
+}
+
+fn jitter_key(
+    incident: &JitterIncident,
+    controls: &BTreeMap<usize, TraversalControl>,
+) -> JitterBucketKey {
+    let order = jitter_derivative_order(incident.class) as isize;
+    let end = incident.frame as isize;
+    let from_route = route_endpoint(controls, end - order + 1);
+    let to_route = route_endpoint(controls, end);
+    let joint_class = jitter_joint_class(&incident.joint);
+    JitterBucketKey {
+        from_route,
+        to_route,
+        envelope: jitter_window_envelope(from_route, to_route, joint_class),
+        joint_class,
+        joint: incident.joint.clone(),
+        metric: incident.class,
+    }
+}
+
+fn motion_numeric_tolerance(values: &[Vec3]) -> f32 {
+    let scale = values
+        .iter()
+        .map(|value| value.abs().max_element())
+        .fold(1.0_f32, f32::max);
+    f32::EPSILON * 256.0 * scale
+}
+
+fn frame_foot_motion(frame: &FrameSample, left: bool) -> Option<&FootMotionEvidenceSample> {
+    if left {
+        frame.left_foot_motion.as_ref()
+    } else {
+        frame.right_foot_motion.as_ref()
+    }
+}
+
+fn append_controller_contract_violations(
+    frames: &[FrameSample],
+    index: usize,
+    violations: &mut Vec<MotionContractViolation>,
+) {
+    if index == 0 {
+        return;
+    }
+    let frame = &frames[index];
+    let previous = &frames[index - 1];
+    let dt = (frame.time_seconds - previous.time_seconds).max(f32::EPSILON);
+    let commanded_velocity = Vec3::from_array(frame.commanded_root_velocity);
+    let previous_commanded_velocity = Vec3::from_array(previous.commanded_root_velocity);
+    let commanded_acceleration = (commanded_velocity - previous_commanded_velocity) / dt;
+    let actual_delta = (Vec3::from_array(frame.root_position_metres)
+        - Vec3::from_array(previous.root_position_metres))
+    .xz();
+    let commanded_delta = (commanded_velocity * dt).xz();
+    let integration_error = actual_delta.distance(commanded_delta);
+    let integration_tolerance =
+        motion_numeric_tolerance(&[actual_delta.extend(0.0), commanded_delta.extend(0.0)]);
+    if integration_error > integration_tolerance {
+        violations.push(MotionContractViolation {
+            frame: index,
+            side: None,
+            kind: MotionContractViolationKind::ControllerIntegrationMismatch,
+            measured: Some(integration_error),
+            limit: Some(integration_tolerance),
+        });
+    }
+    if commanded_acceleration.length() > TRAVERSAL_CONTROLLER_MAXIMUM_ACCELERATION {
+        violations.push(MotionContractViolation {
+            frame: index,
+            side: None,
+            kind: MotionContractViolationKind::ControllerAccelerationLimit,
+            measured: Some(commanded_acceleration.length()),
+            limit: Some(TRAVERSAL_CONTROLLER_MAXIMUM_ACCELERATION),
+        });
+    }
+    if index >= 2 {
+        let before = &frames[index - 2];
+        let before_dt = (previous.time_seconds - before.time_seconds).max(f32::EPSILON);
+        let previous_acceleration = (previous_commanded_velocity
+            - Vec3::from_array(before.commanded_root_velocity))
+            / before_dt;
+        let jerk = (commanded_acceleration - previous_acceleration) / dt;
+        if jerk.length() > TRAVERSAL_CONTROLLER_MAXIMUM_JERK {
+            violations.push(MotionContractViolation {
+                frame: index,
+                side: None,
+                kind: MotionContractViolationKind::ControllerJerkLimit,
+                measured: Some(jerk.length()),
+                limit: Some(TRAVERSAL_CONTROLLER_MAXIMUM_JERK),
+            });
+        }
+    }
+    if index >= 2 {
+        let directions = [index - 2, index - 1, index]
+            .map(|sample| Vec3::from_array(frames[sample].desired_body_forward_direction));
+        let angular_velocities = [
+            angular_delta_degrees(directions[0], directions[1]) * (std::f32::consts::PI / 180.0)
+                / dt,
+            angular_delta_degrees(directions[1], directions[2]) * (std::f32::consts::PI / 180.0)
+                / dt,
+        ];
+        let angular_acceleration = (angular_velocities[1] - angular_velocities[0]) / dt;
+        if angular_acceleration.length() > TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_ACCELERATION {
+            violations.push(MotionContractViolation {
+                frame: index,
+                side: None,
+                kind: MotionContractViolationKind::ControllerAngularAccelerationLimit,
+                measured: Some(angular_acceleration.length()),
+                limit: Some(TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_ACCELERATION),
+            });
+        }
+        if index >= 3 {
+            let oldest = Vec3::from_array(frames[index - 3].desired_body_forward_direction);
+            let oldest_velocity =
+                angular_delta_degrees(oldest, directions[0]) * (std::f32::consts::PI / 180.0) / dt;
+            let previous_angular_acceleration = (angular_velocities[0] - oldest_velocity) / dt;
+            let angular_jerk = (angular_acceleration - previous_angular_acceleration) / dt;
+            if angular_jerk.length() > TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_JERK {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: None,
+                    kind: MotionContractViolationKind::ControllerAngularJerkLimit,
+                    measured: Some(angular_jerk.length()),
+                    limit: Some(TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_JERK),
+                });
+            }
+        }
+    }
+}
+
+fn motion_contract_violations(
+    frames: &[FrameSample],
+    controls: &BTreeMap<usize, TraversalControl>,
+) -> Vec<MotionContractViolation> {
+    let mut violations = Vec::new();
+    for index in 0..frames.len() {
+        let frame = &frames[index];
+        append_controller_contract_violations(frames, index, &mut violations);
+        if controls.contains_key(&index) == false && !controls.is_empty() {
+            violations.push(MotionContractViolation {
+                frame: index,
+                side: None,
+                kind: MotionContractViolationKind::MissingInteriorControl,
+                measured: None,
+                limit: None,
+            });
+        }
+        for (left, side) in [(true, "left"), (false, "right")] {
+            let motion = frame_foot_motion(frame, left);
+            if motion.is_none()
+                && index > 0
+                && frame_foot_motion(&frames[index - 1], left).is_some_and(|previous| {
+                    previous.contact_promised && !previous.contact_completed
+                })
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::ContactAbortWithoutRecovery,
+                    measured: None,
+                    limit: None,
+                });
+            }
+            let solve_present = if left {
+                frame.ik_left_solve_target.is_some()
+            } else {
+                frame.ik_right_solve_target.is_some()
+            };
+            let motion_required = solve_present
+                && (frame.weapon_guard == WeaponGuardState::Raised
+                    || frame.semantic_route_selected_path == SemanticRoutePath::RaisedGuardAttack
+                    || frame.action == SkeletonAction::Dodge);
+            if motion_required && motion.is_none() {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::MissingOwner,
+                    measured: None,
+                    limit: None,
+                });
+                continue;
+            }
+            let Some(motion) = motion else { continue };
+            let position = Vec3::from_array(motion.presented_position);
+            let velocity = Vec3::from_array(motion.presented_velocity);
+            let acceleration = Vec3::from_array(motion.presented_acceleration);
+            if !position.is_finite() || !velocity.is_finite() || !acceleration.is_finite() {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::NonFinite,
+                    measured: None,
+                    limit: None,
+                });
+                continue;
+            }
+            let acceleration_magnitude = acceleration.length();
+            let acceleration_tolerance = motion_numeric_tolerance(&[acceleration]);
+            if acceleration_magnitude > motion.maximum_acceleration + acceleration_tolerance {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::AccelerationLimit,
+                    measured: Some(acceleration_magnitude),
+                    limit: Some(motion.maximum_acceleration),
+                });
+            }
+            if matches!(motion.reach_disposition, ReachDisposition::Clamped) {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::ReachClamp,
+                    measured: Some(motion.target_render_error_metres),
+                    limit: Some(0.0),
+                });
+            }
+            if matches!(
+                motion.reach_disposition,
+                ReachDisposition::HardRecoveryOwned
+            ) && !matches!(
+                motion.owner,
+                FootMotionOwnerSample::EmergencyRecovery | FootMotionOwnerSample::TerminalHold
+            ) {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::HardReachWithoutRecovery,
+                    measured: None,
+                    limit: None,
+                });
+            }
+            let render_tolerance = motion_numeric_tolerance(&[
+                position,
+                motion
+                    .commanded_target
+                    .map(Vec3::from_array)
+                    .unwrap_or(position),
+            ]);
+            if motion.target_render_error_metres > render_tolerance {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::TargetRenderMismatch,
+                    measured: Some(motion.target_render_error_metres),
+                    limit: Some(render_tolerance),
+                });
+            }
+            if let (Some(actual), Some(permitted), Some(excess)) = (
+                motion.actual_contact_lag_metres,
+                motion.permitted_contact_lag_metres,
+                motion.contact_envelope_excess_metres,
+            ) {
+                let contact_tolerance = motion_numeric_tolerance(&[
+                    position,
+                    motion
+                        .contact_endpoint
+                        .map(Vec3::from_array)
+                        .unwrap_or(position),
+                ]);
+                if excess > contact_tolerance {
+                    violations.push(MotionContractViolation {
+                        frame: index,
+                        side: Some(side),
+                        kind: MotionContractViolationKind::ContactEnvelopeExceeded,
+                        measured: Some(actual),
+                        limit: Some(permitted + contact_tolerance),
+                    });
+                }
+                if motion.contact_completed && actual > contact_tolerance {
+                    violations.push(MotionContractViolation {
+                        frame: index,
+                        side: Some(side),
+                        kind: MotionContractViolationKind::NonzeroContactLag,
+                        measured: Some(actual),
+                        limit: Some(contact_tolerance),
+                    });
+                }
+                if motion.contact_completed {
+                    if motion.contact_tick != Some(frame.locomotion_sample_tick) {
+                        violations.push(MotionContractViolation {
+                            frame: index,
+                            side: Some(side),
+                            kind: MotionContractViolationKind::ContactTickMismatch,
+                            measured: motion.contact_tick.map(|tick| tick as f32),
+                            limit: Some(frame.locomotion_sample_tick as f32),
+                        });
+                    }
+                    let authoritative_edge = index > 0
+                        && frame
+                            .raised_step_sequence
+                            .wrapping_sub(frames[index - 1].raised_step_sequence)
+                            == 1;
+                    if !authoritative_edge
+                        && frame.weapon_guard == WeaponGuardState::Raised
+                        && frame.action != SkeletonAction::Dodge
+                    {
+                        violations.push(MotionContractViolation {
+                            frame: index,
+                            side: Some(side),
+                            kind: MotionContractViolationKind::ContactTickMismatch,
+                            measured: Some(frame.raised_step_sequence as f32),
+                            limit: frames.get(index.wrapping_sub(1)).map(|previous| {
+                                previous.raised_step_sequence.wrapping_add(1) as f32
+                            }),
+                        });
+                    }
+                    let derivative_error = velocity.length().max(acceleration.length());
+                    let derivative_tolerance = motion_numeric_tolerance(&[velocity, acceleration]);
+                    if derivative_error > derivative_tolerance {
+                        violations.push(MotionContractViolation {
+                            frame: index,
+                            side: Some(side),
+                            kind: MotionContractViolationKind::ContactDerivativeMismatch,
+                            measured: Some(derivative_error),
+                            limit: Some(derivative_tolerance),
+                        });
+                    }
+                }
+            }
+            if motion.contact_aborted
+                && (motion.aborted_contact_owner_epoch.is_none()
+                    || motion.contact_promised
+                    || !matches!(
+                        motion.owner,
+                        FootMotionOwnerSample::AdmittedC2
+                            | FootMotionOwnerSample::StatefulFollower
+                            | FootMotionOwnerSample::GuardCadence
+                            | FootMotionOwnerSample::EmergencyRecovery
+                            | FootMotionOwnerSample::TerminalHold
+                    ))
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::ContactAbortWithoutRecovery,
+                    measured: None,
+                    limit: None,
+                });
+            }
+            if index == 0 {
+                continue;
+            }
+            let Some(previous) = frame_foot_motion(&frames[index - 1], left) else {
+                continue;
+            };
+            let previous_promise_retained = motion.owner_epoch == previous.owner_epoch
+                && (motion.contact_promised || motion.contact_completed);
+            let previous_promise_retired =
+                motion.aborted_contact_owner_epoch == Some(previous.owner_epoch);
+            if previous.contact_promised
+                && !previous.contact_completed
+                && !(previous_promise_retained || previous_promise_retired)
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::ContactAbortWithoutRecovery,
+                    measured: Some(motion.owner_epoch as f32),
+                    limit: Some(previous.owner_epoch as f32),
+                });
+            }
+            let authoritative_guard_edge = frame.weapon_guard == WeaponGuardState::Raised
+                && frame.action != SkeletonAction::Dodge
+                && frame
+                    .raised_step_sequence
+                    .wrapping_sub(frames[index - 1].raised_step_sequence)
+                    == 1;
+            if authoritative_guard_edge
+                && previous.contact_promised
+                && !previous.contact_completed
+                && !(motion.contact_completed || previous_promise_retired)
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::ContactTickMismatch,
+                    measured: motion.contact_tick.map(|tick| tick as f32),
+                    limit: Some(frame.locomotion_sample_tick as f32),
+                });
+            }
+            let dt = (frame.time_seconds - frames[index - 1].time_seconds).max(f32::EPSILON);
+            let previous_position = Vec3::from_array(previous.presented_position);
+            let previous_velocity = Vec3::from_array(previous.presented_velocity);
+            let previous_acceleration = Vec3::from_array(previous.presented_acceleration);
+            // An admitted C2 owner is seeded from the prior presented p/v/a.
+            // Validate both its first interval and its retained intervals with
+            // the jerk-bounded Taylor remainder; instantaneous analytic
+            // velocity is not the semi-implicit follower velocity.
+            let direct_c2_interval = matches!(motion.owner, FootMotionOwnerSample::AdmittedC2);
+            let expected_position = if direct_c2_interval {
+                previous_position + previous_velocity * dt + previous_acceleration * (0.5 * dt * dt)
+            } else {
+                previous_position + velocity * dt
+            };
+            let consistency_error = position.distance(expected_position);
+            let consistency_tolerance = motion_numeric_tolerance(&[
+                position,
+                previous_position,
+                previous_velocity * dt,
+                previous_acceleration * (dt * dt),
+            ]) + if direct_c2_interval {
+                motion.maximum_jerk * dt.powi(3) / 6.0
+            } else {
+                0.0
+            };
+            if consistency_error > consistency_tolerance {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: if motion.owner_epoch != previous.owner_epoch {
+                        MotionContractViolationKind::OwnerTransitionWithoutSeed
+                    } else {
+                        MotionContractViolationKind::PositionDerivativeMismatch
+                    },
+                    measured: Some(consistency_error),
+                    limit: Some(consistency_tolerance),
+                });
+            }
+            if motion.owner_epoch < previous.owner_epoch
+                || (motion.owner != previous.owner && motion.owner_epoch == previous.owner_epoch)
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::OwnerEpochRegression,
+                    measured: Some(motion.owner_epoch as f32),
+                    limit: Some(previous.owner_epoch as f32),
+                });
+            }
+            let jerk = (acceleration - previous_acceleration) / dt;
+            let jerk_tolerance = motion_numeric_tolerance(&[jerk]);
+            if jerk.length() > motion.maximum_jerk + jerk_tolerance {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::JerkLimit,
+                    measured: Some(jerk.length()),
+                    limit: Some(motion.maximum_jerk),
+                });
+            }
+            if motion.pole_tracking_active
+                && previous.pole_tracking_active
+                && let (Some(previous_pole), Some(pole)) =
+                    (previous.commanded_pole, motion.commanded_pole)
+                && Vec3::from_array(previous_pole)
+                    .normalize_or_zero()
+                    .dot(Vec3::from_array(pole).normalize_or_zero())
+                    < 0.0
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::PoleHemisphereDiscontinuity,
+                    measured: None,
+                    limit: Some(0.0),
+                });
+            }
+            if motion.pole_tracking_active
+                && motion.pole_angular_acceleration.abs()
+                    > motion.maximum_pole_angular_acceleration
+                        + f32::EPSILON * 256.0 * motion.pole_angular_acceleration.abs().max(1.0)
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::PoleAccelerationLimit,
+                    measured: Some(motion.pole_angular_acceleration.abs()),
+                    limit: Some(motion.maximum_pole_angular_acceleration),
+                });
+            }
+            let pole_jerk =
+                (motion.pole_angular_acceleration - previous.pole_angular_acceleration) / dt;
+            if motion.pole_tracking_active
+                && previous.pole_tracking_active
+                && pole_jerk.abs()
+                    > motion.maximum_pole_angular_jerk
+                        + f32::EPSILON * 256.0 * pole_jerk.abs().max(1.0)
+            {
+                violations.push(MotionContractViolation {
+                    frame: index,
+                    side: Some(side),
+                    kind: MotionContractViolationKind::PoleJerkLimit,
+                    measured: Some(pole_jerk.abs()),
+                    limit: Some(motion.maximum_pole_angular_jerk),
+                });
+            }
+        }
+    }
+    violations
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReplayedLegSample {
+    hip: Vec3,
+    knee: Vec3,
+    end: Vec3,
+    upper_direction: Vec3,
+    lower_direction: Vec3,
+}
+
+fn replay_leg_sample(frame: &FrameSample, left: bool) -> Option<ReplayedLegSample> {
+    let motion = frame_foot_motion(frame, left)?;
+    let hip = Vec3::from_array(motion.solve_hip?);
+    let upper_length = motion.upper_length?;
+    let lower_length = motion.lower_length?;
+    let target = Vec3::from_array(motion.presented_position);
+    let pole = Vec3::from_array(motion.commanded_pole?).try_normalize()?;
+    let target_offset = target - hip;
+    let target_direction = target_offset.try_normalize()?;
+    let distance = target_offset.length().clamp(
+        (upper_length - lower_length).abs() + 0.0001,
+        upper_length + lower_length - 0.0001,
+    );
+    let end = hip + target_direction * distance;
+    let along = (upper_length.powi(2) - lower_length.powi(2) + distance.powi(2)) / (2.0 * distance);
+    let height = (upper_length.powi(2) - along.powi(2)).max(0.0).sqrt();
+    let bend = pole
+        .reject_from_normalized(target_direction)
+        .try_normalize()?;
+    let knee = hip + target_direction * along + bend * height;
+    Some(ReplayedLegSample {
+        hip,
+        knee,
+        end,
+        upper_direction: (knee - hip).normalize_or_zero(),
+        lower_direction: (end - knee).normalize_or_zero(),
+    })
+}
+
+fn angular_delta_degrees(from: Vec3, to: Vec3) -> Vec3 {
+    let from = from.normalize_or_zero();
+    let to = to.normalize_or_zero();
+    let cross = from.cross(to);
+    let sine = cross.length();
+    let cosine = from.dot(to).clamp(-1.0, 1.0);
+    let angle = sine.atan2(cosine).to_degrees();
+    cross.try_normalize().unwrap_or(Vec3::ZERO) * angle
+}
+
+fn vector_derivative_value(values: &[Vec3], order: usize, dt: f32, angular: bool) -> Option<f32> {
+    if values.len() != order + 1 || dt <= f32::EPSILON {
+        return None;
+    }
+    let mut derivatives = if angular {
+        values
+            .windows(2)
+            .map(|pair| angular_delta_degrees(pair[0], pair[1]) / dt)
+            .collect::<Vec<_>>()
+    } else {
+        values.to_vec()
+    };
+    let remaining = if angular {
+        order.saturating_sub(1)
+    } else {
+        order
+    };
+    for _ in 0..remaining {
+        derivatives = derivatives
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]) / dt)
+            .collect();
+    }
+    derivatives.first().map(|value| value.length())
+}
+
+fn replayed_chain_oracle_value(frames: &[FrameSample], incident: &JitterIncident) -> Option<f32> {
+    let left = incident.joint.starts_with("left_");
+    if !left && !incident.joint.starts_with("right_") {
+        return None;
+    }
+    let order = jitter_derivative_order(incident.class);
+    let end = incident.frame as usize;
+    let start = end.checked_sub(order)?;
+    let samples = frames
+        .get(start..=end)?
+        .iter()
+        .map(|frame| replay_leg_sample(frame, left))
+        .collect::<Option<Vec<_>>>()?;
+    let angular = matches!(
+        incident.class,
+        JitterClass::AngularVelocity | JitterClass::AngularAcceleration | JitterClass::AngularJerk
+    );
+    let values = samples
+        .iter()
+        .map(|sample| {
+            if angular {
+                if incident.joint.ends_with("_hip") {
+                    Some(sample.upper_direction)
+                } else if incident.joint.ends_with("_knee") {
+                    Some(sample.lower_direction)
+                } else {
+                    None
+                }
+            } else if incident.joint.ends_with("_hip") {
+                Some(Vec3::ZERO)
+            } else if incident.joint.ends_with("_knee") {
+                Some(sample.knee - sample.hip)
+            } else if incident.joint.ends_with("_foot") || incident.joint.ends_with("_toe") {
+                Some(sample.end - sample.hip)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    vector_derivative_value(&values, order, SAMPLE_HZ.recip(), angular)
+}
+
+fn controller_oracle_value(frames: &[FrameSample], incident: &JitterIncident) -> Option<f32> {
+    if incident.joint != "root" {
+        return None;
+    }
+    let order = jitter_derivative_order(incident.class);
+    let end = incident.frame as usize;
+    let angular = matches!(
+        incident.class,
+        JitterClass::AngularVelocity | JitterClass::AngularAcceleration | JitterClass::AngularJerk
+    );
+    if angular {
+        let start = end.checked_sub(order)?;
+        let values = frames
+            .get(start..=end)?
+            .iter()
+            .map(|frame| Vec3::from_array(frame.desired_body_forward_direction))
+            .collect::<Vec<_>>();
+        vector_derivative_value(&values, order, SAMPLE_HZ.recip(), true)
+    } else {
+        // The independently recorded controller command is a velocity, so a
+        // root-position derivative of order N is compared with command
+        // derivative N-1. This cannot accept an arbitrary final root motion
+        // merely because that same output was differentiated twice.
+        let command_order = order.saturating_sub(1);
+        let start = end.checked_sub(command_order)?;
+        let values = frames
+            .get(start..=end)?
+            .iter()
+            .map(|frame| Vec3::from_array(frame.commanded_root_velocity))
+            .collect::<Vec<_>>();
+        vector_derivative_value(&values, command_order, SAMPLE_HZ.recip(), false)
+    }
+}
+
+fn violation_overlaps_incident(
+    violation: &MotionContractViolation,
+    incident: &JitterIncident,
+) -> bool {
+    let order = jitter_derivative_order(incident.class);
+    let start = (incident.frame as usize).saturating_sub(order);
+    (start..=incident.frame as usize).contains(&violation.frame)
+}
+
+fn controller_contract_violation(kind: MotionContractViolationKind) -> bool {
+    matches!(
+        kind,
+        MotionContractViolationKind::ControllerIntegrationMismatch
+            | MotionContractViolationKind::ControllerAccelerationLimit
+            | MotionContractViolationKind::ControllerJerkLimit
+            | MotionContractViolationKind::ControllerAngularAccelerationLimit
+            | MotionContractViolationKind::ControllerAngularJerkLimit
+    )
+}
+
 fn validate_jitter(
     report: &JitterDiagnosticReport,
     controls: &BTreeMap<usize, TraversalControl>,
 ) -> JitterValidationSummary {
-    let key_for = |incident: &JitterIncident| {
-        // Attribute the causative derivative interval, ignoring missing plan
-        // samples at a capture boundary. Review-only frames after the incident
-        // never change its route edge.
-        let mut causative_routes = (incident.frame_window[0]..=incident.frame)
-            .filter_map(|frame| controls.get(&(frame as usize)).map(|control| control.route));
-        let from_route = causative_routes.next();
-        let to_route = causative_routes.last().or(from_route);
-        let joint_class = jitter_joint_class(&incident.joint);
-        JitterBucketKey {
-            from_route,
-            to_route,
-            envelope: jitter_window_envelope(from_route, to_route, joint_class),
-            joint_class,
-            joint: incident.joint.clone(),
-            metric: incident.class,
-        }
-    };
+    validate_jitter_for_profile(
+        report,
+        controls,
+        &[],
+        CaptureValidationProfile::FocusedScenario,
+    )
+}
+
+fn validate_jitter_for_profile(
+    report: &JitterDiagnosticReport,
+    controls: &BTreeMap<usize, TraversalControl>,
+    frames: &[FrameSample],
+    profile: CaptureValidationProfile,
+) -> JitterValidationSummary {
     let mut histogram = BTreeMap::<JitterBucketKey, JitterHistogramEntry>::new();
     for incident in &report.authored.incidents {
-        let key = key_for(incident);
+        let key = jitter_key(incident, controls);
         let bucket = histogram
             .entry(key.clone())
             .or_insert(JitterHistogramEntry {
@@ -4069,6 +5142,10 @@ fn validate_jitter(
                 authored_sensitivity_count: 0,
                 final_sensitivity_count: 0,
                 unacceptable_final_count: 0,
+                accepted_authored_count: 0,
+                accepted_justified_chain_count: 0,
+                accepted_controller_count: 0,
+                accepted_preroll_count: 0,
                 authored_maximum: 0.0,
                 final_maximum: 0.0,
             });
@@ -4079,15 +5156,24 @@ fn validate_jitter(
         report.authored.incidents_truncated == 0 && report.final_pose.incidents_truncated == 0;
     let mut unacceptable_final_incident_count = report.final_pose.incidents_truncated;
     let mut worst_unacceptable: Option<AttributedJitterIncident> = None;
+    let mut accepted_authored_count = 0;
+    let mut accepted_justified_chain_count = 0;
+    let mut accepted_controller_count = 0;
+    let mut accepted_preroll_count = 0;
+    let mut contract_violations = if profile == CaptureValidationProfile::StateMachineTraversal {
+        motion_contract_violations(frames, controls)
+    } else {
+        Vec::new()
+    };
     let authored_keys = report
         .authored
         .incidents
         .iter()
-        .map(|incident| key_for(incident))
+        .map(|incident| jitter_key(incident, controls))
         .collect::<Vec<_>>();
     let mut authored_matched = vec![false; report.authored.incidents.len()];
     for incident in &report.final_pose.incidents {
-        let key = key_for(incident);
+        let key = jitter_key(incident, controls);
         let baseline_index = report
             .authored
             .incidents
@@ -4096,18 +5182,14 @@ fn validate_jitter(
             .filter(|(index, authored)| {
                 !authored_matched[*index]
                     && authored_keys[*index] == key
-                    && authored.frame.abs_diff(incident.frame) <= 2
+                    && authored.frame == incident.frame
+                    && incident.value <= authored.value + jitter_noise_floor(report, incident.class)
             })
-            .max_by(|(_, left), (_, right)| left.value.total_cmp(&right.value))
-            .map(|(index, _)| index);
-        let baseline = baseline_index.map(|index| report.authored.incidents[index].value);
+            .map(|(index, _)| index)
+            .next();
         if let Some(index) = baseline_index {
             authored_matched[index] = true;
         }
-        let unacceptable = key.envelope == JitterEnvelopeClass::ProceduralStrict
-            || baseline.is_none_or(|maximum| {
-                incident.value > maximum + jitter_noise_floor(report, incident.class)
-            });
         let bucket = histogram
             .entry(key.clone())
             .or_insert(JitterHistogramEntry {
@@ -4120,12 +5202,82 @@ fn validate_jitter(
                 authored_sensitivity_count: 0,
                 final_sensitivity_count: 0,
                 unacceptable_final_count: 0,
+                accepted_authored_count: 0,
+                accepted_justified_chain_count: 0,
+                accepted_controller_count: 0,
+                accepted_preroll_count: 0,
                 authored_maximum: 0.0,
                 final_maximum: 0.0,
             });
         bucket.final_sensitivity_count += 1;
         bucket.final_maximum = bucket.final_maximum.max(incident.value);
+        let incident_side = incident
+            .joint
+            .starts_with("left_")
+            .then_some("left")
+            .or_else(|| incident.joint.starts_with("right_").then_some("right"));
+        let chain_interval_is_clean = !contract_violations.iter().any(|violation| {
+            violation_overlaps_incident(violation, incident)
+                && !controller_contract_violation(violation.kind)
+                && (violation.side == incident_side
+                    || (violation.side.is_none()
+                        && violation.kind == MotionContractViolationKind::MissingInteriorControl))
+        });
+        let controller_interval_is_clean = !contract_violations.iter().any(|violation| {
+            violation_overlaps_incident(violation, incident)
+                && (controller_contract_violation(violation.kind)
+                    || violation.kind == MotionContractViolationKind::MissingInteriorControl)
+        });
+        let noise = jitter_noise_floor(report, incident.class);
+        let accepted_authored = baseline_index.is_some()
+            && (profile == CaptureValidationProfile::StateMachineTraversal
+                || key.envelope != JitterEnvelopeClass::ProceduralStrict);
+        let accepted_chain = profile == CaptureValidationProfile::StateMachineTraversal
+            && key.joint_class == JitterJointClass::Leg
+            && chain_interval_is_clean
+            && replayed_chain_oracle_value(frames, incident)
+                .is_some_and(|expected| incident.value <= expected + noise);
+        let accepted_controller = profile == CaptureValidationProfile::StateMachineTraversal
+            && key.joint_class == JitterJointClass::Axial
+            && controller_interval_is_clean
+            && controller_oracle_value(frames, incident)
+                .is_some_and(|expected| incident.value <= expected + noise);
+        // Captured incidents always end on a captured frame. A derivative
+        // stencil that begins in pre-roll therefore crosses into a real
+        // route and must pass the same authored/controller/chain contract as
+        // every other route edge; pre-roll is never a blanket exemption.
+        let accepted_preroll = false;
+        let unacceptable =
+            !(accepted_authored || accepted_chain || accepted_controller || accepted_preroll);
+        if accepted_authored {
+            bucket.accepted_authored_count += 1;
+            accepted_authored_count += 1;
+        } else if accepted_chain {
+            bucket.accepted_justified_chain_count += 1;
+            accepted_justified_chain_count += 1;
+        } else if accepted_controller {
+            bucket.accepted_controller_count += 1;
+            accepted_controller_count += 1;
+        } else if accepted_preroll {
+            bucket.accepted_preroll_count += 1;
+            accepted_preroll_count += 1;
+        }
         if unacceptable {
+            if profile == CaptureValidationProfile::StateMachineTraversal
+                && key.joint_class == JitterJointClass::Leg
+            {
+                contract_violations.push(MotionContractViolation {
+                    frame: incident.frame as usize,
+                    side: incident
+                        .joint
+                        .starts_with("left_")
+                        .then_some("left")
+                        .or_else(|| incident.joint.starts_with("right_").then_some("right")),
+                    kind: MotionContractViolationKind::UnjustifiedChainAmplification,
+                    measured: Some(incident.value),
+                    limit: replayed_chain_oracle_value(frames, incident).map(|value| value + noise),
+                });
+            }
             bucket.unacceptable_final_count += 1;
             unacceptable_final_incident_count += 1;
             let attributed = AttributedJitterIncident {
@@ -4145,10 +5297,24 @@ fn validate_jitter(
     }
     JitterValidationSummary {
         diagnostics_complete,
+        raw_final_incident_count: report.final_pose.incidents.len()
+            + report.final_pose.incidents_truncated,
+        accepted_authored_count,
+        accepted_justified_chain_count,
+        accepted_controller_count,
+        accepted_preroll_count,
+        contract_violations,
         unacceptable_final_incident_count,
         worst_unacceptable,
         histogram: histogram.into_values().collect(),
-        policy: "clean authored traversal motion and documented high-energy envelopes require a one-to-one authored incident on the same joint and derivative within two frames and no larger than that authored value plus its existing noise floor; derivative windows crossing a route edge are attributed to the exact from-route/to-route pair; procedural guard legs, landing, and unattributed focused captures reject every threshold incident",
+        policy: match profile {
+            CaptureValidationProfile::FocusedScenario => {
+                "focused captures retain strict incident acceptance: only an exact same-frame authored incident on the same joint and derivative may explain final motion"
+            }
+            CaptureValidationProfile::StateMachineTraversal => {
+                "traversal retains every raw incident; exact authored matches, complete pre-roll stencils, declared controller motion, or deterministic two-bone replay with clean typed owner/reach inputs may justify it; every owner, dynamics, reach, clamp, control-attribution, or unexplained amplification violation remains unacceptable"
+            }
+        },
     }
 }
 
@@ -4793,10 +5959,15 @@ fn finish_capture(
             .or_insert(0) += 1;
         counts
     });
-    let jitter_validation =
-        validate_jitter(&sequence.jitter_diagnostics, &sequence.traversal_controls);
+    let jitter_validation = validate_jitter_for_profile(
+        &sequence.jitter_diagnostics,
+        &sequence.traversal_controls,
+        &frames,
+        validation_profile,
+    );
     let joint_jitter_within_review_bounds = jitter_validation.diagnostics_complete
-        && jitter_validation.unacceptable_final_incident_count == 0;
+        && jitter_validation.unacceptable_final_incident_count == 0
+        && jitter_validation.contract_violations.is_empty();
     let state_machine_routes_observed = sequence.traversal_controls.is_empty()
         || TraversalRoute::ALL.iter().all(|route| {
             matches!(
@@ -5208,6 +6379,8 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 maximum_knee_foot_yaw_offset_degrees: maximum_knee_foot_yaw_offset(
                     &procedural_frames,
                 ),
+                maximum_transition_band_knee_foot_yaw_offset_degrees:
+                    maximum_transition_band_knee_foot_yaw_offset(&procedural_frames),
                 maximum_facing_motion_error_degrees: maximum_facing_error(&metric_frames),
                 maximum_facing_tracking_excess_degrees: maximum_facing_tracking_excess(
                     &metric_frames,
@@ -5379,11 +6552,68 @@ fn maximum_knee_foot_yaw_offset(frames: &[&FrameSample]) -> f32 {
         .iter()
         .flat_map(|frame| {
             [
-                frame.ik_left_knee_foot_yaw_offset_degrees,
-                frame.ik_right_knee_foot_yaw_offset_degrees,
+                (
+                    "left_hip",
+                    "left_foot",
+                    frame.ik_left_knee_foot_yaw_offset_degrees,
+                ),
+                (
+                    "right_hip",
+                    "right_foot",
+                    frame.ik_right_knee_foot_yaw_offset_degrees,
+                ),
             ]
+            .into_iter()
+            .filter_map(|(hip, foot, yaw)| {
+                knee_yaw_is_well_conditioned(frame, hip, foot).then_some(yaw)
+            })
         })
         .fold(0.0, f32::max)
+}
+
+fn maximum_transition_band_knee_foot_yaw_offset(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .flat_map(|frame| {
+            [
+                (
+                    "left_hip",
+                    "left_foot",
+                    frame.ik_left_knee_foot_yaw_offset_degrees,
+                ),
+                (
+                    "right_hip",
+                    "right_foot",
+                    frame.ik_right_knee_foot_yaw_offset_degrees,
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(hip, foot, yaw)| {
+                (!knee_yaw_is_well_conditioned(frame, hip, foot)).then_some(yaw)
+            })
+        })
+        .fold(0.0, f32::max)
+}
+
+fn knee_yaw_is_well_conditioned(frame: &FrameSample, hip: &str, foot: &str) -> bool {
+    const FULL_FOOT_FACING_AUTHORITY_VERTICAL_FRACTION: f32 = 0.12;
+    let Some(hip) = frame
+        .bones
+        .get(hip)
+        .map(|bone| Vec3::from_array(bone.position))
+    else {
+        return false;
+    };
+    let Some(foot) = frame
+        .bones
+        .get(foot)
+        .map(|bone| Vec3::from_array(bone.position))
+    else {
+        return false;
+    };
+    (foot - hip)
+        .try_normalize()
+        .is_some_and(|axis| axis.y.abs() >= FULL_FOOT_FACING_AUTHORITY_VERTICAL_FRACTION)
 }
 
 fn maximum_facing_error(frames: &[&FrameSample]) -> f32 {
@@ -6156,7 +7386,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 })
             };
             format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
                 scenario.scenario,
                 scenario.frame_count,
                 describe(&scenario.worst_displacement, "m"),
@@ -6170,6 +7400,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 scenario.minimum_knee_flexion_degrees,
                 scenario.minimum_knee_hemisphere_dot,
                 scenario.maximum_knee_foot_yaw_offset_degrees,
+                scenario.maximum_transition_band_knee_foot_yaw_offset_degrees,
                 scenario.maximum_facing_motion_error_degrees,
                 scenario.maximum_facing_tracking_excess_degrees,
                 scenario.maximum_guard_facing_error_degrees,
@@ -6188,7 +7419,7 @@ body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,s
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
-<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>knee-foot yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>dive axis/travel error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
+<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>well-conditioned knee-foot yaw offset deg</th><th>horizontal transition-band yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>dive axis/travel error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
 function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | guard ${{f.weapon_guard}} lead ${{f.lead_foot}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | world plants L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
 function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
@@ -6360,7 +7591,7 @@ mod tests {
         report
             .final_pose
             .incidents
-            .push(incident(PoseDiagnosticSeam::Final, 43, "head"));
+            .push(incident(PoseDiagnosticSeam::Final, 42, "head"));
         let controls = BTreeMap::from([
             (
                 40,
@@ -6403,13 +7634,53 @@ mod tests {
         assert_eq!(validation.unacceptable_final_incident_count, 0);
         assert_eq!(
             validation.histogram[0].from_route,
-            Some(TraversalRoute::UprightStop)
+            RouteEndpoint::Route(TraversalRoute::UprightStop)
         );
         assert_eq!(
             validation.histogram[0].to_route,
-            Some(TraversalRoute::UprightTurn)
+            RouteEndpoint::Route(TraversalRoute::UprightTurn)
         );
         assert_eq!(validation.histogram[0].joint, "head");
+    }
+
+    #[test]
+    fn preroll_crossing_derivative_stencil_is_not_blanket_accepted() {
+        let incident = JitterIncident {
+            seam: PoseDiagnosticSeam::Final,
+            joint: "head".into(),
+            class: JitterClass::AngularJerk,
+            frame: 1,
+            frame_window: [0, 3],
+            value: 20_000.0,
+            severity: 2.0,
+            evidence: SpikeEvidence {
+                absolute_exceeded: true,
+                relative_exceeded: true,
+                previous_value: 100.0,
+                relative_baseline: 400.0,
+            },
+        };
+        let mut report = JitterDiagnosticReport::default();
+        report.final_pose.incidents.push(incident);
+        let control = |route| TraversalControl {
+            route,
+            commands: vec![],
+            grounded: true,
+            downed_aim: None,
+        };
+        let controls = BTreeMap::from([
+            (0, control(TraversalRoute::UprightIdle)),
+            (1, control(TraversalRoute::UprightWalk)),
+        ]);
+        let validation = validate_jitter_for_profile(
+            &report,
+            &controls,
+            &[],
+            CaptureValidationProfile::StateMachineTraversal,
+        );
+        assert_eq!(validation.histogram[0].from_route, RouteEndpoint::PreRoll);
+        assert_eq!(validation.accepted_preroll_count, 0);
+        assert_eq!(validation.unacceptable_final_incident_count, 1);
     }
 
     #[test]
@@ -6558,23 +7829,193 @@ mod tests {
     }
 
     #[test]
+    fn traversal_ramps_guard_release_facing_and_explosive_action_speed() {
+        let plan = state_machine_traversal_scenario();
+        let route_frames = |route| {
+            plan.frames
+                .iter()
+                .filter(|frame| {
+                    plan.controls
+                        .get(&frame.scenario_frame)
+                        .is_some_and(|control| control.route == route)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let releases = route_frames(TraversalRoute::GuardRelease);
+        let first_release = &releases[..28];
+        let reversal = route_frames(TraversalRoute::GuardReversal);
+        let reversal_end = reversal.last().unwrap();
+        assert!(
+            reversal_end.local_direction.dot(Vec2::X) > 0.85,
+            "smoothed reversal ended at {:?}",
+            reversal_end.local_direction
+        );
+        assert!(
+            (reversal_end.camera_yaw - std::f32::consts::FRAC_PI_2).abs() < 0.35,
+            "smoothed reversal yaw ended at {}",
+            reversal_end.camera_yaw
+        );
+        assert!(first_release[0].local_direction.dot(Vec2::X) > 0.75);
+        assert!(first_release[27].local_direction.dot(Vec2::NEG_Y) > 0.75);
+        assert!(first_release[13].local_direction.x > 0.25);
+
+        let quickstep = route_frames(TraversalRoute::Quickstep);
+        assert!(quickstep[20].speed >= TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND * 0.95);
+        assert!(quickstep[20].local_direction.dot(Vec2::X) > 0.99);
+
+        let attack = route_frames(TraversalRoute::AttackLeftSupport);
+        assert!((attack[20].speed - 1.0).abs() < 0.05);
+        for route in [
+            TraversalRoute::AttackRightSupport,
+            TraversalRoute::BlockLeftSupport,
+            TraversalRoute::BlockRightSupport,
+        ] {
+            let frames = route_frames(route);
+            assert!((frames[20].speed - 1.0).abs() < 0.05);
+        }
+        for route in [
+            TraversalRoute::DiveForwardImpactRecovery,
+            TraversalRoute::DiveBackwardImpactRecovery,
+            TraversalRoute::DiveLeftImpactRecovery,
+            TraversalRoute::DiveRightImpactRecovery,
+        ] {
+            let frames = route_frames(route);
+            let first_airborne = frames
+                .iter()
+                .find(|frame| {
+                    plan.controls
+                        .get(&frame.scenario_frame)
+                        .is_some_and(|control| !control.grounded)
+                })
+                .unwrap();
+            assert!(
+                first_airborne.speed >= TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND * 0.95,
+                "route={route:?} first_airborne_speed={:?}",
+                first_airborne.speed
+            );
+            assert!(frames.last().unwrap().speed < 0.05);
+        }
+    }
+
+    #[test]
+    fn traversal_controller_conditioner_obeys_declared_dynamics() {
+        let plan = state_machine_traversal_scenario();
+        let dt = SAMPLE_HZ.recip();
+        let velocities = plan
+            .frames
+            .iter()
+            .map(|frame| {
+                controller_yaw(Quat::from_rotation_y(frame.camera_yaw))
+                    * Vec3::new(
+                        frame.local_direction.x * frame.speed,
+                        0.0,
+                        frame.local_direction.y * frame.speed,
+                    )
+            })
+            .collect::<Vec<_>>();
+        let accelerations = velocities
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]) / dt)
+            .collect::<Vec<_>>();
+        assert!(
+            accelerations.iter().all(|value| {
+                value.length() <= TRAVERSAL_CONTROLLER_MAXIMUM_ACCELERATION + 0.001
+            })
+        );
+        assert!(accelerations.windows(2).all(|pair| {
+            ((pair[1] - pair[0]) / dt).length() <= TRAVERSAL_CONTROLLER_MAXIMUM_JERK + 0.01
+        }));
+        let yaw_velocities = plan
+            .frames
+            .windows(2)
+            .map(|pair| shortest_angle_delta(pair[0].camera_yaw, pair[1].camera_yaw) / dt)
+            .collect::<Vec<_>>();
+        let yaw_accelerations = yaw_velocities
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]) / dt)
+            .collect::<Vec<_>>();
+        assert!(yaw_accelerations.iter().all(|value| {
+            value.abs() <= TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_ACCELERATION + 0.001
+        }));
+        let maximum_yaw_jerk = yaw_accelerations
+            .windows(2)
+            .map(|pair| ((pair[1] - pair[0]) / dt).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            maximum_yaw_jerk <= TRAVERSAL_CONTROLLER_MAXIMUM_ANGULAR_JERK + 0.01,
+            "maximum_yaw_jerk={maximum_yaw_jerk:?}"
+        );
+    }
+
+    #[test]
+    fn guard_octant_turns_keep_constant_speed_and_c2_endpoint_derivatives() {
+        let from = Vec2::new(-1.0, 1.0);
+        let to = Vec2::new(1.0, 1.0);
+        let dt = 1.0 / SAMPLE_HZ;
+        let samples = (0..=15)
+            .map(|frame| c2_guard_velocity(from, to, frame as f32 / 15.0, 2.0))
+            .collect::<Vec<_>>();
+        assert!(
+            samples
+                .iter()
+                .all(|velocity| (velocity.length() - 2.0).abs() < 0.0001)
+        );
+        let accelerations = samples
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]) / dt)
+            .collect::<Vec<_>>();
+        assert!(accelerations[0].length() < 0.75);
+        assert!(accelerations.last().unwrap().length() < 0.75);
+        assert!(
+            accelerations
+                .iter()
+                .all(|acceleration| acceleration.length() < 30.0)
+        );
+
+        // The opposite-octant case must rotate through a defined hemisphere,
+        // never normalize a zero lerp and inject a stop/restart.
+        for frame in 0..=15 {
+            assert!(
+                (c2_guard_velocity(Vec2::NEG_Y, Vec2::Y, frame as f32 / 15.0, 2.0).length() - 2.0)
+                    .abs()
+                    < 0.0001
+            );
+        }
+    }
+
+    #[test]
     fn traversal_exercises_every_guard_octant_and_dive_direction() {
         let plan = state_machine_traversal_scenario();
-        for direction in [
-            Vec2::NEG_Y,
-            Vec2::Y,
-            Vec2::NEG_X,
-            Vec2::X,
-            Vec2::new(-1.0, -1.0),
-            Vec2::new(1.0, -1.0),
-            Vec2::new(-1.0, 1.0),
-            Vec2::ONE,
+        for (route, direction) in [
+            (TraversalRoute::GuardForward, Vec2::NEG_Y),
+            (TraversalRoute::GuardBackward, Vec2::Y),
+            (TraversalRoute::GuardLeft, Vec2::NEG_X),
+            (TraversalRoute::GuardRight, Vec2::X),
+            (TraversalRoute::GuardForwardLeft, Vec2::new(-1.0, -1.0)),
+            (TraversalRoute::GuardForwardRight, Vec2::new(1.0, -1.0)),
+            (TraversalRoute::GuardBackwardLeft, Vec2::new(-1.0, 1.0)),
+            (TraversalRoute::GuardBackwardRight, Vec2::ONE),
         ] {
-            assert!(plan.frames.iter().any(|frame| {
-                frame.weapon_guard == WeaponGuardState::Raised
-                    && frame.local_direction == direction.normalize_or_zero()
-            }));
+            let expected = direction.normalize_or_zero();
+            assert!(
+                plan.frames.iter().any(|frame| {
+                    plan.controls
+                        .get(&frame.scenario_frame)
+                        .is_some_and(|control| control.route == route)
+                        && frame.weapon_guard == WeaponGuardState::Raised
+                        && frame.local_direction.distance(expected) <= 0.01
+                }),
+                "conditioned traversal never reached guard route {route:?}"
+            );
         }
+        assert!(plan.frames.iter().any(|frame| {
+            plan.controls
+                .get(&frame.scenario_frame)
+                .is_some_and(|control| control.route == TraversalRoute::GuardPlanted)
+                && frame.weapon_guard == WeaponGuardState::Raised
+                && frame.speed <= 0.001
+        }));
         for direction in [
             DiveDirection::Forward,
             DiveDirection::Backward,
@@ -6870,6 +8311,7 @@ mod tests {
             speed_metres_per_second: 0.0,
             gait_phase: 0.0,
             locomotion_sample_tick: 0,
+            raised_step_sequence: 0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,
@@ -6881,6 +8323,7 @@ mod tests {
             landing_compression_metres: 0.0,
             root_distance_metres: 0.0,
             root_position_metres: Vec3::ZERO.to_array(),
+            commanded_root_velocity: Vec3::ZERO.to_array(),
             world_travel_direction: Vec3::Z.to_array(),
             desired_body_forward_direction: Vec3::Z.to_array(),
             body_forward_direction: Vec3::Z.to_array(),
@@ -6912,6 +8355,8 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
+            left_foot_motion: None,
+            right_foot_motion: None,
             semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
             semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
             semantic_route_runtime_evaluated: false,
@@ -7274,6 +8719,7 @@ mod tests {
             speed_metres_per_second: 2.0,
             gait_phase: 0.0,
             locomotion_sample_tick: 0,
+            raised_step_sequence: 0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,
@@ -7285,6 +8731,7 @@ mod tests {
             landing_compression_metres: 0.0,
             root_distance_metres: 0.0,
             root_position_metres: Vec3::ZERO.to_array(),
+            commanded_root_velocity: Vec3::ZERO.to_array(),
             world_travel_direction: Vec3::NEG_Z.to_array(),
             desired_body_forward_direction: Vec3::NEG_Z.to_array(),
             body_forward_direction: Vec3::Z.to_array(),
@@ -7316,6 +8763,8 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
+            left_foot_motion: None,
+            right_foot_motion: None,
             semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
             semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
             semantic_route_runtime_evaluated: false,
@@ -7337,6 +8786,10 @@ mod tests {
 
         frame.ik_left_knee_foot_yaw_offset_degrees = 90.0;
         assert!(maximum_knee_foot_yaw_offset(&[&frame]) > 45.0);
+
+        frame.bones.get_mut("left_foot").unwrap().position = Vec3::new(-0.15, 0.95, 0.8).to_array();
+        assert_eq!(maximum_knee_foot_yaw_offset(&[&frame]), 0.0);
+        assert!(maximum_transition_band_knee_foot_yaw_offset(&[&frame]) > 45.0);
     }
 
     #[test]
@@ -7532,6 +8985,7 @@ mod tests {
             speed_metres_per_second: 2.0,
             gait_phase: 0.0,
             locomotion_sample_tick: scenario_frame as u64,
+            raised_step_sequence: 0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,
@@ -7543,6 +8997,7 @@ mod tests {
             landing_compression_metres: 0.0,
             root_distance_metres: 0.0,
             root_position_metres: Vec3::new(0.0, CAPTURE_ROOT_GROUND_OFFSET_METRES, 0.0).to_array(),
+            commanded_root_velocity: Vec3::ZERO.to_array(),
             world_travel_direction: Vec3::NEG_Z.to_array(),
             desired_body_forward_direction: Vec3::NEG_Z.to_array(),
             body_forward_direction: Vec3::NEG_Z.to_array(),
@@ -7574,6 +9029,8 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
+            left_foot_motion: None,
+            right_foot_motion: None,
             semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
             semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
             semantic_route_runtime_evaluated: false,
@@ -7583,6 +9040,196 @@ mod tests {
                 ("right_foot".into(), foot(0.2, right_terrain_height)),
             ]),
         }
+    }
+
+    #[test]
+    fn traversal_motion_contract_rejects_contact_envelope_and_endpoint_errors() {
+        let mut frame = foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0);
+        frame.left_foot_motion = Some(FootMotionEvidenceSample {
+            owner: FootMotionOwnerSample::AdmittedC2,
+            owner_epoch: 1,
+            presented_position: Vec3::ZERO.to_array(),
+            presented_velocity: Vec3::X.to_array(),
+            presented_acceleration: Vec3::X.to_array(),
+            commanded_target: Some(Vec3::ZERO.to_array()),
+            retained_pole: Some(Vec3::Z.to_array()),
+            solve_hip: None,
+            upper_length: None,
+            lower_length: None,
+            commanded_pole: None,
+            pole_tracking_active: false,
+            pole_angular_velocity: 0.0,
+            pole_angular_acceleration: 0.0,
+            maximum_acceleration: 24.0,
+            maximum_jerk: 384.0,
+            maximum_pole_angular_acceleration: 12.0,
+            maximum_pole_angular_jerk: 192.0,
+            reach_disposition: ReachDisposition::Within,
+            target_render_error_metres: 0.0,
+            contact_endpoint: Some((Vec3::X * 0.1).to_array()),
+            contact_progress: Some(1.0),
+            contact_tick: Some(0),
+            contact_ticks_remaining: Some(0),
+            permitted_contact_lag_metres: Some(0.0),
+            actual_contact_lag_metres: Some(0.1),
+            contact_envelope_excess_metres: Some(0.1),
+            contact_promised: true,
+            contact_aborted: false,
+            aborted_contact_owner_epoch: None,
+            contact_completed: true,
+        });
+
+        let violations = motion_contract_violations(&[frame], &BTreeMap::new());
+        assert!(violations.iter().any(
+            |violation| violation.kind == MotionContractViolationKind::ContactEnvelopeExceeded
+        ));
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.kind == MotionContractViolationKind::NonzeroContactLag)
+        );
+        assert!(violations.iter().any(|violation| {
+            violation.kind == MotionContractViolationKind::ContactDerivativeMismatch
+        }));
+    }
+
+    #[test]
+    fn normal_raised_guard_requires_typed_foot_motion_ownership() {
+        let mut frame = foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0);
+        frame.weapon_guard = WeaponGuardState::Raised;
+        frame.ik_left_solve_target = Some(Vec3::ZERO.to_array());
+        let violations = motion_contract_violations(&[frame], &BTreeMap::new());
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.kind == MotionContractViolationKind::MissingOwner)
+        );
+    }
+
+    #[test]
+    fn promised_contact_disappearing_on_route_exit_is_an_explicit_violation() {
+        let mut promised = foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0);
+        promised.left_foot_motion = Some(FootMotionEvidenceSample {
+            owner: FootMotionOwnerSample::AdmittedC2,
+            owner_epoch: 17,
+            presented_position: Vec3::ZERO.to_array(),
+            presented_velocity: Vec3::ZERO.to_array(),
+            presented_acceleration: Vec3::ZERO.to_array(),
+            commanded_target: Some(Vec3::ZERO.to_array()),
+            retained_pole: Some(Vec3::Z.to_array()),
+            solve_hip: None,
+            upper_length: None,
+            lower_length: None,
+            commanded_pole: None,
+            pole_tracking_active: false,
+            pole_angular_velocity: 0.0,
+            pole_angular_acceleration: 0.0,
+            maximum_acceleration: 24.0,
+            maximum_jerk: 384.0,
+            maximum_pole_angular_acceleration: 12.0,
+            maximum_pole_angular_jerk: 192.0,
+            reach_disposition: ReachDisposition::Within,
+            target_render_error_metres: 0.0,
+            contact_endpoint: Some((Vec3::X * 0.1).to_array()),
+            contact_progress: Some(0.5),
+            contact_tick: Some(2),
+            contact_ticks_remaining: Some(2),
+            permitted_contact_lag_metres: Some(0.05),
+            actual_contact_lag_metres: Some(0.1),
+            contact_envelope_excess_metres: Some(0.05),
+            contact_promised: true,
+            contact_aborted: false,
+            aborted_contact_owner_epoch: None,
+            contact_completed: false,
+        });
+        let exited = foot_metric_frame(1, 0.0, 0.0, 0.0, 0.0);
+        let violations = motion_contract_violations(&[promised, exited], &BTreeMap::new());
+        assert!(violations.iter().any(|violation| {
+            violation.frame == 1
+                && violation.kind == MotionContractViolationKind::ContactAbortWithoutRecovery
+        }));
+    }
+
+    #[test]
+    fn promised_contact_replacement_names_the_retired_owner_epoch() {
+        let mut promised = foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0);
+        let mut replacement = foot_metric_frame(1, 0.0, 0.0, 0.0, 0.0);
+        let promised_motion = FootMotionEvidenceSample {
+            owner: FootMotionOwnerSample::AdmittedC2,
+            owner_epoch: 17,
+            presented_position: Vec3::ZERO.to_array(),
+            presented_velocity: Vec3::ZERO.to_array(),
+            presented_acceleration: Vec3::ZERO.to_array(),
+            commanded_target: Some(Vec3::ZERO.to_array()),
+            retained_pole: None,
+            solve_hip: None,
+            upper_length: None,
+            lower_length: None,
+            commanded_pole: None,
+            pole_tracking_active: false,
+            pole_angular_velocity: 0.0,
+            pole_angular_acceleration: 0.0,
+            maximum_acceleration: 24.0,
+            maximum_jerk: 384.0,
+            maximum_pole_angular_acceleration: 12.0,
+            maximum_pole_angular_jerk: 192.0,
+            reach_disposition: ReachDisposition::Within,
+            target_render_error_metres: 0.0,
+            contact_endpoint: Some(Vec3::X.to_array()),
+            contact_progress: Some(0.5),
+            contact_tick: Some(2),
+            contact_ticks_remaining: Some(2),
+            permitted_contact_lag_metres: Some(0.5),
+            actual_contact_lag_metres: Some(1.0),
+            contact_envelope_excess_metres: Some(0.5),
+            contact_promised: true,
+            contact_aborted: false,
+            aborted_contact_owner_epoch: None,
+            contact_completed: false,
+        };
+        promised.left_foot_motion = Some(promised_motion.clone());
+        replacement.left_foot_motion = Some(FootMotionEvidenceSample {
+            owner: FootMotionOwnerSample::StatefulFollower,
+            owner_epoch: 18,
+            contact_endpoint: None,
+            contact_progress: None,
+            contact_tick: None,
+            contact_ticks_remaining: None,
+            permitted_contact_lag_metres: None,
+            actual_contact_lag_metres: None,
+            contact_envelope_excess_metres: None,
+            contact_promised: false,
+            ..promised_motion
+        });
+        let violations =
+            motion_contract_violations(&[promised.clone(), replacement.clone()], &BTreeMap::new());
+        assert!(violations.iter().any(|violation| {
+            violation.frame == 1
+                && violation.kind == MotionContractViolationKind::ContactAbortWithoutRecovery
+        }));
+
+        let motion = replacement.left_foot_motion.as_mut().unwrap();
+        motion.contact_aborted = true;
+        motion.aborted_contact_owner_epoch = Some(17);
+        let violations = motion_contract_violations(&[promised, replacement], &BTreeMap::new());
+        assert!(!violations.iter().any(|violation| {
+            violation.frame == 1
+                && violation.kind == MotionContractViolationKind::ContactAbortWithoutRecovery
+        }));
+    }
+
+    #[test]
+    fn traversal_controller_contract_rejects_unbounded_command_motion() {
+        let first = foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0);
+        let mut second = foot_metric_frame(1, 0.0, 0.0, 0.0, 0.0);
+        second.commanded_root_velocity = Vec3::new(10.0, 0.0, 0.0).to_array();
+        let violations = motion_contract_violations(&[first, second], &BTreeMap::new());
+        assert!(violations.iter().any(|violation| {
+            violation.kind == MotionContractViolationKind::ControllerAccelerationLimit
+        }));
+        assert!(violations.iter().any(|violation| {
+            violation.kind == MotionContractViolationKind::ControllerIntegrationMismatch
+        }));
     }
 
     #[test]

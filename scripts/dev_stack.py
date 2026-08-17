@@ -51,6 +51,10 @@ class TacticalPlayMode(str, Enum):
     NETWORKING = "networking"
 
 
+DEFAULT_DIAGNOSTIC_SCENARIO = "directional-dives"
+GUARD_FOOTWORK_REPRO_SCENARIO = "guard-footwork-live-repro"
+
+
 class ObsWebSocket:
     """Small obs-websocket v5 client used only by the supervised capture path."""
 
@@ -1596,6 +1600,73 @@ def tactical_combat_scale(mode: TacticalPlayMode) -> int:
     return 10_000 if mode is TacticalPlayMode.COMBAT else 0
 
 
+def guard_footwork_repro_commands() -> list[dict[str, object]]:
+    """Captured live aim/move cadence, sent through the real client input path."""
+    return [
+        {"type": "pace", "pace": "walk"},
+        {"type": "guard", "raised": True},
+        {"type": "wait", "duration_seconds": 2.3},
+        {
+            "type": "move_vector", "local_x": 0.0, "local_y": 1.0,
+            "input_speed": 1.0, "duration_seconds": 0.45,
+        },
+        {"type": "wait", "duration_seconds": 0.65},
+        {
+            "type": "move_vector", "local_x": 0.0, "local_y": 1.0,
+            "input_speed": 1.0, "duration_seconds": 0.3,
+        },
+        {
+            "type": "move_vector", "local_x": 1.0, "local_y": 1.0,
+            "input_speed": 1.0, "duration_seconds": 5.75,
+        },
+        {
+            "type": "move_vector", "local_x": 1.0, "local_y": 0.0,
+            "input_speed": 1.0, "duration_seconds": 0.45,
+        },
+        {"type": "wait", "duration_seconds": 0.55},
+        {"type": "guard", "raised": False},
+        {"type": "wait", "duration_seconds": 1.25},
+    ]
+
+
+def diagnostic_commands(scenario: str) -> list[dict[str, object]]:
+    if scenario == GUARD_FOOTWORK_REPRO_SCENARIO:
+        return guard_footwork_repro_commands()
+    if scenario != DEFAULT_DIAGNOSTIC_SCENARIO:
+        raise ValueError(f"unknown diagnostic scenario: {scenario}")
+    return [
+        {"type": "rotate", "degrees_right": 90.0},
+        {
+            "type": "move", "direction": "forward",
+            "input_speed": 0.5, "duration_seconds": 2.0,
+        },
+        {"type": "guard", "raised": True},
+        {
+            "type": "move", "direction": "forward",
+            "input_speed": 1.0, "duration_seconds": 2.0,
+        },
+        {"type": "dive", "direction": "forward", "duration_seconds": 1.5},
+        {"type": "toggle_posture", "duration_seconds": 1.2},
+        {"type": "dive", "direction": "backward", "duration_seconds": 1.5},
+        {"type": "toggle_posture", "duration_seconds": 1.2},
+        {"type": "dive", "direction": "left", "duration_seconds": 1.5},
+        {"type": "toggle_posture", "duration_seconds": 1.2},
+        {"type": "dive", "direction": "right", "duration_seconds": 1.5},
+        {"type": "guard", "raised": False},
+        {"type": "wait", "duration_seconds": 0.5},
+    ]
+
+
+def await_diagnostic_client_after_server_exit(
+    client_process: subprocess.Popen[str], timeout_seconds: float = 2.0,
+) -> int | None:
+    """Reap a client that disconnected successfully just before server teardown."""
+    try:
+        return client_process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        return None
+
+
 def launch_recorded_tactical_client(
     run_dir: Path,
     config: dict[str, object],
@@ -1620,50 +1691,24 @@ def launch_recorded_tactical_client(
         "--present-mode", str(config.get("present_mode", "auto-vsync")),
     ]
     suffix = str(config["session_id"])[:12]
-    if config["play_mode"] == TacticalPlayMode.DIAGNOSTIC.value:
+    if config["play_mode"] in (
+        TacticalPlayMode.ANIMATION.value,
+        TacticalPlayMode.DIAGNOSTIC.value,
+    ):
         animation_log = run_dir / f"animation-state-{suffix}.jsonl"
         command.extend(["--animation-log", str(animation_log)])
         client_config["animation_log"] = str(animation_log)
         config["animation_log"] = str(animation_log)
+    if config["play_mode"] == TacticalPlayMode.DIAGNOSTIC.value:
         input_script = run_dir / f"animation-input-script-{suffix}.json"
         commands: list[dict[str, object]] = []
         if config.get("window_capture") != "off":
             capture_ready = run_dir / f"capture-ready-{suffix}.json"
             commands.append({"type": "wait_for_signal", "path": str(capture_ready)})
             config["capture_ready_signal"] = str(capture_ready)
-        commands.extend([
-            {"type": "rotate", "degrees_right": 90.0},
-            {
-                "type": "move", "direction": "forward",
-                "input_speed": 0.5, "duration_seconds": 2.0,
-            },
-            {"type": "guard", "raised": True},
-            {
-                "type": "move", "direction": "forward",
-                "input_speed": 1.0, "duration_seconds": 2.0,
-            },
-            {
-                "type": "dive", "direction": "forward",
-                "duration_seconds": 1.5,
-            },
-            {"type": "toggle_posture", "duration_seconds": 1.2},
-            {
-                "type": "dive", "direction": "backward",
-                "duration_seconds": 1.5,
-            },
-            {"type": "toggle_posture", "duration_seconds": 1.2},
-            {
-                "type": "dive", "direction": "left",
-                "duration_seconds": 1.5,
-            },
-            {"type": "toggle_posture", "duration_seconds": 1.2},
-            {
-                "type": "dive", "direction": "right",
-                "duration_seconds": 1.5,
-            },
-            {"type": "guard", "raised": False},
-            {"type": "wait", "duration_seconds": 0.5},
-        ])
+        commands.extend(diagnostic_commands(str(config.get(
+            "diagnostic_scenario", DEFAULT_DIAGNOSTIC_SCENARIO
+        ))))
         atomic_write_json(input_script, {
             "commands": commands
         })
@@ -1692,6 +1737,8 @@ def launch_recorded_tactical_client(
             f"native client exited during launch.\nLog: {run_dir / 'client.log'}\n"
             f"{log_tail(run_dir / 'client.log')}"
         )
+    if "animation_log" in config:
+        print(f"Animation session log: {config['animation_log']}")
     return process
 
 
@@ -2124,6 +2171,304 @@ def effective_presentation_trace(
     return requested
 
 
+def analyze_guard_footwork_repro(
+    animation_log: Path,
+    manifest_path: Path,
+    *,
+    scene_input: str = "assets/tactical-scenes/dense-woodland.json",
+    commands: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    commands = commands or guard_footwork_repro_commands()
+    segments = [animation_log.with_suffix(".previous.jsonl"), animation_log]
+    frames: dict[int, dict[str, object]] = {}
+    headers = 0
+    for segment in segments:
+        if not segment.is_file():
+            continue
+        for line in segment.read_text(encoding="utf-8").splitlines():
+            record = json.loads(line)
+            if record.get("record_type") == "session_header":
+                headers += 1
+            elif record.get("record_type") == "frame" and "frame" in record:
+                frames[int(record["frame"])] = record
+    ordered = [frames[index] for index in sorted(frames)]
+    zero_support_frames: list[int] = []
+    awaiting_frames: list[int] = []
+    emergency_frames: list[int] = []
+    warning_frames: list[int] = []
+    hard_frames: list[int] = []
+    airborne_clearance_frames: list[int] = []
+    trailing_frames: list[int] = []
+    overextension_frames: list[int] = []
+    raised_after_lower_frames: list[int] = []
+    visible_stuck_frames: list[int] = []
+    saw_guard_raised = False
+    saw_guard_lowered = False
+    saw_diagonal = False
+    maximum_rearward_metres = 0.0
+    maximum_radial_extension_metres = 0.0
+    emergency_epochs: dict[str, set[int]] = {"left": set(), "right": set()}
+    lowered_elapsed: float | None = None
+    stale_release_start: float | None = None
+    longest_stale_release_seconds = 0.0
+    awaiting_start: float | None = None
+    longest_awaiting_seconds = 0.0
+    syndrome_start: float | None = None
+    longest_syndrome_seconds = 0.0
+    visible_stuck_start: float | None = None
+    longest_visible_stuck_seconds = 0.0
+    authoritative_ticks: set[int] = set()
+    source_ticks: set[int] = set()
+    saw_raised_moving = False
+    controller_positions: list[tuple[float, float]] = []
+    previous_elapsed: float | None = None
+
+    def append_bounded(target: list[int], frame: int) -> None:
+        if len(target) < 64:
+            target.append(frame)
+
+    for record in ordered:
+        frame = int(record["frame"])
+        elapsed = float(record.get("elapsed_seconds", 0.0))
+        if previous_elapsed is not None and not (0.0 <= elapsed - previous_elapsed <= 0.1):
+            awaiting_start = None
+            syndrome_start = None
+            visible_stuck_start = None
+            stale_release_start = None
+        previous_elapsed = elapsed
+        authoritative = record.get("authoritative") or {}
+        if authoritative.get("locomotion_sample_tick") is not None:
+            authoritative_ticks.add(int(authoritative["locomotion_sample_tick"]))
+        cadence = record.get("cadence_identity") or {}
+        if cadence.get("source_tick") is not None:
+            source_ticks.add(int(cadence["source_tick"]))
+        raised = record.get("raised_ownership") or {}
+        saw_raised_moving = saw_raised_moving or bool(raised.get("was_moving"))
+        controller = (record.get("controller_global_transform") or {}).get("translation")
+        if controller and len(controller) >= 3:
+            controller_positions.append((float(controller[0]), float(controller[2])))
+        request = record.get("last_emitted_player_input") or {}
+        guard = str(request.get("weapon_guard", "")).lower()
+        if "raised" in guard:
+            saw_guard_raised = True
+        if "lowered" in guard and saw_guard_raised:
+            saw_guard_lowered = True
+            lowered_elapsed = elapsed if lowered_elapsed is None else lowered_elapsed
+        scripted = record.get("input") or {}
+        movement = (
+            (scripted.get("request") or {}).get("movement")
+            or request.get("movement")
+            or [0.0, 0.0]
+        )
+        if len(movement) >= 2 and abs(float(movement[0])) > 0.1 and abs(float(movement[1])) > 0.1:
+            saw_diagonal = True
+        left_support = float(raised.get("left_support_weight", 1.0))
+        right_support = float(raised.get("right_support_weight", 1.0))
+        zero_support = left_support <= 0.05 and right_support <= 0.05
+        if zero_support:
+            append_bounded(zero_support_frames, frame)
+        if raised.get("awaiting_step_sequence"):
+            append_bounded(awaiting_frames, frame)
+            awaiting_start = elapsed if awaiting_start is None else awaiting_start
+            longest_awaiting_seconds = max(longest_awaiting_seconds, elapsed - awaiting_start)
+        else:
+            awaiting_start = None
+        motion = record.get("foot_motion") or {}
+        recovery_or_reach_this_frame = False
+        for side in ("left", "right"):
+            selected = ((motion.get(side) or {}).get("selected") or {})
+            diagnostic = selected.get("diagnostic") or {}
+            owner = diagnostic.get("owner")
+            if owner == "emergency_recovery":
+                append_bounded(emergency_frames, frame)
+                emergency_epochs[side].add(int(diagnostic.get("owner_epoch", 0)))
+                recovery_or_reach_this_frame = True
+            disposition = selected.get("reach_disposition")
+            if disposition == "warning":
+                append_bounded(warning_frames, frame)
+                recovery_or_reach_this_frame = True
+            elif disposition == "hard":
+                append_bounded(hard_frames, frame)
+                recovery_or_reach_this_frame = True
+        lower = record.get("lower_body") or {}
+        elevated_this_frame = False
+        trailing_this_frame = False
+        overextended_this_frame = False
+        for side in ("left", "right"):
+            side_body = lower.get(side) or {}
+            ankle_delta = side_body.get("ankle_from_visual_pelvis_world")
+            if ankle_delta and len(ankle_delta) >= 3:
+                radial = (
+                    float(ankle_delta[0]) ** 2 + float(ankle_delta[2]) ** 2
+                ) ** 0.5
+                maximum_radial_extension_metres = max(
+                    maximum_radial_extension_metres, radial
+                )
+                if radial > 0.90:
+                    append_bounded(overextension_frames, frame)
+                    overextended_this_frame = True
+                move_x = float(movement[0]) if len(movement) >= 2 else 0.0
+                move_y = float(movement[1]) if len(movement) >= 2 else 0.0
+                move_length = (move_x * move_x + move_y * move_y) ** 0.5
+                rearward = 0.0
+                if move_length > 0.1:
+                    rearward = -(
+                        float(ankle_delta[0]) * move_x
+                        + float(ankle_delta[2]) * -move_y
+                    ) / move_length
+                maximum_rearward_metres = max(maximum_rearward_metres, rearward)
+                if rearward >= 0.70:
+                    append_bounded(trailing_frames, frame)
+                    trailing_this_frame = True
+            ankle = side_body.get("ankle") or {}
+            toe = side_body.get("toe") or {}
+            ankle_clearance = ankle.get("clearance")
+            toe_clearance = toe.get("clearance")
+            sole_clearance = (
+                float(ankle_clearance) - 0.085
+                if ankle_clearance is not None else None
+            )
+            if zero_support and (
+                (sole_clearance is not None and sole_clearance > 0.01)
+                or (toe_clearance is not None and float(toe_clearance) > 0.011)
+            ):
+                append_bounded(airborne_clearance_frames, frame)
+                elevated_this_frame = True
+        if lowered_elapsed is not None:
+            stale_release_active = (
+                motion.get("selected_source") == "raised_footwork"
+                and bool(raised.get("release_handoff_active"))
+            )
+            if stale_release_active:
+                append_bounded(raised_after_lower_frames, frame)
+                stale_release_start = (
+                    elapsed if stale_release_start is None else stale_release_start
+                )
+                longest_stale_release_seconds = max(
+                    longest_stale_release_seconds, elapsed - stale_release_start
+                )
+            else:
+                stale_release_start = None
+        episode = (
+            zero_support
+            and bool(raised.get("awaiting_step_sequence"))
+            and elevated_this_frame
+            and (trailing_this_frame or overextended_this_frame)
+            and recovery_or_reach_this_frame
+        )
+        if episode:
+            syndrome_start = elapsed if syndrome_start is None else syndrome_start
+            longest_syndrome_seconds = max(
+                longest_syndrome_seconds, elapsed - syndrome_start
+            )
+        else:
+            syndrome_start = None
+        visible_stuck = (
+            zero_support
+            and bool(raised.get("awaiting_step_sequence"))
+            and elevated_this_frame
+            and (trailing_this_frame or overextended_this_frame)
+        )
+        if visible_stuck:
+            append_bounded(visible_stuck_frames, frame)
+            visible_stuck_start = elapsed if visible_stuck_start is None else visible_stuck_start
+            longest_visible_stuck_seconds = max(
+                longest_visible_stuck_seconds, elapsed - visible_stuck_start
+            )
+        else:
+            visible_stuck_start = None
+
+    controller_displacement = 0.0
+    if controller_positions:
+        first = controller_positions[0]
+        controller_displacement = max(
+            ((point[0] - first[0]) ** 2 + (point[1] - first[1]) ** 2) ** 0.5
+            for point in controller_positions
+        )
+    harness_completed = (
+        headers > 0
+        and len(ordered) >= 60
+        and saw_guard_raised
+        and saw_guard_lowered
+        and saw_diagonal
+        and len(authoritative_ticks) >= 2
+        and len(source_ticks) >= 2
+        and saw_raised_moving
+        and controller_displacement >= 0.5
+    )
+    signatures = {
+        "dual_zero_support": bool(zero_support_frames),
+        "long_awaiting_step_sequence": longest_awaiting_seconds >= 0.5,
+        "emergency_owner_churn": any(len(epochs) >= 2 for epochs in emergency_epochs.values()),
+        "warning_reach": bool(warning_frames),
+        "hard_reach": bool(hard_frames),
+        "airborne_clearance": bool(airborne_clearance_frames),
+        "body_relative_trailing": bool(trailing_frames),
+        "body_relative_overextension": bool(overextension_frames),
+        "visible_stuck_episode": longest_visible_stuck_seconds >= 0.2,
+        "raised_owner_after_guard_lowered": longest_stale_release_seconds >= 0.5,
+    }
+    known_failure_reproduced = harness_completed and (
+        longest_syndrome_seconds >= 0.2
+        and longest_awaiting_seconds >= 0.5
+        and signatures["emergency_owner_churn"]
+        and (signatures["warning_reach"] or signatures["hard_reach"])
+        and longest_stale_release_seconds >= 0.5
+    )
+    visual_or_lifecycle_failure = (
+        maximum_radial_extension_metres > 0.90
+        or longest_visible_stuck_seconds >= 0.2
+        or longest_awaiting_seconds >= 0.5
+        or longest_stale_release_seconds >= 0.5
+        or bool(hard_frames)
+    )
+    manifest: dict[str, object] = {
+        "schema": "adventuresim.animation.guard_footwork_repro",
+        "schema_version": 1,
+        "source_log": str(animation_log),
+        "scenario": GUARD_FOOTWORK_REPRO_SCENARIO,
+        "scene_input": scene_input,
+        "command_plan": commands,
+        "command_plan_sha256": hashlib.sha256(
+            json.dumps(commands, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "captured_elapsed_range_seconds": (
+            [ordered[0].get("elapsed_seconds"), ordered[-1].get("elapsed_seconds")]
+            if ordered else None
+        ),
+        "harness_completed": harness_completed,
+        "known_failure_reproduced": known_failure_reproduced,
+        "visual_or_lifecycle_failure": visual_or_lifecycle_failure,
+        "animation_acceptance_passed": harness_completed and not visual_or_lifecycle_failure,
+        "frame_count": len(ordered),
+        "maximum_body_relative_rearward_metres": maximum_rearward_metres,
+        "maximum_body_relative_radial_extension_metres": maximum_radial_extension_metres,
+        "longest_awaiting_seconds": longest_awaiting_seconds,
+        "longest_coherent_failure_episode_seconds": longest_syndrome_seconds,
+        "longest_visible_stuck_episode_seconds": longest_visible_stuck_seconds,
+        "longest_raised_release_after_lower_seconds": longest_stale_release_seconds,
+        "authoritative_sample_tick_count": len(authoritative_ticks),
+        "presentation_source_tick_count": len(source_ticks),
+        "controller_displacement_metres": controller_displacement,
+        "emergency_owner_epoch_count": sum(len(epochs) for epochs in emergency_epochs.values()),
+        "signatures": signatures,
+        "evidence_frames": {
+            "dual_zero_support": zero_support_frames,
+            "awaiting_step_sequence": awaiting_frames,
+            "emergency_owner": emergency_frames,
+            "warning_reach": warning_frames,
+            "hard_reach": hard_frames,
+            "airborne_clearance": airborne_clearance_frames,
+            "body_relative_trailing": trailing_frames,
+            "body_relative_overextension": overextension_frames,
+            "raised_after_guard_lowered": raised_after_lower_frames,
+            "visible_stuck_episode": visible_stuck_frames,
+        },
+    }
+    atomic_write_json(manifest_path, manifest)
+    return manifest
+
+
 def tactical_play(
     mode: TacticalPlayMode,
     base_port: int,
@@ -2134,6 +2479,8 @@ def tactical_play(
     capture_source: str = "window",
     render_backend: str = "auto",
     scene_input: str | None = None,
+    diagnostic_scenario: str = DEFAULT_DIAGNOSTIC_SCENARIO,
+    expect_known_failure: bool = False,
 ) -> int:
     launch_client = mode is not TacticalPlayMode.NETWORKING
     code = build_tactical_play(launch_client)
@@ -2156,6 +2503,7 @@ def tactical_play(
         graphics_preset,
         present_mode, window_capture, capture_source, render_backend,
     )
+    config["diagnostic_scenario"] = diagnostic_scenario
     session_file = run_dir / "tactical-session.json"
 
     with ProfileLock(profile_dir / "lifecycle.lock") as lifecycle:
@@ -2299,7 +2647,7 @@ def tactical_play(
                 print("Waiting for the bounded diagnostic client to finish...")
             else:
                 print("Press Ctrl+C to stop this profile's recorded processes.")
-            while server_process.poll() is None:
+            while True:
                 if client_process is not None and mode is TacticalPlayMode.DIAGNOSTIC:
                     client_code = client_process.poll()
                     if client_code is not None:
@@ -2314,11 +2662,38 @@ def tactical_play(
                             obs_capture = None
                             print(f"Window capture complete: {video_path}")
                         print(f"Diagnostic capture complete: {config['animation_log']}")
+                        if diagnostic_scenario == GUARD_FOOTWORK_REPRO_SCENARIO:
+                            manifest_path = run_dir / "guard-footwork-repro-manifest.json"
+                            manifest = analyze_guard_footwork_repro(
+                                Path(str(config["animation_log"])), manifest_path
+                            )
+                            config["guard_footwork_repro_manifest"] = str(manifest_path)
+                            atomic_write_json(session_file, config)
+                            print(f"Guard footwork evidence: {manifest_path}")
+                            print(
+                                "Known failure reproduced: "
+                                f"{manifest['known_failure_reproduced']}"
+                            )
+                            if not manifest["harness_completed"]:
+                                return 2
+                            if expect_known_failure:
+                                return 0 if manifest["known_failure_reproduced"] else 1
+                            return 0 if manifest["animation_acceptance_passed"] else 1
                         return 0
+                if server_process.poll() is not None:
+                    if client_process is not None and mode is TacticalPlayMode.DIAGNOSTIC:
+                        # A successful AppExit closes the socket before the OS necessarily
+                        # makes the client process pollable. Give that completed diagnostic
+                        # a bounded chance to win the disconnect/server-panic race, then
+                        # consume it through the client-first branch above.
+                        client_code = await_diagnostic_client_after_server_exit(client_process)
+                        if client_code is not None:
+                            continue
+                    raise RuntimeError(
+                        f"recorded tactical server exited; see {server_log}\n"
+                        f"{log_tail(server_log)}"
+                    )
                 time.sleep(0.25)
-            raise RuntimeError(
-                f"recorded tactical server exited; see {server_log}\n{log_tail(server_log)}"
-            )
         except KeyboardInterrupt:
             print("\nStopping supervised tactical profile...")
             return 0
@@ -2566,6 +2941,12 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
     )
+    tactical_play_parser.add_argument("--expect-known-failure", action="store_true")
+    tactical_play_parser.add_argument(
+        "--diagnostic-scenario",
+        choices=(DEFAULT_DIAGNOSTIC_SCENARIO, GUARD_FOOTWORK_REPRO_SCENARIO),
+        default=DEFAULT_DIAGNOSTIC_SCENARIO,
+    )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
     reseeder = sub.add_parser("reseed-tactical-mission")
@@ -2631,6 +3012,8 @@ def main() -> int:
                 TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
                 args.presentation_trace, args.present_mode, args.window_capture,
                 args.capture_source, args.render_backend, args.scene_input,
+                args.diagnostic_scenario,
+                args.expect_known_failure,
             )
         if args.command == "tactical-status":
             return tactical_status()

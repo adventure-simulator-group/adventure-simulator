@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::path::{Path, PathBuf};
 
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
@@ -30,12 +30,21 @@ struct InputScript {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ScriptCommand {
+    Pace {
+        pace: ScriptPace,
+    },
     Rotate {
         degrees_right: f32,
     },
     Move {
         #[serde(default)]
         direction: MoveDirection,
+        input_speed: f32,
+        duration_seconds: f32,
+    },
+    MoveVector {
+        local_x: f32,
+        local_y: f32,
         input_speed: f32,
         duration_seconds: f32,
     },
@@ -55,6 +64,23 @@ enum ScriptCommand {
     WaitForSignal {
         path: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ScriptPace {
+    Walk,
+    #[default]
+    Sprint,
+}
+
+impl ScriptPace {
+    fn movement_pace(self) -> MovementPace {
+        match self {
+            Self::Walk => MovementPace::Walk,
+            Self::Sprint => MovementPace::Sprint,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -94,6 +120,7 @@ struct ScriptedInput {
     command_elapsed: f32,
     look: Vec2,
     weapon_guard: WeaponGuardState,
+    pace: MovementPace,
     posture_sequence: u32,
     started: bool,
     exit_after_script: bool,
@@ -102,7 +129,7 @@ struct ScriptedInput {
 
 pub(crate) struct DiagnosticPlugin {
     script: Option<InputScript>,
-    log: Option<File>,
+    log_path: Option<PathBuf>,
     exit_after_script: bool,
     render_schedule: Option<RenderScheduleTelemetry>,
 }
@@ -123,7 +150,7 @@ impl DiagnosticPlugin {
                 Ok(script)
             })
             .transpose()?;
-        let log = log_path
+        let log_path = log_path
             .map(|path| {
                 let path = Path::new(path);
                 if let Some(parent) = path.parent() {
@@ -131,18 +158,16 @@ impl DiagnosticPlugin {
                         format!("failed to create animation log directory: {error}")
                     })?;
                 }
-                File::create(path).map_err(|error| {
-                    format!("failed to create animation log {}: {error}", path.display())
-                })
+                Ok::<_, String>(path.to_path_buf())
             })
             .transpose()?;
         if exit_after_script && script.is_none() {
             return Err("--exit-after-script requires --input-script".to_owned());
         }
-        let render_schedule = log.as_ref().map(|_| RenderScheduleTelemetry::new());
+        let render_schedule = log_path.as_ref().map(|_| RenderScheduleTelemetry::new());
         Ok(Self {
             script,
-            log,
+            log_path,
             exit_after_script,
             render_schedule,
         })
@@ -151,11 +176,11 @@ impl DiagnosticPlugin {
 
 impl Plugin for DiagnosticPlugin {
     fn build(&self, app: &mut App) {
-        if let Some(file) = self.log.as_ref().and_then(|file| file.try_clone().ok()) {
-            app.insert_resource(AnimationDiagnosticLog {
-                writer: std::io::BufWriter::new(file),
-                frame: 0,
-            })
+        if let Some(log_path) = &self.log_path {
+            app.insert_resource(
+                AnimationDiagnosticLog::new(log_path.clone())
+                    .expect("validated animation diagnostic log path should remain writable"),
+            )
             .insert_resource(JointJitterDiagnostics::enabled());
         }
         if let Some(telemetry) = &self.render_schedule {
@@ -168,6 +193,7 @@ impl Plugin for DiagnosticPlugin {
                 command_elapsed: 0.0,
                 look: Vec2::ZERO,
                 weapon_guard: WeaponGuardState::Lowered,
+                pace: MovementPace::Sprint,
                 posture_sequence: 0,
                 started: false,
                 exit_after_script: self.exit_after_script,
@@ -243,6 +269,20 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
                         .to_owned(),
                 );
             }
+            ScriptCommand::MoveVector {
+                local_x,
+                local_y,
+                input_speed,
+                duration_seconds,
+            } if !local_x.is_finite()
+                || !local_y.is_finite()
+                || Vec2::new(*local_x, *local_y).length_squared() <= f32::EPSILON
+                || !(0.0..=1.0).contains(input_speed)
+                || !duration_seconds.is_finite()
+                || *duration_seconds <= 0.0 =>
+            {
+                return Err("move_vector requires a finite nonzero direction, input_speed 0..=1, and positive duration_seconds".to_owned());
+            }
             ScriptCommand::Dive {
                 duration_seconds, ..
             } if !duration_seconds.is_finite() || *duration_seconds <= 0.0 => {
@@ -292,6 +332,8 @@ fn drive_scripted_input(
         let Some(command) = script.commands.get(script.command_index).cloned() else {
             input_override.0 = Some(PlayerInputRequest {
                 look: script.look,
+                pace: script.pace,
+                weapon_guard: script.weapon_guard,
                 ..default()
             });
             let exit_after_script = script.exit_after_script;
@@ -324,9 +366,17 @@ fn drive_scripted_input(
             continue;
         }
 
+        if let ScriptCommand::Pace { pace } = command {
+            script.pace = pace.movement_pace();
+            script.command_index += 1;
+            script.command_elapsed = 0.0;
+            continue;
+        }
+
         if let ScriptCommand::WaitForSignal { path } = &command {
             let request = PlayerInputRequest {
                 look: script.look,
+                pace: script.pace,
                 weapon_guard: script.weapon_guard,
                 ..default()
             };
@@ -365,6 +415,17 @@ fn drive_scripted_input(
                 Some(direction.vector() * input_speed),
                 PostureCommand::default(),
             ),
+            ScriptCommand::MoveVector {
+                local_x,
+                local_y,
+                input_speed,
+                duration_seconds,
+            } => (
+                "move_vector",
+                duration_seconds,
+                Some(Vec2::new(local_x, local_y).normalize() * input_speed),
+                PostureCommand::default(),
+            ),
             ScriptCommand::Dive {
                 direction,
                 duration_seconds,
@@ -393,6 +454,7 @@ fn drive_scripted_input(
                 ("wait", duration_seconds, None, PostureCommand::default())
             }
             ScriptCommand::Rotate { .. }
+            | ScriptCommand::Pace { .. }
             | ScriptCommand::Guard { .. }
             | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
@@ -404,7 +466,7 @@ fn drive_scripted_input(
             jump_charge: false,
             downed_align: false,
             posture,
-            pace: MovementPace::Sprint,
+            pace: script.pace,
             weapon_guard: script.weapon_guard,
         };
         input_override.0 = Some(request);
@@ -443,6 +505,21 @@ mod tests {
         )
         .unwrap();
         assert!(validate_script(&script).is_err());
+    }
+
+    #[test]
+    fn diagonal_move_vector_parses_and_validates() {
+        let script: InputScript = serde_json::from_str(
+            r#"{"commands":[{"type":"pace","pace":"walk"},{"type":"move_vector","local_x":1.0,"local_y":1.0,"input_speed":1.0,"duration_seconds":5.75}]}"#,
+        )
+        .unwrap();
+        assert!(validate_script(&script).is_ok());
+        assert!(matches!(
+            script.commands.first(),
+            Some(ScriptCommand::Pace {
+                pace: ScriptPace::Walk
+            })
+        ));
     }
 
     #[test]

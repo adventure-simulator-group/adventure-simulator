@@ -194,6 +194,26 @@ impl JointJitterDiagnostics {
         }
     }
 
+    pub(crate) fn live_log_snapshot(&self, owner: Entity) -> serde_json::Value {
+        let seam = |kind| {
+            let report = self.reports.get(&(owner, kind));
+            serde_json::json!({
+                "incident_count": report.map_or(0, |report| report.incident_count),
+                "incidents_truncated": report.map_or(0, |report| report.incidents_truncated),
+                "maximum_by_class": report.map(|report| &report.maximum_by_class),
+                "latest_incident": report.and_then(|report| report.incidents.last()),
+                "worst": report.and_then(|report| report.worst.as_ref()),
+            })
+        };
+        serde_json::json!({
+            "sample_hz": JITTER_SAMPLE_HZ,
+            "thresholds": self.thresholds,
+            "sample_tick": self.live_sample_tick,
+            "authored": seam(PoseDiagnosticSeam::Authored),
+            "final_pose": seam(PoseDiagnosticSeam::Final),
+        })
+    }
+
     pub(crate) fn reset_histories(&mut self) {
         self.histories.clear();
         self.continuity_generation = self.continuity_generation.wrapping_add(1);

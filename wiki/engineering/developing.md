@@ -636,11 +636,25 @@ captures disagree with visible networked gameplay. Scripted diagnostic mode
 forces the default third-person camera and suppresses live keyboard and mouse
 buttons, motion, and scrolling so activity in another application cannot alter
 the capture. Third person is also the normal tactical client's default; F9 still
-toggles camera mode outside scripted diagnostics. Only `diagnostic` enables the
-per-frame JSONL log by default, supplies scripted input, and exits
-automatically. Interactive `animation` and `combat` profiles avoid unbounded
-diagnostic files; use the native client's explicit `--animation-log PATH` option
-when an interactive recording needs correlation. On Windows,
+toggles camera mode outside scripted diagnostics. Both `animation` and
+`diagnostic` create a per-frame JSONL log by default. Interactive `animation`
+keeps physical input enabled and runs until manually closed; `diagnostic` alone
+supplies scripted input and exits automatically. The live log retains the newest
+two 32 MiB segments, records a versioned session header, and samples final
+post-propagation animation and IK state. `combat` does not log by default; use
+the native client's explicit `--animation-log PATH` option when another profile
+needs correlation.
+
+Use `just tactical-guard-footwork-repro` for the named production-path raised
+footwork reproducer. It runs the native client and tactical server against the
+dense woodland scene, sends the captured guard/dwell/forward/stop/restart/
+forward-right sequence through the normal machine-readable diagnostic input
+path, and analyzes the live JSONL after the client exits. The command succeeds
+only when the harness completed and the known stuck-air signature was observed;
+its `guard-footwork-repro-manifest.json` records animation acceptance as failed
+when that expected defect is reproduced.
+
+On Windows,
 `presentation_trace=auto` records a `presentmon-<session>.csv` ETW trace for the
 bounded diagnostic profile when PresentMon is installed. Use
 `presentation_trace=required` for a capture that must include independent

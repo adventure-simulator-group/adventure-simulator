@@ -17,6 +17,7 @@ pub struct AdventureSimulatorClientPlugin;
 impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WeaponGuardInputState>()
+            .init_resource::<LastPlayerInputRequest>()
             .init_resource::<ReconnectCredential>()
             .init_resource::<DirectControlState>()
             .init_resource::<DebugForceAttackTrigger>()
@@ -66,6 +67,9 @@ pub struct WeaponGuardInputState {
 #[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
 #[reflect(Resource)]
 pub struct DebugForceAttackTrigger(pub bool);
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct LastPlayerInputRequest(pub Option<PlayerInputRequest>);
 
 #[derive(Resource, Debug, Clone, Copy, Reflect)]
 #[reflect(Resource)]
@@ -536,9 +540,11 @@ fn send_player_input(
     guard: Res<WeaponGuardInputState>,
     controls: Res<DirectControlState>,
     scripted: Res<PlayerInputOverride>,
+    mut last_request: ResMut<LastPlayerInputRequest>,
 ) {
     for (actions, look) in &players {
         if let Some(request) = scripted.0 {
+            last_request.0 = Some(request);
             commands.client_trigger(request);
             continue;
         }
@@ -546,7 +552,7 @@ fn send_player_input(
             .iter_many(actions)
             .next()
             .map(|movement| **movement);
-        commands.client_trigger(PlayerInputRequest {
+        let request = PlayerInputRequest {
             movement,
             look: Vec2::new(look.yaw, look.pitch),
             jump: controls.jump_command,
@@ -556,7 +562,9 @@ fn send_player_input(
             posture: controls.posture_command,
             pace: controls.pace,
             weapon_guard: guard.desired,
-        });
+        };
+        last_request.0 = Some(request);
+        commands.client_trigger(request);
     }
 }
 

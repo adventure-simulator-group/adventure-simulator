@@ -168,7 +168,10 @@ fn advance_body_response(current: Vec2, target: Vec2, tick_delta: Option<u64>) -
     let Some(tick_delta) = tick_delta else {
         return target;
     };
-    let maximum_step = 2.0_f32.to_radians() * tick_delta.max(1) as f32;
+    if tick_delta == 0 {
+        return current;
+    }
+    let maximum_step = 2.0_f32.to_radians() * tick_delta as f32;
     current + (target - current).clamp_length_max(maximum_step)
 }
 
@@ -290,6 +293,27 @@ mod tests {
         assert!(first.distance(second) <= 2.0_f32.to_radians() + 0.000_01);
         assert!(second.length() < first.length());
         assert_ne!(first, Vec2::ZERO);
+    }
+
+    #[test]
+    fn repeated_posture_transition_view_keeps_the_same_chest_pose() {
+        let retained = Vec2::new(18.0_f32.to_radians(), -11.0_f32.to_radians());
+        let first_view = advance_body_response(retained, Vec2::ZERO, Some(1));
+        let repeated_view = advance_body_response(first_view, Vec2::ZERO, Some(0));
+        assert_eq!(repeated_view, first_view);
+
+        let authored_pelvis = Quat::from_rotation_y(0.14);
+        let bind_pelvis = Quat::from_rotation_y(0.05);
+        let authored_chest =
+            Transform::from_translation(Vec3::Y * 0.42).with_rotation(Quat::from_rotation_x(-0.21));
+        let presented_chest = |response: Vec2| {
+            let response = Quat::from_euler(EulerRot::XYZ, response.x, 0.0, response.y);
+            let (pelvis, _) = stable_pelvis_response(authored_pelvis, bind_pelvis, response);
+            Transform::from_rotation(pelvis).compute_affine() * authored_chest.compute_affine()
+        };
+        let first_chest = presented_chest(first_view);
+        let repeated_chest = presented_chest(repeated_view);
+        assert_eq!(first_chest, repeated_chest);
     }
 
     #[test]

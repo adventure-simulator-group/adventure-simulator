@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use adventuresim_tactical_core::prelude::*;
 use bevy::{math::Affine3A, prelude::*};
@@ -106,31 +106,77 @@ pub(crate) struct ProceduralCrouchState {
 pub(super) struct FixedTickPoseCache {
     tick: Option<u64>,
     bones: BTreeMap<Entity, Transform>,
+    rig_nodes: BTreeMap<Entity, Transform>,
+}
+
+fn belongs_to_fixed_tick_rig(
+    entity: Entity,
+    rig_roots: &BTreeSet<Entity>,
+    parent_by_child: &BTreeMap<Entity, Entity>,
+) -> bool {
+    let mut cursor = Some(entity);
+    for _ in 0..64 {
+        let Some(current) = cursor else {
+            break;
+        };
+        if rig_roots.contains(&current) {
+            return true;
+        }
+        cursor = parent_by_child.get(&current).copied();
+    }
+    false
 }
 
 /// Tools can render gameplay, side, and front views from one logical sample.
-/// Preserve the first complete post-procedural local pose for that fixed tick
-/// and restore it before propagation on every repeated render. Live gameplay
-/// leaves the fixed clock unset and never enters this path.
+/// Preserve the first authored hierarchy input for that fixed tick and restore
+/// it before every repeated procedural evaluation. The uncached procedural
+/// output remains visible to final jitter sampling and the viewer's exact
+/// repeated-output comparison, so this cannot hide a non-idempotent solver.
+/// Live gameplay leaves the fixed clock unset and never enters this path.
 pub(super) fn stabilize_repeated_fixed_tick_pose(
     clock: Res<ProceduralAnimationClock>,
     mut cache: ResMut<FixedTickPoseCache>,
     mut bones: Query<(Entity, &mut Transform), With<HumanoidBone>>,
+    rigs: Query<(Entity, &HumanoidRig)>,
+    parents: Query<(Entity, &ChildOf)>,
+    mut nodes: Query<(Entity, &mut Transform), Without<HumanoidBone>>,
 ) {
     let Some((tick, _)) = clock.fixed_step() else {
         cache.tick = None;
         cache.bones.clear();
+        cache.rig_nodes.clear();
         return;
     };
     if cache.tick != Some(tick) {
         cache.tick = Some(tick);
         cache.bones.clear();
+        cache.rig_nodes.clear();
         cache.bones.extend(
             bones
                 .iter_mut()
                 .map(|(entity, transform)| (entity, *transform)),
         );
+        let rig_roots = rigs
+            .iter()
+            .flat_map(|(owner, rig)| [Some(owner), rig.rig_scene()])
+            .flatten()
+            .collect::<BTreeSet<_>>();
+        let parent_by_child = parents
+            .iter()
+            .map(|(child, parent)| (child, parent.parent()))
+            .collect::<BTreeMap<_, _>>();
+        cache
+            .rig_nodes
+            .extend(nodes.iter_mut().filter_map(|(entity, transform)| {
+                belongs_to_fixed_tick_rig(entity, &rig_roots, &parent_by_child)
+                    .then_some((entity, *transform))
+            }));
         return;
+    }
+    for (entity, mut transform) in &mut nodes {
+        if let Some(cached) = cache.rig_nodes.get(&entity) {
+            *transform = *cached;
+        }
     }
     for (entity, mut transform) in &mut bones {
         if let Some(cached) = cache.bones.get(&entity) {
@@ -1048,9 +1094,10 @@ struct BoneSnapshot {
 
 mod ik;
 pub(crate) use ik::{
-    ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkDiagnostics,
-    LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
-    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
+    ArmIkState, ContactMotionEvent, FootMotionDiagnostic, FootMotionOwnerKind, HandIkTarget,
+    HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkDiagnostics, LegIkState,
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    SOLE_CONTACT_TOLERANCE_METRES, advance_procedural_animation_clock, locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
@@ -2094,5 +2141,22 @@ mod legacy_tests {
         assert!(translation.abs_diff_eq(expected.translation, 0.0001));
         assert!(rotation.abs_diff_eq(expected.rotation, 0.0001));
         assert!(scale.abs_diff_eq(expected.scale, 0.0001));
+    }
+
+    #[test]
+    fn repeated_fixed_tick_cache_includes_non_bone_rig_ancestors_only() {
+        let owner = Entity::from_bits(1);
+        let scene = Entity::from_bits(2);
+        let armature = Entity::from_bits(3);
+        let intermediate = Entity::from_bits(4);
+        let camera = Entity::from_bits(5);
+        let roots = BTreeSet::from([owner, scene]);
+        let parents = BTreeMap::from([(scene, owner), (armature, scene), (intermediate, armature)]);
+
+        assert!(belongs_to_fixed_tick_rig(owner, &roots, &parents));
+        assert!(belongs_to_fixed_tick_rig(scene, &roots, &parents));
+        assert!(belongs_to_fixed_tick_rig(armature, &roots, &parents));
+        assert!(belongs_to_fixed_tick_rig(intermediate, &roots, &parents));
+        assert!(!belongs_to_fixed_tick_rig(camera, &roots, &parents));
     }
 }

@@ -348,6 +348,10 @@ tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="miss
 tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }}
 
+# Real client/server dense-woodland reproduction of the live raised-footwork failure.
+tactical-guard-footwork-repro base_port="24920" graphics_preset="default" present_mode="auto-vsync": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play diagnostic {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace off --present-mode {{ quote(present_mode) }} --window-capture off --scene-input assets/tactical-scenes/dense-woodland.json --diagnostic-scenario guard-footwork-live-repro --expect-known-failure
+
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
 tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":

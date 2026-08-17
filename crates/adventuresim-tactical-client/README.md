@@ -203,13 +203,15 @@ phase prediction/correction deltas,
 authoritative phase measurements, pending drift correction, any presentation
 crossfade, wall-clock time, and the latest render-schedule completion counter.
 PresentMon remains the independent authority for actual swapchain presentation. This is
-the diagnostic boundary immediately after pose evaluation; it does not replace
-the real network or animation path.
+the diagnostic boundary after final procedural IK, anatomical correction, and
+transform propagation; it does not replace the real network or animation path.
 
-Only the bounded `diagnostic` profile enables the per-frame JSONL log by
-default. Interactive `animation` and `combat` sessions avoid an unbounded log;
-launch the native client with an explicit `--animation-log PATH` when a manual
-session needs one.
+The `animation` and `diagnostic` profiles enable the per-frame JSONL log by
+default. Interactive `animation` keeps physical input enabled and runs until
+manually closed, while `diagnostic` uses its bounded script and exits. Both logs
+retain only the newest two 32 MiB segments. `combat` does not log by default;
+launch the native client with an explicit `--animation-log PATH` when another
+profile needs one.
 
 On Windows the bounded diagnostic launcher also starts PresentMon when it is
 available and writes `presentmon-<session>.csv` beside the JSONL log. This

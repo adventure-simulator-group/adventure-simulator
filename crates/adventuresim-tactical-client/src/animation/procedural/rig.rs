@@ -38,6 +38,15 @@ impl HumanoidRig {
     pub(super) fn sole_axis(&self, left: bool) -> Option<Vec3> {
         self.sole_axes[usize::from(!left)]
     }
+
+    #[cfg(test)]
+    pub(super) fn with_test_bones(bones: &[(BoneRole, Entity)]) -> Self {
+        let mut rig = Self::default();
+        for &(role, entity) in bones {
+            rig.bones[role.index()] = Some(entity);
+        }
+        rig
+    }
 }
 
 #[repr(u8)]

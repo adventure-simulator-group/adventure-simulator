@@ -2,6 +2,8 @@ use super::*;
 
 pub(in crate::animation::procedural) const FOOT_FOLLOWER_MAXIMUM_ACCELERATION: f32 = 72.0;
 pub(in crate::animation::procedural) const FOOT_FOLLOWER_MAXIMUM_JERK: f32 = 1152.0;
+pub(in crate::animation::procedural) const PELVIS_FOLLOWER_MAXIMUM_ACCELERATION: f32 = 12.0;
+pub(in crate::animation::procedural) const PELVIS_FOLLOWER_MAXIMUM_JERK: f32 = 192.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::animation::procedural) struct WorldFootTargetSample {
@@ -120,6 +122,237 @@ impl FootReachEnvelope {
                 warning_reach,
                 hard_reach,
             })
+    }
+
+    pub fn contains_warning_at(self, point: Vec3, seconds: f32, delta_seconds: f32) -> bool {
+        if !point.is_finite()
+            || !seconds.is_finite()
+            || seconds < 0.0
+            || !delta_seconds.is_finite()
+            || delta_seconds <= f32::EPSILON
+        {
+            return false;
+        }
+        let root_velocity = (self.next_root - self.current_root) / delta_seconds;
+        let predicted_root = self.current_root + root_velocity * seconds;
+        point.distance(predicted_root) <= self.warning_reach + 0.0001
+    }
+
+    pub const fn current_root(self) -> Vec3 {
+        self.current_root
+    }
+
+    pub const fn next_root(self) -> Vec3 {
+        self.next_root
+    }
+
+    pub const fn warning_reach(self) -> f32 {
+        self.warning_reach
+    }
+
+    pub const fn hard_reach(self) -> f32 {
+        self.hard_reach
+    }
+}
+
+/// A fixed world-space contact selected by a semantic footstep planner. The
+/// constructor admits only a previously geometry-conformed endpoint that is
+/// already inside the predicted warning-reach tube; it never mutates X/Z or
+/// terrain height after the semantic planner has validated them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::animation::procedural) struct FeasibleFootEndpoint(Vec3);
+
+/// A world-space endpoint used only to retire IK ownership safely. Unlike a
+/// contact endpoint it makes no terrain-contact claim; it is admitted solely
+/// against the predicted hard-reach tube.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::animation::procedural) struct FeasibleReleaseEndpoint(Vec3);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::animation::procedural) struct PredictedHipTrajectory {
+    position: Vec3,
+    velocity: Vec3,
+    acceleration: Vec3,
+    warning_reach: f32,
+    hard_reach: f32,
+    uncertainty_radius: f32,
+    /// Configured growth of the presentation-space prediction reserve. This
+    /// bounds the planner's admitted tube; it is not a claim that arbitrary
+    /// future controller or authored hip motion can be forecast exactly.
+    uncertainty_speed: f32,
+}
+
+impl PredictedHipTrajectory {
+    pub fn from_retained_motion(
+        reach: FootReachEnvelope,
+        previous_position: Option<Vec3>,
+        previous_velocity: Vec3,
+        delta_seconds: f32,
+        uncertainty_radius: f32,
+        uncertainty_speed: f32,
+    ) -> Option<Self> {
+        if !delta_seconds.is_finite()
+            || delta_seconds <= f32::EPSILON
+            || !previous_velocity.is_finite()
+            || !uncertainty_radius.is_finite()
+            || uncertainty_radius < 0.0
+            || !uncertainty_speed.is_finite()
+            || uncertainty_speed < 0.0
+        {
+            return None;
+        }
+        let retained_position = previous_position.filter(|position| position.is_finite());
+        let velocity = retained_position
+            .map(|position| (reach.current_root - position) / delta_seconds)
+            .unwrap_or((reach.next_root - reach.current_root) / delta_seconds);
+        let acceleration = retained_position
+            .map(|_| (velocity - previous_velocity) / delta_seconds)
+            .unwrap_or(Vec3::ZERO);
+        (velocity.is_finite() && acceleration.is_finite()).then_some(Self {
+            position: reach.current_root,
+            velocity,
+            acceleration,
+            warning_reach: reach.warning_reach,
+            hard_reach: reach.hard_reach,
+            uncertainty_radius,
+            uncertainty_speed,
+        })
+    }
+
+    fn center_at(self, seconds: f32) -> Vec3 {
+        self.position + self.velocity * seconds + self.acceleration * (0.5 * seconds.powi(2))
+    }
+
+    fn uncertainty_at(self, seconds: f32) -> f32 {
+        self.uncertainty_radius + self.uncertainty_speed * seconds.max(0.0)
+    }
+
+    pub fn contains_warning_at(self, point: Vec3, seconds: f32) -> bool {
+        point.is_finite()
+            && seconds.is_finite()
+            && seconds >= 0.0
+            && point.distance(self.center_at(seconds)) + self.uncertainty_at(seconds)
+                <= self.warning_reach + 0.0001
+    }
+
+    pub fn contains_hard_at(self, point: Vec3, seconds: f32) -> bool {
+        point.is_finite()
+            && seconds.is_finite()
+            && seconds >= 0.0
+            && point.distance(self.center_at(seconds)) + self.uncertainty_at(seconds)
+                <= self.hard_reach + 0.0001
+    }
+
+    pub fn recovery_target_at(self, presented: Vec3, seconds: f32) -> Option<Vec3> {
+        if !presented.is_finite() || !seconds.is_finite() || seconds < 0.0 {
+            return None;
+        }
+        let center = self.center_at(seconds);
+        let vertical_budget = (self.hard_reach - self.uncertainty_at(seconds)).max(0.0);
+        Some(Vec3::new(
+            center.x,
+            presented
+                .y
+                .clamp(center.y - vertical_budget, center.y + vertical_budget),
+            center.z,
+        ))
+    }
+
+    /// Proves a fixed quintic path stays inside the configured swept reach
+    /// tube. Runtime hard-reach ownership remains the final guard against a
+    /// controller trajectory that departs from this retained-motion estimate.
+    /// The hip quadratic is degree-elevated to quintic; the relative curve is
+    /// then bounded by the convex hull of its Bernstein control points.
+    pub fn contains_quintic_path(
+        self,
+        foot_control: [Vec3; 6],
+        duration_seconds: f32,
+        hard_limit: bool,
+    ) -> bool {
+        if !duration_seconds.is_finite()
+            || duration_seconds < 0.0
+            || foot_control.iter().any(|point| !point.is_finite())
+        {
+            return false;
+        }
+        let duration = duration_seconds;
+        let hip_quadratic = [
+            self.position,
+            self.position + self.velocity * (duration * 0.5),
+            self.center_at(duration),
+        ];
+        let hip_control = elevate_quadratic_to_quintic(hip_quadratic);
+        let reach = if hard_limit {
+            self.hard_reach
+        } else {
+            self.warning_reach
+        };
+        let available = reach - self.uncertainty_at(duration);
+        available >= 0.0
+            && foot_control
+                .into_iter()
+                .zip(hip_control)
+                .all(|(foot, hip)| foot.distance(hip) <= available + 0.0001)
+    }
+}
+
+fn elevate_quadratic_to_quintic(control: [Vec3; 3]) -> [Vec3; 6] {
+    // Degree elevation preserves the curve exactly. These coefficients are
+    // C(2,i) C(3,k-i) / C(5,k) for k=0..5.
+    [
+        control[0],
+        control[0] * 0.6 + control[1] * 0.4,
+        control[0] * 0.3 + control[1] * 0.6 + control[2] * 0.1,
+        control[0] * 0.1 + control[1] * 0.6 + control[2] * 0.3,
+        control[1] * 0.4 + control[2] * 0.6,
+        control[2],
+    ]
+}
+
+impl FeasibleReleaseEndpoint {
+    pub(super) const fn from_proven_guard_release(requested: Vec3) -> Self {
+        Self(requested)
+    }
+
+    pub fn for_predicted_release(
+        requested: Vec3,
+        trajectory: PredictedHipTrajectory,
+        release_seconds: f32,
+    ) -> Option<Self> {
+        trajectory
+            .contains_hard_at(requested, release_seconds)
+            .then_some(Self(requested))
+    }
+
+    pub const fn position(self) -> Vec3 {
+        self.0
+    }
+}
+
+impl FeasibleFootEndpoint {
+    /// Constructs a contact whose terrain/corridor geometry and complete
+    /// guard-specific hip path were proven by the owning planner. Keeping this
+    /// constructor private to the procedural IK module prevents callers from
+    /// bypassing either proof with an arbitrary world point.
+    pub(super) const fn from_proven_guard_contact(requested: Vec3) -> Self {
+        Self(requested)
+    }
+
+    pub fn for_predicted_terrain_contact(
+        requested: Vec3,
+        trajectory: PredictedHipTrajectory,
+        contact_seconds: f32,
+    ) -> Option<Self> {
+        if !requested.is_finite() || !contact_seconds.is_finite() || contact_seconds < 0.0 {
+            return None;
+        }
+        trajectory
+            .contains_warning_at(requested, contact_seconds)
+            .then_some(Self(requested))
+    }
+
+    pub const fn position(self) -> Vec3 {
+        self.0
     }
 }
 
@@ -265,9 +498,27 @@ pub(in crate::animation::procedural) fn advance_foot_follower(
     let feed_forward_position = current.position + feed_forward_velocity * dt;
     let control_position_error = ideal.position - feed_forward_position;
     let control_velocity_error = ideal.velocity - feed_forward_velocity;
-    let requested_acceleration = ideal.acceleration
+    let current_hard_invalid = limits
+        .reach
+        .is_some_and(|reach| current.position.distance(reach.current_root) > reach.hard_reach);
+    let tracking_acceleration = ideal.acceleration
         + control_position_error * frequency.powi(2)
         + control_velocity_error * damping;
+    let requested_acceleration = if current_hard_invalid {
+        let reach = limits.reach.expect("hard reach check requires an envelope");
+        let outward = (current.position - reach.next_root).normalize_or_zero();
+        let root_velocity = (reach.next_root - reach.current_root) / dt;
+        let relative_outward_speed = (current.velocity - root_velocity).dot(outward);
+        let recovery_distance =
+            (current.position.distance(reach.next_root) - reach.warning_reach).max(0.0);
+        let inward_speed = (2.0 * limits.maximum_acceleration.max(0.0) * recovery_distance).sqrt();
+        let desired_outward_speed = -inward_speed;
+        outward
+            * ((desired_outward_speed - relative_outward_speed) / dt)
+                .clamp(-limits.maximum_acceleration, limits.maximum_acceleration)
+    } else {
+        tracking_acceleration
+    };
     let requested_jerk = (requested_acceleration - current.acceleration) / dt;
     let jerk = requested_jerk.clamp_length_max(limits.maximum_jerk.max(0.0));
     let acceleration =
@@ -283,13 +534,10 @@ pub(in crate::animation::procedural) fn advance_foot_follower(
         previous_ideal_acceleration: ideal.acceleration,
     };
     let pose_error = position.distance(ideal.position);
-    let current_hard_invalid = limits
-        .reach
-        .is_some_and(|reach| current.position.distance(reach.current_root) > reach.hard_reach);
     if current_hard_invalid {
         let reach = limits.reach.expect("hard reach check requires an envelope");
         return FootFollowOutcome::NeedsReleaseOrReplan {
-            presented_state: current,
+            presented_state: state,
             reason: FootFollowReason::ReachHardLimit,
             suggested_semantic_target: constrain_target_to_reach(
                 current.position,
@@ -339,13 +587,12 @@ pub(in crate::animation::procedural) fn advance_foot_follower(
             reach.warning_reach,
         );
     }
-    let presented_state = if reason == FootFollowReason::ReachHardLimit {
-        current
-    } else {
-        state
-    };
     FootFollowOutcome::NeedsReleaseOrReplan {
-        presented_state,
+        // Never encode reach safety as a frozen position with retained
+        // derivatives. The semantic owner consumes the replan reason while
+        // this state continues the jerk-bounded trajectory; on the next tick
+        // an already-hard state enters the explicit inward recovery law above.
+        presented_state: state,
         reason,
         suggested_semantic_target,
     }
@@ -377,6 +624,56 @@ fn jerk_limited_distance(
         + 0.5 * maximum_acceleration * cruise_seconds * cruise_seconds
 }
 
+/// Distance travelled along a reach radius while applying the fastest lawful
+/// braking profile: maximum inward jerk until maximum inward acceleration,
+/// then constant inward acceleration. This is the admission test used before
+/// transferring a moving presentation target to a new semantic owner.
+pub(in crate::animation::procedural) fn jerk_limited_stopping_distance(
+    outward_velocity: f32,
+    outward_acceleration: f32,
+    maximum_acceleration: f32,
+    maximum_jerk: f32,
+) -> f32 {
+    if !outward_velocity.is_finite()
+        || !outward_acceleration.is_finite()
+        || !maximum_acceleration.is_finite()
+        || !maximum_jerk.is_finite()
+        || maximum_acceleration <= 0.0
+        || maximum_jerk < 0.0
+    {
+        return f32::INFINITY;
+    }
+    let velocity = outward_velocity.max(0.0);
+    if velocity <= f32::EPSILON {
+        return 0.0;
+    }
+    let acceleration = outward_acceleration.clamp(-maximum_acceleration, maximum_acceleration);
+    if maximum_jerk <= f32::EPSILON {
+        return if acceleration < 0.0 {
+            velocity * velocity / (-2.0 * acceleration)
+        } else {
+            f32::INFINITY
+        };
+    }
+
+    // v(t) = v0 + a0*t - j*t^2/2. If it reaches zero before the
+    // acceleration cap, integrate only to that root.
+    let stop_during_ramp = (acceleration
+        + (acceleration * acceleration + 2.0 * maximum_jerk * velocity).sqrt())
+        / maximum_jerk;
+    let ramp_to_cap = (acceleration + maximum_acceleration) / maximum_jerk;
+    let ramp_seconds = stop_during_ramp.min(ramp_to_cap.max(0.0));
+    let ramp_distance = velocity * ramp_seconds + 0.5 * acceleration * ramp_seconds.powi(2)
+        - maximum_jerk * ramp_seconds.powi(3) / 6.0;
+    if stop_during_ramp <= ramp_to_cap {
+        return ramp_distance.max(0.0);
+    }
+    let velocity_after_ramp = (velocity + acceleration * ramp_seconds
+        - 0.5 * maximum_jerk * ramp_seconds.powi(2))
+    .max(0.0);
+    (ramp_distance + velocity_after_ramp.powi(2) / (2.0 * maximum_acceleration)).max(0.0)
+}
+
 pub(in crate::animation::procedural) fn plant_is_continuous(
     plant: Vec3,
     current_foot: Vec3,
@@ -394,6 +691,245 @@ pub(in crate::animation::procedural) fn advance_pelvis_shift(
     let maximum_step =
         (PELVIS_CORRECTION_SPEED * delta_seconds.max(0.0)).min(MAX_PELVIS_CORRECTION_STEP);
     current + (desired - current).clamp(-maximum_step, maximum_step)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(in crate::animation::procedural) struct PelvisFollowerState {
+    pub position: f32,
+    pub velocity: f32,
+    pub acceleration: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::animation::procedural) struct PelvisRecoverySegment {
+    start: PelvisFollowerState,
+    end: f32,
+    elapsed_ticks: u32,
+    total_ticks: u32,
+    fixed_delta_seconds: f32,
+}
+
+impl PelvisRecoverySegment {
+    pub(super) fn progress(self) -> f32 {
+        self.elapsed_ticks.min(self.total_ticks) as f32 / self.total_ticks.max(1) as f32
+    }
+
+    fn sample(self) -> PelvisFollowerState {
+        let progress = self.progress();
+        pelvis_boundary_quintic_sample(
+            self.start,
+            self.end,
+            progress,
+            self.total_ticks as f32 * self.fixed_delta_seconds,
+        )
+    }
+
+    fn advance(&mut self) {
+        self.elapsed_ticks = self.elapsed_ticks.saturating_add(1).min(self.total_ticks);
+    }
+
+    fn is_complete(self) -> bool {
+        self.elapsed_ticks >= self.total_ticks
+    }
+}
+
+fn pelvis_boundary_quintic_sample(
+    start: PelvisFollowerState,
+    end: f32,
+    progress: f32,
+    duration_seconds: f32,
+) -> PelvisFollowerState {
+    let progress = progress.clamp(0.0, 1.0);
+    let duration = duration_seconds.max(f32::EPSILON);
+    let velocity_term = start.velocity * duration;
+    let acceleration_term = start.acceleration * duration.powi(2);
+    let residual = end - start.position - velocity_term - acceleration_term * 0.5;
+    let final_velocity_residual = -velocity_term - acceleration_term;
+    let final_acceleration_residual = -acceleration_term;
+    let c3 = residual * 10.0 - final_velocity_residual * 4.0 + final_acceleration_residual * 0.5;
+    let c4 = residual * -15.0 + final_velocity_residual * 7.0 - final_acceleration_residual;
+    let c5 = residual * 6.0 - final_velocity_residual * 3.0 + final_acceleration_residual * 0.5;
+    PelvisFollowerState {
+        position: start.position
+            + velocity_term * progress
+            + acceleration_term * (0.5 * progress.powi(2))
+            + c3 * progress.powi(3)
+            + c4 * progress.powi(4)
+            + c5 * progress.powi(5),
+        velocity: (velocity_term
+            + acceleration_term * progress
+            + c3 * (3.0 * progress.powi(2))
+            + c4 * (4.0 * progress.powi(3))
+            + c5 * (5.0 * progress.powi(4)))
+            / duration,
+        acceleration: (acceleration_term
+            + c3 * (6.0 * progress)
+            + c4 * (12.0 * progress.powi(2))
+            + c5 * (20.0 * progress.powi(3)))
+            / duration.powi(2),
+    }
+}
+
+fn plan_pelvis_recovery(
+    start: PelvisFollowerState,
+    end: f32,
+    fixed_delta_seconds: f32,
+) -> Option<PelvisRecoverySegment> {
+    if !fixed_delta_seconds.is_finite()
+        || fixed_delta_seconds <= f32::EPSILON
+        || !start.position.is_finite()
+        || !start.velocity.is_finite()
+        || !start.acceleration.is_finite()
+        || !end.is_finite()
+        || end < start.position
+    {
+        return None;
+    }
+    for total_ticks in 1..=1024 {
+        let duration = total_ticks as f32 * fixed_delta_seconds;
+        let velocity_term = start.velocity * duration;
+        let acceleration_term = start.acceleration * duration.powi(2);
+        let residual = end - start.position - velocity_term - acceleration_term * 0.5;
+        let final_velocity_residual = -velocity_term - acceleration_term;
+        let final_acceleration_residual = -acceleration_term;
+        let c3 =
+            residual * 10.0 - final_velocity_residual * 4.0 + final_acceleration_residual * 0.5;
+        let c4 = residual * -15.0 + final_velocity_residual * 7.0 - final_acceleration_residual;
+        let c5 = residual * 6.0 - final_velocity_residual * 3.0 + final_acceleration_residual * 0.5;
+        let position_controls = [
+            start.position,
+            start.position + velocity_term / 5.0,
+            start.position + velocity_term * 0.4 + acceleration_term / 20.0,
+            end,
+            end,
+            end,
+        ];
+        if position_controls
+            .iter()
+            .any(|position| *position > end + 0.000001)
+        {
+            continue;
+        }
+        let acceleration_power = [
+            acceleration_term / duration.powi(2),
+            6.0 * c3 / duration.powi(2),
+            12.0 * c4 / duration.powi(2),
+            20.0 * c5 / duration.powi(2),
+        ];
+        let acceleration_controls = [
+            acceleration_power[0],
+            acceleration_power[0] + acceleration_power[1] / 3.0,
+            acceleration_power[0]
+                + acceleration_power[1] * (2.0 / 3.0)
+                + acceleration_power[2] / 3.0,
+            acceleration_power.iter().sum(),
+        ];
+        let jerk_power = [
+            acceleration_power[1] / duration,
+            2.0 * acceleration_power[2] / duration,
+            3.0 * acceleration_power[3] / duration,
+        ];
+        let jerk_controls = [
+            jerk_power[0],
+            jerk_power[0] + jerk_power[1] * 0.5,
+            jerk_power.iter().sum(),
+        ];
+        if acceleration_controls
+            .iter()
+            .all(|value| value.abs() <= PELVIS_FOLLOWER_MAXIMUM_ACCELERATION + 0.0001)
+            && jerk_controls
+                .iter()
+                .all(|value| value.abs() <= PELVIS_FOLLOWER_MAXIMUM_JERK + 0.001)
+        {
+            return Some(PelvisRecoverySegment {
+                start,
+                end,
+                elapsed_ticks: 0,
+                total_ticks,
+                fixed_delta_seconds,
+            });
+        }
+    }
+    None
+}
+
+pub(in crate::animation::procedural) fn advance_pelvis_follower_with_recovery(
+    current: PelvisFollowerState,
+    recovery: &mut Option<PelvisRecoverySegment>,
+    desired: f32,
+    delta_seconds: f32,
+) -> PelvisFollowerState {
+    if recovery.is_some_and(|segment| (segment.end - desired).abs() > 0.000001) {
+        *recovery = None;
+    }
+    if recovery.is_none() && desired > current.position + 0.000001 {
+        *recovery = plan_pelvis_recovery(current, desired, delta_seconds);
+    }
+    if let Some(segment) = recovery.as_mut() {
+        segment.advance();
+        let mut sample = segment.sample();
+        if segment.is_complete() {
+            sample = PelvisFollowerState {
+                position: segment.end,
+                velocity: 0.0,
+                acceleration: 0.0,
+            };
+            *recovery = None;
+        }
+        return sample;
+    }
+    advance_pelvis_follower(current, desired, delta_seconds)
+}
+
+pub(in crate::animation::procedural) fn advance_pelvis_follower(
+    current: PelvisFollowerState,
+    desired: f32,
+    delta_seconds: f32,
+) -> PelvisFollowerState {
+    if !desired.is_finite()
+        || !delta_seconds.is_finite()
+        || delta_seconds <= f32::EPSILON
+        || !current.position.is_finite()
+        || !current.velocity.is_finite()
+        || !current.acceleration.is_finite()
+    {
+        return current;
+    }
+    let frequency = 10.0;
+    let error = desired - current.position;
+    let braking_distance = current.velocity.max(0.0).powi(2)
+        / (2.0 * PELVIS_FOLLOWER_MAXIMUM_ACCELERATION)
+        + current.velocity.max(0.0) * current.acceleration.abs() / PELVIS_FOLLOWER_MAXIMUM_JERK;
+    let requested_acceleration = if error >= 0.0 && current.velocity < 0.0 {
+        PELVIS_FOLLOWER_MAXIMUM_ACCELERATION
+    } else if error >= 0.0 && current.velocity > 0.000001 && braking_distance >= error.max(0.0) {
+        -PELVIS_FOLLOWER_MAXIMUM_ACCELERATION
+    } else {
+        error * frequency * frequency - current.velocity * (2.0 * frequency)
+    };
+    let requested_jerk = (requested_acceleration - current.acceleration) / delta_seconds;
+    let jerk = requested_jerk.clamp(-PELVIS_FOLLOWER_MAXIMUM_JERK, PELVIS_FOLLOWER_MAXIMUM_JERK);
+    let acceleration = (current.acceleration + jerk * delta_seconds).clamp(
+        -PELVIS_FOLLOWER_MAXIMUM_ACCELERATION,
+        PELVIS_FOLLOWER_MAXIMUM_ACCELERATION,
+    );
+    let velocity = current.velocity + acceleration * delta_seconds;
+    let next = PelvisFollowerState {
+        position: current.position + velocity * delta_seconds,
+        velocity,
+        acceleration,
+    };
+    if (desired - next.position).abs() <= 0.000001
+        && next.velocity.abs() <= 0.00001
+        && next.acceleration.abs() <= 0.0001
+    {
+        return PelvisFollowerState {
+            position: desired,
+            velocity: 0.0,
+            acceleration: 0.0,
+        };
+    }
+    next
 }
 
 pub(in crate::animation::procedural) fn maximum_reach(upper_length: f32, lower_length: f32) -> f32 {

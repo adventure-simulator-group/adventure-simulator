@@ -103,9 +103,10 @@ pub struct ClientPlayer;
 /// transforms remain authoritative; this state hides the gaps between their
 /// rotation samples for both camera-facing guard and velocity-facing travel.
 #[derive(Component, Debug, Clone, Copy, Default)]
-struct LocalBodyFacing {
-    rotation: Quat,
-    initialized: bool,
+pub(crate) struct LocalBodyFacing {
+    pub(crate) rotation: Quat,
+    pub(crate) target_rotation: Quat,
+    pub(crate) initialized: bool,
 }
 
 #[derive(EntityEvent)]
@@ -357,6 +358,18 @@ fn predict_local_body_facing(
             skeleton.action_kind(),
             guard.desired,
             time.delta_secs(),
+        );
+        // Retain the exact command endpoint used by the render-frame facing
+        // controller. Procedural reach admission can then replay the same
+        // bounded turn over future semantic ticks instead of reserving an
+        // arbitrary maximum-turn ball that can never fit inside knee reserve.
+        facing.target_rotation = advance_body_facing(
+            facing.rotation,
+            camera_transform.rotation,
+            skeleton.world_velocity,
+            skeleton.action_kind(),
+            guard.desired,
+            1.0,
         );
         transform.rotation = facing.rotation;
     }

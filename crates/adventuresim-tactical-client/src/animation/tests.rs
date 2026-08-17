@@ -235,6 +235,53 @@ mod legacy_tests {
     }
 
     #[test]
+    fn sparse_guard_prediction_advances_phase_swing_and_sequence_atomically() {
+        let velocity = Vec3::NEG_Z * 2.0;
+        let authoritative = SkeletonState::default()
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_local_velocity(velocity)
+            .with_world_velocity(velocity)
+            .with_gait_phase(0.49)
+            .with_locomotion_sample_tick(5)
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(
+                Vec2::NEG_Y,
+                2.0,
+                LeadFoot::Left,
+                5,
+            ));
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+
+        // Ten-Hz authoritative delivery leaves multiple 64-Hz presentation
+        // samples between packets. Crossing the half-step must advance all
+        // three cadence fields together.
+        for _ in 0..7 {
+            advance_presented_skeleton(&mut presented, &authoritative, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        }
+        assert!(presented.gait_phase < 0.49 || presented.gait_phase >= 0.5);
+        assert_eq!(presented.raised_locomotion().step_sequence(), 6);
+        assert_eq!(
+            presented.raised_locomotion().swing_foot(),
+            Some(LeadFoot::Right)
+        );
+
+        // A sparse packet carrying that authoritative edge is the new base;
+        // prediction must never replace it with the older presented identity.
+        let caught_up = authoritative
+            .clone()
+            .with_gait_phase(0.55)
+            .with_locomotion_sample_tick(12)
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(
+                Vec2::NEG_Y,
+                2.0,
+                LeadFoot::Right,
+                6,
+            ));
+        advance_presented_skeleton(&mut presented, &caught_up, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        assert!(presented.raised_locomotion().step_sequence() >= 6);
+        assert_ne!(presented.raised_locomotion().step_sequence(), 5);
+    }
+
+    #[test]
     fn presentation_phase_filters_persistent_drift_before_bounded_correction() {
         let velocity = Vec3::NEG_Z * 5.5;
         let mut authoritative = SkeletonState::default()
@@ -285,6 +332,277 @@ mod legacy_tests {
         assert!(presented.local_velocity.x > 0.0);
         assert!(presented.local_velocity.x < 5.5);
         assert!(presented.local_velocity.z < 0.0);
+    }
+
+    #[test]
+    fn live_guard_takeover_keeps_rendered_ankles_body_relative_across_frame_rates() {
+        use bevy::time::TimeUpdateStrategy;
+
+        fn run(render_hz: f32, lead: LeadFoot, direction: Vec2) {
+            let mut app = App::new();
+            app.add_plugins(MinimalPlugins)
+                .add_plugins(TransformPlugin)
+                .init_resource::<Assets<Mesh>>()
+                .init_resource::<Assets<StandardMaterial>>()
+                .init_resource::<ProceduralAnimationClock>()
+                .init_resource::<TerrainIkEnabled>()
+                .insert_resource(TimeUpdateStrategy::ManualDuration(
+                    std::time::Duration::from_secs_f32(1.0 / render_hz),
+                ))
+                .add_systems(
+                    Update,
+                    (
+                        procedural::advance_procedural_animation_clock,
+                        update_presented_skeletons,
+                        procedural::bind_humanoid_bones,
+                        procedural::cache_humanoid_rigs,
+                    )
+                        .chain(),
+                )
+                .add_systems(
+                    PostUpdate,
+                    (
+                        procedural::apply_terrain_leg_ik,
+                        procedural::enforce_anatomical_knee_yaw,
+                    )
+                        .chain()
+                        .before(TransformSystems::Propagate),
+                )
+                .add_systems(
+                    PostUpdate,
+                    procedural::refresh_raised_support_after_propagation
+                        .after(TransformSystems::Propagate),
+                );
+            app.world_mut()
+                .spawn(SceneTerrain::new(32, 32, 1.0, |_| 0.0));
+            let planted = SkeletonState::default()
+                .with_lead_foot(lead)
+                .with_weapon_guard(WeaponGuardState::Raised)
+                .with_raised_locomotion(RaisedLocomotionIntent::planted(9));
+            let owner = app
+                .world_mut()
+                .spawn((
+                    Player::default(),
+                    planted,
+                    Transform::default(),
+                    GlobalTransform::default(),
+                ))
+                .id();
+            spawn_test_leg_rig(app.world_mut(), owner);
+            for _ in 0..4 {
+                app.update();
+            }
+            let replicated_swing = if direction.x.abs() >= direction.y.abs() {
+                if direction.x.is_sign_negative() {
+                    LeadFoot::Left
+                } else {
+                    LeadFoot::Right
+                }
+            } else if direction.y.is_sign_positive() {
+                lead
+            } else {
+                match lead {
+                    LeadFoot::Left => LeadFoot::Right,
+                    LeadFoot::Right => LeadFoot::Left,
+                }
+            };
+            {
+                let mut raised = app
+                    .world_mut()
+                    .get_mut::<RaisedFootworkState>(owner)
+                    .expect("stationary guard initializes raised state");
+                raised.force_stale_stationary_owner_for_test(replicated_swing != LeadFoot::Left);
+            }
+            {
+                let mut authoritative = app.world_mut().get_mut::<SkeletonState>(owner).unwrap();
+                project_skeleton_locomotion(
+                    &mut authoritative,
+                    SkeletonLocomotionInput {
+                        orientation: Quat::IDENTITY,
+                        linear_velocity: Vec3::new(direction.x, 0.0, direction.y)
+                            .normalize_or_zero()
+                            * TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+                        grounded: true,
+                        crouching: false,
+                        delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                        tick: 10,
+                    },
+                );
+                assert_eq!(authoritative.raised_locomotion().step_sequence(), 9);
+                assert_eq!(
+                    authoritative.raised_locomotion().swing_foot(),
+                    Some(replicated_swing)
+                );
+            }
+            let mut maximum_planar_offset = 0.0_f32;
+            let frames = (render_hz * 0.35).ceil() as usize;
+            for frame in 0..frames {
+                // Authoritative snapshots arrive at 10 Hz while presentation
+                // and procedural owners continue on the shared 64 Hz clock.
+                if frame > 0 && frame as f32 % (render_hz / 10.0) < 1.0 {
+                    let mut authoritative =
+                        app.world_mut().get_mut::<SkeletonState>(owner).unwrap();
+                    let tick = authoritative.locomotion_sample_tick.saturating_add(6);
+                    project_skeleton_locomotion(
+                        &mut authoritative,
+                        SkeletonLocomotionInput {
+                            orientation: Quat::IDENTITY,
+                            linear_velocity: Vec3::new(direction.x, 0.0, direction.y)
+                                .normalize_or_zero()
+                                * TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+                            grounded: true,
+                            crouching: false,
+                            delta_seconds: 0.1,
+                            tick,
+                        },
+                    );
+                }
+                app.world_mut()
+                    .get_mut::<Transform>(owner)
+                    .unwrap()
+                    .translation += Vec3::new(direction.x, 0.0, direction.y).normalize_or_zero()
+                    * (TACTICAL_GUARD_SPEED_METRES_PER_SECOND / render_hz);
+                app.update();
+                let rig = app.world().get::<HumanoidRig>(owner).unwrap().clone();
+                let root = app
+                    .world()
+                    .get::<GlobalTransform>(owner)
+                    .unwrap()
+                    .translation();
+                let visual_body = app
+                    .world()
+                    .get::<GlobalTransform>(*rig.get(&BoneRole::Pelvis).unwrap())
+                    .unwrap()
+                    .translation();
+                let mut rendered_ankles = [Vec3::ZERO; 2];
+                for (index, role) in [BoneRole::FootLeft, BoneRole::FootRight]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let ankle = app
+                        .world()
+                        .get::<GlobalTransform>(*rig.get(&role).unwrap())
+                        .unwrap()
+                        .translation();
+                    rendered_ankles[index] = ankle;
+                    let planar_offset = ankle.xz().distance(root.xz());
+                    maximum_planar_offset = maximum_planar_offset.max(planar_offset);
+                }
+                let raised = app.world().get::<RaisedFootworkState>(owner).unwrap();
+                let presented = app.world().get::<PresentedSkeleton>(owner).unwrap();
+                for (index, left) in [true, false].into_iter().enumerate() {
+                    let diagnostic = raised
+                        .foot_motion_diagnostic(left)
+                        .expect("active raised foot has typed motion evidence");
+                    if let (Some(hip), Some(upper), Some(lower)) = (
+                        diagnostic.solve_hip,
+                        diagnostic.upper_length,
+                        diagnostic.lower_length,
+                    ) {
+                        let anatomical_reach = (upper * upper
+                            + lower * lower
+                            + 2.0 * upper * lower * 20.0_f32.to_radians().cos())
+                        .sqrt();
+                        assert!(
+                            rendered_ankles[index].distance(hip) <= anatomical_reach + 0.005,
+                            "render_hz={render_hz} lead={lead:?} direction={direction:?} frame={frame} left={left} rendered_reach={} anatomical_reach={anatomical_reach}",
+                            rendered_ankles[index].distance(hip),
+                        );
+                    }
+                    let support_weight = if left {
+                        raised.left_support_weight
+                    } else {
+                        raised.right_support_weight
+                    };
+                    if support_weight < 0.5 {
+                        // The planned guard swing corridor is at most 0.42 m
+                        // fore/aft and 0.55 m lateral (0.692 m radially).
+                        // Preserve the authored 15 cm ankle/foot projection
+                        // plus two centimetres of rendered hierarchy/contact
+                        // tolerance while
+                        // rejecting the live bug's airborne foot held nearly
+                        // a full leg-length behind the moving body.
+                        let owner_local_planar =
+                            rendered_ankles[index].xz().distance(visual_body.xz());
+                        assert!(
+                            owner_local_planar <= 0.90,
+                            "render_hz={render_hz} lead={lead:?} direction={direction:?} frame={frame} left={left} airborne_owner_local_planar={owner_local_planar} owners={:?} phase={} sequence={}",
+                            raised.owner_summary_for_test(),
+                            presented.gait_phase,
+                            presented.raised_locomotion().step_sequence(),
+                        );
+                    }
+                }
+                if presented.raised_locomotion().is_moving() {
+                    assert_eq!(
+                        (
+                            raised.swing_left_for_test(),
+                            raised.step_sequence_for_test(),
+                        ),
+                        (
+                            presented.raised_locomotion().swing_foot() == Some(LeadFoot::Left),
+                            presented.raised_locomotion().step_sequence(),
+                        ),
+                        "render_hz={render_hz} lead={lead:?} direction={direction:?} frame={frame} owners={:?}",
+                        raised.owner_summary_for_test(),
+                    );
+                }
+            }
+            assert!(
+                maximum_planar_offset.is_finite(),
+                "rendered stance is finite"
+            );
+        }
+
+        for render_hz in [30.0, 60.0, 144.0] {
+            for lead in [LeadFoot::Left, LeadFoot::Right] {
+                for direction in [Vec2::NEG_Y, Vec2::Y, Vec2::NEG_X, Vec2::X] {
+                    run(render_hz, lead, direction);
+                }
+            }
+        }
+    }
+
+    fn spawn_test_leg_rig(world: &mut World, owner: Entity) {
+        fn bone(world: &mut World, name: &'static str, translation: Vec3) -> Entity {
+            world
+                .spawn((
+                    Name::new(name),
+                    Transform::from_translation(translation),
+                    GlobalTransform::default(),
+                ))
+                .id()
+        }
+
+        let scene = world
+            .spawn((
+                AnimationRigScene(owner),
+                Transform::default(),
+                GlobalTransform::default(),
+            ))
+            .id();
+        let root = bone(world, "root", Vec3::ZERO);
+        let pelvis = bone(world, "pelvis", Vec3::new(0.0, 0.95, 0.0));
+        world.entity_mut(owner).add_child(scene);
+        world.entity_mut(scene).add_child(root);
+        world.entity_mut(root).add_child(pelvis);
+
+        for (suffix, x) in [("L", -0.16), ("R", 0.16)] {
+            let thigh_name = if suffix == "L" { "thigh.L" } else { "thigh.R" };
+            let shin_name = if suffix == "L" { "shin.L" } else { "shin.R" };
+            let foot_name = if suffix == "L" { "foot.L" } else { "foot.R" };
+            let toe_name = if suffix == "L" { "toe.L" } else { "toe.R" };
+            let thigh = bone(world, thigh_name, Vec3::new(x, 0.0, 0.0));
+            // Start from an anatomically flexed authored stance rather than
+            // a perfectly straight synthetic leg at the hard-reach boundary.
+            let shin = bone(world, shin_name, Vec3::new(0.0, -0.44, 0.12));
+            let foot = bone(world, foot_name, Vec3::new(0.0, -0.40, -0.15));
+            let toe = bone(world, toe_name, Vec3::new(0.0, -0.04, -0.18));
+            world.entity_mut(pelvis).add_child(thigh);
+            world.entity_mut(thigh).add_child(shin);
+            world.entity_mut(shin).add_child(foot);
+            world.entity_mut(foot).add_child(toe);
+        }
     }
 
     fn spawn_test_t_pose(
