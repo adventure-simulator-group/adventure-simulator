@@ -1047,8 +1047,9 @@ and copy the checked-in ledger template for severity, cost/benefit triage,
 independent reassessment, and stopping criteria.
 
 `river-bluff-cliff` is the focused implicit-terrain fixture. Its off-frame river
-has undercut the central sector of a concave 28-metre-wide, 9-metre-high
-Buntsandstein terrace boundary with projecting resistant beds, recessed weak
+has undercut a localized 4--7-metre collapse sector within a concave
+28-metre-wide, 9-metre-high Buntsandstein terrace boundary. The intact flanks
+weather back several metres from toe to crest, while projecting resistant beds, recessed weak
 interbeds, a localized crest-open failure scar, and a three-lobed collapsed
 debris fan aggregated directly into the authoritative heightfield. Review the
 clear oblique face and exterior grazing side/profile views, the localized

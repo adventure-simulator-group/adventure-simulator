@@ -75,6 +75,7 @@ fn terrain_patch_collision_evidence(recipe: RiverBluffRecipe) -> TerrainPatchCol
     let proxies = recipe.collision_proxy_boxes();
     let size = recipe.dimensions_metres();
     let slice_width = size.x / X_SLICES as f32;
+    let [collision_min_x, collision_max_x] = recipe.rock_support_bounds_local();
     let mut expected = 0_u16;
     let mut covered = 0_u16;
     let mut max_vertical_gap = 0.0_f32;
@@ -82,12 +83,13 @@ fn terrain_patch_collision_evidence(recipe: RiverBluffRecipe) -> TerrainPatchCol
     let mut max_front_offset = 0.0_f32;
     for index in 0..X_SLICES {
         let x = -size.x * 0.5 + slice_width * (index as f32 + 0.5);
-        if x.abs() > recipe.implicit_collision_half_width() {
+        if !(collision_min_x..=collision_max_x).contains(&x) {
             continue;
         }
         let crest = recipe.local_crest_height(x);
-        let solid_column = [0.55_f32, 0.82, 0.96].into_iter().all(|fraction| {
-            recipe.failure_scar_weight(Vec3::new(x, crest * fraction, 0.0)) <= 0.08
+        let solid_column = (0_u8..=20).all(|sample| {
+            let y = crest * f32::from(sample) / 20.0;
+            recipe.failure_scar_weight(Vec3::new(x, y, 0.0)) <= 0.08
         });
         if !solid_column {
             continue;

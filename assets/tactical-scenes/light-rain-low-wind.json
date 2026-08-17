@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generation_version": 9,
+  "generation_version": 78,
   "seed": 47112,
   "scene_key": "rain",
   "source": {
@@ -830,6 +830,7 @@
       }
     ]
   },
+  "terrain_patches": [],
   "vista": {
     "lods": [
       {

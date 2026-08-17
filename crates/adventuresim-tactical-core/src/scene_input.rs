@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 2;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 77;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 78;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -257,7 +257,10 @@ impl RiverBluffRecipe {
         let size = self.dimensions_metres();
         let lateral = size.x * 0.5 + 6.0;
         let front = -(f32::from(self.talus_depth_cm) / 100.0) - 5.0;
-        let back = size.z + 12.0;
+        // The weathered flanks retreat several metres behind the localized collapse face. Keep
+        // the tile's distant rear edge beyond the full terrain-inheritance interval so the
+        // extracted scalar is ordinary single-valued ground before reaching the perimeter.
+        let back = size.z + 16.0;
         [-lateral, lateral, front, back]
     }
 
@@ -290,7 +293,10 @@ impl RiverBluffRecipe {
     pub fn local_crest_height(self, local_x: f32) -> f32 {
         let size = self.dimensions_metres();
         let across = local_x / (size.x * 0.5);
-        let end_taper = smoothstep(((across.abs() - 0.38) / 0.50).clamp(0.0, 1.0));
+        // Keep the collision-owned central sector coherent, then return the crest over the
+        // remaining eight metres. Starting the taper inside that sector made adjacent coarse
+        // heightfield columns inherit different terrace elevations at the ownership handoff.
+        let end_taper = smoothstep(((across.abs() - 0.44) / 0.44).clamp(0.0, 1.0));
         let broad_crest = size.y * (1.0 - end_taper * 0.91)
             + (across * core::f32::consts::PI * 1.20 + 0.4).sin() * 0.38
             + (across * core::f32::consts::PI * 2.70 - 0.8).sin() * (0.12 + end_taper * 0.20);
@@ -308,11 +314,25 @@ impl RiverBluffRecipe {
             * finite_side_closure
     }
 
-    /// Lateral boundary of the full-height face whose collision is owned by
-    /// the implicit proxy. This is the same 0.50 normalized threshold where
-    /// the authored crest begins its long returned-shoulder taper.
+    /// Half-width of the collapse-centred rock support and implicit collision.
+    /// Stable flanks are ordinary heightfield terrain, not a sandstone facade.
     pub fn implicit_collision_half_width(self) -> f32 {
-        self.dimensions_metres().x * 0.5 * 0.50
+        3.5
+    }
+
+    pub fn rock_support_bounds_local(self) -> [f32; 2] {
+        let collapse_center = f32::from(self.collapse_offset_cm) / 100.0;
+        let half_width = self.implicit_collision_half_width();
+        [collapse_center - half_width, collapse_center + half_width]
+    }
+
+    /// C1 lateral support shared by client geometry/material, collision, and queries.
+    /// The 4.8-metre core contains the scar and undercut; the final metre fades over more than
+    /// three face samples before the scalar becomes exactly authoritative terrain.
+    pub fn rock_support_weight_local(self, local_x: f32) -> f32 {
+        let collapse_center = f32::from(self.collapse_offset_cm) / 100.0;
+        let distance = (local_x - collapse_center).abs();
+        1.0 - smoothstep(((distance - 2.4) / 1.1).clamp(0.0, 1.0))
     }
 
     /// Authored face position at the local crest, shared by the implicit
@@ -440,6 +460,15 @@ impl RiverBluffRecipe {
         side_weight.min(bottom_weight).min(crest_weight)
     }
 
+    fn failure_recess_local_z(self, point: bevy::math::Vec3) -> f32 {
+        let scar_weight = self.failure_scar_weight(point);
+        let facet_a = smoothstep(((point.x + point.y * 0.24 + 0.8) / 1.4).clamp(0.0, 1.0));
+        let facet_b = smoothstep(((-point.x * 0.55 + point.y * 0.18 - 0.2) / 1.2).clamp(0.0, 1.0));
+        let failure_facets = ((facet_a - 0.5) * 0.06 + (facet_b - 0.5) * 0.04) * scar_weight;
+        let failure_rim = (-((scar_weight - 0.30) / 0.24).powi(2)).exp() * 0.04;
+        scar_weight * 0.45 + failure_facets - failure_rim
+    }
+
     pub fn world_to_local(self, world: bevy::math::Vec3) -> bevy::math::Vec3 {
         let relative = world - self.center_metres();
         let (sin, cos) = self.yaw_radians().sin_cos();
@@ -522,6 +551,48 @@ impl RiverBluffRecipe {
         (weak_recess - resistant_projection) * scar_attenuation
     }
 
+    /// Metre-scale toe-to-crest retreat of the natural scarp macroform.
+    ///
+    /// Most of a river bluff is a steep but heightfield-readable weathered slope. Only the
+    /// joint-bounded collapse sector retains a near-vertical rock face and shallow overhang. The
+    /// retreat scales with the inherited local crest so the returned shoulders die into terrain
+    /// instead of ending as a constant-height wall.
+    fn collapse_sector_weight_local(self, local_x: f32) -> f32 {
+        let collapse_center = f32::from(self.collapse_offset_cm) / 100.0;
+        let collapse_distance = (local_x - collapse_center).abs();
+        1.0 - smoothstep(((collapse_distance - 2.0) / 2.0).clamp(0.0, 1.0))
+    }
+
+    pub fn scarp_horizontal_run_local(self, local_x: f32) -> f32 {
+        let height = self.dimensions_metres().y;
+        let crest = self.local_crest_height(local_x);
+        let crest_fraction = (crest / height).clamp(0.0, 1.0);
+        let collapse_sector = self.collapse_sector_weight_local(local_x);
+        let asymmetric_run = crest * 0.46
+            + 0.58
+            + (local_x * 0.19 + 0.35).sin() * 0.42
+            + (local_x * 0.07 - 0.8).sin() * 0.24;
+        asymmetric_run.clamp(5.2, 6.6)
+            * (0.45 + crest_fraction * 0.55)
+            * (1.0 - collapse_sector * 0.82)
+    }
+
+    fn scarp_retreat_local_z(self, point: bevy::math::Vec3) -> f32 {
+        let crest = self.local_crest_height(point.x);
+        if crest <= f32::EPSILON {
+            return 0.0;
+        }
+        let vertical = (point.y / crest).clamp(0.0, 1.0);
+        let broad_profile = vertical * 0.72 + smoothstep(vertical) * 0.28;
+        let collapse_profile =
+            smoothstep(((point.y - 1.55) / (crest - 1.55).max(0.5)).clamp(0.0, 1.0));
+        let collapse_sector = self.collapse_sector_weight_local(point.x);
+        let profile = broad_profile * (1.0 - collapse_sector) + collapse_profile * collapse_sector;
+        let asymmetric_bow = (vertical * core::f32::consts::PI).sin()
+            * ((point.x * 0.16 + 0.4).sin() * 0.22 + (point.x * 0.07 - 0.6).sin() * 0.12);
+        self.scarp_horizontal_run_local(point.x) * profile + asymmetric_bow
+    }
+
     /// Authored front surface in patch-local coordinates.
     ///
     /// The client and collision proxy use this same equation for the exposed
@@ -549,19 +620,20 @@ impl RiverBluffRecipe {
             * detail_fade;
         // The collapse is a shallow release plane cut into one continuous
         // scarp, not a boolean slot dividing the mass into two lobes.
-        let scar_weight = self.failure_scar_weight(point);
-        let facet_a = smoothstep(((point.x + point.y * 0.24 + 0.8) / 1.4).clamp(0.0, 1.0));
-        let facet_b = smoothstep(((-point.x * 0.55 + point.y * 0.18 - 0.2) / 1.2).clamp(0.0, 1.0));
-        let failure_facets = ((facet_a - 0.5) * 0.06 + (facet_b - 0.5) * 0.04) * scar_weight;
-        let failure_rim = (-((scar_weight - 0.30) / 0.24).powi(2)).exp() * 0.04;
-        let failure_recess = scar_weight * 0.45 + failure_facets - failure_rim;
+        let failure_recess = self.failure_recess_local_z(point);
         let bedding_displacement = self.bedding_displacement_local_z(point);
         let undercut_lateral = self
             .undercut_weight_local(bevy::math::Vec3::new(point.x, 0.45, 0.0))
             .clamp(0.0, 1.0);
         let lip_distance = (point.y - 1.42) / 0.30;
         let resistant_toe_lip = (-lip_distance * lip_distance).exp() * 0.56 * undercut_lateral;
-        curve + face_undulation + failure_recess + undercut + bedding_displacement + molded_relief
+        curve
+            + self.scarp_retreat_local_z(point)
+            + face_undulation
+            + failure_recess
+            + undercut
+            + bedding_displacement
+            + molded_relief
             - resistant_toe_lip
     }
 
@@ -707,8 +779,8 @@ impl RiverBluffRecipe {
             let slice_start = -size.x * 0.5 + slice_width * index as f32;
             let slice_end = slice_start + slice_width;
             let x = (slice_start + slice_end) * 0.5;
-            let collision_half_width = self.implicit_collision_half_width();
-            if slice_start < -collision_half_width || slice_end > collision_half_width {
+            let [collision_min_x, collision_max_x] = self.rock_support_bounds_local();
+            if slice_start < collision_min_x || slice_end > collision_max_x {
                 // Returned shoulders are ordinary heightfield collision. Do
                 // not force full-height boxes into the authored crest taper.
                 continue;
@@ -852,8 +924,11 @@ impl RiverBluffRecipe {
                         proxies.push(proxy);
                         continue;
                     }
-                    let subdivision_width = slice_width / 4.0;
-                    for subdivision in 0..4 {
+                    // At a sheared failure margin, a quarter-slice can straddle authored air
+                    // even though one side of the measured gap is intact rock. Eighth-slices
+                    // fit up to that boundary without filling the missing scar volume.
+                    let subdivision_width = slice_width / 8.0;
+                    for subdivision in 0..8 {
                         let sub_start = slice_start + subdivision_width * subdivision as f32;
                         let sub_end = sub_start + subdivision_width;
                         if let Some(proxy) =
@@ -955,7 +1030,8 @@ impl RiverBluffRecipe {
     pub fn upper_surface_below(self, world: bevy::math::Vec3) -> Option<f32> {
         let local = self.world_to_local(world);
         let size = self.dimensions_metres();
-        let inside = local.x.abs() <= size.x * 0.5 && (0.0..=size.z).contains(&local.z);
+        let inside =
+            self.rock_support_weight_local(local.x) > 0.0 && (0.0..=size.z).contains(&local.z);
         let upper = self.center_metres().y + self.local_crest_height(local.x);
         (inside && world.y >= upper).then_some(upper)
     }
@@ -1429,20 +1505,23 @@ fn apply_terrain_patch_heightfield_replacement(
                 {
                     let inherited_height = heights[z * width + x];
                     let clamped_x = local.x.clamp(-patch_half_width, patch_half_width);
+                    let collapse_center = f32::from(recipe.collapse_offset_cm) / 100.0;
+                    let collapse_relative_x = local.x - collapse_center;
                     let returned_shoulder_weight = smoothstep(
-                        ((local.x.abs() - recipe.implicit_collision_half_width())
+                        ((collapse_relative_x.abs() - recipe.implicit_collision_half_width())
                             / (spacing * 0.5))
                             .clamp(0.0, 1.0),
                     );
                     let central_upper =
                         recipe.center_metres().y + recipe.local_crest_height(clamped_x);
                     let collision_half_width = recipe.implicit_collision_half_width();
-                    let returned_contact_x = collision_half_width.copysign(local.x);
+                    let returned_contact_x =
+                        collapse_center + collision_half_width.copysign(collapse_relative_x);
                     let returned_contact_upper =
                         recipe.center_metres().y + recipe.local_crest_height(returned_contact_x);
                     let returned_fade = 1.0
                         - smoothstep(
-                            ((local.x.abs() - collision_half_width)
+                            ((collapse_relative_x.abs() - collision_half_width)
                                 / (patch_half_width + shoulder_width - collision_half_width))
                                 .clamp(0.0, 1.0),
                         );
@@ -1504,7 +1583,7 @@ fn apply_terrain_patch_heightfield_replacement(
                     let near_visible_face = local.z
                         >= recipe.minimum_face_local_z(local.x) - spacing * 1.5
                         && local.z <= recipe.maximum_face_local_z(local.x)
-                        && local.x.abs() <= recipe.implicit_collision_half_width();
+                        && recipe.rock_support_weight_local(local.x) > 0.0;
                     if near_visible_face {
                         heights[z * width + x] =
                             heights[z * width + x].min(recipe.center_metres().y + 0.48);
@@ -2319,6 +2398,49 @@ mod tests {
             );
         }
 
+        // Match the capture manifest's solid-column policy exactly. Columns intersecting the
+        // authored failure air are excluded; every genuinely solid central column must receive
+        // the same <=0.75-metre coverage reported by public evidence.
+        for index in 0..28 {
+            let x = -size.x * 0.5 + slice_width * (index as f32 + 0.5);
+            if x.abs() > collision_half_width {
+                continue;
+            }
+            let crest = recipe.local_crest_height(x);
+            if !(0_u8..=20).all(|sample| {
+                let y = crest * f32::from(sample) / 20.0;
+                recipe.failure_scar_weight(bevy::math::Vec3::new(x, y, 0.0)) <= 0.08
+            }) {
+                continue;
+            }
+            let mut intervals = proxies
+                .iter()
+                .filter_map(|proxy| {
+                    let local = recipe.world_to_local(proxy.center);
+                    ((x - local.x).abs() <= proxy.half_extents.x + 0.02).then_some((
+                        local.y - proxy.half_extents.y,
+                        local.y + proxy.half_extents.y,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            intervals.sort_by(|left, right| left.0.total_cmp(&right.0));
+            let mut covered_top =
+                if recipe.undercut_weight_local(bevy::math::Vec3::new(x, 0.45, 0.0)) > 0.08 {
+                    recipe.undercut_collision_clearance_height()
+                } else {
+                    0.08
+                };
+            for (bottom, top) in intervals {
+                assert!(
+                    bottom - covered_top <= 0.75,
+                    "manifest solid column x={x} has vertical gap {} below ({bottom},{top})",
+                    bottom - covered_top,
+                );
+                covered_top = covered_top.max(top);
+            }
+            assert!(crest - covered_top <= 0.75);
+        }
+
         let mut input = fixture();
         input.playable = TerrainSampleGrid {
             width: 51,
@@ -2378,7 +2500,6 @@ mod tests {
     fn river_bluff_undercut_and_recessed_failure_are_localized() {
         let mut recipe = bluff_recipe();
         recipe.collapse_offset_cm = 0;
-        let centre_front = recipe.top_front_local_z(0.0);
         let quiet_x = -7.5;
         assert!(recipe.undercut_weight_local(bevy::math::Vec3::new(0.0, 0.35, 0.0)) > 0.9);
         assert_eq!(
@@ -2459,34 +2580,34 @@ mod tests {
             "failure release base must remain visibly oblique"
         );
 
-        let scar = recipe.signed_distance(recipe.local_to_world(bevy::math::Vec3::new(
+        // Measure the release displacement against the same authored macro-surface. Comparing
+        // signed distances at different x positions would conflate the scar with the intentional
+        // multi-metre toe-to-crest retreat of the natural flanks.
+        let scar_point = bevy::math::Vec3::new(0.0, 5.5, 0.0);
+        let scar_point_span = scar_span(scar_point.y);
+        let scar_recess = recipe.failure_recess_local_z(scar_point);
+        let left_intact_recess = recipe.failure_recess_local_z(bevy::math::Vec3::new(
+            scar_point_span.0 - 1.2,
+            scar_point.y,
             0.0,
-            5.5,
-            centre_front + 1.0,
-        )));
-        let scar_back = recipe.signed_distance(recipe.local_to_world(bevy::math::Vec3::new(
+        ));
+        let right_intact_recess = recipe.failure_recess_local_z(bevy::math::Vec3::new(
+            scar_point_span.1 + 1.2,
+            scar_point.y,
             0.0,
-            5.5,
-            centre_front + 4.5,
-        )));
-        let intact_face = recipe.signed_distance(recipe.local_to_world(bevy::math::Vec3::new(
-            4.0,
-            5.5,
-            recipe.top_front_local_z(4.0) + 1.0,
-        )));
-        let left_intact_face = recipe.signed_distance(recipe.local_to_world(
-            bevy::math::Vec3::new(-4.0, 5.5, recipe.top_front_local_z(-4.0) + 1.0),
         ));
         assert!(
-            scar > intact_face + 0.35 && scar > left_intact_face + 0.35,
-            "failure plane should be materially recessed from both intact sides: scar={scar}, left={left_intact_face}, right={intact_face}"
+            scar_recess > left_intact_recess + 0.35 && scar_recess > right_intact_recess + 0.35,
+            "failure plane should be materially recessed from both intact sides: scar={scar_recess}, left={left_intact_recess}, right={right_intact_recess}"
         );
         assert!(
-            scar < intact_face + 0.85,
-            "failure plane must remain a shallow recess rather than splitting the scarp"
+            scar_recess <= 0.65,
+            "failure plane must remain a shallow recess rather than splitting the scarp: {scar_recess}"
         );
+        let mut scar_back = scar_point;
+        scar_back.z = recipe.face_surface_local_z(scar_back) + 0.45;
         assert!(
-            scar_back < 0.0,
+            recipe.signed_distance(recipe.local_to_world(scar_back)) < 0.0,
             "recess must retain a solid rendered back plane rather than an aperture"
         );
         let mut previous_face: Option<f32> = None;
@@ -2546,7 +2667,42 @@ mod tests {
             "planform must be visibly asymmetric in overhead"
         );
 
+        for x in [-9.0_f32, -6.0, 7.0, 10.0] {
+            let toe = recipe.face_surface_local_z(bevy::math::Vec3::new(x, 0.35, 0.0));
+            let crest = recipe.face_surface_local_z(bevy::math::Vec3::new(
+                x,
+                recipe.local_crest_height(x) - 0.20,
+                0.0,
+            ));
+            assert!(
+                crest - toe >= 2.6,
+                "intact river-bluff flank must retreat several metres from toe to crest: x={x}, run={}",
+                crest - toe,
+            );
+        }
         let collapse_x = f32::from(recipe.collapse_offset_cm) / 100.0;
+        let collapse_run = recipe.scarp_horizontal_run_local(collapse_x);
+        assert!(
+            (0.45..=1.20).contains(&collapse_run),
+            "localized collapse sector must remain near-vertical: {collapse_run}"
+        );
+        let near_vertical_samples = (-56_i16..=56)
+            .map(|step| f32::from(step) * 0.25)
+            .filter(|x| recipe.scarp_horizontal_run_local(*x) < 1.5)
+            .collect::<Vec<_>>();
+        let near_vertical_width = near_vertical_samples
+            .last()
+            .zip(near_vertical_samples.first())
+            .map_or(0.0, |(last, first)| last - first + 0.25);
+        assert!(
+            (4.0..=7.0).contains(&near_vertical_width),
+            "near-vertical sector must be localized to the collapse: {near_vertical_width}m"
+        );
+        assert!(
+            recipe.scarp_horizontal_run_local(-10.0) != recipe.scarp_horizontal_run_local(10.0),
+            "opposing returned shoulders must retain asymmetric macroform"
+        );
+
         let toe = bevy::math::Vec3::new(collapse_x, 0.5, 0.0);
         let without_undercut = RiverBluffRecipe {
             undercut_depth_cm: 0,
@@ -2959,10 +3115,14 @@ mod tests {
                 "heightfield upper ground failed to meet the face boundary from behind: x={local_x}, height={height}, crest={crest}, local envelope={}, neighbour envelope={neighbour_envelope}, transition contact={transition_contact}, sample z={rear_contact}",
                 recipe.maximum_face_local_z(local_x),
             );
+            // There is no local render collar in the whole-tile architecture. The authoritative
+            // heightfield contact instead stays one guarded coarse cell behind the deepest face
+            // in the neighbouring stencil; the exhaustive triangle gate below proves that this
+            // conservative contact never crosses the visible scarp.
+            assert!(transition_contact >= neighbour_envelope);
             assert!(
-                transition_contact - brink <= 6.25,
-                "face-to-heightfield rear contact exceeded the bounded collar gap: x={local_x}, brink={brink}, contact={transition_contact}, gap={}",
-                transition_contact - brink,
+                transition_contact - neighbour_envelope <= spacing * 1.25,
+                "heightfield contact drifted beyond its conservative neighbour stencil: x={local_x}, brink={brink}, envelope={neighbour_envelope}, contact={transition_contact}"
             );
         }
 

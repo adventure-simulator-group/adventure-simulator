@@ -626,7 +626,9 @@ terrain cells cannot expose a lateral step wall.
 The client evaluates one bounded implicit terrain tile from the authored bluff
 solid and solid-below the replicated heightfield. The bluff is a genuine
 unbounded-downward, rearward terrace mass defined by the authored crest and
-curved scarp, so it has no finite recipe side, back, or bottom planes. The tile spans
+curved scarp, so it has no finite recipe side, back, or bottom planes. Most of
+the scarp retreats several metres from toe to crest; only the localized
+collapse sector remains near-vertical and supports the shallow undercut. The tile spans
 well beyond the topologically complex scarp, so every outer edge is ordinary
 single-valued terrain. Surface Nets consequently produces the face, crest,
 terrace, floodplain, returned shoulders, and debris contact as one connected

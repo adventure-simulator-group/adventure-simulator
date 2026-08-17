@@ -42,21 +42,12 @@ fn implicit_tile_terrace_height_local(
 }
 
 fn implicit_tile_landform_influence(recipe: RiverBluffRecipe, local: Vec3) -> f32 {
-    let [minimum_x, maximum_x, minimum_z, maximum_z] = recipe.implicit_tile_bounds_local();
+    let [_, _, minimum_z, maximum_z] = recipe.implicit_tile_bounds_local();
     let spacing = f32::from(recipe.sample_spacing_cm) / 100.0;
-    let half_face_width = recipe.dimensions_metres().x * 0.5;
-
-    // Keep the authored multi-valued face intact through the active central bluff, then let the
-    // returned shoulders become ordinary terrain over several metres. The zero-weight contour is
-    // deliberately well inside the distant tile perimeter, so the scalar is exactly the terrain
-    // field at every tile edge rather than relying on a clipped finite closure.
-    let lateral_full = half_face_width * 0.66;
-    let lateral_zero =
-        (half_face_width + 4.0).min(maximum_x.abs().min(minimum_x.abs()) - spacing * 3.0);
-    let lateral = 1.0
-        - unit_smoothstep(
-            ((local.x.abs() - lateral_full) / (lateral_zero - lateral_full)).clamp(0.0, 1.0),
-        );
+    // Only the active failed sector needs a multi-valued rock surface. Stable flanks and both
+    // returned shoulders are exactly the authoritative terrain field; the shared C1 support
+    // prevents the old full-width sandstone frontage from surviving presentation-only code.
+    let lateral = recipe.rock_support_weight_local(local.x);
 
     let face_front = recipe.minimum_face_local_z(local.x);
     let face_back = recipe.maximum_face_local_z(local.x);
@@ -1103,9 +1094,16 @@ mod tests {
         );
         let terrain_component = test_terrain(recipe);
         let mut images = Assets::<Image>::default();
+        let procedural_assets =
+            super::procedural_assets::generate_procedural_environment_assets(&mut images);
         let environment = legacy_scene_environment(&SceneId("implicit-tile-order".into()));
-        let material =
-            super::terrain::terrain_material(&terrain_component, &environment, None, &mut images);
+        let material = super::terrain::terrain_material(
+            &terrain_component,
+            &environment,
+            None,
+            &procedural_assets,
+            &mut images,
+        );
         let terrain = app.world_mut().spawn(terrain_component).id();
         app.update();
         assert!(
@@ -1142,9 +1140,16 @@ mod tests {
         let recipe = test_recipe();
         let terrain = test_terrain(recipe);
         let mut images = Assets::<Image>::default();
+        let procedural_assets =
+            super::procedural_assets::generate_procedural_environment_assets(&mut images);
         let first_environment = legacy_scene_environment(&SceneId("tile-material-first".into()));
-        let first =
-            super::terrain::terrain_material(&terrain, &first_environment, None, &mut images);
+        let first = super::terrain::terrain_material(
+            &terrain,
+            &first_environment,
+            None,
+            &procedural_assets,
+            &mut images,
+        );
         let initial_tile = super::terrain::implicit_tile_ground_material(&first);
 
         let mut app = App::new();
@@ -1173,8 +1178,13 @@ mod tests {
         finalized_environment.canopy_bps = 8_900;
         finalized_environment.hilly_bps = 7_100;
         finalized_environment.weather.ground_moisture_bps = 8_200;
-        let finalized =
-            super::terrain::terrain_material(&terrain, &finalized_environment, None, &mut images);
+        let finalized = super::terrain::terrain_material(
+            &terrain,
+            &finalized_environment,
+            None,
+            &procedural_assets,
+            &mut images,
+        );
         let expected = super::terrain::implicit_tile_ground_material(&finalized);
         *app.world_mut()
             .resource_mut::<Assets<TacticalTerrainMaterial>>()

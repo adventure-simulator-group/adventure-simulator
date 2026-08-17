@@ -143,10 +143,13 @@ approximately 0.28--0.35-metre sampling across the face and crest; the bounded
 tile assigns the remaining samples longitudinally. Shared code owns its scalar field, thin face-following
 static collision bands, and nearest-surface-below dispatch for the upper and
 lower benches. The committed landform is a broad lower floodplain meeting a
-broad upper terrace at an asymmetric, concave 28-metre bluff boundary. Its
-central exposed sector carries metre-scale face undulation; the crest and face
-then taper through long returned shoulders into surrounding terrain instead of
-terminating at squared patch edges. A continuous joint-bounded
+broad upper terrace at an asymmetric, concave 28-metre bluff boundary. Most of
+that boundary is a weathered, curved scarp with several metres of horizontal
+toe-to-crest retreat. Only the 4--7-metre-wide active collapse sector remains
+near-vertical and carries the shallow undercut. Metre-scale planform variation
+keeps the opposing flanks asymmetric; the crest and face then taper through
+long returned shoulders into surrounding terrain instead of terminating at
+squared patch edges. A continuous joint-bounded
 failure region is a strongly tapering wedge bounded by four landform-scale
 piecewise fracture vertices on each diagonally traversing side and a
 three-segment angular oblique release base. A few broad blended facet planes
@@ -158,8 +161,8 @@ authoritative `SceneTerrain`, including the aggregated fan. The authored
 contribution is an unbounded-downward, rearward terrace solid: the intersection
 of solid-below-crest and solid-behind the curved scarp. It therefore has no
 recipe box sides, back, or bottom to expose. Its
-40-by-34-metre local footprint extends six metres beyond both face ends, five
-metres beyond the fan, and eight metres behind the rock mass, so every outer
+40-by-38-metre local footprint extends six metres beyond both face ends, five
+metres beyond the fan, and twelve metres behind the rock mass, so every outer
 edge is ordinary single-valued ground. Surface Nets therefore extracts the face,
 crest, lower floodplain, upper terrace, and returned shoulders as one connected
 surface rather than filtering a local face out of a finite box. There is no
