@@ -5,11 +5,12 @@ use adventuresim_weapon_model::{
     decode_holder, default_design, default_holder_design, derive_holder_properties,
     derive_properties, design_hash, encode, encode_holder, holder_design_hash,
 };
-use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
 
 use crate::inventory_container::inventory_object__view;
 use crate::item::item;
 use crate::strategic::PartyInventoryItem;
+use crate::strategic::strategic_gateway_authority__view;
 use crate::{InventoryItem, InventoryObject, ItemKind, inventory_object};
 
 pub const MAX_WEAPON_RECIPE_BYTES: usize = 16 * 1024;
@@ -48,8 +49,32 @@ pub struct WeaponHolderInstance {
     pub grip_to_tip_mm: u32,
 }
 
-/// Sender-scoped tactical transport. The strategic inventory UI does not
-/// subscribe to the private instance table or expose its smithing parameters.
+/// Trusted strategic-backend projection used to produce per-instance inventory
+/// icons. Recipes remain absent for ordinary player subscriptions and HTML.
+#[view(accessor = backend_weapon_instances, public)]
+pub fn backend_weapon_instances(ctx: &ViewContext) -> Vec<WeaponInstance> {
+    let gateway = ctx.db.strategic_gateway_authority().id().find(0);
+    if gateway.is_none_or(|authority| authority.identity != ctx.sender()) {
+        return Vec::new();
+    }
+    let mut instances = Vec::new();
+    for kind in ["personal", "party"] {
+        for object in ctx.db.inventory_object().location_kind().filter(kind) {
+            if let Some(instance) = ctx
+                .db
+                .weapon_instance()
+                .physical_object_id()
+                .find(object.id)
+            {
+                instances.push(instance);
+            }
+        }
+    }
+    instances
+}
+
+/// Sender-scoped tactical transport. Strategic HTML likewise never embeds the
+/// full smithing recipe; its trusted icon endpoint consumes the backend view.
 #[derive(SpacetimeType, Clone, Debug)]
 pub struct ConnectedWeaponAppearance {
     pub generator_version: u16,

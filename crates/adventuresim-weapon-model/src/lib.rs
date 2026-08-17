@@ -5,6 +5,7 @@ mod codec;
 mod derive;
 mod design;
 mod hash;
+mod icon;
 mod mesh;
 mod validation;
 
@@ -16,6 +17,10 @@ pub use codec::{CodecError, decode, decode_holder, encode, encode_holder};
 pub use derive::{derive_holder_properties, derive_properties};
 pub use design::*;
 pub use hash::{DesignHash, design_hash, holder_design_hash};
+pub use icon::{
+    ICON_RENDERER_VERSION, IconBounds, IconError, WeaponIcon, WeaponIconLayout, WeaponIconSpec,
+    generate_icon, icon_layout,
+};
 pub use mesh::{GenerateError, generate, generate_holder};
 pub use validation::{ValidationError, validate, validate_holder};
 

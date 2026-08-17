@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2048)
+## Files (2052)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -439,6 +439,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_social_chat_receipts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_tincture_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_tincture_statuses_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_weapon_instances_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_equipment_condition_and_smiths_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_solo_parties_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -1473,12 +1474,14 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-terrain/src/builder.rs` — Rust source module for this component.
 - `crates/adventuresim-terrain/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-weapon-model/examples/export_icon.rs` — Rust source module.
 - `crates/adventuresim-weapon-model/examples/export_obj.rs` — Rust source module.
 - `crates/adventuresim-weapon-model/src/catalog.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/src/codec.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/src/derive.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/src/design.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/src/hash.rs` — Rust source module for this component.
+- `crates/adventuresim-weapon-model/src/icon.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/src/mesh.rs` — Rust source module for this component.
 - `crates/adventuresim-weapon-model/src/validation.rs` — Rust source module for this component.
@@ -1577,6 +1580,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/settlements/service_quests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements/social_tests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/travel.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/weapon_icons.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/session.rs` — Rust source module for this component.
 - `crates/strategic-web/src/spacetimedb/client.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/spacetimedb/mod.rs` — Strategic web SpacetimeDB integration module.

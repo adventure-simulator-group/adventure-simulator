@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use adventuresim_weapon_model::{
     Attachment, CodecError, ComponentDesign, ComponentRole, ComponentShape, CylinderSpec,
     MELEE_CATALOG_IDS, MaceSpec, MaterialClass, Millimeters, OffsetMm, PRESET_IDS, Permille,
-    Segments, ValidationError, WeaponDesign, WeaponHolderKind, decode, decode_holder,
-    default_design, default_holder_design, derive_properties, design_hash, encode, encode_holder,
-    generate, generate_holder, holder_design_hash, preset_design, recommended_holder, validate,
-    validate_holder,
+    Segments, ValidationError, WeaponDesign, WeaponHolderKind, WeaponIconLayout, WeaponIconSpec,
+    decode, decode_holder, default_design, default_holder_design, derive_properties, design_hash,
+    encode, encode_holder, generate, generate_holder, generate_icon, holder_design_hash,
+    icon_layout, preset_design, recommended_holder, validate, validate_holder,
 };
 
 fn signed_volume(positions: &[[f32; 3]], indices: &[u32]) -> f32 {
@@ -528,7 +528,121 @@ fn deterministic_parameter_fuzz_stays_finite_closed_and_outward() {
             }
             validate(&design).unwrap_or_else(|errors| panic!("{id}: {errors:?}"));
             assert_closed_and_outward(&design);
+            generate_icon(
+                &design,
+                WeaponIconSpec {
+                    size: 32,
+                    supersampling: 2,
+                },
+            )
+            .unwrap_or_else(|error| panic!("{id} icon: {error}"));
         }
+    }
+}
+
+#[test]
+fn procedural_icons_obey_focus_orientation_and_clipping_contracts() {
+    for id in MELEE_CATALOG_IDS {
+        let design = default_design(id).unwrap();
+        let icon = generate_icon(
+            &design,
+            WeaponIconSpec {
+                size: 96,
+                supersampling: 4,
+            },
+        )
+        .unwrap_or_else(|error| panic!("{id}: {error}"));
+        let expected = icon_layout(&design);
+        let expected_from_catalog_family = if matches!(
+            *id,
+            "arming_sword"
+                | "baselard"
+                | "bauernwehr"
+                | "falchion"
+                | "katzbalger"
+                | "knife"
+                | "kriegsmesser"
+                | "longsword"
+                | "messer"
+                | "misericorde"
+                | "rapier"
+                | "rondel_dagger"
+                | "utility_knife"
+                | "zweihander"
+        ) {
+            WeaponIconLayout::HiltFocus
+        } else {
+            WeaponIconLayout::HeadFocus
+        };
+        assert_eq!(expected, expected_from_catalog_family, "{id} family");
+        assert_eq!(icon.layout, expected, "{id}");
+        assert_eq!(icon.framing_anchor, [0.5, 0.5], "{id} semantic anchor");
+        assert!(
+            (1.0..=2.0).contains(&icon.head_zoom),
+            "{id} invalid head zoom {}",
+            icon.head_zoom
+        );
+        assert_eq!(icon.alpha.len(), 96 * 96, "{id}");
+        let occupied = icon.alpha.iter().filter(|value| **value > 0).count();
+        assert!(occupied > 96, "{id} icon is effectively empty");
+        assert!(
+            occupied < 96 * 96 / 2,
+            "{id} icon consumes the whole square"
+        );
+        match expected {
+            WeaponIconLayout::HiltFocus => {
+                assert!(icon.focus_bounds.min[0] >= 0.01, "{id} hilt clipped left");
+                assert!(icon.focus_bounds.min[1] >= 0.01, "{id} hilt clipped top");
+                assert!(icon.focus_bounds.max[0] <= 0.99, "{id} hilt clipped right");
+                assert!(icon.focus_bounds.max[1] <= 0.99, "{id} hilt clipped bottom");
+                assert!(
+                    icon.occupied_bounds.max[1] >= 0.97,
+                    "{id} blade did not clip bottom"
+                );
+                assert!(
+                    icon.occupied_bounds.min[0] < 0.25,
+                    "{id} blade does not extend toward lower-left"
+                );
+            }
+            WeaponIconLayout::HeadFocus => {
+                assert!(icon.focus_bounds.min[0] >= 0.01, "{id} head clipped left");
+                assert!(icon.focus_bounds.min[1] >= 0.01, "{id} head clipped top");
+                assert!(icon.focus_bounds.max[0] <= 0.99, "{id} head clipped right");
+                assert!(icon.focus_bounds.max[1] <= 0.99, "{id} head clipped bottom");
+                assert!(
+                    icon.occupied_bounds.max[1] >= 0.97,
+                    "{id} shaft did not clip bottom"
+                );
+                assert!(
+                    icon.occupied_bounds.max[0] >= 0.97,
+                    "{id} shaft does not extend toward lower-right"
+                );
+                if icon.head_zoom < 1.99 {
+                    assert!(
+                        icon.focus_bounds.min[0] <= 0.15 || icon.focus_bounds.min[1] <= 0.15,
+                        "{id} head did not approach the inset corner"
+                    );
+                }
+                if matches!(*id, "war_hammer" | "walking_staff") {
+                    assert!(
+                        icon.head_zoom > 1.5,
+                        "{id} exception did not materially enlarge the head"
+                    );
+                }
+            }
+        }
+        let repeated = generate_icon(
+            &design,
+            WeaponIconSpec {
+                size: 96,
+                supersampling: 4,
+            },
+        )
+        .unwrap();
+        assert_eq!(icon.alpha, repeated.alpha, "{id} icon is not deterministic");
+        let png = icon.encode_png().unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "{id}");
+        assert_eq!(png[25], 6, "{id}: CSS mask PNG must carry RGBA alpha");
     }
 }
 

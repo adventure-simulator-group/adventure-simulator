@@ -17,6 +17,7 @@ mod party_actions;
 pub mod quests;
 pub mod settlements;
 pub(crate) mod travel;
+mod weapon_icons;
 
 use axum::{
     Router,
@@ -968,6 +969,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(parties::routes())
                 .merge(quests::routes())
                 .merge(missions::routes())
+                .merge(weapon_icons::routes())
                 .merge(crate::live::routes())
                 .route("/time", get(current_time))
                 .layer(middleware::from_fn(require_same_origin_mutation))
