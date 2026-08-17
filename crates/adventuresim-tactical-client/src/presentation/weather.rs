@@ -1,3 +1,4 @@
+use super::terrain::terrain_heightmap_image;
 use super::*;
 
 const WEATHER_SHADER: &str = "shaders/tactical_weather.wgsl";
@@ -103,7 +104,7 @@ pub(super) fn apply_active_scene_weather(
         return;
     }
 
-    let heightmap = images.add(weather_heightmap_image(terrain));
+    let heightmap = images.add(terrain_heightmap_image(terrain));
     let occlusion_map = images.add(empty_weather_occlusion_image());
     occlusion.image = Some(occlusion_map.clone());
     let falling_material = materials.add(weather_material(
@@ -443,37 +444,6 @@ fn rasterize_weather_branch(
     }
 }
 
-fn weather_heightmap_image(terrain: &SceneTerrain) -> Image {
-    let width = terrain.grid_width() as u32;
-    let height = terrain.grid_depth() as u32;
-    let minimum = terrain.minimum_height();
-    let range = (terrain.maximum_height() - minimum).max(0.001);
-    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
-    for z in 0..height {
-        for x in 0..width {
-            let world = Vec2::new(
-                x as f32 * terrain.grid_scale() - terrain.width() * 0.5,
-                z as f32 * terrain.grid_scale() - terrain.depth() * 0.5,
-            );
-            let normalized =
-                ((terrain.height_at(world).unwrap_or(minimum) - minimum) / range).clamp(0.0, 1.0);
-            let encoded = (normalized * 65_535.0).round() as u16;
-            pixels.extend_from_slice(&[(encoded & 0xff) as u8, (encoded >> 8) as u8, 0, 255]);
-        }
-    }
-    Image::new(
-        Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        pixels,
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,7 +460,7 @@ mod tests {
     #[test]
     fn heightmap_encoding_preserves_terrain_range() {
         let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![-2.0, 0.0, 1.0, 4.0]).unwrap();
-        let image = weather_heightmap_image(&terrain);
+        let image = terrain_heightmap_image(&terrain);
         assert_eq!(image.texture_descriptor.size.width, 2);
         assert_eq!(image.texture_descriptor.size.height, 2);
         let pixels = image.data.as_deref().unwrap();

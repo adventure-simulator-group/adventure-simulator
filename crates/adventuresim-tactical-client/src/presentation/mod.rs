@@ -62,7 +62,9 @@ pub(crate) use sky::AtmosphereIblAmbientHandoff;
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
-pub(crate) use terrain::{TerrainDetailPatch, TerrainMaterialPresentation};
+pub(crate) use terrain::{
+    TerrainDetailPatch, TerrainMaterialPresentation, terrain_heightmap_image,
+};
 #[allow(unused_imports)]
 pub(crate) use vista::{VistaTerrain, VistaTreePresentation};
 #[allow(unused_imports)]

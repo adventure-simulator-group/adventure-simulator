@@ -55,7 +55,7 @@ use crate::presentation::{
     TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
     TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
     TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
-    oak_leaf_material, oak_review_terminal_specimen,
+    oak_leaf_material, oak_review_terminal_specimen, terrain_heightmap_image,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -1345,6 +1345,7 @@ fn setup_scene(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     let setup = setup.0.take().expect("scene setup runs exactly once");
@@ -1585,7 +1586,12 @@ fn setup_scene(
             local_focus,
             camera_direction,
         ) = oak_review_terminal_specimen(tree, canopy_bps);
-        let bark_material = bark_materials.add(oak_bark_material(&procedural_assets));
+        let bark_material = bark_materials.add(oak_bark_material(
+            &procedural_assets,
+            images.add(terrain_heightmap_image(&terrain)),
+            Vec2::new(terrain.minimum_height(), terrain.maximum_height()),
+            &terrain,
+        ));
         let leaf_material = leaf_card_materials.add(oak_leaf_material(&procedural_assets));
         let bud_material = materials.add(StandardMaterial {
             base_color: Color::srgb(0.36, 0.27, 0.1),

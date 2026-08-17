@@ -9,18 +9,19 @@ const DETAIL_PATCH_SPACING_METRES: f32 = 0.25;
 const DETAIL_PATCH_SNAP_METRES: f32 = 1.0;
 const DETAIL_PATCH_DEPTH_BIAS: f32 = 2.0;
 const DETAIL_PATCH_BASE_CUTOUT_RADIUS_METRES: f32 = 18.5;
+const DETAIL_RELIEF_MINIMUM_METRES: f32 = -0.075;
+const DETAIL_RELIEF_MAXIMUM_METRES: f32 = 0.105;
+pub(in crate::presentation) const TACTICAL_DIRT_SRGB: [u8; 3] = [101, 82, 49];
 
 pub(super) fn scene_ground_color(environment: &SceneEnvironment) -> Color {
     let mut rgb = if environment.water_bps >= 5_000 {
         [52.0, 83.0, 98.0]
     } else if environment.wetland_bps >= 4_000 {
         [70.0, 62.0, 43.0]
-    } else if environment.canopy_bps >= 5_000 {
-        [65.0, 52.0, 32.0]
     } else if environment.cultivation_bps >= 4_000 {
         [116.0, 91.0, 49.0]
     } else {
-        [101.0, 82.0, 49.0]
+        TACTICAL_DIRT_SRGB.map(f32::from)
     };
     let snow = f32::from(environment.weather.snow_cover_bps) / 10_000.0;
     let wet = f32::from(environment.weather.ground_moisture_bps) / 10_000.0;
@@ -29,6 +30,89 @@ pub(super) fn scene_ground_color(environment: &SceneEnvironment) -> Color {
         *channel = *channel * (1.0 - snow) + 220.0 * snow;
     }
     Color::srgb(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+}
+
+pub(crate) fn terrain_heightmap_image(terrain: &SceneTerrain) -> Image {
+    let width = terrain.grid_width() as u32;
+    let height = terrain.grid_depth() as u32;
+    let minimum = terrain.minimum_height();
+    let maximum = terrain.maximum_height();
+    encoded_terrain_heightmap_image(width, height, minimum, maximum, |x, z| {
+        let world = Vec2::new(
+            x as f32 * terrain.grid_scale() - terrain.width() * 0.5,
+            z as f32 * terrain.grid_scale() - terrain.depth() * 0.5,
+        );
+        terrain.height_at(world).unwrap_or(minimum)
+    })
+}
+
+/// Builds the heightfield used to seat tree materials against the close-range
+/// render mesh. Unlike the authoritative heightmap, this includes the same
+/// presentation-only clods, drainage, root mounds, and obstacle contact relief
+/// evaluated by [`terrain_detail_patch_mesh`]. Sampling it at the detail patch
+/// spacing keeps the shader's triangle reconstruction aligned with the visible
+/// ground rather than a coarser surface hidden underneath it.
+pub(crate) fn terrain_contact_heightmap_image(
+    terrain: &SceneTerrain,
+    ground: Option<&SceneGround>,
+    environment: &SceneEnvironment,
+    vista: &ActiveVistaSurface,
+    obstacles: &Query<(&SceneObstacle, &Transform)>,
+) -> (Image, Vec2) {
+    let width = (terrain.width() / DETAIL_PATCH_SPACING_METRES).round() as u32 + 1;
+    let height = (terrain.depth() / DETAIL_PATCH_SPACING_METRES).round() as u32 + 1;
+    let minimum = terrain.minimum_height() + DETAIL_RELIEF_MINIMUM_METRES;
+    let maximum = terrain.maximum_height() + DETAIL_RELIEF_MAXIMUM_METRES;
+    let tree_positions = detail_tree_positions(obstacles);
+    let rock_influences = detail_rock_influences(obstacles);
+    let image = encoded_terrain_heightmap_image(width, height, minimum, maximum, |x, z| {
+        let point = Vec2::new(
+            x as f32 / (width - 1) as f32 * terrain.width() - terrain.width() * 0.5,
+            z as f32 / (height - 1) as f32 * terrain.depth() - terrain.depth() * 0.5,
+        );
+        let base_height = terrain.height_at(point).unwrap_or(terrain.minimum_height());
+        base_height
+            + terrain_surface_relief(
+                stable_text_seed(&environment.scene_digest) ^ 0x7465_7272_6169_6e64,
+                point,
+                terrain,
+                ground,
+                environment,
+                vista,
+                &tree_positions,
+                &rock_influences,
+            )
+    });
+    (image, Vec2::new(minimum, maximum))
+}
+
+fn encoded_terrain_heightmap_image(
+    width: u32,
+    height: u32,
+    minimum: f32,
+    maximum: f32,
+    mut height_at: impl FnMut(u32, u32) -> f32,
+) -> Image {
+    let range = (maximum - minimum).max(0.001);
+    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
+    for z in 0..height {
+        for x in 0..width {
+            let normalized = ((height_at(x, z) - minimum) / range).clamp(0.0, 1.0);
+            let encoded = (normalized * 65_535.0).round() as u16;
+            pixels.extend_from_slice(&[(encoded & 0xff) as u8, (encoded >> 8) as u8, 0, 255]);
+        }
+    }
+    Image::new(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    )
 }
 
 #[derive(Component)]
@@ -510,7 +594,7 @@ fn terrain_surface_relief(
         + roots
         + rock_contact
         + rock_strata)
-        .clamp(-0.075, 0.105)
+        .clamp(DETAIL_RELIEF_MINIMUM_METRES, DETAIL_RELIEF_MAXIMUM_METRES)
 }
 
 fn signed_ground_noise(seed: u64, point: Vec2) -> f32 {
@@ -1117,6 +1201,26 @@ mod tests {
     use bevy::asset::{AssetApp, AssetPlugin};
 
     #[test]
+    fn ordinary_dirt_uses_one_palette_color_regardless_of_canopy() {
+        let mut environment = legacy_scene_environment(&SceneId("dirt-palette".into()));
+        environment.weather.ground_moisture_bps = 0;
+        environment.weather.snow_cover_bps = 0;
+        environment.wetland_bps = 0;
+        environment.cultivation_bps = 0;
+        environment.water_bps = 0;
+        let expected = Color::srgb_u8(
+            TACTICAL_DIRT_SRGB[0],
+            TACTICAL_DIRT_SRGB[1],
+            TACTICAL_DIRT_SRGB[2],
+        );
+
+        environment.canopy_bps = 0;
+        assert_eq!(scene_ground_color(&environment), expected);
+        environment.canopy_bps = 10_000;
+        assert_eq!(scene_ground_color(&environment), expected);
+    }
+
+    #[test]
     fn ground_shader_keeps_solid_palette_albedo_and_uses_one_planar_height_ao_sample() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -1136,9 +1240,10 @@ mod tests {
         assert!(shader.contains("let height_dx = dpdx(height_metres)"));
         assert!(shader.contains("pbr_input.diffuse_occlusion *= mix(1.0, soil_sample.g"));
         assert!(!shader.contains("select(color, terrain.grass_color.rgb, tall_grass > 0.5)"));
-        assert!(shader.contains("let shaded_substrate = select("));
-        assert!(shader.contains("let canopy_floor = ground_sample.a"));
-        assert!(shader.contains("canopy_floor >= 0.78"));
+        assert!(!shader.contains("shaded_substrate"));
+        assert!(!shader.contains("tall_grass > 0.5 && canopy_floor"));
+        assert!(!shader.contains("canopy_floor"));
+        assert!(!shader.contains("litter_color"));
         assert!(shader.contains("let sward_color = terrain.grass_color.rgb"));
         assert!(!shader.contains("sward_color = color *"));
         assert!(shader.contains("sward_dither < sward_amount"));

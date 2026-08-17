@@ -62,6 +62,18 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::RENDER_WORLD,
     );
+    if visible.iter().any(|branch| branch.depth == 0) {
+        // The bark shader needs metric height above the root contact plane for
+        // its UV-free soil-deposition mask. Vertex colour is an interpolated
+        // geometry channel here, not pigment: local Y remains exact across a
+        // triangle and avoids creating a unique material for every tree.
+        let ground_y = -TREE_TRUNK_HEIGHT_METRES * 0.5;
+        let root_heights = positions
+            .iter()
+            .map(|position| [position[1] - ground_y, 1.0, 1.0, 1.0])
+            .collect::<Vec<_>>();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, root_heights);
+    }
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -980,6 +992,10 @@ mod tests {
             panic!("branch mesh has float UVs");
         };
         assert!(mesh.attribute(Mesh::ATTRIBUTE_TANGENT).is_none());
+        assert!(
+            mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_none(),
+            "crown-only wood must not pay for the root deposition channel"
+        );
         let positions = mesh
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(|attribute| attribute.as_float3())
@@ -998,6 +1014,28 @@ mod tests {
             uvs.iter().map(|uv| uv[1]).fold(0.0_f32, f32::max) > 0.5,
             "a two-metre-long axis must advance a full physical bark tile"
         );
+    }
+
+    #[test]
+    fn trunk_mesh_carries_metric_root_height_without_an_authored_dirt_uv() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let mesh = procedural_tree_branch_mesh(&branches, 0);
+        let positions = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .expect("trunk mesh has float positions");
+        let Some(VertexAttributeValues::Float32x4(root_data)) =
+            mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("trunk mesh has metric root data");
+        };
+        let ground_y = -TREE_TRUNK_HEIGHT_METRES * 0.5;
+
+        assert_eq!(positions.len(), root_data.len());
+        for (position, root) in positions.iter().zip(root_data) {
+            assert!((root[0] - (position[1] - ground_y)).abs() < 1.0e-5);
+            assert_eq!(root[1..], [1.0, 1.0, 1.0]);
+        }
     }
 
     #[test]

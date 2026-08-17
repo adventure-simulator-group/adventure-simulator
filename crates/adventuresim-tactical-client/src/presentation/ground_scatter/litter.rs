@@ -23,6 +23,9 @@ const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 3;
 const TWIG_PASSES_PER_SAMPLE: u64 = 2;
 const WOODLAND_PLANT_PASSES_PER_SAMPLE: u64 = 1;
 const WOODLAND_FLOOR_TRANSITION_METRES: f32 = 3.2;
+const LITTER_BATCH_CELL_METRES: f32 = 64.0;
+const LITTER_BATCH_HALF_DIAGONAL_METRES: f32 =
+    LITTER_BATCH_CELL_METRES * core::f32::consts::FRAC_1_SQRT_2;
 
 pub(super) struct Assets {
     pub dry_leaf_meshes: Vec<Handle<Mesh>>,
@@ -55,7 +58,6 @@ pub(super) fn spawn(
     base_seed: u64,
     assets: &Assets,
 ) {
-    const BATCH_CELL_METRES: f32 = 64.0;
     let mut batches = BTreeMap::<(i32, i32), LitterBatch>::new();
     let mut leaf_anchors = Vec::new();
     let mut twig_anchors = Vec::new();
@@ -97,7 +99,7 @@ pub(super) fn spawn(
                 meshes,
                 &assets.dry_leaf_meshes[(hash % assets.dry_leaf_meshes.len() as u64) as usize],
                 transform,
-                BATCH_CELL_METRES,
+                LITTER_BATCH_CELL_METRES,
                 &mut batches,
                 BatchKind::Leaves,
             );
@@ -120,7 +122,7 @@ pub(super) fn spawn(
                 meshes,
                 &assets.twig_meshes[(hash % assets.twig_meshes.len() as u64) as usize],
                 transform,
-                BATCH_CELL_METRES,
+                LITTER_BATCH_CELL_METRES,
                 &mut batches,
                 BatchKind::Twigs,
             );
@@ -146,7 +148,7 @@ pub(super) fn spawn(
                 &assets.woodland_plant_meshes
                     [(hash % assets.woodland_plant_meshes.len() as u64) as usize],
                 transform,
-                BATCH_CELL_METRES,
+                LITTER_BATCH_CELL_METRES,
                 &mut batches,
                 BatchKind::Plants,
             );
@@ -161,9 +163,9 @@ pub(super) fn spawn(
     }
     for ((cell_x, cell_z), batch) in batches {
         let transform = Transform::from_xyz(
-            cell_x as f32 * BATCH_CELL_METRES,
+            cell_x as f32 * LITTER_BATCH_CELL_METRES,
             0.0,
-            cell_z as f32 * BATCH_CELL_METRES,
+            cell_z as f32 * LITTER_BATCH_CELL_METRES,
         );
         if let Some(mesh) = batch.leaves {
             commands.spawn((
@@ -172,7 +174,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.dry_leaf_material.clone()),
-                VisibilityRange::abrupt(0.0, 35.0),
+                batched_litter_visibility(35.0),
                 transform,
             ));
         }
@@ -183,7 +185,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.twig_material.clone()),
-                VisibilityRange::abrupt(0.0, 24.0),
+                batched_litter_visibility(24.0),
                 transform,
             ));
         }
@@ -194,10 +196,24 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.woodland_plant_material.clone()),
-                VisibilityRange::abrupt(0.0, 28.0),
+                batched_litter_visibility(28.0),
                 transform,
             ));
         }
+    }
+}
+
+fn batched_litter_visibility(local_end_metres: f32) -> VisibilityRange {
+    // Each entity contains debris distributed across a large cell. Measuring
+    // visibility from the cell-corner entity translation can therefore hide
+    // geometry beside the camera. Use the merged mesh bounds and pad the
+    // cutoff by the greatest possible centre-to-edge distance so the range
+    // still describes distance from the debris itself.
+    let batch_end = local_end_metres + LITTER_BATCH_HALF_DIAGONAL_METRES;
+    VisibilityRange {
+        start_margin: 0.0..0.0,
+        end_margin: batch_end..batch_end,
+        use_aabb: true,
     }
 }
 
@@ -756,6 +772,15 @@ mod tests {
         mesh::VertexAttributeValues,
         prelude::{App, Image, TaskPoolPlugin, default},
     };
+
+    #[test]
+    fn batched_litter_visibility_cannot_cull_debris_inside_its_local_range() {
+        let local_end = 24.0;
+        let range = batched_litter_visibility(local_end);
+        assert!(range.use_aabb);
+        assert!(range.is_visible_at_all(LITTER_BATCH_HALF_DIAGONAL_METRES + local_end - 0.01));
+        assert!(!range.is_visible_at_all(LITTER_BATCH_HALF_DIAGONAL_METRES + local_end + 0.01));
+    }
 
     #[test]
     fn capture_anchors_preserve_distinct_placements_inside_one_batch_cell() {
