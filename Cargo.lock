@@ -276,6 +276,7 @@ dependencies = [
  "serde",
  "sha2",
  "thiserror 2.0.18",
+ "tiny-skia",
 ]
 
 [[package]]
@@ -9042,6 +9043,7 @@ dependencies = [
  "adventuresim-dialogue",
  "adventuresim-stdb-client",
  "adventuresim-terrain",
+ "adventuresim-weapon-model",
  "adventuresim-world-schema",
  "anyhow",
  "axum",

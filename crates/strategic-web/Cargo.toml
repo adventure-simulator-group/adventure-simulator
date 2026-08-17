@@ -13,6 +13,7 @@ adventuresim-core.workspace = true
 adventuresim-dialogue.workspace = true
 adventuresim-stdb-client.workspace = true
 adventuresim-world-schema.workspace = true
+adventuresim-weapon-model.workspace = true
 adventuresim-terrain = { path = "../adventuresim-terrain" }
 anyhow = "1"
 axum = "0.8"

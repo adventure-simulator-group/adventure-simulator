@@ -57,15 +57,15 @@ therefore chooses between lower burden and greater protection.
 
 Melee weapons have a versioned procedural design in addition to their catalog
 definition. The catalog entry remains the semantic chassis and supplies names,
-icons, equipment placements, and combat tags. Each concrete weapon design is
-stored once in the private `WeaponInstance` table, keyed by the stable
+fallback icons, equipment placements, and combat tags. Each concrete weapon
+design is stored once in the private `WeaponInstance` table, keyed by the stable
 `InventoryObject.id`; personal and party transfers therefore change custody
-without changing the weapon or its smithing parameters. Dimensions are
-quantized in millimetres and ratios in permille before persistence. The same
-validated recipe deterministically produces its design hash, closed triangle
-meshes, material groups, grip and tip anchors, and a geometric summary. Catalog
-weight, reach, and equipment dimensions remain authoritative for gameplay
-until procedural measurements have been calibrated across both layers.
+without changing the weapon or its smithing parameters. Dimensions are quantized
+in millimetres and ratios in permille before persistence. The same validated
+recipe deterministically produces its design hash, closed triangle meshes,
+material groups, grip and tip anchors, and a geometric summary. Catalog weight,
+reach, and equipment dimensions remain authoritative for gameplay until
+procedural measurements have been calibrated across both layers.
 
 The ordinary strategic inventory continues to show the catalog presentation,
 condition, compact weight/value summaries rather than hundreds of smithing
@@ -75,6 +75,44 @@ the selected character's validated recipe and compact geometric summary. The
 tactical client expands that recipe into cached meshes keyed by generator
 version and design hash; corrupt or unsupported recipes fall back to the
 ordinary equipment box without affecting authoritative combat state.
+
+Inventory icons are deterministic orthographic silhouettes of that same
+validated mesh rather than a second authored representation of a custom
+weapon. Sword-family icons place the guard at the exact center, keep the
+complete handle in the upper right, and let the blade continue beyond the
+lower-left edge of the square. Other melee weapons place the root of the head
+at the exact center, keep the complete head in the upper left, and let the shaft
+continue beyond the lower-right edge. The CPU renderer uses a slightly oblique
+view, supersampling, and semantic-anchor framing so guards, rings, axe heads,
+and hammer polls remain legible at inventory scale while the intentionally
+cropped length does not make compact heads look tiny. Rendered masks are cached
+by weapon generator version, design hash, icon-renderer version, and raster
+settings.
+
+Head-focused framing first fits the complete head-and-socket assembly, then
+permits the actual head geometry to grow by at most two times around its
+centered root. Growth stops when the complete head reaches the inset upper-left
+safety boundary or the zoom cap, whichever comes first; long sockets and langets
+may therefore crop with the shaft instead of making a small poll or beak
+illegible. A headless walking staff treats its uppermost 120 millimetres as a
+synthetic head, producing the same upper-left-to-lower-right composition without
+an unbounded point-sized fit.
+
+The strategic page still does not embed recipes or smithing parameters. Its
+authenticated icon endpoint resolves the stable inventory object, verifies
+that the active character may see its current personal or party custody,
+authenticates the versioned recipe and design hash, and only then uses the
+transient cache. Legacy catalog weapons and failed or unsupported recipes keep
+their authored catalog icon.
+
+The tactical slot grid, active-hand and off-hand controls, and selected ground
+item use the same silhouette renderer locally from the authenticated replicated
+`WeaponAppearance`. They cache the resulting Bevy image by the same generator,
+design, renderer, and raster identity used by the strategic renderer.
+Replication arrival is order-independent because the HUD resolves appearances
+every frame; non-weapons and invalid or unsupported recipes retain the tactical
+catalog atlas icon. The tactical world model continues to use the full generated
+mesh, not the silhouette.
 
 Each generated scabbard or haft loop is a first-class parametric object with a
 versioned `WeaponHolderDesign` template and a private `WeaponHolderInstance`

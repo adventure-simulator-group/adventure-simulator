@@ -1062,7 +1062,36 @@
     decorateContainers(browser);
   }
 
-  function mountAll(root = document) { root.querySelectorAll?.("[data-inventory-browser]").forEach(mount); }
+  function hydrateProceduralWeaponIcons(root = document) {
+    const rows = root.matches?.("tr.trade-inventory-row")
+      ? [root]
+      : [...(root.querySelectorAll?.("tr.trade-inventory-row") || [])];
+    rows.forEach((row) => {
+      if (!row.querySelector('.inventory-item-label[data-item-melee="true"]')) return;
+      const scope = row.dataset.personalInventoryId ? "personal" : row.dataset.partyInventoryId ? "party" : "";
+      const rowId = row.dataset.personalInventoryId || row.dataset.partyInventoryId || "";
+      const icon = row.querySelector(".inventory-item-type .game-icon");
+      if (!scope || !/^\d+$/.test(rowId) || !icon) return;
+      const url = `/api/weapon-icons/${scope}/${rowId}.png`;
+      if (icon.dataset.proceduralWeaponIcon === url) return;
+      icon.dataset.proceduralWeaponIcon = url;
+      const probe = new Image();
+      probe.addEventListener("load", () => {
+        if (icon.isConnected && icon.dataset.proceduralWeaponIcon === url) {
+          icon.style.setProperty("--game-icon", `url("${url}")`);
+        }
+      }, { once: true });
+      probe.addEventListener("error", () => {
+        // The authored catalog SVG remains in place for legacy/non-instanced weapons.
+      }, { once: true });
+      probe.src = url;
+    });
+  }
+
+  function mountAll(root = document) {
+    root.querySelectorAll?.("[data-inventory-browser]").forEach(mount);
+    hydrateProceduralWeaponIcons(root);
+  }
   function refresh(scope = document) {
     const browsers = scope.matches?.("[data-inventory-browser]") ? [scope] : [...(scope.querySelectorAll?.("[data-inventory-browser]") || [])];
     const closest = scope.closest?.("[data-inventory-browser]"); if (closest && !browsers.includes(closest)) browsers.push(closest);
@@ -1071,8 +1100,9 @@
       else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, (browser.dataset.optionalColumns || "").split(",").filter(Boolean)));
     });
     hydrateContainerState(scope);
+    hydrateProceduralWeaponIcons(scope);
   }
-  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, decorateContainers, hydrateContainerState, openContainer, closeContainer, mountAll, refresh, syncPanelWidth };
+  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, decorateContainers, hydrateContainerState, hydrateProceduralWeaponIcons, openContainer, closeContainer, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
   if (global.document) {

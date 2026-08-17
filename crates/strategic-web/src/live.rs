@@ -40,6 +40,7 @@ use adventuresim_stdb_client::{
     backend_dialogue_witness_claims_table::BackendDialogueWitnessClaimsTableAccess,
     backend_local_chat_messages_table::BackendLocalChatMessagesTableAccess,
     backend_organization_memberships_table::BackendOrganizationMembershipsTableAccess,
+    backend_weapon_instances_table::BackendWeaponInstancesTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -113,6 +114,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "retained_projectile",
     "backend_character_training_schedules",
     "backend_organization_memberships",
+    "backend_weapon_instances",
     "organization_presentation",
     "party",
     "party_journey",
@@ -300,6 +302,7 @@ impl LiveState {
                 .backend_character_training_schedules()
         );
         invalidate_on_view_changes!(state.0._connection.db.backend_organization_memberships());
+        invalidate_on_view_changes!(state.0._connection.db.backend_weapon_instances());
         invalidate_on_changes!(state.0._connection.db.organization_presentation());
         invalidate_on_view_changes!(state.0._connection.db.party());
         invalidate_on_view_changes!(state.0._connection.db.party_journey());
@@ -421,6 +424,7 @@ impl LiveState {
             .add_query(|query| query.from.backend_character_times())
             .add_query(|query| query.from.backend_character_training_schedules())
             .add_query(|query| query.from.backend_organization_memberships())
+            .add_query(|query| query.from.backend_weapon_instances())
             .add_query(|query| query.from.organization_presentation())
             .add_query(|query| query.from.party_journey())
             .add_query(|query| query.from.party_journey_itinerary())
