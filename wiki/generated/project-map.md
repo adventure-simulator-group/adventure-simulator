@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2053)
+## Files (2070)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -31,6 +31,7 @@ development, or other wiki document before changing a subsystem.
 - `PRESENTATION_RESTRUCTURING.md` — Project documentation.
 - `README.md` — Component overview and usage notes.
 - `THIRD_PARTY_NOTICES.md` — Project documentation.
+- `assets/SNPro-VariableFont_wght.ttf` — Binary game or UI asset.
 - `assets/TownA.glb` — Binary game or UI asset.
 - `assets/TownB.glb` — Binary game or UI asset.
 - `assets/animations/biped/README.md` — Component overview and usage notes.
@@ -62,6 +63,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/thrust.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
+- `assets/crosshair.png` — Binary game or UI asset.
 - `assets/data/hipparcos-bright-stars.csv` — Repository support file.
 - `assets/shaders/tactical_clouds.wgsl` — Repository support file.
 - `assets/shaders/tactical_foliage.wgsl` — Repository support file.
@@ -95,6 +97,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
 - `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
 - `assets/textures/moon/lroc_color_2k.jpg` — Repository support file.
+- `assets/ui.css` — Browser UI styling.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
@@ -1354,12 +1357,14 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-strategic-sim/src/runner.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/tests/core_loop_live.rs` — Rust source module.
 - `crates/adventuresim-strategic-sim/tests/simulation.rs` — Rust source module.
+- `crates/adventuresim-tactical-brp-generator/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-tactical-brp-generator/src/codegen.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-brp-generator/src/main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-brp-generator/src/resolve.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/.cargo/config.toml` — Tooling or build configuration.
 - `crates/adventuresim-tactical-client/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-client/README.md` — Component overview and usage notes.
-- `crates/adventuresim-tactical-client/assets/SNPro-VariableFont_wght.ttf` — Binary game or UI asset.
-- `crates/adventuresim-tactical-client/assets/crosshair.png` — Binary game or UI asset.
-- `crates/adventuresim-tactical-client/assets/ui.css` — Browser UI styling.
+- `crates/adventuresim-tactical-client/src/animation/AGENTS.md` — Project documentation.
 - `crates/adventuresim-tactical-client/src/animation/catalog.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/diagnostics.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/loading.rs` — Rust source module.
@@ -1382,6 +1387,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/debug.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/diagnostics.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/equipment.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/presentation/clouds.rs` — Rust source module.
@@ -1463,6 +1469,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/src/combat/protocol.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/combat/ranged.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/equipment.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/mission/enrollment.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/mission/mod.rs` — Rust source module.
@@ -1925,6 +1932,7 @@ development, or other wiki document before changing a subsystem.
 - `research/legacy/meta.md` — Project documentation.
 - `research/legacy/roadmap.md` — Project documentation.
 - `rust-toolchain.toml` — Tooling or build configuration.
+- `scripts/adventuresim_brp_lib.py` — Development or documentation automation script.
 - `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/capture_tactical_scenes.py` — Development or documentation automation script.
@@ -1944,6 +1952,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/quest_web_eval.mjs` — Repository support file.
 - `scripts/real_world_tactical.py` — Development or documentation automation script.
+- `scripts/tactical_brp.py` — Development or documentation automation script.
 - `scripts/tactical_terrain_density_benchmark.py` — Development or documentation automation script.
 - `scripts/test_format_wiki_markdown.py` — Development or documentation automation script.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
@@ -1957,6 +1966,13 @@ development, or other wiki document before changing a subsystem.
 - `scripts/test_world_data_bundle.py` — Development or documentation automation script.
 - `scripts/test_world_runtime_release.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
+- `scripts/tests/tactical/conftest.py` — Development or documentation automation script.
+- `scripts/tests/tactical/fixtures/combat_scenario.scn.ron` — Repository support file.
+- `scripts/tests/tactical/lib.py` — Development or documentation automation script.
+- `scripts/tests/tactical/test_combat_defense.py` — Development or documentation automation script.
+- `scripts/tests/tactical/test_connectivity.py` — Development or documentation automation script.
+- `scripts/tests/tactical/test_lifecycle.py` — Development or documentation automation script.
+- `scripts/tests/tactical/test_movement.py` — Development or documentation automation script.
 - `scripts/tests/test_build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/tests/test_capture_tactical_scenes.py` — Development or documentation automation script.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
@@ -2001,6 +2017,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/engineering/puzzle-lab.md` — Project documentation.
 - `wiki/engineering/strategic-read-cache.md` — Project documentation.
 - `wiki/engineering/strategic-simulation.md` — Project documentation.
+- `wiki/engineering/tactical-testing.md` — Project documentation.
 - `wiki/engineering/world-data/drought.md` — Project documentation.
 - `wiki/engineering/world-data/elevation.md` — Project documentation.
 - `wiki/engineering/world-data/environment-visual-review.md` — Project documentation.

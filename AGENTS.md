@@ -80,6 +80,22 @@ python scripts/update_wiki_summary.py
 Before finishing a wiki change, format changed prose with
 `just wiki-format path/to/page.md` and run `just wiki-check`.
 
+## Cost-aware iterative debugging
+
+- Default to one agent for reproduce/fix/test loops. Do not spawn reviewers or
+  parallel investigators unless the user explicitly requests them or the
+  candidate has passed its authoritative acceptance test.
+- Prefer deterministic analyzers and compact generated summaries over loading
+  raw logs into model context.
+- Diagnose and correct the earliest failed contract first. Do not investigate
+  downstream symptoms or expand the architecture while an earlier failure is
+  still sufficient to explain the run.
+- When the user requests one iteration or one testing cycle, perform exactly
+  one fix/test cycle and stop after reporting its result, whether it passes or
+  fails.
+- Report which agents, tests, and evidence files were used so token-cost
+  outliers can be correlated with the workflow.
+
 ## Completion policy
 
 - Continue working until the requested outcome is implemented and relevant verification has run.
