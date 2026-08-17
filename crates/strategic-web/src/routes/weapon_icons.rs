@@ -6,8 +6,8 @@ use std::{
 };
 
 use adventuresim_weapon_model::{
-    DesignHash, GENERATOR_VERSION, ICON_RENDERER_VERSION, WeaponIconSpec, decode, design_hash,
-    generate_icon,
+    DesignHash, GENERATOR_VERSION, HOLDER_GENERATOR_VERSION, ICON_RENDERER_VERSION, WeaponIconSpec,
+    decode, decode_holder, design_hash, generate_holder_icon, generate_icon, holder_design_hash,
 };
 use axum::{
     Router,
@@ -21,7 +21,10 @@ use axum::{
 use crate::{
     routes::AppState,
     session::Session,
-    spacetimedb::{BackendWeaponInstance, Character, InventoryObject, sql_string_literal},
+    spacetimedb::{
+        BackendWeaponHolderInstance, BackendWeaponInstance, Character, InventoryObject,
+        sql_string_literal,
+    },
 };
 
 const ICON_SIZE: u16 = 96;
@@ -30,11 +33,18 @@ const CACHE_LIMIT: usize = 512;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct CacheKey {
+    source: IconSource,
     generator_version: u16,
     icon_renderer_version: u16,
     design_hash: DesignHash,
     size: u16,
     supersampling: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum IconSource {
+    Weapon,
+    Holder,
 }
 
 static ICON_CACHE: OnceLock<Mutex<HashMap<CacheKey, Vec<u8>>>> = OnceLock::new();
@@ -111,7 +121,7 @@ async fn weapon_icon(
     ) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let instance = match state
+    let weapon_instance = match state
         .db
         .query_one::<BackendWeaponInstance>(&format!(
             "SELECT * FROM backend_weapon_instances WHERE physical_object_id = {}",
@@ -119,17 +129,36 @@ async fn weapon_icon(
         ))
         .await
     {
-        Ok(Some(instance)) => instance,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Ok(instance) => instance,
         Err(error) => {
             tracing::error!(%error, object_id = object.id, "failed to resolve weapon-icon recipe");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let (hash, png) = match authenticated_icon(object, &instance) {
+    let rendered = if let Some(instance) = weapon_instance {
+        authenticated_icon(object, &instance)
+    } else {
+        let holder = match state
+            .db
+            .query_one::<BackendWeaponHolderInstance>(&format!(
+                "SELECT * FROM backend_weapon_holder_instances WHERE physical_object_id = {}",
+                object.id
+            ))
+            .await
+        {
+            Ok(Some(instance)) => instance,
+            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+            Err(error) => {
+                tracing::error!(%error, object_id = object.id, "failed to resolve holder-icon recipe");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        };
+        authenticated_holder_icon(object, &holder)
+    };
+    let (generator_version, hash, png) = match rendered {
         Ok(icon) => icon,
         Err(error) => {
-            tracing::warn!(%error, object_id = object.id, "rejected weapon-icon recipe");
+            tracing::warn!(%error, object_id = object.id, "rejected equipment-icon recipe");
             return StatusCode::NOT_FOUND.into_response();
         }
     };
@@ -140,7 +169,7 @@ async fn weapon_icon(
         .header(
             header::ETAG,
             format!(
-                "\"weapon-icon-{GENERATOR_VERSION}-{ICON_RENDERER_VERSION}-{}\"",
+                "\"equipment-icon-{generator_version}-{ICON_RENDERER_VERSION}-{}\"",
                 hash.to_hex()
             ),
         )
@@ -167,7 +196,7 @@ fn custody_visible(
 fn authenticated_icon(
     object: &InventoryObject,
     instance: &BackendWeaponInstance,
-) -> Result<(DesignHash, Vec<u8>), String> {
+) -> Result<(u16, DesignHash, Vec<u8>), String> {
     if instance.physical_object_id != object.id || instance.generator_version != GENERATOR_VERSION {
         return Err("weapon instance identity or generator version mismatch".into());
     }
@@ -180,6 +209,7 @@ fn authenticated_icon(
         return Err("weapon recipe hash mismatch".into());
     }
     let key = CacheKey {
+        source: IconSource::Weapon,
         generator_version: instance.generator_version,
         icon_renderer_version: ICON_RENDERER_VERSION,
         design_hash: hash,
@@ -193,7 +223,7 @@ fn authenticated_icon(
         .get(&key)
         .cloned()
     {
-        return Ok((hash, png));
+        return Ok((GENERATOR_VERSION, hash, png));
     }
     let png = generate_icon(
         &design,
@@ -214,13 +244,69 @@ fn authenticated_icon(
         cache.remove(&evicted);
     }
     cache.insert(key, png.clone());
-    Ok((hash, png))
+    Ok((GENERATOR_VERSION, hash, png))
+}
+
+fn authenticated_holder_icon(
+    object: &InventoryObject,
+    instance: &BackendWeaponHolderInstance,
+) -> Result<(u16, DesignHash, Vec<u8>), String> {
+    if instance.physical_object_id != object.id
+        || instance.generator_version != HOLDER_GENERATOR_VERSION
+    {
+        return Err("holder instance identity or generator version mismatch".into());
+    }
+    let design = decode_holder(&instance.recipe).map_err(|error| error.to_string())?;
+    if design.catalog_id != object.item_id {
+        return Err("holder recipe catalog chassis mismatch".into());
+    }
+    let hash = holder_design_hash(&design);
+    if instance.design_hash.as_slice() != hash.0.as_slice() {
+        return Err("holder recipe hash mismatch".into());
+    }
+    let key = CacheKey {
+        source: IconSource::Holder,
+        generator_version: instance.generator_version,
+        icon_renderer_version: ICON_RENDERER_VERSION,
+        design_hash: hash,
+        size: ICON_SIZE,
+        supersampling: ICON_SUPERSAMPLING,
+    };
+    let cache = ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(png) = cache
+        .lock()
+        .map_err(|_| "equipment icon cache is unavailable")?
+        .get(&key)
+        .cloned()
+    {
+        return Ok((HOLDER_GENERATOR_VERSION, hash, png));
+    }
+    let png = generate_holder_icon(
+        &design,
+        WeaponIconSpec {
+            size: ICON_SIZE,
+            supersampling: ICON_SUPERSAMPLING,
+        },
+    )
+    .map_err(|error| error.to_string())?
+    .encode_png()
+    .map_err(|error| error.to_string())?;
+    let mut cache = cache
+        .lock()
+        .map_err(|_| "equipment icon cache is unavailable")?;
+    if cache.len() >= CACHE_LIMIT
+        && let Some(evicted) = cache.keys().next().copied()
+    {
+        cache.remove(&evicted);
+    }
+    cache.insert(key, png.clone());
+    Ok((HOLDER_GENERATOR_VERSION, hash, png))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_weapon_model::{default_design, encode};
+    use adventuresim_weapon_model::{default_design, default_holder_design, encode, encode_holder};
 
     fn object(kind: &str, owner: &str) -> InventoryObject {
         InventoryObject {
@@ -276,8 +362,8 @@ mod tests {
             length_mm: 1,
             grip_to_tip_mm: 1,
         };
-        let (_, first) = authenticated_icon(&object, &instance).unwrap();
-        let (_, second) = authenticated_icon(&object, &instance).unwrap();
+        let (_, _, first) = authenticated_icon(&object, &instance).unwrap();
+        let (_, _, second) = authenticated_icon(&object, &instance).unwrap();
         assert_eq!(first, second);
 
         let mut tampered = instance;
@@ -286,11 +372,38 @@ mod tests {
     }
 
     #[test]
+    fn holder_icon_cache_authenticates_before_a_warm_hit() {
+        let mut object = object("personal", "3");
+        object.item_id = "scabbard".into();
+        let weapon = default_design("longsword").unwrap();
+        let design = default_holder_design(&weapon).unwrap();
+        let hash = holder_design_hash(&design);
+        let instance = BackendWeaponHolderInstance {
+            physical_object_id: object.id,
+            generator_version: HOLDER_GENERATOR_VERSION,
+            design_hash: hash.0.to_vec(),
+            recipe: encode_holder(&design).unwrap(),
+            mass_grams: 1,
+            length_mm: 1,
+            grip_to_tip_mm: 1,
+        };
+        let (_, _, first) = authenticated_holder_icon(&object, &instance).unwrap();
+        let (_, _, second) = authenticated_holder_icon(&object, &instance).unwrap();
+        assert_eq!(first, second);
+
+        let mut tampered = instance;
+        let other = default_holder_design(&default_design("rondel_dagger").unwrap()).unwrap();
+        tampered.recipe = encode_holder(&other).unwrap();
+        assert!(authenticated_holder_icon(&object, &tampered).is_err());
+    }
+
+    #[test]
     fn inventory_browser_progressively_replaces_only_instanced_melee_icons() {
         let script = include_str!("../../static/inventory-browser.js");
         assert!(script.contains("hydrateProceduralWeaponIcons"));
         assert!(script.contains(".inventory-item-label[data-item-melee=\"true\"]"));
+        assert!(script.contains(".inventory-item-label[data-item-weapon-holder=\"true\"]"));
         assert!(script.contains("/api/weapon-icons/${scope}/${rowId}.png"));
-        assert!(script.contains("authored catalog SVG remains in place"));
+        assert!(script.contains("authored catalog SVG remains"));
     }
 }

@@ -8,7 +8,8 @@ use adventuresim_tactical_netcode::{
     prelude::{EquipmentAction, EquipmentActionRequest, EquipmentHand},
 };
 use adventuresim_weapon_model::{
-    ICON_RENDERER_VERSION, MaterialClass, WeaponIconSpec, decode, generate, generate_icon,
+    ICON_RENDERER_VERSION, MaterialClass, WeaponIconSpec, decode, generate, generate_holder_icon,
+    generate_icon,
 };
 use bevy::{
     asset::RenderAssetUsages,
@@ -164,7 +165,13 @@ struct WeaponMeshCache {
 
 #[derive(Resource, Default)]
 struct WeaponIconCache {
-    icons: HashMap<(u16, u16, [u8; 32], u16, u8), Handle<Image>>,
+    icons: HashMap<(IconSource, u16, u16, [u8; 32], u16, u8), Handle<Image>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum IconSource {
+    Weapon,
+    Holder,
 }
 
 #[derive(Component)]
@@ -680,6 +687,7 @@ fn cached_weapon_icon(
         return None;
     }
     let key = (
+        IconSource::Weapon,
         appearance.generator_version,
         ICON_RENDERER_VERSION,
         appearance.design_hash,
@@ -690,6 +698,59 @@ fn cached_weapon_icon(
         return Some(cached.clone());
     }
     let icon = generate_icon(
+        &design,
+        WeaponIconSpec {
+            size: TACTICAL_WEAPON_ICON_SIZE,
+            supersampling: TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+        },
+    )
+    .ok()?;
+    let rgba = icon
+        .alpha
+        .into_iter()
+        .flat_map(|alpha| [255, 255, 255, alpha])
+        .collect();
+    let handle = images.add(Image::new(
+        Extent3d {
+            width: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+            height: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    ));
+    cache.icons.insert(key, handle.clone());
+    Some(handle)
+}
+
+fn cached_holder_icon(
+    appearance: &WeaponHolderAppearance,
+    cache: &mut WeaponIconCache,
+    images: &mut Assets<Image>,
+) -> Option<Handle<Image>> {
+    if appearance.recipe.len() > 16 * 1024
+        || appearance.generator_version != adventuresim_weapon_model::HOLDER_GENERATOR_VERSION
+    {
+        return None;
+    }
+    let design = adventuresim_weapon_model::decode_holder(&appearance.recipe).ok()?;
+    if adventuresim_weapon_model::holder_design_hash(&design).0 != appearance.design_hash {
+        return None;
+    }
+    let key = (
+        IconSource::Holder,
+        appearance.generator_version,
+        ICON_RENDERER_VERSION,
+        appearance.design_hash,
+        TACTICAL_WEAPON_ICON_SIZE,
+        TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+    );
+    if let Some(cached) = cache.icons.get(&key) {
+        return Some(cached.clone());
+    }
+    let icon = generate_holder_icon(
         &design,
         WeaponIconSpec {
             size: TACTICAL_WEAPON_ICON_SIZE,
@@ -747,6 +808,7 @@ fn draw_slot_hud(
     )>,
     scene_items: Query<(Entity, &ItemProperties), With<TacticalSceneItem>>,
     weapon_appearances: Query<(Entity, &WeaponAppearance)>,
+    holder_appearances: Query<(Entity, &WeaponHolderAppearance)>,
     mut session: ResMut<GrabSession>,
 ) {
     let Some(hand) = session.active else { return };
@@ -756,7 +818,7 @@ fn draw_slot_hud(
     });
     let atlas = icon_atlas.get_or_insert_with(|| asset_server.load("tactical-equipment-icons.png"));
     let atlas_texture = contexts.add_image(EguiTextureHandle::Weak(atlas.id()));
-    let procedural_textures = weapon_appearances
+    let mut procedural_textures = weapon_appearances
         .iter()
         .filter_map(|(entity, appearance)| {
             let handle = cached_weapon_icon(appearance, &mut weapon_icon_cache, &mut images)?;
@@ -764,6 +826,15 @@ fn draw_slot_hud(
             Some((entity, texture))
         })
         .collect::<HashMap<_, _>>();
+    procedural_textures.extend(
+        holder_appearances
+            .iter()
+            .filter_map(|(entity, appearance)| {
+                let handle = cached_holder_icon(appearance, &mut weapon_icon_cache, &mut images)?;
+                let texture = contexts.add_image(EguiTextureHandle::Weak(handle.id()));
+                Some((entity, texture))
+            }),
+    );
     let Ok(context) = contexts.ctx_mut() else {
         return;
     };
@@ -1511,6 +1582,29 @@ mod tests {
             design_hash: adventuresim_weapon_model::holder_design_hash(&holder).0,
             recipe: adventuresim_weapon_model::encode_holder(&holder).unwrap(),
         }
+    }
+
+    #[test]
+    fn identical_holder_recipes_share_cached_tactical_icon_handles() {
+        let appearance = longsword_holder_appearance();
+        let mut cache = WeaponIconCache::default();
+        let mut images = Assets::<Image>::default();
+        let first = cached_holder_icon(&appearance, &mut cache, &mut images).unwrap();
+        let second = cached_holder_icon(&appearance, &mut cache, &mut images).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(cache.icons.len(), 1);
+    }
+
+    #[test]
+    fn tactical_holder_icon_cache_reauthenticates_before_a_warm_hit() {
+        let valid = longsword_holder_appearance();
+        let mut cache = WeaponIconCache::default();
+        let mut images = Assets::<Image>::default();
+        assert!(cached_holder_icon(&valid, &mut cache, &mut images).is_some());
+        let mut tampered = valid;
+        tampered.recipe[5] ^= 0x3c;
+        assert!(cached_holder_icon(&tampered, &mut cache, &mut images).is_none());
+        assert_eq!(cache.icons.len(), 1);
     }
 
     #[test]

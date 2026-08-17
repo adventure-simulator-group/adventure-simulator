@@ -157,6 +157,7 @@ pub mod backend_social_chat_receipt_type;
 pub mod backend_social_chat_receipts_table;
 pub mod backend_tincture_status_type;
 pub mod backend_tincture_statuses_table;
+pub mod backend_weapon_holder_instances_table;
 pub mod backend_weapon_instances_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
@@ -1096,6 +1097,7 @@ pub use backend_social_chat_receipt_type::BackendSocialChatReceipt;
 pub use backend_social_chat_receipts_table::*;
 pub use backend_tincture_status_type::BackendTinctureStatus;
 pub use backend_tincture_statuses_table::*;
+pub use backend_weapon_holder_instances_table::*;
 pub use backend_weapon_instances_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
@@ -4855,6 +4857,7 @@ pub struct DbUpdate {
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     backend_social_chat_receipts: __sdk::TableUpdate<BackendSocialChatReceipt>,
     backend_tincture_statuses: __sdk::TableUpdate<BackendTinctureStatus>,
+    backend_weapon_holder_instances: __sdk::TableUpdate<WeaponHolderInstance>,
     backend_weapon_instances: __sdk::TableUpdate<WeaponInstance>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
@@ -5198,6 +5201,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_tincture_statuses" => db_update.backend_tincture_statuses.append(
                     backend_tincture_statuses_table::parse_table_update(table_update)?,
                 ),
+                "backend_weapon_holder_instances" => {
+                    db_update.backend_weapon_holder_instances.append(
+                        backend_weapon_holder_instances_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_weapon_instances" => db_update.backend_weapon_instances.append(
                     backend_weapon_instances_table::parse_table_update(table_update)?,
                 ),
@@ -5936,6 +5944,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_tincture_statuses",
             &self.backend_tincture_statuses,
         );
+        diff.backend_weapon_holder_instances = cache.apply_diff_to_table::<WeaponHolderInstance>(
+            "backend_weapon_holder_instances",
+            &self.backend_weapon_holder_instances,
+        );
         diff.backend_weapon_instances = cache.apply_diff_to_table::<WeaponInstance>(
             "backend_weapon_instances",
             &self.backend_weapon_instances,
@@ -6182,6 +6194,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_tincture_statuses" => db_update
                     .backend_tincture_statuses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_weapon_holder_instances" => db_update
+                    .backend_weapon_holder_instances
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_weapon_instances" => db_update
                     .backend_weapon_instances
@@ -6589,6 +6604,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_tincture_statuses" => db_update
                     .backend_tincture_statuses
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_weapon_holder_instances" => db_update
+                    .backend_weapon_holder_instances
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_weapon_instances" => db_update
                     .backend_weapon_instances
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6865,6 +6883,7 @@ pub struct AppliedDiff<'r> {
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     backend_social_chat_receipts: __sdk::TableAppliedDiff<'r, BackendSocialChatReceipt>,
     backend_tincture_statuses: __sdk::TableAppliedDiff<'r, BackendTinctureStatus>,
+    backend_weapon_holder_instances: __sdk::TableAppliedDiff<'r, WeaponHolderInstance>,
     backend_weapon_instances: __sdk::TableAppliedDiff<'r, WeaponInstance>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
@@ -7291,6 +7310,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendTinctureStatus>(
             "backend_tincture_statuses",
             &self.backend_tincture_statuses,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<WeaponHolderInstance>(
+            "backend_weapon_holder_instances",
+            &self.backend_weapon_holder_instances,
             event,
         );
         callbacks.invoke_table_row_callbacks::<WeaponInstance>(
@@ -8288,6 +8312,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_social_beliefs_table::register_table(client_cache);
         backend_social_chat_receipts_table::register_table(client_cache);
         backend_tincture_statuses_table::register_table(client_cache);
+        backend_weapon_holder_instances_table::register_table(client_cache);
         backend_weapon_instances_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
@@ -8421,6 +8446,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_social_beliefs",
         "backend_social_chat_receipts",
         "backend_tincture_statuses",
+        "backend_weapon_holder_instances",
         "backend_weapon_instances",
         "battle_loot_item",
         "battle_participant",
