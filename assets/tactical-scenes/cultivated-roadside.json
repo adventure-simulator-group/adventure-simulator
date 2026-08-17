@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "generation_version": 8,
+  "schema_version": 2,
+  "generation_version": 9,
   "seed": 47106,
   "scene_key": "roadside",
   "source": {
@@ -32101,7 +32101,7 @@
     ]
   },
   "weather": {
-    "rules_version": 2,
+    "rules_version": 3,
     "interval_start_minute": 340440,
     "cell_latitude": 214,
     "cell_longitude": 40,
@@ -32110,6 +32110,24 @@
     "precipitation": "clear",
     "intensity_bps": 0,
     "ground_moisture_bps": 100,
-    "snow_cover_bps": 0
+    "snow_cover_bps": 0,
+    "atmosphere": {
+      "relative_humidity_bps": 5800,
+      "dew_point_deci_c": 36,
+      "sea_level_pressure_deci_hpa": 10180,
+      "wind_direction_degrees": 245,
+      "wind_shear_bps": 2500,
+      "instability_bps": 4200,
+      "lift_bps": -500,
+      "low_cloud": {
+        "form": "cumulus",
+        "coverage_bps": 2800,
+        "optical_density_bps": 4000,
+        "base_metres": 1050,
+        "top_metres": 2700
+      },
+      "middle_cloud": null,
+      "high_cloud": null
+    }
   }
 }

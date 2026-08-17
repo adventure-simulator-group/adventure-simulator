@@ -16,11 +16,12 @@ use bevy::{
 
 use super::obstacles::tree::{
     BLACKTHORN_BARK, BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_BARK, COMMON_HAWTHORN_PARAMETERS,
-    COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, TacticalTreeImpostorMaterial,
-    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, blackthorn_leaf_material,
-    hawthorn_leaf_material, hazel_leaf_material, procedural_woody_branch_mesh,
-    procedural_woody_cambered_leaf_mesh, procedural_woody_leaf_card_mesh,
-    procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, TacticalTreeBarkMaterial,
+    TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial, TreeLeafRepresentation,
+    blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
+    procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
+    procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
+    procedural_woody_plant_skeleton,
 };
 use super::{
     PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
@@ -157,6 +158,7 @@ pub(super) fn update_grass_interaction(
 
 pub(super) fn update_celestial_material_lighting(
     celestial: Res<PresentedCelestialLighting>,
+    mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut pebble_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
 ) {
@@ -173,6 +175,9 @@ pub(super) fn update_celestial_material_lighting(
     } else {
         Vec3::new(0.25, 0.92, 0.3).normalize()
     };
+    for (_, material) in bark_materials.iter_mut() {
+        material.extension.lighting = direction.extend(celestial.material_light_factor);
+    }
     for (_, material) in impostor_materials.iter_mut() {
         material.lighting = direction.extend(celestial.material_light_factor);
         material.ambient = celestial

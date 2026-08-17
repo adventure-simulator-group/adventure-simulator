@@ -782,6 +782,7 @@ fn terrain_route_json(
         "intensity_bps": weather.intensity_bps,
         "ground_moisture_bps": weather.ground_moisture_bps,
         "snow_cover_bps": weather.snow_cover_bps,
+        "atmosphere": weather.atmosphere,
         "distance_m": plan.distance_m,
         "minutes": plan.minutes,
         "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),

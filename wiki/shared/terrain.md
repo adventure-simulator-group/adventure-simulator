@@ -43,58 +43,63 @@ parallax longer than a direct crown-to-billboard swap. Runtime atlas generation
 rasterizes low-sided woody silhouette tubes and progressively sampled,
 coverage-compensated leaves rather than rebuilding the multi-million-triangle
 production bark and leaf meshes for every card. The directly viewed near trunk,
-root flare, bark relief, and leaf cards remain the full production meshes. The
-complete load-bearing trunk and root system is one bounded implicit surface,
-eliminating the unrelated mesh loops and normal discontinuity of a flare/tube
-handoff. Swept higher-order branches duplicate their cylindrical wrap position
-and normal exactly. Bark fissure phases vary deterministically per specimen and
-close into irregular plates, so no permanent groove advertises that wrap.
-Intermediate crown wood excludes the depth-zero root flare because the
-separately streamed trunk remains resident, avoiding duplicate geometry and
-duplicate Surface Nets construction. Oak terminal shoots occur in separated
-pulses along each secondary axis. Their compact leaf flushes form a handful of
-readable foliage masses with stable interior windows instead of a uniformly
-noisy twig lattice. Every aggregate tree card is baked from this same clustered
-source geometry, preserving those masses and gaps across LOD transitions.
-Unresolved canopy occlusion is bounded and paired with diffuse leaf transmission
-so crown interiors remain legible in WebGPU without a separate subsurface or
-screen-space effect. The individual-leaf crown uses an 8-triangle cambered PBR
-card and a 30-triangle terminal bud. Once that camber falls below useful screen
-size, each leaf cross-fades to a two-triangle flat PBR card before terminal
-shoots collapse into twig cards. Both leaf stages use the same generated oak
-front/back albedo, DirectX normal maps, AO/roughness, and opacity mask; the
-cambered card supplies close depth and foreshortening while the mask preserves
-one lobed silhouette throughout the transition. Both stages retain the same
-biological attachment, two-sided shading, per-leaf shade variation, and
-vertex-shader wind phase. Seven stable primary scaffold clusters each carry
-their own individual leaves, terminal buds, progressively simplified wood,
-leafed-twig cards, small-branch cards, and crown cards. Projected screen size is
-evaluated from the active camera's field of view and viewport height against
-each cluster's own bounds, so the far side of a nearby crown may collapse before
-the near side. Dither bands cross-fade adjacent representations without a
-whole-tree topology pop. The cheap aggregate tiers deliberately overlap their
-full-strength intervals: the incoming silhouette fades in before the outgoing,
-non-identical silhouette fades away, preventing transition holes. Only the final
-distant billboard is selected for the entire tree. Generated variants reuse
-cached mesh and material handles, allowing Bevy's WebGPU renderer to instance
-repeated trees automatically. The cache initially retains only the deterministic
-branch/leaf recipe output and shared materials. Trunks, detailed scaffold
-meshes, the cambered and flat leaf representations, aggregate crown wood, and
-each baked atlas are generated only when the camera's conservative LOD-residency
-mask first requests them. The two individual-leaf meshes coexist only in a
-widened handoff band; a camera wholly inside either leaf tier does not construct
-the other representation merely because it belongs to the same tree. This is
-demand generation rather than eviction: once requested, a variant's handles
-remain cached for reuse during the scene. Leaf wind is evaluated in the vertex
-shader with fixed petiole roots, spatially varied gusts, and high-frequency tip
-flutter; no per-frame CPU deformation or non-WebGPU feature is required. The
-open-grown reference LOD0 is capped by test at 3.6 million triangles, versus
-roughly 9.1 million before leaf and bud retopology. The scene's world-data
-canopy coverage also shapes the source skeleton continuously: sparse coverage
-yields low, wide open-grown trees, while dense coverage yields taller trees
-whose first scaffold branches sit above the clear bole. This value is part of
-deterministic generation rather than a query over spawned neighbors, preserving
-parallel tree construction.
+root flare, and leaf cards remain the full production meshes. Oak bark relief is
+evaluated in its near-tree material from three scalar-height projections whose
+growth coordinates follow the metric branch sweep. Its packed ambient occlusion
+combines a half-resolution broad horizon with full-resolution local cavity
+sharpening. Bounded mip-aware near-camera parallax and a three-step
+dominant-light horizon add view-dependent cavity depth without altering the mesh
+or tactical collider. The complete load-bearing trunk and root system is one
+bounded implicit surface, eliminating the unrelated mesh
+loops and normal discontinuity of a flare/tube handoff. Swept higher-order
+branches duplicate their cylindrical wrap position and normal exactly. Bark
+fissure phases vary deterministically per specimen and close into irregular
+plates, so no permanent groove advertises that wrap. Intermediate crown wood
+excludes the depth-zero root flare because the separately streamed trunk remains
+resident, avoiding duplicate geometry and duplicate Surface Nets construction.
+Oak terminal shoots occur in separated pulses along each secondary axis. Their
+compact leaf flushes form a handful of readable foliage masses with stable
+interior windows instead of a uniformly noisy twig lattice. Every aggregate tree
+card is baked from this same clustered source geometry, preserving those masses
+and gaps across LOD transitions. Unresolved canopy occlusion is bounded and
+paired with diffuse leaf transmission so crown interiors remain legible in
+WebGPU without a separate subsurface or screen-space effect. The individual-leaf
+crown uses an 8-triangle cambered PBR card and a 30-triangle terminal bud. Once
+that camber falls below useful screen size, each leaf cross-fades to a
+two-triangle flat PBR card before terminal shoots collapse into twig cards. Both
+leaf stages use the same generated oak front/back albedo, DirectX normal maps,
+AO/roughness, and opacity mask; the cambered card supplies close depth and
+foreshortening while the mask preserves one lobed silhouette throughout the
+transition. Both stages retain the same biological attachment, two-sided
+shading, per-leaf shade variation, and vertex-shader wind phase. Seven stable
+primary scaffold clusters each carry their own individual leaves, terminal buds,
+progressively simplified wood, leafed-twig cards, small-branch cards, and crown
+cards. Projected screen size is evaluated from the active camera's field of view
+and viewport height against each cluster's own bounds, so the far side of a
+nearby crown may collapse before the near side. Dither bands cross-fade adjacent
+representations without a whole-tree topology pop. The cheap aggregate tiers
+deliberately overlap their full-strength intervals: the incoming silhouette
+fades in before the outgoing, non-identical silhouette fades away, preventing
+transition holes. Only the final distant billboard is selected for the entire
+tree. Generated variants reuse cached mesh and material handles, allowing Bevy's
+WebGPU renderer to instance repeated trees automatically. The cache initially
+retains only the deterministic branch/leaf recipe output and shared materials.
+Trunks, detailed scaffold meshes, the cambered and flat leaf representations,
+aggregate crown wood, and each baked atlas are generated only when the camera's
+conservative LOD-residency mask first requests them. The two individual-leaf
+meshes coexist only in a widened handoff band; a camera wholly inside either
+leaf tier does not construct the other representation merely because it belongs
+to the same tree. This is demand generation rather than eviction: once
+requested, a variant's handles remain cached for reuse during the scene. Leaf
+wind is evaluated in the vertex shader with fixed petiole roots, spatially
+varied gusts, and high-frequency tip flutter; no per-frame CPU deformation or
+non-WebGPU feature is required. The open-grown reference LOD0 is capped by test
+at 3.6 million triangles, versus roughly 9.1 million before leaf and bud
+retopology. The scene's world-data canopy coverage also shapes the source
+skeleton continuously: sparse coverage yields low, wide open-grown trees, while
+dense coverage yields taller trees whose first scaffold branches sit above the
+clear bole. This value is part of deterministic generation rather than a query
+over spawned neighbors, preserving parallel tree construction.
 
 Playable terrain also carries a replicated, authoritative `SceneGround` grid
 aligned with its height samples. Each location has one semantic substrate, one
@@ -235,22 +240,26 @@ occlusion responses; a small solid-color palette and softened upward normals
 keep the dense field readable without making individual cards look heavily lit.
 A procedural terrain material selects hard-bounded forest floor, dry ground,
 mud, cultivation, stone, water, and snow albedo regions. Both playable and vista
-ground omit albedo textures, normal maps, and synthesized micro-normal detail;
-lighting uses terrain-geometry normals only. A camera-local 40-metre detail
-patch refines that geometric normal response to a 25-centimetre grid without
-changing the authoritative two-metre collider. Its world-space, centimetre-scale
-relief is deterministic and fades to the source surface over the outer 4.5
-metres. The residual height is signed and bounded to roughly seven centimetres
-down and ten centimetres up: broad soil undulation and sparse clods break up
-flat ground; local terrain gradients orient narrow drainage rills downhill and
-soil-creep ridges across slopes; concavity gathers a shallow sediment layer.
-Water stays flat. Road samples infer the local road axis and edges from
-authoritative ground semantics, then form a raised crown and paired compacted
-wheel ruts. Nearby replicated tree positions add a shallow mound, basin, and
-several long curved radial root ridges, tying the ground silhouette to the
-generated roots instead of applying unrelated noise. Stone and gravel suppress
-soil clods in favor of broad contour-following bedrock ledges and sparse
-intersecting fractures. Nearby replicated boulders carve a shallow visual
+ground omit sampled albedo. Near walkable soil adds one shared 1024-square RG8
+height/AO sample with a complete mip chain; world-XZ mapping and screen-space
+height derivatives perturb the geometric normal without storing a normal map.
+The two-metre tile represents sub-two-centimetre compacted earth, hollows,
+clods, and fine aggregate, then fades from 12 to 24 metres and is suppressed on
+steep, stone, gravel, water, and snow-covered surfaces. A camera-local 40-metre
+detail patch refines the underlying geometric normal response to a 25-centimetre
+grid without changing the authoritative two-metre collider. Its world-space,
+centimetre-scale relief is deterministic and fades to the source surface over
+the outer 4.5 metres. The residual height is signed and bounded to roughly seven
+centimetres down and ten centimetres up: broad soil undulation and sparse clods
+break up flat ground; local terrain gradients orient narrow drainage rills
+downhill and soil-creep ridges across slopes; concavity gathers a shallow
+sediment layer. Water stays flat. Road samples infer the local road axis and
+edges from authoritative ground semantics, then form a raised crown and paired
+compacted wheel ruts. Nearby replicated tree positions add a shallow mound,
+basin, and several long curved radial root ridges, tying the ground silhouette
+to the generated roots instead of applying unrelated noise. Stone and gravel
+suppress soil clods in favor of broad contour-following bedrock ledges and
+sparse intersecting fractures. Nearby replicated boulders carve a shallow visual
 socket, build a contact apron, and deposit a widening downhill debris tail, so
 the rock mass meets the landform instead of resting on a flat plane. These
 obstacle-aware residuals remain presentation-only and do not alter the
@@ -275,30 +284,30 @@ and open-soil colors, and grades grass density and height across a 4.8-metre
 exterior band. Sparse fallen leaves, twigs, and multi-segment shade-plant
 rosettes extend into the outer 3.2 metres while the deep core stays mostly bare.
 These remain solid molded-material regions and procedural meshes rather than
-ground texture detail. Tree sampling follows canopy coverage; rock sampling uses
-an independent deterministic roll scaled by hilly coverage, so the two features
-do not suppress one another. Weather affects ground wetness/snow tint, bounded
-rain or snow particles, wind drift, sunlight transmission, and distance fog.
-Clear weather retains a subtle kilometre-scale contrast haze beyond tactical
-gameplay range. At the playable boundary, the first vista ring reuses exact edge
-heights and eases the solid substrate pigment over several regional samples
-while preserving its independent geometric-sward coverage. Coarse vista samples
-preserve local peaks and render as seam-sharing rings of independently culled
-32-by-32-cell mesh chunks out to 50 km. Chunking changes only CPU/ECS submission
-and culling granularity, not regional sampling or visible tessellation, and
-avoids tens of thousands of startup-time entities; coarser rings leave the
-playable and finer-ring interiors open rather than overdrawing them. The
-50-metre and 250-metre regional rings also deterministically scatter bounded
-samples of the production whole-tree impostor over canopy-bearing cells; the
-outer ring relies on aggregate canopy colour. Those presentation-only trees
-share one cached atlas family, have no gameplay collider, and are seated on the
-same morphed vista surface as the terrain. Tree stand sampling scales with
-physical cell area instead of capping the first 250-metre ring to three
-silhouettes. Exposed terrain likewise continues rocks beyond the playable
-rectangle: a shared procedural mesh hands off to a twelve-face silhouette mesh,
-then to the vista terrain's aggregate rock palette before either representation
-becomes subpixel. None of this vista scatter gains collision or server
-authority.
+being baked into the soil texture. Tree sampling follows canopy coverage; rock
+sampling uses an independent deterministic roll scaled by hilly coverage, so the
+two features do not suppress one another. Weather affects ground wetness/snow
+tint, bounded rain or snow particles, wind drift, sunlight transmission, and
+distance fog. Clear weather retains a subtle kilometre-scale contrast haze
+beyond tactical gameplay range. At the playable boundary, the first vista ring
+reuses exact edge heights and eases the solid substrate pigment over several
+regional samples while preserving its independent geometric-sward coverage.
+Coarse vista samples preserve local peaks and render as seam-sharing rings of
+independently culled 32-by-32-cell mesh chunks out to 50 km. Chunking changes
+only CPU/ECS submission and culling granularity, not regional sampling or
+visible tessellation, and avoids tens of thousands of startup-time entities;
+coarser rings leave the playable and finer-ring interiors open rather than
+overdrawing them. The 50-metre and 250-metre regional rings also
+deterministically scatter bounded samples of the production whole-tree impostor
+over canopy-bearing cells; the outer ring relies on aggregate canopy colour.
+Those presentation-only trees share one cached atlas family, have no gameplay
+collider, and are seated on the same morphed vista surface as the terrain. Tree
+stand sampling scales with physical cell area instead of capping the first
+250-metre ring to three silhouettes. Exposed terrain likewise continues rocks
+beyond the playable rectangle: a shared procedural mesh hands off to a
+twelve-face silhouette mesh, then to the vista terrain's aggregate rock palette
+before either representation becomes subpixel. None of this vista scatter gains
+collision or server authority.
 
 Near-tree PBR leaf cards participate in the horizon-aware directional shadow
 map, producing both cast shadows and leaf-on-leaf self shadow. Their vertex data

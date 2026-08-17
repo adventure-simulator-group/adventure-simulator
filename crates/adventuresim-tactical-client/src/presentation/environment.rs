@@ -52,11 +52,12 @@ pub(super) fn scene_sunlight_illuminance(
     sun_altitude_degrees: f32,
 ) -> f32 {
     let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
-    let transmission = match environment.weather.precipitation {
+    let precipitation_transmission = match environment.weather.precipitation {
         Precipitation::Clear => 1.0,
         Precipitation::Rain => 0.62 - intensity * 0.27,
         Precipitation::Snow => 0.72 - intensity * 0.22,
     };
+    let transmission = cloud_solar_transmission(environment.weather) * precipitation_transmission;
     let altitude = (sun_altitude_degrees / 8.0).clamp(0.0, 1.0);
     let altitude_transmission = altitude * altitude * (3.0 - 2.0 * altitude);
     lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0) * altitude_transmission
@@ -69,26 +70,64 @@ pub(super) fn scene_sunlight_illuminance(
 /// ground surfaces from below the planet horizon.
 pub(super) fn scene_atmosphere_solar_illuminance(environment: &SceneEnvironment) -> f32 {
     let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
-    let transmission = match environment.weather.precipitation {
+    let precipitation_transmission = match environment.weather.precipitation {
         Precipitation::Clear => 1.0,
         Precipitation::Rain => 0.62 - intensity * 0.27,
         Precipitation::Snow => 0.72 - intensity * 0.22,
     };
+    let transmission = cloud_solar_transmission(environment.weather) * precipitation_transmission;
     lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0)
+}
+
+pub(super) fn cloud_solar_transmission(weather: WeatherSnapshot) -> f32 {
+    weather
+        .cloud_layers()
+        .fold(1.0, |transmission, layer| {
+            let coverage = f32::from(layer.coverage_bps) / 10_000.0;
+            let density = f32::from(layer.optical_density_bps) / 10_000.0;
+            transmission * (1.0 - coverage * density * 0.82)
+        })
+        .clamp(0.12, 1.0)
 }
 
 pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog {
     let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
+    let humidity = ((f32::from(environment.weather.atmosphere.relative_humidity_bps) - 7_000.0)
+        / 3_000.0)
+        .clamp(0.0, 1.0);
+    let low_stratus = environment
+        .weather
+        .atmosphere
+        .low_cloud
+        .is_some_and(|layer| matches!(layer.form, CloudForm::Stratus) && layer.base_metres <= 250);
+    let clear_air_fog = if low_stratus {
+        humidity.max(0.8)
+    } else {
+        humidity * humidity * 0.65
+    };
     let (start, end, color) = match environment.weather.precipitation {
         // Even clear continental air loses contrast over kilometres. Starting
         // the blend beyond tactical ranges gives regional ridges and tree
         // lines depth without washing out nearby gameplay silhouettes.
-        Precipitation::Clear => (2_500.0, 42_000.0, Color::srgb_u8(188, 201, 207)),
-        Precipitation::Rain => (
-            800.0 + 3_500.0 * (1.0 - intensity),
-            3_000.0 + 14_000.0 * (1.0 - intensity),
-            Color::srgb_u8(112, 126, 135),
+        Precipitation::Clear => (
+            2_500.0 + (120.0 - 2_500.0) * clear_air_fog,
+            42_000.0 + (1_800.0 - 42_000.0) * clear_air_fog,
+            Color::srgb_u8(188, 201, 207),
         ),
+        Precipitation::Rain => {
+            // Rain curtains provide structured mid-distance extinction, while
+            // this ordinary depth fog supplies the unresolved droplets between
+            // them. Pull it into tactical range only for genuinely heavy rain;
+            // light showers retain long visibility without volumetric lighting.
+            let downpour = smoothstep(0.45, 0.92, intensity);
+            let ordinary_start = 800.0 + 3_500.0 * (1.0 - intensity);
+            let ordinary_end = 3_000.0 + 14_000.0 * (1.0 - intensity);
+            (
+                ordinary_start + (40.0 - ordinary_start) * downpour,
+                ordinary_end + (340.0 - ordinary_end) * downpour,
+                Color::srgb_u8(112, 126, 135),
+            )
+        }
         Precipitation::Snow => (
             600.0 + 2_500.0 * (1.0 - intensity),
             2_500.0 + 10_000.0 * (1.0 - intensity),
@@ -276,6 +315,7 @@ mod tests {
                 intensity_bps,
                 ground_moisture_bps: 0,
                 snow_cover_bps: 0,
+                atmosphere: Default::default(),
             },
             canopy_bps: 0,
             wetland_bps: 0,
@@ -336,6 +376,54 @@ mod tests {
         };
         assert!(fog_end(&rain) < fog_end(&clear));
         assert!(fog_end(&snow) < fog_end(&clear));
+    }
+
+    #[test]
+    fn severe_rain_uses_bounded_tactical_distance_fog() {
+        let severe = scene_distance_fog(&environment(Precipitation::Rain, 10_000));
+        let light = scene_distance_fog(&environment(Precipitation::Rain, 2_500));
+        let FogFalloff::Linear {
+            start: severe_start,
+            end: severe_end,
+        } = severe.falloff
+        else {
+            panic!("rain must use bounded linear fog");
+        };
+        let FogFalloff::Linear {
+            start: light_start,
+            end: light_end,
+        } = light.falloff
+        else {
+            panic!("rain must use bounded linear fog");
+        };
+        assert!(severe_start <= 45.0);
+        assert!(severe_end <= 350.0);
+        assert!(light_start > 3_000.0);
+        assert!(light_end > 12_000.0);
+    }
+
+    #[test]
+    fn saturated_surface_stratus_becomes_ground_fog_without_precipitation() {
+        let clear = environment(Precipitation::Clear, 0);
+        let mut saturated = clear.clone();
+        saturated.weather.atmosphere.relative_humidity_bps = 9_800;
+        saturated.weather.atmosphere.low_cloud = Some(CloudLayerSnapshot {
+            form: CloudForm::Stratus,
+            coverage_bps: 9_000,
+            optical_density_bps: 6_000,
+            base_metres: 120,
+            top_metres: 700,
+        });
+        let fog_end = |environment: &SceneEnvironment| match scene_distance_fog(environment).falloff
+        {
+            FogFalloff::Linear { end, .. } => end,
+            _ => panic!("scene weather must use bounded linear fog"),
+        };
+        assert!(fog_end(&saturated) < 5_000.0);
+        assert!(fog_end(&saturated) < fog_end(&clear));
+        assert!(
+            scene_sunlight_illuminance(&saturated, 30.0) < scene_sunlight_illuminance(&clear, 30.0)
+        );
     }
 
     #[test]

@@ -48,7 +48,7 @@ fn main() {
     }
 }
 
-fn fixtures() -> [Fixture; 11] {
+fn fixtures() -> [Fixture; 13] {
     [
         fixture(
             "flat-dry-grassland",
@@ -107,12 +107,28 @@ fn fixtures() -> [Fixture; 11] {
             snow(6_500, 2_500),
         ),
         fixture(
+            "light-rain-low-wind",
+            "rain",
+            47_112,
+            rolling,
+            wet_open,
+            rain(2_500, 2_000),
+        ),
+        fixture(
             "heavy-rain-high-wind",
             "storm",
             47_108,
             rolling,
             wet_open,
             rain(9_500, 9_000),
+        ),
+        fixture(
+            "severe-downpour",
+            "severe-storm",
+            47_113,
+            rolling,
+            wet_open,
+            rain(10_000, 10_000),
         ),
         Fixture {
             vista: VistaKind::ValleyRidge,
@@ -372,5 +388,73 @@ const fn weather(
         intensity_bps,
         ground_moisture_bps,
         snow_cover_bps,
+        atmosphere: match precipitation {
+            Precipitation::Clear => AtmosphericSnapshot {
+                relative_humidity_bps: 5_800,
+                dew_point_deci_c: temperature_deci_c - 84,
+                sea_level_pressure_deci_hpa: 10_180,
+                wind_direction_degrees: 245,
+                wind_shear_bps: 2_500,
+                instability_bps: 4_200,
+                lift_bps: -500,
+                low_cloud: Some(CloudLayerSnapshot {
+                    form: CloudForm::Cumulus,
+                    coverage_bps: 2_800,
+                    optical_density_bps: 4_000,
+                    base_metres: 1_050,
+                    top_metres: 2_700,
+                }),
+                middle_cloud: None,
+                high_cloud: None,
+            },
+            Precipitation::Rain => AtmosphericSnapshot {
+                relative_humidity_bps: 9_500,
+                dew_point_deci_c: temperature_deci_c - 10,
+                sea_level_pressure_deci_hpa: 9_920,
+                wind_direction_degrees: 70,
+                wind_shear_bps: 7_500,
+                instability_bps: 8_200,
+                lift_bps: 7_000,
+                low_cloud: Some(CloudLayerSnapshot {
+                    form: CloudForm::Cumulonimbus,
+                    coverage_bps: 8_800,
+                    optical_density_bps: 9_000,
+                    base_metres: 500,
+                    top_metres: 10_500,
+                }),
+                middle_cloud: None,
+                high_cloud: Some(CloudLayerSnapshot {
+                    form: CloudForm::Cirrus,
+                    coverage_bps: 3_500,
+                    optical_density_bps: 2_000,
+                    base_metres: 6_500,
+                    top_metres: 10_500,
+                }),
+            },
+            Precipitation::Snow => AtmosphericSnapshot {
+                relative_humidity_bps: 9_200,
+                dew_point_deci_c: temperature_deci_c - 16,
+                sea_level_pressure_deci_hpa: 10_020,
+                wind_direction_degrees: 110,
+                wind_shear_bps: 3_500,
+                instability_bps: 2_500,
+                lift_bps: 4_000,
+                low_cloud: Some(CloudLayerSnapshot {
+                    form: CloudForm::Stratocumulus,
+                    coverage_bps: 8_200,
+                    optical_density_bps: 6_500,
+                    base_metres: 550,
+                    top_metres: 1_800,
+                }),
+                middle_cloud: Some(CloudLayerSnapshot {
+                    form: CloudForm::Nimbostratus,
+                    coverage_bps: 8_800,
+                    optical_density_bps: 8_000,
+                    base_metres: 1_800,
+                    top_metres: 5_500,
+                }),
+                high_cloud: None,
+            },
+        },
     }
 }

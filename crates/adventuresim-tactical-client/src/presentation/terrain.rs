@@ -1,3 +1,4 @@
+use super::procedural_assets::{FOREST_SOIL_HEIGHT_RANGE_METRES, FOREST_SOIL_TILE_METRES};
 use super::*;
 
 const TERMINAL_SWARD_FADE_START_METRES: f32 = 124.0;
@@ -70,9 +71,14 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     playable_bounds: Vec4,
     #[uniform(100)]
     detail_patch: Vec4,
+    #[uniform(100)]
+    soil_detail: Vec4,
     #[texture(101)]
     #[sampler(102)]
     ground_map: Handle<Image>,
+    #[texture(103)]
+    #[sampler(104)]
+    soil_height_ao: Handle<Image>,
 }
 
 impl MaterialExtension for TacticalTerrainExtension {
@@ -128,6 +134,7 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    procedural_assets: Res<ProceduralEnvironmentAssets>,
     vista: Res<ActiveVistaSurface>,
     obstacles: Query<(&SceneObstacle, &Transform)>,
 ) {
@@ -150,7 +157,13 @@ pub(in crate::presentation) fn present_pending_terrain(
                     .find(|(source, _, _, _)| source.0 == entity),
             ) {
                 if materials.get(&handle.0).is_some() && materials.get(&detail_handle.0).is_some() {
-                    let material = terrain_material(terrain, environment, ground, &mut images);
+                    let material = terrain_material(
+                        terrain,
+                        environment,
+                        ground,
+                        &procedural_assets,
+                        &mut images,
+                    );
                     *materials
                         .get_mut(&handle.0)
                         .expect("checked terrain material") = material.clone();
@@ -179,7 +192,13 @@ pub(in crate::presentation) fn present_pending_terrain(
                 }
             } else {
                 info!(?entity, "Spawning a scene {id:?}");
-                let material = terrain_material(terrain, environment, ground, &mut images);
+                let material = terrain_material(
+                    terrain,
+                    environment,
+                    ground,
+                    &procedural_assets,
+                    &mut images,
+                );
                 let mut detail_material = material.clone();
                 detail_material.base.depth_bias = DETAIL_PATCH_DEPTH_BIAS;
                 detail_material.extension.detail_patch.x = 0.0;
@@ -755,6 +774,7 @@ pub(in crate::presentation) fn terrain_material(
     terrain: &SceneTerrain,
     environment: &SceneEnvironment,
     ground: Option<&SceneGround>,
+    procedural_assets: &ProceduralEnvironmentAssets,
     images: &mut Assets<Image>,
 ) -> TacticalTerrainMaterial {
     TacticalTerrainMaterial {
@@ -801,10 +821,20 @@ pub(in crate::presentation) fn terrain_material(
             // safely covered interior beneath the signed detail patch; the
             // outer overlap remains coplanar and morphs continuously.
             detail_patch: Vec4::new(1.0, DETAIL_PATCH_BASE_CUTOUT_RADIUS_METRES, 0.0, 0.0),
+            // x is tile repetitions per metre, y is the decoded physical
+            // height range, z scales the derivative normal, and w is the
+            // distance where sub-centimetre detail is completely absent.
+            soil_detail: Vec4::new(
+                1.0 / FOREST_SOIL_TILE_METRES,
+                FOREST_SOIL_HEIGHT_RANGE_METRES,
+                1.0,
+                24.0,
+            ),
             ground_map: images.add(ground_map_image(
                 ground,
                 stable_text_seed(&environment.scene_digest),
             )),
+            soil_height_ao: procedural_assets.forest_soil.height_ao.clone(),
         },
     }
 }
@@ -1055,6 +1085,7 @@ pub(in crate::presentation) fn legacy_scene_environment(id: &SceneId) -> SceneEn
             intensity_bps: 0,
             ground_moisture_bps: 0,
             snow_cover_bps: 0,
+            atmosphere: Default::default(),
         },
         canopy_bps,
         wetland_bps: 0,
@@ -1086,16 +1117,24 @@ mod tests {
     use bevy::asset::{AssetApp, AssetPlugin};
 
     #[test]
-    fn ground_shader_uses_solid_palette_colors_without_surface_texture_detail() {
+    fn ground_shader_keeps_solid_palette_albedo_and_uses_one_planar_height_ao_sample() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_terrain.wgsl"
         ));
         assert!(shader.contains("var ground_map: texture_2d<f32>"));
+        assert!(shader.contains("var soil_height_ao: texture_2d<f32>"));
+        assert_eq!(
+            shader.matches("textureSample(soil_height_ao,").count(),
+            1,
+            "forest soil should add exactly one packed texture fetch"
+        );
         assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(color, 1.0)"));
         assert!(shader.contains("distance(position, view.lod_view_world_position.xyz)"));
         assert!(shader.contains("distance(position.xz, view.lod_view_world_position.xz)"));
-        assert!(shader.contains("pbr_input.N = select(readable_detail_normal"));
+        assert!(shader.contains("let soil_uv = position.xz * terrain.soil_detail.x"));
+        assert!(shader.contains("let height_dx = dpdx(height_metres)"));
+        assert!(shader.contains("pbr_input.diffuse_occlusion *= mix(1.0, soil_sample.g"));
         assert!(!shader.contains("select(color, terrain.grass_color.rgb, tall_grass > 0.5)"));
         assert!(shader.contains("let shaded_substrate = select("));
         assert!(shader.contains("let canopy_floor = ground_sample.a"));
@@ -1159,6 +1198,11 @@ mod tests {
         app.init_asset::<Mesh>();
         app.init_asset::<TacticalTerrainMaterial>();
         app.init_resource::<ActiveVistaSurface>();
+        let procedural_assets = {
+            let mut images = app.world_mut().resource_mut::<Assets<Image>>();
+            generate_procedural_environment_assets(&mut images)
+        };
+        app.insert_resource(procedural_assets);
         app.add_observer(on_game_scene_added);
         app.add_observer(on_environment_added);
         app.add_observer(on_ground_added);

@@ -354,7 +354,14 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         in.color.rgb,
         lod_coverage,
     );
-    pbr_input.material.perceptual_roughness = 0.86;
+    // Ground foliage is grass. Its waxy cuticle produces a tighter highlight
+    // than the shared dry-twig and woodland-plant response, allowing the
+    // differently oriented blade normals to separate without albedo noise.
+    pbr_input.material.perceptual_roughness = select(
+        0.86,
+        0.60,
+        foliage.shading.w > 0.5,
+    );
     pbr_input.material.metallic = 0.0;
     pbr_input.material.reflectance = vec3<f32>(0.16);
     // Living blades are thin enough for broad diffuse transmission. This is
