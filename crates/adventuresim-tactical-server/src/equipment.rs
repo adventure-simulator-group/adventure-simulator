@@ -308,7 +308,7 @@ fn ordered_at_location(
     let mut reachable = Vec::new();
     let mut visited = HashSet::new();
     for (_, entity) in found {
-        append_reachable(entity, items, &mut visited, &mut reachable);
+        append_reachable(entity, location, items, &mut visited, &mut reachable);
     }
     reachable
 }
@@ -335,6 +335,7 @@ impl ReachableTarget {
 
 fn append_reachable(
     entity: Entity,
+    location: EquipmentLocation,
     items: &Query<ItemView<'_>>,
     visited: &mut HashSet<Entity>,
     output: &mut Vec<ReachableTarget>,
@@ -354,7 +355,10 @@ fn append_reachable(
     };
     let mut points: Vec<_> = equipment.attachment_points.iter().collect();
     points.sort_by_key(|point| (point.order, point.id.as_str()));
-    for point in points {
+    for point in points
+        .into_iter()
+        .filter(|point| point.locations.is_empty() || point.locations.contains(&location))
+    {
         for capacity_index in 0..point.capacity {
             let child = items
                 .iter()
@@ -370,7 +374,7 @@ fn append_reachable(
                 }).then_some(child)
                 });
             if let Some(child) = child {
-                append_reachable(child, items, visited, output);
+                append_reachable(child, location, items, visited, output);
             } else {
                 output.push(ReachableTarget::EmptyAttachment {
                     parent: entity,
@@ -1154,7 +1158,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_traversal_exposes_authored_empty_points_in_order() {
+    fn belt_locations_traverse_only_their_authored_attachment_points() {
         let mut world = World::new();
         let actor = world.spawn_empty().id();
         let belt = spawn_test_item(
@@ -1163,25 +1167,42 @@ mod tests {
             "leather_belt",
             EquipmentTopology {
                 placement_id: Some("worn".into()),
-                occupancies: vec![EquipmentTopologyOccupancy {
-                    occupancy_id: "belt".into(),
-                    anchor: TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftBelt),
+                occupancies: [
+                    EquipmentLocation::LeftBelt,
+                    EquipmentLocation::RightBelt,
+                    EquipmentLocation::FrontBelt,
+                    EquipmentLocation::BackBelt,
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(index, location)| EquipmentTopologyOccupancy {
+                    occupancy_id: format!("belt-{index}"),
+                    anchor: TacticalEquipmentAnchor::CharacterLocation(location),
                     channel: EquipmentChannel::Accessory,
                     order: 0,
-                    requirement_index: 0,
+                    requirement_index: index as u16,
                     capacity_index: 0,
-                }],
+                })
+                .collect(),
             },
         );
-        let reachable = world
-            .run_system_once(move |items: Query<ItemView<'_>>| {
-                ordered_at_location(actor, EquipmentLocation::LeftBelt, &items)
-            })
-            .unwrap();
-        assert!(
-            matches!(reachable.first(), Some(ReachableTarget::EmptyAttachment { attachment_point_id, .. }) if attachment_point_id == "left")
-        );
-        assert_eq!(reachable.last(), Some(&ReachableTarget::Occupied(belt)));
+        for (location, expected_point) in [
+            (EquipmentLocation::LeftBelt, "left"),
+            (EquipmentLocation::RightBelt, "right"),
+            (EquipmentLocation::FrontBelt, "front"),
+            (EquipmentLocation::BackBelt, "back"),
+        ] {
+            let reachable = world
+                .run_system_once(move |items: Query<ItemView<'_>>| {
+                    ordered_at_location(actor, location, &items)
+                })
+                .unwrap();
+            assert!(
+                matches!(reachable.first(), Some(ReachableTarget::EmptyAttachment { attachment_point_id, .. }) if attachment_point_id == expected_point)
+            );
+            assert_eq!(reachable.len(), 2);
+            assert_eq!(reachable.last(), Some(&ReachableTarget::Occupied(belt)));
+        }
     }
 
     #[test]

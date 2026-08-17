@@ -155,6 +155,10 @@ pub struct AttachmentPointDefinition {
     pub capacity: u16,
     #[serde(default)]
     pub order: u16,
+    /// Body locations whose slot inputs may traverse this point. Empty means
+    /// the point inherits every location through which its parent is reached.
+    #[serde(default)]
+    pub locations: Vec<EquipmentLocation>,
     /// Empty accepts any equipment-authored child; otherwise at least one
     /// child's attachment tag must match.
     #[serde(default)]
