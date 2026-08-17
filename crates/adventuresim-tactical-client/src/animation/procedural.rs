@@ -20,6 +20,7 @@ pub(crate) struct ProceduralCrouchState {
     base: Transform,
     applied: Transform,
     amount: f32,
+    pelvis_amount: f32,
     evaluation_tick: u64,
 }
 
@@ -91,19 +92,43 @@ fn additive_look_rotation(
 /// and reuse it when the same logical pose reaches this pass again.
 pub(super) fn apply_head_and_torso_look(
     mut commands: Commands,
-    owners: Query<(&CharacterLook, &PresentedSkeleton, &GlobalTransform)>,
-    mut bones: Query<(
-        Entity,
-        &HumanoidBone,
-        &mut Transform,
-        Option<&mut ProceduralLookState>,
+    owners: Query<(Entity, &CharacterLook, &PresentedSkeleton)>,
+    mut transforms: ParamSet<(
+        Query<&Transform>,
+        Query<(
+            Entity,
+            &HumanoidBone,
+            &mut Transform,
+            Option<&mut ProceduralLookState>,
+        )>,
     )>,
 ) {
-    for (entity, bone, mut transform, state) in &mut bones {
-        let Ok((look, skeleton, owner_transform)) = owners.get(bone.owner) else {
+    let owner_look = owners
+        .iter()
+        .filter_map(|(owner, look, skeleton)| {
+            // This pass runs before transform propagation. GlobalTransform is
+            // therefore one frame behind the current replicated root and
+            // would reapply that root yaw across the neck chain.
+            let owner_rotation = transforms.p0().get(owner).ok()?.rotation;
+            Some((
+                owner,
+                (
+                    guarded_camera_look(
+                        look,
+                        owner_rotation,
+                        skeleton.weapon_guard(),
+                        skeleton.is_posture_transitioning(),
+                    ),
+                    skeleton.action_direction().x.clamp(-1.0, 1.0) * 0.35,
+                    skeleton.locomotion_sample_tick,
+                ),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (entity, bone, mut transform, state) in &mut transforms.p1() {
+        let Some(&(aim, directional_yaw, evaluation_tick)) = owner_look.get(&bone.owner) else {
             continue;
         };
-        let directional_yaw = skeleton.action_direction().x.clamp(-1.0, 1.0) * 0.35;
         let weight = match bone.role {
             BoneRole::StomachOne => 0.08,
             BoneRole::StomachTwo => 0.12,
@@ -113,7 +138,6 @@ pub(super) fn apply_head_and_torso_look(
             BoneRole::Head => 0.26,
             _ => continue,
         };
-        let aim = guarded_camera_look(look, owner_transform.rotation(), skeleton.weapon_guard());
         let aim_offset = match (aim, bone.role) {
             (Some(offset), BoneRole::NeckOne | BoneRole::NeckTwo | BoneRole::Head) => offset,
             _ => Vec2::ZERO,
@@ -129,12 +153,8 @@ pub(super) fn apply_head_and_torso_look(
             0.0,
         );
         let previous = state.as_deref().copied();
-        let (rotation, next) = additive_look_rotation(
-            transform.rotation,
-            previous,
-            skeleton.locomotion_sample_tick,
-            offset,
-        );
+        let (rotation, next) =
+            additive_look_rotation(transform.rotation, previous, evaluation_tick, offset);
         transform.rotation = rotation;
         if let Some(mut state) = state {
             *state = next;
@@ -148,8 +168,9 @@ fn guarded_camera_look(
     look: &CharacterLook,
     owner_rotation: Quat,
     weapon_guard: WeaponGuardState,
+    posture_transitioning: bool,
 ) -> Option<Vec2> {
-    (weapon_guard == WeaponGuardState::Raised)
+    (weapon_guard == WeaponGuardState::Raised && !posture_transitioning)
         .then(|| constrained_camera_look(look, owner_rotation))
 }
 
@@ -164,6 +185,10 @@ fn constrained_camera_look(look: &CharacterLook, owner_rotation: Quat) -> Vec2 {
         (yaw / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
         (pitch / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
     )
+}
+
+fn jump_charge_pelvis_target(charging: bool, guard: WeaponGuardState) -> f32 {
+    (charging && guard == WeaponGuardState::Lowered) as u8 as f32
 }
 
 /// Space begins an upright jump with a small procedural anticipation rather
@@ -183,6 +208,11 @@ pub(super) fn apply_jump_charge_crouch(
         let Ok(skeleton) = owners.get(bone.owner) else {
             continue;
         };
+        let quickstep_amount = if skeleton.action_kind() == SkeletonAction::Dodge {
+            0.55 * (1.0 - smoothstep(0.0, 0.35, skeleton.action_phase()))
+        } else {
+            0.0
+        };
         let crouched = skeleton.jump_anticipation() == JumpAnticipation::Charging;
         let previous = state.as_deref().copied();
         let base = previous.map_or(*transform, |previous| {
@@ -198,18 +228,29 @@ pub(super) fn apply_jump_charge_crouch(
             }
         });
         let previous_amount = previous.map_or(0.0, |previous| previous.amount);
+        let previous_pelvis_amount = previous.map_or(0.0, |previous| previous.pelvis_amount);
         let amount = if previous
             .is_some_and(|previous| previous.evaluation_tick == skeleton.locomotion_sample_tick)
         {
             previous_amount
         } else {
-            let target = if crouched { 1.0 } else { 0.0 };
+            let target = if crouched { 1.0 } else { quickstep_amount };
             previous_amount + (target - previous_amount).clamp(-0.125, 0.125)
+        };
+        let pelvis_amount = if previous
+            .is_some_and(|previous| previous.evaluation_tick == skeleton.locomotion_sample_tick)
+        {
+            previous_pelvis_amount
+        } else {
+            let target = jump_charge_pelvis_target(crouched, skeleton.weapon_guard());
+            previous_pelvis_amount + (target - previous_pelvis_amount).clamp(-0.125, 0.125)
         };
         let mut applied = base;
         if amount > f32::EPSILON {
             match bone.role {
-                BoneRole::Pelvis => applied.translation.y -= 0.12 * amount,
+                // The authored guard already supplies enough knee flexion for
+                // quicksteps. Pelvis lowering belongs only to jump charging.
+                BoneRole::Pelvis => applied.translation.y -= 0.12 * pelvis_amount,
                 BoneRole::StomachOne => {
                     applied.rotation =
                         (applied.rotation * Quat::from_rotation_x(0.09 * amount)).normalize()
@@ -235,6 +276,7 @@ pub(super) fn apply_jump_charge_crouch(
             base,
             applied,
             amount,
+            pelvis_amount,
             evaluation_tick: skeleton.locomotion_sample_tick,
         };
         if let Some(mut state) = state {
@@ -424,6 +466,7 @@ pub(crate) struct LocomotionBodyResponseState {
     pub(crate) roll_radians: f32,
     target_pitch_radians: f32,
     target_roll_radians: f32,
+    last_body_velocity: Vec3,
     last_tick: Option<u64>,
     last_posture: Option<Posture>,
     last_action: Option<SkeletonAction>,
@@ -484,6 +527,18 @@ fn landing_compression_for_impact(profile: LocomotionProfile, impact_speed: f32)
             profile.landing.minimum_compression_metres,
             profile.landing.maximum_compression_metres,
         )
+    }
+}
+
+fn landing_compression_for_action(
+    profile: LocomotionProfile,
+    impact_speed: f32,
+    previous_action: Option<SkeletonAction>,
+) -> f32 {
+    if previous_action == Some(SkeletonAction::Dodge) {
+        0.0
+    } else {
+        landing_compression_for_impact(profile, impact_speed)
     }
 }
 
@@ -562,9 +617,10 @@ pub(super) fn stabilize_locomotion_torso(
                 next.landing_compression = 0.0;
                 next.landing_recovery_metres_per_second = 0.0;
             } else {
-                next.landing_compression = landing_compression_for_impact(
+                next.landing_compression = landing_compression_for_action(
                     locomotion_profile(skeleton),
                     skeleton.landing_impact_speed,
+                    next.last_action,
                 );
                 next.landing_recovery_metres_per_second = next.landing_compression
                     / locomotion_profile(skeleton).landing.recovery_seconds;
@@ -891,10 +947,9 @@ struct BoneSnapshot {
 
 mod ik;
 pub(crate) use ik::{
-    ArmIkState, AttackFootworkState, HandIkTarget, HandSide, HeldWeaponConstraint,
-    HumanoidIkTargets, LegIkDiagnostics, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES,
-    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
-    locomotion_support_weights,
+    ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkDiagnostics,
+    LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
@@ -911,7 +966,8 @@ use ik::{
 };
 pub(super) use ik::{
     apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_ordinary_locomotion_ik,
-    apply_terrain_leg_ik, enforce_anatomical_knee_yaw, refresh_raised_support_after_propagation,
+    apply_quickstep_ik, apply_terrain_leg_ik, enforce_anatomical_knee_yaw,
+    refresh_raised_support_after_propagation,
 };
 use ik::{
     apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
@@ -931,6 +987,18 @@ mod contract_tests {
     fn presentation_tick_delta_handles_wrap_and_rejects_large_gaps() {
         assert_eq!(presentation_tick_delta(Some(u64::MAX), 0), Some(1));
         assert_eq!(presentation_tick_delta(Some(1), 100), None);
+    }
+
+    #[test]
+    fn raised_guard_never_adds_jump_charge_pelvis_lowering() {
+        assert_eq!(
+            jump_charge_pelvis_target(true, WeaponGuardState::Raised),
+            0.0
+        );
+        assert_eq!(
+            jump_charge_pelvis_target(true, WeaponGuardState::Lowered),
+            1.0
+        );
     }
 }
 
@@ -1073,16 +1141,34 @@ mod legacy_tests {
             pitch: 0.6,
         };
         assert_eq!(
-            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Lowered),
+            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Lowered, false),
             None
         );
         assert!(
-            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Raised)
+            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Raised, false)
                 .unwrap()
                 .y
                 .abs()
                 > 0.1
         );
+        assert_eq!(
+            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Raised, true),
+            None,
+            "authored posture transitions exclusively own the spine and head"
+        );
+    }
+
+    #[test]
+    fn current_root_facing_removes_camera_yaw_from_the_neck_chain() {
+        let look = CharacterLook {
+            yaw: 0.7,
+            pitch: 0.0,
+        };
+        let camera_forward = Quat::from_rotation_y(look.yaw) * Vec3::NEG_Z;
+        let current_root = Quat::from_rotation_y(camera_forward.x.atan2(camera_forward.z));
+
+        assert!(constrained_camera_look(&look, Quat::IDENTITY).x.abs() > 0.1);
+        assert!(constrained_camera_look(&look, current_root).x.abs() <= 0.000_01);
     }
 
     #[test]
@@ -1219,17 +1305,27 @@ mod legacy_tests {
 
     #[test]
     fn body_response_and_landing_compression_are_bounded() {
-        let forward = body_response_target(Vec3::Z * 12.0);
-        let braking = body_response_target(Vec3::NEG_Z * 12.0);
-        let lateral = body_response_target(Vec3::X * 12.0);
-        assert!((-12.0..=-8.0).contains(&forward.x.to_degrees()));
-        assert!((6.0..=10.0).contains(&braking.x.to_degrees()));
-        assert!((6.0..=10.0).contains(&lateral.y.abs().to_degrees()));
+        let steady_run = body_response_target(Vec3::Z * 5.5, Vec3::ZERO, 1.0);
+        let forward = body_response_target(Vec3::Z * 5.5, Vec3::Z * 12.0, 1.0);
+        let braking = body_response_target(Vec3::Z * 5.5, Vec3::NEG_Z * 12.0, 1.0);
+        let walking_braking = body_response_target(
+            Vec3::Z * WALK_LOCOMOTION_PROFILE.reference_speed,
+            Vec3::NEG_Z * 12.0,
+            WALK_LOCOMOTION_PROFILE.reference_speed / RUN_LOCOMOTION_PROFILE.reference_speed,
+        );
+        let stopped_braking = body_response_target(Vec3::ZERO, Vec3::NEG_Z * 12.0, 0.0);
+        let lateral = body_response_target(Vec3::ZERO, Vec3::X * 12.0, 1.0);
+        assert!((11.9..=12.1).contains(&steady_run.x.to_degrees()));
+        assert!((28.0..=30.0).contains(&forward.x.to_degrees()));
+        assert!((-3.0..=-1.0).contains(&braking.x.to_degrees()));
+        assert!((-1.0..=0.0).contains(&walking_braking.x.to_degrees()));
+        assert!(stopped_braking.x.abs() <= f32::EPSILON);
+        assert!((11.0..=12.0).contains(&lateral.y.abs().to_degrees()));
         assert!(
-            body_response_target(Vec3::new(40.0, 0.0, 40.0))
+            body_response_target(Vec3::ZERO, Vec3::new(40.0, 0.0, 40.0), 1.0)
                 .length()
                 .to_degrees()
-                <= 15.0
+                <= 30.0
         );
         assert_eq!(
             landing_compression_for_impact(WALK_LOCOMOTION_PROFILE, 0.5),
@@ -1239,6 +1335,15 @@ mod legacy_tests {
             WALK_LOCOMOTION_PROFILE,
             4.5,
         )));
+        assert_eq!(
+            landing_compression_for_action(
+                WALK_LOCOMOTION_PROFILE,
+                4.5,
+                Some(SkeletonAction::Dodge),
+            ),
+            0.0
+        );
+        assert!(landing_compression_for_action(WALK_LOCOMOTION_PROFILE, 4.5, None) > 0.0);
         assert_eq!(presentation_tick_delta(Some(10), 10), Some(0));
         assert_eq!(presentation_tick_delta(Some(10), 14), Some(4));
         assert_eq!(presentation_tick_delta(Some(14), 2), None);
@@ -1511,12 +1616,13 @@ mod legacy_tests {
     }
 
     #[test]
-    fn stay_attacks_plant_both_feet_while_unsupported_actions_preserve_authored_fk() {
+    fn attacks_keep_live_locomotion_support_while_unsupported_actions_preserve_authored_fk() {
         let mut attack = SkeletonState::default()
             .with_local_velocity(Vec3::NEG_Z * 5.5)
             .with_gait_phase(0.0);
+        let locomotion = locomotion_support_weights(&attack);
         attack.begin_attack(AttackSpec::default(), 0, 1);
-        assert_eq!(locomotion_support_weights(&attack), (1.0, 1.0));
+        assert_eq!(locomotion_support_weights(&attack), locomotion);
 
         let mut dodge = SkeletonState::default();
         dodge.begin_dodge(DodgeSpec::default(), 0, 1);

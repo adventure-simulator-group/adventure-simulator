@@ -48,31 +48,30 @@ impl AnimationEvaluation {
         let speed = state.animation_speed();
         let gait_phase = state.gait_phase.rem_euclid(1.0);
         let crouch_amount = matches!(state.posture(), Posture::Crouched) as u8 as f32;
-        let base = match state.posture() {
-            Posture::Prone => gait_or_idle(
-                speed,
-                gait_phase,
-                SemanticPose::ProneIdle,
-                SemanticPose::ProneCrawlContact,
-            ),
-            Posture::Supine => gait_or_idle(
-                speed,
-                gait_phase,
-                SemanticPose::SupineIdle,
-                SemanticPose::SupineScamperContact,
-            ),
-            Posture::Airborne => vec![airborne_sample(state.local_velocity.xz().length())],
-            Posture::Ragdolled => Vec::new(),
-            Posture::Upright if state.weapon_guard() == WeaponGuardState::Raised => {
-                raised_guard_locomotion_samples(
-                    state.animation_local_velocity(),
+        let base = match state.action_kind() {
+            SkeletonAction::Dodge => raised_guard_locomotion_samples(),
+            _ => match state.posture() {
+                Posture::Prone => gait_or_idle(
+                    speed,
                     gait_phase,
-                    state.lead_foot,
-                )
-            }
-            Posture::Upright | Posture::Crouched => {
-                locomotion_samples(speed, gait_phase, crouch_amount)
-            }
+                    SemanticPose::ProneIdle,
+                    SemanticPose::ProneCrawlContact,
+                ),
+                Posture::Supine => gait_or_idle(
+                    speed,
+                    gait_phase,
+                    SemanticPose::SupineIdle,
+                    SemanticPose::SupineScamperContact,
+                ),
+                Posture::Airborne => vec![airborne_sample(state.local_velocity.xz().length())],
+                Posture::Ragdolled => Vec::new(),
+                Posture::Upright if state.weapon_guard() == WeaponGuardState::Raised => {
+                    raised_guard_locomotion_samples()
+                }
+                Posture::Upright | Posture::Crouched => {
+                    locomotion_samples(speed, gait_phase, crouch_amount)
+                }
+            },
         };
         let lower_body = if state.guarded_sprint_locomotion()
             && state.raised_locomotion().is_moving()
@@ -246,13 +245,9 @@ fn roll_pose(direction: RollDirection) -> SemanticPose {
     }
 }
 
-fn raised_guard_locomotion_samples(
-    _local_velocity: Vec3,
-    _phase: f32,
-    lead: LeadFoot,
-) -> Vec<PoseSample> {
+fn raised_guard_locomotion_samples() -> Vec<PoseSample> {
     vec![PoseSample {
-        pose: guard_pose(lead),
+        pose: SemanticPose::Guard,
         sampling: PoseSampling::Anchor,
         weight: 1.0,
         mirror_lower_body: false,
@@ -446,69 +441,29 @@ fn out_and_back(start: SemanticPose, middle: SemanticPose, phase: f32) -> PoseSa
 fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
     match state.action_kind() {
         SkeletonAction::None => Vec::new(),
-        SkeletonAction::Dodge => {
-            let direction = state.action_direction();
-            let pose = duck_direction_pose(
-                state.lead_foot,
-                if direction.x.abs() > direction.y.abs() {
-                    if direction.x < 0.0 {
-                        DiveDirection::Left
-                    } else {
-                        DiveDirection::Right
-                    }
-                } else if direction.y < 0.0 {
-                    DiveDirection::Backward
-                } else {
-                    DiveDirection::Forward
-                },
-            );
-            vec![out_and_back(
-                guard_pose(state.lead_foot),
-                pose,
-                state.action_phase(),
-            )]
-        }
+        SkeletonAction::Dodge => Vec::new(),
         SkeletonAction::Attack => attack_samples(state),
         SkeletonAction::Block => vec![out_and_back(
-            guard_pose(state.lead_foot),
-            block_pose(state.incoming_attack_line(), state.lead_foot),
+            SemanticPose::Guard,
+            block_pose(state.incoming_attack_line()),
             state.action_phase(),
         )],
     }
 }
 
-fn duck_direction_pose(lead: LeadFoot, direction: DiveDirection) -> SemanticPose {
+fn duck_direction_pose(_lead: LeadFoot, direction: DiveDirection) -> SemanticPose {
     match direction {
-        DiveDirection::Forward => match lead {
-            LeadFoot::Left => SemanticPose::DuckLeadLeftForward,
-            LeadFoot::Right => SemanticPose::DuckLeadRightForward,
-        },
-        DiveDirection::Backward => match lead {
-            LeadFoot::Left => SemanticPose::DuckLeadLeftBackward,
-            LeadFoot::Right => SemanticPose::DuckLeadRightBackward,
-        },
-        DiveDirection::Left => duck_side_pose(lead, true),
-        DiveDirection::Right => duck_side_pose(lead, false),
-    }
-}
-
-fn duck_side_pose(lead: LeadFoot, duck_left: bool) -> SemanticPose {
-    match (lead, duck_left) {
-        (LeadFoot::Left, true) => SemanticPose::DuckLeadLeftLeft,
-        (LeadFoot::Left, false) => SemanticPose::DuckLeadLeftRight,
-        (LeadFoot::Right, true) => SemanticPose::DuckLeadRightLeft,
-        (LeadFoot::Right, false) => SemanticPose::DuckLeadRightRight,
+        DiveDirection::Forward => SemanticPose::DuckForward,
+        DiveDirection::Backward => SemanticPose::DuckBackward,
+        DiveDirection::Left => SemanticPose::DuckLeft,
+        DiveDirection::Right => SemanticPose::DuckRight,
     }
 }
 
 fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
     let phase = state.action_phase().clamp(0.0, 1.0);
-    let start_lead = state.attack_start_lead();
-    let start_guard = guard_pose(start_lead);
-    let end_guard = guard_pose(match state.footwork() {
-        Footwork::Stay => start_lead,
-        Footwork::Switch => opposite_foot(start_lead),
-    });
+    let start_guard = SemanticPose::Guard;
+    let end_guard = SemanticPose::Guard;
     let contact = attack_pose(state);
     let (pose, end, blend) = if phase < 0.5 {
         (start_guard, contact, phase * 2.0)
@@ -526,32 +481,19 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
     }]
 }
 
-fn guard_pose(lead: LeadFoot) -> SemanticPose {
-    match lead {
-        LeadFoot::Left => SemanticPose::GuardLeadLeft,
-        LeadFoot::Right => SemanticPose::GuardLeadRight,
-    }
-}
-
-fn block_pose(line: AttackLine, lead: LeadFoot) -> SemanticPose {
-    use {AttackLine::*, LeadFoot::*, SemanticPose::*};
-    match (line, lead) {
-        (CutFromLeft, Left) => BlockCutLeftLeadLeft,
-        (CutFromLeft, Right) => BlockCutLeftLeadRight,
-        (CutFromRight, Left) => BlockCutRightLeadLeft,
-        (CutFromRight, Right) => BlockCutRightLeadRight,
-        (Thrust, Left) => BlockThrustLeadLeft,
-        (Thrust, Right) => BlockThrustLeadRight,
+fn block_pose(line: AttackLine) -> SemanticPose {
+    match line {
+        AttackLine::CutFromLeft => SemanticPose::BlockCutLeft,
+        AttackLine::CutFromRight => SemanticPose::BlockCutRight,
+        AttackLine::Thrust => SemanticPose::BlockThrust,
     }
 }
 
 fn attack_pose(state: &SkeletonState) -> SemanticPose {
-    use {LeadFoot::*, SemanticPose::*, StrikeFamily::*};
-    match (state.strike_family(), state.attack_start_lead()) {
-        (Thrust, Left) => AttackThrustLeadLeftContact,
-        (Thrust, Right) => AttackThrustLeadRightContact,
-        (Slash, Left) => AttackSlashLeadLeftContact,
-        (Slash, Right) => AttackSlashLeadRightContact,
+    match state.attack_animation().unwrap_or(AttackAnimation::Thrust) {
+        AttackAnimation::Swing => SemanticPose::AttackSwing,
+        AttackAnimation::SwingFollow => SemanticPose::AttackSwingFollow,
+        AttackAnimation::Thrust => SemanticPose::AttackThrust,
     }
 }
 
@@ -562,7 +504,7 @@ mod tests {
     #[test]
     fn dive_blends_from_guard_specific_duck_to_direction_only_airborne_pose() {
         let loading = dive_transition_samples(LeadFoot::Left, DiveDirection::Right, 0.1);
-        assert_eq!(loading[0].pose, SemanticPose::DuckLeadLeftRight);
+        assert_eq!(loading[0].pose, SemanticPose::DuckRight);
         assert_eq!(
             loading[0].sampling,
             PoseSampling::Span {

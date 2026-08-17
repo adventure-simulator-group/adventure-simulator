@@ -2521,6 +2521,7 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 origin_settlement_id: Some(&settlement_id),
                 mode: crate::character::CharacterCreationMode::Newborn,
                 create_solo_party: false,
+                materialize_generated_carry: false,
                 stable_seed: pregnancy.child_name_seed,
                 initial_time_minute: Some(pregnancy.due_minute),
                 field_actor: false,

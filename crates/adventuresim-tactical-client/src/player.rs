@@ -1,12 +1,14 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
-    client::DirectControlState,
+    client::{DirectControlState, WeaponGuardInputState},
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest},
 };
 use bevy::prelude::*;
 
-use crate::{animation::spawn_fallback_t_pose, camera::CameraAimState};
+use crate::{
+    animation::spawn_fallback_t_pose, camera::CameraAimState, presentation::GrassInteractor,
+};
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     (
@@ -69,11 +71,19 @@ impl Plugin for PlayerPlugin {
             .add_systems(
                 Update,
                 (
-                    apply_direct_combat_controls,
-                    update_attack_state_system.run_if(any_with_component::<AttackState>),
+                    (
+                        apply_direct_combat_controls,
+                        update_attack_state_system.run_if(any_with_component::<AttackState>),
+                        flush_buffered_melee_attacks,
+                    )
+                        .chain(),
                     start_fade_on_incapacitation,
                     tick_fade_out.run_if(any_with_component::<FadingOut>),
                 ),
+            )
+            .add_systems(
+                PostUpdate,
+                predict_local_body_facing.before(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -88,6 +98,15 @@ pub struct LocalCharacterId(pub u64);
 #[derive(Component, Debug, Clone, Copy, Reflect)]
 #[reflect(Component)]
 pub struct ClientPlayer;
+
+/// Render-frame facing state for the locally controlled character. Replicated
+/// transforms remain authoritative; this state hides the gaps between their
+/// rotation samples for both camera-facing guard and velocity-facing travel.
+#[derive(Component, Debug, Clone, Copy, Default)]
+struct LocalBodyFacing {
+    rotation: Quat,
+    initialized: bool,
+}
 
 #[derive(EntityEvent)]
 pub struct HitPerformed {
@@ -118,6 +137,9 @@ pub struct AttackState {
     pub reach: f32,
     pub ranged: bool,
 }
+
+#[derive(Component, Debug, Clone, Copy)]
+struct BufferedMeleeAttack(StrikeFamily);
 
 impl AttackState {
     pub fn new(pre_hit_delay: f32, reach: f32, ranged: bool) -> Self {
@@ -156,6 +178,8 @@ fn on_new_player_added_hook(
         commands.entity(event.entity).insert((
             tactical_character_controller(),
             ClientPlayer,
+            LocalBodyFacing::default(),
+            GrassInteractor,
             actions!(Player[
                 (
                     Action::<input::Movement>::new(),
@@ -297,6 +321,47 @@ fn tick_fade_out(
     }
 }
 
+fn predict_local_body_facing(
+    time: Res<Time>,
+    guard: Res<WeaponGuardInputState>,
+    mut players: Query<
+        (
+            &CharacterControllerCamera,
+            &SkeletonState,
+            &mut Transform,
+            &mut LocalBodyFacing,
+        ),
+        With<ClientPlayer>,
+    >,
+    cameras: Query<&Transform, (With<Camera3d>, Without<ClientPlayer>)>,
+) {
+    for (camera, skeleton, mut transform, mut facing) in &mut players {
+        if skeleton.body().is_downed() || skeleton.is_posture_transitioning() {
+            facing.rotation = transform.rotation;
+            facing.initialized = false;
+            continue;
+        }
+
+        let Ok(camera_transform) = cameras.get(camera.get()) else {
+            continue;
+        };
+        if !facing.initialized {
+            facing.rotation = transform.rotation;
+            facing.initialized = true;
+        }
+
+        facing.rotation = advance_body_facing(
+            facing.rotation,
+            camera_transform.rotation,
+            skeleton.world_velocity,
+            skeleton.action_kind(),
+            guard.desired,
+            time.delta_secs(),
+        );
+        transform.rotation = facing.rotation;
+    }
+}
+
 fn update_attack_state_system(
     mut cmd: Commands,
     spatial: SpatialQuery,
@@ -422,7 +487,6 @@ fn on_attack_fired_hook(
     event: On<Fire<Attack>>,
     mut cmd: Commands,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
-    q_leg_ik: Query<&crate::animation::LegIkState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
@@ -431,7 +495,6 @@ fn on_attack_fired_hook(
         false,
         &mut cmd,
         &mut q_character,
-        &q_leg_ik,
         &viewer,
         &time,
     );
@@ -442,16 +505,12 @@ fn try_start_attack(
     alternate_attack: bool,
     cmd: &mut Commands,
     q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
-    q_leg_ik: &Query<&crate::animation::LegIkState>,
     viewer: &TacticalPlayerViewer,
     time: &Time,
 ) {
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
-    if attacking {
-        return;
-    }
     let Ok((reach, ranged, melee, windup_secs, preferred_style)) = viewer.get(entity).map(|character| {
         (
             character.weapon_reach(),
@@ -469,55 +528,74 @@ fn try_start_attack(
         warn!("Trying to attack without a usable equipped weapon");
         return;
     }
-    cmd.entity(entity)
-        .insert(AttackState::new(windup_secs, reach, ranged));
     let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-    let predicted = if ranged {
-        AttackSpec::default()
+    if ranged {
+        if attacking {
+            return;
+        }
+        cmd.entity(entity)
+            .insert(AttackState::new(windup_secs, reach, true));
+        skeleton.begin_attack(AttackSpec::default(), start, start + 19);
+        cmd.client_trigger(RangedActionRequest::Start);
     } else {
-        // Predict only from the last physical velocity already present in the
-        // replicated skeleton. The authority repeats the same typed
-        // classification from its observation; no input vector crosses the
-        // reliable action boundary.
         let preferred_family = StrikeFamily::from_melee_style(preferred_style);
-        let strike_family = if alternate_attack {
-            match preferred_family {
-                StrikeFamily::Slash => StrikeFamily::Thrust,
-                StrikeFamily::Thrust => StrikeFamily::Slash,
-            }
+        let requested_family = if alternate_attack {
+            preferred_family.alternate()
         } else {
             preferred_family
         };
-        let moving = skeleton.local_velocity.xz().length() > 0.05;
-        let feet_close = q_leg_ik
-            .get(entity)
-            .ok()
-            .and_then(crate::animation::LegIkState::feet_are_close_for_attack)
-            .unwrap_or(false);
-        let footwork = if moving {
-            if feet_close {
-                Footwork::Stay
-            } else {
-                Footwork::Switch
-            }
-        } else if strike_family == StrikeFamily::Slash {
-            Footwork::Switch
-        } else {
-            Footwork::Stay
+        let Some(strike_family) = skeleton.available_strike_family(requested_family) else {
+            return;
         };
-        AttackSpec::melee_from_local_velocity_and_style(
-            skeleton.local_velocity,
-            strike_family,
-            footwork,
-        )
-    };
-    skeleton.begin_attack(predicted, start, start + 19);
-    if ranged {
-        cmd.client_trigger(RangedActionRequest::Start);
-    } else {
+        let Some(animation) = (!attacking)
+            .then(|| skeleton.select_attack_animation(strike_family))
+            .flatten()
+        else {
+            cmd.entity(entity)
+                .insert(BufferedMeleeAttack(strike_family));
+            return;
+        };
+        cmd.entity(entity)
+            .insert(AttackState::new(windup_secs, reach, false))
+            .remove::<BufferedMeleeAttack>();
+        skeleton.begin_attack(AttackSpec::new(animation), start, start + 19);
+        cmd.client_trigger(MeleeActionRequest::Start { strike_family });
+    }
+}
+
+fn flush_buffered_melee_attacks(
+    mut cmd: Commands,
+    mut characters: Query<
+        (
+            Entity,
+            &BufferedMeleeAttack,
+            Has<AttackState>,
+            &mut SkeletonState,
+        ),
+        With<ControlledPlayer>,
+    >,
+    viewer: TacticalPlayerViewer,
+    time: Res<Time>,
+) {
+    for (entity, buffered, attacking, mut skeleton) in &mut characters {
+        if attacking {
+            continue;
+        }
+        let Some(animation) = skeleton.select_attack_animation(buffered.0) else {
+            continue;
+        };
+        let Ok((reach, windup_secs)) = viewer.get(entity).map(|character| {
+            (character.weapon_reach(), character.weapon_windup_secs())
+        }) else {
+            continue;
+        };
+        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        skeleton.begin_attack(AttackSpec::new(animation), start, start + 19);
+        cmd.entity(entity)
+            .insert(AttackState::new(windup_secs, reach, false))
+            .remove::<BufferedMeleeAttack>();
         cmd.client_trigger(MeleeActionRequest::Start {
-            strike_family: predicted.strike_family,
-            footwork: predicted.footwork,
+            strike_family: buffered.0,
         });
     }
 }
@@ -527,7 +605,6 @@ fn apply_direct_combat_controls(
     mut cmd: Commands,
     players: Query<Entity, With<ControlledPlayer>>,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
-    q_leg_ik: Query<&crate::animation::LegIkState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
@@ -538,7 +615,6 @@ fn apply_direct_combat_controls(
                 controls.alternate_attack,
                 &mut cmd,
                 &mut q_character,
-                &q_leg_ik,
                 &viewer,
                 &time,
             );
@@ -546,7 +622,13 @@ fn apply_direct_combat_controls(
         if controls.dodge_just_pressed {
             if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
                 let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-                skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
+                skeleton.begin_dodge(
+                    DodgeSpec {
+                        direction: controls.quickstep_direction,
+                    },
+                    start,
+                    start + 20,
+                );
             }
             cmd.client_trigger(DefendRequest::Dodge);
         }
@@ -590,5 +672,60 @@ mod tests {
     fn gamepad_look_keeps_horizontal_and_reverses_vertical_input() {
         assert!(GAMEPAD_LOOK_SCALE.x.is_sign_positive());
         assert!(GAMEPAD_LOOK_SCALE.y.is_sign_negative());
+    }
+
+    #[test]
+    fn local_aim_facing_advances_on_every_render_frame() {
+        let camera = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let target = advance_body_facing(
+            Quat::IDENTITY,
+            camera,
+            Vec3::ZERO,
+            SkeletonAction::None,
+            WeaponGuardState::Raised,
+            1.0,
+        );
+        let mut facing = Quat::IDENTITY;
+        let mut previous_distance = facing.angle_between(target);
+
+        for _ in 0..4 {
+            facing = advance_body_facing(
+                facing,
+                camera,
+                Vec3::ZERO,
+                SkeletonAction::None,
+                WeaponGuardState::Raised,
+                1.0 / 60.0,
+            );
+            let distance = facing.angle_between(target);
+            assert!(distance < previous_distance);
+            previous_distance = distance;
+        }
+
+        assert!(previous_distance > 0.0);
+    }
+
+    #[test]
+    fn local_travel_facing_advances_toward_world_velocity() {
+        let velocity = Vec3::X * 3.0;
+        let target = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            velocity,
+            SkeletonAction::None,
+            WeaponGuardState::Lowered,
+            1.0,
+        );
+        let next = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            velocity,
+            SkeletonAction::None,
+            WeaponGuardState::Lowered,
+            1.0 / 60.0,
+        );
+
+        assert!(next.angle_between(target) < Quat::IDENTITY.angle_between(target));
+        assert!(next.angle_between(target) > 0.0);
     }
 }

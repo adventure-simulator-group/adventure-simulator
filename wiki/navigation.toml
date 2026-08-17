@@ -303,6 +303,11 @@ title = "Stealth"
 path = "tactical/stealth.md"
 
 [[item]]
+kind = "page"
+title = "Sky presentation"
+path = "tactical/sky.md"
+
+[[item]]
 kind = "part"
 title = "World data"
 
@@ -310,6 +315,11 @@ title = "World data"
 kind = "page"
 title = "World-data input bundles"
 path = "engineering/world-data/world-data-bundles.md"
+
+[[item]]
+kind = "page"
+title = "Tactical environment visual review"
+path = "engineering/world-data/environment-visual-review.md"
 
 [[item]]
 kind = "page"

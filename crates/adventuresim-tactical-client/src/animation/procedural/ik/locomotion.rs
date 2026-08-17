@@ -19,8 +19,8 @@ pub(super) fn owns(skeleton: &SkeletonState) -> bool {
             || skeleton.guarded_sprint_locomotion())
 }
 
-/// Overgrowth-style ordinary locomotion IK: the graph supplies the complete
-/// FK pose and authored foot weights; this pass only conforms weighted ankles
+/// Overgrowth-style ordinary locomotion IK: semantic evaluation supplies the
+/// complete FK pose and authored foot weights; this pass only conforms weighted ankles
 /// to terrain, applies one shared hip correction, and solves each leg once.
 pub(in crate::animation) fn apply(
     enabled: Res<super::super::super::TerrainIkEnabled>,

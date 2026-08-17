@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::connected_equipment_occupancy_type::ConnectedEquipmentOccupancy;
+use super::connected_weapon_appearance_type::ConnectedWeaponAppearance;
 use super::equipment_body_part_type::EquipmentBodyPart;
 use super::item_condition_type::ItemCondition;
 use super::item_type::Item;
@@ -19,6 +20,8 @@ pub struct ConnectedPlayerItem {
     pub occupancies: Vec<ConnectedEquipmentOccupancy>,
     pub protected_body_parts: Vec<EquipmentBodyPart>,
     pub condition: Option<ItemCondition>,
+    pub weapon_appearance: Option<ConnectedWeaponAppearance>,
+    pub weapon_holder_appearance: Option<ConnectedWeaponAppearance>,
 }
 
 impl __sdk::InModule for ConnectedPlayerItem {

@@ -625,6 +625,7 @@ pub(crate) fn add_inventory_item_checked(
         if durable {
             crate::repair::initialize_item_condition(ctx, &item);
         }
+        crate::weapon_instance::initialize_personal_weapon(ctx, &item)?;
         if measured {
             crate::inventory_amount::initialize_personal(ctx, item.id);
         }
@@ -848,8 +849,11 @@ pub fn change_inventory_item(
                     crate::character::unequip_wearable(ctx, id);
                     equipment_changed = true;
                 }
-                ctx.db.inventory_item().id().delete(id);
-                ctx.db.item_condition().inventory_item_id().delete(id);
+                if !crate::inventory_container::delete_carried_object_for_row(ctx, "personal", id)?
+                {
+                    ctx.db.inventory_item().id().delete(id);
+                    ctx.db.item_condition().inventory_item_id().delete(id);
+                }
             }
             if equipment_changed {
                 crate::capability::refresh_character_capability(ctx, character_id)?;

@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn route_cache_identity_distinguishes_departure_weather() {
         let clear = adventuresim_core::weather::WeatherSnapshot {
-            rules_version: 1,
+            rules_version: adventuresim_core::weather::WEATHER_RULES_VERSION,
             interval_start_minute: 0,
             cell_latitude: 0,
             cell_longitude: 0,
@@ -589,6 +589,7 @@ mod tests {
             intensity_bps: 0,
             ground_moisture_bps: 0,
             snow_cover_bps: 0,
+            atmosphere: Default::default(),
         };
         let wet = adventuresim_core::weather::WeatherSnapshot {
             interval_start_minute: 360,

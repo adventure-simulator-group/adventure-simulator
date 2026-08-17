@@ -34,6 +34,7 @@ pub mod strategic;
 pub mod surgery;
 pub mod tactical;
 pub mod time;
+pub mod weapon_instance;
 pub mod world_actor;
 pub mod world_event;
 
@@ -73,5 +74,6 @@ pub use strategic::*;
 pub use surgery::*;
 pub use tactical::*;
 pub use time::*;
+pub use weapon_instance::*;
 pub use world_actor::*;
 pub use world_event::*;

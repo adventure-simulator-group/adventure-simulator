@@ -60,9 +60,10 @@ pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     support_phase_radius: 0.175,
     bounce_metres: 0.0,
     // The authored ordinary passing rise contributes about 3.3 cm and is
-    // normalized out by presentation. Nine centimetres here therefore leaves
-    // a grounded visual flight response near the intended six centimetres.
-    flight_apex_metres: 0.09,
+    // normalized out by presentation. Twelve centimetres here therefore
+    // leaves a visible flight response near nine centimetres: 50% stronger
+    // than the earlier six-centimetre result.
+    flight_apex_metres: 0.12,
     landing: HUMANOID_LANDING_PROFILE,
 };
 pub const CROUCH_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
@@ -86,7 +87,11 @@ pub const RAISED_GUARD_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile
 pub const PRONE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     gait: LocomotionGait::Crouch,
     reference_speed: 1.0,
-    step_distance: 1.06,
+    // The authored contact hand and knee retract about 0.50 m and 0.69 m
+    // respectively over a half-cycle. A 0.60 m contact step balances their
+    // residual world-space drift instead of dragging them through the former
+    // 1.06 m of controller travel.
+    step_distance: 0.60,
     support_phase_radius: 0.30,
     bounce_metres: 0.0,
     flight_apex_metres: 0.0,

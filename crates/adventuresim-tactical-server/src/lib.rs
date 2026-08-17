@@ -31,3 +31,10 @@ pub(crate) struct Args {
     pub(crate) spacetimedb_url: String,
     pub(crate) spacetimedb_module: String,
 }
+
+/// Stand-in for `main.rs`'s real `SceneVistaBundleResource`, for the same
+/// reason as `Args` above.
+#[derive(bevy::prelude::Resource, Default)]
+pub(crate) struct SceneVistaBundleResource(
+    pub(crate) Option<adventuresim_tactical_netcode::prelude::SceneVistaBundle>,
+);

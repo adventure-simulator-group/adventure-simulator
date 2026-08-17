@@ -501,6 +501,7 @@ pub(crate) fn add_to_party_inventory_checked(
                 tier_4: 0.0,
                 tier_5: 0.0,
             });
+            crate::weapon_instance::initialize_party_weapon(ctx, &row)?;
         }
         return Ok(());
     }

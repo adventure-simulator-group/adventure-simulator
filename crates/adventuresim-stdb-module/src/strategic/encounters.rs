@@ -825,6 +825,13 @@ fn commit_encounter_surrender(
 ) -> Result<(), String> {
     for loss in current {
         if loss.owner_kind == "party" {
+            if crate::inventory_container::delete_carried_object_for_row(
+                ctx,
+                "party",
+                loss.inventory_id,
+            )? {
+                continue;
+            }
             ctx.db
                 .party_item_condition()
                 .party_inventory_item_id()
@@ -832,6 +839,13 @@ fn commit_encounter_surrender(
             ctx.db.party_inventory_item().id().delete(loss.inventory_id);
         } else {
             crate::character::unequip_wearable(ctx, loss.inventory_id);
+            if crate::inventory_container::delete_carried_object_for_row(
+                ctx,
+                "personal",
+                loss.inventory_id,
+            )? {
+                continue;
+            }
             ctx.db
                 .item_condition()
                 .inventory_item_id()

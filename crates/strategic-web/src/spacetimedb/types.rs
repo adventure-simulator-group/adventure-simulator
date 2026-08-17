@@ -1468,6 +1468,28 @@ pub struct InventoryObject {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendWeaponInstance {
+    pub physical_object_id: u64,
+    pub generator_version: u16,
+    pub design_hash: Vec<u8>,
+    pub recipe: Vec<u8>,
+    pub mass_grams: u32,
+    pub length_mm: u32,
+    pub grip_to_tip_mm: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendWeaponHolderInstance {
+    pub physical_object_id: u64,
+    pub generator_version: u16,
+    pub design_hash: Vec<u8>,
+    pub recipe: Vec<u8>,
+    pub mass_grams: u32,
+    pub length_mm: u32,
+    pub grip_to_tip_mm: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryContainment {
     pub child_object_id: u64,
     pub parent_object_id: u64,

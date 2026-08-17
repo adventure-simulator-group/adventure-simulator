@@ -793,13 +793,15 @@ mod tests {
             .init_resource::<AcceptedCompletions>()
             .add_observer(on_melee_action_request)
             .add_observer(apply_if_authorized);
-        let attacker = app.world_mut().spawn(MeleeAttackAuthority::default()).id();
+        let attacker = app
+            .world_mut()
+            .spawn((MeleeAttackAuthority::default(), SkeletonState::default()))
+            .id();
         let target = app.world_mut().spawn(Limbs::default()).id();
         app.world_mut().trigger(FromClient {
             client_id: ClientId::Client(attacker),
             message: MeleeActionRequest::Start {
                 strike_family: StrikeFamily::Thrust,
-                footwork: Footwork::Stay,
             },
         });
         // The bare test attacker has no equipped weapon, so its observed

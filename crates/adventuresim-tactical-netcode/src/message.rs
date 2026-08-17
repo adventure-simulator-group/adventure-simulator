@@ -32,6 +32,17 @@ pub struct ReconnectCapability {
     pub token: ReconnectToken,
 }
 
+/// One bounded, ordered scene asset delivered only to an enrolled client.
+/// Vista samples intentionally bypass ordinary ECS component replication.
+#[derive(Debug, Clone, Event, Serialize, Deserialize)]
+pub struct SceneVistaBundle {
+    pub scene_digest: String,
+    /// Half-width and half-depth of the authoritative playable heightfield.
+    /// Presentation-only vista rings clip exactly to this rectangle.
+    pub playable_half_extent_metres: Vec2,
+    pub lods: Vec<VistaLod>,
+}
+
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
@@ -106,9 +117,12 @@ pub enum EquipmentAction {
 /// Durable edge identity for jumping over the unreliable continuous-input
 /// channel. The latest sequence is repeated in every input packet, so dropping
 /// the release packet delays a jump rather than losing it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, Reflect)]
 pub struct JumpCommand {
     pub sequence: u32,
+    /// Camera-relative quickstep direction selected on this edge. `None`
+    /// requests an ordinary jump.
+    pub quickstep: Option<Vec2>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
@@ -122,7 +136,10 @@ pub enum PostureActionRequest {
     Toggle,
     RollLeft,
     RollRight,
-    Dive { direction: DiveDirection },
+    Dive {
+        animation_direction: DiveDirection,
+        travel_direction: DiveDirection,
+    },
 }
 
 /// Debug-build request to run the tactical simulation at normal or quarter
@@ -241,7 +258,6 @@ mod equipment_action_mapping_tests {
 pub enum MeleeActionRequest {
     Start {
         strike_family: StrikeFamily,
-        footwork: Footwork,
     },
     Complete {
         #[entities]

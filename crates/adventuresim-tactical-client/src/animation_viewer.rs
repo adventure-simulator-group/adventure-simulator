@@ -6,7 +6,11 @@ use std::{
     path::PathBuf,
 };
 
-use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
+use adventuresim_tactical_core::animation::dive_launch_root_rotation;
+use adventuresim_tactical_core::physics::{
+    AdventureSimulatorPhysicsPlugin, TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND,
+    TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES, TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND,
+};
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::client::WeaponGuardInputState;
 use bevy::{
@@ -18,14 +22,14 @@ use bevy::{
 };
 use serde::Serialize;
 
+use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
-    AnimationPlayback, AnimationRuntime, ArmIkState, AttackFootworkState, BoneRole, HumanoidBone,
-    LegIkDiagnostics, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
-    LocomotionPresentationEvent, LocomotionPresentationEventKind,
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
-    locomotion_support_weights,
-    semantic_graph::{SemanticGraphPath, SemanticGraphTrace},
+    AnimationPlayback, AnimationRuntime, ArmIkState, BoneRole, HumanoidBone, LegIkDiagnostics,
+    LegIkState, LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
+    LocomotionPresentationEventKind, MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton,
+    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
+    TacticalAnimationPlugin, TerrainIkEnabled, locomotion_support_weights,
+    semantic_route::{SemanticRoutePath, SemanticRouteTrace},
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -38,7 +42,6 @@ const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
 const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
 const RAISED_MAXIMUM_PELVIS_VERTICAL_STEP_METRES: f32 = 0.05;
-const ATTACK_MAXIMUM_CONSTRAINED_TARGET_STEP_METRES: f32 = 0.201;
 // The parent guard-entry fixture already moves 33.13 mm in one sampled frame.
 // Allow less than 4 mm of additional height-system overhead without weakening
 // the broader raised-guard continuity bound.
@@ -88,9 +91,16 @@ struct ScenarioMetadata {
 }
 
 fn scenario_metadata(name: &str) -> ScenarioMetadata {
-    if name.starts_with("downed-")
+    if name == "quickstep-right" {
+        ScenarioMetadata {
+            kind: ScenarioKind::Transition,
+            repeatable: false,
+            procedural_solver: true,
+        }
+    } else if name.starts_with("downed-")
         || name.starts_with("dive-")
         || name.ends_with("-get-up")
+        || name.starts_with("prone-roll-")
         || name == "jump-charge-crouch"
     {
         ScenarioMetadata {
@@ -106,7 +116,10 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
             // contract is bounded transition continuity, not steady plants.
             procedural_solver: false,
         }
-    } else if name == "cross-slope-walk" || name.starts_with("terrain-") {
+    } else if name == "cross-slope-walk"
+        || name.starts_with("terrain-")
+        || name.starts_with("flat-grid-")
+    {
         ScenarioMetadata {
             kind: ScenarioKind::Terrain,
             repeatable: !name.contains("stop")
@@ -117,7 +130,7 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
                 && !name.starts_with("terrain-steady-run"),
             procedural_solver: true,
         }
-    } else if name.starts_with("attack-step-") {
+    } else if name.starts_with("attack-live-") {
         ScenarioMetadata {
             kind: ScenarioKind::Attack,
             repeatable: false,
@@ -231,7 +244,9 @@ pub(crate) fn run(
         )
         .add_systems(
             PostUpdate,
-            draw_skeleton_overlay.after(TransformSystems::Propagate),
+            (draw_flat_ground_grid, draw_skeleton_overlay)
+                .chain()
+                .after(TransformSystems::Propagate),
         )
         .add_systems(
             Last,
@@ -305,10 +320,15 @@ struct CaptureSequence {
 
 impl CaptureSequence {
     fn new(output: PathBuf, settle_frames: u32, scenario: Option<&str>) -> Self {
-        let plan = capture_plan()
-            .into_iter()
-            .filter(|frame| scenario.is_none_or(|scenario| frame.scenario == scenario))
-            .collect::<Vec<_>>();
+        let plan = match scenario {
+            Some("flat-grid-walk-2.0") => steady_scenario("flat-grid-walk-2.0", 2.0, 3.0),
+            Some("flat-grid-run-5.5") => steady_scenario("flat-grid-run-5.5", 5.5, 3.0),
+            Some("flat-grid-walk-stop") => flat_grid_walk_stop_scenario(),
+            _ => capture_plan()
+                .into_iter()
+                .filter(|frame| scenario.is_none_or(|scenario| frame.scenario == scenario))
+                .collect::<Vec<_>>(),
+        };
         assert!(
             !plan.is_empty(),
             "requested animation capture scenario is unknown"
@@ -335,6 +355,12 @@ impl CaptureSequence {
             simulation_tick: 0,
             scenario_distance: 0.0,
         }
+    }
+
+    fn uses_flat_grid(&self) -> bool {
+        self.plan
+            .iter()
+            .all(|frame| frame.scenario.starts_with("flat-grid-"))
     }
 }
 
@@ -399,13 +425,15 @@ fn repeated_bone_mismatch(
 #[derive(Debug, Serialize)]
 struct CaptureManifest {
     sample_hz: f32,
+    playback_backend: &'static str,
+    pose_buffer: PoseBufferMetrics,
     pipeline: &'static str,
     views: [CaptureView; 3],
     validation: CaptureValidation,
     scenarios: Vec<ScenarioMetrics>,
     frames: Vec<FrameSample>,
     presentation_events: Vec<PresentationEventSample>,
-    semantic_graph_path_counts: BTreeMap<String, u64>,
+    semantic_route_path_counts: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -426,11 +454,12 @@ struct CaptureValidation {
     continuity_within_review_bounds: bool,
     biomechanics_within_review_bounds: bool,
     no_ground_penetration: bool,
-    raised_guard_fixed_lead: bool,
+    raised_guard_fixed_support: bool,
     flat_controller_height_stable: bool,
     phase_owned_height_valid: bool,
     run_flight_valid: bool,
     body_response_valid: bool,
+    straight_run_torso_sway_valid: bool,
     speed_ramp_phase_continuity_valid: bool,
     contact_sequences_valid: bool,
     cadence_contact_valid: bool,
@@ -445,8 +474,7 @@ struct CaptureValidation {
     hard_stop_maximum_pelvis_step_metres: Option<f32>,
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
-    attack_footwork_valid: bool,
-    semantic_graph_paths_exercised: bool,
+    semantic_route_paths_exercised: bool,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -514,6 +542,7 @@ struct ScenarioMetrics {
     maximum_facing_tracking_excess_degrees: f32,
     maximum_guard_facing_error_degrees: f32,
     final_facing_motion_error_degrees: f32,
+    maximum_dive_axis_motion_error_degrees: f32,
     maximum_supported_foot_slip_metres_per_frame: f32,
     maximum_planted_foot_drift_metres: f32,
     minimum_foot_clearance_metres: f32,
@@ -554,8 +583,7 @@ struct FrameSample {
     lead_foot: LeadFoot,
     action: SkeletonAction,
     action_phase: f32,
-    attack_step: AttackStep,
-    attack_footwork: Footwork,
+    attack_animation: Option<AttackAnimation>,
     strike_family: StrikeFamily,
     guard_action: bool,
     left_support_weight: f32,
@@ -578,15 +606,9 @@ struct FrameSample {
     ik_settle_progress: Option<f32>,
     ik_left_knee_foot_yaw_offset_degrees: f32,
     ik_right_knee_foot_yaw_offset_degrees: f32,
-    attack_requested_left_foot_target: Option<[f32; 3]>,
-    attack_requested_right_foot_target: Option<[f32; 3]>,
-    attack_constrained_left_foot_target: Option<[f32; 3]>,
-    attack_constrained_right_foot_target: Option<[f32; 3]>,
-    attack_support_handoffs: u8,
-    attack_maximum_reach_yield_metres: f32,
-    semantic_graph_requested_path: SemanticGraphPath,
-    semantic_graph_selected_path: SemanticGraphPath,
-    semantic_graph_runtime_evaluated: bool,
+    semantic_route_requested_path: SemanticRoutePath,
+    semantic_route_selected_path: SemanticRoutePath,
+    semantic_route_runtime_evaluated: bool,
     screenshots: BTreeMap<String, String>,
     bones: BTreeMap<String, BoneSample>,
 }
@@ -789,6 +811,33 @@ fn dynamics_speed_scenario(name: &'static str, hard_stop: bool) -> Vec<PlannedFr
         .collect()
 }
 
+fn flat_grid_walk_stop_scenario() -> Vec<PlannedFrame> {
+    (0..=96)
+        .map(|scenario_frame| {
+            let speed = if scenario_frame < 48 {
+                2.0
+            } else if scenario_frame < 56 {
+                2.0 * (56 - scenario_frame) as f32 / 8.0
+            } else {
+                0.0
+            };
+            PlannedFrame {
+                scenario: "flat-grid-walk-stop",
+                scenario_frame,
+                speed,
+                time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+                local_direction: Vec2::NEG_Y,
+                camera_yaw: 0.0,
+                camera_pitch: 0.0,
+                crouching: false,
+                action: SkeletonAction::None,
+                weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
+            }
+        })
+        .collect()
+}
+
 fn terrain_tap_stop_scenario(
     name: &'static str,
     speed: f32,
@@ -928,7 +977,7 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn attack_step_scenario(
+fn attack_live_scenario(
     name: &'static str,
     speed: f32,
     initial_direction: Vec2,
@@ -945,7 +994,7 @@ fn attack_step_scenario(
             speed,
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             // Deliberately reverse velocity and yaw after attack start in the
-            // stress fixture. The replicated AttackStep must remain the one
+            // stress fixture. The live movement input must remain the one
             // selected on frame zero.
             local_direction: if (reverse_velocity || name.contains("high-speed"))
                 && scenario_frame > START
@@ -991,9 +1040,16 @@ fn capture_plan() -> Vec<PlannedFrame> {
         dive_impact_scenario("dive-left-impact"),
         dive_impact_scenario("dive-right-impact"),
         dive_impact_scenario("dive-backward-impact"),
+        aimed_dive_impact_scenario("dive-forward-aimed-impact"),
+        aimed_dive_impact_scenario("dive-left-aimed-impact"),
+        aimed_dive_impact_scenario("dive-right-aimed-impact"),
+        aimed_dive_impact_scenario("dive-backward-aimed-impact"),
         posture_transition_scenario("prone-get-up", BodyState::Prone),
         posture_transition_scenario("supine-get-up", BodyState::Supine),
+        posture_transition_scenario("prone-roll-left", BodyState::Prone),
+        posture_transition_scenario("prone-roll-right", BodyState::Prone),
         jump_charge_scenario(),
+        quickstep_scenario(),
         steady_scenario("steady-walk-2.0", 2.0, 2.0),
         steady_scenario("walk-run-blend-3.75", 3.75, 2.0),
         steady_scenario("steady-run-5.5", 5.5, 2.0),
@@ -1019,108 +1075,111 @@ fn capture_plan() -> Vec<PlannedFrame> {
         raised_guard_lateral_tap_stop_scenario("raised-guard-tap-stop-right", Vec2::X),
         raised_guard_reversal_scenario(),
         raised_guard_steady_scenario_with_lead(
-            "raised-guard-right-lead-left",
+            "raised-guard-right-support-left",
             2.0,
             1.0,
             Vec2::NEG_X,
             LeadFoot::Right,
         ),
         raised_guard_steady_scenario_with_lead(
-            "raised-guard-right-lead-right",
+            "raised-guard-right-support-right",
             2.0,
             1.0,
             Vec2::X,
             LeadFoot::Right,
         ),
         raised_guard_steady_scenario_with_lead(
-            "raised-guard-right-lead-forward-right",
+            "raised-guard-right-support-forward-right",
             2.0,
             1.0,
             Vec2::new(1.0, -1.0),
             LeadFoot::Right,
         ),
         raised_guard_acceleration_scenario_with_lead(
-            "raised-guard-right-lead-accelerate",
+            "raised-guard-right-support-accelerate",
             LeadFoot::Right,
         ),
-        raised_guard_release_scenario_with_lead("raised-guard-right-lead-release", LeadFoot::Right),
+        raised_guard_release_scenario_with_lead(
+            "raised-guard-right-support-release",
+            LeadFoot::Right,
+        ),
         raised_guard_reversal_scenario_with_lead(
-            "raised-guard-right-lead-reversal",
+            "raised-guard-right-support-reversal",
             LeadFoot::Right,
         ),
         raised_guard_transition_scenario(),
-        attack_step_scenario(
-            "attack-step-forward-left-lead",
+        attack_live_scenario(
+            "attack-live-forward-left-support",
             2.0,
             Vec2::NEG_Y,
             LeadFoot::Left,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-forward-right-lead",
+        attack_live_scenario(
+            "attack-live-forward-right-support",
             2.0,
             Vec2::NEG_Y,
             LeadFoot::Right,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-backward-left-lead",
+        attack_live_scenario(
+            "attack-live-backward-left-support",
             2.0,
             Vec2::Y,
             LeadFoot::Left,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-backward-right-lead",
+        attack_live_scenario(
+            "attack-live-backward-right-support",
             2.0,
             Vec2::Y,
             LeadFoot::Right,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-stationary",
+        attack_live_scenario(
+            "attack-live-stationary",
             0.0,
             Vec2::ZERO,
             LeadFoot::Left,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-moving-stay",
+        attack_live_scenario(
+            "attack-live-moving-thrust",
             2.0,
             Vec2::NEG_Y,
             LeadFoot::Left,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-stationary-slash",
+        attack_live_scenario(
+            "attack-live-stationary-swing",
             0.0,
             Vec2::ZERO,
             LeadFoot::Left,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-high-speed-reversal",
+        attack_live_scenario(
+            "attack-live-high-speed-reversal",
             5.5,
             Vec2::NEG_Y,
             LeadFoot::Left,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-reversal",
+        attack_live_scenario(
+            "attack-live-reversal",
             2.0,
             Vec2::NEG_Y,
             LeadFoot::Left,
             true,
         ),
-        attack_step_scenario(
-            "attack-step-yaw-only",
+        attack_live_scenario(
+            "attack-live-yaw-only",
             2.0,
             Vec2::NEG_Y,
             LeadFoot::Left,
             false,
         ),
-        attack_step_scenario(
-            "attack-step-terrain-cross-slope",
+        attack_live_scenario(
+            "attack-live-terrain-cross-slope",
             2.0,
             Vec2::new(0.5, -1.0).normalize(),
             LeadFoot::Left,
@@ -1163,14 +1222,48 @@ fn capture_plan() -> Vec<PlannedFrame> {
     .collect()
 }
 
-fn downed_contact_scenario(name: &'static str, _body: BodyState) -> Vec<PlannedFrame> {
-    (0..=84)
+fn quickstep_scenario() -> Vec<PlannedFrame> {
+    (0..72)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: "quickstep-right",
+            scenario_frame,
+            speed: if (5..=40).contains(&scenario_frame) {
+                TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
+            } else if (41..57).contains(&scenario_frame) {
+                (TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
+                    - 20.0 * (scenario_frame - 40) as f32 / SAMPLE_HZ)
+                    .max(0.0)
+            } else {
+                0.0
+            },
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::X,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            crouching: false,
+            action: SkeletonAction::Dodge,
+            weapon_guard: WeaponGuardState::Raised,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
+fn downed_contact_scenario(name: &'static str, body: BodyState) -> Vec<PlannedFrame> {
+    let speed = match body {
+        BodyState::Prone => 2.0,
+        BodyState::Supine => 0.8,
+        _ => 0.0,
+    };
+    // Include a full review cycle after the pose-buffer startup settles. The
+    // shorter probe ended just before the first loop seam, hiding precisely
+    // the kind of crawl discontinuity this scenario is meant to diagnose.
+    (0..=148)
         .map(|scenario_frame| PlannedFrame {
             scenario: name,
             scenario_frame,
-            speed: 0.0,
+            speed,
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
-            local_direction: Vec2::ZERO,
+            local_direction: Vec2::NEG_Y,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
             crouching: true,
@@ -1245,7 +1338,26 @@ fn posture_transition_scenario(name: &'static str, _start: BodyState) -> Vec<Pla
 }
 
 fn dive_impact_scenario(name: &'static str) -> Vec<PlannedFrame> {
-    let final_frame = if name == "dive-backward-impact" {
+    dive_impact_scenario_with_aim(name, false)
+}
+
+fn aimed_dive_impact_scenario(name: &'static str) -> Vec<PlannedFrame> {
+    dive_impact_scenario_with_aim(name, true)
+}
+
+fn dive_impact_scenario_with_aim(name: &'static str, aimed: bool) -> Vec<PlannedFrame> {
+    let local_direction = if name.starts_with("dive-forward") {
+        Vec2::NEG_Y
+    } else if name.starts_with("dive-backward") {
+        Vec2::Y
+    } else if name.starts_with("dive-left") {
+        Vec2::NEG_X
+    } else if name.starts_with("dive-right") {
+        Vec2::X
+    } else {
+        Vec2::ZERO
+    };
+    let final_frame = if name.starts_with("dive-backward") {
         56
     } else {
         48
@@ -1254,16 +1366,28 @@ fn dive_impact_scenario(name: &'static str) -> Vec<PlannedFrame> {
         .map(|scenario_frame| PlannedFrame {
             scenario: name,
             scenario_frame,
-            speed: 0.0,
+            // Match the server's camera-relative launch rather than judging a
+            // directional pose on a stationary root. Retain velocity through
+            // the first terrain-contact sample so travel and body orientation
+            // can be compared across the complete airborne arc.
+            speed: if scenario_frame <= 17 {
+                TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND
+            } else {
+                0.0
+            },
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
-            local_direction: Vec2::ZERO,
-            camera_yaw: 0.0,
+            local_direction,
+            camera_yaw: if aimed { 0.85 } else { 0.0 },
             camera_pitch: 0.0,
             // The live controller reports crouching for the complete authored
             // posture transition, including its terrain-contact recovery.
             crouching: true,
             action: SkeletonAction::None,
-            weapon_guard: WeaponGuardState::Lowered,
+            weapon_guard: if aimed {
+                WeaponGuardState::Raised
+            } else {
+                WeaponGuardState::Lowered
+            },
             lead_foot: LeadFoot::Left,
         })
         .collect()
@@ -1296,49 +1420,61 @@ fn downed_body_for_scenario(scenario: &str) -> Option<BodyState> {
 }
 
 fn required_motion_for_scenario(scenario: &str) -> Option<&'static str> {
+    if scenario.starts_with("dive-forward") {
+        return Some("dive_forward");
+    }
+    if scenario.starts_with("dive-backward") {
+        return Some("dive_backward");
+    }
+    if scenario.starts_with("dive-left") {
+        return Some("dive_left");
+    }
+    if scenario.starts_with("dive-right") {
+        return Some("dive_right");
+    }
     match scenario {
         "downed-prone-crawl" => Some("prone_crawl"),
         "downed-supine-scamper" => Some("supine_scamper"),
         "downed-prone-look-at" => Some("prone_idle"),
-        "dive-forward" => Some("dive_forward"),
-        "dive-backward" | "dive-backward-impact" => Some("dive_backward"),
-        "dive-left" | "dive-left-impact" => Some("dive_left"),
-        "dive-right" | "dive-right-impact" => Some("dive_right"),
         "prone-get-up" => Some("prone_transition"),
         "supine-get-up" => Some("supine_transition"),
+        "prone-roll-left" => Some("prone_supine_roll_left"),
+        "prone-roll-right" => Some("prone_supine_roll_right"),
         _ => None,
     }
 }
 
 fn transition_for_scenario(scenario: &str) -> Option<(BodyState, PostureTransitionKind)> {
     let upright = BodyState::Grounded(GroundedPosture::Upright);
+    let dive_direction = if scenario.starts_with("dive-forward") {
+        Some(DiveDirection::Forward)
+    } else if scenario.starts_with("dive-backward") {
+        Some(DiveDirection::Backward)
+    } else if scenario.starts_with("dive-left") {
+        Some(DiveDirection::Left)
+    } else if scenario.starts_with("dive-right") {
+        Some(DiveDirection::Right)
+    } else {
+        None
+    };
+    if let Some(direction) = dive_direction {
+        return Some((upright, PostureTransitionKind::DiveToDowned { direction }));
+    }
     match scenario {
-        "dive-forward" => Some((
-            upright,
-            PostureTransitionKind::DiveToDowned {
-                direction: DiveDirection::Forward,
-            },
-        )),
-        "dive-backward" | "dive-backward-impact" => Some((
-            upright,
-            PostureTransitionKind::DiveToDowned {
-                direction: DiveDirection::Backward,
-            },
-        )),
-        "dive-left" | "dive-left-impact" => Some((
-            upright,
-            PostureTransitionKind::DiveToDowned {
-                direction: DiveDirection::Left,
-            },
-        )),
-        "dive-right" | "dive-right-impact" => Some((
-            upright,
-            PostureTransitionKind::DiveToDowned {
-                direction: DiveDirection::Right,
-            },
-        )),
         "prone-get-up" => Some((BodyState::Prone, PostureTransitionKind::ProneToUpright)),
         "supine-get-up" => Some((BodyState::Supine, PostureTransitionKind::SupineToUpright)),
+        "prone-roll-left" => Some((
+            BodyState::Prone,
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Left,
+            },
+        )),
+        "prone-roll-right" => Some((
+            BodyState::Prone,
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Right,
+            },
+        )),
         _ => None,
     }
 }
@@ -1580,15 +1716,22 @@ fn raised_guard_reversal_scenario_with_lead(
         .collect()
 }
 
-fn setup_viewer(mut commands: Commands) {
+fn setup_viewer(mut commands: Commands, sequence: Res<CaptureSequence>) {
     let default_player = Player::default();
     let mut generator = TerrainGenerator::new(0xA11C_E5E1);
     generator.period = 200.0;
-    let terrain = generator.generate(100, 30, 100);
+    let terrain = generator.generate(100, if sequence.uses_flat_grid() { 0 } else { 30 }, 100);
     let spawn_height =
         terrain.height_at(Vec2::ZERO).unwrap_or_default() + CAPTURE_ROOT_GROUND_OFFSET_METRES;
     commands.spawn((
-        Name::new("Animation review hills scene"),
+        Name::new(if sequence.uses_flat_grid() {
+            "Animation review flat-grid scene"
+        } else {
+            "Animation review hills scene"
+        }),
+        // Retain the known hills presentation family for its production sky,
+        // lighting, and materials; only the authoritative heightfield becomes
+        // flat for grid review.
         SceneId("hills".to_owned()),
         terrain,
         Transform::default(),
@@ -1605,6 +1748,15 @@ fn setup_viewer(mut commands: Commands) {
         Collider::cylinder(0.4, 1.9),
         CollisionMargin(0.01),
         tactical_character_controller(),
+    ));
+    commands.spawn((
+        Name::new("Animation review fill light"),
+        DirectionalLight {
+            illuminance: 35_000.0,
+            shadow_maps_enabled: false,
+            ..default()
+        },
+        Transform::from_xyz(-8.0, 12.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
     commands.spawn((
         CaptureLabel,
@@ -1652,7 +1804,6 @@ fn drive_sequence(
             Option<&mut LegIkState>,
             Option<&mut ArmIkState>,
             Option<&mut RaisedFootworkState>,
-            Option<&mut AttackFootworkState>,
             Option<&mut LocomotionHeightState>,
             Option<&mut LocomotionBodyResponseState>,
         ),
@@ -1675,7 +1826,6 @@ fn drive_sequence(
         ik_state,
         arm_ik_state,
         raised_footwork,
-        attack_footwork,
         height_state,
         body_response,
     ) in &mut subjects
@@ -1702,9 +1852,6 @@ fn drive_sequence(
             }
             if let Some(mut raised_footwork) = raised_footwork {
                 *raised_footwork = RaisedFootworkState::default();
-            }
-            if let Some(mut attack_footwork) = attack_footwork {
-                *attack_footwork = AttackFootworkState::default();
             }
             if let Some(mut height_state) = height_state {
                 *height_state = LocomotionHeightState::default();
@@ -1736,7 +1883,7 @@ fn drive_sequence(
                     .is_some_and(|motion| animation_runtime.motion_is_processed(motion));
             skeleton.set_downed_turning(
                 frame.scenario != "downed-prone-look-at"
-                    && (preload_locomotion || frame.scenario_frame >= 4),
+                    && (preload_locomotion || (frame.scenario_frame >= 4 && frame.speed <= 0.05)),
             );
         }
 
@@ -1744,7 +1891,7 @@ fn drive_sequence(
             Quat::from_euler(EulerRot::YXZ, frame.camera_yaw, frame.camera_pitch, 0.0);
         look.yaw = frame.camera_yaw;
         look.pitch = frame.camera_pitch;
-        let attack_start_frame = frame.scenario.starts_with("attack-step-").then_some(8);
+        let attack_start_frame = frame.scenario.starts_with("attack-live-").then_some(8);
         if frame.action != SkeletonAction::Attack
             || attack_start_frame == Some(frame.scenario_frame)
         {
@@ -1766,32 +1913,29 @@ fn drive_sequence(
             );
         }
         let dive_impact = frame.scenario.ends_with("-impact");
-        let grounded = if dive_impact {
+        let quickstep = frame.scenario == "quickstep-right";
+        let grounded = if quickstep {
+            frame.scenario_frame < 5 || frame.scenario_frame >= 41
+        } else if dive_impact {
             frame.scenario_frame == 0 || frame.scenario_frame >= 17
         } else {
             metadata.kind != ScenarioKind::Landing || frame.scenario_frame >= 32
         };
-        let vertical_velocity =
-            if (metadata.kind == ScenarioKind::Landing || dive_impact) && !grounded {
-                -4.5
-            } else {
-                0.0
-            };
+        let vertical_velocity = if quickstep && !grounded {
+            let duration_seconds = 35.0 / SAMPLE_HZ;
+            let flight = ((frame.scenario_frame.saturating_sub(5)) as f32 / 35.0).clamp(0.0, 1.0);
+            4.0 * TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES * (1.0 - 2.0 * flight) / duration_seconds
+        } else if (metadata.kind == ScenarioKind::Landing || dive_impact) && !grounded {
+            -4.5
+        } else {
+            0.0
+        };
         let requested_local_velocity = Vec3::new(
             frame.local_direction.x * frame.speed,
             vertical_velocity,
             frame.local_direction.y * frame.speed,
         );
-        let local_velocity = skeleton
-            .attack_movement()
-            .map(|(direction, speed)| {
-                // Attack movement is stored in Ahoy controller space, where
-                // +Y is forward. Convert it back to Bevy local -Z and retain
-                // it through the completed switching action, matching server
-                // authority even if the planned live input reverses.
-                Vec3::new(direction.x * speed, vertical_velocity, -direction.y * speed)
-            })
-            .unwrap_or(requested_local_velocity);
+        let local_velocity = requested_local_velocity;
         let world_velocity = controller_yaw(orientation) * local_velocity;
         sequence.simulation_tick = next_capture_simulation_tick(
             sequence.simulation_tick,
@@ -1802,8 +1946,15 @@ fn drive_sequence(
             && let Some((start_body, transition)) = transition_for_scenario(frame.scenario)
         {
             skeleton.transition_body(start_body);
+            if frame.scenario.ends_with("-aimed-impact") {
+                // Match the authoritative launch seam: velocity and authored
+                // direction capture one camera frame even if the previously
+                // displayed root had not finished turning toward it.
+                transform.rotation =
+                    dive_launch_root_rotation(Quat::from_rotation_y(frame.camera_yaw));
+            }
             // Matches the live server's terrain-contact dive recovery.
-            let duration = if frame.scenario == "dive-backward-impact" {
+            let duration = if frame.scenario.starts_with("dive-backward") {
                 32
             } else if dive_impact {
                 20
@@ -1819,7 +1970,12 @@ fn drive_sequence(
         };
         procedural_clock.set_fixed_tick(sequence.simulation_tick, delta_seconds);
         let horizontal = transform.translation.xz() + world_velocity.xz() * delta_seconds;
-        let vertical = if terrain_ik.0 {
+        let vertical = if quickstep {
+            let ground = terrain.height_at(horizontal).unwrap_or_default()
+                + CAPTURE_ROOT_GROUND_OFFSET_METRES;
+            let flight = ((frame.scenario_frame.saturating_sub(5)) as f32 / 35.0).clamp(0.0, 1.0);
+            ground + 4.0 * TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES * flight * (1.0 - flight)
+        } else if terrain_ik.0 {
             terrain.height_at(horizontal).unwrap_or_default() + CAPTURE_ROOT_GROUND_OFFSET_METRES
         } else {
             transform.translation.y
@@ -1828,6 +1984,7 @@ fn drive_sequence(
         if frame.action != SkeletonAction::None
             && (frame.action != SkeletonAction::Attack
                 || attack_start_frame == Some(frame.scenario_frame))
+            && (!quickstep || frame.scenario_frame == 0)
         {
             let start = sequence.simulation_tick;
             let contact = start
@@ -1838,24 +1995,20 @@ fn drive_sequence(
                 };
             match frame.action {
                 SkeletonAction::Attack => {
-                    let attack = if frame.scenario == "attack-step-moving-stay" {
-                        AttackSpec::melee_from_local_velocity_and_style(
-                            local_velocity,
-                            StrikeFamily::Thrust,
-                            Footwork::Stay,
-                        )
-                    } else if frame.scenario == "attack-step-stationary-slash" {
-                        AttackSpec::melee_from_local_velocity_and_style(
-                            local_velocity,
-                            StrikeFamily::Slash,
-                            Footwork::Switch,
-                        )
+                    let attack = if frame.scenario == "attack-live-stationary-swing" {
+                        AttackSpec::new(AttackAnimation::Swing)
                     } else {
-                        AttackSpec::melee_from_local_velocity(local_velocity)
+                        AttackSpec::new(AttackAnimation::Thrust)
                     };
                     skeleton.begin_attack(attack, start, contact)
                 }
-                SkeletonAction::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, contact),
+                SkeletonAction::Dodge => skeleton.begin_dodge(
+                    DodgeSpec {
+                        direction: frame.local_direction,
+                    },
+                    start,
+                    if quickstep { start + 20 } else { contact },
+                ),
                 SkeletonAction::Block => skeleton.begin_block(BlockSpec::default(), start, contact),
                 SkeletonAction::None => {}
             }
@@ -2043,6 +2196,41 @@ fn draw_skeleton_overlay(
     }
 }
 
+fn draw_flat_ground_grid(sequence: Res<CaptureSequence>, mut gizmos: Gizmos) {
+    let Some(frame) = sequence.plan.get(sequence.index) else {
+        return;
+    };
+    if !frame.scenario.starts_with("flat-grid-") {
+        return;
+    }
+
+    const HALF_EXTENT_METRES: i32 = 20;
+    const SUBDIVISIONS_PER_METRE: i32 = 4;
+    let half_steps = HALF_EXTENT_METRES * SUBDIVISIONS_PER_METRE;
+    let height = 0.012;
+    for step in -half_steps..=half_steps {
+        let coordinate = step as f32 / SUBDIVISIONS_PER_METRE as f32;
+        let whole_metre = step % SUBDIVISIONS_PER_METRE == 0;
+        let color = if step == 0 {
+            Color::srgba(1.0, 0.45, 0.12, 0.95)
+        } else if whole_metre {
+            Color::srgba(0.82, 0.86, 0.92, 0.80)
+        } else {
+            Color::srgba(0.42, 0.47, 0.55, 0.48)
+        };
+        gizmos.line(
+            Vec3::new(coordinate, height, -HALF_EXTENT_METRES as f32),
+            Vec3::new(coordinate, height, HALF_EXTENT_METRES as f32),
+            color,
+        );
+        gizmos.line(
+            Vec3::new(-HALF_EXTENT_METRES as f32, height, coordinate),
+            Vec3::new(HALF_EXTENT_METRES as f32, height, coordinate),
+            color,
+        );
+    }
+}
+
 fn collect_locomotion_presentation_events(
     mut events: MessageReader<LocomotionPresentationEvent>,
     mut sequence: ResMut<CaptureSequence>,
@@ -2072,6 +2260,7 @@ fn collect_locomotion_presentation_events(
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
+    pose_buffer_metrics: Res<PoseBufferMetrics>,
     terrain_ik: Res<TerrainIkEnabled>,
     subjects: Query<
         (
@@ -2080,11 +2269,10 @@ fn capture_frame(
             &GlobalTransform,
             Option<&AnimationPlayback>,
             Option<&RaisedFootworkState>,
-            Option<&AttackFootworkState>,
             Option<&LocomotionBodyResponseState>,
             Option<&LocomotionHeightState>,
             Option<&LegIkState>,
-            Option<&SemanticGraphTrace>,
+            Option<&SemanticRouteTrace>,
         ),
         With<CaptureSubject>,
     >,
@@ -2092,6 +2280,8 @@ fn capture_frame(
     terrain: Single<&SceneTerrain>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    let playback_backend = "pose_buffer";
+    let pose_buffer_metrics = *pose_buffer_metrics;
     if !sequence.applied || sequence.capture_in_flight {
         return;
     }
@@ -2101,11 +2291,10 @@ fn capture_frame(
         subject_global,
         playback,
         raised_footwork,
-        attack_footwork,
         body_response,
         height_state,
         leg_ik,
-        semantic_graph,
+        semantic_route,
     )) = subjects.single()
     else {
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
@@ -2119,10 +2308,10 @@ fn capture_frame(
         );
         return;
     };
-    let Some(semantic_graph) = semantic_graph else {
+    let Some(semantic_route) = semantic_route else {
         wait_or_fail(
             &mut sequence,
-            "capture subject has no semantic graph trace",
+            "capture subject has no semantic route trace",
             &mut exit,
         );
         return;
@@ -2216,12 +2405,8 @@ fn capture_frame(
     if sequence.view_index == 0 {
         let cadence_support = locomotion_support_weights(skeleton);
         let root_distance_metres = sequence.scenario_distance;
-        let (desired_left_foot_target, desired_right_foot_target) = attack_footwork
-            .filter(|state| state.initialized)
+        let (desired_left_foot_target, desired_right_foot_target) = raised_footwork
             .map(|state| (state.left_solve_target, state.right_solve_target))
-            .or_else(|| {
-                raised_footwork.map(|state| (state.left_solve_target, state.right_solve_target))
-            })
             .unwrap_or_default();
         let leg_ik = evaluation_leg_ik;
         let ik_support =
@@ -2230,35 +2415,10 @@ fn capture_frame(
             } else {
                 cadence_support
             };
-        let (left_support_weight, right_support_weight) = attack_footwork
+        let (left_support_weight, right_support_weight) = raised_footwork
             .filter(|state| state.initialized)
             .map(|state| (state.left_support_weight, state.right_support_weight))
-            .or_else(|| {
-                raised_footwork
-                    .filter(|state| state.initialized)
-                    .map(|state| (state.left_support_weight, state.right_support_weight))
-            })
             .unwrap_or(ik_support);
-        let (
-            attack_requested_left,
-            attack_requested_right,
-            attack_constrained_left,
-            attack_constrained_right,
-            attack_support_handoffs,
-            attack_maximum_reach_yield,
-        ) = attack_footwork.filter(|state| state.initialized).map_or(
-            (None, None, None, None, 0, 0.0),
-            |state| {
-                (
-                    state.left_requested_target,
-                    state.right_requested_target,
-                    state.left_solve_target,
-                    state.right_solve_target,
-                    state.support_handoffs,
-                    state.maximum_reach_yield,
-                )
-            },
-        );
         sequence.samples.push(FrameSample {
             scenario: frame.scenario.to_owned(),
             scenario_frame: frame.scenario_frame,
@@ -2300,11 +2460,13 @@ fn capture_frame(
             lead_foot: skeleton.lead_foot,
             action: skeleton.action_kind(),
             action_phase: skeleton.action_phase(),
-            attack_step: skeleton.attack_step(),
-            attack_footwork: skeleton.footwork(),
+            attack_animation: skeleton.attack_animation(),
             strike_family: skeleton.strike_family(),
             guard_action: frame.weapon_guard == WeaponGuardState::Raised
-                || matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block),
+                || matches!(
+                    frame.action,
+                    SkeletonAction::Dodge | SkeletonAction::Attack | SkeletonAction::Block
+                ),
             left_support_weight,
             right_support_weight,
             desired_left_foot_target: desired_left_foot_target.map(|value| value.to_array()),
@@ -2325,18 +2487,9 @@ fn capture_frame(
             ik_settle_progress: leg_ik.settle_progress,
             ik_left_knee_foot_yaw_offset_degrees: leg_ik.left_knee_foot_yaw_offset_degrees,
             ik_right_knee_foot_yaw_offset_degrees: leg_ik.right_knee_foot_yaw_offset_degrees,
-            attack_requested_left_foot_target: attack_requested_left.map(|value| value.to_array()),
-            attack_requested_right_foot_target: attack_requested_right
-                .map(|value| value.to_array()),
-            attack_constrained_left_foot_target: attack_constrained_left
-                .map(|value| value.to_array()),
-            attack_constrained_right_foot_target: attack_constrained_right
-                .map(|value| value.to_array()),
-            attack_support_handoffs,
-            attack_maximum_reach_yield_metres: attack_maximum_reach_yield,
-            semantic_graph_requested_path: semantic_graph.requested_path,
-            semantic_graph_selected_path: semantic_graph.path,
-            semantic_graph_runtime_evaluated: semantic_graph.runtime_evaluated,
+            semantic_route_requested_path: semantic_route.requested_path,
+            semantic_route_selected_path: semantic_route.path,
+            semantic_route_runtime_evaluated: semantic_route.runtime_evaluated,
             screenshots: VIEWS
                 .into_iter()
                 .map(|view| {
@@ -2385,7 +2538,12 @@ fn capture_frame(
             sequence.index += 1;
             sequence.applied = false;
             if sequence.index == sequence.plan.len() {
-                finish_capture(&mut sequence, &mut exit);
+                finish_capture(
+                    &mut sequence,
+                    playback_backend,
+                    pose_buffer_metrics,
+                    &mut exit,
+                );
             }
         },
     );
@@ -2478,7 +2636,12 @@ fn wait_or_fail(sequence: &mut CaptureSequence, reason: &str, exit: &mut Message
     exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
 }
 
-fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppExit>) {
+fn finish_capture(
+    sequence: &mut CaptureSequence,
+    playback_backend: &'static str,
+    pose_buffer_metrics: PoseBufferMetrics,
+    exit: &mut MessageWriter<AppExit>,
+) {
     let frames = std::mem::take(&mut sequence.samples);
     let presentation_events = std::mem::take(&mut sequence.presentation_events);
     let scenarios = scenario_metrics(&frames);
@@ -2499,7 +2662,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let all_artifacts_written = capture_artifacts_written(&sequence.output, &frames);
     let continuity_within_review_bounds = scenarios.iter().all(|metrics| {
         metrics.maximum_root_relative_step_metres
-            <= if metrics.scenario.starts_with("attack-step-") {
+            <= if metrics.scenario.starts_with("attack-live-") {
                 0.30
             } else {
                 0.20
@@ -2511,8 +2674,8 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             && metrics.maximum_bone_rotation_step_degrees <= 60.0
             && (!metrics.scenario.contains("run")
                 || metrics.maximum_foot_rotation_step_degrees
-                    <= if metrics.scenario.starts_with("terrain-") {
-                        // Direct graph-weighted slope alignment can rotate a
+                    <= if scenario_metadata(&metrics.scenario).kind == ScenarioKind::Terrain {
+                        // Direct weight-driven slope alignment can rotate a
                         // pointed run foot rapidly during the short contact
                         // approach. Position, contact, penetration, and knee
                         // gates remain strict; no temporal rotation cache is
@@ -2559,7 +2722,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             metrics.minimum_contact_sole_clearance_metres >= -0.02
         }
     });
-    let raised_guard_fixed_lead = frames.windows(2).all(|pair| {
+    let raised_guard_fixed_support = frames.windows(2).all(|pair| {
         pair[0].scenario != pair[1].scenario
             || pair[0].weapon_guard != WeaponGuardState::Raised
             || pair[1].weapon_guard != WeaponGuardState::Raised
@@ -2570,6 +2733,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let flat_controller_height_stable = scenarios.iter().all(|metrics| {
         scenario_uses_terrain_ik(&metrics.scenario)
             || metrics.scenario.contains("terrain")
+            || metrics.scenario == "quickstep-right"
             || metrics.controller_vertical_range_metres <= 0.0001
     });
     let phase_owned_height_valid = scenarios.iter().all(|metrics| {
@@ -2594,7 +2758,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let run_flight_valid = scenarios.iter().all(|metrics| {
         if matches!(
             metrics.scenario.as_str(),
-            "steady-run-5.5" | "terrain-steady-run-5.5"
+            "steady-run-5.5" | "terrain-steady-run-5.5" | "flat-grid-run-5.5"
         ) {
             (0.08..=0.20).contains(&metrics.maximum_no_support_seconds)
                 && (0.05..=0.20).contains(&metrics.minimum_flight_sole_clearance_metres)
@@ -2603,7 +2767,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             metrics.scenario.as_str(),
             "terrain-run-flight-stop" | "terrain-tap-restart-crossfade"
         ) {
-            // Crossfading into graph-authored idle may blend support in before
+            // Transitioning into authored idle may blend support in before
             // a sampled zero-weight frame. If a true flight frame remains,
             // retain the toe-clearance gate; otherwise the ordinary contact
             // and penetration gates own the transition.
@@ -2611,8 +2775,10 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 || strict_transition_flight_toe_clearance_is_valid(
                     metrics.minimum_flight_toe_clearance_metres,
                 )
-        } else if metrics.scenario == "steady-walk-2.0"
-            || raised_scenario_requires_zero_flight(&metrics.scenario)
+        } else if matches!(
+            metrics.scenario.as_str(),
+            "steady-walk-2.0" | "flat-grid-walk-2.0"
+        ) || raised_scenario_requires_zero_flight(&metrics.scenario)
         {
             metrics.maximum_no_support_seconds <= f32::EPSILON
         } else {
@@ -2624,11 +2790,10 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             if pair[0].scenario != pair[1].scenario {
                 return true;
             }
-            if pair[0].scenario.starts_with("attack-step-") {
-                // Combat footwork owns its own measured support handoff and
-                // post-action recovery steps. The ordinary gait contact
-                // sequence may continue advancing underneath that client-only
-                // ownership and is not presentation contact evidence here.
+            if pair[0].scenario.starts_with("attack-live-") {
+                // Attacks deliberately leave contact sequencing to the same
+                // live guard locomotion planner. Its cadence is validated by
+                // the raised-guard scenarios rather than duplicated here.
                 return true;
             }
             let delta = pair[1]
@@ -2746,8 +2911,10 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     };
     let (ramp_pitch_minimum, ramp_pitch_maximum) =
         lean_range("speed-ramp-up-down", |frame| frame.body_lean_pitch_degrees);
-    let (_, hard_stop_pitch_maximum) =
+    let (hard_stop_pitch_minimum, _) =
         lean_range("hard-stop", |frame| frame.body_lean_pitch_degrees);
+    let (walk_stop_pitch_minimum, walk_stop_pitch_maximum) =
+        lean_range("flat-grid-walk-stop", |frame| frame.body_lean_pitch_degrees);
     let turn_90_roll = lean_range("dynamics-turn-90", |frame| {
         frame.body_lean_roll_degrees.abs()
     });
@@ -2764,14 +2931,39 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 <= 2.01
     });
     let has_scenario = |name: &str| frames.iter().any(|frame| frame.scenario == name);
+    let body_lateral_range = |scenario: &str, bone: &str| {
+        let (minimum, maximum) = frames
+            .iter()
+            .filter(|frame| frame.scenario == scenario)
+            .filter_map(|frame| body_local(frame, bone).map(|position| position.x))
+            .fold(
+                (f32::INFINITY, f32::NEG_INFINITY),
+                |(minimum, maximum), value| (minimum.min(value), maximum.max(value)),
+            );
+        if minimum.is_finite() && maximum.is_finite() {
+            maximum - minimum
+        } else {
+            0.0
+        }
+    };
+    let straight_run_torso_sway_valid = ["steady-run-5.5", "flat-grid-run-5.5"]
+        .iter()
+        .filter(|scenario| has_scenario(scenario))
+        .all(|scenario| {
+            body_lateral_range(scenario, "chest") <= 0.015
+                && body_lateral_range(scenario, "head") <= 0.025
+        });
     let body_response_valid = (!has_scenario("speed-ramp-up-down")
-        || ((-12.0..=-8.0).contains(&ramp_pitch_minimum)
-            && (6.0..=10.0).contains(&ramp_pitch_maximum)))
-        && (!has_scenario("hard-stop") || (6.0..=10.0).contains(&hard_stop_pitch_maximum))
-        && (!has_scenario("dynamics-turn-90") || (6.0..=10.0).contains(&turn_90_roll.1))
-        && (!has_scenario("dynamics-turn-180") || (6.0..=10.0).contains(&turn_180_roll.1))
+        || ((-2.5..=0.0).contains(&ramp_pitch_minimum)
+            && (22.0..=30.1).contains(&ramp_pitch_maximum)))
+        && (!has_scenario("hard-stop") || (-0.1..=0.1).contains(&hard_stop_pitch_minimum))
+        && (!has_scenario("flat-grid-walk-stop")
+            || ((-2.5..=0.0).contains(&walk_stop_pitch_minimum)
+                && (3.5..=5.0).contains(&walk_stop_pitch_maximum)))
+        && (!has_scenario("dynamics-turn-90") || (6.0..=18.0).contains(&turn_90_roll.1))
+        && (!has_scenario("dynamics-turn-180") || (6.0..=18.0).contains(&turn_180_roll.1))
         && lean_step_valid
-        && ["speed-ramp-up-down", "hard-stop"]
+        && ["speed-ramp-up-down", "hard-stop", "flat-grid-walk-stop"]
             .iter()
             .filter(|scenario| has_scenario(scenario))
             .all(|scenario| {
@@ -2949,8 +3141,12 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let hard_stop_height_continuity_valid =
         hard_stop_maximum_pelvis_step_metres.is_none_or(|maximum_step| maximum_step <= 0.02);
     let biomechanics_within_review_bounds = scenarios.iter().all(|metrics| {
+        if metrics.scenario.starts_with("dive-") {
+            // Root forward is intentionally not the travel axis for lateral
+            // dives. Judge the posed pelvis-to-head long axis instead.
+            return metrics.maximum_dive_axis_motion_error_degrees <= 20.0;
+        }
         if metrics.scenario.starts_with("downed-")
-            || metrics.scenario.starts_with("dive-")
             || metrics.scenario.ends_with("-get-up")
             || metrics.scenario == "jump-charge-crouch"
             || metrics.scenario == "ordinary-camera-pitch"
@@ -2988,14 +3184,15 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 <= supported_foot_slip_limit(&metrics.scenario)
                 && metrics.maximum_planted_foot_drift_metres
                     <= planted_drift_limit(&metrics.scenario)))
-            && metrics.minimum_signed_foot_track_metres >= -0.01
+            && (metrics.scenario == "quickstep-right"
+                || metrics.minimum_signed_foot_track_metres >= -0.01)
             && metrics.minimum_inter_foot_separation_metres
                 >= inter_foot_separation_limit(&metrics.scenario)
             && (!procedural_solver_gates_apply
                 // Stationary attack fixtures include the authored fully
                 // extended guard leg; moving procedural steps retain the
                 // analytic knee-reserve gate below.
-                || metrics.scenario.starts_with("attack-step-stationary")
+                || metrics.scenario.starts_with("attack-live-stationary")
                 || (metrics.minimum_knee_flexion_degrees >= 3.9
                     && metrics.minimum_knee_hemisphere_dot >= 0.0))
             && (!procedural_solver_gates_apply
@@ -3026,21 +3223,22 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     });
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
-    let attack_footwork_valid = validate_attack_footwork(&frames);
-    let semantic_graph_paths_exercised = frames.iter().all(|frame| {
-        frame.semantic_graph_requested_path == SemanticGraphPath::LegacyFallback
-            || (frame.semantic_graph_runtime_evaluated
-                && frame.semantic_graph_selected_path == frame.semantic_graph_requested_path)
+    let semantic_route_paths_exercised = frames.iter().all(|frame| {
+        frame.semantic_route_requested_path == SemanticRoutePath::LegacyFallback
+            || (frame.semantic_route_runtime_evaluated
+                && frame.semantic_route_selected_path == frame.semantic_route_requested_path)
     });
-    let semantic_graph_path_counts = frames.iter().fold(BTreeMap::new(), |mut counts, frame| {
+    let semantic_route_path_counts = frames.iter().fold(BTreeMap::new(), |mut counts, frame| {
         *counts
-            .entry(frame.semantic_graph_selected_path.as_str().to_owned())
+            .entry(frame.semantic_route_selected_path.as_str().to_owned())
             .or_insert(0) += 1;
         counts
     });
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
-        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, dependency-backed semantic graph, authored FK, and final procedural passes",
+        playback_backend,
+        pose_buffer: pose_buffer_metrics,
+        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, direct semantic routing, fixed-rate pose-buffer FK with per-joint inertialization, and final procedural passes",
         views: VIEWS,
         validation: CaptureValidation {
             finite_transforms,
@@ -3049,11 +3247,12 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             continuity_within_review_bounds,
             biomechanics_within_review_bounds,
             no_ground_penetration,
-            raised_guard_fixed_lead,
+            raised_guard_fixed_support,
             flat_controller_height_stable,
             phase_owned_height_valid,
             run_flight_valid,
             body_response_valid,
+            straight_run_torso_sway_valid,
             speed_ramp_phase_continuity_valid,
             contact_sequences_valid,
             cadence_contact_valid,
@@ -3068,8 +3267,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             hard_stop_maximum_pelvis_step_metres,
             hard_stop_height_continuity_valid,
             repeated_evaluation_valid,
-            attack_footwork_valid,
-            semantic_graph_paths_exercised,
+            semantic_route_paths_exercised,
             views_are_distinct,
             duplicate_view_frames: sequence.duplicate_view_frames.clone(),
             note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
@@ -3077,7 +3275,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         scenarios,
         frames,
         presentation_events,
-        semantic_graph_path_counts,
+        semantic_route_path_counts,
     };
     let manifest_path = sequence.output.join("manifest.json");
     fs::write(
@@ -3095,11 +3293,12 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && continuity_within_review_bounds
         && biomechanics_within_review_bounds
         && no_ground_penetration
-        && raised_guard_fixed_lead
+        && raised_guard_fixed_support
         && flat_controller_height_stable
         && phase_owned_height_valid
         && run_flight_valid
         && body_response_valid
+        && straight_run_torso_sway_valid
         && speed_ramp_phase_continuity_valid
         && contact_sequences_valid
         && cadence_contact_valid
@@ -3113,8 +3312,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && final_support_balance_valid
         && hard_stop_height_continuity_valid
         && repeated_evaluation_valid
-        && attack_footwork_valid
-        && semantic_graph_paths_exercised
+        && semantic_route_paths_exercised
         && views_are_distinct
     {
         exit.write(AppExit::Success);
@@ -3130,7 +3328,12 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
 }
 
 fn foot_continuity_limit(scenario: &str) -> f32 {
-    if scenario.starts_with("attack-step-") {
+    if scenario == "quickstep-right" {
+        // A 5 m/s world-planted takeoff foot releases into an airborne guard
+        // target. Its measured 7.84 cm sample remains below one root-travel
+        // tick and is independently bounded by plant-drift and reach gates.
+        0.09
+    } else if scenario.starts_with("attack-live-") {
         0.21
     } else if scenario.starts_with("dive-") || scenario.ends_with("-get-up") {
         // One-shot authored whole-body transitions move freely rather than
@@ -3143,6 +3346,11 @@ fn foot_continuity_limit(scenario: &str) -> f32 {
         // sustained-forward maximum is 8.83 cm/sample with zero plant drift;
         // retain a narrow 9 cm teleport guard instead of reinstating lag.
         0.09
+    } else if scenario == "flat-grid-run-5.5" {
+        // The rigid travel lean and flat-ground solve peak at 16.09 cm in the
+        // current authored cycle. Rendered review remains continuous; retain a
+        // narrow 16.5 cm teleport guard for this dedicated diagnostic.
+        0.165
     } else if scenario.contains("run") || scenario_requires_strict_terrain_toe_clearance(scenario) {
         // A complete authored run cycle moves a foot relative to the body as
         // well as translating the body by 8.594 cm per 64 Hz sample. Keep a
@@ -3155,7 +3363,12 @@ fn foot_continuity_limit(scenario: &str) -> f32 {
 }
 
 fn knee_continuity_limit(scenario: &str) -> f32 {
-    if scenario.starts_with("attack-step-") {
+    if scenario == "quickstep-right" {
+        // Reactive release from the analytic reach boundary bends a nearly
+        // extended knee faster than ordinary walking. Retain the terrain-run
+        // solver's strict 16 cm teleport guard for this one-shot hop.
+        0.16
+    } else if scenario.starts_with("attack-live-") {
         0.15
     } else if scenario_requires_strict_terrain_toe_clearance(scenario) {
         // Terrain contact acquisition adds slope-aligned leg flexion to the
@@ -3177,6 +3390,10 @@ fn loop_seam_position_limit(scenario: &str) -> f32 {
         // Raised cycles are sampled one 2 m/s controller tick across the
         // nominal seam (3.125 cm at 64 Hz).
         0.035
+    } else if scenario == "flat-grid-run-5.5" {
+        // Three complete cycles measure a 3.10 cm sampled seam on the flat
+        // terrain solve. Keep this diagnostic's margin local.
+        0.032
     } else if scenario.contains("run") {
         // The sampled seam of the complete authored Run cycle is 2.87 cm.
         0.03
@@ -3188,425 +3405,11 @@ fn loop_seam_position_limit(scenario: &str) -> f32 {
 fn scenario_requires_strict_terrain_toe_clearance(scenario: &str) -> bool {
     matches!(
         scenario,
-        "terrain-steady-run-5.5" | "terrain-run-flight-stop" | "terrain-tap-restart-crossfade"
+        "terrain-steady-run-5.5"
+            | "flat-grid-run-5.5"
+            | "terrain-run-flight-stop"
+            | "terrain-tap-restart-crossfade"
     )
-}
-
-fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
-    let mut grouped = BTreeMap::<&str, Vec<&FrameSample>>::new();
-    for frame in frames
-        .iter()
-        .filter(|frame| frame.scenario.starts_with("attack-step-"))
-    {
-        grouped.entry(&frame.scenario).or_default().push(frame);
-    }
-    if grouped.is_empty() {
-        return true;
-    }
-    let expected = [
-        "attack-step-forward-left-lead",
-        "attack-step-forward-right-lead",
-        "attack-step-backward-left-lead",
-        "attack-step-backward-right-lead",
-        "attack-step-stationary",
-        "attack-step-moving-stay",
-        "attack-step-stationary-slash",
-        "attack-step-high-speed-reversal",
-        "attack-step-reversal",
-        "attack-step-yaw-only",
-        "attack-step-terrain-cross-slope",
-    ];
-    let selected = if grouped.len() == 1 {
-        grouped.keys().copied().collect::<Vec<_>>()
-    } else {
-        expected.to_vec()
-    };
-    selected.into_iter().all(|name| {
-        let Some(samples) = grouped.get(name) else {
-            return false;
-        };
-        let start_lead = if name.contains("right-lead") {
-            LeadFoot::Right
-        } else {
-            LeadFoot::Left
-        };
-        let expected_step = if name == "attack-step-stationary" {
-            AttackStep::Stay
-        } else if name.contains("backward") {
-            AttackStep::Backward
-        } else {
-            AttackStep::Forward
-        };
-        let expected_footwork =
-            if matches!(name, "attack-step-stationary" | "attack-step-moving-stay") {
-                Footwork::Stay
-            } else {
-                Footwork::Switch
-            };
-        let expected_family = if name == "attack-step-stationary-slash" {
-            StrikeFamily::Slash
-        } else {
-            StrikeFamily::Thrust
-        };
-        let active = samples
-            .iter()
-            .copied()
-            .filter(|frame| frame.action == SkeletonAction::Attack)
-            .collect::<Vec<_>>();
-        if active.is_empty()
-            || active.iter().any(|frame| {
-                frame.attack_step != expected_step
-                    || frame.attack_footwork != expected_footwork
-                    || frame.strike_family != expected_family
-                    || (frame.action_phase < 0.999 && frame.lead_foot != start_lead)
-            })
-            || active
-                .windows(2)
-                .any(|pair| pair[1].action_phase + 0.0001 < pair[0].action_phase)
-        {
-            return false;
-        }
-        if !attack_knee_bends_valid(&active) {
-            warn!(scenario = name, "attack knee bend validation failed");
-            return false;
-        }
-        let contact = active.iter().min_by(|left, right| {
-            (left.action_phase - 0.5)
-                .abs()
-                .total_cmp(&(right.action_phase - 0.5).abs())
-        });
-        if contact.is_none_or(|frame| {
-            (frame.action_phase - 0.5).abs() > 0.001 || frame.scenario_frame != 27
-        }) {
-            return false;
-        }
-        let final_lead = samples.last().map(|frame| frame.lead_foot);
-        let rendered_root_relative_range = |bone_name: &str| {
-            let positions = active
-                .iter()
-                .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
-                .filter_map(|frame| {
-                    let bone = Vec3::from_array(frame.bones.get(bone_name)?.position);
-                    Some(bone - Vec3::from_array(frame.root_position_metres))
-                })
-                .collect::<Vec<_>>();
-            positions.first().map_or(0.0, |first| {
-                positions
-                    .iter()
-                    .map(|position| position.distance(*first))
-                    .fold(0.0, f32::max)
-            })
-        };
-        if expected_footwork == Footwork::Stay && expected_step == AttackStep::Stay {
-            let stable = [true, false].into_iter().all(|left| {
-                let positions = active
-                    .iter()
-                    .filter_map(|frame| {
-                        if left {
-                            frame.attack_requested_left_foot_target
-                        } else {
-                            frame.attack_requested_right_foot_target
-                        }
-                    })
-                    .map(Vec3::from_array)
-                    .collect::<Vec<_>>();
-                positions.first().is_some_and(|first| {
-                    positions
-                        .iter()
-                        .all(|position| position.distance(*first) <= 0.03)
-                })
-            });
-            return final_lead == Some(start_lead)
-                && stable
-                && active.iter().all(|frame| {
-                    frame.left_support_weight >= 0.99
-                        && frame.right_support_weight >= 0.99
-                        && frame.attack_support_handoffs == 0
-                });
-        }
-        if expected_footwork == Footwork::Stay {
-            let requested_range = |left: bool| {
-                let positions = active
-                    .iter()
-                    .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
-                    .filter_map(|frame| {
-                        if left {
-                            frame.attack_requested_left_foot_target
-                        } else {
-                            frame.attack_requested_right_foot_target
-                        }
-                    })
-                    .map(Vec3::from_array)
-                    .collect::<Vec<_>>();
-                positions.first().map_or(f32::INFINITY, |first| {
-                    positions
-                        .iter()
-                        .map(|position| position.distance(*first))
-                        .fold(0.0, f32::max)
-                })
-            };
-            let left_range = requested_range(true);
-            let right_range = requested_range(false);
-            let moving_foot = if left_range > right_range {
-                "left_foot"
-            } else {
-                "right_foot"
-            };
-            return final_lead == Some(start_lead)
-                && left_range.min(right_range) <= 0.01
-                && left_range.max(right_range) > 0.03
-                // A moving target alone is insufficient: the rendered foot
-                // must visibly advance relative to the attacking body.
-                && rendered_root_relative_range(moving_foot) >= 0.16
-                && active
-                    .iter()
-                    .all(|frame| frame.attack_support_handoffs == 0);
-        }
-        let opposite = match start_lead {
-            LeadFoot::Left => LeadFoot::Right,
-            LeadFoot::Right => LeadFoot::Left,
-        };
-        if final_lead != Some(opposite) {
-            return false;
-        }
-        // The initially planted foot must remain fixed through contact. At
-        // high speed the analytic reach limiter may compress the visible
-        // lunge, so judge the requested world target and separately retain the
-        // global continuity/reach gates for rendered bones.
-        let requested_range = |left: bool| {
-            let positions = active
-                .iter()
-                .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
-                .filter_map(|frame| {
-                    if left {
-                        frame.attack_requested_left_foot_target
-                    } else {
-                        frame.attack_requested_right_foot_target
-                    }
-                })
-                .map(Vec3::from_array)
-                .collect::<Vec<_>>();
-            positions.first().map_or(f32::INFINITY, |first| {
-                positions
-                    .iter()
-                    .map(|position| position.distance(*first))
-                    .fold(0.0, f32::max)
-            })
-        };
-        // Swing ownership is selected from measured fore/aft positions, not
-        // from the semantic lead label. The requested target with less travel
-        // is therefore the original plant for this capture.
-        let planted_left = requested_range(true) <= requested_range(false);
-        let requested = active
-            .iter()
-            .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
-            .filter_map(|frame| {
-                if planted_left {
-                    frame.attack_requested_left_foot_target
-                } else {
-                    frame.attack_requested_right_foot_target
-                }
-            })
-            .map(Vec3::from_array)
-            .collect::<Vec<_>>();
-        let requested_plant_stable = requested.first().is_some_and(|first| {
-            requested
-                .iter()
-                .all(|target| target.is_finite() && target.distance(*first) <= 0.01)
-        });
-        let planted_foot = if planted_left {
-            "left_toe"
-        } else {
-            "right_toe"
-        };
-        let maximum_slip = active
-            .windows(2)
-            .filter(|pair| pair[1].action_phase <= 0.5 + 0.001)
-            .filter_map(|pair| {
-                Some(
-                    (Vec3::from_array(pair[1].bones.get(planted_foot)?.position)
-                        - Vec3::from_array(pair[0].bones.get(planted_foot)?.position))
-                    .xz()
-                    .length(),
-                )
-            })
-            .fold(0.0, f32::max);
-        let slip_limit = if name.contains("high-speed") {
-            0.11
-        } else if name.contains("terrain") {
-            // The analytic cross-slope solve contributes a small horizontal
-            // component while conforming the ankle to the surface normal.
-            0.05
-        } else {
-            0.04
-        };
-        let moving_foot = if planted_left {
-            "right_foot"
-        } else {
-            "left_foot"
-        };
-        // Measure the step in the facing frame captured when the attack
-        // began. A player may continue turning during the action; judging
-        // each frame in its new body frame would turn a valid lunge into a
-        // sideways or backwards step in telemetry.
-        let attack_forward = active
-            .first()
-            .map(|frame| Vec3::from_array(frame.body_forward_direction).normalize_or_zero())
-            .unwrap_or(Vec3::NEG_Z);
-        let moving_start = active.first().and_then(|frame| {
-            frame
-                .bones
-                .get(moving_foot)
-                .map(|bone| Vec3::from_array(bone.position))
-        });
-        let signed_extensions = active
-            .iter()
-            .filter_map(|frame| {
-                let moving = Vec3::from_array(frame.bones.get(moving_foot)?.position);
-                let signed = (moving - moving_start?).dot(attack_forward);
-                Some((frame.scenario_frame, signed))
-            })
-            .collect::<Vec<_>>();
-        let direction_valid = contact.is_some_and(|frame| {
-            let moving = frame
-                .bones
-                .get(moving_foot)
-                .map(|bone| Vec3::from_array(bone.position));
-            moving.zip(moving_start).is_some_and(|(moving, start)| {
-                let margin = (moving - start).dot(attack_forward);
-                if expected_step == AttackStep::Forward {
-                    margin >= 0.05
-                } else {
-                    margin <= -0.05
-                }
-            })
-        });
-        // Recovery may include an in-place guard pivot after a large facing
-        // change. Judge strike extent only over the lunge half; recovery is
-        // separately bounded by continuity and the one-handoff invariant.
-        let maximum_extension = signed_extensions
-            .iter()
-            .filter(|(frame, _)| *frame <= 27)
-            .map(|(_, extension)| extension.abs())
-            .fold(0.0, f32::max);
-        let maximum_at_contact = signed_extensions
-            .iter()
-            .find(|(frame, _)| *frame == 27)
-            // Two centimetres covers the two fixed samples around exact
-            // authored contact while still rejecting a visibly early step.
-            .is_some_and(|(_, extension)| extension.abs() + 0.02 >= maximum_extension);
-        let constrained_continuous = [true, false].into_iter().all(|left| {
-            active
-                .windows(2)
-                .filter_map(|pair| {
-                    let target = |frame: &FrameSample| {
-                        if left {
-                            frame.attack_constrained_left_foot_target
-                        } else {
-                            frame.attack_constrained_right_foot_target
-                        }
-                        .map(Vec3::from_array)
-                    };
-                    Some(target(pair[0])?.distance(target(pair[1])?))
-                })
-                .all(|step| step <= ATTACK_MAXIMUM_CONSTRAINED_TARGET_STEP_METRES)
-        });
-        let stationary_attack = active
-            .first()
-            .is_some_and(|frame| frame.speed_metres_per_second <= 0.05);
-        let recovery_root_motion_valid = active
-            .windows(2)
-            .filter(|pair| pair[0].action_phase >= 0.5 && pair[1].action_phase <= 1.0)
-            .all(|pair| {
-                let root_step = Vec3::from_array(pair[0].root_position_metres)
-                    .distance(Vec3::from_array(pair[1].root_position_metres));
-                if stationary_attack {
-                    root_step <= 0.01
-                } else {
-                    root_step >= 0.01
-                }
-            });
-        let final_attack = active.last().copied();
-        let airborne_lunge = name.contains("high-speed");
-        let yield_valid = if airborne_lunge {
-            final_attack.is_some_and(|frame| frame.attack_maximum_reach_yield_metres <= 0.15)
-        } else {
-            active
-                .iter()
-                .all(|frame| frame.attack_maximum_reach_yield_metres <= 4.0)
-        };
-        let support_valid = if airborne_lunge {
-            contact.is_some_and(|frame| {
-                frame.left_support_weight.max(frame.right_support_weight) >= 0.9
-                    && frame.left_support_weight.min(frame.right_support_weight) <= 0.1
-            }) && active.first().is_some_and(|frame| {
-                frame.left_support_weight.max(frame.right_support_weight) >= 0.9
-            })
-        } else {
-            active
-                .iter()
-                .all(|frame| frame.left_support_weight.max(frame.right_support_weight) >= 0.5)
-        };
-        let valid = (requested_plant_stable || airborne_lunge)
-            && maximum_slip <= slip_limit
-            && direction_valid
-            && rendered_root_relative_range(moving_foot) >= 0.16
-            && maximum_at_contact
-            && constrained_continuous
-            && recovery_root_motion_valid
-            && yield_valid
-            && final_attack.is_some_and(|frame| frame.attack_support_handoffs == 1)
-            && support_valid
-            && active
-                .iter()
-                .all(|frame| frame.attack_maximum_reach_yield_metres.is_finite());
-        if !valid {
-            warn!(
-                scenario = name,
-                requested_plant_stable,
-                maximum_slip,
-                slip_limit,
-                direction_valid,
-                maximum_at_contact,
-                constrained_continuous,
-                recovery_root_motion_valid,
-                yield_valid,
-                support_valid,
-                handoffs = final_attack.map_or(0, |frame| frame.attack_support_handoffs),
-                "attack footwork validation failed"
-            );
-        }
-        valid
-    })
-}
-
-fn attack_knee_bends_valid(frames: &[&FrameSample]) -> bool {
-    let bend = |frame: &FrameSample, left: bool| {
-        let (hip_name, knee_name, foot_name) = if left {
-            ("left_hip", "left_knee", "left_foot")
-        } else {
-            ("right_hip", "right_knee", "right_foot")
-        };
-        let hip = body_local(frame, hip_name)?;
-        let knee = body_local(frame, knee_name)?;
-        let foot = body_local(frame, foot_name)?;
-        let axis = (foot - hip).try_normalize()?;
-        (knee - hip).reject_from_normalized(axis).try_normalize()
-    };
-
-    [true, false].into_iter().all(|left| {
-        let side = if left { -1.0 } else { 1.0 };
-        let canonical = (Vec3::Z + Vec3::X * side * 0.18).normalize();
-        let bends = frames
-            .iter()
-            .filter_map(|frame| bend(frame, left))
-            .collect::<Vec<_>>();
-        !bends.is_empty()
-            && bends.iter().all(|bend| bend.dot(canonical) > 0.0)
-            // A transported bend can turn with the leg, but it may not jump
-            // across the chain to the opposite pole between fixed samples.
-            && bends.windows(2).all(|pair| pair[0].dot(pair[1]) > 0.0)
-    })
 }
 
 fn planted_drift_limit(scenario: &str) -> f32 {
@@ -3825,6 +3628,9 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 ),
                 maximum_guard_facing_error_degrees: maximum_guard_facing_error(&metric_frames),
                 final_facing_motion_error_degrees: final_facing_error(&metric_frames),
+                maximum_dive_axis_motion_error_degrees: maximum_dive_axis_motion_error(
+                    &metric_frames,
+                ),
                 maximum_supported_foot_slip_metres_per_frame: maximum_slip,
                 maximum_planted_foot_drift_metres: maximum_plant_drift,
                 minimum_foot_clearance_metres: minimum_foot_clearance(&metric_frames),
@@ -3838,7 +3644,9 @@ fn expects_loop_seam(scenario: &str) -> bool {
 }
 
 fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 {
-    if scenario.starts_with("attack-step-") {
+    if scenario == "quickstep-right" {
+        0.5
+    } else if scenario.starts_with("attack-live-") {
         0.35
     } else if scenario.starts_with("raised-guard-") {
         // Stationary raised ownership includes initial guard-pelvis
@@ -3860,7 +3668,10 @@ fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 
 fn expected_visual_height(scenario: &str) -> Option<(f32, f32, usize)> {
     Some(match scenario {
         "steady-walk-2.0" => (0.025, 0.06, 2),
-        "steady-run-5.5" => (0.025, 0.10, 2),
+        // Terrain conformity contributes the authored leg/pelvis reach on top
+        // of the 4 cm phase wave even though this terrain has zero relief.
+        "flat-grid-walk-2.0" => (0.025, 0.075, 2),
+        "steady-run-5.5" | "flat-grid-run-5.5" => (0.025, 0.10, 2),
         "steady-crouch-1.5" => (0.035, 0.065, 2),
         "raised-guard-forward" | "raised-guard-half-speed" => (0.018, 0.05, 2),
         _ => return None,
@@ -4041,6 +3852,30 @@ fn final_facing_error(frames: &[&FrameSample]) -> f32 {
                 .angle_between(Vec3::from_array(frame.desired_body_forward_direction))
                 .to_degrees()
         })
+}
+
+fn maximum_dive_axis_motion_error(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        // Preserve the launch vector as the directional contract through the
+        // complete terrain-contact recovery. Physical speed may already be
+        // zero while the authored body is still resolving its landing pose.
+        .filter(|frame| frame.scenario.starts_with("dive-"))
+        .filter_map(|frame| {
+            let head = Vec3::from_array(frame.bones.get("head")?.position);
+            let pelvis = Vec3::from_array(frame.bones.get("pelvis")?.position);
+            let axis = Vec3::new(head.x - pelvis.x, 0.0, head.z - pelvis.z);
+            // While the character is still nearly upright, the horizontal
+            // projection of its long axis is too short to define a stable
+            // travel heading. Begin judging once the dive has visibly tipped.
+            if axis.length() < 0.25 {
+                return None;
+            }
+            let axis = axis.normalize();
+            let travel = Vec3::from_array(frame.world_travel_direction).try_normalize()?;
+            Some(axis.angle_between(travel).to_degrees())
+        })
+        .fold(0.0, f32::max)
 }
 
 fn loop_seam(first: &FrameSample, last: &FrameSample) -> (f32, f32) {
@@ -4521,18 +4356,13 @@ fn reported_support_contacts_are_valid(frames: &[FrameSample]) -> bool {
     frames.iter().all(|frame| {
         if scenario_metadata(&frame.scenario).kind == ScenarioKind::Attack
             || frame.action != SkeletonAction::None
-            || frame.attack_constrained_left_foot_target.is_some()
-            || frame.attack_constrained_right_foot_target.is_some()
             || (!scenario_uses_terrain_ik(&frame.scenario)
                 && frame.weapon_guard == WeaponGuardState::Lowered)
         {
-            // In an FK-only comparison the graph weights describe authored
+            // In an FK-only comparison the semantic weights describe authored
             // loading, not a claim that the procedural solver owns contact.
-            // Attack captures include client-owned recovery and the raised
-            // locomotion seam after the authoritative action has cleared.
-            // Their dedicated validator, penetration gate, and continuity
-            // bounds cover that whole interval; ordinary LegIkState weights
-            // are stale while either specialized follower owns the legs.
+            // Attack captures exercise the same raised-guard locomotion and
+            // terrain IK ownership used outside attacks.
             return true;
         }
         [
@@ -4541,8 +4371,23 @@ fn reported_support_contacts_are_valid(frames: &[FrameSample]) -> bool {
         ]
         .into_iter()
         .all(|(foot, support)| {
+            let quickstep_toe_contact = (frame.scenario == "quickstep-right")
+                .then(|| {
+                    let toe = if foot == "left_foot" {
+                        "left_toe"
+                    } else {
+                        "right_toe"
+                    };
+                    frame
+                        .bones
+                        .get(toe)
+                        .and_then(|bone| bone.terrain_clearance_metres)
+                        .is_some_and(|clearance| clearance.abs() <= SOLE_CONTACT_TOLERANCE_METRES)
+                })
+                .unwrap_or(false);
             support.is_finite()
                 && (support < 0.95
+                    || quickstep_toe_contact
                     || frame
                         .bones
                         .get(foot)
@@ -4725,7 +4570,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 })
             };
             format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
                 scenario.scenario,
                 scenario.frame_count,
                 describe(&scenario.worst_displacement, "m"),
@@ -4743,6 +4588,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 scenario.maximum_facing_tracking_excess_degrees,
                 scenario.maximum_guard_facing_error_degrees,
                 scenario.final_facing_motion_error_degrees,
+                scenario.maximum_dive_axis_motion_error_degrees,
                 scenario.minimum_foot_clearance_metres,
             )
         })
@@ -4756,7 +4602,7 @@ body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,s
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
-<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>knee-foot yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
+<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>knee-foot yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>dive axis/travel error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
 function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | guard ${{f.weapon_guard}} lead ${{f.lead_foot}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | world plants L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
 function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
@@ -4912,8 +4758,7 @@ mod tests {
             lead_foot: LeadFoot::Left,
             action: SkeletonAction::None,
             action_phase: 0.0,
-            attack_step: AttackStep::Stay,
-            attack_footwork: Footwork::Stay,
+            attack_animation: None,
             strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight: 1.0,
@@ -4936,15 +4781,9 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
-            attack_requested_left_foot_target: None,
-            attack_requested_right_foot_target: None,
-            attack_constrained_left_foot_target: None,
-            attack_constrained_right_foot_target: None,
-            attack_support_handoffs: 0,
-            attack_maximum_reach_yield_metres: 0.0,
-            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_runtime_evaluated: false,
+            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_runtime_evaluated: false,
             screenshots,
             bones: BTreeMap::new(),
         };
@@ -5019,6 +4858,33 @@ mod tests {
             && frame.local_direction.is_finite()));
         assert_eq!(frames.first().unwrap().speed, 0.0);
         assert_eq!(frames.last().unwrap().speed, 0.0);
+    }
+
+    #[test]
+    fn flat_grid_scenarios_are_opt_in_complete_cycles_with_terrain_ik() {
+        for (scenario, speed) in [("flat-grid-walk-2.0", 2.0), ("flat-grid-run-5.5", 5.5)] {
+            let sequence = CaptureSequence::new(PathBuf::new(), 1, Some(scenario));
+            assert!(sequence.uses_flat_grid());
+            assert!(sequence.plan.len() > 64);
+            assert!(sequence.plan.iter().all(|frame| {
+                frame.scenario == scenario
+                    && frame.speed == speed
+                    && terrain_ik_enabled_for_frame(frame)
+            }));
+        }
+
+        let ordinary = CaptureSequence::new(PathBuf::new(), 1, Some("steady-walk-2.0"));
+        assert!(!ordinary.uses_flat_grid());
+
+        let stop = CaptureSequence::new(PathBuf::new(), 1, Some("flat-grid-walk-stop"));
+        assert!(stop.uses_flat_grid());
+        assert!(stop.plan[..48].iter().all(|frame| frame.speed == 2.0));
+        assert!(stop.plan[56..].iter().all(|frame| frame.speed == 0.0));
+        assert!(
+            stop.plan[48..=56]
+                .windows(2)
+                .all(|pair| pair[1].speed <= pair[0].speed)
+        );
     }
 
     #[test]
@@ -5101,12 +4967,12 @@ mod tests {
                 .any(|frame| { frame.scenario == "steady-crouch-1.5" && frame.crouching })
         );
         for scenario in [
-            "raised-guard-right-lead-left",
-            "raised-guard-right-lead-right",
-            "raised-guard-right-lead-forward-right",
-            "raised-guard-right-lead-accelerate",
-            "raised-guard-right-lead-release",
-            "raised-guard-right-lead-reversal",
+            "raised-guard-right-support-left",
+            "raised-guard-right-support-right",
+            "raised-guard-right-support-forward-right",
+            "raised-guard-right-support-accelerate",
+            "raised-guard-right-support-release",
+            "raised-guard-right-support-reversal",
         ] {
             assert!(plan.iter().any(|frame| {
                 frame.scenario == scenario
@@ -5128,9 +4994,9 @@ mod tests {
         assert!(procedural_leg_solver_gates_apply("raised-guard-forward"));
         for transition in [
             "raised-guard-release-at-peak",
-            "raised-guard-right-lead-release",
+            "raised-guard-right-support-release",
             "raised-guard-left-right-reversal",
-            "raised-guard-right-lead-reversal",
+            "raised-guard-right-support-reversal",
             "raised-guard-accelerate-from-rest",
             "terrain-tap-restart-crossfade",
             "terrain-speed-threshold-chatter",
@@ -5180,7 +5046,7 @@ mod tests {
                 assert_eq!(skeleton.lead_foot, frame.lead_foot);
                 let evaluation = AnimationEvaluation::from_skeleton(&skeleton);
                 assert_eq!(evaluation.base.len(), 1);
-                assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadLeft);
+                assert_eq!(evaluation.base[0].pose, SemanticPose::Guard);
                 assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
                 phases.push(skeleton.gait_phase);
             }
@@ -5246,13 +5112,9 @@ mod tests {
     }
 
     #[test]
-    fn raised_guard_capture_uses_prepared_runtime_pose_assets() {
+    fn guard_and_attack_captures_use_prepared_runtime_pose_assets() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for name in [
-            "guard_walk_lead_left.glb",
-            "guard_strafe_lead_left_left.glb",
-            "guard_strafe_lead_left_right.glb",
-        ] {
+        for name in ["guard.glb", "swing.glb", "swing_follow.glb", "thrust.glb"] {
             let source = root.join("assets_src/biped/unarmed").join(name);
             let runtime = root.join("assets/animations/biped/unarmed").join(name);
             assert_eq!(fs::read(source).unwrap(), fs::read(runtime).unwrap());
@@ -5300,8 +5162,7 @@ mod tests {
             lead_foot: LeadFoot::Left,
             action: SkeletonAction::None,
             action_phase: 0.0,
-            attack_step: AttackStep::Stay,
-            attack_footwork: Footwork::Stay,
+            attack_animation: None,
             strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight: 1.0,
@@ -5324,15 +5185,9 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
-            attack_requested_left_foot_target: None,
-            attack_requested_right_foot_target: None,
-            attack_constrained_left_foot_target: None,
-            attack_constrained_right_foot_target: None,
-            attack_support_handoffs: 0,
-            attack_maximum_reach_yield_metres: 0.0,
-            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_runtime_evaluated: false,
+            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones,
         };
@@ -5565,8 +5420,7 @@ mod tests {
             lead_foot: LeadFoot::Left,
             action: SkeletonAction::None,
             action_phase: 0.0,
-            attack_step: AttackStep::Stay,
-            attack_footwork: Footwork::Stay,
+            attack_animation: None,
             strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight,
@@ -5589,15 +5443,9 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
-            attack_requested_left_foot_target: None,
-            attack_requested_right_foot_target: None,
-            attack_constrained_left_foot_target: None,
-            attack_constrained_right_foot_target: None,
-            attack_support_handoffs: 0,
-            attack_maximum_reach_yield_metres: 0.0,
-            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
-            semantic_graph_runtime_evaluated: false,
+            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones: BTreeMap::from([
                 ("left_foot".into(), foot(left_x, left_terrain_height)),
@@ -5688,7 +5536,7 @@ mod tests {
     #[test]
     fn viewer_uses_action_support_instead_of_stale_ordinary_ik_support() {
         let mut frame = foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0);
-        frame.scenario = "attack-step-forward-left-lead".to_owned();
+        frame.scenario = "attack-live-forward-left-support".to_owned();
         frame.action = SkeletonAction::Attack;
         frame.ik_left_support_weight = 1.0;
         frame

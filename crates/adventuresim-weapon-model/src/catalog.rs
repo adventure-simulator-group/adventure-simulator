@@ -1,0 +1,1048 @@
+use crate::*;
+
+pub const PRESET_IDS: &[&str] = &[
+    "halberd-1540",
+    "lucerne-hammer",
+    "pollaxe",
+    "kriegsspiess",
+    "short-spear",
+    "partisan",
+    "glaive",
+    "hooked-bill",
+    "military-fork",
+    "landsknecht-longsword",
+    "zweihander",
+    "katzbalger",
+    "grosse-messer",
+    "dussack",
+    "estoc",
+    "rondel-dagger",
+    "reitschwert-1540",
+    "reiter-war-hammer",
+    "hand-axe",
+    "flanged-mace",
+    "gothic-flanged-mace",
+];
+pub const MELEE_CATALOG_IDS: &[&str] = &[
+    "arming_sword",
+    "baselard",
+    "bauernwehr",
+    "club",
+    "falchion",
+    "flanged_mace",
+    "halberd",
+    "hand_axe",
+    "hunting_spear",
+    "katzbalger",
+    "knife",
+    "kriegsmesser",
+    "longsword",
+    "messer",
+    "military_pike",
+    "misericorde",
+    "rapier",
+    "rondel_dagger",
+    "spear",
+    "utility_knife",
+    "walking_staff",
+    "war_hammer",
+    "zweihander",
+];
+
+pub fn recommended_holder(catalog_id: &str) -> Option<WeaponHolderKind> {
+    match catalog_id {
+        "arming_sword" | "baselard" | "bauernwehr" | "falchion" | "katzbalger" | "knife"
+        | "kriegsmesser" | "longsword" | "messer" | "misericorde" | "rapier" | "rondel_dagger"
+        | "utility_knife" | "zweihander" => Some(WeaponHolderKind::BladeSheath),
+        "club" | "flanged_mace" | "hand_axe" | "war_hammer" => Some(WeaponHolderKind::HaftLoop),
+        "halberd" | "hunting_spear" | "military_pike" | "spear" | "walking_staff" => None,
+        _ => None,
+    }
+}
+
+pub fn default_holder_design(weapon: &WeaponDesign) -> Option<WeaponHolderDesign> {
+    let kind = recommended_holder(&weapon.catalog_id)?;
+    Some(WeaponHolderDesign {
+        catalog_id: match kind {
+            WeaponHolderKind::BladeSheath => "scabbard",
+            WeaponHolderKind::HaftLoop => "weapon_loop",
+        }
+        .into(),
+        kind,
+        fitted_weapon: weapon.clone(),
+        body_material: MaterialClass::DarkLeather,
+        fitting_material: MaterialClass::Brass,
+        clearance: Millimeters(5),
+        throat_length: Millimeters(12),
+        chape_length: Millimeters(20),
+        loop_position: Permille(280),
+        loop_bar_radius: Millimeters(4),
+        hanger_width: Millimeters(42),
+        hanger_height: Millimeters(76),
+    })
+}
+
+fn component(
+    id: &str,
+    role: ComponentRole,
+    parent: Option<(&str, u32)>,
+    offset: OffsetMm,
+    material: MaterialClass,
+    shape: ComponentShape,
+) -> ComponentDesign {
+    ComponentDesign {
+        id: id.into(),
+        role,
+        attachment: parent.map_or(Attachment::Root, |(name, insertion)| Attachment::TopOf {
+            component: name.into(),
+            insertion: Millimeters(insertion),
+        }),
+        offset,
+        material,
+        shape,
+    }
+}
+fn shaft(length: u32, radius: u32, steel: bool) -> ComponentDesign {
+    component(
+        "shaft",
+        ComponentRole::Grip,
+        None,
+        OffsetMm::default(),
+        if steel {
+            MaterialClass::Steel
+        } else {
+            MaterialClass::Wood
+        },
+        ComponentShape::Cylinder(CylinderSpec {
+            length: Millimeters(length),
+            radius: Millimeters(radius),
+            bottom_scale: Permille(900),
+            top_scale: Permille(920),
+            segments: Segments(18),
+        }),
+    )
+}
+fn socket(parent: &str, length: u32, radius: u32, insertion: u32) -> ComponentDesign {
+    component(
+        "socket",
+        ComponentRole::Socket,
+        Some((parent, insertion)),
+        OffsetMm::default(),
+        MaterialClass::Steel,
+        ComponentShape::Socket(SocketSpec {
+            length: Millimeters(length),
+            outer_radius: Millimeters(radius),
+            top_radius: Millimeters(radius.saturating_sub(3)),
+            wall: Millimeters(4),
+            segments: Segments(18),
+        }),
+    )
+}
+fn langet(id: &str, x: i32, length: u32) -> ComponentDesign {
+    component(
+        id,
+        ComponentRole::Structure,
+        Some(("shaft", length.min(380))),
+        OffsetMm { x, y: 0, z: 0 },
+        MaterialClass::Steel,
+        ComponentShape::Langet(LangetSpec {
+            length: Millimeters(length),
+            width: Millimeters(13),
+            thickness: Millimeters(5),
+        }),
+    )
+}
+fn spear(
+    id: &str,
+    parent: &str,
+    length: u32,
+    width: u32,
+    thickness: u32,
+    belly: u16,
+) -> ComponentDesign {
+    component(
+        id,
+        ComponentRole::Head,
+        Some((parent, 10)),
+        OffsetMm::default(),
+        MaterialClass::Steel,
+        ComponentShape::Spear(SpearSpec {
+            length: Millimeters(length),
+            width: Millimeters(width),
+            thickness: Millimeters(thickness),
+            root_width: Millimeters(width * 2 / 5),
+            belly_position: Permille(belly),
+            acuteness: Permille(1000),
+            samples: Segments(18),
+        }),
+    )
+}
+fn polearm_base(
+    id: &str,
+    length: u32,
+    radius: u32,
+    socket_length: u32,
+    socket_radius: u32,
+) -> WeaponDesign {
+    WeaponDesign {
+        catalog_id: id.into(),
+        components: vec![
+            shaft(length, radius, false),
+            socket("shaft", socket_length, socket_radius, socket_length * 3 / 4),
+            component(
+                "butt-cap",
+                ComponentRole::Structure,
+                Some(("shaft", length)),
+                OffsetMm { x: 0, y: -40, z: 0 },
+                MaterialClass::DarkSteel,
+                ComponentShape::Cylinder(CylinderSpec {
+                    length: Millimeters(40),
+                    radius: Millimeters(radius),
+                    bottom_scale: Permille(1000),
+                    top_scale: Permille(920),
+                    segments: Segments(16),
+                }),
+            ),
+        ],
+    }
+}
+fn polearm_finish(mut design: WeaponDesign, length: u32) -> WeaponDesign {
+    design.components.push(langet("langet-left", -18, length));
+    design.components.push(langet("langet-right", 18, length));
+    design
+}
+
+fn sword(
+    id: &str,
+    blade_length: u32,
+    width: u32,
+    grip_length: u32,
+    section: BladeSection,
+    curvature: i32,
+    guard: ComponentShape,
+    pommel: ComponentShape,
+) -> WeaponDesign {
+    let grip = component(
+        "grip",
+        ComponentRole::Grip,
+        None,
+        OffsetMm::default(),
+        MaterialClass::Leather,
+        ComponentShape::Cylinder(CylinderSpec {
+            length: Millimeters(grip_length),
+            radius: Millimeters(21),
+            bottom_scale: Permille(1000),
+            top_scale: Permille(920),
+            segments: Segments(16),
+        }),
+    );
+    let pommel_height = pommel.axial_length().0;
+    let pommel = component(
+        "pommel",
+        ComponentRole::Structure,
+        Some(("grip", grip_length)),
+        OffsetMm {
+            x: 0,
+            y: -(pommel_height as i32),
+            z: 0,
+        },
+        MaterialClass::Steel,
+        pommel,
+    );
+    let guard = component(
+        "guard",
+        ComponentRole::Guard,
+        Some(("grip", 0)),
+        OffsetMm::default(),
+        MaterialClass::Steel,
+        guard,
+    );
+    let blade = component(
+        "blade",
+        ComponentRole::Head,
+        Some(("guard", 0)),
+        OffsetMm::default(),
+        MaterialClass::Steel,
+        ComponentShape::SectionBlade(SectionBladeSpec {
+            length: Millimeters(blade_length),
+            width: Millimeters(width),
+            thickness: Millimeters(12),
+            curvature: SignedMillimeters(curvature),
+            section,
+            samples: Segments(24),
+            taper: Permille(820),
+        }),
+    );
+    WeaponDesign {
+        catalog_id: id.into(),
+        components: vec![grip, pommel, guard, blade],
+    }
+}
+fn cross(span: u32, sweep: i32) -> ComponentShape {
+    ComponentShape::Guard(GuardSpec {
+        span: Millimeters(span),
+        radius: Millimeters(8),
+        sweep: SignedMillimeters(sweep),
+        samples: Segments(22),
+        radial_segments: Segments(14),
+    })
+}
+fn profiled(points: &[(u32, u32)]) -> ComponentShape {
+    ComponentShape::ProfiledPommel(ProfiledPommelSpec {
+        profile: points
+            .iter()
+            .map(|(y, radius)| ProfilePointMm {
+                y: Millimeters(*y),
+                radius: Millimeters(*radius),
+            })
+            .collect(),
+        segments: Segments(16),
+    })
+}
+fn curved_blade(
+    length: u32,
+    width: u32,
+    thickness: u32,
+    curvature: i32,
+    taper: u16,
+    single_edge: u16,
+    belly: i16,
+) -> ComponentShape {
+    ComponentShape::Blade(BladeSpec {
+        length: Millimeters(length),
+        width: Millimeters(width),
+        thickness: Millimeters(thickness),
+        curvature: SignedMillimeters(curvature),
+        profile: BladeProfile::Curved,
+        taper: Permille(taper),
+        single_edge: Permille(single_edge),
+        belly: SignedPermille(belly),
+    })
+}
+fn gothic(id: &str, length: u32, haft: u32, concavity: u16) -> WeaponDesign {
+    let (
+        haft_radius,
+        grip_length,
+        grip_radius,
+        collar_width,
+        collar_radius,
+        sleeve_length,
+        root_radius,
+        shoulder_radius,
+        crown_length,
+        flange_thickness,
+    ) = if concavity > 500 {
+        (11, 200, 19, 18, 22, 150, 9, 7, 15, 2)
+    } else {
+        (13, 170, 20, 14, 23, 90, 8, 7, 8, 3)
+    };
+    WeaponDesign {
+        catalog_id: id.into(),
+        components: vec![
+            component(
+                "grip",
+                ComponentRole::Grip,
+                None,
+                OffsetMm::default(),
+                if concavity > 500 {
+                    MaterialClass::DarkLeather
+                } else {
+                    MaterialClass::Leather
+                },
+                ComponentShape::Cylinder(CylinderSpec {
+                    length: Millimeters(grip_length),
+                    radius: Millimeters(grip_radius),
+                    bottom_scale: Permille(1000),
+                    top_scale: Permille(980),
+                    segments: Segments(16),
+                }),
+            ),
+            component(
+                "shaft",
+                ComponentRole::Structure,
+                Some(("grip", 0)),
+                OffsetMm::default(),
+                MaterialClass::DarkSteel,
+                ComponentShape::Cylinder(CylinderSpec {
+                    length: Millimeters(haft),
+                    radius: Millimeters(haft_radius),
+                    bottom_scale: Permille(1000),
+                    top_scale: Permille(940),
+                    segments: Segments(16),
+                }),
+            ),
+            component(
+                "lower-collar",
+                ComponentRole::Structure,
+                Some(("grip", grip_length)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::Collar(CollarSpec {
+                    width: Millimeters(collar_width),
+                    radius: Millimeters(collar_radius),
+                    segments: Segments(16),
+                }),
+            ),
+            component(
+                "upper-collar",
+                ComponentRole::Structure,
+                Some(("grip", 0)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::Collar(CollarSpec {
+                    width: Millimeters(collar_width),
+                    radius: Millimeters(collar_radius),
+                    segments: Segments(16),
+                }),
+            ),
+            component(
+                "head-sleeve",
+                ComponentRole::Socket,
+                Some(("shaft", 12)),
+                OffsetMm::default(),
+                MaterialClass::DarkSteel,
+                ComponentShape::Sleeve(SleeveSpec {
+                    length: Millimeters(sleeve_length),
+                    radius: Millimeters(root_radius + 2),
+                    top_radius: Millimeters(root_radius),
+                    wall: Millimeters(3),
+                    segments: Segments(16),
+                }),
+            ),
+            component(
+                "head",
+                ComponentRole::Head,
+                Some(("head-sleeve", 12)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::GothicMace(GothicMaceSpec {
+                    length: Millimeters(length),
+                    root_radius: Millimeters(root_radius),
+                    shoulder_radius: Millimeters(shoulder_radius),
+                    cusp_radius: Millimeters(60),
+                    cusp_height: Permille(if concavity > 500 { 750 } else { 500 }),
+                    concavity: Permille(concavity),
+                    crown_length: Millimeters(crown_length),
+                    flanges: 6,
+                    flange_thickness: Millimeters(flange_thickness),
+                    profile_samples: Segments(14),
+                    radial_segments: Segments(18),
+                }),
+            ),
+        ],
+    }
+}
+
+pub fn preset_design(id: &str) -> Option<WeaponDesign> {
+    Some(match id {
+        "halberd-1540" => {
+            let mut d = polearm_base(id, 1820, 26, 240, 33);
+            d.components.push(component(
+                "axe",
+                ComponentRole::Head,
+                Some(("socket", 30)),
+                OffsetMm { x: 0, y: 15, z: 0 },
+                MaterialClass::Steel,
+                ComponentShape::Axe(AxeSpec {
+                    reach: Millimeters(155),
+                    height: Millimeters(270),
+                    thickness: Millimeters(22),
+                    root_width: Millimeters(28),
+                    beard: Permille(420),
+                    curvature: Permille(80),
+                    side: 1,
+                    upper_shoulder: Permille(380),
+                    lower_shoulder: Permille(260),
+                    flare: SignedPermille(0),
+                    toe: SignedPermille(0),
+                    heel: SignedPermille(0),
+                    beard_drop: Permille(189),
+                }),
+            ));
+            d.components.push(component(
+                "beak",
+                ComponentRole::Head,
+                Some(("socket", 70)),
+                OffsetMm {
+                    x: -15,
+                    y: 70,
+                    z: 0,
+                },
+                MaterialClass::Steel,
+                ComponentShape::CurvedBeak(CurvedBeakSpec {
+                    length: Millimeters(100),
+                    root_section: Millimeters(33),
+                    tip_section: Millimeters(3),
+                    thickness: Millimeters(18),
+                    curvature: SignedMillimeters(-40),
+                    direction: -1,
+                    samples: Segments(18),
+                    bend_position: Permille(550),
+                    droop: SignedMillimeters(-14),
+                }),
+            ));
+            d.components
+                .push(spear("spike", "socket", 320, 60, 22, 140));
+            polearm_finish(d, 380)
+        }
+        "lucerne-hammer" => {
+            let mut d = polearm_base(id, 1740, 25, 240, 33);
+            d.components.push(component(
+                "poll",
+                ComponentRole::Head,
+                Some(("socket", 45)),
+                OffsetMm { x: 0, y: 45, z: 0 },
+                MaterialClass::Steel,
+                ComponentShape::HammerPoll(HammerPollSpec {
+                    length: Millimeters(90),
+                    face: Millimeters(75),
+                    neck: Millimeters(46),
+                    thickness: Millimeters(70),
+                    direction: 1,
+                    crown: Permille(60),
+                    neck_ratio: Permille(720),
+                    face_flare: Permille(0),
+                    crown_length: Millimeters(5),
+                    face_thickness: Millimeters(70),
+                }),
+            ));
+            d.components.push(component(
+                "beak",
+                ComponentRole::Head,
+                Some(("socket", 45)),
+                OffsetMm { x: -8, y: 45, z: 0 },
+                MaterialClass::Steel,
+                ComponentShape::CurvedBeak(CurvedBeakSpec {
+                    length: Millimeters(140),
+                    root_section: Millimeters(36),
+                    tip_section: Millimeters(3),
+                    thickness: Millimeters(18),
+                    curvature: SignedMillimeters(25),
+                    direction: -1,
+                    samples: Segments(20),
+                    bend_position: Permille(550),
+                    droop: SignedMillimeters(9),
+                }),
+            ));
+            d.components
+                .push(spear("spike", "socket", 310, 52, 22, 120));
+            polearm_finish(d, 420)
+        }
+        "pollaxe" => {
+            let mut d = polearm_base(id, 1480, 26, 250, 32);
+            d.components.push(component(
+                "axe",
+                ComponentRole::Head,
+                Some(("socket", 40)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::Axe(AxeSpec {
+                    reach: Millimeters(115),
+                    height: Millimeters(180),
+                    thickness: Millimeters(23),
+                    root_width: Millimeters(30),
+                    beard: Permille(80),
+                    curvature: Permille(25),
+                    side: 1,
+                    upper_shoulder: Permille(380),
+                    lower_shoulder: Permille(260),
+                    flare: SignedPermille(0),
+                    toe: SignedPermille(0),
+                    heel: SignedPermille(0),
+                    beard_drop: Permille(40),
+                }),
+            ));
+            d.components.push(component(
+                "poll",
+                ComponentRole::Head,
+                Some(("socket", 40)),
+                OffsetMm { x: 0, y: 40, z: 0 },
+                MaterialClass::Steel,
+                ComponentShape::HammerPoll(HammerPollSpec {
+                    length: Millimeters(90),
+                    face: Millimeters(65),
+                    neck: Millimeters(40),
+                    thickness: Millimeters(68),
+                    direction: -1,
+                    crown: Permille(80),
+                    neck_ratio: Permille(720),
+                    face_flare: Permille(0),
+                    crown_length: Millimeters(7),
+                    face_thickness: Millimeters(68),
+                }),
+            ));
+            d.components
+                .push(spear("spike", "socket", 250, 48, 22, 110));
+            polearm_finish(d, 500)
+        }
+        "kriegsspiess" => {
+            let mut d = polearm_base(id, 3350, 21, 180, 27);
+            d.components
+                .push(spear("spike", "socket", 250, 43, 22, 150));
+            d
+        }
+        "short-spear" => {
+            let mut d = polearm_base(id, 1720, 23, 200, 31);
+            d.components
+                .push(spear("spike", "socket", 310, 85, 24, 320));
+            d
+        }
+        "partisan" => {
+            let mut d = polearm_base(id, 1780, 24, 220, 34);
+            d.components.push(component(
+                "partisan",
+                ComponentRole::Head,
+                Some(("socket", 15)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::Partisan(PartisanSpec {
+                    length: Millimeters(420),
+                    width: Millimeters(135),
+                    lug_width: Millimeters(145),
+                    thickness: Millimeters(22),
+                    belly: Permille(320),
+                    root_width: Millimeters(24),
+                    lug_drop: Permille(75),
+                    belly_position: Permille(320),
+                    lug_sweep: Permille(55),
+                    acuteness: Permille(1000),
+                }),
+            ));
+            polearm_finish(d, 320)
+        }
+        "glaive" => {
+            let mut d = polearm_base(id, 1720, 25, 250, 34);
+            d.components.push(component(
+                "glaive",
+                ComponentRole::Head,
+                Some(("socket", 15)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::Glaive(GlaiveSpec {
+                    length: Millimeters(540),
+                    width: Millimeters(105),
+                    thickness: Millimeters(18),
+                    curvature: SignedMillimeters(130),
+                    root: Millimeters(32),
+                    edge_curvature: Permille(240),
+                    spine_curvature: Permille(200),
+                    point_length: Permille(240),
+                    samples: Segments(18),
+                    belly_position: Permille(420),
+                    root_length: Millimeters(80),
+                }),
+            ));
+            polearm_finish(d, 400)
+        }
+        "hooked-bill" => {
+            let mut d = polearm_base(id, 1830, 26, 230, 33);
+            d.components.push(component(
+                "bill",
+                ComponentRole::Head,
+                Some(("socket", 10)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::Bill(BillSpec {
+                    length: Millimeters(380),
+                    width: Millimeters(90),
+                    hook: Millimeters(80),
+                    thickness: Millimeters(20),
+                    root: Millimeters(30),
+                    hook_depth: Permille(190),
+                    hook_curvature: Permille(220),
+                    samples: Segments(30),
+                    belly_position: Permille(480),
+                    point_length: Permille(240),
+                    root_length: Millimeters(60),
+                }),
+            ));
+            polearm_finish(d, 380)
+        }
+        "military-fork" => {
+            let mut d = polearm_base(id, 1860, 24, 240, 34);
+            d.components.push(component(
+                "fork",
+                ComponentRole::Head,
+                Some(("socket", 10)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::Fork(ForkSpec {
+                    length: Millimeters(390),
+                    width: Millimeters(130),
+                    base_width: Millimeters(55),
+                    thickness: Millimeters(22),
+                    tine_width: Millimeters(26),
+                    crotch: Permille(340),
+                    taper: Permille(550),
+                    shoulder_blend: Permille(200),
+                    crotch_round: Permille(50),
+                }),
+            ));
+            polearm_finish(d, 340)
+        }
+        "landsknecht-longsword" => sword(
+            id,
+            1020,
+            65,
+            300,
+            BladeSection::Fullered,
+            0,
+            cross(310, 18),
+            profiled(&[(0, 38), (32, 52), (105, 37), (130, 23)]),
+        ),
+        "zweihander" => {
+            let mut d = sword(
+                id,
+                1280,
+                72,
+                415,
+                BladeSection::Fullered,
+                0,
+                cross(480, 35),
+                profiled(&[(0, 45), (40, 60), (115, 42), (145, 25)]),
+            );
+            if let ComponentShape::SectionBlade(blade) = &mut d.components[3].shape {
+                blade.thickness = Millimeters(13);
+                blade.taper = Permille(680);
+            }
+            d.components.push(component(
+                "parrying-lugs",
+                ComponentRole::Guard,
+                Some(("blade", 1065)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                cross(180, 0),
+            ));
+            d
+        }
+        "katzbalger" => {
+            let mut d = sword(
+                id,
+                660,
+                70,
+                165,
+                BladeSection::Fullered,
+                0,
+                ComponentShape::FigureEight(FigureEightSpec {
+                    width: Millimeters(140),
+                    height: Millimeters(38),
+                    bar: Millimeters(7),
+                    samples: Segments(48),
+                    radial_segments: Segments(14),
+                }),
+                ComponentShape::FanPommel(FanPommelSpec {
+                    width: Millimeters(55),
+                    height: Millimeters(45),
+                    thickness: Millimeters(14),
+                }),
+            );
+            if let ComponentShape::Cylinder(grip) = &mut d.components[0].shape {
+                grip.radius = Millimeters(22);
+            }
+            if let ComponentShape::SectionBlade(blade) = &mut d.components[3].shape {
+                blade.thickness = Millimeters(11);
+                blade.taper = Permille(500);
+            }
+            d
+        }
+        "grosse-messer" => {
+            let mut d = sword(
+                id,
+                840,
+                64,
+                215,
+                BladeSection::Flat,
+                85,
+                cross(230, 10),
+                profiled(&[(0, 26), (30, 34), (52, 25)]),
+            );
+            d.components[0].material = MaterialClass::Wood;
+            d.components[1].material = MaterialClass::Brass;
+            d.components[0].shape = ComponentShape::SlabGrip(SlabGripSpec {
+                length: Millimeters(215),
+                width: Millimeters(38),
+                thickness: Millimeters(10),
+                scale_thickness: Millimeters(9),
+            });
+            d.components[3].shape = curved_blade(840, 64, 11, 85, 780, 720, 160);
+            d.components.push(component(
+                "nagel-stem",
+                ComponentRole::Guard,
+                Some(("guard", 0)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::TubePath(TubePathSpec {
+                    points: vec![OffsetMm::default(), OffsetMm { x: 0, y: 0, z: 45 }],
+                    radius: Millimeters(5),
+                    radial_segments: Segments(12),
+                    closed: false,
+                }),
+            ));
+            d.components.push(component(
+                "nagel-button",
+                ComponentRole::Guard,
+                Some(("nagel-stem", 0)),
+                OffsetMm { x: 0, y: 0, z: 45 },
+                MaterialClass::Steel,
+                ComponentShape::Boss(BossSpec {
+                    radius: Millimeters(8),
+                    thickness: Millimeters(12),
+                    segments: Segments(16),
+                }),
+            ));
+            d
+        }
+        "dussack" => {
+            let mut d = sword(
+                id,
+                690,
+                68,
+                155,
+                BladeSection::Flat,
+                130,
+                ComponentShape::KnuckleBow(KnuckleBowSpec {
+                    width: Millimeters(100),
+                    length: Millimeters(155),
+                    bar: Millimeters(10),
+                    side: 1,
+                    bulge: Permille(0),
+                    samples: Segments(24),
+                    radial_segments: Segments(14),
+                }),
+                profiled(&[(0, 24), (26, 30), (45, 22)]),
+            );
+            d.components[3].shape = curved_blade(690, 68, 12, 130, 820, 800, 320);
+            d.components[1].material = MaterialClass::Brass;
+            d
+        }
+        "estoc" => sword(
+            id,
+            1050,
+            34,
+            260,
+            BladeSection::Diamond,
+            0,
+            cross(240, 5),
+            profiled(&[(0, 36), (35, 50), (100, 35), (120, 21)]),
+        ),
+        "rondel-dagger" => sword(
+            id,
+            380,
+            32,
+            125,
+            BladeSection::Diamond,
+            0,
+            ComponentShape::Rondel(RondelSpec {
+                radius: Millimeters(47),
+                thickness: Millimeters(14),
+                segments: Segments(20),
+            }),
+            profiled(&[(0, 35), (12, 47), (26, 35)]),
+        ),
+        "reitschwert-1540" => {
+            let mut d = sword(
+                id,
+                880,
+                46,
+                170,
+                BladeSection::Fullered,
+                0,
+                cross(230, 10),
+                profiled(&[(0, 28), (30, 42), (70, 31), (88, 19)]),
+            );
+            d.components.push(component(
+                "side-ring",
+                ComponentRole::Guard,
+                Some(("guard", 0)),
+                OffsetMm { x: 0, y: 0, z: 12 },
+                MaterialClass::Steel,
+                ComponentShape::RingGuard(RingGuardSpec {
+                    radius: Millimeters(55),
+                    bar: Millimeters(6),
+                    arc_start: MilliRadians(0),
+                    arc_end: MilliRadians(3142),
+                    samples: Segments(28),
+                    radial_segments: Segments(12),
+                }),
+            ));
+            d.components.push(component(
+                "knuckle-bow",
+                ComponentRole::Guard,
+                Some(("grip", 0)),
+                OffsetMm::default(),
+                MaterialClass::Steel,
+                ComponentShape::KnuckleBow(KnuckleBowSpec {
+                    width: Millimeters(75),
+                    length: Millimeters(170),
+                    bar: Millimeters(7),
+                    side: 1,
+                    bulge: Permille(0),
+                    samples: Segments(24),
+                    radial_segments: Segments(12),
+                }),
+            ));
+            for (name, x, z, parent) in [
+                ("left-side-ring-boss", -55, 12, "guard"),
+                ("right-side-ring-boss", 55, 12, "guard"),
+                ("upper-knuckle-boss", 0, 0, "guard"),
+                ("lower-knuckle-boss", 0, 0, "grip"),
+            ] {
+                d.components.push(component(
+                    name,
+                    ComponentRole::Guard,
+                    Some((parent, 0)),
+                    OffsetMm { x, y: 0, z },
+                    MaterialClass::DarkSteel,
+                    ComponentShape::Boss(BossSpec {
+                        radius: Millimeters(12),
+                        thickness: Millimeters(48),
+                        segments: Segments(16),
+                    }),
+                ));
+            }
+            d
+        }
+        "reiter-war-hammer" => {
+            let mut d = polearm_base(id, 580, 18, 350, 22);
+            d.components[0].material = MaterialClass::Steel;
+            d.components.push(component(
+                "poll",
+                ComponentRole::Head,
+                Some(("socket", 15)),
+                OffsetMm { x: 0, y: 15, z: 0 },
+                MaterialClass::Steel,
+                ComponentShape::HammerPoll(HammerPollSpec {
+                    length: Millimeters(64),
+                    face: Millimeters(46),
+                    neck: Millimeters(26),
+                    thickness: Millimeters(50),
+                    direction: 1,
+                    crown: Permille(60),
+                    neck_ratio: Permille(720),
+                    face_flare: Permille(0),
+                    crown_length: Millimeters(4),
+                    face_thickness: Millimeters(50),
+                }),
+            ));
+            d.components.push(component(
+                "beak",
+                ComponentRole::Head,
+                Some(("socket", 15)),
+                OffsetMm { x: 0, y: 15, z: 0 },
+                MaterialClass::Steel,
+                ComponentShape::FacetedBeak(FacetedBeakSpec {
+                    length: Millimeters(75),
+                    root: Millimeters(38),
+                    tip: Millimeters(8),
+                    thickness: Millimeters(14),
+                    set: SignedMillimeters(5),
+                    direction: -1,
+                    bend_position: Permille(220),
+                    tip_thickness: Millimeters(14),
+                }),
+            ));
+            d
+        }
+        "hand-axe" => WeaponDesign {
+            catalog_id: id.into(),
+            components: vec![
+                shaft(670, 21, false),
+                socket("shaft", 100, 27, 80),
+                component(
+                    "axe",
+                    ComponentRole::Head,
+                    Some(("socket", 20)),
+                    OffsetMm::default(),
+                    MaterialClass::Steel,
+                    ComponentShape::Axe(AxeSpec {
+                        reach: Millimeters(180),
+                        height: Millimeters(180),
+                        thickness: Millimeters(28),
+                        root_width: Millimeters(32),
+                        beard: Permille(500),
+                        curvature: Permille(100),
+                        side: 1,
+                        upper_shoulder: Permille(380),
+                        lower_shoulder: Permille(260),
+                        flare: SignedPermille(0),
+                        toe: SignedPermille(0),
+                        heel: SignedPermille(0),
+                        beard_drop: Permille(225),
+                    }),
+                ),
+                component(
+                    "butt-cap",
+                    ComponentRole::Structure,
+                    Some(("shaft", 670)),
+                    OffsetMm { x: 0, y: -40, z: 0 },
+                    MaterialClass::DarkSteel,
+                    ComponentShape::Cylinder(CylinderSpec {
+                        length: Millimeters(40),
+                        radius: Millimeters(21),
+                        bottom_scale: Permille(1000),
+                        top_scale: Permille(920),
+                        segments: Segments(16),
+                    }),
+                ),
+            ],
+        },
+        "flanged-mace" => gothic(id, 140, 580, 150),
+        "gothic-flanged-mace" => gothic(id, 250, 780, 920),
+        _ => return None,
+    })
+}
+
+pub fn default_design(catalog_id: &str) -> Option<WeaponDesign> {
+    if catalog_id == "walking_staff" {
+        return Some(WeaponDesign {
+            catalog_id: catalog_id.into(),
+            components: vec![shaft(1_850, 25, false)],
+        });
+    }
+    if catalog_id == "club" {
+        return Some(WeaponDesign {
+            catalog_id: catalog_id.into(),
+            components: vec![
+                shaft(620, 25, false),
+                component(
+                    "swollen-head",
+                    ComponentRole::Head,
+                    Some(("shaft", 90)),
+                    OffsetMm::default(),
+                    MaterialClass::Wood,
+                    ComponentShape::Cylinder(CylinderSpec {
+                        length: Millimeters(230),
+                        radius: Millimeters(48),
+                        bottom_scale: Permille(1000),
+                        top_scale: Permille(1000),
+                        segments: Segments(18),
+                    }),
+                ),
+            ],
+        });
+    }
+    let preset = match catalog_id {
+        "arming_sword" => "landsknecht-longsword",
+        "baselard" => "rondel-dagger",
+        "bauernwehr" => "grosse-messer",
+        "falchion" => "dussack",
+        "flanged_mace" => "flanged-mace",
+        "halberd" => "halberd-1540",
+        "hand_axe" => "hand-axe",
+        "hunting_spear" => "short-spear",
+        "katzbalger" => "katzbalger",
+        "knife" | "utility_knife" | "misericorde" => "rondel-dagger",
+        "kriegsmesser" | "messer" => "grosse-messer",
+        "longsword" => "landsknecht-longsword",
+        "military_pike" => "kriegsspiess",
+        "rapier" => "reitschwert-1540",
+        "rondel_dagger" => "rondel-dagger",
+        "spear" => "short-spear",
+        "war_hammer" => "reiter-war-hammer",
+        "zweihander" => "zweihander",
+        _ => return None,
+    };
+    let mut design = preset_design(preset)?;
+    design.catalog_id = catalog_id.into();
+    Some(design)
+}

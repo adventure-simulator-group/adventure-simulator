@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fabelgeist weapon modeler</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">Fabelgeist workshop</p>
+          <h1>Parametric weapon modeler</h1>
+        </div>
+        <div class="header-actions">
+          <label>
+            Preset
+            <select id="preset"></select>
+          </label>
+          <button id="reset" type="button">Reset preset</button>
+        </div>
+      </header>
+      <section class="workspace">
+        <div class="viewport-shell">
+          <canvas id="viewport" aria-label="Interactive three-dimensional weapon view"></canvas>
+          <div class="camera-controls" aria-label="Camera controls">
+            <button type="button" data-pose="front">Front</button><button type="button" data-pose="back">Back</button><button type="button" data-pose="left">Left</button><button type="button" data-pose="right">Right</button><button type="button" data-pose="oblique">Oblique</button>
+            <span></span><button type="button" data-focus="whole">Whole</button><button type="button" data-focus="detail">Detail</button>
+          </div>
+          <div class="viewport-help">Drag to orbit · wheel to zoom · double-click resets whole front</div>
+          <div id="status" class="status">Preparing model…</div>
+        </div>
+        <aside>
+          <section class="identity">
+            <p id="family" class="eyebrow"></p>
+            <h2 id="name"></h2>
+            <p id="description"></p>
+          </section>
+          <section class="composer-section">
+            <h3>Assembly composer</h3>
+            <div class="composer-grid">
+              <label>Haft module<select id="composer-haft"></select></label>
+              <label>Head assembly<select id="composer-head"></select></label>
+              <button id="compose-weapon" type="button">Build composed preview</button>
+            </div>
+            <p id="composer-status" class="composer-status">Modules use the same attachment frames and generators as presets.</p>
+          </section>
+          <section>
+            <div class="section-heading">
+              <h3>Parameters</h3>
+              <output id="dirty-state">Preset values</output>
+            </div>
+            <div id="controls" class="controls"></div>
+          </section>
+          <section class="stats-section">
+            <h3>Generated result</h3>
+            <dl id="stats"></dl>
+          </section>
+          <details>
+            <summary>Weapon definition</summary>
+            <textarea id="definition" spellcheck="false"></textarea>
+            <button id="apply-definition" type="button">Apply definition</button>
+            <p id="definition-error" class="error" role="alert"></p>
+          </details>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

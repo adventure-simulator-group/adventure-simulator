@@ -730,8 +730,8 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
-      "carry": "hand_only",
-      "equipment": {"physical": {"dimensions_m": [0.10, 0.75, 0.10], "grip_to_tip_m": 0.62, "anchor_offset_m": [0.0, -0.13, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
+      "carry": "sheathable",
+      "equipment": {"physical": {"dimensions_m": [0.10, 0.75, 0.10], "grip_to_tip_m": 0.62, "anchor_offset_m": [0.0, -0.13, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.5,
       "reach_m": 0.7,
       "penetration": 0.1,
@@ -987,8 +987,8 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
-      "carry": "hand_only",
-      "equipment": {"physical": {"dimensions_m": [0.12, 0.72, 0.10], "grip_to_tip_m": 0.58, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
+      "carry": "sheathable",
+      "equipment": {"physical": {"dimensions_m": [0.12, 0.72, 0.10], "grip_to_tip_m": 0.58, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.7,
       "reach_m": 0.75,
       "penetration": 0.5,
@@ -1177,8 +1177,8 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
-      "carry": "hand_only",
-      "equipment": {"physical": {"dimensions_m": [0.22, 0.60, 0.07], "grip_to_tip_m": 0.48, "anchor_offset_m": [0.0, -0.12, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
+      "carry": "sheathable",
+      "equipment": {"physical": {"dimensions_m": [0.22, 0.60, 0.07], "grip_to_tip_m": 0.48, "anchor_offset_m": [0.0, -0.12, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1,
       "reach_m": 0.7,
       "penetration": 1,
@@ -3655,8 +3655,8 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
-      "carry": "hand_only",
-      "equipment": {"physical": {"dimensions_m": [0.16, 0.70, 0.08], "grip_to_tip_m": 0.56, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
+      "carry": "sheathable",
+      "equipment": {"physical": {"dimensions_m": [0.16, 0.70, 0.08], "grip_to_tip_m": 0.56, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.7,
       "reach_m": 0.8,
       "penetration": 0.5,
@@ -3919,8 +3919,8 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
-      "carry": "hand_only",
-      "equipment": {"physical": {"dimensions_m": [0.13, 1.80, 0.06], "grip_to_tip_m": 1.50, "anchor_offset_m": [0.0, -0.30, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
+      "carry": "sheathable",
+      "equipment": {"physical": {"dimensions_m": [0.13, 1.80, 0.06], "grip_to_tip_m": 1.50, "anchor_offset_m": [0.0, -0.30, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.7,
       "reach_m": 1.8,
       "penetration": 1,
@@ -4087,10 +4087,10 @@
           ]
         }],
         "attachment_points": [
-          {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "accepts_tags": ["sheath", "bag"]},
-          {"id": "right", "channel": "mount", "capacity": 1, "order": 1, "accepts_tags": ["sheath", "bag"]},
-          {"id": "front", "channel": "mount", "capacity": 1, "order": 2, "accepts_tags": ["bag"]},
-          {"id": "back", "channel": "mount", "capacity": 1, "order": 3, "accepts_tags": ["bag"]}
+          {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "locations": ["left_belt"], "accepts_tags": ["sheath", "bag"]},
+          {"id": "right", "channel": "mount", "capacity": 1, "order": 1, "locations": ["right_belt"], "accepts_tags": ["sheath", "bag"]},
+          {"id": "front", "channel": "mount", "capacity": 1, "order": 2, "locations": ["front_belt"], "accepts_tags": ["bag"]},
+          {"id": "back", "channel": "mount", "capacity": 1, "order": 3, "locations": ["back_belt"], "accepts_tags": ["bag"]}
         ]
       },
       "kind": "simple"
@@ -4183,6 +4183,27 @@
             "capacity": 1,
             "accepts_tags": ["sheathable_weapon"]
           }
+        ]
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "weapon_loop",
+      "display_name": "Weapon loop",
+      "weight_kg": 0.12,
+      "exterior_volume_ml": 150,
+      "base_value": 2,
+      "tags": ["container"],
+      "presentation": {"icon": "belt-armor"},
+      "equipment": {
+        "physical": {"dimensions_m": [0.12, 0.20, 0.08], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.0, 0.0]},
+        "attachment_tags": ["sheath"],
+        "placements": [
+          {"id": "left", "parents": [{"channel": "mount", "order": 0}]},
+          {"id": "right", "parents": [{"channel": "mount", "order": 1}]}
+        ],
+        "attachment_points": [
+          {"id": "blade", "channel": "containment", "capacity": 1, "accepts_tags": ["sheathable_weapon"]}
         ]
       },
       "kind": "simple"

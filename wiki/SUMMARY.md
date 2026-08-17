@@ -81,10 +81,12 @@
 
 - [Combat](tactical/combat.md)
 - [Stealth](tactical/stealth.md)
+- [Sky presentation](tactical/sky.md)
 
 # World data
 
 - [World-data input bundles](engineering/world-data/world-data-bundles.md)
+- [Tactical environment visual review](engineering/world-data/environment-visual-review.md)
 - [Source manifests](engineering/world-data/source-manifests.md)
 - [Canonical spatial grid](engineering/world-data/spatial-grid.md)
 - [Strategic place and fixture identities](engineering/world-data/strategic-places.md)

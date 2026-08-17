@@ -42,6 +42,33 @@ pub struct AnimationPackLibrary {
 }
 
 impl AnimationPackLibrary {
+    /// Resolves gameplay attack capabilities with pack-local override
+    /// semantics. A pack that owns any attack owns the complete attack choice;
+    /// its missing attacks stay unavailable. Only a pack with no attacks at
+    /// all inherits the nearest parent's attack set.
+    pub fn attack_animations(&self, root: &str) -> AttackAnimations {
+        let mut pack_id = Some(root);
+        let mut seen = HashSet::new();
+        while let Some(id) = pack_id {
+            if !seen.insert(id) {
+                break;
+            }
+            let Some(pack) = self.packs.get(id) else {
+                break;
+            };
+            let attacks = AttackAnimations {
+                swing: pack.clips.contains(&SemanticPose::AttackSwing),
+                swing_follow: pack.clips.contains(&SemanticPose::AttackSwingFollow),
+                thrust: pack.clips.contains(&SemanticPose::AttackThrust),
+            };
+            if attacks.any() {
+                return attacks;
+            }
+            pack_id = pack.fallback.as_deref();
+        }
+        AttackAnimations::NONE
+    }
+
     pub fn insert(&mut self, pack: AnimationPack) -> Result<(), PackValidationError> {
         if self.packs.contains_key(&pack.id) {
             return Err(PackValidationError::Duplicate(pack.id));

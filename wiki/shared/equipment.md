@@ -53,6 +53,85 @@ therefore chooses between lower burden and greater protection.
 
 ## Representation and gameplay inference
 
+### Parametric melee weapon instances
+
+Melee weapons have a versioned procedural design in addition to their catalog
+definition. The catalog entry remains the semantic chassis and supplies names,
+fallback icons, equipment placements, and combat tags. Each concrete weapon
+design is stored once in the private `WeaponInstance` table, keyed by the stable
+`InventoryObject.id`; personal and party transfers therefore change custody
+without changing the weapon or its smithing parameters. Dimensions are quantized
+in millimetres and ratios in permille before persistence. The same validated
+recipe deterministically produces its design hash, closed triangle meshes,
+material groups, grip and tip anchors, and a geometric summary. Catalog weight,
+reach, and equipment dimensions remain authoritative for gameplay until
+procedural measurements have been calibrated across both layers.
+
+The ordinary strategic inventory continues to show the catalog presentation,
+condition, compact weight/value summaries rather than hundreds of smithing
+parameters. Future smithing and detailed inspection views may request the
+complete recipe for the selected physical object. Tactical handoff sends only
+the selected character's validated recipe and compact geometric summary. The
+tactical client expands that recipe into cached meshes keyed by generator
+version and design hash; corrupt or unsupported recipes fall back to the
+ordinary equipment box without affecting authoritative combat state.
+
+Inventory icons are deterministic orthographic silhouettes of that same
+validated mesh rather than a second authored representation of a custom
+weapon. Sword-family icons place the guard at the exact center, keep the
+complete handle in the upper right, and let the blade continue beyond the
+lower-left edge of the square. Other melee weapons place the root of the head
+at the exact center, keep the complete head in the upper left, and let the shaft
+continue beyond the lower-right edge. The CPU renderer uses a slightly oblique
+view, supersampling, and semantic-anchor framing so guards, rings, axe heads,
+and hammer polls remain legible at inventory scale while the intentionally
+cropped length does not make compact heads look tiny. Rendered masks are cached
+by weapon generator version, design hash, icon-renderer version, and raster
+settings.
+
+Head-focused framing first fits the complete head-and-socket assembly, then
+permits the actual head geometry to grow by at most two times around its
+centered root. Growth stops when the complete head reaches the inset upper-left
+safety boundary or the zoom cap, whichever comes first; long sockets and langets
+may therefore crop with the shaft instead of making a small poll or beak
+illegible. A headless walking staff treats its uppermost 120 millimetres as a
+synthetic head, producing the same upper-left-to-lower-right composition without
+an unbounded point-sized fit.
+
+The strategic page still does not embed recipes or smithing parameters. Its
+authenticated icon endpoint resolves the stable inventory object, verifies
+that the active character may see its current personal or party custody,
+authenticates the versioned recipe and design hash, and only then uses the
+transient cache. Legacy catalog weapons and failed or unsupported recipes keep
+their authored catalog icon.
+
+The tactical slot grid, active-hand and off-hand controls, and selected ground
+item use the same silhouette renderer locally from the authenticated replicated
+`WeaponAppearance`. They cache the resulting Bevy image by the same generator,
+design, renderer, and raster identity used by the strategic renderer.
+Replication arrival is order-independent because the HUD resolves appearances
+every frame; non-weapons and invalid or unsupported recipes retain the tactical
+catalog atlas icon. The tactical world model continues to use the full generated
+mesh, not the silhouette.
+
+Generated holders use their own persisted holder recipe rather than borrowing
+the contained weapon's icon. A blade sheath mirrors the sword composition: its
+complete throat and suspension begin in the inset upper-left and its fitted body
+continues toward, and may crop at, the lower-right. Compact haft loops fit their
+complete loop-and-hanger assembly inside the square. Strategic holder icons use
+the same custody-gated endpoint and tactical holder icons use the replicated
+`WeaponHolderAppearance`; both reauthenticate the holder recipe and design hash
+before consulting their caches.
+
+Each generated scabbard or haft loop is a first-class parametric object with a
+versioned `WeaponHolderDesign` template and a private `WeaponHolderInstance`
+keyed by its stable physical object. Its recipe captures the fitted weapon
+shape plus independent clearance, furniture, material, and suspension
+parameters. Drawing or later altering the weapon therefore does not silently
+change the holder; refitting is an explicit smithing/leatherworking operation.
+Deleting the holder cascades its instance row, while deleting the original
+weapon leaves the independently reproducible holder intact.
+
 Equipment authors one or more stable-ID placements. Root placements claim
 physical body locations in an explicit occupancy channel and order; attached
 placements require compatible points on already equipped parents. A placement
@@ -63,18 +142,19 @@ armor channel. A multi-location equip or reparent either claims every
 destination or changes nothing; conflicts are reported before mutation.
 Sided pieces provide explicit left and right placement alternatives.
 
-The normalized equipment graph supports body → belt → sheath → weapon,
-body → belt → bag → contents, and body → forearm/boot sheath → weapon.
+The normalized equipment graph supports body → belt → fitted sheath or haft loop
+→ weapon, body → belt → bag → contents, and body → forearm/boot sheath → weapon.
 The catalog sword sheath uses two belt mount requirements, exercising
-multi-point attachment against the belt's ordered mount points.
-Generated non-newborn characters whose loadout contains a sheathable weapon
-receive a worn belt and attached sheath. An initially held weapon stays held;
-an unequipped sidearm begins inside the sheath. Hand-only loadouts receive no
-irrelevant carry kit. This materialization is deterministic and versioned with
-the starting-character generator.
-Attachment points have an authored channel, traversal order, capacity, and
-optional accepted child tags. Removing or moving an item with children is
-rejected in player-facing reducers, so no operation can orphan descendants.
+multi-point attachment against the belt's ordered mount points. Generated
+non-newborn characters whose loadout contains a sheathable weapon receive a worn
+belt and one fitted holder per weapon. Blades use generated scabbards; compact
+axes, clubs, maces, and hammers use generated haft loops. An initially held
+weapon stays held; an unequipped sidearm begins inside its holder. Polearm
+loadouts receive no irrelevant carry kit. This materialization is deterministic
+and versioned with the starting-character generator. Attachment points have an
+authored channel, traversal order, capacity, and optional accepted child tags.
+Removing or moving an item with children is rejected in player-facing reducers,
+so no operation can orphan descendants.
 
 The equipment topology is finer than the stable seven-part combat and health
 model. Each placement explicitly lists the stable body parts it protects;
@@ -95,20 +175,23 @@ name test.
 
 ## Condition and repair
 
-Weapons, shields, armor, and clothing are individual inventory instances. Their condition is a continuous
-five-bin bar: tier one is yellow-green, tier two yellow, tier three orange, tier four red, and tier
-five violet. Bins one and two are field-repairable, while bins three through five require a
-settlement craftsperson. Repairing bin *n* requires Smithing skill *n* for weapons, shields, and
-armor, or Tailoring skill *n* for clothing; field work is capped at bin two.
-Equipment quality is also its required maintenance skill, so a lesser smith can improve a
-masterwork item without restoring it completely. Damage can never occupy a tier above the item's
-quality: only quality-5 equipment can acquire violet tier-5 damage.
+Weapons, shields, armor, and clothing are individual inventory instances. Their
+condition is a continuous five-bin bar: tier one is yellow-green, tier two
+yellow, tier three orange, tier four red, and tier five violet. Bins one and two
+are field-repairable, while bins three through five require a settlement
+craftsperson. Repairing bin *n* requires Smithing skill *n* for weapons,
+shields, and armor, or Tailoring skill *n* for clothing; field work is capped at
+bin two. Equipment quality is also its required maintenance skill, so a lesser
+smith can improve a masterwork item without restoring it completely. Damage can
+never occupy a tier above the item's quality: only quality-5 equipment can
+acquire violet tier-5 damage.
 
 Clothing condition and Tailor repair are authoritative for damaged clothing
 instances, including seeded and imported damage. Clothing uses the same
-equipment protection projection as armor, so padding, resistance, coverage, flexibility,
-and range of motion are available to combat and future survival systems.
-Carried inventory is deliberately not worn down as if it were being worn.
+equipment protection projection as armor, so padding, resistance, coverage,
+flexibility, and range of motion are available to combat and future survival
+systems. Carried inventory is deliberately not worn down as if it were being
+worn.
 
 ## Weather exposure
 
@@ -121,40 +204,41 @@ adds no further weatherproofing. Padding also traps moisture
 and slows evaporation in warm conditions. These are strategic projections of
 the normalized equipment graph, not new equipment slots or tactical tick state.
 
-Quality uses the same 1--5 scale and is shown by the item name using the corresponding condition
-color, adjusted toward the fixed light interface text color for readability. Quality 3 is ordinary
-munition-grade work, quality 4 is the sort of commission a knight might order, and quality 5 is
-work for royalty or an esteemed hero. Munition grade is the neutral durability baseline. Quality
-1--5 multiplies physical durability by 0.65, 0.80, 1.00, 1.25, and 1.60 respectively: the multiplier
-raises yield and fracture stress and inversely scales ordinary wear. Outside durability and its
-maintenance requirements, quality does not currently change combat statistics, coverage, handling,
-price, or any other item property.
+Quality uses the same 1--5 scale and is shown by the item name using the
+corresponding condition color, adjusted toward the fixed light interface text
+color for readability. Quality 3 is ordinary munition-grade work, quality 4 is
+the sort of commission a knight might order, and quality 5 is work for royalty
+or an esteemed hero. Munition grade is the neutral durability baseline. Quality
+1--5 multiplies physical durability by 0.65, 0.80, 1.00, 1.25, and 1.60
+respectively: the multiplier raises yield and fracture stress and inversely
+scales ordinary wear. Outside durability and its maintenance requirements,
+quality does not currently change combat statistics, coverage, handling, price,
+or any other item property.
 
-The local catalog assigns several starter and demo items across all five qualities so the Wounded
-Demo fixture exercises each color and repair ceiling.
+The local catalog assigns several starter and demo items across all five
+qualities so the Wounded Demo fixture exercises each color and repair ceiling.
 
 Equippable personal-inventory rows expose a compact slot-key control. Equipped
-items show every applicable QWERTY key, with lighter text toward the surface
-and darker text underneath. Clicking an equipped control unequips it directly.
-Clicking an unequipped control opens a self-explanatory keyboard-shaped slot
-map with a compact X close control. Invalid locations are dimmed and flash red
-when their key is pressed. Eligible occupied locations show the current item's
-icon; selecting one atomically unequips that occupant and equips the new item.
-Eligible empty locations retain the same icon-sized negative space. Clicking
-or pressing a valid key chooses the outermost compatible authored placement or
-attachment target. Hovering or keyboard-focusing any equippable control
-previews the same map without a modal backdrop. While merely hovering, a
-mapped key equips or reassigns the item immediately. Keyboard focus preserves
-normal Tab navigation; Space opens the modal before slot keys become active,
-and Escape closes it. Clicking an equipped control still unequips it directly.
-An equipped item's current placement is highlighted and shows that item's icon
-in both the preview and modal maps.
-Equipped controls name their occupied locations and protection coverage to
-assistive technology and in their tooltip. An attached item's row names its parent and
-attachment point directly. Swaps validate the complete destination and every
-displaced item before changing the graph; descendant targets and incompatible
-attachment points remain excluded or are reported exactly.
-Non-equipment rows keep a disabled slot control.
+items show every applicable QWERTY key, with lighter text toward the surface and
+darker text underneath. Clicking an equipped control unequips it directly.
+Clicking an unequipped control opens a self-explanatory keyboard-shaped slot map
+with a compact X close control. Invalid locations are dimmed and flash red when
+their key is pressed. Eligible occupied locations show the current item's icon;
+selecting one atomically unequips that occupant and equips the new item.
+Eligible empty locations retain the same icon-sized negative space. Clicking or
+pressing a valid key chooses the outermost compatible authored placement or
+attachment target. Hovering or keyboard-focusing any equippable control previews
+the same map without a modal backdrop. While merely hovering, a mapped key
+equips or reassigns the item immediately. Keyboard focus preserves normal Tab
+navigation; Space opens the modal before slot keys become active, and Escape
+closes it. Clicking an equipped control still unequips it directly. An equipped
+item's current placement is highlighted and shows that item's icon in both the
+preview and modal maps. Equipped controls name their occupied locations and
+protection coverage to assistive technology and in their tooltip. An attached
+item's row names its parent and attachment point directly. Swaps validate the
+complete destination and every displaced item before changing the graph;
+descendant targets and incompatible attachment points remain excluded or are
+reported exactly. Non-equipment rows keep a disabled slot control.
 
 Medication reuses the same familiar checkbox gesture without occupying an
 equipment slot. Checking it administers and consumes the quantity-one
@@ -165,30 +249,34 @@ this gesture is self-only. Direct member transfers and party-pool
 deposits/withdrawals preserve every preparation as an individual quantity-one
 course. Ordinary equipment behavior is unchanged.
 
-Smithing uses the shared trained-skill curve: 5,000 invested hours is rank 2.5. Database upgrades
-split any legacy durable stack into quantity-one instances while retaining the original row ID for
-one piece, preserving equipped references; pooled party equipment is migrated the same way.
+Smithing uses the shared trained-skill curve: 5,000 invested hours is rank 2.5.
+Database upgrades split any legacy durable stack into quantity-one instances
+while retaining the original row ID for one piece, preserving equipped
+references; pooled party equipment is migrated the same way.
 
-Rest resolves health first, then automatic field maintenance, then scheduled downtime. Field
-maintenance uses Tailoring for clothing and Smithing for other durable equipment. Settlement rest
-recommendations also include unfinished local repair orders. Services have independently seeded
-Weaponsmith, Armourer, and Tailor ratings of 3--5. Repair orders escrow the exact item instance, have an ETA,
-retain damage beyond the smith's skill, and never expire. A job's stable quote is
-`ceil(base_value * repairable_damage)`, with a minimum of one gold; only bins within that smith's
-skill contribute. The quote is charged atomically from personal gold when the repaired item is
-retrieved. Bulk collection is deterministic: orders are considered by submission time and ID, and
-the affordable prefix is retrieved without skipping an earlier unaffordable job.
+Rest resolves health first, then automatic field maintenance, then scheduled
+downtime. Field maintenance uses Tailoring for clothing and Smithing for other
+durable equipment. Settlement rest recommendations also include unfinished local
+repair orders. Services have independently seeded Weaponsmith, Armourer, and
+Tailor ratings of 3--5. Repair orders escrow the exact item instance, have an
+ETA, retain damage beyond the smith's skill, and never expire. A job's stable
+quote is `ceil(base_value * repairable_damage)`, with a minimum of one gold;
+only bins within that smith's skill contribute. The quote is charged atomically
+from personal gold when the repaired item is retrieved. Bulk collection is
+deterministic: orders are considered by submission time and ID, and the
+affordable prefix is retrieved without skipping an earlier unaffordable job.
 Submitting an equipped item snapshots its stable placement and every parent
 edge. Retrieval restores that exact graph atomically; if a saved parent or
-capacity is unavailable, retrieval fails without consuming payment or
-releasing the escrowed item.
+capacity is unavailable, retrieval fails without consuming payment or releasing
+the escrowed item.
 
-Impact damage uses each item's explicit yield, fracture, wear, and failure-share values. Ductile
-armor yields and dents readily but resists catastrophic fracture; stiff weapons resist ordinary
-wear but fail more sharply under a sufficiently large impact. Failure share models construction:
-one failed plate in segmented armor contributes less total damage than failure of a monolithic
-breastplate. Wear continuously reduces weapon precision and armor/shield handling, without reducing
-coverage for the sake of a single local hole.
+Impact damage uses each item's explicit yield, fracture, wear, and failure-share
+values. Ductile armor yields and dents readily but resists catastrophic
+fracture; stiff weapons resist ordinary wear but fail more sharply under a
+sufficiently large impact. Failure share models construction: one failed plate
+in segmented armor contributes less total damage than failure of a monolithic
+breastplate. Wear continuously reduces weapon precision and armor/shield
+handling, without reducing coverage for the sake of a single local hole.
 
 Weights are kilograms. The documented object weights below anchor the scale;
 the other weights are bounded gameplay estimates for ordinary serviceable

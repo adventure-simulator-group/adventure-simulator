@@ -195,6 +195,30 @@ pub struct EquipmentPhysical {
     pub anchor_offset_m: Vec3,
 }
 
+/// Immutable, authoritative procedural appearance for a smith-made weapon.
+///
+/// The recipe uses the versioned `adventuresim-weapon-model` postcard wire
+/// format. Keeping the transport opaque here avoids coupling tactical combat
+/// state to render-only mesh types; the client validates and expands it into
+/// geometry, while the server continues to use [`EquipmentPhysical`] as its
+/// conservative interaction/collision proxy.
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WeaponAppearance {
+    pub generator_version: u16,
+    pub design_hash: [u8; 32],
+    pub recipe: Vec<u8>,
+}
+
+/// Immutable recipe used to derive a fitted sheath, scabbard, or haft loop.
+/// This is attached to the holder entity, while [`WeaponAppearance`] remains
+/// attached to the contained weapon entity.
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WeaponHolderAppearance {
+    pub generator_version: u16,
+    pub design_hash: [u8; 32],
+    pub recipe: Vec<u8>,
+}
+
 impl EquipmentPhysical {
     pub fn is_valid(self) -> bool {
         self.dimensions_m.is_finite()

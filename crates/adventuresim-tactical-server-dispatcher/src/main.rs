@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
@@ -14,6 +15,8 @@ use adventuresim_stdb_client::{
     DbConnection, TacticalServerRequestTableAccess, authorize_tactical_server_claim,
     revoke_tactical_server_claim, tactical_server_requestQueryTableAccess,
 };
+use adventuresim_tactical_server_dispatcher::scene_input;
+use adventuresim_terrain::{TerrainPack, TerrainPurpose};
 use clap::Parser;
 use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
@@ -45,6 +48,18 @@ struct Args {
     /// Public host for clients to connect to
     #[arg(long, default_value = "0.0.0.0")]
     host: IpAddr,
+
+    /// Final terrain manifest loaded once by this trusted dispatcher.
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v3.json")]
+    terrain_manifest: PathBuf,
+
+    /// Final compressed terrain payload paired with `terrain_manifest`.
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v3.pack")]
+    terrain_pack: PathBuf,
+
+    /// Worktree-local directory for immutable per-mission scene documents.
+    #[arg(long, default_value = "target/tactical-scene-inputs")]
+    scene_input_dir: PathBuf,
 }
 
 fn main() {
@@ -62,6 +77,18 @@ fn main() {
         args.spacetimedb_url, args.spacetimedb_module
     );
     info!("Tactical server binary: {}", args.tactical_server_bin);
+    let terrain = TerrainPack::load(&args.terrain_manifest, &args.terrain_pack)
+        .unwrap_or_else(|error| panic!("failed to load final tactical terrain source: {error}"));
+    assert_eq!(
+        terrain.purpose(),
+        TerrainPurpose::Final,
+        "dispatcher requires the final terrain pack"
+    );
+    info!(
+        digest = terrain.digest(),
+        "Loaded final terrain pack once for tactical sampling"
+    );
+    let terrain = Arc::new(terrain);
 
     // Shared state for tracking spawned missions and port allocation
     let spawned: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
@@ -102,6 +129,8 @@ fn main() {
     let stdb_url = args.spacetimedb_url.clone();
     let stdb_module = args.spacetimedb_module.clone();
     let host = args.host;
+    let terrain_clone = terrain.clone();
+    let scene_input_dir = args.scene_input_dir.clone();
 
     conn.db
         .tactical_server_request()
@@ -128,6 +157,23 @@ fn main() {
             let expected_party_members = request.expected_party_members.to_string();
             let required_enemy_kills = request.required_enemy_kills.to_string();
             let enemy_combat_scale_bps = request.enemy_combat_scale_bps.to_string();
+            let scene_input = match scene_input::build_imported_scene(
+                &terrain_clone,
+                &mission_id,
+                &scene_key,
+                request.latitude_e_7,
+                request.longitude_e_7,
+                request.absolute_minute,
+            )
+            .and_then(|input| {
+                scene_input::materialize_scene_input(&scene_input_dir, &mission_id, &input)
+            }) {
+                Ok(path) => path.to_string_lossy().into_owned(),
+                Err(error) => {
+                    error!(%mission_id, %error, "Failed to provision tactical scene input");
+                    return;
+                }
+            };
             let spawned = spawned_clone.clone();
             let bin = bin.clone();
             let stdb_url = stdb_url.clone();
@@ -149,6 +195,8 @@ fn main() {
                                 &mission_id,
                                 "--scene-key",
                                 &scene_key,
+                                "--scene-input",
+                                &scene_input,
                                 "--expected-party-members",
                                 &expected_party_members,
                                 "--required-enemy-kills",

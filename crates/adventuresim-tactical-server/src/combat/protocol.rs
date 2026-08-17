@@ -1,4 +1,4 @@
-use adventuresim_tactical_core::prelude::{BodyPart, Footwork, StrikeFamily};
+use adventuresim_tactical_core::prelude::{BodyPart, StrikeFamily};
 use adventuresim_tactical_netcode::message::DefendRequest;
 use bevy::prelude::*;
 
@@ -40,7 +40,6 @@ pub(crate) struct MeleeAttackStartedIntent {
     pub(crate) target: Entity,
     pub(crate) windup: CombatDuration,
     pub(crate) strike_family: StrikeFamily,
-    pub(crate) footwork: Footwork,
 }
 
 /// `target == None` is an authoritative miss that still consumes a projectile.

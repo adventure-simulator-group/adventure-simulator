@@ -12,16 +12,17 @@ pub mod inventory;
 pub mod physics;
 pub mod player;
 pub mod scene;
+pub mod scene_input;
 
 pub use avian3d;
 
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
-        ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine,
-        AttackSpec, AttackStep, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
+        ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackAnimation,
+        AttackAnimations, AttackLine, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
         CROUCH_LOCOMOTION_PROFILE, DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec,
-        DownedFacingPose, Footwork, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
+        DownedFacingPose, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
         LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile,
         PackValidationError, PoseSample, PoseSampling, Posture, PostureTransitionKind,
         PostureTransitionState, RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE,
@@ -37,15 +38,17 @@ pub mod prelude {
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
         EquipmentTopology, EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties,
         ItemQuantity, ShieldItem, TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER,
-        TacticalEquipmentAnchor, TacticalSceneItem, WeaponItem, rebuild_inventory_holding_cache,
+        TacticalEquipmentAnchor, TacticalSceneItem, WeaponAppearance, WeaponHolderAppearance,
+        WeaponItem, rebuild_inventory_holding_cache,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, MovementPace,
         TACTICAL_BREATH_RESPONSE_SCALE, TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
-        TACTICAL_PRONE_SPEED_METRES_PER_SECOND, TACTICAL_ROLL_SPEED_METRES_PER_SECOND,
-        TACTICAL_RUN_SPEED_METRES_PER_SECOND, TACTICAL_SUPINE_SPEED_METRES_PER_SECOND,
-        TACTICAL_WALK_SPEED_METRES_PER_SECOND, tactical_breath_recovery_per_second,
-        tactical_character_controller, tactical_exhaustion_change_per_second, tactical_jog_speed,
+        TACTICAL_PRONE_LATERAL_SPEED_SCALE, TACTICAL_PRONE_SPEED_METRES_PER_SECOND,
+        TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND, TACTICAL_ROLL_SPEED_METRES_PER_SECOND,
+        TACTICAL_RUN_SPEED_METRES_PER_SECOND, TACTICAL_WALK_SPEED_METRES_PER_SECOND,
+        tactical_breath_recovery_per_second, tactical_character_controller,
+        tactical_exhaustion_change_per_second, tactical_jog_speed,
         tactical_movement_acceleration_hz_for_guard,
         tactical_movement_exhaustion_change_per_second, tactical_movement_speed,
         tactical_movement_speed_for_guard, tactical_movement_speed_for_pace, tactical_sprint_speed,
@@ -55,7 +58,18 @@ pub mod prelude {
         Stats, TacticalCombatState, TacticalIncapacitationSources, TacticalPlayerView,
         TacticalPlayerViewer, default_tactical_character_id,
     };
-    pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
+    pub use crate::scene::{
+        GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,
+        TerrainGenerator,
+    };
+    pub use crate::scene_input::{
+        EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
+        RockArchetype, RockLithology, RockRecipe, SceneEnvironment, SceneInputError, SceneObstacle,
+        SceneRepairReport, SceneSource, TACTICAL_SCENE_GENERATION_VERSION,
+        TACTICAL_SCENE_SCHEMA_VERSION, TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES,
+        TREE_TRUNK_RADIUS_METRES, TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod,
+        VistaSample,
+    };
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};
     pub use adventuresim_core::prelude::*;
