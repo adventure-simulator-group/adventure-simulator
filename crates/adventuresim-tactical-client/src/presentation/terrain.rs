@@ -128,15 +128,21 @@ fn regular_terrain_owns_cell(
 ) -> bool {
     !patches.iter().any(|patch| {
         let TerrainPatchRecipe::RiverBluff(recipe) = *patch;
-        let local = recipe.world_to_local(Vec3::new(point.x, recipe.center_metres().y, point.y));
-        let [minimum_x, maximum_x, minimum_z, maximum_z] = recipe.implicit_tile_bounds_local();
-        // A cell is removed only when its complete footprint is safely inside the tile.
-        // Retaining boundary-straddling cells creates a narrow coplanar overlap on ordinary
-        // single-valued ground instead of the dark one-cell moat left by center classification.
-        local.x > minimum_x + cell_boundary_radius
-            && local.x < maximum_x - cell_boundary_radius
-            && local.z > minimum_z + cell_boundary_radius
-            && local.z < maximum_z - cell_boundary_radius
+        [
+            Vec2::new(-cell_boundary_radius, -cell_boundary_radius),
+            Vec2::new(cell_boundary_radius, -cell_boundary_radius),
+            Vec2::new(-cell_boundary_radius, cell_boundary_radius),
+            Vec2::new(cell_boundary_radius, cell_boundary_radius),
+        ]
+        .into_iter()
+        .all(|offset| {
+            let sample = point + offset;
+            let local =
+                recipe.world_to_local(Vec3::new(sample.x, recipe.center_metres().y, sample.y));
+            recipe.implicit_scarp_blend_weight_local(local.x) >= 0.30
+                && local.z >= recipe.minimum_face_local_z(local.x) - 0.6
+                && local.z <= recipe.rear_terrace_convergence_start_local_z() + 0.6
+        })
     })
 }
 
@@ -197,23 +203,7 @@ pub(super) fn presented_ground_allows_scatter(
 }
 
 fn detail_surface_owns_cell(center: Vec2, radius: f32, patches: &[TerrainPatchRecipe]) -> bool {
-    if !presented_ground_allows_scatter(patches, center, radius + 0.5) {
-        return false;
-    }
-
-    // Keep each microdetail quad on one single-valued sheet. Centre-only
-    // classification can join lower-ground vertices to upper-terrace
-    // vertices across the scarp, manufacturing a presentation wall.
-    let corners = [
-        center + Vec2::new(-radius, -radius),
-        center + Vec2::new(radius, -radius),
-        center + Vec2::new(-radius, radius),
-        center + Vec2::new(radius, radius),
-    ];
-    let upper = patch_upper_surface_owns_point(patches, corners[0]);
-    corners[1..]
-        .iter()
-        .all(|corner| patch_upper_surface_owns_point(patches, *corner) == upper)
+    regular_terrain_owns_cell(center, radius, patches)
 }
 
 /// Camera-local render refinement. This mesh never participates in collision
@@ -1352,7 +1342,7 @@ mod tests {
     }
 
     #[test]
-    fn regular_terrain_omits_only_the_implicit_tile_interior() {
+    fn regular_terrain_yields_only_inside_localized_implicit_scarp() {
         let recipe = RiverBluffRecipe {
             seed: 7_094_698_234_423_137_900,
             center_cm: [300, 0, -500],
@@ -1376,7 +1366,7 @@ mod tests {
             recipe.local_to_world(Vec3::new(local_x, 0.0, local_z)).xz()
         };
 
-        assert!(!regular_terrain_owns_cell(world_xz(0.0, 0.0), 0.25, &patch));
+        assert!(regular_terrain_owns_cell(world_xz(0.0, 0.0), 0.25, &patch));
         for boundary in [
             world_xz(minimum_x, 0.0),
             world_xz(maximum_x, 0.0),
@@ -1393,7 +1383,7 @@ mod tests {
             0.25,
             &patch
         ));
-        assert!(!regular_terrain_owns_cell(
+        assert!(regular_terrain_owns_cell(
             world_xz(maximum_x - 0.40, 0.0),
             0.25,
             &patch
@@ -1406,18 +1396,17 @@ mod tests {
         let terrain = SceneTerrain::from_heightmap(51, 51, 2.0, vec![0.0; 51 * 51]).unwrap();
         let upper = world_xz(0.0, 8.0);
         let lower = world_xz(0.0, -10.0);
-        assert!(
-            presented_ground_height(&terrain, &patch, upper).unwrap()
-                >= recipe.local_crest_height(0.0) - 0.01,
-            "upper-terrace presentation must sit on the implicit top"
-        );
+        assert!((1.0..=2.0).contains(&presented_ground_height(&terrain, &patch, upper).unwrap()));
         assert_eq!(presented_ground_height(&terrain, &patch, lower), Some(0.0));
-        assert!(detail_surface_owns_cell(upper, 0.25, &patch));
+        assert!(!detail_surface_owns_cell(upper, 0.25, &patch));
         let scarp = world_xz(0.0, recipe.face_surface_local_z(Vec3::new(0.0, 4.0, 0.0)));
-        assert!(
-            !detail_surface_owns_cell(scarp, 0.25, &patch),
-            "camera-detail cells must not bridge the multivalued scarp"
-        );
+        assert!(!regular_terrain_owns_cell(scarp, 0.25, &patch));
+        assert!(!detail_surface_owns_cell(scarp, 0.25, &patch));
+        assert!(regular_terrain_owns_cell(
+            world_xz(recipe.implicit_scarp_render_bounds_local()[1] + 0.5, 8.0),
+            0.25,
+            &patch
+        ));
     }
 
     #[test]
