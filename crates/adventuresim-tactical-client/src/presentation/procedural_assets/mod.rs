@@ -11,6 +11,8 @@ const FOREST_SOIL_AO_DIRECTIONS: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0,
 const FOREST_SOIL_AO_STEPS: [i32; 4] = [1, 4, 12, 32];
 pub(super) const FOREST_SOIL_TILE_METRES: f32 = 2.0;
 pub(super) const FOREST_SOIL_HEIGHT_RANGE_METRES: f32 = 0.028;
+pub(super) const FOREST_LITTER_TILE_METRES: f32 = 4.0;
+pub(super) const FOREST_LITTER_HEIGHT_RANGE_METRES: f32 = 0.016;
 
 #[derive(Clone, Debug)]
 pub(super) struct LeafTextureSet {
@@ -41,6 +43,8 @@ pub(super) struct BarkTextureSet {
 #[derive(Clone, Debug)]
 pub(super) struct GroundTextureSet {
     pub(super) height_ao: Handle<Image>,
+    pub(super) litter_surface: Handle<Image>,
+    pub(super) litter_normal: Handle<Image>,
 }
 
 #[derive(Resource, Clone, Debug)]
@@ -67,6 +71,7 @@ struct LeafRecipe {
     tooth_depth: f32,
     vein_pairs: u32,
     bend: f32,
+    width_scale: f32,
     blade: [u8; 3],
     vein: [u8; 3],
     back_blade: [u8; 3],
@@ -84,6 +89,7 @@ impl LeafRecipe {
         tooth_depth: 0.0,
         vein_pairs: 7,
         bend: 0.035,
+        width_scale: 0.43,
         blade: [76, 111, 48],
         vein: [139, 157, 76],
         back_blade: [91, 116, 65],
@@ -91,9 +97,10 @@ impl LeafRecipe {
     };
 
     const DRY_WHITE_OAK: Self = Self {
-        blade: [157, 105, 49],
-        vein: [190, 139, 69],
-        back_blade: [126, 82, 43],
+        width_scale: 0.68,
+        blade: [107, 90, 68],
+        vein: [109, 92, 70],
+        back_blade: [98, 85, 68],
         roughness: 232,
         ..Self::WHITE_OAK
     };
@@ -108,6 +115,7 @@ impl LeafRecipe {
         tooth_depth: 0.075,
         vein_pairs: 9,
         bend: -0.025,
+        width_scale: 0.43,
         blade: [66, 112, 48],
         vein: [129, 154, 75],
         back_blade: [82, 119, 61],
@@ -124,6 +132,7 @@ impl LeafRecipe {
         tooth_depth: 0.028,
         vein_pairs: 6,
         bend: 0.018,
+        width_scale: 0.43,
         blade: [61, 103, 42],
         vein: [117, 139, 66],
         back_blade: [77, 111, 56],
@@ -140,6 +149,7 @@ impl LeafRecipe {
         tooth_depth: 0.035,
         vein_pairs: 6,
         bend: -0.012,
+        width_scale: 0.43,
         blade: [72, 113, 44],
         vein: [132, 151, 68],
         back_blade: [84, 119, 58],
@@ -156,6 +166,7 @@ impl LeafRecipe {
         tooth_depth: 0.018,
         vein_pairs: 8,
         bend: 0.022,
+        width_scale: 0.43,
         blade: [67, 108, 46],
         vein: [126, 147, 72],
         back_blade: [81, 117, 59],
@@ -299,6 +310,70 @@ fn image_rg_mipped(data: Vec<u8>, size: u32, repeat: bool) -> Image {
     image
 }
 
+fn image_rgba_mipped(data: Vec<u8>, size: u32, repeat: bool) -> Image {
+    assert!(size.is_power_of_two());
+    assert_eq!(data.len(), (size * size * 4) as usize);
+    let base_level = data.clone();
+    let mut mip_data = data;
+    let mut previous = base_level.clone();
+    let mut previous_size = size;
+    while previous_size > 1 {
+        let next_size = previous_size / 2;
+        let mut next = Vec::with_capacity((next_size * next_size * 4) as usize);
+        for y in 0..next_size {
+            for x in 0..next_size {
+                for channel in 0..4 {
+                    let mut sum = 0_u32;
+                    for offset_y in 0..2 {
+                        for offset_x in 0..2 {
+                            let source_x = x * 2 + offset_x;
+                            let source_y = y * 2 + offset_y;
+                            let index =
+                                ((source_y * previous_size + source_x) * 4 + channel) as usize;
+                            sum += previous[index] as u32;
+                        }
+                    }
+                    next.push(((sum + 2) / 4) as u8);
+                }
+            }
+        }
+        mip_data.extend_from_slice(&next);
+        previous = next;
+        previous_size = next_size;
+    }
+
+    let mut image = Image::new(
+        Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        base_level,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.data = Some(mip_data);
+    image.texture_descriptor.mip_level_count = size.ilog2() + 1;
+    use bevy::image::{ImageAddressMode, ImageSamplerDescriptor};
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: if repeat {
+            ImageAddressMode::Repeat
+        } else {
+            ImageAddressMode::ClampToEdge
+        },
+        address_mode_v: if repeat {
+            ImageAddressMode::Repeat
+        } else {
+            ImageAddressMode::ClampToEdge
+        },
+        address_mode_w: ImageAddressMode::Repeat,
+        anisotropy_clamp: 8,
+        ..ImageSamplerDescriptor::linear()
+    });
+    image
+}
+
 fn leaf_width(recipe: LeafRecipe, t: f32) -> f32 {
     let base = if t < recipe.widest_point {
         (t / recipe.widest_point)
@@ -335,7 +410,7 @@ fn leaf_sample(recipe: LeafRecipe, u: f32, v: f32) -> (bool, bool, f32) {
     if !(0.0..=1.0).contains(&t) {
         return (petiole, petiole, if petiole { 0.08 } else { 0.0 });
     }
-    let width = leaf_width(recipe, t) * 0.43;
+    let width = leaf_width(recipe, t) * recipe.width_scale;
     let inside = x.abs() <= width;
     let midrib = x.abs() < 0.012;
     let mut vein = midrib;
@@ -1003,6 +1078,165 @@ fn forest_soil_local_cavity(field: &[f32], x: i32, y: i32) -> f32 {
     (1.0 - cavity * 2.2).clamp(0.78, 1.0)
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct LitterLeafImprint {
+    coverage: f32,
+    dome: f32,
+    tone: f32,
+    vein: f32,
+}
+
+fn litter_leaf_field(point: Vec2, grid: i32, salt: u64) -> LitterLeafImprint {
+    let scaled = point * grid as f32;
+    let base_cell = scaled.floor().as_ivec2();
+    let mut field = LitterLeafImprint::default();
+    for offset_y in -1..=1 {
+        for offset_x in -1..=1 {
+            let cell = base_cell + IVec2::new(offset_x, offset_y);
+            let centre = cell.as_vec2()
+                + Vec2::new(
+                    0.10 + soil_random(cell.x, cell.y, grid, salt ^ 0x13a7) * 0.80,
+                    0.10 + soil_random(cell.x, cell.y, grid, salt ^ 0x91cb) * 0.80,
+                );
+            let angle = soil_random(cell.x, cell.y, grid, salt ^ 0xc72d) * core::f32::consts::TAU;
+            let long_axis = Vec2::new(angle.cos(), angle.sin());
+            let delta = scaled - centre;
+            let local = Vec2::new(delta.dot(long_axis), delta.perp_dot(long_axis));
+            let radius = 0.66 + soil_random(cell.x, cell.y, grid, salt ^ 0x27f1) * 0.30;
+            let aspect = 0.30 + soil_random(cell.x, cell.y, grid, salt ^ 0xe419) * 0.20;
+            let longitudinal = local.x / radius;
+            if longitudinal.abs() >= 0.98 {
+                continue;
+            }
+            // Match the physical scatter's procedural white-oak silhouette.
+            // Its cards and this aggregate representation now agree on waist,
+            // lobes, tip, and broad scale instead of merely sharing a palette.
+            let blade_t = (longitudinal + 1.0) * 0.5;
+            let blade_envelope = leaf_width(LeafRecipe::DRY_WHITE_OAK, blade_t);
+            let phase = soil_random(cell.x, cell.y, grid, salt ^ 0x41af) * core::f32::consts::TAU;
+            let edge_warp = 0.96 + 0.04 * (longitudinal * 7.0 + phase).sin();
+            let half_width = radius * aspect * blade_envelope * edge_warp;
+            let lateral = local.y.abs() / half_width.max(0.001);
+            // Retain only a narrow antialiased rim. The old broad ramp made
+            // aggregate leaves dissolve into mottling beside the crisp alpha
+            // silhouettes used by the physical scatter.
+            let coverage = 1.0 - smoothstep(0.92, 1.02, lateral);
+            if coverage <= field.coverage {
+                continue;
+            }
+            let midrib = 1.0 - smoothstep(0.025, 0.11, local.y.abs() / radius.max(0.001));
+            let vein_phase = (longitudinal * 6.5 + lateral * 0.72).fract().abs();
+            let side_veins = (1.0 - smoothstep(0.035, 0.11, (vein_phase - 0.5).abs()))
+                * smoothstep(0.12, 0.72, lateral);
+            let pigment = soil_random(cell.x, cell.y, grid, salt ^ 0xa531);
+            let pigment_tone = 0.18 + pigment * 0.64;
+            field = LitterLeafImprint {
+                coverage,
+                dome: (1.0 - lateral.powf(1.45)).max(0.0) * (0.72 + midrib * 0.18) * coverage,
+                tone: (pigment_tone
+                    + (longitudinal * 5.0 + phase).sin() * 0.06
+                    + midrib * 0.20
+                    + side_veins * 0.10)
+                    .clamp(0.0, 1.0),
+                vein: (midrib.max(side_veins) * coverage).clamp(0.0, 1.0),
+            };
+        }
+    }
+    field
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ForestLitterSample {
+    height: f32,
+    ao: f32,
+    tone: f32,
+    coverage: f32,
+}
+
+fn forest_litter_sample(u: f32, v: f32) -> ForestLitterSample {
+    let point = Vec2::new(u, v);
+    let warp = Vec2::new(
+        soil_value_noise(point, 7, 0x51a7),
+        soil_value_noise(point + Vec2::new(0.41, 0.23), 7, 0x8d31),
+    ) * 0.014;
+    let sample = point + warp;
+    let lower = litter_leaf_field(sample, 41, 0x1eaf_0001);
+    let middle = litter_leaf_field(sample, 47, 0x1eaf_0002);
+    // The upper stratum deliberately uses a coarser field. Its isolated
+    // 10--16 cm oak silhouettes remain recognizable over the two dense,
+    // composting strata instead of washing into a third layer of mottling.
+    let upper = litter_leaf_field(sample, 43, 0x1eaf_0003);
+    let coverage = 1.0 - (1.0 - lower.coverage) * (1.0 - middle.coverage) * (1.0 - upper.coverage);
+    let overlap =
+        (lower.coverage + middle.coverage + upper.coverage - coverage).clamp(0.0, 2.0) * 0.5;
+    let pile = (lower.dome * 0.18 + middle.dome * 0.28 + upper.dome * 0.42).clamp(0.0, 1.0);
+    let height = 0.48 + pile * 0.38 + overlap * 0.08;
+    let vein =
+        lower.vein * (1.0 - middle.coverage) + middle.vein * (1.0 - upper.coverage) + upper.vein;
+    let ao = (1.0 - coverage * 0.06 - overlap * 0.16 - vein * 0.025).clamp(0.70, 1.0);
+    let visible_tone = lower.tone * lower.coverage * (1.0 - middle.coverage)
+        + middle.tone * middle.coverage * (1.0 - upper.coverage)
+        + upper.tone * upper.coverage;
+    let compost_tone = soil_value_noise(sample, 79, 0xb875) * 0.5 + 0.5;
+    let tone = visible_tone
+        .lerp(compost_tone, (1.0 - coverage) * 0.75)
+        .clamp(0.0, 1.0);
+    ForestLitterSample {
+        height,
+        ao,
+        tone,
+        coverage,
+    }
+}
+
+fn generate_forest_litter_textures() -> (Image, Image) {
+    let size = FOREST_SOIL_TEXTURE_SIZE;
+    let samples = (0..size)
+        .flat_map(|y| {
+            (0..size).map(move |x| {
+                forest_litter_sample(
+                    (x as f32 + 0.5) / size as f32,
+                    (y as f32 + 0.5) / size as f32,
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut data = Vec::with_capacity((size * size * 4) as usize);
+    for sample in &samples {
+        data.extend_from_slice(&[
+            (sample.height * 255.0).round().clamp(0.0, 255.0) as u8,
+            (sample.ao * 255.0).round().clamp(0.0, 255.0) as u8,
+            (sample.tone * 255.0).round().clamp(0.0, 255.0) as u8,
+            (sample.coverage * 255.0).round().clamp(0.0, 255.0) as u8,
+        ]);
+    }
+    let sample_at = |x: i32, y: i32| {
+        samples[y.rem_euclid(size as i32) as usize * size as usize
+            + x.rem_euclid(size as i32) as usize]
+    };
+    let texel_metres = FOREST_LITTER_TILE_METRES / size as f32;
+    let mut normal_data = Vec::with_capacity((size * size * 2) as usize);
+    for y in 0..size as i32 {
+        for x in 0..size as i32 {
+            let height_x = (sample_at(x + 1, y).height - sample_at(x - 1, y).height)
+                * FOREST_LITTER_HEIGHT_RANGE_METRES
+                / (2.0 * texel_metres);
+            let height_z = (sample_at(x, y + 1).height - sample_at(x, y - 1).height)
+                * FOREST_LITTER_HEIGHT_RANGE_METRES
+                / (2.0 * texel_metres);
+            let normal = Vec3::new(-height_x, 1.0, -height_z).normalize();
+            normal_data.extend_from_slice(&[
+                ((normal.x * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8,
+                ((normal.z * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8,
+            ]);
+        }
+    }
+    (
+        image_rgba_mipped(data, size, true),
+        image_rg_mipped(normal_data, size, true),
+    )
+}
+
 fn generate_forest_soil_texture(images: &mut Assets<Image>) -> GroundTextureSet {
     let size = FOREST_SOIL_TEXTURE_SIZE;
     let heights = (0..size)
@@ -1037,8 +1271,11 @@ fn generate_forest_soil_texture(images: &mut Assets<Image>) -> GroundTextureSet 
             height_ao.extend_from_slice(&[encoded_height, ao]);
         }
     }
+    let (litter_surface, litter_normal) = generate_forest_litter_textures();
     GroundTextureSet {
         height_ao: images.add(image_rg_mipped(height_ao, size, true)),
+        litter_surface: images.add(litter_surface),
+        litter_normal: images.add(litter_normal),
     }
 }
 
@@ -1157,10 +1394,10 @@ mod tests {
     }
 
     #[test]
-    fn forest_soil_is_one_packed_1024_texture_with_a_complete_mip_chain() {
+    fn forest_ground_uses_packed_surface_and_normal_textures_with_complete_mip_chains() {
         let mut images = Assets::<Image>::default();
         let textures = generate_forest_soil_texture(&mut images);
-        assert_eq!(images.len(), 1);
+        assert_eq!(images.len(), 3);
         let image = images.get(&textures.height_ao).unwrap();
         assert_eq!((image.width(), image.height()), (1024, 1024));
         assert_eq!(image.texture_descriptor.format, TextureFormat::Rg8Unorm);
@@ -1173,6 +1410,29 @@ mod tests {
             (mip_texels * 2) as usize
         );
         assert_eq!(FOREST_SOIL_AO_SIZE, FOREST_SOIL_TEXTURE_SIZE / 2);
+
+        let litter = images.get(&textures.litter_surface).unwrap();
+        assert_eq!((litter.width(), litter.height()), (1024, 1024));
+        assert_eq!(litter.texture_descriptor.format, TextureFormat::Rgba8Unorm);
+        assert_eq!(litter.texture_descriptor.mip_level_count, 11);
+        assert_eq!(
+            litter.data.as_ref().unwrap().len(),
+            (mip_texels * 4) as usize
+        );
+        let litter_normal = images.get(&textures.litter_normal).unwrap();
+        assert_eq!(
+            (litter_normal.width(), litter_normal.height()),
+            (1024, 1024)
+        );
+        assert_eq!(
+            litter_normal.texture_descriptor.format,
+            TextureFormat::Rg8Unorm
+        );
+        assert_eq!(litter_normal.texture_descriptor.mip_level_count, 11);
+        assert_eq!(
+            litter_normal.data.as_ref().unwrap().len(),
+            (mip_texels * 2) as usize
+        );
     }
 
     #[test]
@@ -1209,6 +1469,39 @@ mod tests {
             * FOREST_SOIL_AO_DIRECTIONS.len() as u32
             * FOREST_SOIL_AO_STEPS.len() as u32;
         assert_eq!(horizon_samples, 4_194_304);
+    }
+
+    #[test]
+    fn forest_litter_is_periodic_dense_and_retains_soil_gaps() {
+        let mut covered = 0_usize;
+        let mut exposed = 0_usize;
+        let mut minimum_ao = 1.0_f32;
+        let mut maximum_repeat_error = 0.0_f32;
+        for y in 0..128 {
+            for x in 0..128 {
+                let u = (x as f32 + 0.5) / 128.0;
+                let v = (y as f32 + 0.5) / 128.0;
+                let sample = forest_litter_sample(u, v);
+                let repeated = forest_litter_sample(u + 1.0, v - 1.0);
+                maximum_repeat_error = maximum_repeat_error
+                    .max((sample.coverage - repeated.coverage).abs())
+                    .max((sample.height - repeated.height).abs());
+                assert!((0.47..=0.94).contains(&sample.height));
+                minimum_ao = minimum_ao.min(sample.ao);
+                covered += usize::from(sample.coverage >= 0.5);
+                exposed += usize::from(sample.coverage <= 0.1);
+            }
+        }
+        let samples = 128 * 128;
+        assert!(
+            maximum_repeat_error < 0.01,
+            "maximum periodic repeat error: {maximum_repeat_error}"
+        );
+        assert!(covered * 100 / samples >= 68, "covered texels: {covered}");
+        assert!(exposed * 100 / samples >= 3, "exposed texels: {exposed}");
+        assert!(minimum_ao <= 0.82, "minimum litter AO: {minimum_ao}");
+        assert_eq!(FOREST_LITTER_TILE_METRES, 4.0);
+        assert!((0.014..=0.020).contains(&FOREST_LITTER_HEIGHT_RANGE_METRES));
     }
 
     #[test]

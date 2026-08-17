@@ -538,12 +538,13 @@ pub(super) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 12] = [
     .detail(DetailRequirement::GrassPresent),
     v!(
         "forest-floor-debris-detail",
-        "Fallen oak leaves and twig geometry close-up",
+        "Unobstructed forest-floor leaf-bed, twig, and pebble review",
         CapturePose::Debris,
-        39.6,
+        44.0,
         500
     )
     .debris()
+    .suppress_grass()
     .detail(DetailRequirement::DebrisPair),
     v!(
         "horizon",

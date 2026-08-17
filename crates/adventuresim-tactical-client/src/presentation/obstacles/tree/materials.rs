@@ -52,7 +52,8 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     /// diffuse transmission for the species' leaf thickness.
     #[uniform(12)]
     pub(crate) surface_parameters: Vec4,
-    /// Perceptual roughness, physical thickness in metres, and reserved.
+    /// Perceptual roughness, physical thickness in metres, ground-litter
+    /// vertex-pigment strength, and reserved.
     #[uniform(12)]
     pub(crate) physical_parameters: Vec4,
 }
