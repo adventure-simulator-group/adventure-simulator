@@ -5,8 +5,8 @@ use adventuresim_weapon_model::{
     MELEE_CATALOG_IDS, MaceSpec, MaterialClass, Millimeters, OffsetMm, PRESET_IDS, Permille,
     Segments, ValidationError, WeaponDesign, WeaponHolderKind, WeaponIconLayout, WeaponIconSpec,
     decode, decode_holder, default_design, default_holder_design, derive_properties, design_hash,
-    encode, encode_holder, generate, generate_holder, generate_icon, holder_design_hash,
-    icon_layout, preset_design, recommended_holder, validate, validate_holder,
+    encode, encode_holder, generate, generate_holder, generate_holder_icon, generate_icon,
+    holder_design_hash, icon_layout, preset_design, recommended_holder, validate, validate_holder,
 };
 
 fn signed_volume(positions: &[[f32; 3]], indices: &[u32]) -> f32 {
@@ -643,6 +643,61 @@ fn procedural_icons_obey_focus_orientation_and_clipping_contracts() {
         let png = icon.encode_png().unwrap();
         assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "{id}");
         assert_eq!(png[25], 6, "{id}: CSS mask PNG must carry RGBA alpha");
+    }
+}
+
+#[test]
+fn procedural_holder_icons_are_fitted_mirrored_and_deterministic() {
+    let spec = WeaponIconSpec {
+        size: 96,
+        supersampling: 4,
+    };
+    let sword = default_design("longsword").unwrap();
+    let sheath = default_holder_design(&sword).unwrap();
+    let icon = generate_holder_icon(&sheath, spec).unwrap();
+    assert_eq!(icon.layout, WeaponIconLayout::HiltFocus);
+    assert!(icon.mirrored);
+    assert_eq!(icon.framing_anchor, [0.24, 0.24]);
+    assert!(icon.focus_bounds.min[0] >= 0.01);
+    assert!(icon.focus_bounds.min[1] >= 0.01);
+    assert!(icon.focus_bounds.max[0] <= 0.99);
+    assert!(icon.focus_bounds.max[1] <= 0.99);
+    assert!(
+        icon.occupied_bounds.max[0] >= 0.97 && icon.occupied_bounds.max[1] >= 0.97,
+        "scabbard body must exit toward the lower-right: {:?}",
+        icon.occupied_bounds
+    );
+    assert_eq!(
+        icon.alpha,
+        generate_holder_icon(&sheath, spec).unwrap().alpha,
+        "holder icon is not deterministic"
+    );
+
+    let hammer = default_design("war_hammer").unwrap();
+    let haft_loop = default_holder_design(&hammer).unwrap();
+    let loop_icon = generate_holder_icon(&haft_loop, spec).unwrap();
+    assert_eq!(loop_icon.layout, WeaponIconLayout::HeadFocus);
+    assert!(!loop_icon.mirrored);
+    assert_eq!(loop_icon.framing_anchor, [0.5, 0.5]);
+    assert!(loop_icon.occupied_bounds.min[0] >= 0.01);
+    assert!(loop_icon.occupied_bounds.min[1] >= 0.01);
+    assert!(loop_icon.occupied_bounds.max[0] <= 0.99);
+    assert!(loop_icon.occupied_bounds.max[1] <= 0.99);
+    assert_ne!(icon.alpha, loop_icon.alpha);
+
+    for id in MELEE_CATALOG_IDS {
+        let weapon = default_design(id).unwrap();
+        let Some(holder) = default_holder_design(&weapon) else {
+            continue;
+        };
+        generate_holder_icon(
+            &holder,
+            WeaponIconSpec {
+                size: 32,
+                supersampling: 2,
+            },
+        )
+        .unwrap_or_else(|error| panic!("{id} holder icon: {error}"));
     }
 }
 

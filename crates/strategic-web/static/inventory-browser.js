@@ -1067,7 +1067,7 @@
       ? [root]
       : [...(root.querySelectorAll?.("tr.trade-inventory-row") || [])];
     rows.forEach((row) => {
-      if (!row.querySelector('.inventory-item-label[data-item-melee="true"]')) return;
+      if (!row.querySelector('.inventory-item-label[data-item-melee="true"], .inventory-item-label[data-item-weapon-holder="true"]')) return;
       const scope = row.dataset.personalInventoryId ? "personal" : row.dataset.partyInventoryId ? "party" : "";
       const rowId = row.dataset.personalInventoryId || row.dataset.partyInventoryId || "";
       const icon = row.querySelector(".inventory-item-type .game-icon");
@@ -1082,7 +1082,7 @@
         }
       }, { once: true });
       probe.addEventListener("error", () => {
-        // The authored catalog SVG remains in place for legacy/non-instanced weapons.
+        // The authored catalog SVG remains for legacy or non-instanced equipment.
       }, { once: true });
       probe.src = url;
     });

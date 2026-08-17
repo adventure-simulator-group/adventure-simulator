@@ -6,7 +6,8 @@ use thiserror::Error;
 use tiny_skia::{FillRule, IntSize, Mask, PathBuilder, Pixmap, Transform};
 
 use crate::{
-    ComponentRole, ComponentShape, GenerateError, GeneratedWeapon, WeaponDesign, generate,
+    ComponentRole, ComponentShape, GenerateError, GeneratedWeapon, GeneratedWeaponHolder, MeshPart,
+    WeaponDesign, WeaponHolderDesign, WeaponHolderKind, generate, generate_holder,
 };
 
 /// Bump whenever projection, framing, or rasterization changes.
@@ -75,7 +76,9 @@ pub struct WeaponIcon {
     pub size: u16,
     pub alpha: Vec<u8>,
     pub layout: WeaponIconLayout,
-    /// Normalized semantic framing anchor: guard center or head root.
+    /// True when the base layout is horizontally mirrored, as for scabbards.
+    pub mirrored: bool,
+    /// Normalized semantic framing anchor: guard, head root, sheath throat, or loop center.
     pub framing_anchor: [f32; 2],
     /// Head-layout magnification relative to fitting the full head/socket assembly.
     pub head_zoom: f32,
@@ -137,18 +140,40 @@ pub fn icon_layout(design: &WeaponDesign) -> WeaponIconLayout {
 }
 
 pub fn generate_icon(design: &WeaponDesign, spec: WeaponIconSpec) -> Result<WeaponIcon, IconError> {
-    if spec.size < 16 || spec.size > 512 || !(1..=8).contains(&spec.supersampling) {
-        return Err(IconError::InvalidSpec);
-    }
     let generated = generate(design)?;
     let layout = icon_layout(design);
     let projection = Projection::new(design, &generated, layout)?;
+    rasterize_icon(&generated.parts, spec, projection)
+}
+
+/// Render a fitted scabbard or haft loop from its independently persisted recipe.
+///
+/// Blade sheaths use the same diagonal as their weapon, with the throat centered
+/// and the long body intentionally cropped toward the lower-left. Compact haft
+/// loops fit the complete loop-and-hanger assembly in the opposite diagonal.
+pub fn generate_holder_icon(
+    design: &WeaponHolderDesign,
+    spec: WeaponIconSpec,
+) -> Result<WeaponIcon, IconError> {
+    let generated = generate_holder(design)?;
+    let projection = Projection::holder(&generated)?;
+    rasterize_icon(&generated.parts, spec, projection)
+}
+
+fn rasterize_icon(
+    parts: &[MeshPart],
+    spec: WeaponIconSpec,
+    projection: Projection,
+) -> Result<WeaponIcon, IconError> {
+    if spec.size < 16 || spec.size > 512 || !(1..=8).contains(&spec.supersampling) {
+        return Err(IconError::InvalidSpec);
+    }
     let render_size = u32::from(spec.size)
         .checked_mul(u32::from(spec.supersampling))
         .ok_or(IconError::InvalidSpec)?;
     let mut mask = Mask::new(render_size, render_size).ok_or(IconError::Rasterization)?;
     let factor = render_size as f32;
-    for part in &generated.parts {
+    for part in parts {
         for triangle in part.indices.as_chunks::<3>().0 {
             let points = triangle.map(|index| {
                 let projected = projection.point(part.positions[index as usize]);
@@ -187,7 +212,8 @@ pub fn generate_icon(design: &WeaponDesign, spec: WeaponIconSpec) -> Result<Weap
     Ok(WeaponIcon {
         size: spec.size,
         alpha,
-        layout,
+        layout: projection.layout,
+        mirrored: projection.mirror_x,
         framing_anchor: projection.framing_anchor,
         head_zoom: projection.head_zoom,
         focus_bounds: projection.focus_bounds,
@@ -201,6 +227,8 @@ struct Projection {
     axial_center: f32,
     target: [f32; 2],
     scale: f32,
+    mirror_x: bool,
+    flip_lateral: bool,
     framing_anchor: [f32; 2],
     head_zoom: f32,
     focus_bounds: IconBounds,
@@ -264,8 +292,15 @@ impl Projection {
             min: [0.02, 0.02],
             max: [0.98, 0.98],
         };
-        let base_scale =
-            fit_scale(&focus, [lateral_center, axial_center], layout, target, safe)? * 0.96;
+        let base_scale = fit_scale(
+            &focus,
+            [lateral_center, axial_center],
+            layout,
+            false,
+            false,
+            target,
+            safe,
+        )? * 0.96;
         let (scale, head_zoom, framed_focus) = match layout {
             WeaponIconLayout::HiltFocus => (base_scale, 1.0, focus),
             WeaponIconLayout::HeadFocus => {
@@ -273,6 +308,8 @@ impl Projection {
                     &principal_head,
                     [lateral_center, axial_center],
                     layout,
+                    false,
+                    false,
                     target,
                     safe,
                 )? * 0.96;
@@ -286,6 +323,8 @@ impl Projection {
             axial_center,
             target,
             scale,
+            mirror_x: false,
+            flip_lateral: false,
             framing_anchor: target,
             head_zoom,
             focus_bounds: IconBounds::empty(),
@@ -296,11 +335,92 @@ impl Projection {
         Ok(projection)
     }
 
+    fn holder(generated: &GeneratedWeaponHolder) -> Result<Self, IconError> {
+        let (layout, mirror_x, flip_lateral, target, focus, anchor) = match generated.kind {
+            WeaponHolderKind::BladeSheath => {
+                let focus = generated
+                    .parts
+                    .iter()
+                    .filter(|part| {
+                        matches!(
+                            part.component_id.as_str(),
+                            "scabbard-throat" | "scabbard-suspension"
+                        )
+                    })
+                    .flat_map(|part| part.positions.iter().copied())
+                    .collect::<Vec<_>>();
+                let throat = generated
+                    .parts
+                    .iter()
+                    .find(|part| part.component_id == "scabbard-throat")
+                    .ok_or(IconError::MissingFocus)?;
+                (
+                    WeaponIconLayout::HiltFocus,
+                    true,
+                    false,
+                    [0.24, 0.24],
+                    focus,
+                    bounds_center(throat.bounds),
+                )
+            }
+            WeaponHolderKind::HaftLoop => {
+                let focus = generated
+                    .parts
+                    .iter()
+                    .flat_map(|part| part.positions.iter().copied())
+                    .collect::<Vec<_>>();
+                (
+                    WeaponIconLayout::HeadFocus,
+                    false,
+                    false,
+                    [0.5, 0.5],
+                    focus,
+                    bounds_center(generated.bounds),
+                )
+            }
+        };
+        if focus.is_empty() {
+            return Err(IconError::MissingFocus);
+        }
+        let [lateral_center, axial_center] = raw_coordinates(anchor, layout);
+        let safe = IconBounds {
+            min: [0.02, 0.02],
+            max: [0.98, 0.98],
+        };
+        let scale = fit_scale(
+            &focus,
+            [lateral_center, axial_center],
+            layout,
+            mirror_x,
+            flip_lateral,
+            target,
+            safe,
+        )? * 0.96;
+        let mut projection = Self {
+            layout,
+            lateral_center,
+            axial_center,
+            target,
+            scale,
+            mirror_x,
+            flip_lateral,
+            framing_anchor: target,
+            head_zoom: 1.0,
+            focus_bounds: IconBounds::empty(),
+        };
+        for point in focus {
+            projection.focus_bounds.include(projection.point(point));
+        }
+        Ok(projection)
+    }
+
     fn point(&self, point: [f32; 3]) -> [f32; 2] {
         let relative = relative_screen(
             raw_coordinates(point, self.layout),
             [self.lateral_center, self.axial_center],
             self.layout,
+            self.mirror_x,
+            self.flip_lateral,
         );
         [
             self.target[0] + relative[0] * self.scale,
@@ -309,16 +429,28 @@ impl Projection {
     }
 }
 
+fn bounds_center(bounds: crate::Bounds) -> [f32; 3] {
+    std::array::from_fn(|axis| (bounds.min[axis] + bounds.max[axis]) * 0.5)
+}
+
 fn fit_scale(
     points: &[[f32; 3]],
     center: [f32; 2],
     layout: WeaponIconLayout,
+    mirror_x: bool,
+    flip_lateral: bool,
     target: [f32; 2],
     safe: IconBounds,
 ) -> Result<f32, IconError> {
     let mut scale = f32::INFINITY;
     for point in points {
-        let relative = relative_screen(raw_coordinates(*point, layout), center, layout);
+        let relative = relative_screen(
+            raw_coordinates(*point, layout),
+            center,
+            layout,
+            mirror_x,
+            flip_lateral,
+        );
         for axis in 0..2 {
             if relative[axis] < -1.0e-6 {
                 scale = scale.min((target[axis] - safe.min[axis]) / -relative[axis]);
@@ -431,16 +563,29 @@ fn raw_coordinates(point: [f32; 3], layout: WeaponIconLayout) -> [f32; 2] {
     [lateral, axial]
 }
 
-fn relative_screen(point: [f32; 2], center: [f32; 2], layout: WeaponIconLayout) -> [f32; 2] {
-    let lateral = point[0] - center[0];
+fn relative_screen(
+    point: [f32; 2],
+    center: [f32; 2],
+    layout: WeaponIconLayout,
+    mirror_x: bool,
+    flip_lateral: bool,
+) -> [f32; 2] {
+    let mut lateral = point[0] - center[0];
+    if flip_lateral {
+        lateral = -lateral;
+    }
     let axial = point[1] - center[1];
     let diagonal = std::f32::consts::FRAC_1_SQRT_2;
-    match layout {
+    let mut screen = match layout {
         WeaponIconLayout::HiltFocus => {
             [(-axial + lateral) * diagonal, (axial + lateral) * diagonal]
         }
         WeaponIconLayout::HeadFocus => [(axial + lateral) * diagonal, (axial - lateral) * diagonal],
+    };
+    if mirror_x {
+        screen[0] = -screen[0];
     }
+    screen
 }
 
 fn occupied_bounds(alpha: &[u8], size: usize) -> Option<IconBounds> {

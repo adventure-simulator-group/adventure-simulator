@@ -114,6 +114,15 @@ every frame; non-weapons and invalid or unsupported recipes retain the tactical
 catalog atlas icon. The tactical world model continues to use the full generated
 mesh, not the silhouette.
 
+Generated holders use their own persisted holder recipe rather than borrowing
+the contained weapon's icon. A blade sheath mirrors the sword composition: its
+complete throat and suspension begin in the inset upper-left and its fitted body
+continues toward, and may crop at, the lower-right. Compact haft loops fit their
+complete loop-and-hanger assembly inside the square. Strategic holder icons use
+the same custody-gated endpoint and tactical holder icons use the replicated
+`WeaponHolderAppearance`; both reauthenticate the holder recipe and design hash
+before consulting their caches.
+
 Each generated scabbard or haft loop is a first-class parametric object with a
 versioned `WeaponHolderDesign` template and a private `WeaponHolderInstance`
 keyed by its stable physical object. Its recipe captures the fitted weapon
