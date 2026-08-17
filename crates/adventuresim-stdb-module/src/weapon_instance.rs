@@ -73,6 +73,31 @@ pub fn backend_weapon_instances(ctx: &ViewContext) -> Vec<WeaponInstance> {
     instances
 }
 
+/// Trusted strategic-backend projection for independently persisted scabbard
+/// and haft-loop recipes. Ordinary players still receive holder recipes only
+/// through the sender-scoped tactical projection.
+#[view(accessor = backend_weapon_holder_instances, public)]
+pub fn backend_weapon_holder_instances(ctx: &ViewContext) -> Vec<WeaponHolderInstance> {
+    let gateway = ctx.db.strategic_gateway_authority().id().find(0);
+    if gateway.is_none_or(|authority| authority.identity != ctx.sender()) {
+        return Vec::new();
+    }
+    let mut instances = Vec::new();
+    for kind in ["personal", "party"] {
+        for object in ctx.db.inventory_object().location_kind().filter(kind) {
+            if let Some(instance) = ctx
+                .db
+                .weapon_holder_instance()
+                .physical_object_id()
+                .find(object.id)
+            {
+                instances.push(instance);
+            }
+        }
+    }
+    instances
+}
+
 /// Sender-scoped tactical transport. Strategic HTML likewise never embeds the
 /// full smithing recipe; its trusted icon endpoint consumes the backend view.
 #[derive(SpacetimeType, Clone, Debug)]

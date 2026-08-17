@@ -19,7 +19,7 @@ pub use design::*;
 pub use hash::{DesignHash, design_hash, holder_design_hash};
 pub use icon::{
     ICON_RENDERER_VERSION, IconBounds, IconError, WeaponIcon, WeaponIconLayout, WeaponIconSpec,
-    generate_icon, icon_layout,
+    generate_holder_icon, generate_icon, icon_layout,
 };
 pub use mesh::{GenerateError, generate, generate_holder};
 pub use validation::{ValidationError, validate, validate_holder};

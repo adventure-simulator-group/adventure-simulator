@@ -2103,6 +2103,7 @@ fn item_name_with_display_quality(
             data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
             data-item-melee=[definition.map(|item| item.melee)]
+            data-item-weapon-holder=[matches!(item_id, "scabbard" | "weapon_loop").then_some("true")]
             data-item-ranged=[definition.map(|item| item.ranged)]
             data-item-group=[alcohol_group]
             data-group-name=[alcohol_group.map(|_| "Alcohol")]
@@ -2459,6 +2460,16 @@ mod tests {
     use crate::spacetimedb::{EquipmentAnchorKind, EquipmentLocation};
     use crate::templates::settlement::test_support::*;
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn holder_inventory_rows_request_per_instance_icons() {
+        for id in ["scabbard", "weapon_loop"] {
+            let markup = item_name_with_display(id, id, None).into_string();
+            assert!(markup.contains("data-item-weapon-holder=\"true\""), "{id}");
+        }
+        let markup = item_name_with_display("belt", "belt", None).into_string();
+        assert!(!markup.contains("data-item-weapon-holder"));
+    }
 
     #[test]
     fn fireplace_container_rows_expose_shared_browser_metadata_and_open_controls() {
