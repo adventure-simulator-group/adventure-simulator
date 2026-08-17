@@ -1,0 +1,11 @@
+[package]
+name = "adventuresim-fbx"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/adventure-simulator-group/fabelgeist"
+license = "GPL-3.0"
+
+[dependencies]
+anyhow = "1"
+# Pure-Rust inflate (miniz_oxide) for deflated FBX array properties; no C toolchain.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

@@ -18,11 +18,13 @@ members = [
     "crates/adventuresim-tactical-server-dispatcher",
     "crates/adventuresim-tactical-brp-generator",
     "crates/strategic-web",
+    "crates/adventuresim-fbx",
 ]
 exclude = [
     "wiki",
     "utils",
     "crates/adventuresim-character-creator",
+    "crates/adventuresim-mhr",
 ]
 
 [workspace.package]
