@@ -1,3 +1,4 @@
+use adventuresim_tactical_core::prelude::SceneTerrain;
 use bevy::{
     pbr::{ExtendedMaterial, Material, MaterialExtension},
     prelude::*,
@@ -13,7 +14,12 @@ use super::geometry::{
 };
 #[cfg(test)]
 use crate::presentation::generate_procedural_environment_assets;
-use crate::presentation::{LeafTextureSet, ProceduralEnvironmentAssets};
+use crate::presentation::procedural_assets::{
+    FOREST_SOIL_HEIGHT_RANGE_METRES, FOREST_SOIL_TILE_METRES,
+};
+use crate::presentation::{
+    LeafTextureSet, ProceduralEnvironmentAssets, color_vec4, terrain::TACTICAL_DIRT_SRGB,
+};
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
@@ -86,6 +92,32 @@ pub(crate) struct TacticalTreeBarkExtension {
     /// Direction toward dominant light and normalized directional strength.
     #[uniform(102)]
     pub(in crate::presentation) lighting: Vec4,
+    /// Linear bark pigment and perceptual roughness.
+    #[uniform(102)]
+    surface: Vec4,
+    /// Linear soil pigment and perceptual roughness. Soil remains a single
+    /// molded albedo; only the binary coverage mask varies spatially.
+    #[uniform(102)]
+    soil_surface: Vec4,
+    /// Solid soil height, maximum speck height, cell size, minimum radius.
+    #[uniform(102)]
+    deposition: Vec4,
+    /// Playable half extents and encoded minimum/maximum terrain heights.
+    #[uniform(102)]
+    terrain_surface: Vec4,
+    /// Soil tiles/metre, physical height range, normal strength, AO strength.
+    #[uniform(102)]
+    soil_response: Vec4,
+    /// Soil dielectric reflectance; remaining components are reserved.
+    #[uniform(102)]
+    soil_optics: Vec4,
+    /// Row-major playable terrain heightfield encoded into two channels.
+    #[texture(103)]
+    terrain_heightmap: Handle<Image>,
+    /// The same packed height/AO surface sampled by tactical terrain.
+    #[texture(104)]
+    #[sampler(105)]
+    soil_height_ao: Handle<Image>,
 }
 
 impl MaterialExtension for TacticalTreeBarkExtension {
@@ -101,9 +133,17 @@ impl MaterialExtension for TacticalTreeBarkExtension {
 pub(crate) type TacticalTreeBarkMaterial =
     ExtendedMaterial<StandardMaterial, TacticalTreeBarkExtension>;
 
-pub(crate) fn oak_bark_material(assets: &ProceduralEnvironmentAssets) -> TacticalTreeBarkMaterial {
+pub(crate) fn oak_bark_material(
+    assets: &ProceduralEnvironmentAssets,
+    terrain_heightmap: Handle<Image>,
+    terrain_height_range: Vec2,
+    terrain: &SceneTerrain,
+) -> TacticalTreeBarkMaterial {
     bark_material(
         assets,
+        terrain_heightmap,
+        terrain_height_range,
+        terrain,
         Color::srgb_u8(96, 68, 43),
         180.0 / 255.0,
         Vec4::new(2.0, 0.032, 1.30, 0.95),
@@ -112,11 +152,17 @@ pub(crate) fn oak_bark_material(assets: &ProceduralEnvironmentAssets) -> Tactica
 
 pub(in crate::presentation) fn beech_bark_material(
     assets: &ProceduralEnvironmentAssets,
+    terrain_heightmap: Handle<Image>,
+    terrain_height_range: Vec2,
+    terrain: &SceneTerrain,
 ) -> TacticalTreeBarkMaterial {
     // Beech shares the pipeline so streamed wood remains one material type,
     // but its smooth bark deliberately bypasses oak relief and cavity AO.
     bark_material(
         assets,
+        terrain_heightmap,
+        terrain_height_range,
+        terrain,
         Color::srgb_u8(145, 145, 135),
         0.9,
         Vec4::new(2.0, 0.0, 0.0, 0.0),
@@ -125,10 +171,18 @@ pub(in crate::presentation) fn beech_bark_material(
 
 fn bark_material(
     assets: &ProceduralEnvironmentAssets,
+    terrain_heightmap: Handle<Image>,
+    terrain_height_range: Vec2,
+    terrain: &SceneTerrain,
     base_color: Color,
     perceptual_roughness: f32,
     relief: Vec4,
 ) -> TacticalTreeBarkMaterial {
+    let soil_color = Color::srgb_u8(
+        TACTICAL_DIRT_SRGB[0],
+        TACTICAL_DIRT_SRGB[1],
+        TACTICAL_DIRT_SRGB[2],
+    );
     TacticalTreeBarkMaterial {
         base: StandardMaterial {
             base_color,
@@ -141,6 +195,27 @@ fn bark_material(
             relief,
             projection: Vec4::new(4.0, 0.92, 0.52, 12.0),
             lighting: Vec3::new(0.25, 0.92, 0.3).normalize().extend(1.0),
+            surface: color_vec4(base_color).xyz().extend(perceptual_roughness),
+            soil_surface: color_vec4(soil_color).xyz().extend(0.84),
+            // The 7 mm minimum radius yields a 14 mm minimum full speck
+            // diameter before edge antialiasing. A 45 mm cell leaves enough
+            // negative space for the separate deposits to read clearly.
+            deposition: Vec4::new(0.12, 0.46, 0.045, 0.007),
+            terrain_surface: Vec4::new(
+                terrain.width() * 0.5,
+                terrain.depth() * 0.5,
+                terrain_height_range.x,
+                terrain_height_range.y,
+            ),
+            soil_response: Vec4::new(
+                1.0 / FOREST_SOIL_TILE_METRES,
+                FOREST_SOIL_HEIGHT_RANGE_METRES,
+                1.0,
+                0.82,
+            ),
+            soil_optics: Vec4::new(0.35, 0.0, 0.0, 0.0),
+            terrain_heightmap,
+            soil_height_ao: assets.forest_soil.height_ao.clone(),
         },
     }
 }
@@ -365,7 +440,10 @@ mod tests {
         let assets = generate_procedural_environment_assets(
             &mut app.world_mut().resource_mut::<Assets<Image>>(),
         );
-        let bark = oak_bark_material(&assets);
+        let terrain = SceneTerrain::new(2, 2, 1.0, |point| point.x * 0.1 + point.y * 0.2);
+        let heightmap = Handle::<Image>::default();
+        let terrain_height_range = Vec2::new(-0.075, 0.705);
+        let bark = oak_bark_material(&assets, heightmap.clone(), terrain_height_range, &terrain);
 
         assert_eq!(bark.base.base_color, Color::srgb_u8(96, 68, 43));
         assert!(bark.base.base_color_texture.is_none());
@@ -377,10 +455,47 @@ mod tests {
         assert_eq!(bark.extension.relief, Vec4::new(2.0, 0.032, 1.30, 0.95));
         assert_eq!(bark.extension.projection, Vec4::new(4.0, 0.92, 0.52, 12.0));
         assert!(bark.extension.lighting.xyz().is_normalized());
+        assert_eq!(
+            bark.extension.surface,
+            color_vec4(Color::srgb_u8(96, 68, 43))
+                .xyz()
+                .extend(180.0 / 255.0)
+        );
+        assert_eq!(
+            bark.extension.soil_surface,
+            color_vec4(Color::srgb_u8(
+                TACTICAL_DIRT_SRGB[0],
+                TACTICAL_DIRT_SRGB[1],
+                TACTICAL_DIRT_SRGB[2],
+            ))
+            .xyz()
+            .extend(0.84)
+        );
+        assert_eq!(
+            bark.extension.deposition,
+            Vec4::new(0.12, 0.46, 0.045, 0.007)
+        );
+        assert!(bark.extension.deposition.w * 2.0 >= 0.01);
+        assert_eq!(bark.extension.terrain_heightmap, heightmap);
+        assert_eq!(
+            bark.extension.terrain_surface,
+            Vec4::new(1.0, 1.0, -0.075, 0.705)
+        );
+        assert_eq!(
+            bark.extension.soil_response,
+            Vec4::new(
+                1.0 / FOREST_SOIL_TILE_METRES,
+                FOREST_SOIL_HEIGHT_RANGE_METRES,
+                1.0,
+                0.82,
+            )
+        );
+        assert_eq!(bark.extension.soil_height_ao, assets.forest_soil.height_ao);
+        assert_eq!(bark.extension.soil_optics, Vec4::new(0.35, 0.0, 0.0, 0.0));
     }
 
     #[test]
-    fn bark_shader_blends_scalar_height_before_surface_gradient_normals() {
+    fn bark_shader_blends_shared_soil_response_at_the_sampled_terrain_contact() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_tree_bark.wgsl"
@@ -389,7 +504,7 @@ mod tests {
         assert!(shader.contains("let height_metres = (sample.r - 0.5)"));
         assert!(shader.contains("let height_dx = dpdx(height_metres)"));
         assert!(shader.contains("let height_dy = dpdy(height_metres)"));
-        assert!(shader.contains("pbr_input.N = composed_normal"));
+        assert!(shader.contains("pbr_input.N = normalize(mix(composed_normal, soil_normal"));
         assert!(shader.contains("fn parallax_branch_coordinates"));
         assert!(shader.contains("branch_texture_coordinates(in.uv)"));
         assert!(shader.contains("view.lod_view_world_position"));
@@ -399,7 +514,30 @@ mod tests {
         assert!(shader.contains("fn directional_horizon_visibility"));
         assert!(shader.contains("layer < 6"));
         assert!(shader.contains("horizon_step <= 3"));
-        assert!(shader.contains("pbr_input.material.perceptual_roughness = clamp"));
+        assert!(shader.contains("let bark_roughness = clamp"));
+        assert!(shader.contains("bark.soil_surface.w"));
+        assert!(shader.contains("vec3<f32>(bark.soil_optics.x)"));
+        assert!(shader.contains("fn root_soil_signed_distance"));
+        assert!(shader.contains("fn soil_speck_distance"));
+        assert!(shader.contains("let fine_specks = soil_speck_distance"));
+        assert!(shader.contains("let coarse_specks = soil_speck_distance"));
+        assert!(shader.contains("if root_height > bark.deposition.y + cell_size"));
+        assert!(shader.contains("let edge_width = max(fwidth(signed_distance)"));
+        assert!(shader.contains("mix(bark.surface.rgb, bark.soil_surface.rgb, soil_coverage)"));
+        assert!(shader.contains("let terrain_height = terrain_height_at(in.world_position.xz)"));
+        assert!(shader.contains("let terrain_clearance = in.world_position.y - terrain_height"));
+        assert!(shader.contains("var soil_response_coverage = 0.0"));
+        assert!(shader.contains("smoothstep(0.0381, 0.0508"));
+        assert!(shader.contains("soil_response_coverage = soil_coverage * contact_response"));
+        assert!(shader.contains("soil_sample = soil_surface_sample(in.world_position.xyz)"));
+        assert!(shader.contains("mix(composed_normal, soil_normal, soil_response_coverage)"));
+        assert!(shader.contains("bark.soil_surface.w,\n        soil_coverage"));
+        assert!(
+            shader.contains("mix(ambient_visibility, soil_visibility, soil_response_coverage)")
+        );
+        assert!(!shader.contains("mix(ambient_visibility, soil_visibility, soil_coverage)"));
+        assert!(shader.contains("#ifdef VERTEX_COLORS"));
+        assert_eq!(shader.matches("textureSample(soil_height_ao,").count(), 1);
         assert!(!shader.contains("normal_map"));
     }
 
