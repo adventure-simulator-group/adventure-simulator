@@ -3,6 +3,7 @@
 debug
 target
 /.codex-target-*/
+.workbench
 
 # Root JavaScript tooling dependencies
 /node_modules/

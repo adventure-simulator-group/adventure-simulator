@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2070)
+## Files (2047)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -31,7 +31,6 @@ development, or other wiki document before changing a subsystem.
 - `PRESENTATION_RESTRUCTURING.md` — Project documentation.
 - `README.md` — Component overview and usage notes.
 - `THIRD_PARTY_NOTICES.md` — Project documentation.
-- `assets/SNPro-VariableFont_wght.ttf` — Binary game or UI asset.
 - `assets/TownA.glb` — Binary game or UI asset.
 - `assets/TownB.glb` — Binary game or UI asset.
 - `assets/animations/biped/README.md` — Component overview and usage notes.
@@ -63,23 +62,16 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/thrust.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
-- `assets/crosshair.png` — Binary game or UI asset.
 - `assets/data/hipparcos-bright-stars.csv` — Repository support file.
-- `assets/shaders/tactical_clouds.wgsl` — Repository support file.
 - `assets/shaders/tactical_foliage.wgsl` — Repository support file.
 - `assets/shaders/tactical_moon.wgsl` — Repository support file.
 - `assets/shaders/tactical_pebble_billboard.wgsl` — Repository support file.
 - `assets/shaders/tactical_rock.wgsl` — Repository support file.
 - `assets/shaders/tactical_stars.wgsl` — Repository support file.
 - `assets/shaders/tactical_terrain.wgsl` — Repository support file.
-- `assets/shaders/tactical_tree_bark.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_impostor.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_leaf_card.wgsl` — Repository support file.
 - `assets/shaders/tactical_vista.wgsl` — Repository support file.
-- `assets/shaders/tactical_weather.wgsl` — Repository support file.
-- `assets/tactical-art-goals/pedunculate-oak-ground-goal-v2.png` — Binary game or UI asset.
-- `assets/tactical-art-goals/pedunculate-oak-ground-goal.png` — Binary game or UI asset.
-- `assets/tactical-art-goals/pedunculate-oak-trunk-goal.png` — Binary game or UI asset.
 - `assets/tactical-equipment-icons.png` — Binary game or UI asset.
 - `assets/tactical-scenes/cultivated-roadside.json` — Repository support file.
 - `assets/tactical-scenes/dense-woodland.json` — Repository support file.
@@ -87,17 +79,14 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/environment-review-ledger.template.json` — Repository support file.
 - `assets/tactical-scenes/flat-dry-grassland.json` — Repository support file.
 - `assets/tactical-scenes/heavy-rain-high-wind.json` — Repository support file.
-- `assets/tactical-scenes/light-rain-low-wind.json` — Repository support file.
 - `assets/tactical-scenes/narrow-peak-lod-boundary.json` — Repository support file.
 - `assets/tactical-scenes/playability-repair-required.json` — Repository support file.
 - `assets/tactical-scenes/saturated-wetland.json` — Repository support file.
-- `assets/tactical-scenes/severe-downpour.json` — Repository support file.
 - `assets/tactical-scenes/snow-covered-ground.json` — Repository support file.
 - `assets/tactical-scenes/sparse-woodland.json` — Repository support file.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
 - `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
 - `assets/textures/moon/lroc_color_2k.jpg` — Repository support file.
-- `assets/ui.css` — Browser UI styling.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
@@ -281,6 +270,43 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-dialogue/src/authoring_schema.rs` — Rust source module for this component.
 - `crates/adventuresim-dialogue/src/bin/dialogue-check.rs` — Rust source module.
 - `crates/adventuresim-dialogue/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-fbx/src/curve.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/link.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/node.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/node_animation.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/object.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/prop.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/reader.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/scene.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/take.rs` — Rust source module for this component.
+- `crates/adventuresim-fbx/src/transform_channel.rs` — Rust source module for this component.
+- `crates/adventuresim-mhr/Cargo.lock` — Locked Rust dependency versions.
+- `crates/adventuresim-mhr/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-mhr/src/character/blend_shapes.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/character/character.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/character/mesh.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/character/mod.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/character/skeleton.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/character/skin_weights.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-mhr/src/math/mod.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/math/transform.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/model/mhr.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/model/mhr_config.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/model/mhr_output.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/model/mod.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/model_def/mod.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/model_def/parameter_limit.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/model_def/parameter_transform.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/pose_correctives.rs` — Rust source module for this component.
+- `crates/adventuresim-mhr/src/skel_state.rs` — Rust source module for this component.
+- `crates/adventuresim-mhr/src/storage/dtype.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/storage/mod.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/storage/npy_array.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/storage/npz.rs` — Rust source module.
+- `crates/adventuresim-mhr/src/storage/zip_archive.rs` — Rust source module.
 - `crates/adventuresim-puzzles/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-puzzles/src/analysis.rs` — Rust source module for this component.
 - `crates/adventuresim-puzzles/src/bin/puzzle-lab.rs` — Rust source module.
@@ -442,8 +468,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_social_chat_receipts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_tincture_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_tincture_statuses_table.rs` — Generated SpacetimeDB table interface.
-- `crates/adventuresim-stdb-client/src/backend_weapon_holder_instances_table.rs` — Generated SpacetimeDB table interface.
-- `crates/adventuresim-stdb-client/src/backend_weapon_instances_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_equipment_condition_and_smiths_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_solo_parties_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -546,7 +570,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/connected_player_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/connected_player_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/connected_players_table.rs` — Generated SpacetimeDB table interface.
-- `crates/adventuresim-stdb-client/src/connected_weapon_appearance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/conscience_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/construction_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/construction_industry_type.rs` — Generated SpacetimeDB data type.
@@ -1215,8 +1238,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/water_holding_contribution_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/water_material_lot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/water_output_lot_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/weapon_holder_instance_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/weapon_instance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/weapon_skill_distribution_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/western_christian_arrangement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/withdraw_party_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -1313,7 +1334,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/surgery.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/weapon_instance.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/world_actor.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/world_event.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.
@@ -1357,14 +1377,12 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-strategic-sim/src/runner.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/tests/core_loop_live.rs` — Rust source module.
 - `crates/adventuresim-strategic-sim/tests/simulation.rs` — Rust source module.
-- `crates/adventuresim-tactical-brp-generator/Cargo.toml` — Cargo package/workspace manifest.
-- `crates/adventuresim-tactical-brp-generator/src/codegen.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-brp-generator/src/main.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-brp-generator/src/resolve.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/.cargo/config.toml` — Tooling or build configuration.
 - `crates/adventuresim-tactical-client/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-client/README.md` — Component overview and usage notes.
-- `crates/adventuresim-tactical-client/src/animation/AGENTS.md` — Project documentation.
+- `crates/adventuresim-tactical-client/assets/SNPro-VariableFont_wght.ttf` — Binary game or UI asset.
+- `crates/adventuresim-tactical-client/assets/crosshair.png` — Binary game or UI asset.
+- `crates/adventuresim-tactical-client/assets/ui.css` — Browser UI styling.
 - `crates/adventuresim-tactical-client/src/animation/catalog.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/diagnostics.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/loading.rs` — Rust source module.
@@ -1376,7 +1394,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/hands.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/locomotion.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/mod.rs` — Rust source module.
-- `crates/adventuresim-tactical-client/src/animation/procedural/ik/quickstep.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/solver.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/rig.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/semantic_route.rs` — Rust source module.
@@ -1387,10 +1404,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/debug.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/diagnostics.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/equipment.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-client/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-client/src/presentation/clouds.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/environment.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/ground_scatter/grass.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/ground_scatter/litter.rs` — Rust source module.
@@ -1469,7 +1484,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/src/combat/protocol.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/combat/ranged.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/equipment.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-server/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/mission/enrollment.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/mission/mod.rs` — Rust source module.
@@ -1481,19 +1495,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-terrain/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-terrain/src/builder.rs` — Rust source module for this component.
 - `crates/adventuresim-terrain/src/lib.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/Cargo.toml` — Cargo package/workspace manifest.
-- `crates/adventuresim-weapon-model/examples/export_icon.rs` — Rust source module.
-- `crates/adventuresim-weapon-model/examples/export_obj.rs` — Rust source module.
-- `crates/adventuresim-weapon-model/src/catalog.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/codec.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/derive.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/design.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/hash.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/icon.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/lib.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/mesh.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/src/validation.rs` — Rust source module for this component.
-- `crates/adventuresim-weapon-model/tests/generation.rs` — Rust source module.
 - `crates/adventuresim-world-import/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-world-import/src/bin/build-strategic-map.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/bin/build-strategic-map/raster.rs` — Rust source module.
@@ -1588,7 +1589,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/settlements/service_quests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements/social_tests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/travel.rs` — Strategic web HTTP route handler.
-- `crates/strategic-web/src/routes/weapon_icons.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/session.rs` — Rust source module for this component.
 - `crates/strategic-web/src/spacetimedb/client.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/spacetimedb/mod.rs` — Strategic web SpacetimeDB integration module.
@@ -1932,7 +1932,6 @@ development, or other wiki document before changing a subsystem.
 - `research/legacy/meta.md` — Project documentation.
 - `research/legacy/roadmap.md` — Project documentation.
 - `rust-toolchain.toml` — Tooling or build configuration.
-- `scripts/adventuresim_brp_lib.py` — Development or documentation automation script.
 - `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/capture_tactical_scenes.py` — Development or documentation automation script.
@@ -1952,7 +1951,6 @@ development, or other wiki document before changing a subsystem.
 - `scripts/prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/quest_web_eval.mjs` — Repository support file.
 - `scripts/real_world_tactical.py` — Development or documentation automation script.
-- `scripts/tactical_brp.py` — Development or documentation automation script.
 - `scripts/tactical_terrain_density_benchmark.py` — Development or documentation automation script.
 - `scripts/test_format_wiki_markdown.py` — Development or documentation automation script.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
@@ -1966,13 +1964,6 @@ development, or other wiki document before changing a subsystem.
 - `scripts/test_world_data_bundle.py` — Development or documentation automation script.
 - `scripts/test_world_runtime_release.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
-- `scripts/tests/tactical/conftest.py` — Development or documentation automation script.
-- `scripts/tests/tactical/fixtures/combat_scenario.scn.ron` — Repository support file.
-- `scripts/tests/tactical/lib.py` — Development or documentation automation script.
-- `scripts/tests/tactical/test_combat_defense.py` — Development or documentation automation script.
-- `scripts/tests/tactical/test_connectivity.py` — Development or documentation automation script.
-- `scripts/tests/tactical/test_lifecycle.py` — Development or documentation automation script.
-- `scripts/tests/tactical/test_movement.py` — Development or documentation automation script.
 - `scripts/tests/test_build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/tests/test_capture_tactical_scenes.py` — Development or documentation automation script.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
@@ -1988,19 +1979,6 @@ development, or other wiki document before changing a subsystem.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_runtime_release.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
-- `tools/weapon-modeler/.gitignore` — Repository support file.
-- `tools/weapon-modeler/README.md` — Component overview and usage notes.
-- `tools/weapon-modeler/index.html` — Browser UI page.
-- `tools/weapon-modeler/package.json` — Repository support file.
-- `tools/weapon-modeler/server.mjs` — Repository support file.
-- `tools/weapon-modeler/src/app.js` — Repository support file.
-- `tools/weapon-modeler/src/math.js` — Repository support file.
-- `tools/weapon-modeler/src/mesh.js` — Repository support file.
-- `tools/weapon-modeler/src/presets.js` — Repository support file.
-- `tools/weapon-modeler/src/renderer.js` — Repository support file.
-- `tools/weapon-modeler/styles.css` — Browser UI styling.
-- `tools/weapon-modeler/tests/mesh.test.mjs` — Repository support file.
-- `tools/weapon-modeler/tests/structure.test.mjs` — Repository support file.
 - `utils/generate_certificates.py` — Development or documentation automation script.
 - `wiki/SUMMARY.md` — Project documentation.
 - `wiki/client/animation.md` — Project documentation.
@@ -2017,7 +1995,6 @@ development, or other wiki document before changing a subsystem.
 - `wiki/engineering/puzzle-lab.md` — Project documentation.
 - `wiki/engineering/strategic-read-cache.md` — Project documentation.
 - `wiki/engineering/strategic-simulation.md` — Project documentation.
-- `wiki/engineering/tactical-testing.md` — Project documentation.
 - `wiki/engineering/world-data/drought.md` — Project documentation.
 - `wiki/engineering/world-data/elevation.md` — Project documentation.
 - `wiki/engineering/world-data/environment-visual-review.md` — Project documentation.

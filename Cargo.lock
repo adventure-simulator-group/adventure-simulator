@@ -122,6 +122,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "adventuresim-fbx"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+]
+
+[[package]]
 name = "adventuresim-puzzles"
 version = "0.1.0"
 dependencies = [
