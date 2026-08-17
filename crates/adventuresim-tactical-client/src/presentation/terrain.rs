@@ -1,4 +1,7 @@
-use super::procedural_assets::{FOREST_SOIL_HEIGHT_RANGE_METRES, FOREST_SOIL_TILE_METRES};
+use super::procedural_assets::{
+    FOREST_LITTER_HEIGHT_RANGE_METRES, FOREST_LITTER_TILE_METRES, FOREST_SOIL_HEIGHT_RANGE_METRES,
+    FOREST_SOIL_TILE_METRES,
+};
 use super::*;
 
 const TERMINAL_SWARD_FADE_START_METRES: f32 = 124.0;
@@ -157,12 +160,20 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     detail_patch: Vec4,
     #[uniform(100)]
     soil_detail: Vec4,
+    #[uniform(100)]
+    litter_detail: Vec4,
     #[texture(101)]
     #[sampler(102)]
     ground_map: Handle<Image>,
     #[texture(103)]
     #[sampler(104)]
     soil_height_ao: Handle<Image>,
+    #[texture(105)]
+    #[sampler(106)]
+    litter_surface: Handle<Image>,
+    #[texture(107)]
+    #[sampler(108)]
+    litter_normal: Handle<Image>,
 }
 
 impl MaterialExtension for TacticalTerrainExtension {
@@ -914,11 +925,22 @@ pub(in crate::presentation) fn terrain_material(
                 1.0,
                 24.0,
             ),
+            // Dense leaf litter is an aggregate terrain material first. Its
+            // packed height/AO/tone/coverage map supplies the continuous
+            // forest-floor mass beneath sparse silhouette-breaking meshes.
+            litter_detail: Vec4::new(
+                1.0 / FOREST_LITTER_TILE_METRES,
+                FOREST_LITTER_HEIGHT_RANGE_METRES,
+                0.72,
+                32.0,
+            ),
             ground_map: images.add(ground_map_image(
                 ground,
                 stable_text_seed(&environment.scene_digest),
             )),
             soil_height_ao: procedural_assets.forest_soil.height_ao.clone(),
+            litter_surface: procedural_assets.forest_soil.litter_surface.clone(),
+            litter_normal: procedural_assets.forest_soil.litter_normal.clone(),
         },
     }
 }
@@ -1221,17 +1243,31 @@ mod tests {
     }
 
     #[test]
-    fn ground_shader_keeps_solid_palette_albedo_and_uses_one_planar_height_ao_sample() {
+    fn ground_shader_layers_parallax_litter_and_normal_over_one_planar_soil_sample() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_terrain.wgsl"
         ));
         assert!(shader.contains("var ground_map: texture_2d<f32>"));
         assert!(shader.contains("var soil_height_ao: texture_2d<f32>"));
+        assert!(shader.contains("var litter_surface: texture_2d<f32>"));
+        assert!(shader.contains("var litter_normal_map: texture_2d<f32>"));
         assert_eq!(
             shader.matches("textureSample(soil_height_ao,").count(),
             1,
             "forest soil should add exactly one packed texture fetch"
+        );
+        assert_eq!(
+            shader
+                .matches("textureSample(\n        litter_surface,")
+                .count(),
+            2
+        );
+        assert_eq!(
+            shader
+                .matches("textureSample(\n        litter_normal_map,")
+                .count(),
+            1
         );
         assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(color, 1.0)"));
         assert!(shader.contains("distance(position, view.lod_view_world_position.xyz)"));
@@ -1242,8 +1278,11 @@ mod tests {
         assert!(!shader.contains("select(color, terrain.grass_color.rgb, tall_grass > 0.5)"));
         assert!(!shader.contains("shaded_substrate"));
         assert!(!shader.contains("tall_grass > 0.5 && canopy_floor"));
-        assert!(!shader.contains("canopy_floor"));
-        assert!(!shader.contains("litter_color"));
+        assert!(shader.contains("let canopy_floor = smoothstep(0.14, 0.72"));
+        assert!(shader.contains("let litter_color = mix("));
+        assert!(shader.contains("litter_region * litter_sample.a"));
+        assert!(shader.contains("let parallax_offset = clamp("));
+        assert!(shader.contains("let litter_mapped_normal = normalize("));
         assert!(shader.contains("let sward_color = terrain.grass_color.rgb"));
         assert!(!shader.contains("sward_color = color *"));
         assert!(shader.contains("sward_dither < sward_amount"));

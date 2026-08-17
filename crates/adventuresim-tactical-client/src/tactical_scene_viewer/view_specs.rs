@@ -75,6 +75,7 @@ pub(super) struct CaptureViewSpec {
     pub understory_species: Option<&'static str>,
     pub suppress_leaves: bool,
     pub suppress_grass: bool,
+    pub suppress_understory: bool,
     pub vista_visible: bool,
     pub hide_obstacles: bool,
     pub show_tree_backdrop: bool,
@@ -108,6 +109,7 @@ impl CaptureViewSpec {
             understory_species: None,
             suppress_leaves: false,
             suppress_grass: false,
+            suppress_understory: false,
             vista_visible: false,
             hide_obstacles: false,
             show_tree_backdrop: false,
@@ -156,6 +158,10 @@ impl CaptureViewSpec {
     }
     pub const fn suppress_grass(mut self) -> Self {
         self.suppress_grass = true;
+        self
+    }
+    pub const fn suppress_understory(mut self) -> Self {
+        self.suppress_understory = true;
         self
     }
     pub const fn vista(mut self) -> Self {
@@ -501,6 +507,8 @@ pub(super) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 12] = [
         38.0,
         350
     )
+    .suppress_grass()
+    .suppress_understory()
     .detail(DetailRequirement::TreeFocus),
     v!(
         "tree-branch-junction",
@@ -538,12 +546,13 @@ pub(super) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 12] = [
     .detail(DetailRequirement::GrassPresent),
     v!(
         "forest-floor-debris-detail",
-        "Fallen oak leaves and twig geometry close-up",
+        "Unobstructed forest-floor leaf-bed, twig, and pebble review",
         CapturePose::Debris,
-        39.6,
+        44.0,
         500
     )
     .debris()
+    .suppress_grass()
     .detail(DetailRequirement::DebrisPair),
     v!(
         "horizon",

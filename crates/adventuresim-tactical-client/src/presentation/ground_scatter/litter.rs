@@ -19,13 +19,15 @@ use super::{
     TacticalFoliageMaterial, TacticalTreeLeafCardMaterial, foliage_transform,
 };
 
-const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 3;
-const TWIG_PASSES_PER_SAMPLE: u64 = 2;
+const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 12;
+const TWIG_PASSES_PER_SAMPLE: u64 = 4;
 const WOODLAND_PLANT_PASSES_PER_SAMPLE: u64 = 1;
 const WOODLAND_FLOOR_TRANSITION_METRES: f32 = 3.2;
-const LITTER_BATCH_CELL_METRES: f32 = 64.0;
+const LITTER_BATCH_CELL_METRES: f32 = 24.0;
 const LITTER_BATCH_HALF_DIAGONAL_METRES: f32 =
     LITTER_BATCH_CELL_METRES * core::f32::consts::FRAC_1_SQRT_2;
+const DRY_LEAVES_PER_PATCH: u64 = 84;
+const TWIGS_PER_PATCH: u64 = 8;
 
 pub(super) struct Assets {
     pub dry_leaf_meshes: Vec<Handle<Mesh>>,
@@ -84,7 +86,7 @@ pub(super) fn spawn(
         for pass in 0..DRY_LEAF_PASSES_PER_SAMPLE {
             let hash =
                 splitmix64(base_seed ^ index as u64 ^ pass.rotate_left(19) ^ 0x2b6f_5dd9_81aa_9135);
-            if unit_hash(hash) >= density * 0.92 {
+            if unit_hash(hash) >= density * 0.97 {
                 continue;
             }
             let Some(transform) =
@@ -174,7 +176,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.dry_leaf_material.clone()),
-                batched_litter_visibility(35.0),
+                batched_litter_visibility(26.0),
                 transform,
             ));
         }
@@ -185,7 +187,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.twig_material.clone()),
-                batched_litter_visibility(24.0),
+                batched_litter_visibility(20.0),
                 transform,
             ));
         }
@@ -338,8 +340,16 @@ pub(super) fn forest_floor_leaf_material(
     material.parameters.z = 0.0;
     material.surface_parameters.z = 0.0;
     material.surface_parameters.w = 0.035;
+    // The dry-leaf height map remains available to close inspection, but its
+    // embossed midrib must not make every geometry leaf readable from the
+    // acceptance distance when the terrain layer's relief has minified.
+    material.surface_parameters.y = 0.18;
     material.physical_parameters.x = 0.96;
     material.physical_parameters.y = 0.00035;
+    // Fallen-leaf meshes already carry deterministic dry pigments per leaf.
+    // Blend those pigments over the shared dry-oak texture; live canopy cards
+    // keep zero here and retain their species albedo unchanged.
+    material.physical_parameters.z = 0.38;
     material
 }
 
@@ -372,43 +382,57 @@ fn forest_floor_patch_transform(
 }
 pub(super) fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
     let mut data = GroundLitterMeshData::default();
+    // Keep the vertex pigments in the same narrow value bands as the packed
+    // terrain litter. Variation remains legible up close without turning the
+    // physical leaves into isolated copper markers.
     let leaf_colors = [
-        Color::srgb_u8(190, 132, 61),
-        Color::srgb_u8(139, 82, 43),
-        Color::srgb_u8(202, 164, 81),
-        Color::srgb_u8(104, 72, 48),
-        Color::srgb_u8(157, 126, 74),
+        Color::srgb_u8(106, 90, 69),
+        Color::srgb_u8(99, 86, 68),
+        Color::srgb_u8(112, 95, 72),
+        Color::srgb_u8(95, 83, 67),
+        Color::srgb_u8(104, 91, 72),
     ];
-    let cluster_count = 4;
-    let clusters = (0..cluster_count)
+    const STRATIFIED_LEAVES: u64 = 56;
+    const STRATIFIED_COLUMNS: u64 = 8;
+    const CLUSTER_COUNT: u64 = 7;
+    let clusters = (0..CLUSTER_COUNT)
         .map(|cluster| {
             let hash = splitmix64(variant.rotate_left(17) ^ cluster as u64 ^ 0x5a9d_31c4);
             Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 0.68
         })
         .collect::<Vec<_>>();
-    for leaf in 0..24_u64 {
+    for leaf in 0..DRY_LEAVES_PER_PATCH {
         let hash = splitmix64(leaf ^ variant.rotate_left(29) ^ 0x5ec4_57d2_bf90_1c37);
-        let cluster_angle = unit_hash(splitmix64(hash ^ 0x43)) * core::f32::consts::TAU;
-        let centre = if leaf < 20 {
-            let cluster = clusters[leaf as usize % clusters.len()];
-            let radial = 0.04 + unit_hash(splitmix64(hash ^ 0x42)) * 0.14;
-            cluster + Vec2::new(cluster_angle.cos(), cluster_angle.sin()) * radial
+        let scatter_angle = unit_hash(splitmix64(hash ^ 0x43)) * core::f32::consts::TAU;
+        let centre = if leaf < STRATIFIED_LEAVES {
+            let column = leaf % STRATIFIED_COLUMNS;
+            let row = leaf / STRATIFIED_COLUMNS;
+            let jitter = Vec2::new(
+                unit_hash(splitmix64(hash ^ 0x9a31)) - 0.5,
+                unit_hash(splitmix64(hash ^ 0xb477)) - 0.5,
+            ) * 0.075;
+            Vec2::new(
+                (column as f32 + 0.5) / STRATIFIED_COLUMNS as f32 - 0.5,
+                (row as f32 + 0.5) / (STRATIFIED_LEAVES / STRATIFIED_COLUMNS) as f32 - 0.5,
+            ) * 0.90
+                + jitter
         } else {
-            Vec2::new(cluster_angle.cos(), cluster_angle.sin())
-                * (0.36 + unit_hash(splitmix64(hash ^ 0x42)) * 0.16)
+            let cluster = clusters[leaf as usize % clusters.len()];
+            let radial = 0.025 + unit_hash(splitmix64(hash ^ 0x42)) * 0.12;
+            cluster + Vec2::new(scatter_angle.cos(), scatter_angle.sin()) * radial
         };
         let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
         let long =
-            Vec2::new(angle.cos(), angle.sin()) * (0.065 + unit_hash(splitmix64(hash ^ 3)) * 0.045);
-        let side = Vec2::new(-long.y, long.x) * (0.34 + unit_hash(splitmix64(hash ^ 4)) * 0.16);
+            Vec2::new(angle.cos(), angle.sin()) * (0.045 + unit_hash(splitmix64(hash ^ 3)) * 0.040);
+        let side = Vec2::new(-long.y, long.x) * (0.45 + unit_hash(splitmix64(hash ^ 4)) * 0.18);
         data.append_cambered_leaf(
             centre,
             long,
             side,
-            if leaf < 20 {
-                [0.0, 0.0025, 0.005][(leaf as usize / 4) % 3]
+            if leaf % 5 == 0 {
+                0.004 + unit_hash(splitmix64(hash ^ 0x781d)) * 0.008
             } else {
-                0.0
+                unit_hash(splitmix64(hash ^ 0x781d)) * 0.0015
             },
             hash,
             leaf_colors[leaf as usize % leaf_colors.len()],
@@ -426,7 +450,7 @@ pub(super) fn twig_patch_mesh(variant: u64) -> Mesh {
         Color::srgb_u8(102, 62, 29),
         Color::srgb_u8(62, 40, 25),
     ];
-    for twig in 0..9_u64 {
+    for twig in 0..TWIGS_PER_PATCH {
         let hash = splitmix64(twig ^ variant.rotate_left(31) ^ 0xa773_9fe2_410c_862d);
         let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 1.02;
         let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
@@ -705,10 +729,18 @@ impl GroundLitterMeshData {
         // Fallen leaves should curl without becoming little tents. Build the
         // varied plate first, then seat its lowest vertex just below the local
         // patch ground plane so every instance visibly makes contact.
-        let long_slope = (unit_hash(splitmix64(seed ^ 0x11)) - 0.5) * 0.12;
-        let side_slope = (unit_hash(splitmix64(seed ^ 0x12)) - 0.5) * 0.08;
-        let camber = 0.003 + unit_hash(splitmix64(seed ^ 0x13)) * 0.008;
-        let curl = (unit_hash(splitmix64(seed ^ 0x14)) - 0.5) * 0.007;
+        let elevated = height >= 0.004;
+        let long_slope =
+            (unit_hash(splitmix64(seed ^ 0x11)) - 0.5) * if elevated { 0.12 } else { 0.035 };
+        let side_slope =
+            (unit_hash(splitmix64(seed ^ 0x12)) - 0.5) * if elevated { 0.08 } else { 0.025 };
+        let camber = if elevated {
+            0.004 + unit_hash(splitmix64(seed ^ 0x13)) * 0.007
+        } else {
+            0.0012 + unit_hash(splitmix64(seed ^ 0x13)) * 0.0022
+        };
+        let curl =
+            (unit_hash(splitmix64(seed ^ 0x14)) - 0.5) * if elevated { 0.007 } else { 0.002 };
         let burial = 0.0007 + height.min(0.006) * 0.15 + unit_hash(splitmix64(seed ^ 0x15)) * 0.001;
         let long3 = Vec3::new(long.x, long_slope * long.length(), long.y);
         let side3 = Vec3::new(side.x, side_slope * side.length(), side.y);
@@ -844,10 +876,13 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_NORMAL)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
-        assert_eq!(leaf_positions.len(), 24 * 9);
-        assert_eq!(leaves.indices().unwrap().len() / 3, 24 * 8);
-        assert!((190..=300).contains(&twig_positions.len()));
-        assert!((360..=520).contains(&(twigs.indices().unwrap().len() / 3)));
+        assert_eq!(leaf_positions.len(), DRY_LEAVES_PER_PATCH as usize * 9);
+        assert_eq!(
+            leaves.indices().unwrap().len() / 3,
+            DRY_LEAVES_PER_PATCH as usize * 8
+        );
+        assert!((168..=288).contains(&twig_positions.len()));
+        assert!((320..=496).contains(&(twigs.indices().unwrap().len() / 3)));
         assert_eq!(
             leaves.attribute(Mesh::ATTRIBUTE_POSITION),
             repeated_leaves.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -884,6 +919,7 @@ mod tests {
                 .any(|normal| Vec3::from_array(*normal).distance(Vec3::Y) > 0.03)
         );
         let mut contacting_leaves = 0;
+        let mut seated_leaves = 0;
         let leaf_spans = leaf_positions
             .chunks_exact(9)
             .map(|leaf| {
@@ -896,15 +932,20 @@ mod tests {
                     .map(|point| point[1])
                     .fold(f32::NEG_INFINITY, f32::max);
                 contacting_leaves += usize::from(minimum <= -0.0006);
-                assert!(maximum <= 0.025, "leaf lift must stay bounded: {maximum}");
+                seated_leaves += usize::from(minimum <= 0.004);
+                assert!(maximum <= 0.032, "leaf lift must stay bounded: {maximum}");
                 maximum - minimum
             })
             .collect::<Vec<_>>();
         assert!(
-            contacting_leaves >= 8,
+            contacting_leaves >= 4,
             "each loose pile needs seated base leaves"
         );
-        assert!(leaf_spans.iter().all(|span| *span > 0.003));
+        assert!(
+            seated_leaves >= DRY_LEAVES_PER_PATCH as usize * 3 / 4,
+            "most leaves must sit within four millimetres: {seated_leaves}"
+        );
+        assert!(leaf_spans.iter().all(|span| *span > 0.0008));
         assert!(
             leaf_spans
                 .windows(2)
@@ -983,8 +1024,11 @@ mod tests {
         assert_eq!(floor.surface_parameters.z, 0.0);
         assert!(floor.surface_parameters.w < oak.surface_parameters.w * 0.2);
         assert!(floor.physical_parameters.y < oak.physical_parameters.y);
+        assert!((0.3..0.5).contains(&floor.physical_parameters.z));
+        assert_eq!(oak.physical_parameters.z, 0.0);
         let shader = include_str!("../../../../../assets/shaders/tactical_tree_leaf_card.wgsl");
         assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(\n        albedo,"));
+        assert!(shader.contains("albedo = mix(albedo, in.color.rgb"));
         assert!(!shader.contains("spatial_hue"));
     }
 
@@ -1013,7 +1057,7 @@ mod tests {
             let mut expected_vertices = 0;
             let mut expected_triangles = 0;
             let mut expected_boundaries = 0;
-            for twig in 0..9_u64 {
+            for twig in 0..TWIGS_PER_PATCH {
                 let hash = splitmix64(twig ^ variant.rotate_left(31) ^ 0xa773_9fe2_410c_862d);
                 let sides = 5 + (hash % 2) as usize;
                 expected_vertices += sides * 4 + 2;

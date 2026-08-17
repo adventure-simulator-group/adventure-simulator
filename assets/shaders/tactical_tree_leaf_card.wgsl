@@ -216,6 +216,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         albedo = textureSample(back_albedo, back_albedo_sampler, in.uv).rgb;
         tangent_normal = textureSample(back_normal, back_normal_sampler, in.uv).xyz * 2.0 - 1.0;
     }
+    // Ground litter opts into deterministic per-leaf pigments. Tree foliage
+    // leaves physical_parameters.z at zero, so its vertex color remains free
+    // for canopy visibility and coherent thinning metadata.
+    albedo = mix(albedo, in.color.rgb, leaf_card.physical_parameters.z);
     let arm = textureSample(leaf_arm, leaf_arm_sampler, in.uv).rgb;
     tangent_normal = normalize(vec3<f32>(
         tangent_normal.xy * leaf_card.surface_parameters.y,

@@ -24,6 +24,7 @@ struct TacticalTerrainMaterial {
     playable_bounds: vec4<f32>,
     detail_patch: vec4<f32>,
     soil_detail: vec4<f32>,
+    litter_detail: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100)
@@ -36,11 +37,20 @@ var ground_map_sampler: sampler;
 var soil_height_ao: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(104)
 var soil_height_ao_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(105)
+var litter_surface: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(106)
+var litter_surface_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(107)
+var litter_normal_map: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(108)
+var litter_normal_sampler: sampler;
 
 fn height_perturbed_normal(
     world_position: vec3<f32>,
     macro_normal: vec3<f32>,
     height_metres: f32,
+    normal_strength: f32,
 ) -> vec3<f32> {
     let position_dx = dpdx(world_position);
     let position_dy = dpdy(world_position);
@@ -57,7 +67,7 @@ fn height_perturbed_normal(
     let surface_gradient = (
         reciprocal_x * height_dx + reciprocal_y * height_dy
     ) / safe_determinant;
-    return normalize(macro_normal - surface_gradient * terrain.soil_detail.z);
+    return normalize(macro_normal - surface_gradient * normal_strength);
 }
 
 @fragment
@@ -101,8 +111,49 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     ) * 0.035;
     let soil_uv = position.xz * terrain.soil_detail.x + soil_warp;
     let soil_sample = textureSample(soil_height_ao, soil_height_ao_sampler, soil_uv).rg;
+    let litter_warp = vec2<f32>(
+        sin(position.z * 0.17 - position.x * 0.07),
+        sin(position.x * 0.13 + position.z * 0.09),
+    ) * 0.021;
+    let litter_uv = position.xz * terrain.litter_detail.x + litter_warp;
+    // R is also a true parallax height field. One bounded relief lookup shifts
+    // the shared normal/surface samples at grazing angles, while an overhead
+    // view remains exactly on the unshifted world-XZ projection.
+    let litter_base_sample = textureSample(
+        litter_surface,
+        litter_surface_sampler,
+        litter_uv,
+    );
+    let view_to_camera = normalize(view.lod_view_world_position.xyz - position);
+    let parallax_direction = view_to_camera.xz / max(abs(view_to_camera.y), 0.24);
+    let parallax_height_metres = (litter_base_sample.r - 0.48) * terrain.litter_detail.y;
+    let parallax_offset = clamp(
+        parallax_direction * parallax_height_metres * terrain.litter_detail.x,
+        vec2<f32>(-0.035),
+        vec2<f32>(0.035),
+    );
+    let litter_parallax_uv = litter_uv - parallax_offset;
+    // RGBA carries normalized height, broad/local AO, a stable muted-palette
+    // selector, and physical litter coverage. The separate RG normal map is
+    // generated from this exact height field, so color, relief, and parallax
+    // retain one leaf silhouette through their complete mip chains.
+    let litter_sample = textureSample(
+        litter_surface,
+        litter_surface_sampler,
+        litter_parallax_uv,
+    );
+    let litter_normal_xz = textureSample(
+        litter_normal_map,
+        litter_normal_sampler,
+        litter_parallax_uv,
+    ).rg * 2.0 - 1.0;
     let height_metres = (soil_sample.r - 0.5) * terrain.soil_detail.y;
-    let soil_normal = height_perturbed_normal(position, base_normal, height_metres);
+    let soil_normal = height_perturbed_normal(
+        position,
+        base_normal,
+        height_metres,
+        terrain.soil_detail.z,
+    );
     let soil_substrate = 1.0 - step(0.5, abs(substrate_kind - 0.0));
     let mud_substrate = 1.0 - step(0.5, abs(substrate_kind - 3.0));
     let road_substrate = 1.0 - step(0.5, abs(substrate_kind - 4.0));
@@ -113,9 +164,33 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     pbr_input.N = normalize(mix(base_normal, soil_normal, soil_response));
     pbr_input.diffuse_occlusion *= mix(1.0, soil_sample.g, soil_response * 0.82);
     let tall_grass = 1.0 - step(0.5, abs(cover_kind - 1.0));
+    let leaf_litter = 1.0 - step(0.5, abs(cover_kind - 2.0));
+    // Ground-map alpha is a signed canopy-floor distance: the lower half is
+    // the exterior approach and the upper half is depth inside leaf litter.
+    // Keep categorical authority while allowing a broad, organic material
+    // transition beyond the last litter cell.
+    let canopy_floor = smoothstep(0.14, 0.72, ground_sample.a);
+    let litter_region = max(leaf_litter * 0.88, canopy_floor)
+        * soil_substrate
+        * upward_response
+        * (1.0 - snow);
+    let litter_distance_fade = 1.0 - smoothstep(20.0, terrain.litter_detail.w, camera_distance);
+    let litter_normal_y = sqrt(max(0.0, 1.0 - dot(litter_normal_xz, litter_normal_xz)));
+    let litter_mapped_normal = normalize(
+        base_normal * litter_normal_y
+        + vec3<f32>(litter_normal_xz.x, 0.0, litter_normal_xz.y)
+    );
+    let litter_relief = litter_region * litter_sample.a * litter_distance_fade;
+    pbr_input.N = normalize(mix(
+        pbr_input.N,
+        litter_mapped_normal,
+        litter_relief * terrain.litter_detail.z,
+    ));
+    pbr_input.diffuse_occlusion *= mix(1.0, litter_sample.g, litter_relief * 0.88);
 
-    // Ordinary soil keeps one solid molded-material albedo regardless of
-    // grass, litter, or canopy cover. There is no sampled albedo detail.
+    // Ordinary soil keeps one solid molded-material albedo. Canopy floor adds
+    // a constrained procedural palette: dark shaded soil remains visible in
+    // the packed coverage gaps while overlapping litter supplies the mass.
     var color = terrain.base_color.rgb;
     if cultivation >= 0.4 { color = vec3<f32>(0.17, 0.11, 0.035); }
     if wetland >= 0.4 || substrate_kind == 3.0 { color = vec3<f32>(0.18, 0.16, 0.105); }
@@ -126,6 +201,21 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         color = vec3<f32>(0.31, 0.30, 0.275);
     }
     if water >= 0.5 || substrate_kind == 5.0 { color = vec3<f32>(0.09, 0.18, 0.22); }
+
+    let shaded_soil = terrain.base_color.rgb * vec3<f32>(0.38, 0.40, 0.37);
+    // Match the dark/medium/pale bands of the physical dry-oak cards. Stronger
+    // separation from the soil and a narrow generated coverage rim keep these
+    // leaves recognizable instead of reducing the terrain layer to mottling.
+    let litter_dark = vec3<f32>(0.016, 0.010, 0.006);
+    let litter_mid = vec3<f32>(0.035, 0.021, 0.011);
+    let litter_pale = vec3<f32>(0.062, 0.036, 0.018);
+    let litter_color = mix(
+        mix(litter_dark, litter_mid, smoothstep(0.05, 0.58, litter_sample.b)),
+        litter_pale,
+        smoothstep(0.62, 0.96, litter_sample.b),
+    );
+    color = mix(color, shaded_soil, litter_region * 0.76);
+    color = mix(color, litter_color, litter_region * litter_sample.a * 0.92);
 
     // Use the same true camera distance that drives mesh visibility. Horizontal
     // distance alone left an overhead camera with culled blades but no
@@ -164,7 +254,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let dry_roughness = select(0.84, 0.9, terrain.detail_patch.x > 0.5);
     // A continuous film darkens porous ground and narrows its highlights.
     // Snow remains a rough dielectric unless the underlying surface is water.
-    let base_roughness = dry_roughness - wetness * 0.22 + snow_mask * 0.08 - water * 0.19;
+    let litter_roughness = litter_region * litter_sample.a * 0.055;
+    let base_roughness = dry_roughness + litter_roughness
+        - wetness * 0.22 + snow_mask * 0.08 - water * 0.19;
     pbr_input.material.perceptual_roughness = clamp(base_roughness, 0.55, 1.0);
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 

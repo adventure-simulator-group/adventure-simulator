@@ -24,6 +24,7 @@ use crate::presentation::{
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
 const TREE_BARK_SHADER: &str = "shaders/tactical_tree_bark.wgsl";
+const CANOPY_SHADED_SOIL_LINEAR_SCALE: Vec3 = Vec3::new(0.38, 0.40, 0.37);
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(crate) struct TacticalTreeLeafCardMaterial {
@@ -52,7 +53,8 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     /// diffuse transmission for the species' leaf thickness.
     #[uniform(12)]
     pub(crate) surface_parameters: Vec4,
-    /// Perceptual roughness, physical thickness in metres, and reserved.
+    /// Perceptual roughness, physical thickness in metres, ground-litter
+    /// vertex-pigment strength, and reserved.
     #[uniform(12)]
     pub(crate) physical_parameters: Vec4,
 }
@@ -178,11 +180,15 @@ fn bark_material(
     perceptual_roughness: f32,
     relief: Vec4,
 ) -> TacticalTreeBarkMaterial {
-    let soil_color = Color::srgb_u8(
+    let dirt_color = Color::srgb_u8(
         TACTICAL_DIRT_SRGB[0],
         TACTICAL_DIRT_SRGB[1],
         TACTICAL_DIRT_SRGB[2],
     );
+    // Match the soil deposited at the root contact to the shaded substrate
+    // beneath canopy litter. The terrain shader applies this same linear
+    // multiplier before layering individual litter pigments over the ground.
+    let shaded_soil_color = color_vec4(dirt_color).xyz() * CANOPY_SHADED_SOIL_LINEAR_SCALE;
     TacticalTreeBarkMaterial {
         base: StandardMaterial {
             base_color,
@@ -196,7 +202,7 @@ fn bark_material(
             projection: Vec4::new(4.0, 0.92, 0.52, 12.0),
             lighting: Vec3::new(0.25, 0.92, 0.3).normalize().extend(1.0),
             surface: color_vec4(base_color).xyz().extend(perceptual_roughness),
-            soil_surface: color_vec4(soil_color).xyz().extend(0.84),
+            soil_surface: shaded_soil_color.extend(0.84),
             // The 7 mm minimum radius yields a 14 mm minimum full speck
             // diameter before edge antialiasing. A 45 mm cell leaves enough
             // negative space for the separate deposits to read clearly.
@@ -463,13 +469,14 @@ mod tests {
         );
         assert_eq!(
             bark.extension.soil_surface,
-            color_vec4(Color::srgb_u8(
+            (color_vec4(Color::srgb_u8(
                 TACTICAL_DIRT_SRGB[0],
                 TACTICAL_DIRT_SRGB[1],
                 TACTICAL_DIRT_SRGB[2],
             ))
             .xyz()
-            .extend(0.84)
+                * CANOPY_SHADED_SOIL_LINEAR_SCALE)
+                .extend(0.84)
         );
         assert_eq!(
             bark.extension.deposition,
