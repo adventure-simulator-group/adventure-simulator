@@ -15,7 +15,7 @@ const tacticalModule = fs.readFileSync(
   "utf8",
 );
 const tacticalServer = fs.readFileSync(
-  "crates/adventuresim-tactical-server/src/main.rs",
+  "crates/adventuresim-tactical-server/src/player_projection.rs",
   "utf8",
 );
 const characterModule = fs.readFileSync(
@@ -25,22 +25,23 @@ const characterModule = fs.readFileSync(
 
 const contract = [
   ["TravelToSettlement", "travel"],
-  ["TravelToQuest", "travel"],
+  ["TravelToCaseSite", "travel"],
   ["RemovePartyMember", "kick"],
   ["CreateRecruitmentRole", "add_role"],
   ["UpdateRecruitmentRole", "edit_role"],
   ["DeleteRecruitmentRole", "delete_role"],
   ["AcceptJoinRequest", "accept_join"],
   ["RejectJoinRequest", "reject_join"],
-  ["AcceptQuest", "accept_quest"],
-  ["AbandonQuest", "abandon_quest"],
-  ["TurnInQuest", "turn_in_quest"],
-  ["AutoresolveQuest", "autoresolve"],
+  ["AcceptContract", "accept_contract"],
+  ["AbandonContract", "abandon_contract"],
+  ["ReportContract", "report_contract"],
+  ["AutoresolveMission", "autoresolve"],
   ["UpdatePartyCheckTargets", "party_checks"],
   ["SetInventoryQuantityTarget", "party_inventory"],
   ["DisbandParty", "disband_party"],
   ["RequestTacticalServer", "initiate_combat"],
   ["CancelMission", "cancel_mission"],
+  ["PerformInvestigation", "investigate"],
 ];
 
 test("web and module retain the complete party-action variant/kind contract", () => {
@@ -55,9 +56,9 @@ test("web and module retain the complete party-action variant/kind contract", ()
 });
 
 test("tactical enrollment and departure retain server authority without creating join rows", () => {
-  assert.match(tacticalModule, /character\.in_server[\s\S]*character\.server != server[\s\S]*tactical_server\(\)/);
+  assert.match(tacticalModule, /character\.in_server[\s\S]*character\.server != server\.identity[\s\S]*tactical_server_authority\(\)/);
   assert.match(tacticalModule, /Only a registered tactical server can remove characters/);
-  const joinHandler = tacticalServer.match(/fn on_join_request[\s\S]*?\n}\n\n#\[cfg\(test\)\]/)?.[0];
+  const joinHandler = tacticalServer.match(/pub\(crate\) fn on_join_request[\s\S]*?\n}\n\n\/\/\/ Standalone-mode/)?.[0];
   assert.ok(joinHandler, "join handler source boundary");
   assert.doesNotMatch(joinHandler, /create_character/);
   assert.match(joinHandler, /enter_mission/);

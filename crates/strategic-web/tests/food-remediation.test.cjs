@@ -23,7 +23,7 @@ test("food acquisitions remain independent lots instead of merchant-merged stack
 });
 
 test("food reducers require the registered gateway and reject tactical actors", () => {
-  assert.equal((food.match(/crate::strategic::require_strategic_gateway\(ctx\)\?/g) || []).length, 4);
+  assert.equal((food.match(/crate::strategic::require_strategic_gateway\(ctx\)\?/g) || []).length, 8);
   assert.match(strategic, /pub\(crate\) fn require_strategic_gateway[\s\S]*authority\.identity != ctx\.sender\(\)/);
   assert.match(food, /Eating is unavailable during a tactical encounter/);
   assert.match(food, /Cooking is unavailable during a tactical encounter/);
@@ -54,7 +54,7 @@ test("fireplace navigation replaces the cooking skill modal", () => {
   assert.match(template, /Cooking is informational/);
   assert.doesNotMatch(template, /\?cook=true/);
   assert.doesNotMatch(template, /cooking-dialog-title/);
-  assert.match(template, /Add Ingredients/);
+  assert.match(template, /Start spit roast/);
   assert.match(template, /fireplace_inventory_row/);
   assert.match(template, /data-food-lot=\[adventuresim_core::food::definition/);
   assert.match(inventoryBrowser, /data-food-lot="true"/);
