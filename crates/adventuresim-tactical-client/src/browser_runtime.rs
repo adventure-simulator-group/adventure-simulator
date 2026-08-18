@@ -339,6 +339,12 @@ pub(crate) fn encode_design_json(json: &str) -> Result<Vec<u8>, String> {
     encode(&design).map_err(|error| error.to_string())
 }
 
+pub(crate) fn editor_fields_json(json: &str) -> Result<String, String> {
+    let design: WeaponDesign = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    serde_json::to_string(&adventuresim_weapon_model::numeric_editor_fields(&design))
+        .map_err(|error| error.to_string())
+}
+
 pub(crate) fn quote_design_json(json: &str) -> Result<String, String> {
     let design: WeaponDesign = serde_json::from_str(json).map_err(|error| error.to_string())?;
     let physical = derive_properties(&design).map_err(|errors| format!("{errors:?}"))?;

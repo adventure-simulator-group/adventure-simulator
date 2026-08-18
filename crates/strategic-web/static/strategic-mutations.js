@@ -126,10 +126,12 @@
       response.headers.get("X-Strategic-Canonical-Url") || location.href,
       location.href,
     );
-    if (window.strategicBoundaryUrl?.(canonical) ||
-        profile !== "strategic" || replacement?.dataset.scriptProfile !== "strategic") {
+    if (window.strategicBoundaryUrl?.(canonical)) {
       location.assign(canonical);
       return true;
+    }
+    if (profile !== "strategic" || replacement?.dataset.scriptProfile !== "strategic") {
+      throw new Error("The server did not return the negotiated mutation root.");
     }
     if (response.headers.get("X-Strategic-Response") !== "root" || !replacement) {
       throw new Error("The server did not return the negotiated mutation root.");

@@ -609,7 +609,7 @@
           session_id: view.session_id,
           action_id: acceptanceActionId,
         })).then((result) => {
-          window.location.assign(result.redirect);
+          window.strategicNavigate(result.redirect);
         }).catch((error) => {
           button.disabled = false;
           window.reportStrategicError(error, "accept Order errantry");

@@ -180,11 +180,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-4" defer {}
-                    script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
+                    script src="/static/live-regions.js?v=preserved-client-regions-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/strategic-navigation.js?v=soft-navigation-1" defer {}
-                    script type="module" src="/static/strategic-renderer.js?v=forge-orbit-controls-2" {}
+                    script type="module" src="/static/strategic-renderer.js?v=model-owned-forge-controls-1" {}
                     script src="/static/strategic-mutations.js?v=formaction-override-1" defer {}
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
@@ -804,7 +804,7 @@ mod tests {
         let markup = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
         assert!(markup.contains("/static/local-chat.js?v=local-chat-location-authority-1"));
         assert!(!markup.contains("local-chat.js?v=herbalist-private-1"));
-        assert!(markup.contains("/static/live-regions.js?v=persistent-rest-refresh-2"));
+        assert!(markup.contains("/static/live-regions.js?v=preserved-client-regions-1"));
         assert!(markup.contains("id=\"strategic-page\""));
         assert!(markup.contains("/static/strategic-navigation.js"));
         assert!(markup.contains("/static/strategic-mutations.js?v=formaction-override-1\" defer"));

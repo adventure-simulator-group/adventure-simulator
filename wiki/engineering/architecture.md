@@ -212,6 +212,15 @@ no-JavaScript clients. In an enhanced session:
    redirected strategic root in the original response;
 4. native links and `303` redirects remain the fallback.
 
+Within the enhanced strategic profile, ordinary same-origin links, forms,
+authoritative location changes, travel actions, dialogue redirects, and
+inventory-container mutations stay inside that root-swap contract. Full
+document navigation is reserved for explicit boundaries such as onboarding,
+tactical entry, downloads, and external origins. Live-region reconciliation
+may retain keyed client-owned nodes while replacing surrounding server-owned
+content. The forge editor uses this seam so periodic authority updates neither
+discard its local recipe nor collapse its scroll geometry.
+
 Strategic pages may also host the browser tactical client's Bevy renderer. A
 single document-scoped canvas sits outside `#strategic-page`, so soft navigation
 does not replace its WebGPU context. The proof-of-concept runtime installs the
@@ -228,6 +237,12 @@ elapsed time, and persists that same parametric recipe for tactical projection.
 The reducer is chassis-independent;
 the strategic editor selects a catalog preset and edits its supported component
 parameters without changing the persistence contract.
+Bladed catalog entries share one quantized blade component covering section,
+profile, curvature, taper, edge asymmetry, belly, and ricasso. Catalog identity
+selects distinct default geometry and optional furniture rather than aliasing a
+different weapon's complete model. The weapon-model crate also owns the bounded
+numeric editor fields; the browser renders only those declared controls and
+does not expose tessellation or attachment internals as forge sliders.
 Live-region reconciliation rehydrates the forge editor from its current client
 recipe, and the canvas remains behind the strategic portrait and dialogue
 layers. Forge previews are stationary by default; middle-button dragging orbits

@@ -263,14 +263,18 @@ fn sword(
         Some(("guard", 0)),
         OffsetMm::default(),
         MaterialClass::Steel,
-        ComponentShape::SectionBlade(SectionBladeSpec {
+        ComponentShape::Blade(BladeSpec {
             length: Millimeters(blade_length),
             width: Millimeters(width),
             thickness: Millimeters(12),
             curvature: SignedMillimeters(curvature),
+            profile: BladeProfile::Straight,
             section,
             samples: Segments(24),
             taper: Permille(820),
+            single_edge: Permille(0),
+            belly: SignedPermille(0),
+            ricasso: Millimeters(0),
         }),
     );
     WeaponDesign {
@@ -299,6 +303,33 @@ fn profiled(points: &[(u32, u32)]) -> ComponentShape {
         segments: Segments(16),
     })
 }
+
+fn plain_blade_furniture(
+    mut design: WeaponDesign,
+    guard_span: u32,
+    pommel_radius: u32,
+) -> WeaponDesign {
+    if let Some(guard) = design
+        .components
+        .iter_mut()
+        .find(|component| component.id == "guard")
+    {
+        guard.shape = cross(guard_span, 0);
+    }
+    if let Some(pommel) = design
+        .components
+        .iter_mut()
+        .find(|component| component.id == "pommel")
+    {
+        pommel.shape = profiled(&[
+            (0, pommel_radius),
+            (18, pommel_radius + 5),
+            (36, pommel_radius),
+        ]);
+        pommel.offset.y = -(pommel.shape.axial_length().0 as i32);
+    }
+    design
+}
 fn curved_blade(
     length: u32,
     width: u32,
@@ -314,9 +345,12 @@ fn curved_blade(
         thickness: Millimeters(thickness),
         curvature: SignedMillimeters(curvature),
         profile: BladeProfile::Curved,
+        section: BladeSection::Flat,
+        samples: Segments(24),
         taper: Permille(taper),
         single_edge: Permille(single_edge),
         belly: SignedPermille(belly),
+        ricasso: Millimeters(0),
     })
 }
 fn gothic(id: &str, length: u32, haft: u32, concavity: u16) -> WeaponDesign {
@@ -701,9 +735,10 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
                 cross(480, 35),
                 profiled(&[(0, 45), (40, 60), (115, 42), (145, 25)]),
             );
-            if let ComponentShape::SectionBlade(blade) = &mut d.components[3].shape {
+            if let ComponentShape::Blade(blade) = &mut d.components[3].shape {
                 blade.thickness = Millimeters(13);
                 blade.taper = Permille(680);
+                blade.ricasso = Millimeters(260);
             }
             d.components.push(component(
                 "parrying-lugs",
@@ -739,7 +774,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             if let ComponentShape::Cylinder(grip) = &mut d.components[0].shape {
                 grip.radius = Millimeters(22);
             }
-            if let ComponentShape::SectionBlade(blade) = &mut d.components[3].shape {
+            if let ComponentShape::Blade(blade) = &mut d.components[3].shape {
                 blade.thickness = Millimeters(11);
                 blade.taper = Permille(500);
             }
@@ -1021,28 +1056,189 @@ pub fn default_design(catalog_id: &str) -> Option<WeaponDesign> {
             ],
         });
     }
-    let preset = match catalog_id {
-        "arming_sword" => "landsknecht-longsword",
-        "baselard" => "rondel-dagger",
-        "bauernwehr" => "grosse-messer",
-        "falchion" => "dussack",
-        "flanged_mace" => "flanged-mace",
-        "halberd" => "halberd-1540",
-        "hand_axe" => "hand-axe",
-        "hunting_spear" => "short-spear",
-        "katzbalger" => "katzbalger",
-        "knife" | "utility_knife" | "misericorde" => "rondel-dagger",
-        "kriegsmesser" | "messer" => "grosse-messer",
-        "longsword" => "landsknecht-longsword",
-        "military_pike" => "kriegsspiess",
-        "rapier" => "reitschwert-1540",
-        "rondel_dagger" => "rondel-dagger",
-        "spear" => "short-spear",
-        "war_hammer" => "reiter-war-hammer",
-        "zweihander" => "zweihander",
-        _ => return None,
+    let configured_blade = |preset: &str,
+                            length: u32,
+                            width: u32,
+                            thickness: u32,
+                            profile: BladeProfile,
+                            section: BladeSection,
+                            taper: u16,
+                            single_edge: u16,
+                            belly: i16,
+                            curvature: i32,
+                            ricasso: u32| {
+        let mut design = preset_design(preset)?;
+        design.catalog_id = catalog_id.into();
+        let blade = design.components.iter_mut().find_map(|component| {
+            if let ComponentShape::Blade(blade) = &mut component.shape {
+                Some(blade)
+            } else {
+                None
+            }
+        })?;
+        blade.length = Millimeters(length);
+        blade.width = Millimeters(width);
+        blade.thickness = Millimeters(thickness);
+        blade.profile = profile;
+        blade.section = section;
+        blade.taper = Permille(taper);
+        blade.single_edge = Permille(single_edge);
+        blade.belly = SignedPermille(belly);
+        blade.curvature = SignedMillimeters(curvature);
+        blade.ricasso = Millimeters(ricasso);
+        Some(design)
     };
-    let mut design = preset_design(preset)?;
-    design.catalog_id = catalog_id.into();
-    Some(design)
+    let retagged = |preset: &str| {
+        let mut design = preset_design(preset)?;
+        design.catalog_id = catalog_id.into();
+        Some(design)
+    };
+    match catalog_id {
+        "arming_sword" => configured_blade(
+            "landsknecht-longsword",
+            820,
+            54,
+            11,
+            BladeProfile::Straight,
+            BladeSection::Fullered,
+            790,
+            0,
+            0,
+            0,
+            0,
+        ),
+        "baselard" => configured_blade(
+            "rondel-dagger",
+            430,
+            48,
+            10,
+            BladeProfile::Spear,
+            BladeSection::Diamond,
+            760,
+            0,
+            0,
+            0,
+            0,
+        )
+        .map(|design| plain_blade_furniture(design, 105, 31)),
+        "bauernwehr" => configured_blade(
+            "grosse-messer",
+            480,
+            55,
+            9,
+            BladeProfile::Curved,
+            BladeSection::Flat,
+            760,
+            760,
+            130,
+            35,
+            0,
+        ),
+        "falchion" => configured_blade(
+            "dussack",
+            720,
+            74,
+            12,
+            BladeProfile::Cleaver,
+            BladeSection::Flat,
+            700,
+            900,
+            300,
+            110,
+            0,
+        ),
+        "flanged_mace" => retagged("flanged-mace"),
+        "halberd" => retagged("halberd-1540"),
+        "hand_axe" => retagged("hand-axe"),
+        "hunting_spear" => {
+            let mut design = retagged("short-spear")?;
+            if let ComponentShape::Cylinder(shaft) = &mut design.components[0].shape {
+                shaft.radius = Millimeters(21);
+            }
+            if let Some(ComponentShape::Spear(head)) =
+                design.components.last_mut().map(|part| &mut part.shape)
+            {
+                head.length = Millimeters(270);
+                head.width = Millimeters(68);
+            }
+            Some(design)
+        }
+        "katzbalger" => retagged("katzbalger"),
+        "knife" => configured_blade(
+            "rondel-dagger",
+            210,
+            30,
+            5,
+            BladeProfile::Straight,
+            BladeSection::Flat,
+            720,
+            1000,
+            0,
+            0,
+            0,
+        )
+        .map(|design| plain_blade_furniture(design, 62, 24)),
+        "utility_knife" => configured_blade(
+            "rondel-dagger",
+            135,
+            26,
+            4,
+            BladeProfile::Cleaver,
+            BladeSection::Flat,
+            620,
+            1000,
+            120,
+            8,
+            0,
+        )
+        .map(|design| plain_blade_furniture(design, 48, 21)),
+        "misericorde" => configured_blade(
+            "estoc",
+            360,
+            24,
+            9,
+            BladeProfile::Spear,
+            BladeSection::Diamond,
+            920,
+            0,
+            0,
+            0,
+            0,
+        )
+        .map(|design| plain_blade_furniture(design, 78, 27)),
+        "kriegsmesser" => configured_blade(
+            "grosse-messer",
+            1050,
+            72,
+            13,
+            BladeProfile::Curved,
+            BladeSection::Flat,
+            730,
+            760,
+            180,
+            105,
+            120,
+        ),
+        "messer" => configured_blade(
+            "grosse-messer",
+            720,
+            58,
+            10,
+            BladeProfile::Curved,
+            BladeSection::Flat,
+            780,
+            720,
+            140,
+            65,
+            0,
+        ),
+        "longsword" => retagged("landsknecht-longsword"),
+        "military_pike" => retagged("kriegsspiess"),
+        "rapier" => retagged("reitschwert-1540"),
+        "rondel_dagger" => retagged("rondel-dagger"),
+        "spear" => retagged("short-spear"),
+        "war_hammer" => retagged("reiter-war-hammer"),
+        "zweihander" => retagged("zweihander"),
+        _ => return None,
+    }
 }

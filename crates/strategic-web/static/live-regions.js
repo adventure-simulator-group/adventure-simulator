@@ -29,6 +29,34 @@
     return `${currentLocation.pathname}${currentLocation.search}`;
   };
   window.strategicLiveRefreshUrl = liveRefreshUrl;
+  const preservedRegionMap = (root) => {
+    const regions = new Map();
+    root.querySelectorAll?.("[data-live-preserve]").forEach((region) => {
+      const key = region.dataset.livePreserve;
+      if (!key || regions.has(key)) regions.set(key, null);
+      else regions.set(key, region);
+    });
+    return regions;
+  };
+  const comparableRegionHtml = (region) => {
+    const clone = region.cloneNode(true);
+    clone.querySelectorAll?.("[data-live-preserve]").forEach((preserved) => {
+      const marker = clone.ownerDocument.createElement("span");
+      marker.dataset.livePreserve = preserved.dataset.livePreserve;
+      preserved.replaceWith(marker);
+    });
+    return clone.outerHTML;
+  };
+  const preserveClientRegions = (current, next) => {
+    const currentRegions = preservedRegionMap(current);
+    const nextRegions = preservedRegionMap(next);
+    currentRegions.forEach((region, key) => {
+      const replacement = nextRegions.get(key);
+      if (region && replacement) replacement.replaceWith(region);
+    });
+  };
+  window.strategicComparableRegionHtml = comparableRegionHtml;
+  window.strategicPreserveClientRegions = preserveClientRegions;
   if (!document.querySelector("#strategic-live-revision")) return;
 
   let generation = 0;
@@ -83,7 +111,8 @@
   const replaceIfChanged = (selector, nextDocument) => {
     const current = document.querySelector(selector);
     const next = nextDocument.querySelector(selector);
-    if (!current || !next || current.outerHTML === next.outerHTML) return false;
+    if (!current || !next || comparableRegionHtml(current) === comparableRegionHtml(next)) return false;
+    preserveClientRegions(current, next);
     current.replaceWith(next);
     return true;
   };

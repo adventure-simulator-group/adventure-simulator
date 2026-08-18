@@ -199,6 +199,12 @@ pub fn wasm_encode_weapon_design(design_json: String) -> Result<Vec<u8>, JsValue
 
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
+pub fn wasm_weapon_editor_fields(design_json: String) -> Result<String, JsValue> {
+    browser_runtime::editor_fields_json(&design_json).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
 pub fn wasm_quote_weapon_design(design_json: String) -> Result<String, JsValue> {
     browser_runtime::quote_design_json(&design_json).map_err(|error| JsValue::from_str(&error))
 }

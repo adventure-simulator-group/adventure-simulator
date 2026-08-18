@@ -497,7 +497,7 @@ mod tests {
             .components
             .iter_mut()
             .find_map(|component| match &mut component.shape {
-                adventuresim_weapon_model::ComponentShape::SectionBlade(blade) => Some(blade),
+                adventuresim_weapon_model::ComponentShape::Blade(blade) => Some(blade),
                 _ => None,
             })
             .expect("longsword should have a section blade");

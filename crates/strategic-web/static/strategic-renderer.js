@@ -4,6 +4,7 @@ let runtimePromise;
 let host;
 let resizeObserver;
 const forgeDesigns = new WeakMap();
+const forgeConstraints = new WeakMap();
 let currentForgeDesign;
 let orbitingForge = false;
 
@@ -64,23 +65,18 @@ const setPath = (object, path, value) => {
   parent[path.at(-1)] = value;
 };
 
-const numericBounds = (key, value) => {
-  if (key.includes("segments") || key === "samples" || key === "flanges") return [3, 128, 1];
-  if (["taper", "single_edge", "beard", "cusp_height", "loop_position", "ratio", "scale"].some((part) => key.includes(part))) return [0, 1000, 5];
-  if (value < 0 || ["sweep", "belly", "offset", "set", "droop", "flare", "toe", "heel", "curvature"].some((part) => key.includes(part))) return [-5000, 5000, 1];
-  return [0, 5000, 1];
-};
-
-const appendField = (container, key, value, path) => {
+const appendField = (container, key, value, path, constraints) => {
   const label = document.createElement("label");
   const name = document.createElement("span");
   name.textContent = titleize(key);
   label.append(name);
   let input;
   if (typeof value === "number") {
+    const constraint = constraints.get(path.join("."));
+    if (!constraint) return;
     input = document.createElement("input");
     input.type = "range";
-    [input.min, input.max, input.step] = numericBounds(key, value);
+    [input.min, input.max, input.step] = [constraint.min, constraint.max, constraint.step];
     input.value = value;
     const output = document.createElement("output");
     output.textContent = value;
@@ -96,19 +92,20 @@ const appendField = (container, key, value, path) => {
   container.append(label);
 };
 
-const appendObjectFields = (container, object, path) => {
+const appendObjectFields = (container, object, path, constraints) => {
   for (const [key, value] of Object.entries(object)) {
-    if (key === "id" || key === "catalog_id" || (key === "component" && path.includes("attachment"))) continue;
+    if (key === "id" || key === "catalog_id" || key === "role" || (key === "component" && path.includes("attachment"))) continue;
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      appendObjectFields(container, value, [...path, key]);
+      appendObjectFields(container, value, [...path, key], constraints);
     } else {
-      appendField(container, key, value, [...path, key]);
+      appendField(container, key, value, [...path, key], constraints);
     }
   }
 };
 
 const renderForgeEditor = (root, design) => {
   const editor = root.querySelector("[data-forge-editor]");
+  const constraints = forgeConstraints.get(root) || new Map();
   editor.replaceChildren();
   design.components.forEach((component, index) => {
     const group = document.createElement("details");
@@ -116,7 +113,7 @@ const renderForgeEditor = (root, design) => {
     const summary = document.createElement("summary");
     summary.textContent = titleize(component.id);
     group.append(summary);
-    appendObjectFields(group, component, ["components", index]);
+    appendObjectFields(group, component, ["components", index], constraints);
     editor.append(group);
   });
 };
@@ -151,8 +148,10 @@ const updateForge = async (root) => {
 const loadForgeChassis = async (root, catalogId) => {
   const runtime = await runtimePromise;
   const design = JSON.parse(runtime.wasm_default_weapon_design(catalogId));
+  const constraints = JSON.parse(runtime.wasm_weapon_editor_fields(JSON.stringify(design)));
   currentForgeDesign = design;
   forgeDesigns.set(root, design);
+  forgeConstraints.set(root, new Map(constraints.map((constraint) => [constraint.path, constraint])));
   renderForgeEditor(root, design);
   await updateForge(root);
 };
@@ -167,6 +166,8 @@ const initializeForge = async (root) => {
   if (currentForgeDesign) {
     catalog.value = currentForgeDesign.catalog_id;
     forgeDesigns.set(root, currentForgeDesign);
+    const constraints = JSON.parse(runtime.wasm_weapon_editor_fields(JSON.stringify(currentForgeDesign)));
+    forgeConstraints.set(root, new Map(constraints.map((constraint) => [constraint.path, constraint])));
     renderForgeEditor(root, currentForgeDesign);
     await updateForge(root);
   } else {

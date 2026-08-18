@@ -4,6 +4,7 @@ mod catalog;
 mod codec;
 mod derive;
 mod design;
+mod editor;
 mod hash;
 mod icon;
 mod mesh;
@@ -16,6 +17,7 @@ pub use catalog::{
 pub use codec::{CodecError, decode, decode_holder, encode, encode_holder};
 pub use derive::{derive_holder_properties, derive_material_masses, derive_properties};
 pub use design::*;
+pub use editor::{NumericEditorField, numeric_editor_fields};
 pub use hash::{DesignHash, design_hash, holder_design_hash};
 pub use icon::{
     ICON_RENDERER_VERSION, IconBounds, IconError, WeaponIcon, WeaponIconLayout, WeaponIconSpec,
@@ -24,7 +26,7 @@ pub use icon::{
 pub use mesh::{GenerateError, generate, generate_holder};
 pub use validation::{ValidationError, validate, validate_holder};
 
-pub const SCHEMA_VERSION: u16 = 3;
-pub const GENERATOR_VERSION: u16 = 3;
+pub const SCHEMA_VERSION: u16 = 4;
+pub const GENERATOR_VERSION: u16 = 4;
 pub const HOLDER_SCHEMA_VERSION: u16 = 1;
 pub const HOLDER_GENERATOR_VERSION: u16 = 1;

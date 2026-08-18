@@ -39,12 +39,7 @@ pub fn derive_holder_properties(
                 .fitted_weapon
                 .components
                 .iter()
-                .filter(|component| {
-                    matches!(
-                        &component.shape,
-                        ComponentShape::Blade(_) | ComponentShape::SectionBlade(_)
-                    )
-                })
+                .filter(|component| matches!(&component.shape, ComponentShape::Blade(_)))
                 .map(|component| volume(&component.shape))
                 .sum::<f32>();
             let length = weapon.grip_to_tip_m + design.chape_length.meters() * 0.5;
@@ -112,8 +107,14 @@ fn volume(shape: &ComponentShape) -> f32 {
             polygonal_tube(v.length.meters(), outer, v.segments.0)
                 - polygonal_tube(v.length.meters(), inner, v.segments.0)
         }
-        Blade(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.48,
-        SectionBlade(v) => v.length.meters() * v.width.meters() * v.thickness.meters() * 0.38,
+        Blade(v) => {
+            let section_factor = match v.section {
+                crate::BladeSection::Flat => 0.48,
+                crate::BladeSection::Diamond => 0.38,
+                crate::BladeSection::Fullered => 0.34,
+            };
+            v.length.meters() * v.width.meters() * v.thickness.meters() * section_factor
+        }
         Guard(v) => v.span.meters() * std::f32::consts::PI * v.radius.meters().powi(2),
         Mace(v) => {
             polygonal_tube(v.length.meters(), v.core_radius.meters(), v.segments.0)

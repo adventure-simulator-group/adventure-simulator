@@ -138,15 +138,18 @@
         return;
       }
       const profile = response.headers.get("X-Strategic-Script-Profile");
-      if (response.headers.get("X-Strategic-Response") !== "root" ||
-          profile !== "strategic" || replacement.dataset.scriptProfile !== "strategic") {
-        location.assign(response.url || url);
-        return;
-      }
       const finalUrl = new URL(
         response.headers.get("X-Strategic-Canonical-Url") || response.url || url,
         location.href,
       );
+      if (response.headers.get("X-Strategic-Response") !== "root" ||
+          profile !== "strategic" || replacement.dataset.scriptProfile !== "strategic") {
+        if (boundaryUrl(finalUrl)) {
+          location.assign(finalUrl);
+          return;
+        }
+        throw new Error("The server did not return the negotiated strategic contract");
+      }
       if (boundaryUrl(finalUrl)) {
         location.assign(finalUrl);
         return;
@@ -161,7 +164,10 @@
       announce("Page loaded");
     } catch (error) {
       if (error.name === "AbortError") return;
-      location.assign(url);
+      current.removeAttribute("aria-busy");
+      document.dispatchEvent(new CustomEvent("strategic-page-mounted"));
+      announce("Unable to open page");
+      window.reportStrategicError?.(error, "strategic navigation");
     }
   }
 
