@@ -141,18 +141,18 @@
     const buttons = evidence.map((item) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "party-portrait settlement-npc-portrait physical-evidence-portrait";
+      button.className = "scene-interactable scene-interactable--evidence physical-evidence-portrait";
       button.dataset.evidenceId = item.id;
       button.setAttribute("aria-label", `Inspect ${item.label}`);
       button.setAttribute("aria-pressed", "false");
       button.tabIndex = -1;
       const portrait = document.createElement("span");
-      portrait.className = "party-portrait-initial settlement-npc-initials";
+      portrait.className = "scene-interactable-visual scene-interactable-visual--icon";
       const face = document.createElement("span");
-      face.className = "party-portrait-face";
+      face.className = "scene-interactable-icon";
       face.append(icon(item.portrait_icon, item.label));
       const name = document.createElement("span");
-      name.className = "party-portrait-name settlement-npc-name";
+      name.className = "scene-interactable-label";
       name.textContent = item.label;
       portrait.append(face, name);
       button.append(portrait);

@@ -2355,6 +2355,53 @@ body.character-action-dialog-open { overflow: hidden; }
   display: contents;
 }
 
+/* Shared presentation for anything selectable in a scene: people, fixtures,
+   evidence, and remains. Domain-specific capabilities stay outside this shell. */
+.scene-interactable {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 3.8rem;
+  width: 3.8rem;
+  min-height: 3.8rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: .25rem;
+  border: 0;
+  padding: 0;
+  color: var(--text-primary);
+  font: inherit;
+  text-decoration: none;
+}
+.scene-interactable--evidence { cursor: pointer; background: transparent; }
+.scene-interactable-visual {
+  display: grid;
+  width: 3.35rem;
+  height: 3.35rem;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent-light) 65%, var(--panel-bg));
+  color: var(--accent-dark);
+}
+.scene-interactable-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-display), serif;
+  font-size: .62rem;
+  line-height: 1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scene-interactable:focus-visible { outline: 2px solid var(--accent, #d4a85f); outline-offset: 3px; }
+.scene-interactable:is(.active, [aria-pressed="true"]) .scene-interactable-visual {
+  box-shadow: 0 0 0 2px var(--accent-gold), 0 0 0 4px rgb(212 170 83 / 28%);
+}
+.scene-interactable-icon .game-icon { width: 1.75rem; height: 1.75rem; }
+
+.scene-interactable-strip,
 .settlement-npc-strip {
   position: absolute;
   z-index: 6;

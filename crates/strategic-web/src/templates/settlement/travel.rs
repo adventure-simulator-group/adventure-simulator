@@ -875,13 +875,13 @@ pub fn camp_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
             @if active_character.is_some() {
-                nav class="settlement-npc-strip counterparty-strip camp-counterparty-strip" aria-label="Camp counterparties" {
-                    a class="npc-portrait fireplace-portrait" href="/camp/fireplace"
+                nav class="scene-interactable-strip camp-interactable-strip" aria-label="Camp interactions" {
+                    a class="scene-interactable scene-interactable--fixture fireplace-portrait" href="/camp/fireplace"
                         aria-label="Cook at fireplace" title="Cook at fireplace" {
-                        span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
+                        span class="scene-interactable-visual fireplace-portrait-image" aria-hidden="true" {
                             (decorative_game_icon("campfire"))
                         }
-                        span class="npc-portrait-name" { "Campfire" }
+                        span class="scene-interactable-label" { "Campfire" }
                         span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
                     }
                 }

@@ -526,29 +526,29 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
         adventuresim_core::organization::organization_chapter_at(settlement_id, location_id)
             .and_then(|(organization, _)| organization.service_id.as_deref());
     html! {
-        nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
+        nav class="scene-interactable-strip" aria-label="People and things here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
             @if !matches!(location_id, "overview" | "public-square" | "map") {
-                a class="npc-portrait fireplace-portrait"
+                a class="scene-interactable scene-interactable--fixture fireplace-portrait"
                     href=(format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"))
                     data-location-fixture
                     aria-label="Cook at fireplace" title="Cook at fireplace" {
-                    span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
+                    span class="scene-interactable-visual fireplace-portrait-image" aria-hidden="true" {
                         (decorative_game_icon("campfire"))
                     }
-                    span class="npc-portrait-name" { "Fireplace" }
+                    span class="scene-interactable-label" { "Fireplace" }
                     span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
                 }
             }
             @if organization_service == Some("weapons") {
-                a class="npc-portrait forge-portrait"
+                a class="scene-interactable scene-interactable--fixture forge-portrait"
                     href=(format!("/settlements/{settlement_id}/weapons"))
                     data-location-fixture
                     aria-label="Forge a weapon" title="Forge a weapon" {
-                    span class="npc-portrait-image forge-portrait-image" aria-hidden="true" {
+                    span class="scene-interactable-visual forge-portrait-image" aria-hidden="true" {
                         (decorative_game_icon("anvil"))
                     }
-                    span class="npc-portrait-name" { "Forge" }
+                    span class="scene-interactable-label" { "Forge" }
                     span class="btn btn-secondary btn-small" aria-hidden="true" { "Forge" }
                 }
             }
