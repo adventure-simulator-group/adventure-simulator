@@ -80,6 +80,20 @@ Never make a run pass by:
 Analyzer or telemetry changes must preserve or strengthen the existing
 acceptance contract.
 
+## Locomotion invariants
+
+- Give each leg and pelvis exactly one presentation owner per semantic tick.
+  Handoffs must transfer the visible position and retained derivatives
+  atomically; a wait flag or diagnostic label is not an owner.
+- Derive reach, stride, clearance, and dynamics from the measured rig and
+  cadence rather than fixed humanoid distances. Validate representative limb
+  scales, speeds, and render rates when changing locomotion.
+- Treat reachable geometry as a solve-boundary invariant. A downstream IK
+  projection must never change the visible ankle while retaining derivatives
+  from an unreachable target.
+- Prefer a simple body-relative gait with bounded terrain contacts over
+  overlapping world-space plant, release, recovery, and fallback owners.
+
 ## Iteration report
 
 After each native run, report only:
