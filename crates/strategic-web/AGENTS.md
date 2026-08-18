@@ -17,10 +17,10 @@ source for the project's pattern vocabulary, asset anatomy, and art direction.
   keyboard-focus descriptions. Preserve accessible names, visible labels, focus
   indicators, and non-color state cues.
 - Do not add explanatory or release-note copy inside an interface element.
-  Present only labels, state, results, validation errors, and instructions needed
-  to complete the action.
+  Present only labels, state, results, validation errors, and instructions
+  needed to complete the action.
 - Keep architectural family, component skin, service, interaction state, and
-  time-of-day lighting as separate inputs; do not bake reusable state into markup
-  or assets.
+  time-of-day lighting as separate inputs; do not bake reusable state into
+  markup or assets.
 - Store third-party asset provenance in the applicable attribution file and
   `../../THIRD_PARTY_NOTICES.md`.

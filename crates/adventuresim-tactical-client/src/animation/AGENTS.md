@@ -13,9 +13,9 @@ simplified fixture when the real-client script can express the input sequence.
 
 ## Evidence order
 
-Inspect a compact analyzer summary or bounded projection first, then the relevant
-source functions. Read the full animation JSONL only when that evidence is
-demonstrably insufficient.
+Inspect a compact analyzer summary or bounded projection first, then the
+relevant source functions. Read the full animation JSONL only when that evidence
+is demonstrably insufficient.
 
 Do not paste or emit full JSONL records, cumulative incident lists, or large
 frame arrays into model context. Prefer contiguous ranges, counts, first
