@@ -14,7 +14,7 @@ pub use catalog::{
     recommended_holder,
 };
 pub use codec::{CodecError, decode, decode_holder, encode, encode_holder};
-pub use derive::{derive_holder_properties, derive_properties};
+pub use derive::{derive_holder_properties, derive_material_masses, derive_properties};
 pub use design::*;
 pub use hash::{DesignHash, design_hash, holder_design_hash};
 pub use icon::{

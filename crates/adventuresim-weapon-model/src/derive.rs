@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    Attachment, ComponentDesign, ComponentRole, ComponentShape, DerivedProperties, ValidationError,
-    WeaponDesign, WeaponHolderDesign, WeaponHolderKind, validate, validate_holder,
+    Attachment, ComponentDesign, ComponentRole, ComponentShape, DerivedMaterialMass,
+    DerivedProperties, MaterialClass, ValidationError, WeaponDesign, WeaponHolderDesign,
+    WeaponHolderKind, validate, validate_holder,
 };
 
 fn origin_y<'a>(
@@ -237,4 +238,51 @@ pub fn derive_properties(design: &WeaponDesign) -> Result<DerivedProperties, Vec
         length_m: maximum - minimum,
         grip_to_tip_m: maximum - grip,
     })
+}
+
+/// Returns exact per-material mass derived from the same component volumes as
+/// the weapon's total physical properties.
+pub fn derive_material_masses(
+    design: &WeaponDesign,
+) -> Result<Vec<DerivedMaterialMass>, Vec<ValidationError>> {
+    validate(design)?;
+    let classes = [
+        MaterialClass::Wood,
+        MaterialClass::Leather,
+        MaterialClass::DarkLeather,
+        MaterialClass::Brass,
+        MaterialClass::Steel,
+        MaterialClass::DarkSteel,
+    ];
+    Ok(classes
+        .into_iter()
+        .filter_map(|material| {
+            let mass_kg = design
+                .components
+                .iter()
+                .filter(|component| component.material == material)
+                .map(|component| volume(&component.shape) * material.density_kg_m3())
+                .sum::<f32>();
+            (mass_kg > f32::EPSILON).then_some(DerivedMaterialMass { material, mass_kg })
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn per_material_mass_conserves_total_recipe_mass() {
+        for catalog_id in crate::MELEE_CATALOG_IDS {
+            let design = crate::default_design(catalog_id).unwrap();
+            let total = derive_properties(&design).unwrap().mass_kg;
+            let by_material = derive_material_masses(&design)
+                .unwrap()
+                .into_iter()
+                .map(|mass| mass.mass_kg)
+                .sum::<f32>();
+            assert!((total - by_material).abs() < 0.000_01, "{catalog_id}");
+        }
+    }
 }

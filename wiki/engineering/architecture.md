@@ -212,6 +212,27 @@ no-JavaScript clients. In an enhanced session:
    redirected strategic root in the original response;
 4. native links and `303` redirects remain the fallback.
 
+Strategic pages may also host the browser tactical client's Bevy renderer. A
+single document-scoped canvas sits outside `#strategic-page`, so soft navigation
+does not replace its WebGPU context. The proof-of-concept runtime installs the
+complete tactical plugin graph and eagerly loads its assets, then accepts typed
+commands for strategic forge previews or an in-process tactical connection.
+Strategic smithing remains an authoritative SpacetimeDB transaction: the canvas
+previews a recipe, while the reducer validates the complete canonical recipe
+against the melee catalog, the character's location, and the advertised smithing
+service. A forge may be advertised by the settlement economy or by an authored
+local organization chapter with the `weapons` service capability; standalone
+weaponsmith guildhalls expose the same generic forge entry point. The reducer
+then derives and consumes fixed-point material amounts, advances
+elapsed time, and persists that same parametric recipe for tactical projection.
+The reducer is chassis-independent;
+the strategic editor selects a catalog preset and edits its supported component
+parameters without changing the persistence contract.
+Live-region reconciliation rehydrates the forge editor from its current client
+recipe, and the canvas remains behind the strategic portrait and dialogue
+layers. Forge previews are stationary by default; middle-button dragging orbits
+the model and the mouse wheel changes its viewing distance.
+
 The web process owns one generated SpacetimeDB SDK WebSocket connection. Its
 explicit subscription invalidates live regions and supplies a small,
 typed public read cache. Private and owner-scoped page data remains

@@ -415,6 +415,7 @@ pub mod forage_harvest_material_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
+pub mod forge_weapon_reducer;
 pub mod generated_problem_incident_type;
 pub mod geologic_age_evidence_type;
 pub mod geologic_era_type;
@@ -1355,6 +1356,7 @@ pub use forage_harvest_material_type::ForageHarvestMaterial;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
+pub use forge_weapon_reducer::forge_weapon;
 pub use generated_problem_incident_type::GeneratedProblemIncident;
 pub use geologic_age_evidence_type::GeologicAgeEvidence;
 pub use geologic_era_type::GeologicEra;
@@ -2259,6 +2261,11 @@ pub enum Reducer {
         attempt_generation: u64,
         attestation: ForageEnvironmentAttestation,
     },
+    ForgeWeapon {
+        character_id: u64,
+        settlement_id: String,
+        recipe: Vec<u8>,
+    },
     GrantBrowserCharacter {
         owner_key: String,
         character_id: u64,
@@ -2929,6 +2936,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
             Reducer::ForageCurrentVicinity { .. } => "forage_current_vicinity",
+            Reducer::ForgeWeapon { .. } => "forge_weapon",
             Reducer::GrantBrowserCharacter { .. } => "grant_browser_character",
             Reducer::ImportSettlementAliases { .. } => "import_settlement_aliases",
             Reducer::ImportSettlementDescriptions { .. } => "import_settlement_descriptions",
@@ -3723,6 +3731,15 @@ Reducer::BeginFormalCourtship{
                 requested_minutes: requested_minutes.clone(),
                 attempt_generation: attempt_generation.clone(),
                 attestation: attestation.clone(),
+}),
+            Reducer::ForgeWeapon{
+                character_id,
+                settlement_id,
+                recipe,
+}             => __sats::bsatn::to_vec(&forge_weapon_reducer::ForgeWeaponArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                recipe: recipe.clone(),
 }),
             Reducer::GrantBrowserCharacter{
                 owner_key,

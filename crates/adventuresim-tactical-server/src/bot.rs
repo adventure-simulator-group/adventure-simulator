@@ -20,11 +20,11 @@ use crate::{
 };
 #[cfg(test)]
 use defense::CountedEnemyDefeat;
+pub use defense::DefenseChances;
 use defense::{
     on_attack_started, on_tactical_combatant_defeated, on_targeted_attack_started,
     on_targeted_ranged_attack_started, tick_bot_reactions,
 };
-pub use defense::DefenseChances;
 pub use offense::OffensiveCombatAi;
 #[cfg(test)]
 use offense::ranged_weapon_needs_ammo_lookup;

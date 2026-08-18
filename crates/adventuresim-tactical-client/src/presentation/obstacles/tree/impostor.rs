@@ -185,7 +185,7 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
     lod: u8,
     style: TreeBakeStyle,
 ) -> TreeLodBake {
-    let started = std::time::Instant::now();
+    let started = web_time::Instant::now();
     let cards = tree_bake_cards_with_style(seed, branches, leaves, lod, style);
     let tile_size = match lod {
         1 => 96,

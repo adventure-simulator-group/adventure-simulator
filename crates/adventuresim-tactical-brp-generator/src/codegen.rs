@@ -10,7 +10,12 @@ pub fn render(resolver: &Resolver) -> String {
     print_base_classes(&mut lines);
     print_section(&mut lines, resolver, StructKind::Component, "# Components");
     print_section(&mut lines, resolver, StructKind::Resource, "# Resources");
-    print_section(&mut lines, resolver, StructKind::Nested, "# Nested/helper types");
+    print_section(
+        &mut lines,
+        resolver,
+        StructKind::Nested,
+        "# Nested/helper types",
+    );
 
     let mut output = lines.join("\n");
     output.push('\n');
@@ -91,7 +96,10 @@ fn render_class(class: &ClassDef, lines: &mut Vec<String>) {
     lines.push(header);
     lines.push(format!("    \"\"\"`{}`\"\"\"", class.type_path));
     if class.kind != StructKind::Nested {
-        lines.push(format!("    type_path: ClassVar[str] = \"{}\"", class.type_path));
+        lines.push(format!(
+            "    type_path: ClassVar[str] = \"{}\"",
+            class.type_path
+        ));
     }
 
     match &class.body {
@@ -100,11 +108,24 @@ fn render_class(class: &ClassDef, lines: &mut Vec<String>) {
     }
 }
 
-fn render_fields_class(class: &ClassDef, fields: &[crate::resolve::FieldDef], lines: &mut Vec<String>) {
+fn render_fields_class(
+    class: &ClassDef,
+    fields: &[crate::resolve::FieldDef],
+    lines: &mut Vec<String>,
+) {
     for field in fields {
-        let comment = field.encoding.comment().map(|c| format!("  {c}")).unwrap_or_default();
+        let comment = field
+            .encoding
+            .comment()
+            .map(|c| format!("  {c}"))
+            .unwrap_or_default();
         let ident = crate::resolve::python_ident(&field.name);
-        lines.push(format!("    {}: {}{}", ident, field.encoding.annotation(), comment));
+        lines.push(format!(
+            "    {}: {}{}",
+            ident,
+            field.encoding.annotation(),
+            comment
+        ));
     }
 
     lines.push(String::new());
@@ -113,28 +134,42 @@ fn render_fields_class(class: &ClassDef, fields: &[crate::resolve::FieldDef], li
     for field in fields {
         let mut depth = 0u32;
         let ident = crate::resolve::python_ident(&field.name);
-        let expr = field.encoding.to_brp_expr(&format!("self.{ident}"), &mut depth);
+        let expr = field
+            .encoding
+            .to_brp_expr(&format!("self.{ident}"), &mut depth);
         lines.push(format!("            \"{}\": {},", field.name, expr));
     }
     lines.push("        }".to_string());
 
     lines.push(String::new());
     lines.push("    @classmethod".to_string());
-    lines.push(format!("    def from_brp(cls, value: object) -> \"{}\":", class.class_name));
+    lines.push(format!(
+        "    def from_brp(cls, value: object) -> \"{}\":",
+        class.class_name
+    ));
     lines.push("        data = value".to_string());
     lines.push("        assert isinstance(data, dict)".to_string());
     lines.push("        return cls(".to_string());
     for field in fields {
         let mut depth = 0u32;
-        let expr = field.encoding.from_brp_expr(&format!("data[\"{}\"]", field.name), &mut depth);
+        let expr = field
+            .encoding
+            .from_brp_expr(&format!("data[\"{}\"]", field.name), &mut depth);
         let ident = crate::resolve::python_ident(&field.name);
         lines.push(format!("            {}={},", ident, expr));
     }
     lines.push("        )".to_string());
 }
 
-fn render_transparent_class(class: &ClassDef, encoding: &crate::resolve::Encoding, lines: &mut Vec<String>) {
-    let comment = encoding.comment().map(|c| format!("  {c}")).unwrap_or_default();
+fn render_transparent_class(
+    class: &ClassDef,
+    encoding: &crate::resolve::Encoding,
+    lines: &mut Vec<String>,
+) {
+    let comment = encoding
+        .comment()
+        .map(|c| format!("  {c}"))
+        .unwrap_or_default();
     lines.push(format!("    value: {}{}", encoding.annotation(), comment));
 
     lines.push(String::new());
@@ -145,7 +180,10 @@ fn render_transparent_class(class: &ClassDef, encoding: &crate::resolve::Encodin
 
     lines.push(String::new());
     lines.push("    @classmethod".to_string());
-    lines.push(format!("    def from_brp(cls, value: object) -> \"{}\":", class.class_name));
+    lines.push(format!(
+        "    def from_brp(cls, value: object) -> \"{}\":",
+        class.class_name
+    ));
     let mut depth = 0u32;
     let expr = encoding.from_brp_expr("value", &mut depth);
     lines.push(format!("        return cls(value={expr})"));

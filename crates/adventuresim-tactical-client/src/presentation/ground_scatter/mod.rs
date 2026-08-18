@@ -477,7 +477,7 @@ pub(super) fn present_ground_scatter(
     procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     for (entity, scene_id, terrain, ground, environment) in &scenes {
-        let started = std::time::Instant::now();
+        let started = web_time::Instant::now();
         tracing::info!("Generating tactical ground scatter");
         spawn_ground_foliage(
             &mut commands,

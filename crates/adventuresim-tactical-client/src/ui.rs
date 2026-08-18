@@ -36,6 +36,11 @@ use crate::{
 
 pub struct UiPlugin;
 
+/// Root of the tactical-only HUD. The persistent browser runtime keeps the UI
+/// instantiated but hides it while the shared canvas presents strategic scenes.
+#[derive(Component)]
+pub(crate) struct TacticalUiRoot;
+
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((FlairPlugin, EguiPlugin::default()))
@@ -265,6 +270,8 @@ struct PlayerSpan(Vec<Entity>);
 
 fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
+        TacticalUiRoot,
+        Visibility::Inherited,
         Node::default(),
         Styled::new(asset_server.load("ui.css")),
         children![

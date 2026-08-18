@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2070)
+## Files (2074)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -700,6 +700,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/forest_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forestry_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/forge_weapon_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/generated_problem_incident_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/geologic_age_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/geologic_era_type.rs` — Generated SpacetimeDB data type.
@@ -1278,6 +1279,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/residence.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/simulation.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/smithing.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/social.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/social_roles.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/strategic/authority_model.rs` — Rust source module.
@@ -1383,6 +1385,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/animation/tests.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation_viewer.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/animation_viewer_main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/browser_runtime.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/camera.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/debug.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/diagnostics.rs` — Rust source module for this component.
@@ -1838,6 +1841,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/static/strategic-map.js` — Repository support file.
 - `crates/strategic-web/static/strategic-mutations.js` — Repository support file.
 - `crates/strategic-web/static/strategic-navigation.js` — Repository support file.
+- `crates/strategic-web/static/strategic-renderer.js` — Repository support file.
 - `crates/strategic-web/static/strategic-time.js` — Repository support file.
 - `crates/strategic-web/static/styles/timber-framed/ATTRIBUTION.md` — Project documentation.
 - `crates/strategic-web/static/styles/timber-framed/background/city/coastal.png` — Binary game or UI asset.

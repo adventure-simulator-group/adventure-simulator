@@ -511,15 +511,17 @@ fn try_start_attack(
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
-    let Ok((reach, ranged, melee, windup_secs, preferred_style)) = viewer.get(entity).map(|character| {
-        (
-            character.weapon_reach(),
-            character.weapon_is_ranged(),
-            character.weapon_is_melee(),
-            character.weapon_windup_secs(),
-            character.weapon_preferred_melee_style(),
-        )
-    }) else {
+    let Ok((reach, ranged, melee, windup_secs, preferred_style)) =
+        viewer.get(entity).map(|character| {
+            (
+                character.weapon_reach(),
+                character.weapon_is_ranged(),
+                character.weapon_is_melee(),
+                character.weapon_windup_secs(),
+                character.weapon_preferred_melee_style(),
+            )
+        })
+    else {
         warn!("Trying to attack, but can't get weapon reach. Not holding any weapons ?");
         return;
     };
@@ -584,9 +586,10 @@ fn flush_buffered_melee_attacks(
         let Some(animation) = skeleton.select_attack_animation(buffered.0) else {
             continue;
         };
-        let Ok((reach, windup_secs)) = viewer.get(entity).map(|character| {
-            (character.weapon_reach(), character.weapon_windup_secs())
-        }) else {
+        let Ok((reach, windup_secs)) = viewer
+            .get(entity)
+            .map(|character| (character.weapon_reach(), character.weapon_windup_secs()))
+        else {
             continue;
         };
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;

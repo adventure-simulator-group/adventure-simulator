@@ -55,19 +55,12 @@ impl BuildingQuery {
         )
     }
 
-    async fn append_to(
-        &self,
-        state: &AppState,
-        kind: &str,
-        id: &str,
-        path: String,
-    ) -> String {
+    async fn append_to(&self, state: &AppState, kind: &str, id: &str, path: String) -> String {
         match resolve_location(state, kind, id).await {
             LocationLookup::Found(location) => self.append_to_location(&location, path),
             LocationLookup::NotFound | LocationLookup::Unavailable => path,
         }
     }
-
 }
 
 #[cfg(test)]
@@ -81,13 +74,17 @@ mod building_query_tests {
             .organizations
             .iter()
             .find_map(|organization| {
-                organization.chapters.iter().find(|chapter| {
-                    adventuresim_core::organization::chapter_has_standalone_building(
-                        organization,
-                        chapter,
-                        &economy,
-                    )
-                }).map(|chapter| (organization, chapter))
+                organization
+                    .chapters
+                    .iter()
+                    .find(|chapter| {
+                        adventuresim_core::organization::chapter_has_standalone_building(
+                            organization,
+                            chapter,
+                            &economy,
+                        )
+                    })
+                    .map(|chapter| (organization, chapter))
             })
             .expect("standalone catalog chapter");
         let location = crate::templates::settlement::LocationView {
@@ -104,13 +101,19 @@ mod building_query_tests {
             ..Default::default()
         };
         assert_eq!(valid.valid_for(&location), Some("inn"));
-        let unavailable = BuildingQuery { building: Some("books".into()), ..Default::default() };
+        let unavailable = BuildingQuery {
+            building: Some("books".into()),
+            ..Default::default()
+        };
         assert_eq!(unavailable.valid_for(&location), None);
         let organization_query = BuildingQuery {
             building: Some(chapter.location_id.clone()),
             ..Default::default()
         };
-        assert_eq!(organization_query.valid_for(&location), Some(chapter.location_id.as_str()));
+        assert_eq!(
+            organization_query.valid_for(&location),
+            Some(chapter.location_id.as_str())
+        );
         if let Some(foreign) = adventuresim_core::organization::catalog()
             .organizations
             .iter()
@@ -196,9 +199,7 @@ mod building_query_tests {
         let private_dish = ["SELECT * FROM fireplace_", "dish WHERE"].concat();
         assert!(!source.contains(&private_station));
         assert!(!source.contains(&private_dish));
-        assert!(source.contains(
-            "party.camp_destination.as_ref() == Some(&journey.destination)"
-        ));
+        assert!(source.contains("party.camp_destination.as_ref() == Some(&journey.destination)"));
         assert!(source.contains("matches!(journey.plan_version, 1 | 2)"));
         assert!(source.contains("journey.completed_minutes < journey.total_minutes"));
         assert!(source.contains("camp_stop_minutes"));
@@ -226,25 +227,24 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge,
-    BackendIngredientPreparationPlan,
-    BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendCorpse,
-    BackendFamilyChild,
-    BackendLocalProblemTradeEffect, BackendPhysiologyAdministration, BackendPhysiologyChart,
-    BackendRoadChallenge, BackendContextCharacter, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
+    BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendContextCharacter,
+    BackendCorpse, BackendFamilyChild, BackendFireplaceDish, BackendFireplaceStation,
+    BackendIngredientPreparationPlan, BackendLocalProblemTradeEffect,
+    BackendPhysiologyAdministration, BackendPhysiologyChart, BackendRoadChallenge,
+    BackendTinctureStatus, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
     CharacterCondition, CharacterEquipmentGraph, CharacterEquippedItem, CharacterFamiliarity,
     CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterPersonality,
     CharacterSettlementReputation, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    BackendFireplaceDish, BackendFireplaceStation, EquipmentAnchorKind,
-    EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
-    InventoryItemAmount, InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind,
-    ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyItemAmount, PartyJourney,
-    PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake,
-    RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand,
-    RepairOrder, ResidenceTier, RetainedProjectile, ScheduleAllocation, Settlement,
-    SettlementAlias, SettlementDescription, SettlementResidenceOffer, SettlementSmith,
-    SocialAddress, SocialBelief, SocialChatOutcome, StrategicEncounter, TravelEdge,
-    BackendTinctureStatus, ContainerLiquid, InventoryContainment, InventoryObject,
+    CharacterTime, CharacterTrainingSchedule, ContainerLiquid, ContractPresentation,
+    ContractPresentationStatus, EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy,
+    FoodLot, InventoryContainment, InventoryItem, InventoryItemAmount, InventoryObject,
+    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
+    LimbRegion, Party, PartyInventoryItem, PartyItemAmount, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer,
+    RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, ResidenceTier,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementResidenceOffer, SettlementSmith, SocialAddress, SocialBelief, SocialChatOutcome,
+    StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, ChildPresentation, LocationKind, LocationView,
@@ -437,6 +437,7 @@ pub fn routes() -> Router<AppState> {
             post(finalize_merchant_offer),
         )
         .route("/settlements/{id}/weapons", get(weapons))
+        .route("/settlements/{id}/weapons/forge", post(forge_weapon))
         .route("/settlements/{id}/armor", get(armor))
         .route("/settlements/{id}/{shop}/repair", post(submit_repair))
         .route(

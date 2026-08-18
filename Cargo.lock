@@ -200,6 +200,7 @@ dependencies = [
  "tracing-tracy",
  "tracy-client-sys",
  "wasm-bindgen",
+ "web-time",
 ]
 
 [[package]]

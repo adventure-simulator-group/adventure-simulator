@@ -27,6 +27,11 @@ use bevy::prelude::*;
 use bevy::world_serialization::DynamicWorldBuilder;
 use clap::{ArgAction, Parser};
 
+#[cfg(feature = "debug")]
+use crate::player_projection::{
+    bind_dumped_character_on_join, mark_loaded_items_replicated, on_client_disconnected_standalone,
+    on_join_request_standalone,
+};
 use crate::{
     combat::CombatSet,
     mission::{
@@ -41,11 +46,6 @@ use crate::{
         update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
-};
-#[cfg(feature = "debug")]
-use crate::player_projection::{
-    bind_dumped_character_on_join, mark_loaded_items_replicated,
-    on_client_disconnected_standalone, on_join_request_standalone,
 };
 
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
@@ -672,7 +672,9 @@ mod debug_dump_world_tests {
         load_app.insert_resource(test_args(Some(dump_path.clone())));
         load_world_dump(load_app.world_mut());
 
-        let mut query = load_app.world_mut().query::<(Entity, &Player, &CharacterId)>();
+        let mut query = load_app
+            .world_mut()
+            .query::<(Entity, &Player, &CharacterId)>();
         let (loaded_entity, player, _) = query
             .iter(load_app.world())
             .find(|(_, _, id)| id.0 == 777)
@@ -823,8 +825,7 @@ fn on_server_started(
             let y = terrain.height_at(Vec2::new(x, z)).unwrap_or_default() + height_offset;
             let yaw = match kind {
                 SceneObstacle::Rock(recipe) => {
-                    (recipe.seed >> 40) as f32 / ((1_u32 << 24) - 1) as f32
-                        * core::f32::consts::TAU
+                    (recipe.seed >> 40) as f32 / ((1_u32 << 24) - 1) as f32 * core::f32::consts::TAU
                 }
                 SceneObstacle::Tree => 0.0,
             };

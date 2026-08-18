@@ -560,6 +560,12 @@ pub struct DerivedProperties {
     pub grip_to_tip_m: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DerivedMaterialMass {
+    pub material: MaterialClass,
+    pub mass_kg: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedWeapon {
     pub design_hash: crate::DesignHash,

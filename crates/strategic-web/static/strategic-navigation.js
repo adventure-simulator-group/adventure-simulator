@@ -7,7 +7,7 @@
   const page = () => document.querySelector("#strategic-page");
   const boundaryUrl = (url) => url.origin !== location.origin ||
     url.pathname.startsWith("/characters") || url.pathname === "/map/data-license" ||
-    url.pathname.startsWith("/missions/") || url.pathname.startsWith("/tactical/");
+    url.pathname.startsWith("/tactical/");
   const focusKey = (element) => {
     if (!element || element === document.body) return null;
     if (element.id) return { kind: "id", value: element.id };

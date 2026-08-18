@@ -885,7 +885,10 @@ pub(crate) fn on_player_input(
         );
         return;
     }
-    info!("DEBUG on_player_input entity={entity:?} input.look={:?} validated.yaw={}", input.look, validated.yaw);
+    info!(
+        "DEBUG on_player_input entity={entity:?} input.look={:?} validated.yaw={}",
+        input.look, validated.yaw
+    );
     look.yaw = validated.yaw;
     look.pitch = validated.pitch;
     accumulated_input.last_movement = validated.movement;
@@ -1439,8 +1442,12 @@ pub(crate) fn on_client_disconnected(
         CharacterController,
         AccumulatedInput,
     )>(orphan);
-    commands.entity(entity).move_components::<InventoryItems>(orphan);
-    commands.entity(entity).move_components::<LoadingPlayer>(orphan);
+    commands
+        .entity(entity)
+        .move_components::<InventoryItems>(orphan);
+    commands
+        .entity(entity)
+        .move_components::<LoadingPlayer>(orphan);
     for (item, owner) in &inventory_items {
         if owner.0 == entity {
             commands.entity(item).insert(ItemOf(orphan));

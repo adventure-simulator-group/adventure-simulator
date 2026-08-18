@@ -522,18 +522,34 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
 }
 
 pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Markup {
+    let organization_service =
+        adventuresim_core::organization::organization_chapter_at(settlement_id, location_id)
+            .and_then(|(organization, _)| organization.service_id.as_deref());
     html! {
         nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
             @if !matches!(location_id, "overview" | "public-square" | "map") {
                 a class="npc-portrait fireplace-portrait"
                     href=(format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"))
+                    data-location-fixture
                     aria-label="Cook at fireplace" title="Cook at fireplace" {
                     span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
                         (decorative_game_icon("campfire"))
                     }
                     span class="npc-portrait-name" { "Fireplace" }
                     span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
+                }
+            }
+            @if organization_service == Some("weapons") {
+                a class="npc-portrait forge-portrait"
+                    href=(format!("/settlements/{settlement_id}/weapons"))
+                    data-location-fixture
+                    aria-label="Forge a weapon" title="Forge a weapon" {
+                    span class="npc-portrait-image forge-portrait-image" aria-hidden="true" {
+                        (decorative_game_icon("anvil"))
+                    }
+                    span class="npc-portrait-name" { "Forge" }
+                    span class="btn btn-secondary btn-small" aria-hidden="true" { "Forge" }
                 }
             }
             span class="text-muted" data-npc-loading { "Finding the people here…" }
@@ -543,6 +559,14 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
 
 pub(super) fn npc_description_stage(name: &str, fallback: &str) -> Markup {
     html! { section class="visual-stage npc-description-stage" data-npc-description aria-live="polite" {
+        div class="visual-stage-placeholder npc-portrait-silhouette" aria-hidden="true" {}
+        h2 { (name) }
+        p { (fallback) }
+    } }
+}
+
+pub(super) fn forge_description_stage(name: &str, fallback: &str) -> Markup {
+    html! { section class="visual-stage npc-description-stage forge-description-stage" data-npc-description data-bevy-scene="forge" aria-live="polite" {
         div class="visual-stage-placeholder npc-portrait-silhouette" aria-hidden="true" {}
         h2 { (name) }
         p { (fallback) }
@@ -1169,6 +1193,21 @@ mod tests {
         assert!(!square.contains("Cook at fireplace"));
         assert!(church_strip.contains("Finding the people here…"));
         assert!(!church_strip.contains("â"));
+    }
+
+    #[test]
+    fn weapons_service_chapter_exposes_the_generic_forge_entry_point() {
+        let strip =
+            npc_portrait_strip("viabundus-0", "organization-weaponsmith-guild").into_string();
+        assert!(strip.contains("aria-label=\"Forge a weapon\""));
+        assert!(strip.contains("href=\"/settlements/viabundus-0/weapons\""));
+        assert_eq!(strip.matches("data-location-fixture").count(), 2);
+
+        let client = include_str!("../../../static/dialogue-client.js");
+        assert!(client.contains("querySelectorAll(\"[data-location-fixture]\")"));
+
+        let unrelated = npc_portrait_strip("viabundus-0", "residences").into_string();
+        assert!(!unrelated.contains("Forge a weapon"));
     }
 
     #[test]
