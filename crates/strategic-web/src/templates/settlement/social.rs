@@ -521,6 +521,47 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
     }
 }
 
+/// Presentation projection of the non-character interactables available at a
+/// settlement location. This is deliberately separate from the NPC loader so
+/// templates cannot accidentally infer fixtures from the people present.
+struct LocationFixture {
+    kind: &'static str,
+    label: &'static str,
+    aria_label: &'static str,
+    icon: &'static str,
+    action_label: &'static str,
+    href: String,
+}
+
+fn location_fixtures(
+    settlement_id: &str,
+    location_id: &str,
+    organization_service: Option<&str>,
+) -> Vec<LocationFixture> {
+    let mut fixtures = Vec::new();
+    if !matches!(location_id, "overview" | "public-square" | "map") {
+        fixtures.push(LocationFixture {
+            kind: "fixture fireplace-portrait",
+            label: "Fireplace",
+            aria_label: "Cook at fireplace",
+            icon: "campfire",
+            action_label: "Cook",
+            href: format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"),
+        });
+    }
+    if organization_service == Some("weapons") {
+        fixtures.push(LocationFixture {
+            kind: "fixture forge-portrait",
+            label: "Forge",
+            aria_label: "Forge a weapon",
+            icon: "anvil",
+            action_label: "Forge",
+            href: format!("/settlements/{settlement_id}/weapons"),
+        });
+    }
+    fixtures
+}
+
 pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Markup {
     let organization_service =
         adventuresim_core::organization::organization_chapter_at(settlement_id, location_id)
@@ -528,19 +569,11 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
     html! {
         nav class="scene-interactable-strip" aria-label="People and things here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
-            @if !matches!(location_id, "overview" | "public-square" | "map") {
+            @for fixture in location_fixtures(settlement_id, location_id, organization_service) {
                 span data-location-fixture {
                     (scene_interactable_link(SceneInteractableLink {
-                        kind: "fixture fireplace-portrait", href: &format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"),
-                        label: "Fireplace", aria_label: "Cook at fireplace", icon: "campfire", action_label: Some("Cook"),
-                    }))
-                }
-            }
-            @if organization_service == Some("weapons") {
-                span data-location-fixture {
-                    (scene_interactable_link(SceneInteractableLink {
-                        kind: "fixture forge-portrait", href: &format!("/settlements/{settlement_id}/weapons"),
-                        label: "Forge", aria_label: "Forge a weapon", icon: "anvil", action_label: Some("Forge"),
+                        kind: fixture.kind, href: &fixture.href, label: fixture.label,
+                        aria_label: fixture.aria_label, icon: fixture.icon, action_label: Some(fixture.action_label),
                     }))
                 }
             }
@@ -1200,6 +1233,19 @@ mod tests {
 
         let unrelated = npc_portrait_strip("viabundus-0", "residences").into_string();
         assert!(!unrelated.contains("Forge a weapon"));
+    }
+
+    #[test]
+    fn location_fixture_projection_keeps_people_and_things_independent() {
+        let ordinary = location_fixtures("lubeck", "market", None);
+        assert_eq!(ordinary.len(), 1);
+        assert_eq!(ordinary[0].label, "Fireplace");
+
+        let weapons = location_fixtures("lubeck", "organization-weaponsmith-guild", Some("weapons"));
+        assert_eq!(weapons.len(), 2);
+        assert_eq!(weapons[1].label, "Forge");
+
+        assert!(location_fixtures("lubeck", "public-square", None).is_empty());
     }
 
     #[test]
