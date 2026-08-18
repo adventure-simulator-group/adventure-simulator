@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const source = fs.readFileSync("crates/strategic-web/static/strategic-time.js", "utf8");
 const buildingSource = fs.readFileSync("crates/strategic-web/static/building-state.js", "utf8");
@@ -17,7 +18,7 @@ test("grouped inventory disclosures stay beside their labels in narrow merchant 
   assert.match(strategicCss, /:is\(\.currency-parent-row, \.alcohol-parent-row, \.food-parent-row\) \.currency-disclosure \{[\s\S]*vertical-align: middle;/);
 });
 const layoutTemplate = fs.readFileSync("crates/strategic-web/src/templates/layout.rs", "utf8");
-const settlementTemplate = fs.readFileSync("crates/strategic-web/src/templates/settlement.rs", "utf8");
+const settlementTemplate = readRustModuleSource("crates/strategic-web/src/templates/settlement/mod.rs");
 const window = {
   queueStrategicInitialLoad: () => new Promise(() => {}),
   strategicBackgroundFetch() {},
@@ -25,7 +26,11 @@ const window = {
 };
 vm.runInNewContext(source, {
   window,
-  document: { documentElement: { style: { setProperty(name, value) { appliedStyles.set(name, value); } } }, querySelectorAll: () => [] },
+  document: {
+    documentElement: { style: { setProperty(name, value) { appliedStyles.set(name, value); } } },
+    querySelectorAll: () => [],
+    addEventListener() {},
+  },
   Promise,
 });
 
@@ -61,7 +66,7 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
   assert.match(layoutCss, /\.settlement-services \{[\s\S]*align-items: flex-end/);
   assert.match(baseCss, /--building-interactive:color-mix/);
   assert.match(strategicCss, /\.trade-inventory-row \{[\s\S]*background: var\(--building-interactive\)/);
-  assert.match(strategicCss, /\.main-grid \.btn:not\(\.btn-danger\)[\s\S]*background: var\(--building-interactive\)/);
+  assert.match(strategicCss, /\.main-grid \.btn:not\(\.btn-danger, \.btn-primary, \.btn-secondary\)[\s\S]*--tactile-face: var\(--building-interactive\)[\s\S]*background: var\(--tactile-background\)/);
 });
 
 test("continuous environment tokens cover night, dawn, noon, sunset, and twilight", () => {
@@ -89,7 +94,7 @@ test("continuous environment tokens cover night, dawn, noon, sunset, and twiligh
 });
 
 test("environmental map treatment is scoped away from semantic overlays and controls", () => {
-  assert.match(strategicCss, /\.map-tile-layer image \{ filter: brightness\(var\(--map-light/);
+  assert.match(strategicCss, /\.map-tile-layer \{[^}]*filter: brightness\(var\(--map-light/);
   assert.match(strategicCss, /\.map-atmosphere-layer \{[^}]*var\(--environment-tint/);
   assert.doesNotMatch(strategicCss, /\.map-overlay-layer[^}]*filter:/);
   assert.doesNotMatch(strategicCss, /\.strategic-map-control[^}]*--map-light/);
@@ -140,7 +145,7 @@ test("settlement tabs layer tiered tintable buildings and proportional horizons 
   for (const icon of ["travel", "market", "weapons", "armor", "clothing", "herbalist", "inn"]) {
     assert.match(layoutCss, new RegExp(`settlement-services/${icon}\\.png`));
   }
-  assert.match(buildingSource, /"clothing", "herbalist", "inn"/);
+  assert.match(layoutTemplate, /"clothing" \| "herbalist" \| "books" \| "inn"/);
 });
 
 test("settlement smithies and wilderness tabs use independent non-interactive effect layers", () => {
@@ -295,5 +300,5 @@ test("rest duration radios use a bounded accessible hiding technique", () => {
 test("building state is re-applied when live regions replace party links", () => {
   assert.match(buildingSource, /new MutationObserver/);
   assert.match(buildingSource, /mutation\.addedNodes/);
-  assert.match(buildingSource, /syncPartyLinks\(node\)/);
+  assert.match(buildingSource, /syncPartyLinks\(node\.matches\("a\[href\], form\[action\]"\) \? node\.parentElement : node\)/);
 });

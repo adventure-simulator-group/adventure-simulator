@@ -139,7 +139,7 @@ test("provisioning preserves the exact planner state in a reusable return URL", 
 
 test("party provisioning reads and updates the active inventory pane", () => {
   const trade = fs.readFileSync(path.join(root, "static", "party-trade.js"), "utf8");
-  const template = fs.readFileSync(path.join(root, "src", "templates", "settlement.rs"), "utf8");
+  const template = readRustModuleSource(path.join(root, "src", "templates", "settlement", "mod.rs"));
   const strategic = readRustModuleSource(path.join(root, "..", "adventuresim-stdb-module", "src", "strategic", "mod.rs"));
   assert.match(trade, /\[data-inventory-pane\]:not\(\[hidden\]\)/);
   assert.match(template, /party-personal-currency/);
@@ -157,7 +157,7 @@ test("calendar labels preserve the canonical Monday-first week and 365-day year"
 
 test("planner source covers midnight chronology, hidden fatigue detail, config bounds, and live remount", () => {
   const source = fs.readFileSync(plannerPath, "utf8");
-  const template = fs.readFileSync(path.join(root, "src", "templates", "settlement.rs"), "utf8");
+  const template = readRustModuleSource(path.join(root, "src", "templates", "settlement", "mod.rs"));
   assert.match(source, /Math\.ceil\(departure \/ DAY\) \* DAY/);
   assert.match(source, /travel-midnight-tick/);
   assert.match(source, /travel-calendar-label/);
@@ -223,7 +223,7 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
 });
 
 test("camp renderer coalesces contiguous actual and forecast portions before deriving walking gaps", () => {
-  const template = fs.readFileSync(path.join(root, "src", "templates", "settlement.rs"), "utf8");
+  const template = readRustModuleSource(path.join(root, "src", "templates", "settlement", "mod.rs"));
   assert.match(template, /last\.movement_minute == camp\.movement_minute/);
   assert.match(template, /\*was_actual \|= actual/);
   assert.match(template, /\*was_forecast \|= forecast/);
@@ -245,7 +245,7 @@ test("authoritative travel guards stale sync, bounded legacy vectors, and termin
   assert.match(strategic, /plan_version == 0[\s\S]+reconstruct_legacy_journey_coordinates/);
   assert.match(
     strategic,
-    /prepare_party_waterskins\(ctx, &party_id, true\)[\s\S]+\.find\(&party_id\)[\s\S]+let\s+\((?:leg_minutes|requested_leg_minutes)/,
+    /prepare_party_waterskins\(ctx, &party_id, departing_settlement\)[\s\S]+\.find\(&party_id\)[\s\S]+let proposed_leg_minutes/,
     "quest departure reloads the party after filling shared waterskins before writing camp state",
   );
   assert.match(

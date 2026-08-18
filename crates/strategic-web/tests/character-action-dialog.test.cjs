@@ -29,12 +29,12 @@ test("encounter counterparties use durable characters and ordinary actions", () 
   assert.match(worldActors, /row\.active = false/);
   assert.match(encounters, /context_character_ids/);
   assert.doesNotMatch(encounters, /u64::MAX\.saturating_sub\(index\)/);
-  assert.match(surgery, /treatment_is_authorized/);
+  assert.equal((surgery.match(/contextual_treatment_decision/g) || []).length >= 2, true);
   assert.match(travel, /aria-label="Counterparty"/);
   assert.match(travel, /presentation\.cast/);
   assert.match(travel, /aria-label="Roadside characters"/);
-  assert.match(travel, /\{ "Talk" \}/);
-  assert.match(travel, /\{ "Bandage" \}/);
+  assert.match(travel, /\{ "Request" \}/);
+  assert.match(travel, /"Emergency treatment"[\s\S]*"Request treatment"/);
   assert.doesNotMatch(travel, /challenge\.actor_character_id/);
 });
 
