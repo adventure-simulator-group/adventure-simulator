@@ -2,8 +2,9 @@
 //!
 //! The proof of concept deliberately installs the complete tactical plugin
 //! graph and retains eager asset loading. This module supplies only the
-//! lifecycle seam: JavaScript queues commands, Bevy owns the one running
-//! world, and strategic preview entities are removed before tactical entry.
+//! lifecycle seam: JavaScript queues typed scene commands, Bevy owns the one
+//! running world, and scene-scoped entities are removed without recreating the
+//! Wasm application, WebGPU device, or persistent asset stores.
 
 use std::{
     collections::VecDeque,
@@ -38,10 +39,8 @@ pub(crate) enum BrowserMode {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum BrowserCommand {
-    ShowForge {
-        #[serde(default = "default_catalog_id")]
-        catalog_id: String,
-        design_json: Option<String>,
+    ShowStrategicScene {
+        scene: StrategicScene,
     },
     OrbitForge {
         delta_x: f32,
@@ -58,15 +57,25 @@ enum BrowserCommand {
     ExitTactical,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum StrategicScene {
+    Forge {
+        #[serde(default = "default_catalog_id")]
+        catalog_id: String,
+        design_json: Option<String>,
+    },
+}
+
 fn default_catalog_id() -> String {
     "longsword".into()
 }
 
 #[derive(Component)]
-struct StrategicPreview;
+struct StrategicSceneEntity;
 
 #[derive(Component)]
-struct StrategicPreviewRoot;
+struct StrategicSceneRoot;
 
 #[derive(Resource)]
 struct ForgePreviewView {
@@ -139,15 +148,15 @@ fn drain_browser_commands(
     mut mode: ResMut<BrowserMode>,
     mut args: ResMut<Args>,
     mut local_character: ResMut<LocalCharacterId>,
-    previews: Query<Entity, With<StrategicPreview>>,
+    scene_entities: Query<Entity, With<StrategicSceneEntity>>,
     clients: Query<Entity, With<AdventureSimulatorClient>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cameras: Query<
         (&mut Transform, &mut Exposure),
-        (With<Camera3d>, Without<StrategicPreviewRoot>),
+        (With<Camera3d>, Without<StrategicSceneRoot>),
     >,
-    mut preview_roots: Query<&mut Transform, (With<StrategicPreviewRoot>, Without<Camera3d>)>,
+    mut scene_roots: Query<&mut Transform, (With<StrategicSceneRoot>, Without<Camera3d>)>,
     mut preview_view: ResMut<ForgePreviewView>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
@@ -159,48 +168,50 @@ fn drain_browser_commands(
 
     for command in pending {
         match command {
-            BrowserCommand::ShowForge {
-                catalog_id,
-                design_json,
-            } => {
+            BrowserCommand::ShowStrategicScene { scene } => {
                 *mode = BrowserMode::Strategic;
-                despawn_previews(&mut commands, &previews);
+                despawn_strategic_scene(&mut commands, &scene_entities);
                 for (mut camera, mut exposure) in &mut cameras {
                     *camera = Transform::IDENTITY.looking_to(Vec3::NEG_Z, Vec3::Y);
                     exposure.ev100 = 8.0;
                 }
                 ambient.color = Color::srgb(0.95, 0.82, 0.66);
                 ambient.brightness = 1_200.0;
-                spawn_forge_preview(
-                    &mut commands,
-                    &mut meshes,
-                    &mut materials,
-                    &catalog_id,
-                    design_json.as_deref(),
-                    &preview_view,
-                );
+                match scene {
+                    StrategicScene::Forge {
+                        catalog_id,
+                        design_json,
+                    } => spawn_forge_scene(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        &catalog_id,
+                        design_json.as_deref(),
+                        &preview_view,
+                    ),
+                }
             }
             BrowserCommand::OrbitForge { delta_x, delta_y } => {
                 preview_view.orbit(delta_x, delta_y);
-                for mut root in &mut preview_roots {
+                for mut root in &mut scene_roots {
                     apply_preview_view(&preview_view, &mut root);
                 }
             }
             BrowserCommand::ZoomForge { delta } => {
                 preview_view.zoom(delta);
-                for mut root in &mut preview_roots {
+                for mut root in &mut scene_roots {
                     apply_preview_view(&preview_view, &mut root);
                 }
             }
             BrowserCommand::HideStrategicScene => {
-                despawn_previews(&mut commands, &previews);
+                despawn_strategic_scene(&mut commands, &scene_entities);
                 *preview_view = ForgePreviewView::default();
             }
             BrowserCommand::EnterTactical {
                 server_addr,
                 character_id,
             } => {
-                despawn_previews(&mut commands, &previews);
+                despawn_strategic_scene(&mut commands, &scene_entities);
                 for (_, mut exposure) in &mut cameras {
                     *exposure = Exposure::SUNLIGHT;
                 }
@@ -227,13 +238,16 @@ fn drain_browser_commands(
     }
 }
 
-fn despawn_previews(commands: &mut Commands, previews: &Query<Entity, With<StrategicPreview>>) {
-    for entity in previews {
+fn despawn_strategic_scene(
+    commands: &mut Commands,
+    scene_entities: &Query<Entity, With<StrategicSceneEntity>>,
+) {
+    for entity in scene_entities {
         commands.entity(entity).despawn();
     }
 }
 
-fn spawn_forge_preview(
+fn spawn_forge_scene(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
@@ -266,8 +280,8 @@ fn spawn_forge_preview(
     let root = commands
         .spawn((
             Name::new("Strategic forge weapon preview"),
-            StrategicPreview,
-            StrategicPreviewRoot,
+            StrategicSceneEntity,
+            StrategicSceneRoot,
             preview_transform(view, scale),
         ))
         .id();
@@ -291,7 +305,7 @@ fn spawn_forge_preview(
 
     commands.spawn((
         Name::new("Strategic forge preview light"),
-        StrategicPreview,
+        StrategicSceneEntity,
         DirectionalLight {
             illuminance: 60_000.0,
             shadow_maps_enabled: false,
@@ -302,7 +316,7 @@ fn spawn_forge_preview(
 
     commands.spawn((
         Name::new("Strategic forge preview fill light"),
-        StrategicPreview,
+        StrategicSceneEntity,
         PointLight {
             intensity: 12_000.0,
             range: 8.0,
@@ -405,10 +419,15 @@ mod tests {
 
     #[test]
     fn browser_commands_are_closed_and_typed() {
-        let forge: BrowserCommand = serde_json::from_str(r#"{"type":"show-forge"}"#).unwrap();
-        assert!(
-            matches!(forge, BrowserCommand::ShowForge { catalog_id, .. } if catalog_id == "longsword")
-        );
+        let forge: BrowserCommand =
+            serde_json::from_str(r#"{"type":"show-strategic-scene","scene":{"type":"forge"}}"#)
+                .unwrap();
+        assert!(matches!(
+            forge,
+            BrowserCommand::ShowStrategicScene {
+                scene: StrategicScene::Forge { catalog_id, .. }
+            } if catalog_id == "longsword"
+        ));
         assert!(serde_json::from_str::<BrowserCommand>(r#"{"type":"unknown"}"#).is_err());
         assert!(matches!(
             serde_json::from_str::<BrowserCommand>(

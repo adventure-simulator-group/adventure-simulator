@@ -2786,14 +2786,17 @@ body.character-action-dialog-open { overflow: hidden; }
 
 #strategic-render-surface {
   position: fixed;
-  z-index: 2;
+  z-index: 0;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   background: var(--bg-primary);
   pointer-events: none;
 }
 
-#strategic-render-surface[hidden] { display: none; }
 #strategic-render-surface canvas { display: block; width: 100%; height: 100%; }
+#strategic-page { position: relative; z-index: 1; }
 .forge-description-stage[data-renderer-ready] > * { visibility: hidden; }
 
 .settlement-main:has(.forge-description-stage) {

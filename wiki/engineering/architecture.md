@@ -222,10 +222,13 @@ content. The forge editor uses this seam so periodic authority updates neither
 discard its local recipe nor collapse its scroll geometry.
 
 Strategic pages may also host the browser tactical client's Bevy renderer. A
-single document-scoped canvas sits outside `#strategic-page`, so soft navigation
-does not replace its WebGPU context. The proof-of-concept runtime installs the
-complete tactical plugin graph and eagerly loads its assets, then accepts typed
-commands for strategic forge previews or an in-process tactical connection.
+single fullscreen, document-scoped canvas sits behind and outside
+`#strategic-page`, so soft navigation does not replace its WebGPU context. The
+runtime installs the complete tactical plugin graph and eagerly loads its
+assets, then accepts typed strategic-scene commands or an in-process tactical
+connection. Scene-scoped entities are replaced while the Bevy application,
+Wasm instance, WebGPU device, and asset stores remain alive. The forge is the
+first strategic scene using this protocol.
 Strategic smithing remains an authoritative SpacetimeDB transaction: the canvas
 previews a recipe, while the reducer validates the complete canonical recipe
 against the melee catalog, the character's location, and the advertised smithing
