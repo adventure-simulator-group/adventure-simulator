@@ -7,7 +7,10 @@ use super::{
     trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
 use crate::spacetimedb::{Character, FoodLot, InventoryItem};
-use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, sidebar_section};
+use crate::templates::{
+    SceneInteractableKind, SceneInteractableLink, decorative_game_icon, item_display_name,
+    item_type_icon, scene_interactable_link, sidebar_section,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct SocialPresentation {
@@ -521,35 +524,65 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
     }
 }
 
+/// Presentation projection of the non-character interactables available at a
+/// settlement location. This is deliberately separate from the NPC loader so
+/// templates cannot accidentally infer fixtures from the people present.
+struct LocationFixture {
+    kind: SceneInteractableKind,
+    visual_modifier: &'static str,
+    label: &'static str,
+    aria_label: &'static str,
+    icon: &'static str,
+    action_label: &'static str,
+    href: String,
+}
+
+fn location_fixtures(
+    settlement_id: &str,
+    location_id: &str,
+    organization_service: Option<&str>,
+) -> Vec<LocationFixture> {
+    let mut fixtures = Vec::new();
+    if !matches!(location_id, "overview" | "public-square" | "map") {
+        fixtures.push(LocationFixture {
+            kind: SceneInteractableKind::Fixture,
+            visual_modifier: "fireplace-portrait",
+            label: "Fireplace",
+            aria_label: "Cook at fireplace",
+            icon: "campfire",
+            action_label: "Cook",
+            href: format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"),
+        });
+    }
+    if organization_service == Some("weapons") {
+        fixtures.push(LocationFixture {
+            // The forge currently has no independent physical state. It is an
+            // entry point into the weapons service, not a fake fixture record.
+            kind: SceneInteractableKind::Service,
+            visual_modifier: "forge-portrait",
+            label: "Forge",
+            aria_label: "Forge a weapon",
+            icon: "anvil",
+            action_label: "Forge",
+            href: format!("/settlements/{settlement_id}/weapons"),
+        });
+    }
+    fixtures
+}
+
 pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Markup {
     let organization_service =
         adventuresim_core::organization::organization_chapter_at(settlement_id, location_id)
             .and_then(|(organization, _)| organization.service_id.as_deref());
     html! {
-        nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
+        nav class="scene-interactable-strip" aria-label="People and things here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
-            @if !matches!(location_id, "overview" | "public-square" | "map") {
-                a class="npc-portrait fireplace-portrait"
-                    href=(format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"))
-                    data-location-fixture
-                    aria-label="Cook at fireplace" title="Cook at fireplace" {
-                    span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
-                        (decorative_game_icon("campfire"))
-                    }
-                    span class="npc-portrait-name" { "Fireplace" }
-                    span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
-                }
-            }
-            @if organization_service == Some("weapons") {
-                a class="npc-portrait forge-portrait"
-                    href=(format!("/settlements/{settlement_id}/weapons"))
-                    data-location-fixture
-                    aria-label="Forge a weapon" title="Forge a weapon" {
-                    span class="npc-portrait-image forge-portrait-image" aria-hidden="true" {
-                        (decorative_game_icon("anvil"))
-                    }
-                    span class="npc-portrait-name" { "Forge" }
-                    span class="btn btn-secondary btn-small" aria-hidden="true" { "Forge" }
+            @for fixture in location_fixtures(settlement_id, location_id, organization_service) {
+                span data-location-fixture {
+                    (scene_interactable_link(SceneInteractableLink {
+                        kind: fixture.kind, visual_modifier: Some(fixture.visual_modifier), href: &fixture.href, label: fixture.label,
+                        aria_label: fixture.aria_label, icon: fixture.icon, action_label: Some(fixture.action_label),
+                    }))
                 }
             }
             span class="text-muted" data-npc-loading { "Finding the people here…" }
@@ -1208,6 +1241,22 @@ mod tests {
 
         let unrelated = npc_portrait_strip("viabundus-0", "residences").into_string();
         assert!(!unrelated.contains("Forge a weapon"));
+    }
+
+    #[test]
+    fn location_fixture_projection_keeps_people_and_things_independent() {
+        let ordinary = location_fixtures("lubeck", "market", None);
+        assert_eq!(ordinary.len(), 1);
+        assert_eq!(ordinary[0].label, "Fireplace");
+        assert_eq!(ordinary[0].kind, SceneInteractableKind::Fixture);
+
+        let weapons =
+            location_fixtures("lubeck", "organization-weaponsmith-guild", Some("weapons"));
+        assert_eq!(weapons.len(), 2);
+        assert_eq!(weapons[1].label, "Forge");
+        assert_eq!(weapons[1].kind, SceneInteractableKind::Service);
+
+        assert!(location_fixtures("lubeck", "public-square", None).is_empty());
     }
 
     #[test]
