@@ -7,7 +7,7 @@ use super::{
     trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
 use crate::spacetimedb::{Character, FoodLot, InventoryItem};
-use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, sidebar_section};
+use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, scene_interactable_link, sidebar_section, SceneInteractableLink};
 
 #[derive(Debug, Clone, Default)]
 pub struct SocialPresentation {
@@ -529,27 +529,19 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
         nav class="scene-interactable-strip" aria-label="People and things here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
             @if !matches!(location_id, "overview" | "public-square" | "map") {
-                a class="scene-interactable scene-interactable--fixture fireplace-portrait"
-                    href=(format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"))
-                    data-location-fixture
-                    aria-label="Cook at fireplace" title="Cook at fireplace" {
-                    span class="scene-interactable-visual fireplace-portrait-image" aria-hidden="true" {
-                        (decorative_game_icon("campfire"))
-                    }
-                    span class="scene-interactable-label" { "Fireplace" }
-                    span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
+                span data-location-fixture {
+                    (scene_interactable_link(SceneInteractableLink {
+                        kind: "fixture fireplace-portrait", href: &format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"),
+                        label: "Fireplace", aria_label: "Cook at fireplace", icon: "campfire", action_label: Some("Cook"),
+                    }))
                 }
             }
             @if organization_service == Some("weapons") {
-                a class="scene-interactable scene-interactable--fixture forge-portrait"
-                    href=(format!("/settlements/{settlement_id}/weapons"))
-                    data-location-fixture
-                    aria-label="Forge a weapon" title="Forge a weapon" {
-                    span class="scene-interactable-visual forge-portrait-image" aria-hidden="true" {
-                        (decorative_game_icon("anvil"))
-                    }
-                    span class="scene-interactable-label" { "Forge" }
-                    span class="btn btn-secondary btn-small" aria-hidden="true" { "Forge" }
+                span data-location-fixture {
+                    (scene_interactable_link(SceneInteractableLink {
+                        kind: "fixture forge-portrait", href: &format!("/settlements/{settlement_id}/weapons"),
+                        label: "Forge", aria_label: "Forge a weapon", icon: "anvil", action_label: Some("Forge"),
+                    }))
                 }
             }
             span class="text-muted" data-npc-loading { "Finding the people here…" }

@@ -71,6 +71,33 @@ pub fn decorative_game_icon(icon: &str) -> Markup {
     }
 }
 
+/// A compact, neutral scene card for a non-character subject with a single
+/// navigational action. Characters keep their own richer action overlays.
+pub struct SceneInteractableLink<'a> {
+    pub kind: &'a str,
+    pub href: &'a str,
+    pub label: &'a str,
+    pub aria_label: &'a str,
+    pub icon: &'a str,
+    pub action_label: Option<&'a str>,
+}
+
+pub fn scene_interactable_link(view: SceneInteractableLink<'_>) -> Markup {
+    let action_label = view.action_label;
+    html! {
+        a class=(format!("scene-interactable scene-interactable--{}", view.kind))
+            href=(view.href) aria-label=(view.aria_label) title=(view.aria_label) {
+            span class="scene-interactable-visual" aria-hidden="true" {
+                (decorative_game_icon(view.icon))
+            }
+            span class="scene-interactable-label" { (view.label) }
+            @if let Some(action_label) = action_label {
+                span class="btn btn-secondary btn-small" aria-hidden="true" { (action_label) }
+            }
+        }
+    }
+}
+
 /// Exact icon name for a seeded item. Unknown/modded items get a real fallback
 /// asset rather than a URL derived from untrusted data.
 pub fn item_icon_name(item_id: &str) -> &'static str {

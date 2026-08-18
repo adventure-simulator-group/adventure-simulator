@@ -2439,7 +2439,8 @@ body.character-action-dialog-open { overflow: hidden; }
     outline-offset: 3px;
 }
 
-.fireplace-portrait-image {
+.fireplace-portrait-image,
+.fireplace-portrait .scene-interactable-visual {
     display: grid;
     place-items: center;
     width: 3.5rem;
@@ -2448,7 +2449,8 @@ body.character-action-dialog-open { overflow: hidden; }
     background: radial-gradient(circle, #f6bb58 0 20%, #9d472d 55%, #33231d 100%);
 }
 
-.forge-portrait-image {
+.forge-portrait-image,
+.forge-portrait .scene-interactable-visual {
     display: grid;
     place-items: center;
     width: 3.5rem;
