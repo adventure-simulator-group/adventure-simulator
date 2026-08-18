@@ -563,7 +563,7 @@ fn ensure_tree_assets_resident(
     images: &mut Assets<Image>,
     diagnostics: &mut TreeAssetResidencyDiagnostics,
 ) {
-    let started = std::time::Instant::now();
+    let started = web_time::Instant::now();
     if mask & 1 != 0 && cached.trunk_mesh.is_none() {
         let mesh = match cached.species {
             TreePresentationSpecies::EnglishOak => procedural_tree_branch_mesh(&cached.branches, 0),
@@ -814,7 +814,7 @@ pub(in crate::presentation) fn present_pending_trees(
     let competition = canopy_competition(environment.canopy_bps);
     let site_key = oak_site_key(environment);
     for (entity, transform) in &pending {
-        let started = std::time::Instant::now();
+        let started = web_time::Instant::now();
         info!("Generating playable tactical tree presentation");
         let seed = obstacle_seed(transform.translation);
         let species = tree_species_for_site(transform.translation, environment);

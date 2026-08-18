@@ -72,7 +72,7 @@ pub(super) fn on_scene_vista_bundle(
     mut images: ResMut<Assets<Image>>,
     mut vista_tree_cache: ResMut<VistaTreePresentationCache>,
 ) {
-    let started = std::time::Instant::now();
+    let started = web_time::Instant::now();
     let mut presented_chunk_count = 0_usize;
     info!("Generating tactical vista presentation");
     *active_surface = ActiveVistaSurface {

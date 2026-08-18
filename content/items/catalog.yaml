@@ -2,6 +2,46 @@
   "schema_version": 1,
   "items": [
     {
+      "id": "steel_stock",
+      "display_name": "Steel stock",
+      "weight_kg": 5.0,
+      "exterior_volume_ml": 130,
+      "base_value": 18,
+      "tags": ["ingredient", "smithing_material", "metal", "steel"],
+      "presentation": {"icon": "anvil"},
+      "kind": "ingredient"
+    },
+    {
+      "id": "leather_stock",
+      "display_name": "Leather stock",
+      "weight_kg": 2.0,
+      "exterior_volume_ml": 1100,
+      "base_value": 10,
+      "tags": ["ingredient", "smithing_material", "leather"],
+      "presentation": {"icon": "knapsack"},
+      "kind": "ingredient"
+    },
+    {
+      "id": "brass_stock",
+      "display_name": "Brass stock",
+      "weight_kg": 2.0,
+      "exterior_volume_ml": 120,
+      "base_value": 24,
+      "tags": ["ingredient", "smithing_material", "metal", "brass"],
+      "presentation": {"icon": "anvil"},
+      "kind": "ingredient"
+    },
+    {
+      "id": "wood_stock",
+      "display_name": "Seasoned wood stock",
+      "weight_kg": 4.0,
+      "exterior_volume_ml": 1400,
+      "base_value": 4,
+      "tags": ["ingredient", "smithing_material", "wood"],
+      "presentation": {"icon": "wood-club"},
+      "kind": "ingredient"
+    },
+    {
       "id": "glass_bottle",
       "display_name": "Glass bottle",
       "weight_kg": 0.2,

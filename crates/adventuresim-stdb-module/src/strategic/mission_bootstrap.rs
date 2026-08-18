@@ -627,7 +627,10 @@ pub fn seed_standalone_tactical_mission(
                 .character_time()
                 .character_id()
                 .find(character_id)
-                .map_or(adventuresim_core::strategic_time::WORLD_START_MINUTE, |time| time.minutes),
+                .map_or(
+                    adventuresim_core::strategic_time::WORLD_START_MINUTE,
+                    |time| time.minutes,
+                ),
             expected_party_members,
             authorized_party_member_ids,
             required_enemy_kills,
@@ -849,7 +852,15 @@ pub(crate) fn seed_world(
                         adventuresim_world_schema::FallbackIndustry::WoodlandFuelwood,
                     ),
                 ]).unwrap(),
-                economy: SettlementEconomyProfile::stage_placeholder(),
+                economy: {
+                    let mut economy = SettlementEconomyProfile::stage_placeholder();
+                    if id == "ironforge" {
+                        economy
+                            .services
+                            .push(adventuresim_world_schema::SettlementService::Weaponsmith);
+                    }
+                    economy
+                },
                 scene_key: scene.into(),
                 religion_id: religious_status.church().religion_id().into(),
                 currency_id: crate::item::settlement_currency_id(id).into(),
@@ -1038,7 +1049,9 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
                     .settlement_resident_presence()
                     .character_id()
                     .find(npc.character_id)
-                    .filter(|presence| crate::settlement_population::npc_is_present(ctx, presence, now))
+                    .filter(|presence| {
+                        crate::settlement_population::npc_is_present(ctx, presence, now)
+                    })
                     .map(|presence| (npc, presence))
             })
             .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.character_id))
@@ -1147,7 +1160,7 @@ fn generated_witness_candidates(
 ) -> Vec<adventuresim_core::quest_generation::WitnessCandidate> {
     use adventuresim_core::{
         quest_generation::{
-            retain_navigable_witnesses, Circumstance, WitnessCandidate, WitnessDemographic,
+            Circumstance, WitnessCandidate, WitnessDemographic, retain_navigable_witnesses,
         },
         settlement_economy::player_visible_npc_tabs,
     };
@@ -1265,7 +1278,7 @@ pub(crate) fn developer_npc_witness_candidate(
     presence: &crate::settlement_population::SettlementResidentPresence,
 ) -> Option<adventuresim_core::quest_generation::WitnessCandidate> {
     use adventuresim_core::quest_generation::{
-        visible_witness_candidate, VisibleWitnessCandidateInput,
+        VisibleWitnessCandidateInput, visible_witness_candidate,
     };
     let age_band = format!("{:?}", npc.age_band);
     let presentation = format!("{:?}", npc.presentation);
@@ -1456,7 +1469,10 @@ fn materialize_preferred_generated_fixture(
         .is_none()
     {
         qg::validate(&generated).map_err(|errors| {
-            format!("Development quest fixture manifest is invalid: {}", errors.join("; "))
+            format!(
+                "Development quest fixture manifest is invalid: {}",
+                errors.join("; ")
+            )
         })?;
         let fixture_site_distance_m = preferred_fixture_site_distance_m(family);
         materialize_generated_quest(
@@ -1626,7 +1642,13 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<String,
         .filter(character_id)
         .find(|row| row.item_id == "cooking_pot")
         .ok_or("Outbreak demo cooking pot was not materialized")?;
-    crate::inventory_container::ensure_object(ctx, character_id, "personal", cooking_pot.id, false)?;
+    crate::inventory_container::ensure_object(
+        ctx,
+        character_id,
+        "personal",
+        cooking_pot.id,
+        false,
+    )?;
 
     materialize_preferred_generated_fixture(
         ctx,
@@ -2349,9 +2371,7 @@ mod developer_quest_source_tests {
             .next()
             .unwrap();
         assert!(
-            bootstrap
-                .find("seed_world(ctx, true)")
-                .unwrap()
+            bootstrap.find("seed_world(ctx, true)").unwrap()
                 < bootstrap.find("seed_social_demo(ctx)").unwrap()
         );
         assert!(
@@ -2442,7 +2462,7 @@ mod developer_quest_source_tests {
             SettlementResidentProfile,
         };
         use adventuresim_core::quest_generation::{
-            visible_witness_candidate, VisibleWitnessCandidateInput,
+            VisibleWitnessCandidateInput, visible_witness_candidate,
         };
 
         let presence = SettlementResidentPresence {

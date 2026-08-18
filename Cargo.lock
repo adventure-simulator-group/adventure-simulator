@@ -200,6 +200,7 @@ dependencies = [
  "tracing-tracy",
  "tracy-client-sys",
  "wasm-bindgen",
+ "web-time",
 ]
 
 [[package]]
@@ -285,6 +286,7 @@ version = "0.1.0"
 dependencies = [
  "postcard",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror 2.0.20",
  "tiny-skia",

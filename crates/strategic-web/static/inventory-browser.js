@@ -770,9 +770,10 @@
 
   async function postContainer(path, values) {
     const body = new URLSearchParams(values);
-    const response = await global.fetch(path, { method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
-    if (!response.ok) throw new Error(await response.text());
-    global.location.reload();
+    await global.strategicSubmitMutation(path, {
+      body,
+      originPage: document.querySelector("#strategic-page"),
+    });
   }
 
   function openContainer(browser, button) {

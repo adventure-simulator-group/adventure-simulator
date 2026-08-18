@@ -126,12 +126,10 @@ pub fn icon_layout(design: &WeaponDesign) -> WeaponIconLayout {
         .components
         .iter()
         .any(|component| component.role == ComponentRole::Guard);
-    let has_sword_blade = design.components.iter().any(|component| {
-        matches!(
-            component.shape,
-            ComponentShape::Blade(_) | ComponentShape::SectionBlade(_)
-        )
-    });
+    let has_sword_blade = design
+        .components
+        .iter()
+        .any(|component| matches!(component.shape, ComponentShape::Blade(_)));
     if has_guard && has_sword_blade {
         WeaponIconLayout::HiltFocus
     } else {

@@ -2371,7 +2371,8 @@ body.character-action-dialog-open { overflow: hidden; }
   pointer-events: auto;
 }
 
-.fireplace-portrait {
+.fireplace-portrait,
+.forge-portrait {
     display: inline-flex;
     flex-direction: column;
     align-items: center;
@@ -2385,7 +2386,8 @@ body.character-action-dialog-open { overflow: hidden; }
     display: contents;
 }
 
-.fireplace-portrait:focus-visible {
+.fireplace-portrait:focus-visible,
+.forge-portrait:focus-visible {
     outline: 2px solid var(--accent, #d4a85f);
     outline-offset: 3px;
 }
@@ -2397,6 +2399,15 @@ body.character-action-dialog-open { overflow: hidden; }
     height: 3.5rem;
     border-radius: 50%;
     background: radial-gradient(circle, #f6bb58 0 20%, #9d472d 55%, #33231d 100%);
+}
+
+.forge-portrait-image {
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    background: radial-gradient(circle, #efc16b 0 18%, #8f5b2d 52%, #2c2118 100%);
 }
 
 .fireplace-rest-menu output {
@@ -2723,6 +2734,46 @@ body.character-action-dialog-open { overflow: hidden; }
 .npc-description-stage > * { max-width: min(42rem, 100%); }
 .npc-description-stage h2,
 .npc-description-stage p { margin-right: auto; margin-left: auto; text-align: center; }
+
+#strategic-render-surface {
+  position: fixed;
+  z-index: 2;
+  overflow: hidden;
+  background: var(--bg-primary);
+  pointer-events: none;
+}
+
+#strategic-render-surface[hidden] { display: none; }
+#strategic-render-surface canvas { display: block; width: 100%; height: 100%; }
+.forge-description-stage[data-renderer-ready] > * { visibility: hidden; }
+
+.settlement-main:has(.forge-description-stage) {
+  z-index: 3;
+  background: transparent;
+}
+
+body[data-tactical-active] #strategic-render-surface {
+  z-index: 2000;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  pointer-events: auto;
+}
+
+body[data-tactical-active] #strategic-page { visibility: hidden; }
+
+.forge-customization form { display: grid; gap: .55rem; }
+.forge-customization label { display: flex; justify-content: space-between; gap: .5rem; }
+.forge-customization input[type="range"] { width: 100%; }
+.forge-recipe-editor { display: grid; max-height: 42vh; gap: .35rem; overflow: auto; }
+.forge-recipe-editor details { border: 1px solid var(--border-light); padding: .35rem; }
+.forge-recipe-editor summary { cursor: pointer; font-weight: 700; }
+.forge-recipe-editor details label { margin-top: .35rem; font-size: .78rem; }
+.forge-material-staging { display: grid; gap: .25rem; margin: .3rem 0; }
+.forge-material-staging div { display: flex; justify-content: space-between; }
+.forge-material-staging dt, .forge-material-staging dd { margin: 0; }
+.forge-submit-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.repair-custody-panel[hidden] { display: none; }
 
 .party-portrait {
   position: relative;

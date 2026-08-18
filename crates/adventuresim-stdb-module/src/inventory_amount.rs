@@ -7,6 +7,9 @@ use crate::{inventory_item, party_inventory_item};
 
 pub use adventuresim_core::inventory_measurement::FULL_AMOUNT_MILLIUNITS;
 
+pub const SMITHING_MATERIAL_IDS: [&str; 4] =
+    ["steel_stock", "leather_stock", "brass_stock", "wood_stock"];
+
 #[derive(Clone, Debug)]
 #[table(accessor = inventory_item_amount, public)]
 pub struct InventoryItemAmount {
@@ -27,6 +30,7 @@ pub fn is_measured_definition(definition: &crate::Item) -> bool {
     definition.kind == crate::ItemKind::Food
         || definition.alcohol_serving_ml > 0
         || definition.id == crate::filth::SOAP_ITEM_ID
+        || SMITHING_MATERIAL_IDS.contains(&definition.id.as_str())
 }
 
 pub fn is_measured_item(ctx: &ReducerContext, item_id: &str) -> bool {
@@ -200,10 +204,15 @@ mod tests {
             kind: crate::ItemKind::Weapon,
             ..crate::Item::default()
         };
+        let steel = crate::Item {
+            id: "steel_stock".into(),
+            ..crate::Item::default()
+        };
 
         assert!(is_measured_definition(&food));
         assert!(is_measured_definition(&alcohol));
         assert!(is_measured_definition(&soap));
         assert!(!is_measured_definition(&sword));
+        assert!(is_measured_definition(&steel));
     }
 }

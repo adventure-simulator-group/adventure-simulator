@@ -50,14 +50,20 @@ enum IconSource {
 static ICON_CACHE: OnceLock<Mutex<HashMap<CacheKey, Vec<u8>>>> = OnceLock::new();
 
 pub(super) fn routes() -> Router<AppState> {
-    Router::new().route("/api/weapon-icons/{scope}/{row_id}.png", get(weapon_icon))
+    Router::new().route("/api/weapon-icons/{scope}/{filename}", get(weapon_icon))
 }
 
 async fn weapon_icon(
     State(state): State<AppState>,
     session: Session,
-    Path((scope, row_id)): Path<(String, u64)>,
+    Path((scope, filename)): Path<(String, String)>,
 ) -> Response {
+    let Some(row_id) = filename
+        .strip_suffix(".png")
+        .and_then(|value| value.parse::<u64>().ok())
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
     if !matches!(scope.as_str(), "personal" | "party") || row_id == 0 {
         return StatusCode::NOT_FOUND.into_response();
     }

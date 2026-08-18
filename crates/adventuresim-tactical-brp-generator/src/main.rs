@@ -44,7 +44,11 @@ fn main() {
         // `ReflectResource` doesn't currently occur in practice -
         // `Component` is an arbitrary but harmless choice for it if it
         // ever does.
-        let kind = if has_component { StructKind::Component } else { StructKind::Resource };
+        let kind = if has_component {
+            StructKind::Component
+        } else {
+            StructKind::Resource
+        };
         let type_info = registration.type_info();
         resolver.resolve_top_level(type_info.type_path(), type_info, kind);
     }

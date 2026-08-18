@@ -62,10 +62,10 @@ const ENTITY_TYPE: &str = "bevy_ecs::entity::Entity";
 /// distinct wire key (`"global"`) from its Python attribute/parameter name
 /// (`global_`).
 const PYTHON_KEYWORDS: &[&str] = &[
-    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
-    "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
-    "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
-    "try", "while", "with", "yield",
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue",
+    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import",
+    "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
+    "with", "yield",
 ];
 
 /// The Python identifier used for a field named `name` in code (attribute
@@ -74,7 +74,11 @@ const PYTHON_KEYWORDS: &[&str] = &[
 /// underscore disambiguates it. The *wire* key (dict key / `data[...]`
 /// subscript) always stays the original `name`.
 pub fn python_ident(name: &str) -> String {
-    if PYTHON_KEYWORDS.contains(&name) { format!("{name}_") } else { name.to_string() }
+    if PYTHON_KEYWORDS.contains(&name) {
+        format!("{name}_")
+    } else {
+        name.to_string()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -98,9 +102,15 @@ pub enum Encoding {
     Any(String),
     /// One of the hardcoded glam vector types - `list[float]`/`list[int]`
     /// with a known length, never a class.
-    GlamList { len: usize, ints: bool },
+    GlamList {
+        len: usize,
+        ints: bool,
+    },
     /// A `Vec<T>` (`len: None`) or fixed-size `[T; N]` (`len: Some(N)`).
-    ListLike { elem: Box<Encoding>, len: Option<usize> },
+    ListLike {
+        elem: Box<Encoding>,
+        len: Option<usize>,
+    },
     /// `Option<T>` - `None` or a bare `T` on the wire.
     OptionOf(Box<Encoding>),
     /// A reference to a memoized, separately-defined class (Struct-shaped,
@@ -276,12 +286,20 @@ pub struct Resolver {
 
 impl Resolver {
     pub fn new() -> Self {
-        Self { classes: BTreeMap::new(), names_used: HashMap::new() }
+        Self {
+            classes: BTreeMap::new(),
+            names_used: HashMap::new(),
+        }
     }
 
     /// Entry point for a type discovered directly in the `AppTypeRegistry`
     /// via `ReflectComponent`/`ReflectResource` type data.
-    pub fn resolve_top_level(&mut self, type_path: &str, type_info: &'static TypeInfo, kind: StructKind) {
+    pub fn resolve_top_level(
+        &mut self,
+        type_path: &str,
+        type_info: &'static TypeInfo,
+        kind: StructKind,
+    ) {
         self.get_or_create(type_path, Some(type_info), Some(kind));
     }
 
@@ -304,7 +322,9 @@ impl Resolver {
             return existing.class_name.clone();
         }
 
-        let short_path = type_info.map(|ti| ti.type_path_table().short_path()).unwrap_or(type_path);
+        let short_path = type_info
+            .map(|ti| ti.type_path_table().short_path())
+            .unwrap_or(type_path);
         let class_name = self.reserve_name(short_path);
 
         // Insert a placeholder before recursing so a self-referential type
@@ -342,21 +362,38 @@ impl Resolver {
     }
 
     fn reserve_name(&mut self, short_path: &str) -> String {
-        let clean: String = short_path.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        let clean: String = short_path
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
         let count = self.names_used.entry(clean.clone()).or_insert(0);
         *count += 1;
-        if *count == 1 { clean } else { format!("{clean}{}", *count) }
+        if *count == 1 {
+            clean
+        } else {
+            format!("{clean}{}", *count)
+        }
     }
 
     /// Resolves a single field's (or a top-level type's own) reflected
     /// type into its wire [`Encoding`]. See the module docs for the rules
     /// this applies, in priority order.
-    pub fn resolve_type(&mut self, type_info: Option<&'static TypeInfo>, type_path: &str) -> Encoding {
+    pub fn resolve_type(
+        &mut self,
+        type_info: Option<&'static TypeInfo>,
+        type_path: &str,
+    ) -> Encoding {
         if let Some((_, len)) = GLAM_FLOAT_TYPES.iter().find(|(path, _)| *path == type_path) {
-            return Encoding::GlamList { len: *len, ints: false };
+            return Encoding::GlamList {
+                len: *len,
+                ints: false,
+            };
         }
         if let Some((_, len)) = GLAM_INT_TYPES.iter().find(|(path, _)| *path == type_path) {
-            return Encoding::GlamList { len: *len, ints: true };
+            return Encoding::GlamList {
+                len: *len,
+                ints: true,
+            };
         }
         if type_path == "bool" {
             return Encoding::Bool;
@@ -388,7 +425,9 @@ impl Resolver {
 
         match type_info {
             None => Encoding::Any(type_path.to_string()),
-            Some(TypeInfo::Struct(_)) => Encoding::Class(self.get_or_create(type_path, type_info, None)),
+            Some(TypeInfo::Struct(_)) => {
+                Encoding::Class(self.get_or_create(type_path, type_info, None))
+            }
             Some(TypeInfo::TupleStruct(info)) => {
                 if info.field_len() == 1 {
                     let field = info.field_at(0).expect("field_len() == 1");
@@ -401,27 +440,42 @@ impl Resolver {
                 }
             }
             Some(TypeInfo::Enum(enum_info)) => {
-                if enum_info.iter().all(|variant| variant.variant_type() == VariantType::Unit) {
-                    Encoding::Literal(enum_info.iter().map(|variant| variant.name().to_string()).collect())
+                if enum_info
+                    .iter()
+                    .all(|variant| variant.variant_type() == VariantType::Unit)
+                {
+                    Encoding::Literal(
+                        enum_info
+                            .iter()
+                            .map(|variant| variant.name().to_string())
+                            .collect(),
+                    )
                 } else {
                     Encoding::Any(type_path.to_string())
                 }
             }
             Some(TypeInfo::List(info)) => {
                 let elem = self.resolve_type(info.item_info(), info.item_ty().path());
-                Encoding::ListLike { elem: Box::new(elem), len: None }
+                Encoding::ListLike {
+                    elem: Box::new(elem),
+                    len: None,
+                }
             }
             Some(TypeInfo::Array(info)) => {
                 let elem = self.resolve_type(info.item_info(), info.item_ty().path());
-                Encoding::ListLike { elem: Box::new(elem), len: Some(info.capacity()) }
+                Encoding::ListLike {
+                    elem: Box::new(elem),
+                    len: Some(info.capacity()),
+                }
             }
             // `Tuple` (bare unnamed tuples), `Map`, `Set`, and `Opaque`
             // (`Duration`, `Handle<T>`, `Color`, remaining primitives we
             // don't special-case, ...) have no generically-known wire
             // shape.
-            Some(TypeInfo::Tuple(_)) | Some(TypeInfo::Map(_)) | Some(TypeInfo::Set(_)) | Some(TypeInfo::Opaque(_)) => {
-                Encoding::Any(type_path.to_string())
-            }
+            Some(TypeInfo::Tuple(_))
+            | Some(TypeInfo::Map(_))
+            | Some(TypeInfo::Set(_))
+            | Some(TypeInfo::Opaque(_)) => Encoding::Any(type_path.to_string()),
         }
     }
 }

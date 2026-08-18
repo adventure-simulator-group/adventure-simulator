@@ -5,9 +5,9 @@ use crate::{
     Anchor, Attachment, AxeSpec, BillSpec, BladeProfile, BladeSection, BladeSpec, Bounds,
     ComponentDesign, ComponentRole, ComponentShape, CurvedBeakSpec, FigureEightSpec,
     GeneratedWeapon, GeneratedWeaponHolder, GlaiveSpec, GothicMaceSpec, GuardSpec, MaceSpec,
-    MaterialClass, MeshPart, PartisanSpec, SectionBladeSpec, SocketSpec, TubePathSpec,
-    ValidationError, WeaponDesign, WeaponHolderDesign, WeaponHolderKind, derive_holder_properties,
-    derive_properties, design_hash, holder_design_hash, validate, validate_holder,
+    MaterialClass, MeshPart, PartisanSpec, SocketSpec, TubePathSpec, ValidationError, WeaponDesign,
+    WeaponHolderDesign, WeaponHolderKind, derive_holder_properties, derive_properties, design_hash,
+    holder_design_hash, validate, validate_holder,
 };
 
 #[derive(Debug, Error)]
@@ -103,100 +103,80 @@ fn frustum(length: f32, bottom_radius: f32, top_radius: f32, segments: u16) -> R
 }
 
 fn blade(spec: &BladeSpec) -> RawMesh {
-    if spec.profile == BladeProfile::Curved {
-        let samples = 24;
-        let mut left = Vec::with_capacity(samples + 1);
-        let mut right = Vec::with_capacity(samples + 1);
-        for index in 0..=samples {
-            let t = index as f32 / samples as f32;
-            let center = spec.curvature.meters() * t * t;
-            let taper = 0.025 + 0.975 * (1.0 - t).powf(spec.taper.unit());
-            let half = spec.width.meters()
-                * 0.5
-                * taper
-                * (1.0 + spec.belly.0 as f32 / 1_000.0 * (std::f32::consts::PI * t).sin());
-            left.push([
-                center - half * (1.0 - spec.single_edge.unit()),
-                t * spec.length.meters(),
-            ]);
-            right.push([
-                center + half * (1.0 + spec.single_edge.unit()),
-                t * spec.length.meters(),
-            ]);
-        }
-        right.reverse();
-        left.extend(right);
-        return prism(left, spec.thickness.meters());
-    }
-    let length = spec.length.meters();
-    let width = spec.width.meters();
-    let root = width * 0.3;
-    let curve = spec.curvature.meters();
-    let mut outline = match spec.profile {
-        BladeProfile::Spear => vec![
-            [-root, 0.0],
-            [-width / 2.0, length * 0.28],
-            [curve, length],
-            [width / 2.0, length * 0.28],
-            [root, 0.0],
-        ],
-        BladeProfile::Cleaver => vec![
-            [-root, 0.0],
-            [-width * 0.42, length * 0.2],
-            [curve - width * 0.36, length * 0.82],
-            [curve, length],
-            [curve + width * 0.4, length * 0.72],
-            [root, 0.0],
-        ],
-        BladeProfile::Curved => vec![
-            [-root, 0.0],
-            [-width * 0.42, length * 0.2],
-            [curve - width * 0.24, length * 0.82],
-            [curve, length],
-            [curve + width * 0.24, length * 0.82],
-            [width * 0.52, length * 0.28],
-            [root, 0.0],
-        ],
-        BladeProfile::Straight => vec![
-            [-root, 0.0],
-            [-width / 2.0, length * 0.12],
-            [-width * 0.12, length * 0.9],
-            [0.0, length],
-            [width * 0.12, length * 0.9],
-            [width / 2.0, length * 0.12],
-            [root, 0.0],
-        ],
+    let samples = spec.samples.0 as usize;
+    let section_count = match spec.section {
+        BladeSection::Flat | BladeSection::Diamond => 4,
+        BladeSection::Fullered => 8,
     };
-    let area: f32 = outline
-        .iter()
-        .enumerate()
-        .map(|(index, point)| {
-            let next = outline[(index + 1) % outline.len()];
-            point[0] * next[1] - next[0] * point[1]
-        })
-        .sum();
-    if area < 0.0 {
-        outline.reverse();
-    }
-    let half = spec.thickness.meters() / 2.0;
     let mut mesh = RawMesh::default();
-    for z in [-half, half] {
-        mesh.positions
-            .extend(outline.iter().map(|point| [point[0], point[1], z]));
-    }
-    let count = outline.len();
-    for index in 1..count - 1 {
-        mesh.triangle(
-            (count) as u32,
-            (count + index) as u32,
-            (count + index + 1) as u32,
+    let ricasso = spec.ricasso.meters() / spec.length.meters();
+    for index in 0..=samples {
+        let t = index as f32 / samples as f32;
+        let edge_t = ((t - ricasso) / (1.0 - ricasso)).clamp(0.0, 1.0);
+        let profile_taper = match spec.profile {
+            BladeProfile::Straight | BladeProfile::Curved => 1.0,
+            BladeProfile::Spear => 0.78 + 0.22 * (std::f32::consts::PI * edge_t).sin(),
+            BladeProfile::Cleaver => 0.9 + 0.24 * (std::f32::consts::PI * edge_t).sin(),
+        };
+        let point_taper = 0.025 + 0.975 * (1.0 - edge_t).powf(spec.taper.unit());
+        let belly = 1.0 + spec.belly.0 as f32 / 1_000.0 * (std::f32::consts::PI * edge_t).sin();
+        let half_width = spec.width.meters() * 0.5 * profile_taper * point_taper * belly;
+        let asymmetry = half_width * spec.single_edge.unit() * 0.35;
+        let center = spec.curvature.meters() * edge_t * edge_t + asymmetry;
+        let depth = spec.thickness.meters() * 0.5 * (1.0 - edge_t * 0.72);
+        let ring: Vec<[f32; 2]> = match spec.section {
+            BladeSection::Fullered => vec![
+                [-half_width, 0.0],
+                [-half_width * 0.72, depth],
+                [-half_width * 0.28, depth * 0.32],
+                [0.0, depth * 0.22],
+                [half_width * 0.28, depth * 0.32],
+                [half_width * 0.72, depth],
+                [half_width, 0.0],
+                [0.0, -depth * 0.8],
+            ],
+            BladeSection::Flat => vec![
+                [-half_width, 0.0],
+                [0.0, depth * 0.45],
+                [half_width, 0.0],
+                [0.0, -depth * 0.45],
+            ],
+            BladeSection::Diamond => {
+                vec![
+                    [-half_width, 0.0],
+                    [0.0, depth],
+                    [half_width, 0.0],
+                    [0.0, -depth],
+                ]
+            }
+        };
+        mesh.positions.extend(
+            ring.into_iter()
+                .map(|point| [center + point[0], t * spec.length.meters(), point[1]]),
         );
-        mesh.triangle(0, (index + 1) as u32, index as u32);
     }
-    for index in 0..count {
-        let next = (index + 1) % count;
-        mesh.triangle(index as u32, next as u32, (count + next) as u32);
-        mesh.triangle(index as u32, (count + next) as u32, (count + index) as u32);
+    for ring in 0..samples {
+        for side in 0..section_count {
+            let next = (side + 1) % section_count;
+            let a = (ring * section_count + side) as u32;
+            let b = (ring * section_count + next) as u32;
+            let c = ((ring + 1) * section_count + next) as u32;
+            let d = ((ring + 1) * section_count + side) as u32;
+            mesh.triangle(a, b, c);
+            mesh.triangle(a, c, d);
+        }
+    }
+    let bottom = mesh.positions.len() as u32;
+    mesh.positions.push([0.0, 0.0, 0.0]);
+    let top = mesh.positions.len() as u32;
+    mesh.positions
+        .push([spec.curvature.meters(), spec.length.meters(), 0.0]);
+    for side in 0..section_count {
+        let next = (side + 1) % section_count;
+        mesh.triangle(bottom, next as u32, side as u32);
+        let a = (samples * section_count + side) as u32;
+        let b = (samples * section_count + next) as u32;
+        mesh.triangle(top, a, b);
     }
     mesh.orient_positive();
     mesh
@@ -308,63 +288,6 @@ fn socket(spec: &SocketSpec) -> RawMesh {
             mesh.triangle(a as u32, b as u32, c as u32);
             mesh.triangle(a as u32, c as u32, d as u32);
         }
-    }
-    mesh.orient_positive();
-    mesh
-}
-
-fn section_blade(spec: &SectionBladeSpec) -> RawMesh {
-    let samples = spec.samples.0 as usize;
-    let section_count = match spec.section {
-        BladeSection::Diamond => 4,
-        BladeSection::Flat => 4,
-        BladeSection::Fullered => 8,
-    };
-    let mut mesh = RawMesh::default();
-    for index in 0..=samples {
-        let t = index as f32 / samples as f32;
-        let y = t * spec.length.meters();
-        let center = spec.curvature.meters() * t * t;
-        let width = spec.width.meters() * 0.5 * (0.025 + 0.975 * (1.0 - t).powf(spec.taper.unit()));
-        let depth = spec.thickness.meters() * 0.5 * (1.0 - t * 0.72);
-        let ring: Vec<[f32; 2]> = match spec.section {
-            BladeSection::Fullered => vec![
-                [-width, 0.0],
-                [-width * 0.72, depth],
-                [-width * 0.28, depth * 0.32],
-                [0.0, depth * 0.22],
-                [width * 0.28, depth * 0.32],
-                [width * 0.72, depth],
-                [width, 0.0],
-                [0.0, -depth * 0.8],
-            ],
-            _ => vec![[-width, 0.0], [0.0, depth], [width, 0.0], [0.0, -depth]],
-        };
-        mesh.positions
-            .extend(ring.into_iter().map(|p| [center + p[0], y, p[1]]));
-    }
-    for ring in 0..samples {
-        for side in 0..section_count {
-            let next = (side + 1) % section_count;
-            let a = (ring * section_count + side) as u32;
-            let b = (ring * section_count + next) as u32;
-            let c = ((ring + 1) * section_count + next) as u32;
-            let d = ((ring + 1) * section_count + side) as u32;
-            mesh.triangle(a, b, c);
-            mesh.triangle(a, c, d);
-        }
-    }
-    let bottom = mesh.positions.len() as u32;
-    mesh.positions.push([0.0, 0.0, 0.0]);
-    let top = mesh.positions.len() as u32;
-    mesh.positions
-        .push([spec.curvature.meters(), spec.length.meters(), 0.0]);
-    for side in 0..section_count {
-        let next = (side + 1) % section_count;
-        mesh.triangle(bottom, next as u32, side as u32);
-        let a = (samples * section_count + side) as u32;
-        let b = (samples * section_count + next) as u32;
-        mesh.triangle(top, a, b);
     }
     mesh.orient_positive();
     mesh
@@ -1444,7 +1367,6 @@ pub fn generate(design: &WeaponDesign) -> Result<GeneratedWeapon, GenerateError>
                 ],
                 0.0,
             ),
-            ComponentShape::SectionBlade(value) => section_blade(value),
             ComponentShape::Axe(value) => axe(value),
             ComponentShape::HammerPoll(value) => hammer(value),
             ComponentShape::CurvedBeak(value) => curved_beak(value),
@@ -1538,7 +1460,7 @@ pub fn generate(design: &WeaponDesign) -> Result<GeneratedWeapon, GenerateError>
             | ComponentShape::Collar(_)
             | ComponentShape::Sleeve(_)
             | ComponentShape::ProfiledPommel(_) => 0.65,
-            ComponentShape::SectionBlade(_) => 0.98,
+            ComponentShape::Blade(_) => 0.98,
             _ => 0.9999,
         };
         let smooth_core = match &component.shape {
@@ -1616,12 +1538,7 @@ pub fn generate_holder(
                 .fitted_weapon
                 .components
                 .iter()
-                .find(|component| {
-                    matches!(
-                        &component.shape,
-                        ComponentShape::Blade(_) | ComponentShape::SectionBlade(_)
-                    )
-                })
+                .find(|component| matches!(&component.shape, ComponentShape::Blade(_)))
                 .map(|component| component.id.as_str())
                 .ok_or(GenerateError::MissingHolderGeometry("blade"))?;
             let blade = weapon

@@ -10,12 +10,17 @@
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
-use bevy::image::BevyDefault;
+#[cfg(target_family = "wasm")]
+use bevy::asset::AssetMetaCheck;
+use bevy::asset::AssetPlugin;
+#[cfg(not(target_family = "wasm"))]
+use bevy::asset::io::AssetSourceBuilder;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
+#[cfg(not(target_family = "wasm"))]
+use bevy::image::BevyDefault;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
-    asset::{AssetPlugin, io::AssetSourceBuilder},
     ecs::schedule::common_conditions::any_with_component,
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
@@ -28,6 +33,8 @@ use wasm_bindgen::prelude::*;
 
 #[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
+#[cfg(target_family = "wasm")]
+mod browser_runtime;
 #[allow(dead_code)] // Viewer-only camera diagnostics are compiled into this binary.
 mod camera;
 #[cfg(feature = "debug")]
@@ -129,7 +136,7 @@ impl GraphicsPreset {
 
 #[cfg(not(target_family = "wasm"))]
 fn main() {
-    run(Args::parse());
+    run(Args::parse(), true);
 }
 
 #[cfg(target_family = "wasm")]
@@ -141,10 +148,71 @@ fn main() {
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
 pub fn wasm_run(args: Vec<String>) {
-    run(Args::parse_from(args));
+    run(Args::parse_from(args), true);
 }
 
-fn run(args: Args) {
+/// Start the persistent browser renderer without joining a tactical server.
+/// JavaScript subsequently drives strategic scenes and tactical connections
+/// through `wasm_command`; Bevy and its WebGPU device remain alive throughout.
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_boot() {
+    run(
+        Args {
+            id: 0,
+            server_addr: String::new(),
+            input_script: None,
+            animation_log: None,
+            exit_after_script: false,
+            graphics_preset: GraphicsPreset::Default,
+            present_mode: ClientPresentMode::AutoVsync,
+            #[cfg(feature = "debug")]
+            headless: false,
+            #[cfg(feature = "debug")]
+            brp_port: None,
+        },
+        false,
+    );
+}
+
+/// Queue one browser-runtime command without borrowing Bevy's running world.
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_command(command: String) -> Result<(), JsValue> {
+    browser_runtime::queue_json(&command).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_weapon_catalog() -> Result<String, JsValue> {
+    browser_runtime::catalog_json().map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_default_weapon_design(catalog_id: String) -> Result<String, JsValue> {
+    browser_runtime::default_design_json(&catalog_id).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_encode_weapon_design(design_json: String) -> Result<Vec<u8>, JsValue> {
+    browser_runtime::encode_design_json(&design_json).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_weapon_editor_fields(design_json: String) -> Result<String, JsValue> {
+    browser_runtime::editor_fields_json(&design_json).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_quote_weapon_design(design_json: String) -> Result<String, JsValue> {
+    browser_runtime::quote_design_json(&design_json).map_err(|error| JsValue::from_str(&error))
+}
+
+fn run(args: Args, initial_tactical: bool) {
     let mut app = App::new();
     #[cfg(not(target_family = "wasm"))]
     let asset_root = native_asset_root();
@@ -190,18 +258,24 @@ fn run(args: Args) {
         }
     };
     #[cfg(target_family = "wasm")]
-    let default_plugins = DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Fabelgeist - Tactical".into(),
-            canvas: Some("#game-canvas".into()),
-            fit_canvas_to_parent: true,
-            prevent_default_event_handling: true,
-            present_mode: args.present_mode.into(),
-            decorations: false,
+    let default_plugins = DefaultPlugins
+        .set(AssetPlugin {
+            file_path: "/tactical/assets".into(),
+            meta_check: AssetMetaCheck::Never,
             ..default()
-        }),
-        ..default()
-    });
+        })
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Fabelgeist - Tactical".into(),
+                canvas: Some("#game-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                present_mode: args.present_mode.into(),
+                decorations: false,
+                ..default()
+            }),
+            ..default()
+        });
     app.add_plugins((
         default_plugins,
         FrameTimeDiagnosticsPlugin::default(),
@@ -233,7 +307,7 @@ fn run(args: Args) {
         },
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-    .add_systems(Startup, setup_client)
+    .add_systems(Startup, setup_initial_client)
     .add_systems(
         Update,
         (
@@ -248,7 +322,11 @@ fn run(args: Args) {
         ),
     )
     .insert_resource(player::LocalCharacterId(args.id))
+    .insert_resource(InitialTacticalMode(initial_tactical))
     .insert_resource(args.clone());
+
+    #[cfg(target_family = "wasm")]
+    app.add_plugins(browser_runtime::BrowserRuntimePlugin::new(initial_tactical));
 
     #[cfg(feature = "debug")]
     app.add_plugins(debug::DebugPlugin);
@@ -351,7 +429,17 @@ fn validate_native_presentation_assets(asset_root: &std::path::Path) -> Result<(
     }
 }
 
-fn setup_client(mut commands: Commands, args: Res<Args>) {
+#[derive(Resource)]
+struct InitialTacticalMode(bool);
+
+fn setup_initial_client(
+    mut commands: Commands,
+    args: Res<Args>,
+    initial_tactical: Res<InitialTacticalMode>,
+) {
+    if !initial_tactical.0 {
+        return;
+    }
     commands.spawn(AdventureSimulatorClient {
         player_id: args.id,
         server_url: args.server_addr.clone(),

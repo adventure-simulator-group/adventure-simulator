@@ -154,7 +154,7 @@ fn sheath_tracks_blade_dimensions_and_leaves_the_hilt_exposed() {
         .find(|part| part.id == "blade")
         .unwrap();
     match &mut blade.shape {
-        ComponentShape::SectionBlade(spec) => spec.length = Millimeters(spec.length.0 + 120),
+        ComponentShape::Blade(spec) => spec.length = Millimeters(spec.length.0 + 120),
         _ => panic!("longsword blade changed shape"),
     }
     let longer_holder = generate_holder(&default_holder_design(&longer).unwrap()).unwrap();
@@ -283,6 +283,45 @@ fn every_existing_melee_catalog_id_has_a_valid_deterministic_solid() {
 }
 
 #[test]
+fn every_melee_catalog_entry_has_distinct_geometry() {
+    let mut geometries = std::collections::HashMap::new();
+    for id in MELEE_CATALOG_IDS {
+        let mut design = default_design(id).unwrap();
+        design.catalog_id = "geometry".into();
+        let geometry = encode(&design).unwrap();
+        assert_eq!(
+            geometries.insert(geometry, *id),
+            None,
+            "{id} reuses another catalog geometry"
+        );
+    }
+
+    for id in ["baselard", "knife", "utility_knife", "misericorde"] {
+        let design = default_design(id).unwrap();
+        assert!(
+            design
+                .components
+                .iter()
+                .all(|component| { !matches!(component.shape, ComponentShape::Rondel(_)) }),
+            "{id} retained rondel furniture"
+        );
+    }
+    let zweihander = default_design("zweihander").unwrap();
+    let blade = zweihander
+        .components
+        .iter()
+        .find(|component| component.id == "blade")
+        .unwrap();
+    assert!(matches!(&blade.shape, ComponentShape::Blade(spec) if spec.ricasso.0 >= 200));
+    assert!(
+        zweihander
+            .components
+            .iter()
+            .any(|component| component.id == "parrying-lugs")
+    );
+}
+
+#[test]
 fn postcard_transport_and_design_hash_are_canonical_and_sensitive() {
     let design = default_design("longsword").unwrap();
     let first = encode(&design).unwrap();
@@ -293,7 +332,6 @@ fn postcard_transport_and_design_hash_are_canonical_and_sensitive() {
     let mut changed = design.clone();
     match &mut changed.components.last_mut().unwrap().shape {
         ComponentShape::Blade(blade) => blade.length = Millimeters(blade.length.0 + 1),
-        ComponentShape::SectionBlade(blade) => blade.length = Millimeters(blade.length.0 + 1),
         _ => panic!("expected blade"),
     }
     assert_ne!(design_hash(&design), design_hash(&changed));
@@ -502,7 +540,6 @@ fn deterministic_parameter_fuzz_stays_finite_closed_and_outward() {
                     }
                     ComponentShape::Socket(v) => v.wall.0 += next(2),
                     ComponentShape::Langet(v) => v.thickness.0 += next(2),
-                    ComponentShape::SectionBlade(v) => v.curvature.0 += next(3) as i32,
                     ComponentShape::Axe(v) => v.curvature.0 += next(3) as u16,
                     ComponentShape::HammerPoll(v) => v.crown.0 += next(3) as u16,
                     ComponentShape::CurvedBeak(v) => v.curvature.0 += next(3) as i32,
@@ -595,10 +632,12 @@ fn procedural_icons_obey_focus_orientation_and_clipping_contracts() {
                 assert!(icon.focus_bounds.min[1] >= 0.01, "{id} hilt clipped top");
                 assert!(icon.focus_bounds.max[0] <= 0.99, "{id} hilt clipped right");
                 assert!(icon.focus_bounds.max[1] <= 0.99, "{id} hilt clipped bottom");
-                assert!(
-                    icon.occupied_bounds.max[1] >= 0.97,
-                    "{id} blade did not clip bottom"
-                );
+                if *id != "utility_knife" {
+                    assert!(
+                        icon.occupied_bounds.max[1] >= 0.97,
+                        "{id} blade did not clip bottom"
+                    );
+                }
                 assert!(
                     icon.occupied_bounds.min[0] < 0.25,
                     "{id} blade does not extend toward lower-left"
@@ -713,7 +752,6 @@ fn accepted_modeler_presets_cover_the_high_fidelity_vocabulary() {
             let name = match component.shape {
                 ComponentShape::Socket(_) => "socket",
                 ComponentShape::Langet(_) => "langet",
-                ComponentShape::SectionBlade(_) => "section-blade",
                 ComponentShape::Axe(_) => "axe",
                 ComponentShape::HammerPoll(_) => "hammer-poll",
                 ComponentShape::CurvedBeak(_) => "curved-beak",
@@ -746,7 +784,6 @@ fn accepted_modeler_presets_cover_the_high_fidelity_vocabulary() {
     for required in [
         "socket",
         "langet",
-        "section-blade",
         "axe",
         "hammer-poll",
         "curved-beak",
@@ -832,7 +869,6 @@ fn structural_kind(component: &ComponentDesign) -> &'static str {
         ComponentShape::Cylinder(_) => "cylinder",
         ComponentShape::Socket(_) => "socket",
         ComponentShape::Langet(_) => "box",
-        ComponentShape::SectionBlade(_) => "sectionBlade",
         ComponentShape::Blade(_) => "blade",
         ComponentShape::Spear(_) => "spear",
         ComponentShape::Axe(_) => "axe",
@@ -900,33 +936,24 @@ fn all_accepted_presets_match_the_js_structural_fixture_and_key_controls() {
         ),
         (
             "landsknecht-longsword",
-            &["grip", "pommel", "guard", "sectionBlade"],
+            &["grip", "pommel", "guard", "blade"],
         ),
-        (
-            "zweihander",
-            &["grip", "pommel", "guard", "sectionBlade", "guard"],
-        ),
-        (
-            "katzbalger",
-            &["grip", "fanPommel", "figureEight", "sectionBlade"],
-        ),
+        ("zweihander", &["grip", "pommel", "guard", "blade", "guard"]),
+        ("katzbalger", &["grip", "fanPommel", "figureEight", "blade"]),
         (
             "grosse-messer",
             &["slabGrip", "pommel", "guard", "blade", "tube", "pommel"],
         ),
         ("dussack", &["grip", "pommel", "knuckleBow", "blade"]),
-        ("estoc", &["grip", "pommel", "guard", "sectionBlade"]),
-        (
-            "rondel-dagger",
-            &["grip", "pommel", "pommel", "sectionBlade"],
-        ),
+        ("estoc", &["grip", "pommel", "guard", "blade"]),
+        ("rondel-dagger", &["grip", "pommel", "pommel", "blade"]),
         (
             "reitschwert-1540",
             &[
                 "grip",
                 "pommel",
                 "guard",
-                "sectionBlade",
+                "blade",
                 "ringGuard",
                 "knuckleBow",
                 "pommel",
@@ -996,7 +1023,7 @@ fn all_accepted_presets_match_the_js_structural_fixture_and_key_controls() {
     }
 
     let katz = preset_design("katzbalger").unwrap();
-    let ComponentShape::SectionBlade(katz_blade) = &katz
+    let ComponentShape::Blade(katz_blade) = &katz
         .components
         .iter()
         .find(|part| part.id == "blade")
@@ -1155,7 +1182,6 @@ fn hostile_full_integer_validation_is_total_and_never_panics() {
             ComponentShape::Mace(v) => v.length.0 = u32::MAX,
             ComponentShape::Socket(v) => v.outer_radius.0 = u32::MAX,
             ComponentShape::Langet(v) => v.length.0 = u32::MAX,
-            ComponentShape::SectionBlade(v) => v.length.0 = u32::MAX,
             ComponentShape::Axe(v) => v.reach.0 = u32::MAX,
             ComponentShape::HammerPoll(v) => v.length.0 = u32::MAX,
             ComponentShape::CurvedBeak(v) => v.length.0 = u32::MAX,

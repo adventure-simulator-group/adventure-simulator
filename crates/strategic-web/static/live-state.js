@@ -55,7 +55,7 @@
       const state = await response.json();
       if (!locationMatches(state)) {
         beginNavigation();
-        location.assign(state.path);
+        window.strategicNavigate(state.path);
         return;
       }
       dispatchUpdate();

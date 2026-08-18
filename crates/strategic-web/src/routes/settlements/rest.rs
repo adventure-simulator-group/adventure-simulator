@@ -201,9 +201,12 @@ pub(super) async fn rest(
         query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
     let before_skills =
         query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
-    let before_time =
-        query_single::<crate::spacetimedb::CharacterTime>(&state, "backend_character_times", character_id)
-            .await;
+    let before_time = query_single::<crate::spacetimedb::CharacterTime>(
+        &state,
+        "backend_character_times",
+        character_id,
+    )
+    .await;
     let before_reputation = query_local_reputation(&state, character_id, &id).await;
     let character_settlement_id = before_character
         .as_ref()
@@ -267,16 +270,23 @@ pub(super) async fn rest(
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
-    let after_limbs = query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
+    let after_limbs =
+        query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
     let after_skills =
         query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
-    let after_time =
-        query_single::<crate::spacetimedb::CharacterTime>(&state, "backend_character_times", character_id)
-            .await;
+    let after_time = query_single::<crate::spacetimedb::CharacterTime>(
+        &state,
+        "backend_character_times",
+        character_id,
+    )
+    .await;
     if form.advance_development_clock
         && let Err(error) = state
             .db
-            .call("sync_development_clock_to_character", &[json!(character_id)])
+            .call(
+                "sync_development_clock_to_character",
+                &[json!(character_id)],
+            )
             .await
     {
         tracing::warn!(
@@ -574,6 +584,43 @@ pub(super) async fn weapons(
     session: Session,
 ) -> Html<String> {
     merchant_shop(state, id, session, MerchantShop::Weapons).await
+}
+
+#[derive(Deserialize)]
+pub(super) struct ForgeWeaponForm {
+    recipe: String,
+}
+
+pub(super) async fn forge_weapon(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<ForgeWeaponForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    let recipe = match form
+        .recipe
+        .split(',')
+        .filter(|part| !part.is_empty())
+        .map(str::parse::<u8>)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(recipe) if !recipe.is_empty() => recipe,
+        _ => return (StatusCode::BAD_REQUEST, "Invalid weapon recipe").into_response(),
+    };
+    match state
+        .db
+        .call(
+            "forge_weapon",
+            &[json!(character_id), json!(id), json!(recipe)],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to(&format!("/settlements/{id}/weapons")).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 pub(super) async fn armor(

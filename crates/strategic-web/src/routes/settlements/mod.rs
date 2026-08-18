@@ -131,8 +131,9 @@ use rendering::{
     inventory_trade_context, merchant_shop, personal_inventory_targets, render_service_page,
 };
 use rest::{
-    armor, bookstore, clothing, herbalist, purchase_from_herbalist, query_local_reputation,
-    query_single, religion, rest, settlement_action_service_available, travel, weapons,
+    armor, bookstore, clothing, forge_weapon, herbalist, purchase_from_herbalist,
+    query_local_reputation, query_single, religion, rest, settlement_action_service_available,
+    travel, weapons,
 };
 #[cfg(test)]
 use rest_preview::{calculate_rest_supply_availability, calculate_soap_rest_preview};

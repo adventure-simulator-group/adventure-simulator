@@ -30,7 +30,7 @@ pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) 
             }
         }
     };
-    page_shell(title, header, content, ScriptProfile::Live)
+    page_shell(title, header, content, ScriptProfile::Strategic)
 }
 
 pub fn journal_layout(content: Markup, logged_in_as: Option<&str>) -> Markup {
@@ -169,7 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=organization-facades-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=visual-ui-audit-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=forge-preview-layering-3";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -180,10 +180,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-4" defer {}
-                    script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
+                    script src="/static/live-regions.js?v=preserved-client-regions-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/strategic-navigation.js?v=soft-navigation-1" defer {}
+                    script type="module" src="/static/strategic-renderer.js?v=model-owned-forge-controls-1" {}
                     script src="/static/strategic-mutations.js?v=formaction-override-1" defer {}
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
@@ -197,7 +198,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=fireplace-counterparty-1" defer {}
+                    script src="/static/dialogue-client.js?v=location-fixtures-2" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
                     script src="/static/developer-quest-editor.js?v=scenario-gallery-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
@@ -212,6 +213,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 }
             }
             body {
+                @if scripts == ScriptProfile::Strategic {
+                    div id="strategic-render-surface" hidden aria-hidden="true" {
+                        canvas id="game-canvas" {}
+                    }
+                }
                 @if scripts != ScriptProfile::Entry {
                     div id="strategic-live-stream" data-init="@get('/live')" {
                         span id="strategic-live-revision" data-live-revision="0" hidden {}
@@ -798,7 +804,7 @@ mod tests {
         let markup = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
         assert!(markup.contains("/static/local-chat.js?v=local-chat-location-authority-1"));
         assert!(!markup.contains("local-chat.js?v=herbalist-private-1"));
-        assert!(markup.contains("/static/live-regions.js?v=persistent-rest-refresh-2"));
+        assert!(markup.contains("/static/live-regions.js?v=preserved-client-regions-1"));
         assert!(markup.contains("id=\"strategic-page\""));
         assert!(markup.contains("/static/strategic-navigation.js"));
         assert!(markup.contains("/static/strategic-mutations.js?v=formaction-override-1\" defer"));

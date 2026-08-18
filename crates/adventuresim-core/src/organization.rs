@@ -497,6 +497,29 @@ pub fn organizations_for_chapter(
         .filter(move |organization| organization.has_chapter(settlement_id))
 }
 
+/// Returns the authored organization chapter that provides `service_id` in a
+/// settlement, if one exists. Service capability comes from the catalog rather
+/// than an organization name so alternate and future weaponsmith associations
+/// inherit the same behavior.
+pub fn organization_service_chapter(
+    settlement_id: &str,
+    service_id: &str,
+) -> Option<(
+    &'static OrganizationDefinition,
+    &'static OrganizationChapter,
+)> {
+    organizations_for_chapter(settlement_id).find_map(|organization| {
+        (organization.service_id.as_deref() == Some(service_id)).then(|| {
+            (
+                organization,
+                organization
+                    .chapter(settlement_id)
+                    .expect("organization selected by chapter membership"),
+            )
+        })
+    })
+}
+
 pub fn organization_chapter_at(
     settlement_id: &str,
     location_id: &str,
@@ -741,6 +764,15 @@ mod tests {
                 3
             );
         }
+    }
+
+    #[test]
+    fn service_chapters_are_discovered_by_authored_capability() {
+        let (organization, chapter) =
+            organization_service_chapter("viabundus-0", "weapons").unwrap();
+        assert_eq!(organization.id, "weaponsmith_guild");
+        assert_eq!(chapter.location_id, "organization-weaponsmith-guild");
+        assert!(organization_service_chapter("viabundus-0", "nonexistent-service").is_none());
     }
 
     #[test]

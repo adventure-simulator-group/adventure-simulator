@@ -151,9 +151,12 @@ pub struct BladeSpec {
     pub thickness: Millimeters,
     pub curvature: SignedMillimeters,
     pub profile: BladeProfile,
+    pub section: BladeSection,
+    pub samples: Segments,
     pub taper: Permille,
     pub single_edge: Permille,
     pub belly: SignedPermille,
+    pub ricasso: Millimeters,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -197,17 +200,6 @@ pub struct LangetSpec {
     pub length: Millimeters,
     pub width: Millimeters,
     pub thickness: Millimeters,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct SectionBladeSpec {
-    pub length: Millimeters,
-    pub width: Millimeters,
-    pub thickness: Millimeters,
-    pub curvature: SignedMillimeters,
-    pub section: BladeSection,
-    pub samples: Segments,
-    pub taper: Permille,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -452,7 +444,6 @@ pub enum ComponentShape {
     Mace(MaceSpec),
     Socket(SocketSpec),
     Langet(LangetSpec),
-    SectionBlade(SectionBladeSpec),
     Axe(AxeSpec),
     HammerPoll(HammerPollSpec),
     CurvedBeak(CurvedBeakSpec),
@@ -485,7 +476,6 @@ impl ComponentShape {
             Self::Mace(value) => value.length,
             Self::Socket(value) => value.length,
             Self::Langet(value) => value.length,
-            Self::SectionBlade(value) => value.length,
             Self::Axe(_)
             | Self::HammerPoll(_)
             | Self::CurvedBeak(_)
@@ -558,6 +548,12 @@ pub struct DerivedProperties {
     pub mass_kg: f32,
     pub length_m: f32,
     pub grip_to_tip_m: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DerivedMaterialMass {
+    pub material: MaterialClass,
+    pub mass_kg: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]

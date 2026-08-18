@@ -184,7 +184,7 @@ pub(super) fn setup_procedural_environment_assets(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let started = std::time::Instant::now();
+    let started = web_time::Instant::now();
     info!("Generating procedural environment texture assets");
     commands.insert_resource(generate_procedural_environment_assets(&mut images));
     info!(

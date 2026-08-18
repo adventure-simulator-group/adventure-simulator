@@ -33,7 +33,10 @@ pub struct DefenseChances {
 
 impl Default for DefenseChances {
     fn default() -> Self {
-        Self { parry_chance: 0.2, dodge_chance: 0.2 }
+        Self {
+            parry_chance: 0.2,
+            dodge_chance: 0.2,
+        }
     }
 }
 
@@ -100,20 +103,35 @@ pub(super) fn on_attack_started(
     let nearest = q_bots
         .iter()
         .filter(|(_, _, _, side, state, _)| **side != *attacker_side && !state.is_incapacitated())
-        .min_by(|(a, _, a_transform, _, _, _), (b, _, b_transform, _, _, _)| {
-            compare_target(attacker_transform, a_transform, *a, b_transform, *b)
-        });
+        .min_by(
+            |(a, _, a_transform, _, _, _), (b, _, b_transform, _, _, _)| {
+                compare_target(attacker_transform, a_transform, *a, b_transform, *b)
+            },
+        );
     let Some((bot, bot_look, _, _, _, chances)) = nearest else {
         return;
     };
-    try_start_reaction(&mut cmd, bot, attacker_look, bot_look, chances.copied().unwrap_or_default());
+    try_start_reaction(
+        &mut cmd,
+        bot,
+        attacker_look,
+        bot_look,
+        chances.copied().unwrap_or_default(),
+    );
 }
 
 pub(super) fn on_targeted_attack_started(
     event: On<MeleeAttackStartedIntent>,
     mut cmd: Commands,
     q_character: Query<&CharacterLook>,
-    q_ai: Query<(&CharacterLook, &TacticalCombatState, Option<&DefenseChances>), With<OffensiveCombatAi>>,
+    q_ai: Query<
+        (
+            &CharacterLook,
+            &TacticalCombatState,
+            Option<&DefenseChances>,
+        ),
+        With<OffensiveCombatAi>,
+    >,
 ) {
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, event.target])
     else {
@@ -121,7 +139,13 @@ pub(super) fn on_targeted_attack_started(
     };
     if let Ok((_, state, chances)) = q_ai.get(event.target) {
         if !state.is_incapacitated() {
-            try_start_reaction(&mut cmd, event.target, attacker_look, defender_look, chances.copied().unwrap_or_default());
+            try_start_reaction(
+                &mut cmd,
+                event.target,
+                attacker_look,
+                defender_look,
+                chances.copied().unwrap_or_default(),
+            );
         }
     }
 }
@@ -130,7 +154,14 @@ pub(super) fn on_targeted_ranged_attack_started(
     event: On<RangedAttackStartedIntent>,
     mut cmd: Commands,
     q_character: Query<&CharacterLook>,
-    q_ai: Query<(&CharacterLook, &TacticalCombatState, Option<&DefenseChances>), With<OffensiveCombatAi>>,
+    q_ai: Query<
+        (
+            &CharacterLook,
+            &TacticalCombatState,
+            Option<&DefenseChances>,
+        ),
+        With<OffensiveCombatAi>,
+    >,
 ) {
     let Some(target) = event.target else {
         return;
@@ -140,7 +171,13 @@ pub(super) fn on_targeted_ranged_attack_started(
     };
     if let Ok((_, state, chances)) = q_ai.get(target) {
         if !state.is_incapacitated() {
-            try_start_reaction(&mut cmd, target, attacker_look, defender_look, chances.copied().unwrap_or_default());
+            try_start_reaction(
+                &mut cmd,
+                target,
+                attacker_look,
+                defender_look,
+                chances.copied().unwrap_or_default(),
+            );
         }
     }
 }

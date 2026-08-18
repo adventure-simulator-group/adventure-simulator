@@ -220,7 +220,14 @@ pub(crate) fn check_terminal_combat_outcome(
     let Some(resolution) = terminal_resolution(snapshot) else {
         return Ok(());
     };
-    commit_terminal_resolution(resolution, time.elapsed(), conn, consequences, state, commands)
+    commit_terminal_resolution(
+        resolution,
+        time.elapsed(),
+        conn,
+        consequences,
+        state,
+        commands,
+    )
 }
 
 pub(crate) fn check_mission_timeout(

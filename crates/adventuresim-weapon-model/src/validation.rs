@@ -67,11 +67,6 @@ fn footprint(shape: &ComponentShape) -> (u64, u64, u64) {
             mm(value.thickness.0) / 2,
             mm(value.length.0),
         ),
-        ComponentShape::SectionBlade(value) => (
-            mm(value.width.0) / 2,
-            mm(value.thickness.0) / 2,
-            mm(value.length.0),
-        ),
         ComponentShape::Axe(value) => (
             mm(value.reach.0),
             mm(value.thickness.0) / 2,
@@ -241,6 +236,8 @@ pub fn validate(design: &WeaponDesign) -> Result<(), Vec<ValidationError>> {
                         && (100..=2_500).contains(&value.taper.0)
                         && value.single_edge.0 <= 1_000
                         && value.belly.0.unsigned_abs() <= 1_000
+                        && (4..=256).contains(&value.samples.0)
+                        && value.ricasso.0 < value.length.0
                 }
                 ComponentShape::Guard(value) => {
                     value
@@ -279,14 +276,6 @@ pub fn validate(design: &WeaponDesign) -> Result<(), Vec<ValidationError>> {
                     (1..=3_000).contains(&v.length.0)
                         && (1..=500).contains(&v.width.0)
                         && (1..=200).contains(&v.thickness.0)
-                }
-                ComponentShape::SectionBlade(v) => {
-                    (1..=3_000).contains(&v.length.0)
-                        && (1..=1_000).contains(&v.width.0)
-                        && (1..=200).contains(&v.thickness.0)
-                        && v.curvature.0.unsigned_abs() <= 2_000
-                        && (100..=2_500).contains(&v.taper.0)
-                        && (4..=256).contains(&v.samples.0)
                 }
                 ComponentShape::Axe(v) => {
                     (1..=2_000).contains(&v.reach.0)
@@ -659,12 +648,11 @@ pub fn validate_holder(design: &WeaponHolderDesign) -> Result<(), Vec<Validation
         .components
         .iter()
         .any(|part| part.role == ComponentRole::Grip);
-    let has_blade = design.fitted_weapon.components.iter().any(|part| {
-        matches!(
-            part.shape,
-            ComponentShape::Blade(_) | ComponentShape::SectionBlade(_)
-        )
-    });
+    let has_blade = design
+        .fitted_weapon
+        .components
+        .iter()
+        .any(|part| matches!(part.shape, ComponentShape::Blade(_)));
     if !has_grip || (design.kind == WeaponHolderKind::BladeSheath && !has_blade) {
         errors.push(ValidationError::InvalidDimensions(
             "holder source geometry".into(),

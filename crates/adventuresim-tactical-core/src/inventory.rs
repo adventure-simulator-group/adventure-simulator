@@ -636,7 +636,6 @@ fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
