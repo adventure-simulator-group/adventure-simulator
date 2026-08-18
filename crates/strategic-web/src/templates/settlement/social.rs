@@ -528,6 +528,7 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
 /// settlement location. This is deliberately separate from the NPC loader so
 /// templates cannot accidentally infer fixtures from the people present.
 struct LocationFixture {
+    kind: SceneInteractableKind,
     visual_modifier: &'static str,
     label: &'static str,
     aria_label: &'static str,
@@ -544,6 +545,7 @@ fn location_fixtures(
     let mut fixtures = Vec::new();
     if !matches!(location_id, "overview" | "public-square" | "map") {
         fixtures.push(LocationFixture {
+            kind: SceneInteractableKind::Fixture,
             visual_modifier: "fireplace-portrait",
             label: "Fireplace",
             aria_label: "Cook at fireplace",
@@ -554,6 +556,9 @@ fn location_fixtures(
     }
     if organization_service == Some("weapons") {
         fixtures.push(LocationFixture {
+            // The forge currently has no independent physical state. It is an
+            // entry point into the weapons service, not a fake fixture record.
+            kind: SceneInteractableKind::Service,
             visual_modifier: "forge-portrait",
             label: "Forge",
             aria_label: "Forge a weapon",
@@ -575,7 +580,7 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
             @for fixture in location_fixtures(settlement_id, location_id, organization_service) {
                 span data-location-fixture {
                     (scene_interactable_link(SceneInteractableLink {
-                        kind: SceneInteractableKind::Fixture, visual_modifier: Some(fixture.visual_modifier), href: &fixture.href, label: fixture.label,
+                        kind: fixture.kind, visual_modifier: Some(fixture.visual_modifier), href: &fixture.href, label: fixture.label,
                         aria_label: fixture.aria_label, icon: fixture.icon, action_label: Some(fixture.action_label),
                     }))
                 }
@@ -1243,11 +1248,13 @@ mod tests {
         let ordinary = location_fixtures("lubeck", "market", None);
         assert_eq!(ordinary.len(), 1);
         assert_eq!(ordinary[0].label, "Fireplace");
+        assert_eq!(ordinary[0].kind, SceneInteractableKind::Fixture);
 
         let weapons =
             location_fixtures("lubeck", "organization-weaponsmith-guild", Some("weapons"));
         assert_eq!(weapons.len(), 2);
         assert_eq!(weapons[1].label, "Forge");
+        assert_eq!(weapons[1].kind, SceneInteractableKind::Service);
 
         assert!(location_fixtures("lubeck", "public-square", None).is_empty());
     }

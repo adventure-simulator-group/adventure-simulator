@@ -87,6 +87,7 @@ pub struct SceneInteractableLink<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SceneInteractableKind {
     Fixture,
+    Service,
     Evidence,
     Remains,
 }
@@ -95,6 +96,7 @@ impl SceneInteractableKind {
     const fn class(self) -> &'static str {
         match self {
             Self::Fixture => "fixture",
+            Self::Service => "service",
             Self::Evidence => "evidence",
             Self::Remains => "remains",
         }

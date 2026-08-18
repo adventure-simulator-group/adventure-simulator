@@ -85,9 +85,9 @@ Panel. They may be opaque or translucent as their purpose requires.
   contains people, environmental fixtures, evidence, and remains that can be
   acted upon at the current place. A shared card supplies focus, selection,
   label, and icon treatment; each subject keeps only its own actions. A person
-  may talk or receive treatment, a fixture may open a service, and evidence may
-  expose inspection topics. Its hover controls emerge above the card so they do
-  not collide with the Conversation Dock.
+  may talk or receive treatment, a fixture may open cooking, a service may open
+  crafting, and evidence may expose inspection topics. Its hover controls
+  emerge above the card so they do not collide with the Conversation Dock.
 - A **Stage Modal** is a menu or dialog opened from a Side Panel. Do not place
   such menus inside the constrained panel that launched them; open them over
   the Scene Stage instead.
