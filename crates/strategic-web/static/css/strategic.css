@@ -2416,6 +2416,55 @@ body.character-action-dialog-open { overflow: hidden; }
     font-variant-numeric: tabular-nums;
 }
 
+.fireplace-instrument,
+.fireplace-vessel-name,
+.fireplace-vessel-cooking,
+.fireplace-rest-countdown {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+.fireplace-instrument .game-icon,
+.fireplace-vessel-name .game-icon { width: 1.2rem; height: 1.2rem; color: var(--accent-gold-light); }
+.fireplace-cook-status {
+    display: grid;
+    grid-template-columns: 1.25rem minmax(3.5rem, 1fr) auto auto;
+    align-items: center;
+    gap: .4rem;
+    margin-block: .55rem;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+.fireplace-cook-status-icon .game-icon,
+.fireplace-vessel-cooking .game-icon,
+.fireplace-rest-countdown .game-icon { width: 1.15rem; height: 1.15rem; color: #ed9c45; }
+.fireplace-cook-progress {
+    height: .55rem;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--accent-gold-light) 45%, var(--border-color));
+    border-radius: 999px;
+    background: #160e09;
+}
+.fireplace-cook-progress span {
+    display: block;
+    width: var(--cooking-progress);
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #d9612e, #f2bf55);
+    transition: width 180ms ease;
+}
+.fireplace-cook-status[data-cooking-phase="ready"] .fireplace-cook-progress span { background: #63b76a; }
+.fireplace-cook-status[data-cooking-phase="ready"] .fireplace-cook-status-icon .game-icon { color: #63b76a; }
+.fireplace-cook-status[data-cooking-phase="overdue"] .fireplace-cook-progress span { background: #cb5142; }
+.fireplace-cook-status[data-cooking-phase="overdue"] .fireplace-cook-status-icon .game-icon { color: #cb5142; }
+.fireplace-vessel { padding: .5rem; border: 1px solid var(--border-light); border-radius: .35rem; }
+.fireplace-vessel + .fireplace-vessel { margin-top: .45rem; }
+.fireplace-vessel-name { margin: 0 0 .4rem; }
+.fireplace-vessel-cooking { margin: .45rem 0; color: var(--text-secondary); font-size: var(--font-size-sm); }
+.fireplace-rest-countdown { justify-content: center; margin: .4rem 0; font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fireplace-ready-warning { display: flex; align-items: flex-start; gap: .4rem; }
+.fireplace-ready-warning .game-icon { flex: 0 0 auto; width: 1.15rem; height: 1.15rem; }
+
 .settlement-npc-portrait {
   border: 0;
   border-radius: 50%;
@@ -6505,4 +6554,65 @@ body.chat-resizing {
   font-size: 0.66rem;
   line-height: 1.1;
   color: #b9cfb1;
+}
+
+/* Chat uses its horizontal space first: channel controls at left, discussion
+   topics at right, and the message stream in the remaining centre column. */
+.settlement-chat-resize {
+  order: 2;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 0;
+}
+.settlement-chat-layout {
+  order: 1;
+  grid-template-columns: minmax(3rem, max-content) minmax(0, 1fr) minmax(16ch, 18rem);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.settlement-chat-conversation {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  grid-template-columns: subgrid;
+  grid-template-rows: subgrid;
+}
+.conversation-dock-header { display: contents; }
+.settlement-chat-filters {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  padding: 0.55rem 0.45rem;
+  border-right: 1px solid var(--border-light);
+  border-bottom: 0;
+}
+.settlement-chat-messages { grid-column: 2; grid-row: 1; min-height: 0; }
+.settlement-chat-composer { grid-column: 2; grid-row: 2; }
+.conversation-dock-tools,
+.conversation-tabs {
+  grid-column: 3;
+  grid-row: 1;
+  flex-direction: column;
+  align-items: stretch;
+}
+.conversation-dock-tools { z-index: 2; }
+.conversation-tabs { margin: 0; }
+.conversation-panel,
+.dialogue-category-panel {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 0;
+  max-height: none;
+  margin-top: 10rem;
+  padding: 0.55rem;
+  overflow: auto;
+  border-left: 1px solid var(--border-color);
+}
+
+@media (max-width: 768px) {
+  .settlement-chat-layout { grid-template-columns: minmax(2.5rem, max-content) minmax(0, 1fr); }
+  .conversation-dock-tools,
+  .conversation-tabs,
+  .conversation-panel,
+  .dialogue-category-panel { display: none; }
 }

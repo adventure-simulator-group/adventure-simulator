@@ -347,6 +347,24 @@ pub fn fireplace_page(
             }
         }
     });
+    let cooking_progress = dish.map(|row| {
+        let target = u64::from(row.target_minutes).max(1);
+        (elapsed.min(target) * 100 / target) as u8
+    });
+    let cooking_state_icon = dish.map(|row| {
+        if elapsed < u64::from(row.target_minutes) {
+            "flame"
+        } else if elapsed == u64::from(row.target_minutes) {
+            "check-mark"
+        } else {
+            "flame"
+        }
+    });
+    let cooking_phase = dish.map(|row| {
+        if elapsed < u64::from(row.target_minutes) { "cooking" }
+        else if elapsed == u64::from(row.target_minutes) { "ready" }
+        else { "overdue" }
+    });
     let scope_href = |scope: &str| {
         format!(
             "{action_base}{}inventory_scope={scope}",
@@ -357,10 +375,21 @@ pub fn fireplace_page(
         div class="fireplace-layout" data-cooking-activity[dish.is_none()] data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
         aside class="left-sidebar fireplace-station-sidebar" {
             (sidebar_section("Fireplace", html! {
-                p { strong { "Loose cooking: " } (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
+                p class="fireplace-instrument" title="Loose food is always spit-roasted; pots, pans, and ovens cook their own contents." {
+                    (decorative_game_icon("campfire"))
+                    span { (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
+                }
                 @if let Some(row) = dish {
-                    p data-fireplace-status { strong { (status.unwrap_or("Cooking")) } " · " (elapsed) "/" (row.target_minutes) " min" }
-                    p class="small-copy text-muted" { "Added by " (&row.contributor_name) " at character minute " (row.started_at_minute) ". Hidden food-safety state is intentionally not shown." }
+                    div class="fireplace-cook-status" data-fireplace-status data-cooking-phase=(cooking_phase.unwrap_or("cooking")) role="group"
+                        aria-label=(format!("{}: {} of {} minutes", status.unwrap_or("Cooking"), elapsed, row.target_minutes)) {
+                        span class="fireplace-cook-status-icon" aria-hidden="true" { (decorative_game_icon(cooking_state_icon.unwrap_or("flame"))) }
+                        div class="fireplace-cook-progress" role="meter" aria-label="Cooking progress"
+                            aria-valuemin="0" aria-valuemax="100" aria-valuenow=(cooking_progress.unwrap_or(0)) {
+                            span style=(format!("--cooking-progress:{}%", cooking_progress.unwrap_or(0))) {}
+                        }
+                        strong { (status.unwrap_or("Cooking")) }
+                        time { (elapsed) "/" (row.target_minutes) "m" }
+                    }
                     form action=(format!("{action_base}/retrieve")) method="post" {
                         label { "Retrieve to "
                             select name="inventory_scope" {
@@ -383,11 +412,13 @@ pub fn fireplace_page(
                         @let vessel_item_id = vessel.instrument_item_id.as_deref().unwrap_or("container");
                         @let vessel_definition = definitions.iter().find(|item| item.id == vessel_item_id);
                         section class="fireplace-vessel" data-fireplace-container=(object_id) {
-                            p { strong { (item_name_with_display(vessel_item_id, &item_display_name(vessel_item_id), vessel_definition)) } }
+                            p class="fireplace-vessel-name" { (decorative_game_icon("meal")) strong { (item_name_with_display(vessel_item_id, &item_display_name(vessel_item_id), vessel_definition)) } }
                             button type="button" class="btn btn-secondary btn-small"
                                 data-container-open=(object_id) aria-label=(format!("Open {}", item_display_name(vessel_item_id))) { "Open" }
                             @if let Some(cooking) = vessel_dish {
-                                p class="small-copy" { (cooking.display_name.as_str()) " is cooking." }
+                                p class="fireplace-vessel-cooking" title=(format!("{} is cooking", cooking.display_name)) {
+                                    (decorative_game_icon("flame")) span { (cooking.display_name.as_str()) }
+                                }
                                 form action=(format!("{action_base}/retrieve")) method="post" {
                                     input type="hidden" name="inventory_scope" value=(format!("container:{object_id}"));
                                     button class="btn btn-primary btn-small" type="submit" { "Retrieve into vessel" }
@@ -410,9 +441,13 @@ pub fn fireplace_page(
             @if let Some(row) = dish {
                 section class="rest-service-menu fireplace-rest-menu" aria-label="Rest until food is ready" {
                     div class="rest-service-heading" { strong { "Rest while cooking" } }
-                    p class="small-copy" { "Target: " (row.target_minutes) " minutes · Remaining: " (u64::from(row.target_minutes).saturating_sub(elapsed)) " minutes" }
+                    p class="fireplace-rest-countdown" aria-label=(format!("{} minutes remaining", u64::from(row.target_minutes).saturating_sub(elapsed))) {
+                        (decorative_game_icon("flame"))
+                        span { (u64::from(row.target_minutes).saturating_sub(elapsed)) "m" }
+                    }
                     @if elapsed >= u64::from(row.target_minutes) {
-                        p class="strategic-warning" role="status" {
+                        p class="strategic-warning fireplace-ready-warning" role="status" {
+                            (decorative_game_icon("flame"))
                             @match row.method {
                                 CookingMethod::Stew => { "The dish is ready and will hold safely in its wet pot." }
                                 CookingMethod::Roast => { "The dish is ready. More time will dry and smoke it, reducing nutrition." }
