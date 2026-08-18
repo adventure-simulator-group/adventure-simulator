@@ -260,10 +260,10 @@ fn settlement_top_bar(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let services = [
+        ("map", "map", "Map", "map"),
         ("", "public-square", "Public square", "market"),
         ("residences", "residences", "Residences", "house"),
         ("keep", "keep", "Keep", "castle"),
-        ("map", "map", "Map", "map"),
         ("merchants", "merchants", "General Market", "market"),
         ("weapons", "weapons", "Weapons", "weapons"),
         ("armor", "armor", "Armour", "armor"),
@@ -1067,6 +1067,27 @@ mod tests {
         assert!(town.contains(
             "data-service-id=\"keep\" data-building-id=\"keep\" data-building-material=\"stone\""
         ));
+    }
+
+    #[test]
+    fn settlement_map_is_the_first_service_tab() {
+        let markup = settlement_top_bar(
+            "Place",
+            "p",
+            &SettlementCategory::Village,
+            "public-square",
+            None,
+            None,
+            None,
+        )
+        .into_string();
+        let map = markup
+            .find("href=\"/locations/settlement/p/map\"")
+            .expect("settlement travel map tab");
+        let public_square = markup
+            .find("data-service-id=\"public-square\"")
+            .expect("public square tab");
+        assert!(map < public_square, "the travel map must remain first");
     }
 
     #[test]
