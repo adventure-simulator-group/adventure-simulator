@@ -108,14 +108,14 @@ pub fn settlement_overview_page(
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
             (npc_portrait_strip(&settlement.id, "overview"))
             @if !corpses.is_empty() {
-                nav class="settlement-npc-strip corpse-strip" aria-label="Bodies held in the settlement" {
+                nav class="scene-interactable-strip corpse-strip" aria-label="Bodies held in the settlement" {
                     @for corpse in corpses {
                         @let corpse_label = if corpse.location == "interred" { "Buried body" } else { &corpse.display_name };
-                        a class="npc-portrait corpse-portrait"
+                        a class="scene-interactable scene-interactable--remains corpse-portrait"
                             href=(format!("/locations/settlement/{}?corpse={}&medical=physiology", settlement.id, corpse.corpse_id))
                             aria-label=(format!("Examine {corpse_label} with Physiology")) {
-                            span class="npc-portrait-image" aria-hidden="true" { "☠" }
-                            span class="npc-portrait-name" { (corpse_label) }
+                            span class="scene-interactable-visual" aria-hidden="true" { "☠" }
+                            span class="scene-interactable-label" { (corpse_label) }
                         }
                     }
                 }
@@ -764,7 +764,7 @@ pub(crate) fn character_portrait_overlay(
                         (inventory)
                     }
                     @for member in members {
-                        div class=(format!("party-portrait{}{}", if member.selected { " active" } else { "" }, if !member.alive { " dead" } else { "" }))
+                        div class=(format!("scene-interactable scene-interactable--person party-portrait{}{}", if member.selected { " active" } else { "" }, if !member.alive { " dead" } else { "" }))
                             data-character-id=(member.id)
                             data-character-alive=(member.alive)
                             data-active-character[member.active]
@@ -776,9 +776,9 @@ pub(crate) fn character_portrait_overlay(
                                 @if let Some(decoration) = &member.decoration {
                                     (decoration)
                                 }
-                                span class="party-portrait-initial" {
+                                span class="scene-interactable-visual party-portrait-initial" {
                                     span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
-                                    span class="party-portrait-name" { (member.name) @if !member.alive { " (dead)" } }
+                                    span class="scene-interactable-label party-portrait-name" { (member.name) @if !member.alive { " (dead)" } }
                                     @if let Some(badge) = &member.badge {
                                         (badge)
                                     }
@@ -811,9 +811,9 @@ pub(crate) fn party_portrait_overlay(
 
     let inventory = active_character.map(|_| {
         html! {
-            div class="party-portrait party-inventory-portrait" title="Party inventory" {
+            div class="scene-interactable scene-interactable--fixture party-portrait party-inventory-portrait" title="Party inventory" {
                 a class="party-portrait-select" href=(format!("{}/party-inventory", location_path)) {
-                    span class="party-portrait-initial party-chest-face" { (game_icon("Party inventory", "knapsack")) }
+                    span class="scene-interactable-visual party-portrait-initial party-chest-face" { (game_icon("Party inventory", "knapsack")) }
                 }
             }
         }

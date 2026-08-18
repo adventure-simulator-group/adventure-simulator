@@ -984,11 +984,11 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
     html! {
         section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
             @if challenge.active && challenge.open && !presentation.cast.is_empty() {
-              nav class="settlement-npc-strip counterparty-strip" aria-label="Roadside characters" {
+              nav class="scene-interactable-strip counterparty-strip" aria-label="Roadside characters" {
                 @for character in &presentation.cast {
-                  div class="npc-portrait counterparty-portrait" data-character-id=(character.character_id) {
-                    span class="npc-portrait-image" aria-hidden="true" { "?" }
-                    span class="npc-portrait-name" { (&character.name) }
+                  div class="scene-interactable scene-interactable--person counterparty-portrait" data-character-id=(character.character_id) {
+                    span class="scene-interactable-visual" aria-hidden="true" { "?" }
+                    span class="scene-interactable-label" { (&character.name) }
                     @if character.contact_decision == adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request {
                       form action="/camp/counterparty/contact" method="post" {
                         input type="hidden" name="target_id" value=(character.character_id);
@@ -1093,11 +1093,11 @@ fn strategic_encounter_panel(
             p { (awareness) }
             p class="text-muted small-copy" { (encounter.selection_explanation.as_str()) }
             @if !counterparties.is_empty() {
-                nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
+                nav class="scene-interactable-strip counterparty-strip" aria-label="Counterparty" {
                     @for character in counterparties {
-                        div class="npc-portrait counterparty-portrait" {
-                            span class="npc-portrait-image" aria-hidden="true" { "?" }
-                            span class="npc-portrait-name" { (&character.name) }
+                        div class="scene-interactable scene-interactable--person counterparty-portrait" {
+                            span class="scene-interactable-visual" aria-hidden="true" { "?" }
+                            span class="scene-interactable-label" { (&character.name) }
                             form action="/camp/counterparty/contact" method="post" {
                                 input type="hidden" name="target_id" value=(character.id);
                                 input type="hidden" name="contact_ref" value=(&encounter.encounter_id);
