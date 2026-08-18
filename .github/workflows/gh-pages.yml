@@ -64,8 +64,6 @@ jobs:
         run: npm run check:wiki-tooling-format
       - name: Check generated wiki navigation
         run: python3 scripts/update_wiki_summary.py --check
-      - name: Check generated project map
-        run: python3 scripts/update_project_map.py --check
       - name: Test wiki tooling
         run: >-
           python3 -B -m unittest

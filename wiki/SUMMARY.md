@@ -13,9 +13,9 @@
 # Contributing
 
 - [Wiki writing](contributing/wiki-writing.md)
+- [Strategic interface style guide](contributing/strategic-interface-style.md)
 - [Development workflow](engineering/developing.md)
 - [Item definition authoring](contributing/item-authoring.md)
-- [Project map maintenance](engineering/project-map-maintenance.md)
 
 # Engineering
 
@@ -26,10 +26,6 @@
 - [Strategic NPC simulation](engineering/strategic-simulation.md)
 - [Puzzle laboratory](engineering/puzzle-lab.md)
 - [Tactical automated testing](engineering/tactical-testing.md)
-
-# Generated reference
-
-- [Project map](generated/project-map.md)
 
 # Client
 
