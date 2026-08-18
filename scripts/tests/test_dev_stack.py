@@ -176,6 +176,24 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(result["animation_acceptance_passed"])
             self.assertTrue(result["signatures"]["body_relative_trailing"])
             self.assertTrue(result["signatures"]["long_awaiting_step_sequence"])
+            self.assertEqual(result["schema_version"], 2)
+            self.assertNotIn("evidence_frames", result)
+            self.assertEqual(
+                result["evidence_ranges"]["dual_zero_support"], [[0, 63]]
+            )
+            self.assertEqual(result["first_failure"]["contract"], "radial_extension")
+            summary = json.loads(
+                (root / "guard-footwork-iteration-summary.json").read_text()
+            )
+            self.assertEqual(summary["first_failure"], result["first_failure"])
+            self.assertLess(len(json.dumps(summary)), 4096)
+            causal = json.loads(
+                (root / "guard-footwork-causal-slice.json").read_text()
+            )
+            self.assertEqual(causal["first_failure"], result["first_failure"])
+            self.assertLessEqual(len(causal["frames"]), 21)
+            self.assertIn("raised", causal["frames"][0])
+            self.assertIn("left", causal["frames"][0])
             self.assertEqual(json.loads(manifest.read_text()), result)
 
     def test_guard_footwork_acceptance_rejects_partial_visible_failure(self):
@@ -211,7 +229,10 @@ class WorkflowTests(unittest.TestCase):
                         "selected_source": "raised_footwork",
                         **{
                             side: {"selected": {"diagnostic": {
-                                "owner": "guard_cadence", "owner_epoch": 4,
+                                "owner": "ground_safety_slide",
+                                "owner_epoch": 4,
+                                "acceleration": [100.0, 0.0, 0.0],
+                                "maximum_acceleration": 72.0,
                             }, "reach_disposition": "within"}}
                             for side in ("left", "right")
                         },
@@ -232,6 +253,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(result["known_failure_reproduced"])
             self.assertTrue(result["visual_or_lifecycle_failure"])
             self.assertFalse(result["animation_acceptance_passed"])
+            contracts = {failure["contract"] for failure in result["failed_contracts"]}
+            self.assertIn("ground_safety_slide_duration", contracts)
+            self.assertIn("selected_acceleration_limit_ratio", contracts)
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_authenticated_cli_token_is_forwarded_without_logging(self, run_checked):

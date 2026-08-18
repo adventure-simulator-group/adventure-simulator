@@ -2171,6 +2171,98 @@ def effective_presentation_trace(
     return requested
 
 
+def contiguous_frame_ranges(frames: list[int]) -> list[list[int]]:
+    """Compress sorted frame evidence without losing interval boundaries."""
+    if not frames:
+        return []
+    ranges: list[list[int]] = []
+    start = previous = frames[0]
+    for frame in frames[1:]:
+        if frame <= previous + 1:
+            previous = max(previous, frame)
+            continue
+        ranges.append([start, previous])
+        start = previous = frame
+    ranges.append([start, previous])
+    return ranges
+
+
+def guard_footwork_causal_frame(record: dict[str, object]) -> dict[str, object]:
+    """Project one live frame to the state needed for causal footwork review."""
+    raised = record.get("raised_ownership") or {}
+    motion = record.get("foot_motion") or {}
+    lower = record.get("lower_body") or {}
+
+    def foot(side: str) -> dict[str, object]:
+        selected = ((motion.get(side) or {}).get("selected") or {})
+        diagnostic = selected.get("diagnostic") or {}
+        side_body = lower.get(side) or {}
+        ankle = side_body.get("ankle") or {}
+        toe = side_body.get("toe") or {}
+        return {
+            "owner": diagnostic.get("owner"),
+            "owner_epoch": diagnostic.get("owner_epoch"),
+            "presented": diagnostic.get("presented"),
+            "commanded": diagnostic.get("commanded"),
+            "velocity": diagnostic.get("velocity"),
+            "acceleration": diagnostic.get("acceleration"),
+            "contact_event": diagnostic.get("contact_event"),
+            "contact_tick": diagnostic.get("contact_tick"),
+            "contact_progress": diagnostic.get("contact_progress"),
+            "reach_disposition": selected.get("reach_disposition"),
+            "reach_distance": selected.get("reach_distance"),
+            "warning_reach": selected.get("warning_reach"),
+            "hard_reach": selected.get("hard_reach"),
+            "ankle_from_visual_pelvis_world": side_body.get(
+                "ankle_from_visual_pelvis_world"
+            ),
+            "ankle_clearance": ankle.get("clearance"),
+            "toe_clearance": toe.get("clearance"),
+        }
+
+    request = record.get("last_emitted_player_input") or {}
+    return {
+        "frame": record.get("frame"),
+        "elapsed_seconds": record.get("elapsed_seconds"),
+        "semantic_tick": (record.get("procedural_clock") or {}).get("semantic_tick"),
+        "authoritative": record.get("authoritative"),
+        "presented": record.get("presented"),
+        "cadence_identity": record.get("cadence_identity"),
+        "input": {
+            "movement": request.get("movement"),
+            "pace": request.get("pace"),
+            "weapon_guard": request.get("weapon_guard"),
+        },
+        "controller_translation": (
+            record.get("controller_global_transform") or {}
+        ).get("translation"),
+        "raised": {
+            key: raised.get(key)
+            for key in (
+                "step_sequence",
+                "swing_left",
+                "half_step",
+                "awaiting_step_sequence",
+                "pending_cadence_edge",
+                "pivot_active",
+                "left_support_weight",
+                "right_support_weight",
+                "left_support_release_owner",
+                "right_support_release_owner",
+                "swing_segment_active",
+                "swing_segment_progress",
+                "swing_emergency_brake_active",
+                "swing_release_owner_active",
+                "release_handoff_active",
+                "was_moving",
+            )
+        },
+        "pelvis_motion": record.get("pelvis_motion"),
+        "left": foot("left"),
+        "right": foot("right"),
+    }
+
+
 def analyze_guard_footwork_repro(
     animation_log: Path,
     manifest_path: Path,
@@ -2210,18 +2302,30 @@ def analyze_guard_footwork_repro(
     emergency_epochs: dict[str, set[int]] = {"left": set(), "right": set()}
     lowered_elapsed: float | None = None
     stale_release_start: float | None = None
+    stale_release_start_frame: int | None = None
     longest_stale_release_seconds = 0.0
     awaiting_start: float | None = None
+    awaiting_start_frame: int | None = None
     longest_awaiting_seconds = 0.0
     syndrome_start: float | None = None
     longest_syndrome_seconds = 0.0
     visible_stuck_start: float | None = None
+    visible_stuck_start_frame: int | None = None
     longest_visible_stuck_seconds = 0.0
+    ground_safety_slide_starts: dict[str, tuple[float, int] | None] = {
+        "left": None,
+        "right": None,
+    }
+    longest_ground_safety_slide_seconds = 0.0
+    maximum_selected_acceleration_ratio = 0.0
+    maximum_selected_acceleration_frame: int | None = None
     authoritative_ticks: set[int] = set()
     source_ticks: set[int] = set()
     saw_raised_moving = False
     controller_positions: list[tuple[float, float]] = []
     previous_elapsed: float | None = None
+    threshold_frames: dict[str, int] = {}
+    threshold_start_frames: dict[str, int] = {}
 
     def append_bounded(target: list[int], frame: int) -> None:
         if len(target) < 64:
@@ -2232,9 +2336,13 @@ def analyze_guard_footwork_repro(
         elapsed = float(record.get("elapsed_seconds", 0.0))
         if previous_elapsed is not None and not (0.0 <= elapsed - previous_elapsed <= 0.1):
             awaiting_start = None
+            awaiting_start_frame = None
             syndrome_start = None
             visible_stuck_start = None
+            visible_stuck_start_frame = None
             stale_release_start = None
+            stale_release_start_frame = None
+            ground_safety_slide_starts = {"left": None, "right": None}
         previous_elapsed = elapsed
         authoritative = record.get("authoritative") or {}
         if authoritative.get("locomotion_sample_tick") is not None:
@@ -2270,15 +2378,52 @@ def analyze_guard_footwork_repro(
         if raised.get("awaiting_step_sequence"):
             append_bounded(awaiting_frames, frame)
             awaiting_start = elapsed if awaiting_start is None else awaiting_start
+            awaiting_start_frame = frame if awaiting_start_frame is None else awaiting_start_frame
             longest_awaiting_seconds = max(longest_awaiting_seconds, elapsed - awaiting_start)
+            if elapsed - awaiting_start >= 0.5:
+                threshold_frames.setdefault("cadence_wait", frame)
+                threshold_start_frames.setdefault(
+                    "cadence_wait", awaiting_start_frame or frame
+                )
         else:
             awaiting_start = None
+            awaiting_start_frame = None
         motion = record.get("foot_motion") or {}
         recovery_or_reach_this_frame = False
         for side in ("left", "right"):
             selected = ((motion.get(side) or {}).get("selected") or {})
             diagnostic = selected.get("diagnostic") or {}
             owner = diagnostic.get("owner")
+            if owner == "ground_safety_slide":
+                started = ground_safety_slide_starts[side]
+                if started is None:
+                    started = (elapsed, frame)
+                    ground_safety_slide_starts[side] = started
+                duration = elapsed - started[0]
+                longest_ground_safety_slide_seconds = max(
+                    longest_ground_safety_slide_seconds, duration
+                )
+                if duration >= 0.5:
+                    threshold_frames.setdefault("ground_safety_slide", frame)
+                    threshold_start_frames.setdefault("ground_safety_slide", started[1])
+            else:
+                ground_safety_slide_starts[side] = None
+            acceleration = diagnostic.get("acceleration")
+            maximum_acceleration = diagnostic.get("maximum_acceleration")
+            if (
+                acceleration
+                and len(acceleration) >= 3
+                and maximum_acceleration is not None
+                and float(maximum_acceleration) > 0.0
+            ):
+                magnitude = sum(float(component) ** 2 for component in acceleration[:3]) ** 0.5
+                ratio = magnitude / float(maximum_acceleration)
+                if ratio > maximum_selected_acceleration_ratio:
+                    maximum_selected_acceleration_ratio = ratio
+                    maximum_selected_acceleration_frame = frame
+                if ratio > 1.001:
+                    threshold_frames.setdefault("selected_acceleration", frame)
+                    threshold_start_frames.setdefault("selected_acceleration", frame)
             if owner == "emergency_recovery":
                 append_bounded(emergency_frames, frame)
                 emergency_epochs[side].add(int(diagnostic.get("owner_epoch", 0)))
@@ -2289,6 +2434,8 @@ def analyze_guard_footwork_repro(
                 recovery_or_reach_this_frame = True
             elif disposition == "hard":
                 append_bounded(hard_frames, frame)
+                threshold_frames.setdefault("hard_reach", frame)
+                threshold_start_frames.setdefault("hard_reach", frame)
                 recovery_or_reach_this_frame = True
         lower = record.get("lower_body") or {}
         elevated_this_frame = False
@@ -2306,6 +2453,8 @@ def analyze_guard_footwork_repro(
                 )
                 if radial > 0.90:
                     append_bounded(overextension_frames, frame)
+                    threshold_frames.setdefault("radial_extension", frame)
+                    threshold_start_frames.setdefault("radial_extension", frame)
                     overextended_this_frame = True
                 move_x = float(movement[0]) if len(movement) >= 2 else 0.0
                 move_y = float(movement[1]) if len(movement) >= 2 else 0.0
@@ -2344,11 +2493,22 @@ def analyze_guard_footwork_repro(
                 stale_release_start = (
                     elapsed if stale_release_start is None else stale_release_start
                 )
+                stale_release_start_frame = (
+                    frame
+                    if stale_release_start_frame is None
+                    else stale_release_start_frame
+                )
                 longest_stale_release_seconds = max(
                     longest_stale_release_seconds, elapsed - stale_release_start
                 )
+                if elapsed - stale_release_start >= 0.5:
+                    threshold_frames.setdefault("stale_raised_release", frame)
+                    threshold_start_frames.setdefault(
+                        "stale_raised_release", stale_release_start_frame or frame
+                    )
             else:
                 stale_release_start = None
+                stale_release_start_frame = None
         episode = (
             zero_support
             and bool(raised.get("awaiting_step_sequence"))
@@ -2372,11 +2532,20 @@ def analyze_guard_footwork_repro(
         if visible_stuck:
             append_bounded(visible_stuck_frames, frame)
             visible_stuck_start = elapsed if visible_stuck_start is None else visible_stuck_start
+            visible_stuck_start_frame = (
+                frame if visible_stuck_start_frame is None else visible_stuck_start_frame
+            )
             longest_visible_stuck_seconds = max(
                 longest_visible_stuck_seconds, elapsed - visible_stuck_start
             )
+            if elapsed - visible_stuck_start >= 0.2:
+                threshold_frames.setdefault("visible_stuck", frame)
+                threshold_start_frames.setdefault(
+                    "visible_stuck", visible_stuck_start_frame or frame
+                )
         else:
             visible_stuck_start = None
+            visible_stuck_start_frame = None
 
     controller_displacement = 0.0
     if controller_positions:
@@ -2421,10 +2590,117 @@ def analyze_guard_footwork_repro(
         or longest_awaiting_seconds >= 0.5
         or longest_stale_release_seconds >= 0.5
         or bool(hard_frames)
+        or longest_ground_safety_slide_seconds >= 0.5
+        or maximum_selected_acceleration_ratio > 1.001
     )
+    failed_contracts = [
+        {
+            "contract": "radial_extension",
+            "value": maximum_radial_extension_metres,
+            "limit": 0.90,
+            "frame": threshold_frames.get("radial_extension"),
+            "episode_start_frame": threshold_start_frames.get("radial_extension"),
+        },
+        {
+            "contract": "visible_stuck_duration",
+            "value": longest_visible_stuck_seconds,
+            "limit": 0.2,
+            "frame": threshold_frames.get("visible_stuck"),
+            "episode_start_frame": threshold_start_frames.get("visible_stuck"),
+        },
+        {
+            "contract": "cadence_wait",
+            "value": longest_awaiting_seconds,
+            "limit": 0.5,
+            "frame": threshold_frames.get("cadence_wait"),
+            "episode_start_frame": threshold_start_frames.get("cadence_wait"),
+        },
+        {
+            "contract": "stale_raised_release",
+            "value": longest_stale_release_seconds,
+            "limit": 0.5,
+            "frame": threshold_frames.get("stale_raised_release"),
+            "episode_start_frame": threshold_start_frames.get("stale_raised_release"),
+        },
+        {
+            "contract": "hard_reach",
+            "value": bool(hard_frames),
+            "limit": False,
+            "frame": threshold_frames.get("hard_reach"),
+            "episode_start_frame": threshold_start_frames.get("hard_reach"),
+        },
+        {
+            "contract": "ground_safety_slide_duration",
+            "value": longest_ground_safety_slide_seconds,
+            "limit": 0.5,
+            "frame": threshold_frames.get("ground_safety_slide"),
+            "episode_start_frame": threshold_start_frames.get("ground_safety_slide"),
+        },
+        {
+            "contract": "selected_acceleration_limit_ratio",
+            "value": maximum_selected_acceleration_ratio,
+            "limit": 1.001,
+            "frame": threshold_frames.get("selected_acceleration"),
+            "episode_start_frame": threshold_start_frames.get("selected_acceleration"),
+        },
+    ]
+    failed_contracts = [
+        contract for contract in failed_contracts if contract["frame"] is not None
+    ]
+    first_failure = min(
+        failed_contracts,
+        key=lambda contract: int(contract["frame"]),
+        default=None,
+    )
+    evidence_lists = {
+        "dual_zero_support": zero_support_frames,
+        "awaiting_step_sequence": awaiting_frames,
+        "emergency_owner": emergency_frames,
+        "warning_reach": warning_frames,
+        "hard_reach": hard_frames,
+        "airborne_clearance": airborne_clearance_frames,
+        "body_relative_trailing": trailing_frames,
+        "body_relative_overextension": overextension_frames,
+        "raised_after_guard_lowered": raised_after_lower_frames,
+        "visible_stuck_episode": visible_stuck_frames,
+    }
+    evidence_ranges = {
+        name: contiguous_frame_ranges(frame_list)
+        for name, frame_list in evidence_lists.items()
+    }
+    summary_path = manifest_path.with_name("guard-footwork-iteration-summary.json")
+    causal_slice_path = manifest_path.with_name("guard-footwork-causal-slice.json")
+    first_failure_frame = (
+        int(first_failure["frame"]) if first_failure is not None else None
+    )
+    first_failure_start_frame = (
+        int(first_failure["episode_start_frame"])
+        if first_failure is not None
+        and first_failure.get("episode_start_frame") is not None
+        else first_failure_frame
+    )
+    causal_frame_ids: set[int] = set()
+    if first_failure_frame is not None and first_failure_start_frame is not None:
+        causal_frame_ids.update(
+            range(first_failure_start_frame - 4, first_failure_start_frame + 7)
+        )
+        causal_frame_ids.update(range(first_failure_frame - 3, first_failure_frame + 5))
+    causal_records = [
+        guard_footwork_causal_frame(record)
+        for record in ordered
+        if int(record["frame"]) in causal_frame_ids
+    ]
+    causal_slice = {
+        "schema": "adventuresim.animation.guard_footwork_causal_slice",
+        "schema_version": 1,
+        "source_log": str(animation_log),
+        "first_failure": first_failure,
+        "frames": causal_records,
+    }
+    atomic_write_json(causal_slice_path, causal_slice)
     manifest: dict[str, object] = {
         "schema": "adventuresim.animation.guard_footwork_repro",
-        "schema_version": 1,
+        "schema_version": 2,
         "source_log": str(animation_log),
         "scenario": GUARD_FOOTWORK_REPRO_SCENARIO,
         "scene_input": scene_input,
@@ -2447,25 +2723,34 @@ def analyze_guard_footwork_repro(
         "longest_coherent_failure_episode_seconds": longest_syndrome_seconds,
         "longest_visible_stuck_episode_seconds": longest_visible_stuck_seconds,
         "longest_raised_release_after_lower_seconds": longest_stale_release_seconds,
+        "longest_ground_safety_slide_seconds": longest_ground_safety_slide_seconds,
+        "maximum_selected_acceleration_ratio": maximum_selected_acceleration_ratio,
+        "maximum_selected_acceleration_frame": maximum_selected_acceleration_frame,
         "authoritative_sample_tick_count": len(authoritative_ticks),
         "presentation_source_tick_count": len(source_ticks),
         "controller_displacement_metres": controller_displacement,
         "emergency_owner_epoch_count": sum(len(epochs) for epochs in emergency_epochs.values()),
         "signatures": signatures,
-        "evidence_frames": {
-            "dual_zero_support": zero_support_frames,
-            "awaiting_step_sequence": awaiting_frames,
-            "emergency_owner": emergency_frames,
-            "warning_reach": warning_frames,
-            "hard_reach": hard_frames,
-            "airborne_clearance": airborne_clearance_frames,
-            "body_relative_trailing": trailing_frames,
-            "body_relative_overextension": overextension_frames,
-            "raised_after_guard_lowered": raised_after_lower_frames,
-            "visible_stuck_episode": visible_stuck_frames,
-        },
+        "failed_contracts": failed_contracts,
+        "first_failure": first_failure,
+        "evidence_ranges": evidence_ranges,
+        "causal_slice": str(causal_slice_path),
+        "iteration_summary": str(summary_path),
     }
     atomic_write_json(manifest_path, manifest)
+    summary = {
+        "schema": "adventuresim.animation.guard_footwork_iteration",
+        "schema_version": 1,
+        "animation_acceptance_passed": manifest["animation_acceptance_passed"],
+        "harness_completed": harness_completed,
+        "first_failure": first_failure,
+        "failed_contracts": failed_contracts,
+        "evidence_ranges": evidence_ranges,
+        "manifest": str(manifest_path),
+        "causal_slice": str(causal_slice_path),
+        "source_log": str(animation_log),
+    }
+    atomic_write_json(summary_path, summary)
     return manifest
 
 

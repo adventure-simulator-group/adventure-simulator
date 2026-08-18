@@ -882,6 +882,7 @@ enum FootMotionOwnerSample {
     GuardCadence,
     AdmittedC2,
     EmergencyRecovery,
+    GroundSafetySlide,
     TerminalHold,
     ReleaseHandoff,
 }
@@ -894,6 +895,7 @@ impl FootMotionOwnerSample {
             FootMotionOwnerKind::GuardCadence => Some(Self::GuardCadence),
             FootMotionOwnerKind::AdmittedC2 => Some(Self::AdmittedC2),
             FootMotionOwnerKind::EmergencyRecovery => Some(Self::EmergencyRecovery),
+            FootMotionOwnerKind::GroundSafetySlide => Some(Self::GroundSafetySlide),
             FootMotionOwnerKind::TerminalHold => Some(Self::TerminalHold),
             FootMotionOwnerKind::ReleaseHandoff => Some(Self::ReleaseHandoff),
         }

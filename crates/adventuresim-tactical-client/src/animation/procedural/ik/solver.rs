@@ -501,6 +501,20 @@ pub(in crate::animation::procedural) fn advance_foot_follower(
     let current_hard_invalid = limits
         .reach
         .is_some_and(|reach| current.position.distance(reach.current_root) > reach.hard_reach);
+    let reach_braking = limits.reach.and_then(|reach| {
+        let radial = (current.position - reach.next_root).normalize_or_zero();
+        let root_velocity = (reach.next_root - reach.current_root) / dt;
+        let outward_velocity = (current.velocity - root_velocity).dot(radial);
+        let outward_acceleration = current.acceleration.dot(radial);
+        let stopping_distance = jerk_limited_stopping_distance(
+            outward_velocity,
+            outward_acceleration,
+            limits.maximum_acceleration,
+            limits.maximum_jerk,
+        );
+        (current.position.distance(reach.next_root) + stopping_distance >= reach.warning_reach)
+            .then_some(radial)
+    });
     let tracking_acceleration = ideal.acceleration
         + control_position_error * frequency.powi(2)
         + control_velocity_error * damping;
@@ -516,6 +530,12 @@ pub(in crate::animation::procedural) fn advance_foot_follower(
         outward
             * ((desired_outward_speed - relative_outward_speed) / dt)
                 .clamp(-limits.maximum_acceleration, limits.maximum_acceleration)
+    } else if let Some(radial) = reach_braking {
+        // Begin radial braking while the current p/v/a can still stop inside
+        // warning reach. Preserve tangential tracking so a grounded shuffle
+        // can keep moving around the hip without trading its flexion reserve
+        // for an avoidable downstream hard clamp.
+        tracking_acceleration.reject_from_normalized(radial) - radial * limits.maximum_acceleration
     } else {
         tracking_acceleration
     };
@@ -523,8 +543,30 @@ pub(in crate::animation::procedural) fn advance_foot_follower(
     let jerk = requested_jerk.clamp_length_max(limits.maximum_jerk.max(0.0));
     let acceleration =
         (current.acceleration + jerk * dt).clamp_length_max(limits.maximum_acceleration.max(0.0));
-    let velocity = current.velocity + acceleration * dt;
-    let position = current.position + velocity * dt;
+    let mut velocity = current.velocity + acceleration * dt;
+    let mut acceleration = acceleration;
+    let mut position = current.position + velocity * dt;
+    let mut reach_constrained = false;
+    if let Some(reach) = limits.reach {
+        let offset = position - reach.next_root;
+        let distance = offset.length();
+        if distance > reach.warning_reach {
+            reach_constrained = true;
+            // Reach is a unilateral kinematic constraint, not merely a reason
+            // to ask the semantic owner for a different target next frame.
+            // Project the complete presented state onto its tangent space so
+            // the downstream two-bone solver never has to snap position while
+            // retaining impossible outward derivatives. This is deliberately
+            // morphology-relative and remains valid when limb scale or gait
+            // speed changes.
+            let radial = offset / distance;
+            position = reach.next_root + radial * reach.warning_reach;
+            let root_velocity = (reach.next_root - reach.current_root) / dt;
+            let relative_velocity = velocity - root_velocity;
+            velocity -= radial * relative_velocity.dot(radial).max(0.0);
+            acceleration -= radial * acceleration.dot(radial).max(0.0);
+        }
+    }
     let state = FootFollowerState {
         position,
         velocity,
@@ -550,7 +592,7 @@ pub(in crate::animation::procedural) fn advance_foot_follower(
         let candidate_reach = position.distance(reach.next_root);
         if candidate_reach > reach.hard_reach {
             Some(FootFollowReason::ReachHardLimit)
-        } else if candidate_reach > reach.warning_reach {
+        } else if reach_constrained || candidate_reach > reach.warning_reach {
             Some(FootFollowReason::ReachWarning)
         } else {
             None
@@ -781,7 +823,6 @@ fn plan_pelvis_recovery(
         || !start.velocity.is_finite()
         || !start.acceleration.is_finite()
         || !end.is_finite()
-        || end < start.position
     {
         return None;
     }
@@ -804,9 +845,11 @@ fn plan_pelvis_recovery(
             end,
             end,
         ];
+        let minimum_position = start.position.min(end) - 0.000001;
+        let maximum_position = start.position.max(end) + 0.000001;
         if position_controls
             .iter()
-            .any(|position| *position > end + 0.000001)
+            .any(|position| *position < minimum_position || *position > maximum_position)
         {
             continue;
         }
@@ -859,10 +902,19 @@ pub(in crate::animation::procedural) fn advance_pelvis_follower_with_recovery(
     desired: f32,
     delta_seconds: f32,
 ) -> PelvisFollowerState {
-    if recovery.is_some_and(|segment| (segment.end - desired).abs() > 0.000001) {
-        *recovery = None;
+    if let Some(segment) = *recovery {
+        let admitted_direction = (segment.end - segment.start.position).signum();
+        let requested_direction = (desired - segment.end).signum();
+        let extends_admitted_motion = admitted_direction != 0.0
+            && requested_direction == admitted_direction
+            && (desired - segment.end).abs() > 0.000001;
+        if extends_admitted_motion
+            && let Some(replanned) = plan_pelvis_recovery(current, desired, delta_seconds)
+        {
+            *recovery = Some(replanned);
+        }
     }
-    if recovery.is_none() && desired > current.position + 0.000001 {
+    if recovery.is_none() && (desired - current.position).abs() > 0.000001 {
         *recovery = plan_pelvis_recovery(current, desired, delta_seconds);
     }
     if let Some(segment) = recovery.as_mut() {

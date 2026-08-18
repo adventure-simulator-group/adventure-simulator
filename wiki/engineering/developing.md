@@ -652,7 +652,12 @@ forward-right sequence through the normal machine-readable diagnostic input
 path, and analyzes the live JSONL after the client exits. The command succeeds
 only when the harness completed and the known stuck-air signature was observed;
 its `guard-footwork-repro-manifest.json` records animation acceptance as failed
-when that expected defect is reproduced.
+when that expected defect is reproduced. The analyzer also writes a compact
+`guard-footwork-iteration-summary.json` with the first failed contract,
+threshold values, and contiguous evidence ranges, plus a bounded
+`guard-footwork-causal-slice.json` containing only the twelve frames before and
+eight frames after that failure. Use those two files for ordinary iteration;
+open the full JSONL only when the causal slice is insufficient.
 
 On Windows,
 `presentation_trace=auto` records a `presentmon-<session>.csv` ETW trace for the

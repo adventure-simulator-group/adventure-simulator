@@ -526,7 +526,11 @@ mod legacy_tests {
                             rendered_ankles[index].xz().distance(visual_body.xz());
                         assert!(
                             owner_local_planar <= 0.90,
-                            "render_hz={render_hz} lead={lead:?} direction={direction:?} frame={frame} left={left} airborne_owner_local_planar={owner_local_planar} owners={:?} phase={} sequence={}",
+                            "render_hz={render_hz} lead={lead:?} direction={direction:?} frame={frame} left={left} airborne_owner_local_planar={owner_local_planar} ankle={:?} visual_body={visual_body:?} presented={:?} commanded={:?} velocity={:?} owners={:?} phase={} sequence={}",
+                            rendered_ankles[index],
+                            diagnostic.presented,
+                            diagnostic.commanded,
+                            diagnostic.velocity,
                             raised.owner_summary_for_test(),
                             presented.gait_phase,
                             presented.raised_locomotion().step_sequence(),

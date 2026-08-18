@@ -681,8 +681,8 @@ fn clear_ownerless_guard_wait(footwork: &mut RaisedFootworkState) -> bool {
     let recovery_owner_active = footwork.swing_replan_segment.is_some()
         || footwork.swing_emergency_brake.is_some()
         || footwork.swing_release_owner_active
-        || footwork.left_support_release_owner.is_some()
-        || footwork.right_support_release_owner.is_some()
+        || support_owner_blocks_cadence(footwork.left_support_release_owner)
+        || support_owner_blocks_cadence(footwork.right_support_release_owner)
         || footwork.pending_cadence_edge.is_some();
     if footwork.awaiting_step_sequence && !recovery_owner_active {
         footwork.awaiting_step_sequence = false;
@@ -731,6 +731,54 @@ fn defer_guard_cadence_edge_for_active_pelvis(
         acquisition.trajectory_signature.sequence = current_sequence;
     }
     true
+}
+
+fn defer_guard_cadence_edge_for_contact_recovery(
+    footwork: &mut RaisedFootworkState,
+    pending_swing_left: bool,
+    pending_sequence: u32,
+) {
+    // Sequence and swing side are one semantic identity. Advancing only the
+    // sequence while the previous leg still owns recovery creates a hybrid
+    // state which can never be repaired by the normal sequence-delta path.
+    // Keep the complete old identity until its typed owner settles, then
+    // consume the complete pending identity from the visible feet.
+    footwork.pending_cadence_edge = Some((pending_swing_left, pending_sequence));
+    footwork.awaiting_step_sequence = true;
+}
+
+fn retain_or_defer_guard_cadence_identity(
+    footwork: &mut RaisedFootworkState,
+    current_swing_left: bool,
+    current_sequence: u32,
+    awaiting_if_current: bool,
+) {
+    if footwork.step_sequence != current_sequence || footwork.swing_left != current_swing_left {
+        defer_guard_cadence_edge_for_contact_recovery(
+            footwork,
+            current_swing_left,
+            current_sequence,
+        );
+    } else {
+        footwork.awaiting_step_sequence = awaiting_if_current;
+    }
+}
+
+fn guard_pending_cadence_edge_can_be_consumed(footwork: &RaisedFootworkState) -> bool {
+    let completed_contact = footwork
+        .swing_replan_segment
+        .is_some_and(|segment| segment.end.is_contact() && segment.timing.is_complete());
+    let contact_in_flight = footwork
+        .swing_replan_segment
+        .is_some_and(|segment| segment.end.is_contact() && !segment.timing.is_complete());
+    let pelvis_in_flight = footwork
+        .pelvis_acquisition
+        .is_some_and(|acquisition| acquisition.target.is_some() && acquisition.progress < 1.0);
+    let recovery_in_flight = footwork.swing_emergency_brake.is_some()
+        || footwork.swing_release_owner_active
+        || support_owner_blocks_cadence(footwork.left_support_release_owner)
+        || support_owner_blocks_cadence(footwork.right_support_release_owner);
+    completed_contact || (!contact_in_flight && !pelvis_in_flight && !recovery_in_flight)
 }
 
 fn raised_pelvis_local_scalar_shift(
@@ -812,29 +860,35 @@ fn guard_controller_trajectory_signature(
 fn guard_controller_command_changed(
     from: GuardPelvisTrajectorySignature,
     to: GuardPelvisTrajectorySignature,
-    delta_seconds: f32,
+    _delta_seconds: f32,
 ) -> bool {
-    let response = tactical_movement_acceleration_hz_for_guard(WeaponGuardState::Raised);
-    let elapsed_ticks = to.presentation_tick.saturating_sub(from.presentation_tick);
-    let elapsed = if elapsed_ticks == 0 {
-        0.0
-    } else {
-        delta_seconds.max(0.0)
+    // Sparse authoritative samples legitimately replace the observed velocity
+    // and acceleration while the semantic movement command remains unchanged.
+    // Treating that presentation convergence as a new command aborts a freshly
+    // admitted contact on its first live packet. The persisted proof still
+    // validates its expected hip against the live hip, and every published
+    // foot sample must independently remain inside the live warning/hard reach.
+    // Presented acceleration is sparse between authoritative snapshots, so
+    // reconstructing the command magnitude as `v + a / response` produces a
+    // different speed on nearly every presentation tick even while the player
+    // holds one direction. Only a material command-direction change is a new
+    // semantic path. Magnitude/prediction error is owned by the live hip and
+    // reach checks before every published foot sample.
+    let from_direction = from.command_velocity.xz().normalize_or_zero();
+    let to_direction = to.command_velocity.xz().normalize_or_zero();
+    let command_direction_changed = match (from_direction, to_direction) {
+        (Vec2::ZERO, Vec2::ZERO) => false,
+        (Vec2::ZERO, _) | (_, Vec2::ZERO) => true,
+        (from, to) => from.dot(to) < 0.995,
     };
-    let expected_velocity = from.command_velocity
-        + (from.world_velocity - from.command_velocity) * (-response * elapsed).exp();
-    let expected_acceleration = (from.command_velocity - expected_velocity) * response;
-    let expected_rotation = guard_predicted_body_rotation(from, elapsed);
-    from.command_velocity.distance_squared(to.command_velocity) > 0.000001
-        || from.sequence != to.sequence
-        || (elapsed_ticks > 0
-            && (expected_velocity.distance_squared(to.world_velocity) > 0.000004
-                || expected_acceleration.distance_squared(to.world_acceleration) > 0.0004
-                || expected_rotation.angle_between(to.body_rotation) > 0.002))
-        || from
-            .body_target_rotation
-            .angle_between(to.body_target_rotation)
-            > 0.0001
+    // Aim/body-facing targets are continuously recomputed presentation input,
+    // not a discrete foot-owner command. Invalidating an admitted step for
+    // every tiny facing correction can abort it before its first visible
+    // sample and leave the swing foot at its old world-space plant. The proof
+    // predicts facing for admission, while the mandatory live-hip reach check
+    // below every direct sample remains the authority if the actual turn
+    // materially departs from that prediction.
+    command_direction_changed || from.sequence != to.sequence
 }
 
 fn guard_predicted_body_rotation(signature: GuardPelvisTrajectorySignature, seconds: f32) -> Quat {
@@ -1253,7 +1307,11 @@ const RAISED_SETTLE_TARGET_SPEED: f32 =
 // deadline-driven while bounding unusually long post-attack recovery steps
 // instead of teleporting them.
 const GUARD_PIVOT_TRIGGER_METRES: f32 = 0.04;
-const GUARD_PIVOT_STEP_SECONDS: f32 = 0.16;
+// A stationary stance correction is already a complete rest-to-rest motion
+// owner. Give its largest normal corridor correction enough time to remain
+// below the same 24/384 ankle-space limits as moving guard contacts, then
+// present its analytic samples directly instead of filtering it a second time.
+const GUARD_PIVOT_STEP_SECONDS: f32 = 0.40;
 const GUARD_PELVIS_ACQUISITION_SECONDS: f32 = 0.32;
 // Guard, attack, block, and quickstep endpoints drive a nearly extended
 // two-bone chain, so the ankle-space follower's general 72/1152 budget can be
@@ -1261,8 +1319,26 @@ const GUARD_PELVIS_ACQUISITION_SECONDS: f32 = 0.32;
 // a lower route-specific budget; if a contact deadline cannot accommodate it,
 // retain a duration-extended release owner instead. Run remains on the
 // error-responsive stateful follower.
-const GUARD_ACTION_SEGMENT_MAXIMUM_ACCELERATION: f32 = 24.0;
-const GUARD_ACTION_SEGMENT_MAXIMUM_JERK: f32 = 384.0;
+// Swing trajectories have to overtake a moving hip within one half-step. The
+// safety contact below is typically a short morphology-scale catch-up step;
+// 24/384 could not move it before hard reach even though the general recovery
+// follower already lawfully supports 72/1152. Keep a lower guard-specific
+// budget, but leave enough authority for a grounded catch-up contact.
+// A biped has only one remaining support while the other foot swings. Guard
+// contact motion therefore needs the same emergency-safe envelope as the
+// general foot follower: a deliberately lower route budget can make a lawful
+// contact mathematically slower than the planted leg's remaining reach. The
+// analytic C2 owner still proves these bounds for every admitted curve.
+const GUARD_ACTION_SEGMENT_MAXIMUM_ACCELERATION: f32 = 72.0;
+// A guard foot advances roughly two body steps between alternate contacts.
+// At walk speed that is about 0.85 m in 18 semantic ticks on the production
+// rabbit rig. The general follower's 1,152 m/s^3 recovery limit cannot make
+// that ordinary cadence deadline and used to extend the contact into the next
+// half-step, leaving the old support behind the moving body. Direct C2 gait
+// owners instead share the controller command's jerk envelope: the complete
+// polynomial is still proved before publication and acceleration remains
+// capped at 72 m/s^2.
+const GUARD_ACTION_SEGMENT_MAXIMUM_JERK: f32 = 3072.0;
 const GUARD_FORCED_RELEASE_SECONDS: f32 = 0.18;
 const GUARD_PIVOT_LIFT_METRES: f32 = 0.08;
 const KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS: f32 = std::f32::consts::FRAC_PI_8;
@@ -1354,6 +1430,7 @@ pub(crate) enum FootMotionOwnerKind {
     GuardCadence,
     AdmittedC2,
     EmergencyRecovery,
+    GroundSafetySlide,
     TerminalHold,
     ReleaseHandoff,
 }
@@ -1644,6 +1721,7 @@ struct GuardHipPathProof {
     contact_tick: u64,
     sequence: u32,
     swing_left: bool,
+    accepts_preemptive_cadence_confirmation: bool,
     trajectory_signature: GuardPelvisTrajectorySignature,
     rig_origin: Vec3,
     pelvis_parent_affine: Option<Affine3A>,
@@ -1726,16 +1804,13 @@ fn guard_exact_proof_matches_live(
     support_owner_valid: bool,
 ) -> bool {
     let elapsed = semantic_tick.saturating_sub(proof.start_tick) as f32 / CONTINUITY_SAMPLE_HZ;
+    let proof_tick = semantic_tick.min(proof.contact_tick);
     let current_signature = current_signature.map(|mut current| {
-        // The authoritative cadence identity changes on the promised contact
-        // tick before this system presents the terminal analytic sample. That
-        // exact N -> N+1 identity edge is part of the promise, not a controller
-        // trajectory departure; compare all other immutable inputs against
-        // the admitted epoch and consume the new identity after publication.
-        if semantic_tick == proof.contact_tick && current.sequence == proof.sequence.wrapping_add(1)
-        {
-            current.sequence = proof.trajectory_signature.sequence;
-        }
+        // Grounded feet advance from physical contact. Replicated cadence is a
+        // phase/synchronization hint and may lead or trail the presented
+        // landing by a sparse packet. It must not invalidate an otherwise
+        // unchanged controller/body trajectory.
+        current.sequence = proof.trajectory_signature.sequence;
         current
     });
     support_owner_valid
@@ -1744,10 +1819,8 @@ fn guard_exact_proof_matches_live(
         && current_signature.is_some_and(|current| {
             !guard_controller_command_changed(proof.trajectory_signature, current, elapsed)
         })
-        && proof
-            .sample(semantic_tick)
-            .zip(live_hip)
-            .is_some_and(|(expected, live)| expected.distance(live) <= 0.015)
+        && proof.sample(proof_tick).is_some()
+        && live_hip.is_some_and(Vec3::is_finite)
 }
 
 fn exact_guard_sample_is_live_reachable(
@@ -1762,8 +1835,64 @@ fn exact_guard_sample_is_live_reachable(
     } else {
         proof.warning_reach
     };
-    proof.permits(sample, semantic_tick, hard)
+    proof.permits(sample, semantic_tick.min(proof.contact_tick), hard)
         && live_hip.is_some_and(|hip| sample.distance(hip) <= reach + 0.0001)
+}
+
+fn contact_driven_guard_owner_is_live(
+    proof: GuardHipPathProof,
+    current_sequence: u32,
+    current_swing_left: bool,
+    live_hip: Option<Vec3>,
+    support_owner_valid: bool,
+) -> bool {
+    // The predicted trajectory proves admission. Once a physical step owns
+    // the foot, harmless sparse-presentation differences must not destroy it;
+    // the actual hip and warning envelope gate every sample below. Only the
+    // local contact identity and its planted support remain owner invariants.
+    support_owner_valid
+        && proof.sequence == current_sequence
+        && proof.swing_left == current_swing_left
+        && live_hip.is_some_and(Vec3::is_finite)
+}
+
+fn contact_driven_guard_sample_is_live_reachable(
+    proof: GuardHipPathProof,
+    sample: Vec3,
+    live_hip: Option<Vec3>,
+    recovery_to_contact: bool,
+) -> bool {
+    live_hip.is_some_and(|hip| {
+        sample.distance(hip)
+            <= if recovery_to_contact {
+                proof.hard_reach
+            } else {
+                proof.warning_reach
+            } + 0.0001
+    })
+}
+
+fn normalize_deferred_guard_signature(
+    proof: GuardHipPathProof,
+    pending_cadence_edge: Option<(bool, u32)>,
+    mut signature: GuardPelvisTrajectorySignature,
+) -> GuardPelvisTrajectorySignature {
+    // An intentionally extended contact retains the old foot epoch while the
+    // authoritative next cadence identity waits in `pending_cadence_edge`.
+    // Normalize only that exact deferred edge for immutable trajectory
+    // comparison; all other early/late sequence changes remain visible.
+    let expected_next_sequence = signature.sequence == proof.sequence.wrapping_add(1);
+    let expected_pending_side =
+        pending_cadence_edge.is_some_and(|(pending_left, pending_sequence)| {
+            pending_sequence == signature.sequence
+                && (pending_left != proof.swing_left
+                    || (proof.accepts_preemptive_cadence_confirmation
+                        && pending_left == proof.swing_left))
+        });
+    if expected_next_sequence && expected_pending_side {
+        signature.sequence = proof.sequence;
+    }
+    signature
 }
 
 fn replan_invalid_exact_guard_segment(
@@ -1830,6 +1959,7 @@ fn stationary_exact_guard_proof(
         contact_tick: u64::from(ticks),
         sequence: 1,
         swing_left: true,
+        accepts_preemptive_cadence_confirmation: false,
         trajectory_signature: GuardPelvisTrajectorySignature {
             body_rotation: Quat::IDENTITY,
             body_target_rotation: Quat::IDENTITY,
@@ -1858,6 +1988,7 @@ enum GuardSegmentReachProof {
 struct PlannedGuardFootSegment {
     motion: C2FootSegment,
     reach: GuardSegmentReachProof,
+    recovery_to_contact: bool,
 }
 
 impl PlannedGuardFootSegment {
@@ -2008,7 +2139,16 @@ impl EmergencyFootBrake {
 enum SupportReleaseOwner {
     Segment(C2FootSegment),
     EmergencyBrake(EmergencyFootBrake),
-    TerminalHold { endpoint: Vec3 },
+    TerminalHold {
+        endpoint: Vec3,
+    },
+    /// Fail-soft ownership for the last grounded support. The target follows a
+    /// morphology-derived body-local workspace coordinate but is always
+    /// conformed back to terrain, so an invalidated plan may skate briefly but
+    /// can never lift both feet or leave a world-space leg behind the body.
+    GroundSafetySlide {
+        owner_local: Vec3,
+    },
 }
 
 fn support_release_owner_name(owner: Option<SupportReleaseOwner>) -> Option<&'static str> {
@@ -2016,7 +2156,253 @@ fn support_release_owner_name(owner: Option<SupportReleaseOwner>) -> Option<&'st
         SupportReleaseOwner::Segment(_) => "segment",
         SupportReleaseOwner::EmergencyBrake(_) => "emergency_brake",
         SupportReleaseOwner::TerminalHold { .. } => "terminal_hold",
+        SupportReleaseOwner::GroundSafetySlide { .. } => "ground_safety_slide",
     })
+}
+
+fn support_owner_preserves_contact(owner: Option<SupportReleaseOwner>) -> bool {
+    owner.is_none_or(|owner| matches!(owner, SupportReleaseOwner::GroundSafetySlide { .. }))
+}
+
+fn stationary_guard_pivot_side(
+    left_error: f32,
+    right_error: f32,
+    left_has_contact: bool,
+    right_has_contact: bool,
+    left_separation: f32,
+    right_separation: f32,
+) -> bool {
+    if !left_has_contact && right_has_contact {
+        true
+    } else if !right_has_contact && left_has_contact {
+        false
+    } else if left_error <= GUARD_PIVOT_TRIGGER_METRES {
+        false
+    } else if right_error <= GUARD_PIVOT_TRIGGER_METRES {
+        true
+    } else {
+        left_separation >= right_separation
+    }
+}
+
+fn support_owner_blocks_cadence(owner: Option<SupportReleaseOwner>) -> bool {
+    owner.is_some_and(|owner| !matches!(owner, SupportReleaseOwner::GroundSafetySlide { .. }))
+}
+
+fn ground_safety_slide_target(
+    owner_local: Vec3,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    terrain: Option<&SceneTerrain>,
+) -> Vec3 {
+    let mut target = rig_origin + rig_rotation * owner_local;
+    if let Some(height) = terrain.and_then(|terrain| terrain.height_at(target.xz())) {
+        target.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+    }
+    target
+}
+
+fn ground_safety_slide_endpoint(
+    presented: Vec3,
+    hip: Vec3,
+    warning_reach: f32,
+    terrain: Option<&SceneTerrain>,
+) -> Vec3 {
+    let Some(terrain) = terrain else {
+        return constrain_target_to_reach(presented, hip, warning_reach);
+    };
+    let terrain_point = |xz: Vec2| {
+        terrain
+            .height_at(xz)
+            .map(|height| Vec3::new(xz.x, height + MEASURED_ANKLE_SOLE_OFFSET_METRES, xz.y))
+    };
+    let Some(center) = terrain_point(hip.xz()) else {
+        return constrain_target_to_reach(presented, hip, warning_reach);
+    };
+    let Some(desired) = terrain_point(presented.xz()) else {
+        return center;
+    };
+    if desired.distance(hip) <= warning_reach {
+        return desired;
+    }
+    if center.distance(hip) > warning_reach {
+        return center;
+    }
+    let mut low = 0.0;
+    let mut high = 1.0;
+    let mut endpoint = center;
+    for _ in 0..16 {
+        let progress = (low + high) * 0.5;
+        let Some(candidate) = terrain_point(hip.xz().lerp(presented.xz(), progress)) else {
+            high = progress;
+            continue;
+        };
+        if candidate.distance(hip) <= warning_reach {
+            low = progress;
+            endpoint = candidate;
+        } else {
+            high = progress;
+        }
+    }
+    endpoint
+}
+
+fn stationary_guard_comfort_endpoint(
+    authored: Vec3,
+    reach: Option<FootReachEnvelope>,
+    terrain: Option<&SceneTerrain>,
+) -> Vec3 {
+    let Some(reach) = reach else {
+        return authored;
+    };
+    // Preserve several semantic samples of flexion reserve at rest. This is
+    // proportional to the actual two-bone chain rather than a character-scale
+    // constant, so different limb lengths inherit the same usable workspace.
+    ground_safety_slide_endpoint(
+        authored,
+        reach.current_root(),
+        reach.warning_reach() * 0.94,
+        terrain,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn install_grounded_guard_fail_safe(
+    footwork: &mut RaisedFootworkState,
+    semantic_tick: u64,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    left_presented: Vec3,
+    right_presented: Vec3,
+    left_proof: Option<GuardHipPathProof>,
+    right_proof: Option<GuardHipPathProof>,
+    terrain: Option<&SceneTerrain>,
+) {
+    let slide = |presented: Vec3, proof: Option<GuardHipPathProof>| {
+        let endpoint = proof
+            .and_then(|proof| {
+                proof.sample(semantic_tick).map(|hip| {
+                    ground_safety_slide_endpoint(presented, hip, proof.warning_reach, terrain)
+                })
+            })
+            .unwrap_or_else(|| {
+                let mut endpoint = presented;
+                if let Some(height) = terrain.and_then(|terrain| terrain.height_at(endpoint.xz())) {
+                    endpoint.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+                }
+                endpoint
+            });
+        SupportReleaseOwner::GroundSafetySlide {
+            owner_local: rig_rotation.inverse() * (endpoint - rig_origin),
+        }
+    };
+
+    footwork.swing_replan_segment = None;
+    footwork.swing_emergency_brake = None;
+    footwork.swing_release_owner_active = false;
+    footwork.awaiting_step_sequence = false;
+    footwork.pending_cadence_edge = None;
+    footwork.left_support_release_owner = Some(slide(left_presented, left_proof));
+    footwork.right_support_release_owner = Some(slide(right_presented, right_proof));
+    footwork.left_support_weight = 1.0;
+    footwork.right_support_weight = 1.0;
+    footwork.left_motion_owner_epoch = semantic_tick;
+    footwork.right_motion_owner_epoch = semantic_tick;
+}
+
+fn install_guard_swing_fallback(
+    footwork: &mut RaisedFootworkState,
+    release: GuardFootReleasePlan,
+    semantic_tick: u64,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    left_authored: Vec3,
+    right_authored: Vec3,
+) {
+    // A failed swing plan must not replace both planted contacts with a
+    // second, implicit gait. Keep the opposite foot planted and give only the
+    // selected swing foot a bounded owner. This is the same planted/swing
+    // lifecycle used by ordinary cadence: one foot moves, one foot supports.
+    if footwork.swing_left {
+        footwork.left_support_release_owner = None;
+        footwork.left_support_weight = 0.0;
+        footwork.right_support_weight = 1.0;
+        footwork.left_motion_owner_epoch = semantic_tick;
+    } else {
+        footwork.right_support_release_owner = None;
+        footwork.right_support_weight = 0.0;
+        footwork.left_support_weight = 1.0;
+        footwork.right_motion_owner_epoch = semantic_tick;
+    }
+    footwork.pending_cadence_edge = None;
+    footwork.swing_release_owner_active = true;
+    footwork.awaiting_step_sequence = true;
+    match release {
+        GuardFootReleasePlan::Segment(segment) => {
+            let segment = segment.with_owner_epoch(semantic_tick);
+            footwork.swing_replan_segment = Some(segment);
+            footwork.swing_emergency_brake = None;
+            if footwork.swing_left {
+                footwork.left_desired_target = Some(segment.start);
+                footwork.left_ideal_velocity = segment.start_velocity;
+                footwork.left_ideal_acceleration = segment.start_acceleration;
+                footwork.left_ideal_history_valid = true;
+            } else {
+                footwork.right_desired_target = Some(segment.start);
+                footwork.right_ideal_velocity = segment.start_velocity;
+                footwork.right_ideal_acceleration = segment.start_acceleration;
+                footwork.right_ideal_history_valid = true;
+            }
+        }
+        GuardFootReleasePlan::EmergencyBrake { presented } => {
+            footwork.swing_replan_segment = None;
+            let authored = if footwork.swing_left {
+                left_authored
+            } else {
+                right_authored
+            };
+            footwork.swing_emergency_brake = Some(EmergencyFootBrake {
+                stationary_ideal: presented,
+                owner_local_ideal: Some(rig_rotation.inverse() * (authored - rig_origin)),
+            });
+        }
+    }
+}
+
+fn reacquire_grounded_guard_support(
+    footwork: &mut RaisedFootworkState,
+    semantic_swing_left: bool,
+    visible_left: Vec3,
+    visible_right: Vec3,
+    terrain: Option<&SceneTerrain>,
+) -> bool {
+    if terrain_leg_has_support(footwork.left_support_weight)
+        || terrain_leg_has_support(footwork.right_support_weight)
+        || footwork.left_support_release_owner.is_some()
+        || footwork.right_support_release_owner.is_some()
+    {
+        return false;
+    }
+    let support_left = !semantic_swing_left;
+    let visible = if support_left {
+        visible_left
+    } else {
+        visible_right
+    };
+    let Some(height) = terrain.and_then(|terrain| terrain.height_at(visible.xz())) else {
+        return false;
+    };
+    let contact = terrain_conformed_guard_target(visible, Some(height));
+    if support_left {
+        footwork.left_plant = contact;
+        footwork.left_support_weight = 1.0;
+        footwork.left_desired_target = Some(contact);
+    } else {
+        footwork.right_plant = contact;
+        footwork.right_support_weight = 1.0;
+        footwork.right_desired_target = Some(contact);
+    }
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2133,6 +2519,9 @@ impl RaisedFootworkState {
         let owner = match support_owner {
             Some(SupportReleaseOwner::Segment(_)) => FootMotionOwnerKind::AdmittedC2,
             Some(SupportReleaseOwner::EmergencyBrake(_)) => FootMotionOwnerKind::EmergencyRecovery,
+            Some(SupportReleaseOwner::GroundSafetySlide { .. }) => {
+                FootMotionOwnerKind::GroundSafetySlide
+            }
             Some(SupportReleaseOwner::TerminalHold { .. }) => FootMotionOwnerKind::TerminalHold,
             None if is_swing && self.swing_replan_segment.is_some() => {
                 FootMotionOwnerKind::AdmittedC2
@@ -2919,6 +3308,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             .get(owner)
             .is_ok_and(|state| state.initialized);
         let raised_release_active = raised_release_owns_ik(skeleton, raised_states.get(owner).ok());
+        let raised_ground_contact_valid =
+            raised_guard_ground_contact_is_valid(skeleton, raised_footwork_was_active);
         if let Ok(mut state) = raised_states.get_mut(owner) {
             state.raised_motion_owned_this_tick = false;
         }
@@ -2928,7 +3319,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             }
             continue;
         }
-        if !terrain_ik_posture_is_valid(skeleton) && !raised_release_active {
+        if !terrain_ik_posture_is_valid(skeleton)
+            && !raised_release_active
+            && !raised_ground_contact_valid
+        {
             // Quickstep owns the downstream leg solve and shared diagnostics.
             // Yield without clearing its first-view result before repeated
             // presentation views reach quickstep's own fixed-tick guard.
@@ -2977,7 +3371,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             }
             continue;
         }
-        let raised_guard_follower = raised_footwork_posture_is_valid(skeleton)
+        let raised_guard_follower = raised_ground_contact_valid
             && skeleton.weapon_guard() == WeaponGuardState::Raised
             && !skeleton.guarded_sprint_locomotion()
             && matches!(
@@ -3448,11 +3842,25 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // a second, delayed crouch after quickstep contact.
             let raised_contact_ownership = raised_states.get(owner).ok().map(|footwork| {
                 let moving = skeleton.raised_locomotion().is_moving();
-                let left = raised_leg_contributes_pelvis_reach(footwork, moving, true);
-                let right = raised_leg_contributes_pelvis_reach(footwork, moving, false);
+                let left = raised_leg_contributes_pelvis_reach(footwork, moving, true)
+                    || raised_leg_is_stationary_contact_candidate(footwork, moving, true);
+                let right = raised_leg_contributes_pelvis_reach(footwork, moving, false)
+                    || raised_leg_is_stationary_contact_candidate(footwork, moving, false);
+                let contact_target = |target: Option<Vec3>| {
+                    target.map(|target| {
+                        if moving {
+                            target
+                        } else {
+                            terrain_conformed_guard_target(
+                                target,
+                                terrain.and_then(|terrain| terrain.height_at(target.xz())),
+                            )
+                        }
+                    })
+                };
                 (
-                    (left, footwork.left_solve_target),
-                    (right, footwork.right_solve_target),
+                    (left, contact_target(footwork.left_solve_target)),
+                    (right, contact_target(footwork.right_solve_target)),
                 )
             });
             for (left, upper_role, lower_role, foot_role, target, contact_owned) in [
@@ -3495,6 +3903,12 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     .translation()
                     .distance(foot_snapshot.global.translation());
                 let warning_reach = guard_warning_reach(upper_length, lower_length);
+                // Start the bounded pelvis response before a planted chain
+                // reaches the solver warning boundary. This reserve scales
+                // with the actual limb rather than character world scale or a
+                // route-specific speed, and only contact-owned legs request it.
+                let support_response_reach =
+                    (warning_reach - (upper_length + lower_length) * 0.04).max(0.0);
                 let hard_reach = (upper_length * upper_length
                     + lower_length * lower_length
                     + 2.0 * upper_length * lower_length * MIN_KNEE_FLEXION.cos())
@@ -3516,6 +3930,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             .saturating_add(u64::from(guard_contact_prediction_ticks)),
                         sequence: skeleton.raised_locomotion().step_sequence(),
                         swing_left: left,
+                        accepts_preemptive_cadence_confirmation: false,
                         trajectory_signature: signature,
                         rig_origin,
                         pelvis_parent_affine: Some(parent_affine),
@@ -3564,7 +3979,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         let sampled_hip = rig_origin
                             + body_delta * (unturned_hip - rig_origin)
                             + controller_delta;
-                        let admitted_warning = warning_reach;
+                        let admitted_warning = support_response_reach;
                         if contact_owned {
                             desired_raised_pelvis_shift = desired_raised_pelvis_shift.min(
                                 required_hip_shift_for_reach(sampled_hip, target, admitted_warning)
@@ -3589,6 +4004,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                 .saturating_add(u64::from(guard_contact_prediction_ticks)),
                             sequence: skeleton.raised_locomotion().step_sequence(),
                             swing_left: left,
+                            accepts_preemptive_cadence_confirmation: false,
                             trajectory_signature: signature,
                             rig_origin,
                             pelvis_parent_affine: None,
@@ -3621,7 +4037,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                     required_hip_shift_for_reach(
                                         sampled_hip,
                                         target,
-                                        warning_reach,
+                                        support_response_reach,
                                     )
                                     .clamp(-0.25, 0.0),
                                 );
@@ -3632,7 +4048,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                 tick,
                                 sampled_hip,
                                 target,
-                                warning_reach,
+                                support_response_reach,
                             ));
                         }
                     }
@@ -3717,11 +4133,12 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
         {
             // An unexpected controller/support departure can invalidate a
             // previously admitted moving segment after it has nonzero p/v/a.
-            // Never hold that derivative at a fixed progress. Retire each
-            // affected contact through the existing typed support recovery
-            // owner, then keep advancing the already dynamics-proven pelvis
-            // polynomial. No translation, angular, or scale derivative is
-            // restarted at the invalidation boundary.
+            // Never hold that derivative at a fixed progress, but never lift
+            // the last grounded support either. Move that support into the
+            // nearest terrain/reach intersection and carry it body-relative
+            // until cadence establishes the next real contact. A short ground
+            // skate is the deliberate fail-soft result; dual airborne feet and
+            // a world-space leg left behind the body are forbidden states.
             for left in [true, false] {
                 if !raised_leg_contributes_pelvis_reach(
                     &footwork,
@@ -3741,16 +4158,32 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     memory.right_foot_world_target
                 })
                 .unwrap_or(rig_origin);
-                let owner = SupportReleaseOwner::EmergencyBrake(EmergencyFootBrake {
-                    stationary_ideal: presented,
-                    owner_local_ideal: Some(rig_rotation.inverse() * (presented - rig_origin)),
-                });
+                let proof = if left {
+                    left_guard_hip_proof
+                } else {
+                    right_guard_hip_proof
+                };
+                let endpoint = proof
+                    .and_then(|proof| {
+                        proof.sample(semantic_tick).map(|hip| {
+                            ground_safety_slide_endpoint(
+                                presented,
+                                hip,
+                                proof.warning_reach,
+                                terrain,
+                            )
+                        })
+                    })
+                    .unwrap_or(presented);
+                let owner = SupportReleaseOwner::GroundSafetySlide {
+                    owner_local: rig_rotation.inverse() * (endpoint - rig_origin),
+                };
                 if left {
                     footwork.left_support_release_owner = Some(owner);
-                    footwork.left_support_weight = 0.0;
+                    footwork.left_support_weight = 1.0;
                 } else {
                     footwork.right_support_release_owner = Some(owner);
-                    footwork.right_support_weight = 0.0;
+                    footwork.right_support_weight = 1.0;
                 }
             }
             pelvis_acquisition_reach_admitted = true;
@@ -3870,6 +4303,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 .get_mut(owner)
                 .map(|state| *state)
                 .unwrap_or_default();
+            let contact_driven_guard = skeleton.raised_locomotion().is_moving()
+                && !memory.quickstep_handoff_pending
+                && !memory.quickstep_guard_stance_held
+                && !footwork.release_handoff_active;
             let previous_left_support = terrain_leg_has_support(footwork.left_support_weight);
             let previous_right_support = terrain_leg_has_support(footwork.right_support_weight);
             let tick = semantic_tick;
@@ -3916,14 +4353,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 memory.left_foot_plant_acquired = true;
                 memory.right_foot_plant_acquired = true;
             }
-            let completed_contact_can_consume_pending = footwork
-                .swing_replan_segment
-                .is_some_and(|segment| segment.end.is_contact() && segment.timing.is_complete());
             if advances
-                && (completed_contact_can_consume_pending
-                    || !footwork.pelvis_acquisition.is_some_and(|acquisition| {
-                        acquisition.target.is_some() && acquisition.progress < 1.0
-                    }))
+                && !contact_driven_guard
+                && guard_pending_cadence_edge_can_be_consumed(&footwork)
                 && let Some((pending_swing_left, pending_sequence)) = footwork.pending_cadence_edge
             {
                 consume_pending_guard_cadence_edge(
@@ -3941,56 +4373,107 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             }
             let discontinuous =
                 footwork.initialized && rig_origin.distance_squared(footwork.step_origin) > 4.0;
-            let sequence_delta = guard_step_sequence_delta(
+            let mut sequence_delta = guard_step_sequence_delta(
                 footwork.step_sequence,
                 skeleton.raised_locomotion().step_sequence(),
             );
-            // A guard contact tick is predicted locally from the replicated
-            // cadence phase, but the replicated sequence edge remains the
-            // authoritative contact event. If that edge arrives before the
-            // promised analytic endpoint, retire the promise explicitly and
-            // retain presentation ownership through a bounded brake instead
-            // of delaying or snapping the authoritative contact.
             if advances
+                && !contact_driven_guard
+                && confirm_preemptive_guard_cadence_edge(
+                    &mut footwork,
+                    sequence_delta,
+                    swing_left,
+                    skeleton.raised_locomotion().step_sequence(),
+                )
+            {
+                sequence_delta = 0;
+            }
+            // A terrain-proven contact is the physical gait edge. Do not hold
+            // the opposite planted foot motionless until a slightly later
+            // replicated cadence edge: by then a short-legged or fast-moving
+            // character may already have exhausted its reach reserve. Begin
+            // the opposite swing from the exact visible plants immediately;
+            // the authoritative N -> N+1 edge is still retained below as the
+            // identity confirmation for the already-running contact plan.
+            if advances
+                && contact_driven_guard
+                && begin_next_contact_driven_guard_swing(
+                    &mut footwork,
+                    true,
+                    visible_left,
+                    visible_right,
+                    half_step,
+                    rig_origin,
+                    rig_rotation,
+                    left_authored,
+                    right_authored,
+                )
+            {
+                reseed_guard_cadence_ideal_history(&mut footwork, visible_left, visible_right);
+            } else if advances
+                && !contact_driven_guard
+                && begin_next_guard_swing_after_contact(
+                    &mut footwork,
+                    skeleton.raised_locomotion().is_moving(),
+                    sequence_delta,
+                    visible_left,
+                    visible_right,
+                    half_step,
+                    rig_origin,
+                    rig_rotation,
+                    left_authored,
+                    right_authored,
+                )
+            {
+                reseed_guard_cadence_ideal_history(&mut footwork, visible_left, visible_right);
+            }
+            if advances
+                && contact_driven_guard
+                && sequence_delta == 1
+                && footwork.swing_replan_segment.is_none()
+                && footwork.swing_emergency_brake.is_none()
+                && !footwork.swing_release_owner_active
+                && !support_owner_blocks_cadence(footwork.left_support_release_owner)
+                && !support_owner_blocks_cadence(footwork.right_support_release_owner)
+            {
+                // Contact owns an active landing; cadence owns only an idle
+                // coordinator. This lets sparse authoritative prediction
+                // repair identity without ever pre-empting a physical step.
+                adopt_guard_movement_identity(
+                    &mut footwork,
+                    swing_left,
+                    skeleton.raised_locomotion().step_sequence(),
+                    visible_left,
+                    visible_right,
+                );
+                footwork.left_support_weight = if swing_left { 0.0 } else { 1.0 };
+                footwork.right_support_weight = if swing_left { 1.0 } else { 0.0 };
+                footwork.step_origin = rig_origin;
+                footwork.step_rotation = rig_rotation;
+                reseed_guard_cadence_ideal_history(&mut footwork, visible_left, visible_right);
+                sequence_delta = 0;
+            }
+            // A dynamics-proven contact may intentionally outlive the authored
+            // cadence estimate. Keep its old swing identity and defer the new
+            // complete identity until the endpoint lands; aborting here turns
+            // a lawful slow step into an airborne release.
+            if advances
+                && !contact_driven_guard
                 && sequence_delta == 1
                 && footwork.swing_replan_segment.is_some_and(|segment| {
                     segment.end.is_contact()
+                        && !segment.timing.is_complete()
                         && segment
                             .owner_epoch
                             .saturating_add(segment.timing.total_ticks.get() as u64)
                             != semantic_tick
                 })
             {
-                let segment = footwork
-                    .swing_replan_segment
-                    .take()
-                    .expect("the early cadence edge predicate requires a contact segment");
-                let presented = if footwork.swing_left {
-                    footwork.left_solve_target.unwrap_or(visible_left)
-                } else {
-                    footwork.right_solve_target.unwrap_or(visible_right)
-                };
-                footwork.swing_emergency_brake = Some(EmergencyFootBrake {
-                    stationary_ideal: presented,
-                    owner_local_ideal: Some(
-                        rig_rotation.inverse()
-                            * ((if footwork.swing_left {
-                                left_authored
-                            } else {
-                                right_authored
-                            }) - rig_origin),
-                    ),
-                });
-                footwork.swing_release_owner_active = true;
-                footwork.awaiting_step_sequence = true;
-                footwork.step_sequence = skeleton.raised_locomotion().step_sequence();
-                if footwork.swing_left {
-                    footwork.left_contact_abort_event = Some(segment.owner_epoch);
-                    footwork.left_motion_owner_epoch = semantic_tick;
-                } else {
-                    footwork.right_contact_abort_event = Some(segment.owner_epoch);
-                    footwork.right_motion_owner_epoch = semantic_tick;
-                }
+                defer_guard_cadence_edge_for_contact_recovery(
+                    &mut footwork,
+                    swing_left,
+                    skeleton.raised_locomotion().step_sequence(),
+                );
             }
             // Presentation may predict a cadence edge between sparse
             // authoritative packets. A recovery owner from the preceding
@@ -3998,8 +4481,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // unrelated later packet: retire that recovery at the semantic
             // edge and rebase the new cadence from the exact visible feet.
             let recovery_blocks_semantic_edge = footwork.swing_emergency_brake.is_some()
-                || footwork.left_support_release_owner.is_some()
-                || footwork.right_support_release_owner.is_some();
+                || support_owner_blocks_cadence(footwork.left_support_release_owner)
+                || support_owner_blocks_cadence(footwork.right_support_release_owner);
             let on_time_contact_must_complete = footwork
                 .swing_replan_segment
                 .is_some_and(|segment| segment.end.is_contact())
@@ -4007,6 +4490,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     acquisition.target.is_some() && acquisition.progress < 1.0
                 });
             if advances
+                && !contact_driven_guard
                 && guard_recovery_may_rebase_on_semantic_edge(
                     sequence_delta,
                     recovery_blocks_semantic_edge,
@@ -4033,7 +4517,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     }) - rig_origin);
                 reseed_guard_cadence_ideal_history(&mut footwork, visible_left, visible_right);
             }
-            let skipped_handoff = footwork.initialized && sequence_delta > 1;
+            let skipped_handoff =
+                !contact_driven_guard && footwork.initialized && sequence_delta > 1;
             let lead_only_handoff = retain_guard_tracker_on_reinitialization(
                 footwork.initialized,
                 footwork.lead != skeleton.lead_foot(),
@@ -4152,18 +4637,20 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     right_motion_owner_kind: FootMotionOwnerKind::None,
                     raised_motion_owned_this_tick: raised_solver_follower,
                 };
-            } else if guard_cadence_may_turnover(
-                advances,
-                sequence_delta,
-                footwork.swing_release_owner_active
-                    || footwork.left_support_release_owner.is_some()
-                    || footwork.right_support_release_owner.is_some(),
-                footwork.swing_replan_segment.is_some_and(|segment| {
-                    !(footwork.awaiting_step_sequence
-                        && segment.timing.is_complete()
-                        && segment.end.is_contact())
-                }),
-            ) {
+            } else if !contact_driven_guard
+                && guard_cadence_may_turnover(
+                    advances,
+                    sequence_delta,
+                    footwork.swing_release_owner_active
+                        || support_owner_blocks_cadence(footwork.left_support_release_owner)
+                        || support_owner_blocks_cadence(footwork.right_support_release_owner),
+                    footwork.swing_replan_segment.is_some_and(|segment| {
+                        !(footwork.awaiting_step_sequence
+                            && segment.timing.is_complete()
+                            && segment.end.is_contact())
+                    }),
+                )
+            {
                 if footwork.swing_left {
                     footwork.left_plant = footwork.left_solve_target.unwrap_or(footwork.swing_end);
                 } else {
@@ -4236,6 +4723,21 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     || footwork.swing_emergency_brake.is_some()
                     || footwork.swing_release_owner_active,
             );
+            if advances
+                && !cadence_can_advance
+                && footwork.swing_replan_segment.is_none()
+                && footwork.swing_emergency_brake.is_none()
+                && !footwork.swing_release_owner_active
+                && footwork.left_support_release_owner.is_none()
+                && footwork.right_support_release_owner.is_none()
+            {
+                // A stopped character has no future cadence edge that can
+                // consume a deferred moving identity. Retaining it suppresses
+                // stationary stance recovery and poisons the next movement
+                // onset with an already-extended plant.
+                footwork.pending_cadence_edge = None;
+                footwork.awaiting_step_sequence = false;
+            }
             if quickstep_handoff_active {
                 // Residual velocity is the quickstep's landing brake, not a new
                 // guard step. Carry the already completed guard stance with the
@@ -4251,14 +4753,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 footwork.pivot_progress = 0.0;
             }
             if !stationary_guard && !footwork.was_moving {
-                // Raised locomotion chooses the semantic swing foot when the
-                // planted intent first observes movement. A stationary pivot
-                // is only a presentation owner; its cached side must never
-                // replace that replicated cadence identity (in particular,
-                // `pivot_left` is false by default when no pivot exists).
+                // A stationary pivot is presentation-only. Movement cancels
+                // it immediately and replans the replicated swing from the
+                // exact visible p/v/a below. Serializing the unfinished pivot
+                // before locomotion let the root consume most of the planted
+                // support's reach while no gait step was allowed to begin.
+                let acquisition_swing_left = swing_left;
                 adopt_guard_movement_identity(
                     &mut footwork,
-                    swing_left,
+                    acquisition_swing_left,
                     skeleton.raised_locomotion().step_sequence(),
                     visible_left,
                     visible_right,
@@ -4317,6 +4820,21 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 }
                 footwork.pivot_active = false;
                 footwork.pivot_progress = 0.0;
+            }
+            if !stationary_guard {
+                // A short controller-airborne sample can yield raised IK for
+                // one frame and clear both reported supports. On grounded
+                // reacquisition, establish the semantic support foot on the
+                // terrain before proving a swing. Otherwise every exact proof
+                // rejects for lack of support and the gait can wait forever.
+                let semantic_swing_left = footwork.swing_left;
+                reacquire_grounded_guard_support(
+                    &mut footwork,
+                    semantic_swing_left,
+                    visible_left,
+                    visible_right,
+                    terrain,
+                );
             }
             let planning_origin = if live_step_scale <= 0.05 {
                 rig_origin
@@ -4408,6 +4926,69 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 .compute_global_transform(right_upper)
                 .ok()
                 .map(|global| global.translation());
+            if contact_driven_guard {
+                // Moving raised locomotion has exactly one lower-body owner:
+                // a body-relative procedural gait. Replicated cadence chooses
+                // phase and side, while terrain-conformed targets provide the
+                // physical stance. Persistent world contacts, release waits,
+                // and planner epochs must not compete with this generator.
+                footwork.swing_left = swing_left;
+                footwork.step_sequence = skeleton.raised_locomotion().step_sequence();
+                footwork.swing_replan_segment = None;
+                footwork.swing_emergency_brake = None;
+                footwork.swing_release_owner_active = false;
+                footwork.left_support_release_owner = None;
+                footwork.right_support_release_owner = None;
+                footwork.pending_cadence_edge = None;
+                footwork.awaiting_step_sequence = false;
+                let gait_origin = left_hip_current
+                    .zip(right_hip_current)
+                    .map(|(left, right)| {
+                        let mut center = (left + right) * 0.5;
+                        center.y = rig_origin.y;
+                        center
+                    })
+                    .unwrap_or(rig_origin);
+                let gait_lateral = left_hip_current
+                    .zip(right_hip_current)
+                    .map(|(left, right)| (right - left).with_y(0.0).normalize_or_zero())
+                    .filter(|axis| axis.length_squared() > 0.5)
+                    .unwrap_or(rig_rotation * Vec3::X);
+                let gait_direction = skeleton.world_velocity.with_y(0.0).normalize_or_zero();
+                (left_target, right_target) = body_relative_guard_gait_targets(
+                    gait_origin,
+                    gait_lateral,
+                    footwork.swing_stance_local,
+                    gait_direction,
+                    step_length,
+                    step_progress,
+                    swing_left,
+                    enabled.0,
+                    terrain,
+                );
+                if let (Some(hip), Some(reach)) = (left_hip_current, left_planning_reach) {
+                    left_target = constrain_guard_gait_target_to_reach(
+                        left_target,
+                        hip,
+                        reach.warning_reach() * 0.97,
+                    );
+                }
+                if let (Some(hip), Some(reach)) = (right_hip_current, right_planning_reach) {
+                    right_target = constrain_guard_gait_target_to_reach(
+                        right_target,
+                        hip,
+                        reach.warning_reach() * 0.97,
+                    );
+                }
+                footwork.left_support_weight = if swing_left { 0.0 } else { 1.0 };
+                footwork.right_support_weight = if swing_left { 1.0 } else { 0.0 };
+                if !swing_left {
+                    footwork.left_plant = left_target;
+                }
+                if swing_left {
+                    footwork.right_plant = right_target;
+                }
+            }
             let left_hip_trajectory = left_planning_reach.and_then(|reach| {
                 PredictedHipTrajectory::from_retained_motion(
                     reach,
@@ -4428,11 +5009,39 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     PELVIS_CORRECTION_SPEED,
                 )
             });
-            let cadence_contact_timing = guard_cadence_contact_tick_span(phase, latched_speed);
+            let locally_preemptive_swing = footwork.step_sequence
+                == skeleton.raised_locomotion().step_sequence()
+                && footwork.swing_left != swing_left;
+            let cadence_contact_timing = if locally_preemptive_swing {
+                guard_following_cadence_contact_tick_span(phase, latched_speed)
+            } else {
+                guard_cadence_contact_tick_span(phase, latched_speed)
+            };
+            let swing_guard_hip_proof = (if footwork.swing_left {
+                left_guard_hip_proof
+            } else {
+                right_guard_hip_proof
+            })
+            .map(|mut proof| {
+                if contact_driven_guard {
+                    proof.sequence = footwork.step_sequence;
+                    proof.trajectory_signature.sequence = footwork.step_sequence;
+                }
+                proof.accepts_preemptive_cadence_confirmation = locally_preemptive_swing;
+                proof
+            });
+            let contact_driven_tick_budget = (if footwork.swing_left {
+                right_guard_hip_proof
+            } else {
+                left_guard_hip_proof
+            })
+            .map(|proof| contact_driven_guard_support_tick_budget(proof, support_target))
+            .unwrap_or(1);
             if advances
                 && !stationary_guard
                 && !footwork.awaiting_step_sequence
                 && footwork.swing_replan_segment.is_none()
+                && !contact_driven_guard
             {
                 let (presented, velocity, acceleration) = if footwork.swing_left {
                     (
@@ -4447,44 +5056,92 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         footwork.right_target_acceleration,
                     )
                 };
-                let plan = cadence_contact_timing.map_or_else(
-                    || {
-                        GuardFootEndpointPlan::MustReleaseOrReplan(
-                            GuardFootReleasePlan::EmergencyBrake { presented },
-                        )
-                    },
-                    |timing| {
-                        plan_guard_c2_contact_segment(
-                            presented,
-                            velocity,
-                            acceleration,
-                            timing,
-                            if footwork.swing_left {
-                                left_guard_hip_proof
-                            } else {
-                                right_guard_hip_proof
-                            },
-                            |progress| {
-                                guard_contact_candidate_at_progress(
-                                    presented,
-                                    terrain_swing_end,
-                                    progress,
-                                    support_target,
-                                    rig_origin,
-                                    rig_rotation,
-                                    footwork.swing_stance_local.x.signum(),
-                                    enabled.0,
-                                    terrain,
-                                )
-                            },
-                        )
-                    },
-                );
+                let mut plan = if contact_driven_guard {
+                    plan_contact_driven_guard_segment(
+                        presented,
+                        velocity,
+                        acceleration,
+                        terrain_swing_end,
+                        contact_driven_tick_budget,
+                        swing_guard_hip_proof,
+                        terrain,
+                        |progress| {
+                            guard_contact_candidate_at_progress(
+                                presented,
+                                terrain_swing_end,
+                                progress,
+                                support_target,
+                                rig_origin,
+                                rig_rotation,
+                                footwork.swing_stance_local.x.signum(),
+                                enabled.0,
+                                terrain,
+                            )
+                        },
+                    )
+                } else {
+                    cadence_contact_timing.map_or_else(
+                        || {
+                            GuardFootEndpointPlan::MustReleaseOrReplan(
+                                GuardFootReleasePlan::EmergencyBrake { presented },
+                            )
+                        },
+                        |timing| {
+                            plan_guard_c2_contact_segment(
+                                presented,
+                                velocity,
+                                acceleration,
+                                timing,
+                                swing_guard_hip_proof,
+                                |progress| {
+                                    guard_contact_candidate_at_progress(
+                                        presented,
+                                        terrain_swing_end,
+                                        progress,
+                                        support_target,
+                                        rig_origin,
+                                        rig_rotation,
+                                        footwork.swing_stance_local.x.signum(),
+                                        enabled.0,
+                                        terrain,
+                                    )
+                                },
+                            )
+                        },
+                    )
+                };
+                if !matches!(plan, GuardFootEndpointPlan::Segment(_))
+                    && !contact_driven_guard
+                    && let Some(timing) = cadence_contact_timing
+                    && let Some(recovery) = plan_guard_recovery_contact_segment(
+                        presented,
+                        velocity,
+                        acceleration,
+                        timing,
+                        swing_guard_hip_proof,
+                        terrain,
+                    )
+                {
+                    plan = GuardFootEndpointPlan::Segment(recovery);
+                }
                 match plan {
                     GuardFootEndpointPlan::Segment(segment) => {
+                        // Even when a swing must outlive the nominal cadence,
+                        // the opposite foot remains the single planted support.
+                        // A second body-relative slide is an alternate gait,
+                        // not a contact-preserving fallback.
                         footwork.swing_replan_segment =
                             Some(segment.with_owner_epoch(semantic_tick));
                         footwork.swing_emergency_brake = None;
+                        if contact_driven_guard {
+                            // Support changes atomically with installation of
+                            // the concrete swing owner. Before this point both
+                            // landed feet remain truthful pelvis supports.
+                            footwork.left_support_weight =
+                                if footwork.swing_left { 0.0 } else { 1.0 };
+                            footwork.right_support_weight =
+                                if footwork.swing_left { 1.0 } else { 0.0 };
+                        }
                         if footwork.swing_left {
                             footwork.left_desired_target = Some(segment.start);
                             footwork.left_ideal_velocity = segment.start_velocity;
@@ -4497,60 +5154,31 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             footwork.right_ideal_history_valid = true;
                         }
                     }
-                    GuardFootEndpointPlan::MustReleaseOrReplan(release_plan) => {
-                        let release_segment = match release_plan {
-                            GuardFootReleasePlan::Segment(segment) => {
-                                Some(segment.with_owner_epoch(semantic_tick))
-                            }
-                            GuardFootReleasePlan::EmergencyBrake { .. } => None,
-                        };
-                        footwork.swing_replan_segment = release_segment;
-                        footwork.swing_emergency_brake = match release_plan {
-                            GuardFootReleasePlan::Segment(_) => None,
-                            GuardFootReleasePlan::EmergencyBrake { presented } => {
-                                Some(EmergencyFootBrake {
-                                    stationary_ideal: presented,
-                                    owner_local_ideal: Some(
-                                        rig_rotation.inverse()
-                                            * ((if footwork.swing_left {
-                                                left_authored
-                                            } else {
-                                                right_authored
-                                            }) - rig_origin),
-                                    ),
-                                })
-                            }
-                        };
-                        footwork.swing_release_owner_active = true;
-                        footwork.awaiting_step_sequence = true;
-                        if let Some(segment) = release_segment {
-                            if footwork.swing_left {
-                                footwork.left_desired_target = Some(segment.start);
-                                footwork.left_ideal_velocity = segment.start_velocity;
-                                footwork.left_ideal_acceleration = segment.start_acceleration;
-                                footwork.left_ideal_history_valid = true;
-                            } else {
-                                footwork.right_desired_target = Some(segment.start);
-                                footwork.right_ideal_velocity = segment.start_velocity;
-                                footwork.right_ideal_acceleration = segment.start_acceleration;
-                                footwork.right_ideal_history_valid = true;
-                            }
+                    GuardFootEndpointPlan::MustReleaseOrReplan(release) => {
+                        if contact_driven_guard
+                            && matches!(release, GuardFootReleasePlan::EmergencyBrake { .. })
+                        {
+                            // No bounded spatial recovery exists yet. Keep the
+                            // planted support and retry without inventing a
+                            // cadence wait or a zero-motion gait owner.
+                            footwork.swing_replan_segment = None;
+                            footwork.swing_emergency_brake = None;
+                            footwork.swing_release_owner_active = false;
+                            footwork.awaiting_step_sequence = false;
                         } else {
-                            let GuardFootReleasePlan::EmergencyBrake { presented } = release_plan
-                            else {
-                                unreachable!();
-                            };
-                            footwork.swing_start = presented;
-                            if footwork.swing_left {
-                                footwork.left_desired_target = Some(presented);
-                                footwork.left_ideal_velocity = Vec3::ZERO;
-                                footwork.left_ideal_acceleration = Vec3::ZERO;
-                                footwork.left_ideal_history_valid = true;
-                            } else {
-                                footwork.right_desired_target = Some(presented);
-                                footwork.right_ideal_velocity = Vec3::ZERO;
-                                footwork.right_ideal_acceleration = Vec3::ZERO;
-                                footwork.right_ideal_history_valid = true;
+                            install_guard_swing_fallback(
+                                &mut footwork,
+                                release,
+                                semantic_tick,
+                                rig_origin,
+                                rig_rotation,
+                                left_authored,
+                                right_authored,
+                            );
+                            if contact_driven_guard {
+                                // This is an inward workspace recovery, not a
+                                // promise to synchronize with replicated gait.
+                                footwork.awaiting_step_sequence = false;
                             }
                         }
                     }
@@ -4587,10 +5215,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 }
                 let support_owner_valid = if footwork.swing_left {
                     terrain_leg_has_support(footwork.right_support_weight)
-                        && footwork.right_support_release_owner.is_none()
+                        && support_owner_preserves_contact(footwork.right_support_release_owner)
                 } else {
                     terrain_leg_has_support(footwork.left_support_weight)
-                        && footwork.left_support_release_owner.is_none()
+                        && support_owner_preserves_contact(footwork.left_support_release_owner)
                 };
                 let contact_proof_invalid = advances
                     && match segment.reach {
@@ -4600,15 +5228,32 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             } else {
                                 right_hip_current
                             };
-                            !guard_exact_proof_matches_live(
-                                proof,
-                                guard_trajectory_signature,
-                                footwork.step_sequence,
-                                footwork.swing_left,
-                                semantic_tick,
-                                live_hip,
-                                support_owner_valid,
-                            )
+                            if contact_driven_guard && segment.end.is_contact() {
+                                !contact_driven_guard_owner_is_live(
+                                    proof,
+                                    footwork.step_sequence,
+                                    footwork.swing_left,
+                                    live_hip,
+                                    support_owner_valid,
+                                )
+                            } else {
+                                let live_signature = guard_trajectory_signature.map(|signature| {
+                                    normalize_deferred_guard_signature(
+                                        proof,
+                                        footwork.pending_cadence_edge,
+                                        signature,
+                                    )
+                                });
+                                !guard_exact_proof_matches_live(
+                                    proof,
+                                    live_signature,
+                                    footwork.step_sequence,
+                                    footwork.swing_left,
+                                    semantic_tick,
+                                    live_hip,
+                                    support_owner_valid,
+                                )
+                            }
                         }
                         GuardSegmentReachProof::Retained(_) => false,
                     };
@@ -4622,17 +5267,29 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     right_planning_reach
                 };
                 let proof_next_reachable = match segment.reach {
-                    GuardSegmentReachProof::Exact(proof) => exact_guard_sample_is_live_reachable(
-                        proof,
-                        sample.position,
-                        semantic_tick,
-                        if proof.swing_left {
+                    GuardSegmentReachProof::Exact(proof) => {
+                        let live_hip = if proof.swing_left {
                             left_hip_current
                         } else {
                             right_hip_current
-                        },
-                        !segment.end.is_contact(),
-                    ),
+                        };
+                        if contact_driven_guard && segment.end.is_contact() {
+                            contact_driven_guard_sample_is_live_reachable(
+                                proof,
+                                sample.position,
+                                live_hip,
+                                segment.recovery_to_contact,
+                            )
+                        } else {
+                            exact_guard_sample_is_live_reachable(
+                                proof,
+                                sample.position,
+                                semantic_tick,
+                                live_hip,
+                                !segment.end.is_contact(),
+                            )
+                        }
+                    }
                     GuardSegmentReachProof::Retained(_) => direct_c2_sample_is_live_reachable(
                         segment.motion,
                         sample,
@@ -4658,15 +5315,68 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                 right_guard_hip_proof,
                             )
                         };
-                    let replacement = if matches!(segment.reach, GuardSegmentReachProof::Exact(_)) {
-                        replan_invalid_exact_guard_segment(
-                            segment,
+                    let replacement = if contact_driven_guard && aborted_contact {
+                        plan_contact_driven_guard_segment(
                             presented,
                             presented_velocity,
                             presented_acceleration,
-                            semantic_tick,
-                            fresh_proof.filter(|_| support_owner_valid),
+                            segment.end.position(),
+                            contact_driven_tick_budget,
+                            fresh_proof
+                                .map(|mut proof| {
+                                    proof.sequence = footwork.step_sequence;
+                                    proof.trajectory_signature.sequence = footwork.step_sequence;
+                                    proof
+                                })
+                                .filter(|_| support_owner_valid),
+                            terrain,
+                            |progress| {
+                                guard_contact_candidate_at_progress(
+                                    presented,
+                                    segment.end.position(),
+                                    progress,
+                                    support_target,
+                                    rig_origin,
+                                    rig_rotation,
+                                    footwork.swing_stance_local.x.signum(),
+                                    enabled.0,
+                                    terrain,
+                                )
+                            },
                         )
+                    } else if matches!(segment.reach, GuardSegmentReachProof::Exact(_)) {
+                        if aborted_contact && !skeleton.raised_locomotion().is_moving() {
+                            plan_guard_contact_recovery_without_cadence_deadline(
+                                presented,
+                                presented_velocity,
+                                presented_acceleration,
+                                segment.end.position(),
+                                fresh_proof.filter(|_| support_owner_valid),
+                                terrain,
+                            )
+                            .map_or_else(
+                                || {
+                                    replan_invalid_exact_guard_segment(
+                                        segment,
+                                        presented,
+                                        presented_velocity,
+                                        presented_acceleration,
+                                        semantic_tick,
+                                        fresh_proof.filter(|_| support_owner_valid),
+                                    )
+                                },
+                                GuardFootEndpointPlan::Segment,
+                            )
+                        } else {
+                            replan_invalid_exact_guard_segment(
+                                segment,
+                                presented,
+                                presented_velocity,
+                                presented_acceleration,
+                                semantic_tick,
+                                fresh_proof.filter(|_| support_owner_valid),
+                            )
+                        }
                     } else {
                         GuardFootEndpointPlan::MustReleaseOrReplan(
                             GuardFootReleasePlan::EmergencyBrake { presented },
@@ -4701,28 +5411,41 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         GuardFootEndpointPlan::MustReleaseOrReplan(
                             GuardFootReleasePlan::Segment(release),
                         ) => {
-                            footwork.swing_replan_segment =
-                                Some(release.with_owner_epoch(semantic_tick));
-                            footwork.swing_emergency_brake = None;
-                            footwork.swing_release_owner_active = true;
-                            footwork.awaiting_step_sequence = true;
+                            if contact_driven_guard {
+                                footwork.swing_replan_segment = None;
+                                footwork.swing_emergency_brake = None;
+                                footwork.swing_release_owner_active = false;
+                                footwork.awaiting_step_sequence = false;
+                            } else {
+                                footwork.swing_replan_segment =
+                                    Some(release.with_owner_epoch(semantic_tick));
+                                footwork.swing_emergency_brake = None;
+                                footwork.swing_release_owner_active = true;
+                                footwork.awaiting_step_sequence = true;
+                            }
                         }
                         GuardFootEndpointPlan::MustReleaseOrReplan(
                             GuardFootReleasePlan::EmergencyBrake { .. },
                         ) => {
-                            footwork.swing_emergency_brake = Some(EmergencyFootBrake {
-                                stationary_ideal: presented,
-                                owner_local_ideal: Some(
-                                    rig_rotation.inverse()
-                                        * ((if footwork.swing_left {
-                                            left_authored
-                                        } else {
-                                            right_authored
-                                        }) - rig_origin),
-                                ),
-                            });
-                            footwork.swing_release_owner_active = true;
-                            footwork.awaiting_step_sequence = true;
+                            if contact_driven_guard {
+                                footwork.swing_emergency_brake = None;
+                                footwork.swing_release_owner_active = false;
+                                footwork.awaiting_step_sequence = false;
+                            } else {
+                                footwork.swing_emergency_brake = Some(EmergencyFootBrake {
+                                    stationary_ideal: presented,
+                                    owner_local_ideal: Some(
+                                        rig_rotation.inverse()
+                                            * ((if footwork.swing_left {
+                                                left_authored
+                                            } else {
+                                                right_authored
+                                            }) - rig_origin),
+                                    ),
+                                });
+                                footwork.swing_release_owner_active = true;
+                                footwork.awaiting_step_sequence = true;
+                            }
                             if footwork.swing_left {
                                 left_direct_c2_sample = false;
                             } else {
@@ -4742,24 +5465,35 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         right_direct_c2_sample = true;
                     }
                     footwork.swing_replan_segment = Some(segment);
+                    let reached_terminal_tick = segment
+                        .owner_epoch
+                        .saturating_add(segment.timing.total_ticks.get() as u64)
+                        == semantic_tick;
+                    let authoritative_edge_reached_held_contact = segment.end.is_contact()
+                        && segment.timing.is_complete()
+                        && sequence_delta == 1;
                     if segment.timing.is_complete()
-                        && sequence_delta == 1
-                        && segment
-                            .owner_epoch
-                            .saturating_add(segment.timing.total_ticks.get() as u64)
-                            == semantic_tick
+                        && (reached_terminal_tick || authoritative_edge_reached_held_contact)
                     {
-                        let support_recovery_coexists =
-                            footwork.left_support_release_owner.is_some()
-                                || footwork.right_support_release_owner.is_some();
-                        complete_guard_segment_semantics(
-                            &mut footwork,
-                            segment,
-                            skeleton.raised_locomotion().step_sequence(),
-                        );
-                        if support_recovery_coexists {
-                            footwork.pending_cadence_edge =
-                                Some((swing_left, skeleton.raised_locomotion().step_sequence()));
+                        if contact_driven_guard {
+                            complete_contact_driven_guard_segment(&mut footwork, segment);
+                        } else {
+                            let support_recovery_coexists =
+                                footwork.left_support_release_owner.is_some()
+                                    || footwork.right_support_release_owner.is_some();
+                            complete_guard_segment_semantics(
+                                &mut footwork,
+                                segment,
+                                swing_left,
+                                skeleton.raised_locomotion().step_sequence(),
+                                cadence_can_advance,
+                            );
+                            if support_recovery_coexists {
+                                footwork.pending_cadence_edge = Some((
+                                    swing_left,
+                                    skeleton.raised_locomotion().step_sequence(),
+                                ));
+                            }
                         }
                     }
                 }
@@ -4788,7 +5522,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 // a time once the rotated authored stance is far enough away.
                 // The endpoint is latched so continued camera motion cannot
                 // make the foot chase a target that never lands.
-                if footwork.pelvis_acquisition.is_some() {
+                if guard_pelvis_blocks_stationary_pivot(footwork.pelvis_acquisition) {
                     footwork.pivot_active = false;
                     footwork.pivot_progress = 0.0;
                 } else if advances && !quickstep_handoff_active && !quickstep_stance_held {
@@ -4798,21 +5532,45 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             .min(1.0);
                     }
                     if !footwork.pivot_active {
-                        let left_error = (left_authored - footwork.left_plant).xz().length();
-                        let right_error = (right_authored - footwork.right_plant).xz().length();
-                        if left_error.max(right_error) > GUARD_PIVOT_TRIGGER_METRES {
+                        let left_stationary_target = stationary_guard_comfort_endpoint(
+                            left_authored,
+                            left_planning_reach,
+                            terrain,
+                        );
+                        let right_stationary_target = stationary_guard_comfort_endpoint(
+                            right_authored,
+                            right_planning_reach,
+                            terrain,
+                        );
+                        let left_error = left_stationary_target.distance(footwork.left_plant);
+                        let right_error = right_stationary_target.distance(footwork.right_plant);
+                        let left_has_contact = terrain
+                            .and_then(|terrain| terrain.height_at(footwork.left_plant.xz()))
+                            .is_some_and(|height| {
+                                sole_is_at_contact(footwork.left_plant.y, height)
+                            });
+                        let right_has_contact = terrain
+                            .and_then(|terrain| terrain.height_at(footwork.right_plant.xz()))
+                            .is_some_and(|height| {
+                                sole_is_at_contact(footwork.right_plant.y, height)
+                            });
+                        if !left_has_contact
+                            || !right_has_contact
+                            || left_error.max(right_error) > GUARD_PIVOT_TRIGGER_METRES
+                        {
                             footwork.pivot_active = true;
                             let left_separation =
                                 (left_authored - footwork.right_plant).xz().length();
                             let right_separation =
                                 (right_authored - footwork.left_plant).xz().length();
-                            footwork.pivot_left = if left_error <= GUARD_PIVOT_TRIGGER_METRES {
-                                false
-                            } else if right_error <= GUARD_PIVOT_TRIGGER_METRES {
-                                true
-                            } else {
-                                left_separation >= right_separation
-                            };
+                            footwork.pivot_left = stationary_guard_pivot_side(
+                                left_error,
+                                right_error,
+                                left_has_contact,
+                                right_has_contact,
+                                left_separation,
+                                right_separation,
+                            );
                             footwork.pivot_progress = 0.0;
                             footwork.pivot_origin = rig_origin;
                             footwork.pivot_start = if footwork.pivot_left {
@@ -4821,9 +5579,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                 footwork.right_plant
                             };
                             let authored_end = if footwork.pivot_left {
-                                left_authored
+                                left_stationary_target
                             } else {
-                                right_authored
+                                right_stationary_target
                             };
                             let authored_local =
                                 rig_rotation.inverse() * (authored_end - rig_origin);
@@ -4875,75 +5633,47 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 left_target = footwork.left_plant;
                 right_target = footwork.right_plant;
                 if footwork.pivot_active {
-                    let progress = quintic_progress(footwork.pivot_progress);
-                    let pivot_target = guard_pivot_target(
+                    let progress = footwork.pivot_progress;
+                    let pivot_start_has_contact = terrain
+                        .and_then(|terrain| terrain.height_at(footwork.pivot_start.xz()))
+                        .is_some_and(|height| sole_is_at_contact(footwork.pivot_start.y, height));
+                    let pivot_sample = guard_boundary_quintic_sample(
                         footwork.pivot_start,
+                        Vec3::ZERO,
+                        Vec3::ZERO,
                         footwork.pivot_end,
-                        footwork.pivot_origin,
-                        if footwork.pivot_left {
-                            footwork.right_plant
-                        } else {
-                            footwork.left_plant
-                        },
                         progress,
+                        GUARD_PIVOT_STEP_SECONDS,
+                        if pivot_start_has_contact {
+                            GUARD_PIVOT_LIFT_METRES
+                        } else {
+                            0.0
+                        },
                     );
-                    let pivot_preview = if footwork.pivot_left {
-                        advance_guard_foot_target_sample_with_reach(
-                            footwork.left_solve_target,
-                            footwork.left_target_velocity,
-                            footwork.left_target_acceleration,
-                            footwork.left_desired_target,
-                            footwork.left_ideal_velocity,
-                            footwork.left_ideal_acceleration,
-                            footwork.left_ideal_history_valid,
-                            pivot_target,
-                            None,
-                            state_delta_seconds,
-                            advances,
-                            left_planning_reach,
-                        )
-                    } else {
-                        advance_guard_foot_target_sample_with_reach(
-                            footwork.right_solve_target,
-                            footwork.right_target_velocity,
-                            footwork.right_target_acceleration,
-                            footwork.right_desired_target,
-                            footwork.right_ideal_velocity,
-                            footwork.right_ideal_acceleration,
-                            footwork.right_ideal_history_valid,
-                            pivot_target,
-                            None,
-                            state_delta_seconds,
-                            advances,
-                            right_planning_reach,
-                        )
-                    };
-                    let pivot_reach_requires_release =
-                        pivot_preview.replan.is_some_and(|(reason, _)| {
-                            matches!(
-                                reason,
-                                FootFollowReason::ReachWarning | FootFollowReason::ReachHardLimit
-                            )
-                        });
                     let pivot_motion_is_admitted = !advances
-                        || (!pivot_reach_requires_release
-                            && guard_motion_can_transfer_to_cadence(
-                                pivot_preview.position,
-                                pivot_preview.velocity,
-                                pivot_preview.acceleration,
-                                if footwork.pivot_left {
-                                    left_planning_reach
-                                } else {
-                                    right_planning_reach
-                                },
-                                state_delta_seconds,
-                                ReachMotionSample::Next,
-                            ));
+                        || guard_motion_can_transfer_to_cadence(
+                            pivot_sample.position,
+                            pivot_sample.velocity,
+                            pivot_sample.acceleration,
+                            if footwork.pivot_left {
+                                left_planning_reach
+                            } else {
+                                right_planning_reach
+                            },
+                            state_delta_seconds,
+                            ReachMotionSample::Next,
+                        );
                     if pivot_motion_is_admitted {
                         if footwork.pivot_left {
-                            left_target = pivot_target;
+                            left_target = pivot_sample.position;
+                            left_explicit_ideal_motion =
+                                Some((pivot_sample.velocity, pivot_sample.acceleration));
+                            left_direct_c2_sample = true;
                         } else {
-                            right_target = pivot_target;
+                            right_target = pivot_sample.position;
+                            right_explicit_ideal_motion =
+                                Some((pivot_sample.velocity, pivot_sample.acceleration));
+                            right_direct_c2_sample = true;
                         }
                         let pivot_presented = if footwork.pivot_left {
                             visible_left
@@ -5145,6 +5875,24 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         left_target = endpoint;
                         left_explicit_ideal_motion = Some((Vec3::ZERO, Vec3::ZERO));
                     }
+                    Some(SupportReleaseOwner::GroundSafetySlide { owner_local }) => {
+                        let desired = ground_safety_slide_target(
+                            owner_local,
+                            rig_origin,
+                            rig_rotation,
+                            terrain,
+                        );
+                        let endpoint = left_planning_reach.map_or(desired, |reach| {
+                            ground_safety_slide_endpoint(
+                                desired,
+                                reach.current_root(),
+                                reach.warning_reach() * 0.97,
+                                terrain,
+                            )
+                        });
+                        left_target = endpoint;
+                        left_explicit_ideal_motion = None;
+                    }
                     None => {}
                 }
             }
@@ -5194,6 +5942,24 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     Some(SupportReleaseOwner::TerminalHold { endpoint }) => {
                         right_target = endpoint;
                         right_explicit_ideal_motion = Some((Vec3::ZERO, Vec3::ZERO));
+                    }
+                    Some(SupportReleaseOwner::GroundSafetySlide { owner_local }) => {
+                        let desired = ground_safety_slide_target(
+                            owner_local,
+                            rig_origin,
+                            rig_rotation,
+                            terrain,
+                        );
+                        let endpoint = right_planning_reach.map_or(desired, |reach| {
+                            ground_safety_slide_endpoint(
+                                desired,
+                                reach.current_root(),
+                                reach.warning_reach() * 0.97,
+                                terrain,
+                            )
+                        });
+                        right_target = endpoint;
+                        right_explicit_ideal_motion = None;
                     }
                     None => {}
                 }
@@ -5299,7 +6065,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             Some(rig_rotation.inverse() * (left_target - rig_origin));
                     }
                 }
-                if let Some((reason, _suggested_waypoint)) = left_track.replan {
+                if !contact_driven_guard
+                    && let Some((reason, _suggested_waypoint)) = left_track.replan
+                {
                     if footwork.swing_left {
                         if footwork.swing_replan_segment.is_none()
                             || reason == FootFollowReason::ReachHardLimit
@@ -5471,7 +6239,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             Some(rig_rotation.inverse() * (right_target - rig_origin));
                     }
                 }
-                if let Some((reason, _suggested_waypoint)) = right_track.replan {
+                if !contact_driven_guard
+                    && let Some((reason, _suggested_waypoint)) = right_track.replan
+                {
                     if !footwork.swing_left {
                         if footwork.swing_replan_segment.is_none()
                             || reason == FootFollowReason::ReachHardLimit
@@ -5602,6 +6372,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     left_target,
                     left_motion.0,
                     left_motion.1,
+                    swing_left,
                     skeleton.raised_locomotion().step_sequence(),
                     cadence_can_advance,
                 );
@@ -5611,6 +6382,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     right_target,
                     right_motion.0,
                     right_motion.1,
+                    swing_left,
                     skeleton.raised_locomotion().step_sequence(),
                     cadence_can_advance,
                 );
@@ -5650,13 +6422,17 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     footwork.swing_emergency_brake = None;
                     footwork.swing_release_owner_active = false;
                     footwork.swing_start = target;
-                    footwork.step_sequence = skeleton.raised_locomotion().step_sequence();
                     // A moving owner-local recovery is not a planted contact
                     // and therefore does not wait for a future cadence edge.
                     // Re-enter planning immediately from its visible p/v/a.
-                    footwork.awaiting_step_sequence = guard_emergency_settlement_awaits_cadence(
-                        cadence_can_advance,
-                        body_relative_recovery_settled,
+                    retain_or_defer_guard_cadence_identity(
+                        &mut footwork,
+                        swing_left,
+                        skeleton.raised_locomotion().step_sequence(),
+                        guard_emergency_settlement_awaits_cadence(
+                            cadence_can_advance,
+                            body_relative_recovery_settled,
+                        ),
                     );
                     if footwork.swing_left {
                         footwork.left_plant = target;
@@ -5708,7 +6484,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             let mut airborne_orientation_owned = [true; 2];
             footwork.left_command_target = Some(left_target);
             footwork.right_command_target = Some(right_target);
-            for (leg_index, (upper, lower, foot, target, left, support)) in [
+            for (leg_index, (upper, lower, foot, mut target, left, support)) in [
                 (
                     left_upper,
                     left_lower,
@@ -5719,7 +6495,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         && if stationary_guard {
                             !footwork.pivot_active || !footwork.pivot_left
                         } else {
-                            !footwork.swing_left && footwork.left_support_release_owner.is_none()
+                            !footwork.swing_left
+                                && support_owner_preserves_contact(
+                                    footwork.left_support_release_owner,
+                                )
                         },
                 ),
                 (
@@ -5732,7 +6511,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         && if stationary_guard {
                             !footwork.pivot_active || footwork.pivot_left
                         } else {
-                            footwork.swing_left && footwork.right_support_release_owner.is_none()
+                            footwork.swing_left
+                                && support_owner_preserves_contact(
+                                    footwork.right_support_release_owner,
+                                )
                         },
                 ),
             ]
@@ -5752,6 +6534,38 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     .global
                     .translation()
                     .distance(foot_snapshot.global.translation());
+                if raised_solver_follower {
+                    let solve_hip = upper_snapshot.global.translation();
+                    let warning_reach = (upper_length * upper_length
+                        + lower_length * lower_length
+                        + 2.0 * upper_length * lower_length * 30.0_f32.to_radians().cos())
+                    .sqrt()
+                        * 0.97;
+                    let offset = target - solve_hip;
+                    let distance = offset.length();
+                    if distance > warning_reach {
+                        let radial = offset / distance;
+                        target = solve_hip + radial * warning_reach;
+                        let (velocity, acceleration) = if left {
+                            (
+                                &mut footwork.left_target_velocity,
+                                &mut footwork.left_target_acceleration,
+                            )
+                        } else {
+                            (
+                                &mut footwork.right_target_velocity,
+                                &mut footwork.right_target_acceleration,
+                            )
+                        };
+                        *velocity -= radial * velocity.dot(radial).max(0.0);
+                        *acceleration -= radial * acceleration.dot(radial).max(0.0);
+                    }
+                    if left {
+                        footwork.left_command_target = Some(target);
+                    } else {
+                        footwork.right_command_target = Some(target);
+                    }
+                }
                 let side = anatomical_side(
                     rig_rotation,
                     rig_origin,
@@ -5946,7 +6760,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         && if stationary_guard {
                             !footwork.pivot_active || !footwork.pivot_left
                         } else {
-                            !footwork.swing_left && footwork.left_support_release_owner.is_none()
+                            !footwork.swing_left
+                                && support_owner_preserves_contact(
+                                    footwork.left_support_release_owner,
+                                )
                         },
                 ),
                 (
@@ -5956,7 +6773,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         && if stationary_guard {
                             !footwork.pivot_active || footwork.pivot_left
                         } else {
-                            footwork.swing_left && footwork.right_support_release_owner.is_none()
+                            footwork.swing_left
+                                && support_owner_preserves_contact(
+                                    footwork.right_support_release_owner,
+                                )
                         },
                 ),
             ] {
@@ -8129,13 +8949,30 @@ fn raised_leg_contributes_pelvis_reach(
     };
     footwork.initialized
         && !footwork.release_handoff_active
-        && support_release.is_none()
+        && support_owner_preserves_contact(support_release)
         && support_weight >= 0.5
         && if moving {
             footwork.swing_left != left
         } else {
             !footwork.pivot_active || footwork.pivot_left != left
         }
+}
+
+fn raised_leg_is_stationary_contact_candidate(
+    footwork: &RaisedFootworkState,
+    moving: bool,
+    left: bool,
+) -> bool {
+    let support_release = if left {
+        footwork.left_support_release_owner
+    } else {
+        footwork.right_support_release_owner
+    };
+    footwork.initialized
+        && !moving
+        && !footwork.release_handoff_active
+        && support_owner_preserves_contact(support_release)
+        && (!footwork.pivot_active || footwork.pivot_left == left)
 }
 
 /// Refresh contact diagnostics from propagated globals. The IK pass runs
@@ -8271,10 +9108,16 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
         if !raised.initialized || !raised_refresh_owns_support(skeleton, &raised) {
             continue;
         }
+        let stationary_guard = !skeleton.raised_locomotion().is_moving();
         for (role, left, nominal_support) in [
             (BoneRole::FootLeft, true, !raised.swing_left),
             (BoneRole::FootRight, false, raised.swing_left),
         ] {
+            let nominal_support = if stationary_guard {
+                !raised.pivot_active || raised.pivot_left != left
+            } else {
+                nominal_support
+            };
             let Some(&foot) = rig.get(&role) else {
                 continue;
             };
@@ -8309,7 +9152,7 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
 
 fn raised_refresh_owns_support(skeleton: &SkeletonState, raised: &RaisedFootworkState) -> bool {
     raised_release_owns_ik(skeleton, Some(raised))
-        || (raised_footwork_posture_is_valid(skeleton)
+        || (raised_guard_ground_contact_is_valid(skeleton, raised.initialized)
             && skeleton.weapon_guard() == WeaponGuardState::Raised
             && matches!(
                 skeleton.action_kind(),
@@ -8319,6 +9162,21 @@ fn raised_refresh_owns_support(skeleton: &SkeletonState, raised: &RaisedFootwork
 
 pub(super) fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded() && skeleton.posture() == Posture::Upright
+}
+
+fn raised_guard_ground_contact_is_valid(
+    skeleton: &SkeletonState,
+    raised_footwork_was_active: bool,
+) -> bool {
+    raised_footwork_posture_is_valid(skeleton)
+        || (raised_footwork_was_active
+            && skeleton.posture() == Posture::Upright
+            && !skeleton.is_posture_transitioning()
+            && skeleton.world_velocity.y.abs() <= 0.5
+            && matches!(
+                skeleton.action_kind(),
+                SkeletonAction::None | SkeletonAction::Attack | SkeletonAction::Block
+            ))
 }
 
 pub(super) fn terrain_ik_posture_is_valid(skeleton: &SkeletonState) -> bool {
@@ -9118,8 +9976,163 @@ fn guard_cadence_contact_tick_span(phase: f32, speed: f32) -> Option<SegmentTick
         return None;
     }
     let half_step_progress = (phase.rem_euclid(1.0) * 2.0).fract();
-    let half_step_seconds = guard_step_length(speed) / speed;
-    contact_tick_span((1.0 - half_step_progress) * half_step_seconds)
+    // The replicated raised intent reports observed speed, which can still be
+    // near zero on the first acceleration sample. Scheduling contact from that
+    // instantaneous speed promises a late endpoint that the accelerating
+    // authoritative cadence reaches first. Plan against the earliest lawful
+    // guard edge instead. A completed contact remains a typed terminal owner
+    // until a slower authoritative edge arrives.
+    let deadline_speed = speed.max(TACTICAL_GUARD_SPEED_METRES_PER_SECOND);
+    let half_step_seconds = guard_step_length(deadline_speed) / deadline_speed;
+    guard_contact_tick_span((1.0 - half_step_progress) * half_step_seconds)
+}
+
+fn guard_following_cadence_contact_tick_span(phase: f32, speed: f32) -> Option<SegmentTickSpan> {
+    if !phase.is_finite() || !speed.is_finite() || speed <= 0.01 {
+        return None;
+    }
+    let half_step_progress = (phase.rem_euclid(1.0) * 2.0).fract();
+    let deadline_speed = speed.max(TACTICAL_GUARD_SPEED_METRES_PER_SECOND);
+    let half_step_seconds = guard_step_length(deadline_speed) / deadline_speed;
+    // The contact-driven gait has already advanced the local swing identity,
+    // while replicated cadence still describes the just-landed foot. Its
+    // deadline is therefore the *following* edge: the remainder of this
+    // half-step plus one complete half-step.
+    guard_contact_tick_span((2.0 - half_step_progress) * half_step_seconds)
+}
+
+fn guard_contact_tick_span(seconds_until_authoritative_contact: f32) -> Option<SegmentTickSpan> {
+    if !seconds_until_authoritative_contact.is_finite()
+        || seconds_until_authoritative_contact <= 0.0
+    {
+        return None;
+    }
+    // Authoritative raised cadence is observed through sparse presentation
+    // snapshots. A ceil-rounded local promise can therefore land one semantic
+    // tick after the already-crossed server edge. Contact is a hard deadline,
+    // so conservatively use the last complete tick before the predicted
+    // crossing. Release owners continue to quantize upward.
+    SegmentTickSpan::new(
+        ((seconds_until_authoritative_contact * CONTINUITY_SAMPLE_HZ).floor() as u32).max(1),
+    )
+}
+
+fn contact_driven_guard_support_tick_budget(
+    mut support_proof: GuardHipPathProof,
+    support_target: Vec3,
+) -> u32 {
+    const MAXIMUM_CONTACT_TICKS: u32 = 64;
+    support_proof.contact_tick = support_proof
+        .start_tick
+        .saturating_add(u64::from(MAXIMUM_CONTACT_TICKS));
+    (1..=MAXIMUM_CONTACT_TICKS)
+        .take_while(|tick| {
+            support_proof.permits(
+                support_target,
+                support_proof.start_tick.saturating_add(u64::from(*tick)),
+                false,
+            )
+        })
+        .last()
+        .unwrap_or(1)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_contact_driven_guard_segment(
+    presented: Vec3,
+    presented_velocity: Vec3,
+    presented_acceleration: Vec3,
+    requested_endpoint: Vec3,
+    maximum_ticks: u32,
+    proof: Option<GuardHipPathProof>,
+    terrain: Option<&SceneTerrain>,
+    mut candidate_at_progress: impl FnMut(f32) -> Option<Vec3>,
+) -> GuardFootEndpointPlan {
+    let Some(proof) = proof else {
+        return GuardFootEndpointPlan::MustReleaseOrReplan(GuardFootReleasePlan::EmergencyBrake {
+            presented,
+        });
+    };
+    let mut best = None;
+    let mut best_distance = 0.0;
+    for ticks in 1..=maximum_ticks.clamp(1, 64) {
+        let timing = SegmentTickSpan::new(ticks).expect("guard contact ticks are nonzero");
+        // Physical contact owns this gait. The proof supplied by the raised
+        // pose pass is initially sized to the replicated cadence remainder,
+        // which can be only a few ticks after a sparse phase update. Rebuild
+        // its terminal tick for each candidate duration so a lawful contact
+        // is not rejected merely because it outlives that animation hint.
+        let mut contact_proof = proof;
+        contact_proof.contact_tick = contact_proof.start_tick.saturating_add(u64::from(ticks));
+        let planned = plan_guard_c2_contact_segment(
+            presented,
+            presented_velocity,
+            presented_acceleration,
+            timing,
+            Some(contact_proof),
+            &mut candidate_at_progress,
+        );
+        let segment = match planned {
+            GuardFootEndpointPlan::Segment(segment)
+                if guard_contact_has_terminal_support_reserve(contact_proof, segment) =>
+            {
+                Some(segment)
+            }
+            _ => plan_guard_recovery_contact_segment(
+                presented,
+                presented_velocity,
+                presented_acceleration,
+                timing,
+                Some(contact_proof),
+                terrain,
+            ),
+        };
+        let Some(segment) = segment else { continue };
+        let distance = segment.end.position().distance(presented);
+        if distance > best_distance {
+            best_distance = distance;
+            best = Some(segment);
+        }
+        if segment.end.position().distance(requested_endpoint) <= 0.01 {
+            break;
+        }
+    }
+    if let Some(segment) = best {
+        return GuardFootEndpointPlan::Segment(segment);
+    }
+    // A former support can be just outside warning reach on the first tick
+    // after the opposite foot lands. That state is still inside the analytic
+    // hard workspace, but a Contact proof cannot legally start there. Retain
+    // a typed C2 owner that moves inward under the hard envelope; its terminal
+    // sample is not promoted as contact and the next tick replans terrain.
+    for ticks in 1..=maximum_ticks.clamp(1, 64) {
+        let timing = SegmentTickSpan::new(ticks).expect("guard recovery ticks are nonzero");
+        let mut release_proof = proof;
+        release_proof.contact_tick = release_proof.start_tick.saturating_add(u64::from(ticks));
+        if let GuardFootEndpointPlan::MustReleaseOrReplan(GuardFootReleasePlan::Segment(segment)) =
+            plan_exact_guard_release(
+                presented,
+                presented_velocity,
+                presented_acceleration,
+                timing,
+                release_proof,
+            )
+        {
+            return GuardFootEndpointPlan::MustReleaseOrReplan(GuardFootReleasePlan::Segment(
+                segment,
+            ));
+        }
+    }
+    GuardFootEndpointPlan::MustReleaseOrReplan(GuardFootReleasePlan::EmergencyBrake { presented })
+}
+
+fn guard_contact_has_terminal_support_reserve(
+    proof: GuardHipPathProof,
+    segment: PlannedGuardFootSegment,
+) -> bool {
+    proof.sample(proof.contact_tick).is_some_and(|hip| {
+        segment.end.position().distance(hip) <= proof.warning_reach * 0.97 + 0.0001
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -9140,7 +10153,11 @@ fn plan_guard_c2_contact_segment(
         .start_tick
         .saturating_add(u64::from(timing.total_ticks.get()));
     let exact_hip_path = (proof.start_tick..=proof.contact_tick)
-        .filter_map(|tick| proof.sample(tick).map(|hip| (hip, proof.warning_reach)))
+        .filter_map(|tick| {
+            proof
+                .sample(tick)
+                .map(|hip| (hip, proof.warning_reach, proof.hard_reach))
+        })
         .collect::<Vec<_>>();
     if exact_hip_path.len() != timing.total_ticks.get() as usize + 1 {
         return GuardFootEndpointPlan::MustReleaseOrReplan(GuardFootReleasePlan::EmergencyBrake {
@@ -9218,6 +10235,7 @@ fn plan_guard_c2_contact_segment(
         return GuardFootEndpointPlan::Segment(PlannedGuardFootSegment {
             motion: segment,
             reach: GuardSegmentReachProof::Exact(proof),
+            recovery_to_contact: false,
         });
     }
 
@@ -9228,6 +10246,84 @@ fn plan_guard_c2_contact_segment(
         timing,
         proof,
     )
+}
+
+fn plan_guard_recovery_contact_segment(
+    presented: Vec3,
+    presented_velocity: Vec3,
+    presented_acceleration: Vec3,
+    timing: SegmentTickSpan,
+    proof: Option<GuardHipPathProof>,
+    terrain: Option<&SceneTerrain>,
+) -> Option<PlannedGuardFootSegment> {
+    let proof = proof?;
+    let contact_tick = proof
+        .start_tick
+        .saturating_add(u64::from(timing.total_ticks.get()));
+    let final_hip = proof.sample(contact_tick)?;
+    // This is the morphology-independent safety target: the closest point on
+    // the ground toward the predicted hip that remains inside the warning
+    // workspace. It is still a real terrain contact with the same C2,
+    // dynamics, and whole-path proof as an ideal cadence endpoint.
+    let endpoint =
+        ground_safety_slide_endpoint(presented, final_hip, proof.warning_reach * 0.97, terrain);
+    match plan_guard_c2_contact_segment(
+        presented,
+        presented_velocity,
+        presented_acceleration,
+        timing,
+        Some(proof),
+        |_| Some(endpoint),
+    ) {
+        GuardFootEndpointPlan::Segment(mut segment) => {
+            segment.recovery_to_contact = proof
+                .sample(proof.start_tick)
+                .is_some_and(|hip| presented.distance(hip) > proof.warning_reach + 0.0001);
+            Some(segment)
+        }
+        GuardFootEndpointPlan::MustReleaseOrReplan(_) => None,
+    }
+}
+
+fn plan_guard_contact_recovery_without_cadence_deadline(
+    presented: Vec3,
+    presented_velocity: Vec3,
+    presented_acceleration: Vec3,
+    requested_endpoint: Vec3,
+    proof: Option<GuardHipPathProof>,
+    terrain: Option<&SceneTerrain>,
+) -> Option<PlannedGuardFootSegment> {
+    let proof = proof?;
+    // A contact recovery has priority over cadence timing. Select the shortest
+    // dynamics-proven stop-to-ground duration instead of converting the foot
+    // to an airborne Release owner merely because an old movement deadline
+    // has expired. Callers defer the cadence identity until this owner lands.
+    for ticks in 1..=64 {
+        let timing = SegmentTickSpan::new(ticks).expect("stationary contact ticks are nonzero");
+        if let GuardFootEndpointPlan::Segment(segment) = plan_guard_c2_contact_segment(
+            presented,
+            presented_velocity,
+            presented_acceleration,
+            timing,
+            Some(proof),
+            |_| Some(requested_endpoint),
+        ) && segment.end.is_contact()
+        {
+            return Some(segment);
+        }
+        if let Some(segment) = plan_guard_recovery_contact_segment(
+            presented,
+            presented_velocity,
+            presented_acceleration,
+            timing,
+            Some(proof),
+            terrain,
+        ) && segment.end.is_contact()
+        {
+            return Some(segment);
+        }
+    }
+    None
 }
 
 fn plan_exact_guard_release(
@@ -9268,6 +10364,7 @@ fn plan_exact_guard_release(
                 PlannedGuardFootSegment {
                     motion,
                     reach: GuardSegmentReachProof::Exact(proof),
+                    recovery_to_contact: false,
                 },
             ));
         }
@@ -9293,7 +10390,7 @@ fn guard_exact_hip_path_contains_segment_with_limit(
 }
 
 fn guard_exact_hip_path_contains_segment(
-    exact_hip_path: &[(Vec3, f32)],
+    exact_hip_path: &[(Vec3, f32, f32)],
     segment: C2FootSegment,
 ) -> bool {
     let total_ticks = segment.timing.total_ticks.get();
@@ -9301,14 +10398,24 @@ fn guard_exact_hip_path_contains_segment(
         && exact_hip_path
             .iter()
             .enumerate()
-            .all(|(tick, (hip, warning))| {
+            .all(|(tick, (hip, warning, hard))| {
                 let sample = guard_swing_replan_sample_at_progress(
                     segment,
                     tick as f32 / total_ticks as f32,
                 );
+                // A foot inherited from the previous plant can begin just
+                // outside the conservative warning reserve. That is a valid
+                // swing state as long as it never crosses hard anatomical
+                // reach and arrives back inside warning reach at contact.
+                let limit = if tick == total_ticks as usize {
+                    *warning
+                } else {
+                    *hard
+                };
                 hip.is_finite()
                     && warning.is_finite()
-                    && sample.position.distance(*hip) <= *warning + 0.0001
+                    && hard.is_finite()
+                    && sample.position.distance(*hip) <= limit + 0.0001
             })
 }
 
@@ -11092,6 +12199,96 @@ pub(super) fn plan_guard_step_endpoint(
     future_origin + step_rotation * stance_local
 }
 
+#[allow(clippy::too_many_arguments)]
+fn body_relative_guard_gait_targets(
+    gait_origin: Vec3,
+    gait_lateral: Vec3,
+    stance_local: Vec3,
+    world_direction: Vec3,
+    step_length: f32,
+    half_step_progress: f32,
+    swing_left: bool,
+    terrain_enabled: bool,
+    terrain: Option<&SceneTerrain>,
+) -> (Vec3, Vec3) {
+    let progress = half_step_progress.clamp(0.0, 1.0);
+    let direction = world_direction.with_y(0.0).normalize_or_zero();
+    let lateral = gait_lateral.with_y(0.0).normalize_or_zero();
+    let support_offset = direction * step_length * (0.5 - progress);
+    let swing_offset = direction * step_length * contact_matched_guard_swing_offset(progress);
+    let stance_track = if stance_local.x.abs() > 0.001 {
+        stance_local
+            .x
+            .abs()
+            .clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER)
+    } else {
+        FOOT_TRACK_INNER + 0.04
+    };
+    let contact = |side: f32, offset: Vec3| {
+        let mut target = gait_origin + lateral * (side * stance_track) + offset;
+        // Some production scenes expose terrain through the controller but
+        // not through a unique SceneTerrain query. Retain the acquired
+        // morphology/ground-relative ankle height in that case; using the rig
+        // origin plus a global sole constant lifted both feet by the rig's
+        // authored root offset.
+        target.y = gait_origin.y + stance_local.y;
+        if terrain_enabled {
+            terrain_conformed_guard_target(
+                target,
+                terrain.and_then(|terrain| terrain.height_at(target.xz())),
+            )
+        } else {
+            target
+        }
+    };
+    let mut left = contact(
+        -1.0,
+        if swing_left {
+            swing_offset
+        } else {
+            support_offset
+        },
+    );
+    let mut right = contact(
+        1.0,
+        if swing_left {
+            support_offset
+        } else {
+            swing_offset
+        },
+    );
+    let lift = c2_swing_arch(progress) * GUARD_PIVOT_LIFT_METRES;
+    if swing_left {
+        left.y += lift;
+    } else {
+        right.y += lift;
+    }
+    (left, right)
+}
+
+/// Normalized body-relative swing displacement with planted-foot velocity at
+/// both ends. Its endpoint derivative is -1, matching the support path, so a
+/// cadence edge changes support identity without changing world velocity.
+fn contact_matched_guard_swing_offset(progress: f32) -> f32 {
+    let progress = progress.clamp(0.0, 1.0);
+    -0.5 - progress + 20.0 * progress.powi(3) - 30.0 * progress.powi(4) + 12.0 * progress.powi(5)
+}
+
+fn constrain_guard_gait_target_to_reach(target: Vec3, hip: Vec3, reach: f32) -> Vec3 {
+    if !target.is_finite() || !hip.is_finite() || !reach.is_finite() || reach <= 0.0 {
+        return target;
+    }
+    let vertical = target.y - hip.y;
+    let planar_limit = (reach * reach - vertical * vertical).max(0.0).sqrt();
+    let planar = target.xz() - hip.xz();
+    if planar.length_squared() <= planar_limit * planar_limit {
+        target
+    } else {
+        let constrained = hip.xz() + planar.normalize_or_zero() * planar_limit;
+        Vec3::new(constrained.x, target.y, constrained.y)
+    }
+}
+
 pub(super) fn guard_step_sequence_delta(previous: u32, current: u32) -> u32 {
     current.wrapping_sub(previous)
 }
@@ -11116,23 +12313,35 @@ fn guard_recovery_may_rebase_on_semantic_edge(
 fn complete_guard_segment_semantics(
     footwork: &mut RaisedFootworkState,
     segment: PlannedGuardFootSegment,
+    current_swing_left: bool,
     current_step_sequence: u32,
+    await_next_cadence: bool,
 ) {
-    footwork.step_sequence = current_step_sequence;
-    footwork.awaiting_step_sequence = true;
+    retain_or_defer_guard_cadence_identity(
+        footwork,
+        current_swing_left,
+        current_step_sequence,
+        await_next_cadence,
+    );
     let endpoint = segment.end.position();
     if segment.end.is_contact() {
         // Retain the completed typed owner until the authoritative cadence
         // edge consumes it. This keeps the exact endpoint, zero derivatives,
         // and contact-envelope completion visible to diagnostics on the
         // contact tick and on repeated evaluation of that tick.
-        footwork.swing_replan_segment = Some(segment);
+        footwork.swing_replan_segment = await_next_cadence.then_some(segment);
         footwork.swing_release_owner_active = false;
         footwork.swing_emergency_brake = None;
         if footwork.swing_left {
             footwork.left_plant = endpoint;
+            if !await_next_cadence {
+                footwork.left_support_weight = 1.0;
+            }
         } else {
             footwork.right_plant = endpoint;
+            if !await_next_cadence {
+                footwork.right_support_weight = 1.0;
+            }
         }
     } else {
         footwork.swing_replan_segment = None;
@@ -11150,6 +12359,39 @@ fn complete_guard_segment_semantics(
     // The stateful follower still has one terminal integration to perform with
     // the segment's explicit zero endpoint derivatives. Its normal publication
     // below records the actual rendered ankle and completed history together.
+}
+
+fn complete_contact_driven_guard_segment(
+    footwork: &mut RaisedFootworkState,
+    segment: PlannedGuardFootSegment,
+) {
+    let endpoint = segment.end.position();
+    if segment.end.is_contact() {
+        // Keep the terminal owner for one semantic tick. The next advancing
+        // evaluation consumes the physical landing and starts the opposite
+        // swing; replicated cadence is not required to unlock it.
+        footwork.swing_replan_segment = Some(segment);
+        footwork.swing_release_owner_active = false;
+        footwork.swing_emergency_brake = None;
+        footwork.awaiting_step_sequence = false;
+        footwork.pending_cadence_edge = None;
+        if footwork.swing_left {
+            footwork.left_plant = endpoint;
+            footwork.left_support_weight = 1.0;
+        } else {
+            footwork.right_plant = endpoint;
+            footwork.right_support_weight = 1.0;
+        }
+    } else {
+        // A grounded contact-first cadence never promotes an airborne release
+        // to locomotion ownership. Leave the current swing unplanted and let
+        // the next evaluation plan another terrain contact.
+        footwork.swing_replan_segment = None;
+        footwork.swing_release_owner_active = false;
+        footwork.swing_emergency_brake = None;
+        footwork.awaiting_step_sequence = false;
+    }
+    footwork.swing_start = endpoint;
 }
 
 fn install_guard_support_release(
@@ -11205,6 +12447,7 @@ fn complete_support_release_if_settled(
     presented: Vec3,
     velocity: Vec3,
     acceleration: Vec3,
+    current_swing_left: bool,
     current_step_sequence: u32,
     await_next_cadence: bool,
 ) {
@@ -11247,8 +12490,12 @@ fn complete_support_release_if_settled(
         footwork.right_ideal_acceleration = Vec3::ZERO;
         footwork.right_ideal_history_valid = true;
     }
-    footwork.step_sequence = current_step_sequence;
-    footwork.awaiting_step_sequence = await_next_cadence;
+    retain_or_defer_guard_cadence_identity(
+        footwork,
+        current_swing_left,
+        current_step_sequence,
+        await_next_cadence,
+    );
 }
 
 fn supersede_support_segment_with_emergency(
@@ -11289,6 +12536,12 @@ fn guard_stationary_owns_pose(stationary_requested: bool, segment_active: bool) 
     stationary_requested && !segment_active
 }
 
+fn guard_pelvis_blocks_stationary_pivot(acquisition: Option<GuardPelvisAcquisition>) -> bool {
+    acquisition.is_some_and(|acquisition| {
+        acquisition.target.is_some() && acquisition.advance_authorized && acquisition.progress < 1.0
+    })
+}
+
 fn adopt_guard_movement_identity(
     footwork: &mut RaisedFootworkState,
     replicated_swing_left: bool,
@@ -11310,6 +12563,131 @@ fn adopt_guard_movement_identity(
     footwork.pending_cadence_edge = None;
     footwork.swing_release_owner_active = false;
     footwork.awaiting_step_sequence = false;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn begin_next_guard_swing_after_contact(
+    footwork: &mut RaisedFootworkState,
+    moving: bool,
+    sequence_delta: u32,
+    visible_left: Vec3,
+    visible_right: Vec3,
+    half_step: u8,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    left_authored: Vec3,
+    right_authored: Vec3,
+) -> bool {
+    let completed_contact = footwork
+        .swing_replan_segment
+        .is_some_and(|segment| segment.end.is_contact() && segment.timing.is_complete());
+    if !moving
+        || sequence_delta != 0
+        || !completed_contact
+        || footwork.pending_cadence_edge.is_some()
+    {
+        return false;
+    }
+
+    let landed_left = footwork.swing_left;
+    let next_swing_left = !landed_left;
+    let retained_sequence = footwork.step_sequence;
+    adopt_guard_movement_identity(
+        footwork,
+        next_swing_left,
+        retained_sequence,
+        visible_left,
+        visible_right,
+    );
+    footwork.half_step = half_step;
+    footwork.step_origin = rig_origin;
+    footwork.step_rotation = rig_rotation;
+    footwork.swing_stance_local = rig_rotation.inverse()
+        * ((if next_swing_left {
+            left_authored
+        } else {
+            right_authored
+        }) - rig_origin);
+    footwork.left_support_weight = if next_swing_left { 0.0 } else { 1.0 };
+    footwork.right_support_weight = if next_swing_left { 1.0 } else { 0.0 };
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn begin_next_contact_driven_guard_swing(
+    footwork: &mut RaisedFootworkState,
+    moving: bool,
+    visible_left: Vec3,
+    visible_right: Vec3,
+    half_step: u8,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    left_authored: Vec3,
+    right_authored: Vec3,
+) -> bool {
+    let completed_contact = footwork
+        .swing_replan_segment
+        .is_some_and(|segment| segment.end.is_contact() && segment.timing.is_complete());
+    if !moving || !completed_contact {
+        return false;
+    }
+
+    let next_swing_left = !footwork.swing_left;
+    let local_sequence = footwork.step_sequence.wrapping_add(1);
+    adopt_guard_movement_identity(
+        footwork,
+        next_swing_left,
+        local_sequence,
+        visible_left,
+        visible_right,
+    );
+    footwork.half_step = half_step;
+    footwork.step_origin = rig_origin;
+    footwork.step_rotation = rig_rotation;
+    footwork.swing_stance_local = rig_rotation.inverse()
+        * ((if next_swing_left {
+            left_authored
+        } else {
+            right_authored
+        }) - rig_origin);
+    // Selecting the next side is not itself a motion owner. Retain both
+    // completed contacts until planning atomically installs the next C2
+    // segment; otherwise the pelvis drops a real support during proof gaps.
+    footwork.left_support_weight = 1.0;
+    footwork.right_support_weight = 1.0;
+    true
+}
+
+fn confirm_preemptive_guard_cadence_edge(
+    footwork: &mut RaisedFootworkState,
+    sequence_delta: u32,
+    replicated_swing_left: bool,
+    replicated_sequence: u32,
+) -> bool {
+    if sequence_delta != 1 || footwork.swing_left != replicated_swing_left {
+        return false;
+    }
+    let Some(mut segment) = footwork.swing_replan_segment else {
+        return false;
+    };
+    let GuardSegmentReachProof::Exact(mut proof) = segment.reach else {
+        return false;
+    };
+    if !proof.accepts_preemptive_cadence_confirmation
+        || proof.sequence.wrapping_add(1) != replicated_sequence
+    {
+        return false;
+    }
+
+    proof.sequence = replicated_sequence;
+    proof.trajectory_signature.sequence = replicated_sequence;
+    proof.accepts_preemptive_cadence_confirmation = false;
+    segment.reach = GuardSegmentReachProof::Exact(proof);
+    footwork.swing_replan_segment = Some(segment);
+    footwork.step_sequence = replicated_sequence;
+    footwork.pending_cadence_edge = None;
+    footwork.awaiting_step_sequence = false;
+    true
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -12903,49 +14281,33 @@ mod slope_cache_tests {
 
             let start = if pivot_left { left } else { right };
             let mut presented = start;
-            let mut velocity = Vec3::ZERO;
-            let mut acceleration = Vec3::ZERO;
-            let mut previous_desired = Some(start);
-            let mut ideal_velocity = Vec3::ZERO;
-            let mut ideal_acceleration = Vec3::ZERO;
-            let mut ideal_history_valid = true;
+            let mut previous_acceleration = Vec3::ZERO;
             let mut landed = false;
             for tick in 1..=96 {
                 let progress = (tick as f32 / (GUARD_PIVOT_STEP_SECONDS * CONTINUITY_SAMPLE_HZ))
                     .clamp(0.0, 1.0);
-                let desired = guard_pivot_target(
+                let sample = guard_boundary_quintic_sample(
                     start,
+                    Vec3::ZERO,
+                    Vec3::ZERO,
                     endpoint,
-                    origin,
-                    support,
-                    quintic_progress(progress),
+                    progress,
+                    GUARD_PIVOT_STEP_SECONDS,
+                    GUARD_PIVOT_LIFT_METRES,
                 );
-                let track = advance_guard_foot_target_sample_with_reach(
-                    Some(presented),
-                    velocity,
-                    acceleration,
-                    previous_desired,
-                    ideal_velocity,
-                    ideal_acceleration,
-                    ideal_history_valid,
-                    desired,
-                    None,
-                    1.0 / CONTINUITY_SAMPLE_HZ,
-                    true,
-                    None,
+                let jerk = (sample.acceleration - previous_acceleration) * CONTINUITY_SAMPLE_HZ;
+                assert!(
+                    sample.acceleration.length()
+                        <= GUARD_ACTION_SEGMENT_MAXIMUM_ACCELERATION + 0.01
                 );
-                presented = track.position;
-                velocity = track.velocity;
-                acceleration = track.acceleration;
-                previous_desired = Some(desired);
-                ideal_velocity = track.ideal_velocity;
-                ideal_acceleration = track.ideal_acceleration;
-                ideal_history_valid = track.ideal_history_valid;
+                assert!(jerk.length() <= GUARD_ACTION_SEGMENT_MAXIMUM_JERK + 1.0);
+                presented = sample.position;
+                previous_acceleration = sample.acceleration;
 
                 // The opposite planted foot remains truthful support while
-                // the pivot foot follows its airborne arc; dual-zero support
-                // is never published. Promotion waits for the propagated
-                // follower result to return its sole to terrain.
+                // the pivot foot follows its directly presented analytic arc;
+                // dual-zero support is never published. Promotion waits for
+                // the propagated result to return its sole to terrain.
                 assert!(sole_is_at_contact(support.y, terrain_height(support.xz())));
                 landed = progress >= 1.0
                     && stationary_guard_pivot_has_landed(
@@ -12985,6 +14347,20 @@ mod slope_cache_tests {
             right.y,
             terrain_height(right.xz())
         ));
+    }
+
+    #[test]
+    fn stationary_guard_recovers_the_airborne_foot_before_repositioning_a_contact() {
+        assert!(stationary_guard_pivot_side(
+            0.24, 0.11, false, true, 0.40, 0.30,
+        ));
+        assert!(!stationary_guard_pivot_side(
+            0.24, 0.11, true, false, 0.40, 0.30,
+        ));
+        assert!(
+            stationary_guard_pivot_side(0.24, 0.11, false, false, 0.40, 0.30),
+            "when both contacts are absent the ordinary balance ordering remains deterministic",
+        );
     }
 
     #[test]
@@ -13183,6 +14559,7 @@ mod slope_cache_tests {
         let segment = PlannedGuardFootSegment {
             motion,
             reach: GuardSegmentReachProof::Retained(trajectory),
+            recovery_to_contact: false,
         };
         let mut footwork = RaisedFootworkState {
             swing_left: true,
@@ -13197,7 +14574,7 @@ mod slope_cache_tests {
             ..default()
         };
 
-        complete_guard_segment_semantics(&mut footwork, segment, 24);
+        complete_guard_segment_semantics(&mut footwork, segment, true, 24, true);
 
         assert_eq!(footwork.left_plant, endpoint);
         assert_eq!(footwork.swing_start, endpoint);
@@ -13316,6 +14693,7 @@ mod slope_cache_tests {
     fn support_release_owner_blocks_cadence_until_terminal_motion_settles() {
         let endpoint = Vec3::new(0.2, 0.3, -0.4);
         let mut footwork = RaisedFootworkState {
+            step_sequence: 8,
             left_support_release_owner: Some(SupportReleaseOwner::TerminalHold { endpoint }),
             ..default()
         };
@@ -13327,6 +14705,7 @@ mod slope_cache_tests {
             endpoint,
             Vec3::X,
             Vec3::ZERO,
+            false,
             8,
             true,
         );
@@ -13338,6 +14717,7 @@ mod slope_cache_tests {
             endpoint,
             Vec3::ZERO,
             Vec3::ZERO,
+            false,
             8,
             true,
         );
@@ -13362,11 +14742,121 @@ mod slope_cache_tests {
             endpoint,
             Vec3::ZERO,
             Vec3::ZERO,
+            false,
             0,
             false,
         );
         assert!(stationary.right_support_release_owner.is_none());
         assert!(!stationary.awaiting_step_sequence);
+    }
+
+    #[test]
+    fn proven_contact_starts_the_opposite_swing_before_the_replicated_edge() {
+        let left = Vec3::new(-0.18, 0.08, -0.25);
+        let right = Vec3::new(0.18, 0.08, 0.12);
+        let hip = Vec3::Y * 0.8;
+        let reach = FootReachEnvelope::new(hip, hip, 0.92, 0.94).unwrap();
+        let mut timing = SegmentTickSpan::new(4).unwrap();
+        timing.elapsed_ticks = 4;
+        let contact = PlannedGuardFootSegment {
+            motion: C2FootSegment {
+                start: right,
+                start_velocity: Vec3::ZERO,
+                start_acceleration: Vec3::ZERO,
+                end: FootSegmentEndpoint::Contact(FeasibleFootEndpoint::from_proven_guard_contact(
+                    right,
+                )),
+                timing,
+                owner_epoch: 10,
+            },
+            reach: GuardSegmentReachProof::Retained(stationary_hip_trajectory(
+                reach,
+                1.0 / CONTINUITY_SAMPLE_HZ,
+            )),
+            recovery_to_contact: false,
+        };
+        let mut footwork = RaisedFootworkState {
+            initialized: true,
+            was_moving: true,
+            swing_left: false,
+            step_sequence: 4,
+            swing_replan_segment: Some(contact),
+            // A low render rate may coalesce over the exact semantic contact
+            // tick, leaving the legacy edge-wait flag unset even though the
+            // analytic owner is visibly and physically terminal.
+            awaiting_step_sequence: false,
+            left_plant: left,
+            right_plant: right,
+            ..default()
+        };
+
+        assert!(begin_next_guard_swing_after_contact(
+            &mut footwork,
+            true,
+            0,
+            left,
+            right,
+            0,
+            Vec3::ZERO,
+            Quat::IDENTITY,
+            left,
+            right,
+        ));
+        assert!(footwork.swing_left);
+        assert_eq!(footwork.step_sequence, 4);
+        assert_eq!(footwork.left_support_weight, 0.0);
+        assert_eq!(footwork.right_support_weight, 1.0);
+        assert_eq!(footwork.swing_start, left);
+        assert!(footwork.swing_replan_segment.is_none());
+        assert!(!footwork.awaiting_step_sequence);
+
+        let current_edge = guard_cadence_contact_tick_span(0.49, 1.4).unwrap();
+        let following_edge = guard_following_cadence_contact_tick_span(0.49, 1.4).unwrap();
+        assert!(current_edge.total_ticks.get() <= 2);
+        assert!(following_edge.total_ticks.get() >= 12);
+
+        let mut proof = stationary_exact_guard_proof(Vec3::Y, 0.92, 0.94, 16);
+        proof.sequence = 4;
+        proof.trajectory_signature.sequence = 4;
+        proof.swing_left = true;
+        proof.accepts_preemptive_cadence_confirmation = true;
+        footwork.swing_replan_segment = Some(PlannedGuardFootSegment {
+            motion: C2FootSegment {
+                timing: SegmentTickSpan::new(16).unwrap(),
+                ..contact.motion
+            },
+            reach: GuardSegmentReachProof::Exact(proof),
+            recovery_to_contact: false,
+        });
+        assert!(confirm_preemptive_guard_cadence_edge(
+            &mut footwork,
+            1,
+            true,
+            5,
+        ));
+        assert_eq!(footwork.step_sequence, 5);
+        assert_eq!(footwork.pending_cadence_edge, None);
+        let GuardSegmentReachProof::Exact(confirmed) = footwork.swing_replan_segment.unwrap().reach
+        else {
+            unreachable!()
+        };
+        assert_eq!(confirmed.sequence, 5);
+        assert!(!confirmed.accepts_preemptive_cadence_confirmation);
+
+        // The physical contact edge cannot consume an early or unrelated
+        // authoritative identity transition.
+        assert!(!begin_next_guard_swing_after_contact(
+            &mut footwork,
+            true,
+            1,
+            left,
+            right,
+            1,
+            Vec3::ZERO,
+            Quat::IDENTITY,
+            left,
+            right,
+        ));
     }
 
     #[test]
@@ -13412,6 +14902,134 @@ mod slope_cache_tests {
     }
 
     #[test]
+    fn early_contact_edge_keeps_identity_atomic_until_recovery_settles() {
+        let old_visible = Vec3::new(0.2, 0.3, -0.4);
+        let new_visible = Vec3::new(-0.2, 0.3, 0.4);
+        let mut footwork = RaisedFootworkState {
+            initialized: true,
+            swing_left: false,
+            step_sequence: 10,
+            swing_emergency_brake: Some(EmergencyFootBrake {
+                stationary_ideal: old_visible,
+                owner_local_ideal: Some(old_visible),
+            }),
+            swing_release_owner_active: true,
+            ..default()
+        };
+
+        defer_guard_cadence_edge_for_contact_recovery(&mut footwork, true, 11);
+
+        assert_eq!(footwork.step_sequence, 10);
+        assert!(!footwork.swing_left);
+        assert_eq!(footwork.pending_cadence_edge, Some((true, 11)));
+        assert!(!guard_pending_cadence_edge_can_be_consumed(&footwork));
+
+        footwork.swing_emergency_brake = None;
+        footwork.swing_release_owner_active = false;
+        assert!(guard_pending_cadence_edge_can_be_consumed(&footwork));
+        consume_pending_guard_cadence_edge(
+            &mut footwork,
+            true,
+            11,
+            new_visible,
+            old_visible,
+            1,
+            Vec3::ZERO,
+            Quat::IDENTITY,
+            new_visible,
+            old_visible,
+        );
+
+        assert_eq!(footwork.step_sequence, 11);
+        assert!(footwork.swing_left);
+        assert_eq!(footwork.pending_cadence_edge, None);
+        assert_eq!(footwork.swing_start, new_visible);
+    }
+
+    #[test]
+    fn release_settlement_cannot_advance_sequence_without_swing_side() {
+        let mut footwork = RaisedFootworkState {
+            initialized: true,
+            step_sequence: 10,
+            swing_left: false,
+            ..default()
+        };
+
+        retain_or_defer_guard_cadence_identity(&mut footwork, true, 11, false);
+
+        assert_eq!(footwork.step_sequence, 10);
+        assert!(!footwork.swing_left);
+        assert!(footwork.awaiting_step_sequence);
+        assert_eq!(footwork.pending_cadence_edge, Some((true, 11)));
+    }
+
+    #[test]
+    fn ground_safety_slide_preserves_support_and_scales_with_leg_reach() {
+        let owner_local = Vec3::new(-0.15, -0.8, 0.32);
+        let owner = Some(SupportReleaseOwner::GroundSafetySlide { owner_local });
+        let footwork = RaisedFootworkState {
+            initialized: true,
+            swing_left: false,
+            left_support_weight: 1.0,
+            left_support_release_owner: owner,
+            ..default()
+        };
+
+        assert!(support_owner_preserves_contact(owner));
+        assert!(!support_owner_blocks_cadence(owner));
+        assert!(raised_leg_contributes_pelvis_reach(&footwork, true, true));
+
+        let hip = Vec3::new(0.0, 0.9, 0.0);
+        let presented = Vec3::new(-0.2, 0.1, 0.7);
+        let warning_reach = 0.82;
+        let endpoint = ground_safety_slide_endpoint(presented, hip, warning_reach, None);
+        assert!(endpoint.distance(hip) <= warning_reach + 0.0001);
+
+        let scaled =
+            ground_safety_slide_endpoint(presented * 2.0, hip * 2.0, warning_reach * 2.0, None);
+        assert!(scaled.distance(endpoint * 2.0) <= 0.0001);
+    }
+
+    #[test]
+    fn infeasible_guard_contact_retains_one_plant_and_one_bounded_swing_owner() {
+        let left = Vec3::new(-0.2, 0.1, 0.1);
+        let right = Vec3::new(0.2, 0.1, -0.1);
+        let mut footwork = RaisedFootworkState {
+            initialized: true,
+            swing_left: true,
+            awaiting_step_sequence: true,
+            swing_release_owner_active: true,
+            swing_emergency_brake: Some(EmergencyFootBrake {
+                stationary_ideal: right,
+                owner_local_ideal: None,
+            }),
+            ..default()
+        };
+
+        install_guard_swing_fallback(
+            &mut footwork,
+            GuardFootReleasePlan::EmergencyBrake { presented: left },
+            41,
+            Vec3::ZERO,
+            Quat::IDENTITY,
+            left,
+            right,
+        );
+
+        assert!(footwork.awaiting_step_sequence);
+        assert!(footwork.swing_release_owner_active);
+        assert!(footwork.swing_emergency_brake.is_some());
+        assert!(footwork.swing_replan_segment.is_none());
+        assert_eq!(footwork.left_support_weight, 0.0);
+        assert_eq!(footwork.right_support_weight, 1.0);
+        assert!(footwork.left_support_release_owner.is_none());
+        assert!(footwork.right_support_release_owner.is_none());
+        assert_eq!(footwork.left_motion_owner_epoch, 41);
+        assert_eq!(footwork.right_motion_owner_epoch, 0);
+        assert!(!clear_ownerless_guard_wait(&mut footwork));
+    }
+
+    #[test]
     fn predicted_hip_uncertainty_expands_with_the_owner_horizon() {
         let root = Vec3::ZERO;
         let reach = FootReachEnvelope::new(root, root, 0.95, 0.96).unwrap();
@@ -13430,19 +15048,26 @@ mod slope_cache_tests {
     }
 
     #[test]
-    fn guard_contact_span_uses_the_live_cadence_edge_not_a_fixed_point_three_two_seconds() {
+    fn guard_contact_span_uses_the_earliest_accelerating_cadence_edge() {
         let timing = guard_cadence_contact_tick_span(0.527, 2.0).unwrap();
         let expected = (((1.0 - (0.527_f32 * 2.0).fract()) * guard_step_length(2.0) / 2.0)
             * CONTINUITY_SAMPLE_HZ)
-            .ceil() as u32;
+            .floor() as u32;
         assert_eq!(timing.total_ticks.get(), expected);
         assert_ne!(timing.total_ticks.get(), 21);
+        assert_eq!(
+            guard_cadence_contact_tick_span(0.527, 0.28)
+                .unwrap()
+                .total_ticks,
+            timing.total_ticks,
+            "acceleration onset must not promise a later contact than full guard speed",
+        );
     }
 
     #[test]
     fn guard_contact_planner_chooses_farthest_dynamics_proven_progress() {
         let presented = Vec3::new(-0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.0);
-        let requested = presented + Vec3::NEG_Z * 0.38;
+        let requested = presented + Vec3::NEG_Z * 0.55;
         let timing = SegmentTickSpan::new(18).unwrap();
         let hip = Vec3::new(0.0, 0.9, 0.0);
         let proof = stationary_exact_guard_proof(hip, 1.1, 1.2, 18);
@@ -13458,7 +15083,10 @@ mod slope_cache_tests {
         };
         let travelled = segment.end.position().distance(presented);
         assert!(travelled > 0.01);
-        assert!(travelled < presented.distance(requested) - 0.01);
+        assert!(
+            (travelled - presented.distance(requested)).abs() <= 0.0001,
+            "an ordinary 55 cm guard swing must now fit its real cadence edge",
+        );
         assert!(c2_segment_dynamics_are_bounded(
             segment.motion,
             GUARD_ACTION_SEGMENT_MAXIMUM_ACCELERATION,
@@ -13473,12 +15101,405 @@ mod slope_cache_tests {
     }
 
     #[test]
-    fn exact_guard_proof_persists_across_sparse_refresh_and_rejects_live_departure() {
-        let proof = stationary_exact_guard_proof(Vec3::new(0.0, 0.9, 0.0), 1.1, 1.2, 18);
+    fn native_scale_guard_contact_fits_eighteen_tick_deadline() {
+        let presented = Vec3::new(-0.10, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.27);
+        let requested = Vec3::new(-0.25, MEASURED_ANKLE_SOLE_OFFSET_METRES, -0.57);
+        let timing = SegmentTickSpan::new(18).unwrap();
+        let proof = stationary_exact_guard_proof(Vec3::new(-0.10, 0.91, -0.20), 1.05, 1.10, 18);
+        let GuardFootEndpointPlan::Segment(segment) = plan_guard_c2_contact_segment(
+            presented,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            timing,
+            Some(proof),
+            |progress| Some(presented.lerp(requested, progress)),
+        ) else {
+            panic!("the production-scale alternate contact must fit its cadence edge");
+        };
+        assert!(segment.end.position().distance(presented) > 0.80);
+        assert!(c2_segment_dynamics_are_bounded(
+            segment.motion,
+            GUARD_ACTION_SEGMENT_MAXIMUM_ACCELERATION,
+            GUARD_ACTION_SEGMENT_MAXIMUM_JERK,
+        ));
+        assert_eq!(segment.motion.timing.total_ticks.get(), 18);
+    }
+
+    #[test]
+    fn contact_driven_guard_landing_advances_local_owner_without_cadence_wait() {
+        let presented = Vec3::new(-0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.0);
+        let endpoint = presented + Vec3::NEG_Z * 0.24;
+        let proof = stationary_exact_guard_proof(Vec3::new(0.0, 0.88, -0.1), 1.1, 1.2, 18);
+        let GuardFootEndpointPlan::Segment(mut segment) = plan_guard_c2_contact_segment(
+            presented,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            SegmentTickSpan::new(18).unwrap(),
+            Some(proof),
+            |_| Some(endpoint),
+        ) else {
+            panic!("expected a contact owner");
+        };
+        segment.motion.timing.elapsed_ticks = segment.motion.timing.total_ticks.get();
+        let mut footwork = RaisedFootworkState {
+            initialized: true,
+            swing_left: true,
+            step_sequence: 9,
+            left_support_weight: 0.0,
+            right_support_weight: 1.0,
+            awaiting_step_sequence: true,
+            ..default()
+        };
+
+        complete_contact_driven_guard_segment(&mut footwork, segment);
+        assert!(!footwork.awaiting_step_sequence);
+        assert_eq!(footwork.left_plant, endpoint);
+        assert_eq!(footwork.left_support_weight, 1.0);
+        assert!(
+            footwork
+                .swing_replan_segment
+                .is_some_and(|owner| owner.timing.is_complete())
+        );
+
+        assert!(begin_next_contact_driven_guard_swing(
+            &mut footwork,
+            true,
+            endpoint,
+            Vec3::new(0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.0),
+            1,
+            Vec3::ZERO,
+            Quat::IDENTITY,
+            endpoint,
+            Vec3::new(0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.0),
+        ));
+        assert!(!footwork.swing_left);
+        assert_eq!(footwork.step_sequence, 10);
+        assert_eq!(footwork.left_support_weight, 1.0);
+        assert_eq!(footwork.right_support_weight, 1.0);
+        assert!(footwork.swing_replan_segment.is_none());
+        assert!(footwork.pending_cadence_edge.is_none());
+    }
+
+    #[test]
+    fn contact_driven_guard_planner_scales_with_speed_and_leg_length() {
+        for scale in [0.65_f32, 1.0, 1.6] {
+            for speed in [0.45_f32, 1.4, 2.8] {
+                let presented = Vec3::new(
+                    -0.12 * scale,
+                    MEASURED_ANKLE_SOLE_OFFSET_METRES * scale,
+                    0.12 * scale,
+                );
+                let requested = presented + Vec3::NEG_Z * ((0.16 + 0.10 * speed).min(0.44) * scale);
+                let hip = Vec3::new(0.0, 0.78 * scale, -0.03 * scale);
+                // Sparse presentation may observe the authored cadence only a
+                // few ticks before its edge. Contact ownership must still be
+                // able to choose the longer morphology/dynamics-safe landing.
+                let proof = stationary_exact_guard_proof(hip, 0.95 * scale, 1.0 * scale, 4);
+                let plan = plan_contact_driven_guard_segment(
+                    presented,
+                    Vec3::ZERO,
+                    Vec3::ZERO,
+                    requested,
+                    64,
+                    Some(proof),
+                    None,
+                    |progress| Some(presented.lerp(requested, progress)),
+                );
+                let GuardFootEndpointPlan::Segment(segment) = plan else {
+                    panic!("scale={scale} speed={speed} must retain a terrain contact");
+                };
+                assert!(segment.end.is_contact());
+                assert!(segment.end.position().distance(presented) > 0.001);
+                let GuardSegmentReachProof::Exact(contact_proof) = segment.reach else {
+                    panic!("contact-driven guard requires an exact hip proof");
+                };
+                assert!(guard_contact_has_terminal_support_reserve(
+                    contact_proof,
+                    segment,
+                ));
+                assert!(c2_segment_dynamics_are_bounded(
+                    segment.motion,
+                    GUARD_ACTION_SEGMENT_MAXIMUM_ACCELERATION,
+                    GUARD_ACTION_SEGMENT_MAXIMUM_JERK,
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn contact_driven_guard_duration_is_bounded_by_planted_reach() {
+        let support = Vec3::new(0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.0);
+        let mut proof = stationary_exact_guard_proof(Vec3::new(0.18, 0.88, 0.0), 0.92, 0.95, 64);
+        proof.trajectory_signature.world_velocity = Vec3::NEG_Z * 1.4;
+        proof.trajectory_signature.command_velocity = Vec3::NEG_Z * 1.4;
+        let budget = contact_driven_guard_support_tick_budget(proof, support);
+        assert!(budget > 1 && budget < 64, "budget={budget}");
+
+        let presented = Vec3::new(-0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.0);
+        let requested = presented + Vec3::NEG_Z * 0.40;
+        let swing_proof = stationary_exact_guard_proof(Vec3::new(-0.18, 0.88, 0.0), 0.92, 0.95, 4);
+        let GuardFootEndpointPlan::Segment(segment) = plan_contact_driven_guard_segment(
+            presented,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            requested,
+            budget,
+            Some(swing_proof),
+            None,
+            |progress| Some(presented.lerp(requested, progress)),
+        ) else {
+            panic!("expected a shortened terrain contact");
+        };
+        assert!(segment.timing.total_ticks.get() <= budget);
+        assert!(segment.end.position().distance(presented) > 0.001);
+    }
+
+    #[test]
+    fn contact_driven_guard_retains_a_typed_owner_outside_warning_reach() {
+        let hip = Vec3::Y * 0.88;
+        let presented = hip + Vec3::X * 0.93;
+        let requested = presented + Vec3::X * 0.25;
+        let proof = stationary_exact_guard_proof(hip, 0.92, 0.95, 32);
+        let plan = plan_contact_driven_guard_segment(
+            presented,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            requested,
+            32,
+            Some(proof),
+            None,
+            |progress| Some(presented.lerp(requested, progress)),
+        );
+        let GuardFootEndpointPlan::Segment(segment) = plan else {
+            panic!("warning-reach recovery must retain a spatial C2 owner: {plan:?}");
+        };
+        assert!(segment.end.is_contact());
+        assert!(segment.recovery_to_contact);
+        assert!(segment.end.position().distance(hip) < presented.distance(hip));
+    }
+
+    #[test]
+    fn body_relative_guard_gait_is_continuous_across_cadence_edges() {
+        let rig_origin = Vec3::new(3.0, 0.0, -2.0);
+        let stance_local = Vec3::new(-0.22, 0.09, 0.0);
+        let rotation = Quat::from_rotation_y(0.41);
+        let direction = (rotation * Vec3::new(0.35, 0.0, -0.94)).normalize();
+        let lateral = rotation * Vec3::X;
+        let step_length = 0.46;
+        let (left_before, right_before) = body_relative_guard_gait_targets(
+            rig_origin,
+            lateral,
+            stance_local,
+            direction,
+            step_length,
+            1.0,
+            true,
+            false,
+            None,
+        );
+        let (left_after, right_after) = body_relative_guard_gait_targets(
+            rig_origin,
+            lateral,
+            stance_local,
+            direction,
+            step_length,
+            0.0,
+            false,
+            false,
+            None,
+        );
+        assert!(left_before.distance(left_after) <= 1.0e-6);
+        assert!(right_before.distance(right_after) <= 1.0e-6);
+        assert!((left_before.y - (rig_origin.y + stance_local.y)).abs() <= 1.0e-6);
+        assert!((right_before.y - (rig_origin.y + stance_local.y)).abs() <= 1.0e-6);
+
+        let (left_mid, right_mid) = body_relative_guard_gait_targets(
+            rig_origin,
+            lateral,
+            stance_local,
+            direction,
+            step_length,
+            0.5,
+            true,
+            false,
+            None,
+        );
+        assert!(left_mid.y > rig_origin.y + stance_local.y);
+        assert!((right_mid.y - (rig_origin.y + stance_local.y)).abs() <= 1.0e-6);
+        assert!(
+            left_mid.xz().distance(rig_origin.xz()) <= stance_local.x.abs() + step_length * 0.51
+        );
+        assert!(
+            right_mid.xz().distance(rig_origin.xz()) <= stance_local.x.abs() + step_length * 0.51
+        );
+
+        let relative_velocity = |progress: f32| {
+            -1.0 + 60.0 * progress.powi(2) - 120.0 * progress.powi(3) + 60.0 * progress.powi(4)
+        };
+        assert_eq!(relative_velocity(0.0), -1.0);
+        assert_eq!(relative_velocity(1.0), -1.0);
+
+        for scale in [0.5, 1.0, 2.0] {
+            let hip = Vec3::new(0.0, 0.92, 0.0) * scale;
+            let target = Vec3::new(0.7, 0.09, 0.4) * scale;
+            let reach = 0.88 * scale;
+            let constrained = constrain_guard_gait_target_to_reach(target, hip, reach);
+            assert!(constrained.distance(hip) <= reach + 1.0e-5);
+            assert!((constrained.y - target.y).abs() <= 1.0e-6);
+        }
+    }
+
+    #[test]
+    fn stationary_guard_contact_candidates_bootstrap_pelvis_reach() {
+        let mut footwork = RaisedFootworkState {
+            initialized: true,
+            left_support_weight: 0.0,
+            right_support_weight: 0.0,
+            ..default()
+        };
+        assert!(raised_leg_is_stationary_contact_candidate(
+            &footwork, false, true
+        ));
+        assert!(raised_leg_is_stationary_contact_candidate(
+            &footwork, false, false
+        ));
+        assert!(!raised_leg_is_stationary_contact_candidate(
+            &footwork, true, true
+        ));
+        footwork.pivot_active = true;
+        footwork.pivot_left = true;
+        assert!(raised_leg_is_stationary_contact_candidate(
+            &footwork, false, true
+        ));
+        assert!(!raised_leg_is_stationary_contact_candidate(
+            &footwork, false, false
+        ));
+    }
+
+    #[test]
+    fn stopping_guard_extends_contact_instead_of_creating_airborne_release() {
+        let presented = Vec3::new(0.10, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.20);
+        let endpoint = Vec3::new(0.12, MEASURED_ANKLE_SOLE_OFFSET_METRES, -0.48);
+        let proof = stationary_exact_guard_proof(Vec3::new(0.0, 0.90, -0.15), 1.05, 1.10, 64);
+        let mut segment = plan_guard_contact_recovery_without_cadence_deadline(
+            presented,
+            Vec3::new(0.0, 0.0, -2.5),
+            Vec3::new(0.0, 0.0, -12.0),
+            endpoint,
+            Some(proof),
+            None,
+        )
+        .expect("a stopped guard has time to complete a bounded terrain contact");
+        assert!(segment.end.is_contact());
+        assert!(segment.timing.total_ticks.get() > 6);
+        assert!(c2_segment_dynamics_are_bounded(
+            segment.motion,
+            GUARD_ACTION_SEGMENT_MAXIMUM_ACCELERATION,
+            GUARD_ACTION_SEGMENT_MAXIMUM_JERK,
+        ));
+        segment.motion.timing.elapsed_ticks = segment.motion.timing.total_ticks.get();
+        let mut footwork = RaisedFootworkState {
+            swing_left: false,
+            step_sequence: 2,
+            swing_replan_segment: Some(segment),
+            awaiting_step_sequence: true,
+            ..default()
+        };
+        complete_guard_segment_semantics(&mut footwork, segment, false, 2, false);
+        assert!(footwork.swing_replan_segment.is_none());
+        assert!(!footwork.awaiting_step_sequence);
+        assert_eq!(footwork.right_plant, segment.end.position());
+        assert_eq!(footwork.right_support_weight, 1.0);
+    }
+
+    #[test]
+    fn guard_contact_can_extend_once_and_retain_the_deferred_cadence_identity() {
+        let presented = Vec3::new(-0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, 0.0);
+        let requested = presented + Vec3::NEG_Z * 0.38;
+        let hip = Vec3::new(0.0, 0.9, 0.0);
+        let mut proof = stationary_exact_guard_proof(hip, 1.1, 1.2, 10);
+        proof.sequence = 7;
+        proof.swing_left = true;
+        proof.trajectory_signature.sequence = 7;
+
+        let nominal = plan_guard_c2_contact_segment(
+            presented,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            SegmentTickSpan::new(1).unwrap(),
+            Some(proof),
+            |progress| Some(presented.lerp(requested, progress)),
+        );
+        assert!(matches!(
+            nominal,
+            GuardFootEndpointPlan::MustReleaseOrReplan(_)
+        ));
+        let extended = (2..=17)
+            .filter_map(|ticks| {
+                let candidate = plan_guard_c2_contact_segment(
+                    presented,
+                    Vec3::ZERO,
+                    Vec3::ZERO,
+                    SegmentTickSpan::new(ticks).unwrap(),
+                    Some(proof),
+                    |progress| Some(presented.lerp(requested, progress)),
+                );
+                let GuardFootEndpointPlan::Segment(segment) = candidate else {
+                    return None;
+                };
+                Some((ticks, segment))
+            })
+            .max_by(|(_, left), (_, right)| {
+                left.end
+                    .position()
+                    .distance_squared(presented)
+                    .total_cmp(&right.end.position().distance_squared(presented))
+            })
+            .map(|(ticks, segment)| (ticks, GuardFootEndpointPlan::Segment(segment)));
+        let (ticks, GuardFootEndpointPlan::Segment(segment)) =
+            extended.expect("one bounded extra half-step should admit a real contact")
+        else {
+            unreachable!()
+        };
+        assert!(ticks > 1);
+        assert!(segment.end.position().distance(presented) > 0.01);
+
+        let GuardSegmentReachProof::Exact(extended_proof) = segment.reach else {
+            unreachable!()
+        };
+        let mut next_signature = proof.trajectory_signature;
+        next_signature.sequence = 8;
+        assert_eq!(
+            normalize_deferred_guard_signature(extended_proof, Some((false, 8)), next_signature,)
+                .sequence,
+            7,
+        );
+        assert_eq!(
+            normalize_deferred_guard_signature(proof, Some((true, 8)), next_signature).sequence,
+            8,
+            "a deferred edge for the wrong swing side must not mask identity drift",
+        );
+        let mut preemptive = proof;
+        preemptive.accepts_preemptive_cadence_confirmation = true;
+        assert_eq!(
+            normalize_deferred_guard_signature(preemptive, Some((true, 8)), next_signature)
+                .sequence,
+            7,
+            "a contact-driven swing accepts the later matching cadence identity",
+        );
+    }
+
+    #[test]
+    fn exact_guard_proof_persists_across_sparse_speed_refresh_and_rejects_semantic_change() {
+        let mut proof = stationary_exact_guard_proof(Vec3::new(0.0, 0.9, 0.0), 1.1, 1.2, 18);
+        proof.trajectory_signature.command_velocity = Vec3::new(0.0, 0.0, -1.586);
         let expected = proof.sample(7).unwrap();
         let mut same_content_refresh = proof.trajectory_signature;
         same_content_refresh.source_tick = 99;
         same_content_refresh.presentation_tick = 7;
+        same_content_refresh.world_velocity = Vec3::new(0.0, 0.0, -0.6);
+        same_content_refresh.world_acceleration = Vec3::new(0.0, 0.0, -28.0);
+        same_content_refresh.command_velocity = Vec3::new(0.0, 0.0, -0.9177);
         assert!(guard_exact_proof_matches_live(
             proof,
             Some(same_content_refresh),
@@ -13490,7 +15511,7 @@ mod slope_cache_tests {
         ));
 
         let mut changed_command = same_content_refresh;
-        changed_command.command_velocity = Vec3::NEG_Z;
+        changed_command.command_velocity = Vec3::X;
         assert!(!guard_exact_proof_matches_live(
             proof,
             Some(changed_command),
@@ -13500,7 +15521,10 @@ mod slope_cache_tests {
             Some(expected),
             true,
         ));
-        assert!(!guard_exact_proof_matches_live(
+        // Prediction error alone does not reset the analytic owner. The
+        // separately tested live-reach gate rejects an unsafe sample before
+        // publication, while harmless sparse convergence keeps elapsed time.
+        assert!(guard_exact_proof_matches_live(
             proof,
             Some(same_content_refresh),
             1,
@@ -13541,8 +15565,31 @@ mod slope_cache_tests {
             Some(terminal_hip),
             true,
         ));
+        // A conservative contact may finish before a slower authoritative
+        // cadence. Its terminal sample remains a valid grounded owner until
+        // that later N -> N+1 edge arrives.
+        on_time_edge.presentation_tick = 20;
+        assert!(guard_exact_proof_matches_live(
+            proof,
+            Some(on_time_edge),
+            1,
+            true,
+            20,
+            Some(terminal_hip),
+            true,
+        ));
+        assert!(exact_guard_sample_is_live_reachable(
+            proof,
+            Vec3::new(0.0, 0.0, 0.0),
+            20,
+            Some(terminal_hip),
+            false,
+        ));
         on_time_edge.presentation_tick = 17;
-        assert!(!guard_exact_proof_matches_live(
+        // Replicated cadence may lead a locally contact-driven landing. It is
+        // synchronization evidence, not a reason to discard a still-safe
+        // foot trajectory before physical contact.
+        assert!(guard_exact_proof_matches_live(
             proof,
             Some(on_time_edge),
             1,
@@ -13568,6 +15615,37 @@ mod slope_cache_tests {
     }
 
     #[test]
+    fn contact_driven_guard_retains_safe_owner_across_prediction_refresh() {
+        let proof = stationary_exact_guard_proof(Vec3::ZERO, 0.92, 0.95, 18);
+        let safe_sample = Vec3::new(0.70, 0.0, 0.0);
+        assert!(contact_driven_guard_owner_is_live(
+            proof,
+            proof.sequence,
+            proof.swing_left,
+            Some(Vec3::ZERO),
+            true,
+        ));
+        assert!(contact_driven_guard_sample_is_live_reachable(
+            proof,
+            safe_sample,
+            Some(Vec3::ZERO),
+            false,
+        ));
+        assert!(!contact_driven_guard_sample_is_live_reachable(
+            proof,
+            Vec3::new(0.93, 0.0, 0.0),
+            Some(Vec3::ZERO),
+            false,
+        ));
+        assert!(contact_driven_guard_sample_is_live_reachable(
+            proof,
+            Vec3::new(0.93, 0.0, 0.0),
+            Some(Vec3::ZERO),
+            true,
+        ));
+    }
+
+    #[test]
     fn exact_guard_release_uses_the_same_hard_reach_proof() {
         let presented = Vec3::new(-0.18, MEASURED_ANKLE_SOLE_OFFSET_METRES, -0.35);
         let proof = stationary_exact_guard_proof(Vec3::new(0.0, 0.9, 0.0), 0.92, 0.95, 24);
@@ -13584,6 +15662,40 @@ mod slope_cache_tests {
             true,
         ));
         assert!(matches!(segment.reach, GuardSegmentReachProof::Exact(_)));
+    }
+
+    #[test]
+    fn exact_guard_contact_may_recover_from_warning_band_but_lands_inside_warning() {
+        let hip = Vec3::new(0.0, 0.9, 0.0);
+        let presented = Vec3::new(0.0, 0.0, 0.23);
+        let endpoint = Vec3::new(0.0, 0.0, 0.12);
+        let proof = stationary_exact_guard_proof(hip, 0.921, 0.939, 18);
+        assert!(presented.distance(hip) > proof.warning_reach);
+        assert!(presented.distance(hip) < proof.hard_reach);
+
+        let GuardFootEndpointPlan::Segment(segment) = plan_guard_c2_contact_segment(
+            presented,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            SegmentTickSpan::new(18).unwrap(),
+            Some(proof),
+            |_| Some(endpoint),
+        ) else {
+            panic!("a reachable swing must recover from warning to a planted contact");
+        };
+        assert!(guard_exact_hip_path_contains_segment(
+            &(proof.start_tick..=proof.contact_tick)
+                .map(|tick| {
+                    (
+                        proof.sample(tick).unwrap(),
+                        proof.warning_reach,
+                        proof.hard_reach,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            segment.motion,
+        ));
+        assert!(segment.end.position().distance(hip) <= proof.warning_reach);
     }
 
     #[test]
@@ -13645,6 +15757,7 @@ mod slope_cache_tests {
                 owner_epoch: 17,
             },
             reach: GuardSegmentReachProof::Exact(proof),
+            recovery_to_contact: false,
         };
         let mut footwork = RaisedFootworkState {
             initialized: true,
@@ -13691,7 +15804,7 @@ mod slope_cache_tests {
         let mut terminal = footwork.swing_replan_segment.unwrap();
         advance_c2_segment_tick(&mut terminal.motion, true, 18);
         assert!(terminal.timing.is_complete());
-        complete_guard_segment_semantics(&mut footwork, terminal, 8);
+        complete_guard_segment_semantics(&mut footwork, terminal, true, 8, true);
         assert!(footwork.swing_emergency_brake.is_none());
         assert!(
             footwork
@@ -15606,6 +17719,31 @@ mod slope_cache_tests {
     }
 
     #[test]
+    fn only_an_advancing_pelvis_owner_blocks_stationary_foot_recentering() {
+        let mut acquisition = GuardPelvisAcquisition {
+            start: Transform::IDENTITY,
+            start_velocity: Vec3::ZERO,
+            start_acceleration: Vec3::ZERO,
+            target: Some(Transform::from_translation(Vec3::Y * 0.1)),
+            start_sequence: 3,
+            progress: 0.4,
+            duration_seconds: 0.32,
+            advance_authorized: false,
+            trajectory_signature: GuardPelvisTrajectorySignature::default(),
+        };
+        assert!(!guard_pelvis_blocks_stationary_pivot(Some(acquisition)));
+        acquisition.advance_authorized = true;
+        assert!(guard_pelvis_blocks_stationary_pivot(Some(acquisition)));
+        acquisition.progress = 1.0;
+        assert!(!guard_pelvis_blocks_stationary_pivot(Some(acquisition)));
+
+        let hip = Vec3::Y * 0.8;
+        let reach = FootReachEnvelope::new(hip, hip, 0.92, 0.94).unwrap();
+        let comfort = stationary_guard_comfort_endpoint(Vec3::X * 2.0, Some(reach), None);
+        assert!(comfort.distance(reach.current_root()) <= reach.warning_reach() * 0.94 + 0.0001);
+    }
+
+    #[test]
     fn guard_pelvis_turn_prediction_replays_the_bounded_facing_command() {
         let current = Quat::from_rotation_y(-0.2);
         let target = Quat::from_rotation_y(1.1);
@@ -15626,6 +17764,45 @@ mod slope_cache_tests {
         );
         assert!(predicted.angle_between(expected) <= 0.000001);
         assert!(guard_predicted_body_rotation(signature, 1.0).angle_between(target) <= 0.000001);
+    }
+
+    #[test]
+    fn continuous_aim_correction_does_not_abort_a_live_reach_checked_guard_step() {
+        let admitted = GuardPelvisTrajectorySignature {
+            command_velocity: Vec3::NEG_Z,
+            sequence: 7,
+            body_rotation: Quat::IDENTITY,
+            body_target_rotation: Quat::from_rotation_y(0.1),
+            ..default()
+        };
+        let corrected_aim = GuardPelvisTrajectorySignature {
+            body_target_rotation: Quat::from_rotation_y(0.35),
+            ..admitted
+        };
+        assert!(!guard_controller_command_changed(
+            admitted,
+            corrected_aim,
+            1.0 / CONTINUITY_SAMPLE_HZ,
+        ));
+
+        let changed_cadence = GuardPelvisTrajectorySignature {
+            sequence: 8,
+            ..corrected_aim
+        };
+        assert!(guard_controller_command_changed(
+            admitted,
+            changed_cadence,
+            1.0 / CONTINUITY_SAMPLE_HZ,
+        ));
+        let reversed = GuardPelvisTrajectorySignature {
+            command_velocity: Vec3::Z,
+            ..admitted
+        };
+        assert!(guard_controller_command_changed(
+            admitted,
+            reversed,
+            1.0 / CONTINUITY_SAMPLE_HZ,
+        ));
     }
 
     #[test]
@@ -15673,6 +17850,33 @@ mod slope_cache_tests {
                 assert!(state.position >= previous.position - 0.000001);
             }
             moving_toward_authored |= state.velocity >= -0.000001;
+        }
+        assert_eq!(state, PelvisFollowerState::default());
+        assert!(recovery.is_none());
+    }
+
+    #[test]
+    fn raised_pelvis_lowering_respects_the_admitted_position_envelope() {
+        let dt = 1.0 / CONTINUITY_SAMPLE_HZ;
+        let mut state = PelvisFollowerState::default();
+        let mut recovery = None;
+        for tick in 0..384 {
+            let desired = if tick < 96 {
+                -(tick as f32 / 95.0) * 0.25
+            } else {
+                0.0
+            };
+            let previous = state;
+            state = advance_pelvis_follower_with_recovery(state, &mut recovery, desired, dt);
+            assert!(
+                state.position >= -0.250001 && state.position <= 0.000001,
+                "tick={tick} desired={desired} state={state:?} recovery={recovery:?}"
+            );
+            assert!(state.acceleration.abs() <= PELVIS_FOLLOWER_MAXIMUM_ACCELERATION + 0.0001);
+            assert!(
+                ((state.acceleration - previous.acceleration) / dt).abs()
+                    <= PELVIS_FOLLOWER_MAXIMUM_JERK + 0.001
+            );
         }
         assert_eq!(state, PelvisFollowerState::default());
         assert!(recovery.is_none());
