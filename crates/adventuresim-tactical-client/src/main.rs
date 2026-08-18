@@ -10,8 +10,11 @@
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
+#[cfg(target_family = "wasm")]
+use bevy::asset::AssetMetaCheck;
+use bevy::asset::AssetPlugin;
 #[cfg(not(target_family = "wasm"))]
-use bevy::asset::{AssetPlugin, io::AssetSourceBuilder};
+use bevy::asset::io::AssetSourceBuilder;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 #[cfg(not(target_family = "wasm"))]
 use bevy::image::BevyDefault;
@@ -255,18 +258,24 @@ fn run(args: Args, initial_tactical: bool) {
         }
     };
     #[cfg(target_family = "wasm")]
-    let default_plugins = DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Fabelgeist - Tactical".into(),
-            canvas: Some("#game-canvas".into()),
-            fit_canvas_to_parent: true,
-            prevent_default_event_handling: true,
-            present_mode: args.present_mode.into(),
-            decorations: false,
+    let default_plugins = DefaultPlugins
+        .set(AssetPlugin {
+            file_path: "/tactical/assets".into(),
+            meta_check: AssetMetaCheck::Never,
             ..default()
-        }),
-        ..default()
-    });
+        })
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Fabelgeist - Tactical".into(),
+                canvas: Some("#game-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                present_mode: args.present_mode.into(),
+                decorations: false,
+                ..default()
+            }),
+            ..default()
+        });
     app.add_plugins((
         default_plugins,
         FrameTimeDiagnosticsPlugin::default(),
