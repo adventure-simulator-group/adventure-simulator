@@ -5,9 +5,10 @@ Environment assets use a realistic-structure, molded-material art direction.
 - Keep meshes, silhouettes, normal maps, height maps, and ambient-occlusion maps
   as detailed as the subject and performance budget justify.
 - Ground surfaces are the deliberate exception: render them from solid palette
-  colors without albedo textures, normal maps, or synthesized micro-normal
-  detail. Terrain geometry supplies their only surface normal. Gameplay data
-  masks may still select hard-edged substrate, cover, water, and snow regions.
+  colors without sampled albedo or stored normal maps. Terrain geometry supplies
+  the base normal; the shared packed height/AO texture may add the bounded
+  near-field relief defined by the tactical architecture. Gameplay data masks
+  may still select hard-edged substrate, cover, water, and snow regions.
 - Treat albedo as the color of the material itself, not paint or accumulated
   surface history. Use a small palette of solid color regions with hard
   boundaries. Do not bake gradients, dirt, grime, edge wear, stains, or

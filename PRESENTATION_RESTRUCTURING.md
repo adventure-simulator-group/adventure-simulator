@@ -304,16 +304,6 @@ the same Rust module. Once the new directory facade is ready, remove
 - Avoid opportunistic formatting or renaming outside the moved code.
 - Treat generated SpacetimeDB client bindings as out of scope.
 
-## Documentation and project map
-
-Because this restructuring removes `presentation.rs` and adds several source
-files, regenerate the project map after the final layout is stable:
-
-```powershell
-python scripts/update_project_map.py
-python scripts/update_project_map.py --check
-```
-
 No gameplay or architecture documentation should require semantic changes if
 the extraction is truly behavior-preserving. Update documentation only where a
 page names the old source path directly.
@@ -326,7 +316,6 @@ At minimum, run:
 just fmt
 just check
 just test
-python scripts/update_project_map.py --check
 ```
 
 If the full workspace commands are blocked by an existing baseline failure,
@@ -349,6 +338,5 @@ validation manifests.
 - Existing tests retain equivalent or stronger assertions and pass to the same
   baseline as before the move.
 - The tactical scene viewer compiles and retains its capture/diagnostic access.
-- The generated project map is current.
 - No intended visual, gameplay, authority, persistence, or collider behavior
   changes are introduced.

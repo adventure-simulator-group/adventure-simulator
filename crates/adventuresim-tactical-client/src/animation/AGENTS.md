@@ -6,18 +6,16 @@ For defects reported in live tactical play, the native client/server diagnostic
 is the acceptance authority. Synthetic ECS tests and animation-viewer captures
 are focused regression tools, not substitutes for the production-path run.
 
-Use the existing machine-readable diagnostic scenario and production logging.
-Do not create another simplified fixture when the real-client script can express
-the input sequence.
+Run the existing production-path scenario with `just tactical-play diagnostic`.
+Its supervised run directory, reported by `just tactical-status`, contains the
+machine-readable animation JSONL and process logs. Do not create another
+simplified fixture when the real-client script can express the input sequence.
 
 ## Evidence order
 
-Inspect artifacts in this order:
-
-1. `guard-footwork-iteration-summary.json`
-2. `guard-footwork-causal-slice.json`
-3. The relevant source functions
-4. The full animation JSONL only if the causal slice is demonstrably insufficient
+Inspect a compact analyzer summary or bounded projection first, then the relevant
+source functions. Read the full animation JSONL only when that evidence is
+demonstrably insufficient.
 
 Do not paste or emit full JSONL records, cumulative incident lists, or large
 frame arrays into model context. Prefer contiguous ranges, counts, first
@@ -68,24 +66,6 @@ immediately before commit.
 Compilation warnings already known to be unrelated should be summarized rather
 than repeatedly analyzed.
 
-## Agent and review policy
-
-Use one implementation agent during ordinary iteration.
-
-Do not keep a reviewer agent running continuously. Request independent review
-only when:
-
-- the native acceptance test passes;
-- a proposed change alters ownership architecture or acceptance semantics; or
-- the implementation agent has reached a concrete ambiguity that deterministic
-  evidence cannot resolve.
-
-Do not request a new review after every small remediation.
-
-If a subagent is explicitly authorized, provide only the compact iteration
-summary, causal slice, relevant source locations, and precise question. Do not
-fork the full conversation history unless it is essential.
-
 ## Acceptance integrity
 
 Never make a run pass by:
@@ -108,7 +88,7 @@ After each native run, report only:
 - wall-clock duration;
 - first failed contract and frame;
 - failed threshold values;
-- paths to the compact summary and causal slice;
+- paths to the compact summary or bounded projection;
 - files changed;
 - agents used;
 - whether another run was performed.

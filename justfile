@@ -508,7 +508,6 @@ wiki-check:
     @npm run check:wiki-tooling-format
     @{{ python_bin }} -B -m unittest scripts.test_format_wiki_markdown scripts.test_update_wiki_summary -v
     @{{ python_bin }} scripts/update_wiki_summary.py --check
-    @{{ python_bin }} scripts/update_project_map.py --check
     @mdbook build
 
 wiki-serve:

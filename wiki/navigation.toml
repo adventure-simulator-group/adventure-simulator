@@ -30,6 +30,11 @@ path = "contributing/wiki-writing.md"
 
 [[item]]
 kind = "page"
+title = "Strategic interface style guide"
+path = "contributing/strategic-interface-style.md"
+
+[[item]]
+kind = "page"
 title = "Development workflow"
 path = "engineering/developing.md"
 
@@ -37,11 +42,6 @@ path = "engineering/developing.md"
 kind = "page"
 title = "Item definition authoring"
 path = "contributing/item-authoring.md"
-
-[[item]]
-kind = "page"
-title = "Project map maintenance"
-path = "engineering/project-map-maintenance.md"
 
 [[item]]
 kind = "part"
@@ -81,15 +81,6 @@ path = "engineering/puzzle-lab.md"
 kind = "page"
 title = "Tactical automated testing"
 path = "engineering/tactical-testing.md"
-
-[[item]]
-kind = "part"
-title = "Generated reference"
-
-[[item]]
-kind = "page"
-title = "Project map"
-path = "generated/project-map.md"
 
 [[item]]
 kind = "part"
