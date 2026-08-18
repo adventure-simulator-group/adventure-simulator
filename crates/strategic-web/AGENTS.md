@@ -22,5 +22,17 @@ source for the project's pattern vocabulary, asset anatomy, and art direction.
 - Keep architectural family, component skin, service, interaction state, and
   time-of-day lighting as separate inputs; do not bake reusable state into
   markup or assets.
+- Assume the in-world interface runs in one game tab and may spend 10--20
+  seconds on its initial renderer and asset load. Preserve one fullscreen Bevy
+  canvas, Wasm instance, WebGPU device, and asset cache for the lifetime of the
+  strategic document; scene changes must not recreate them.
+- Bevy owns continuous 3D presentation and spatial interaction. HTML owns
+  document-like panels, forms, dialogue, and accessibility-critical controls.
+  Egui may be used for canvas-native HUD and spatial interactions, but must not
+  introduce a second strategic authority or duplicate an HTML workflow without
+  a specific interaction need.
+- Synchronize canvas and HTML interactions through typed semantic commands and
+  stable domain IDs. Strategic state remains authoritative in the existing
+  server and SpacetimeDB flows, not in either presentation layer.
 - Store third-party asset provenance in the applicable attribution file and
   `../../THIRD_PARTY_NOTICES.md`.

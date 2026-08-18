@@ -214,7 +214,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
             }
             body {
                 @if scripts == ScriptProfile::Strategic {
-                    div id="strategic-render-surface" hidden aria-hidden="true" {
+                    div id="strategic-render-surface" aria-hidden="true" {
                         canvas id="game-canvas" {}
                     }
                 }

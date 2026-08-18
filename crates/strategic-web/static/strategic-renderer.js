@@ -2,7 +2,6 @@ const surface = document.querySelector("#strategic-render-surface");
 const canvas = surface?.querySelector("#game-canvas");
 let runtimePromise;
 let host;
-let resizeObserver;
 const forgeDesigns = new WeakMap();
 const forgeConstraints = new WeakMap();
 let currentForgeDesign;
@@ -12,23 +11,11 @@ const command = (payload) => runtimePromise
   ?.then((runtime) => runtime.wasm_command(JSON.stringify(payload)))
   .catch((error) => console.error("strategic renderer command failed", error));
 
-const positionSurface = () => {
-  if (!surface || !host) return;
-  const bounds = host.getBoundingClientRect();
-  surface.style.left = `${bounds.left}px`;
-  surface.style.top = `${bounds.top}px`;
-  surface.style.width = `${bounds.width}px`;
-  surface.style.height = `${bounds.height}px`;
-};
-
 const hide = () => {
-  resizeObserver?.disconnect();
-  resizeObserver = undefined;
   host?.removeAttribute("data-renderer-ready");
   host = undefined;
   currentForgeDesign = undefined;
   orbitingForge = false;
-  if (surface) surface.hidden = true;
   command({ type: "hide-strategic-scene" });
 };
 
@@ -40,11 +27,6 @@ const mount = () => {
     return;
   }
   host = nextHost;
-  positionSurface();
-  surface.hidden = false;
-  resizeObserver?.disconnect();
-  resizeObserver = new ResizeObserver(positionSurface);
-  resizeObserver.observe(host);
   runtimePromise?.then(() => {
     if (host !== nextHost) return;
     nextHost.setAttribute("data-renderer-ready", "");
@@ -138,7 +120,10 @@ const updateForge = async (root) => {
     }));
     root.querySelector("[data-forge-eta]").textContent = `${Math.floor(quote.minutes / 60)} h ${quote.minutes % 60} min`;
     root.querySelector("[data-forge-submit]").disabled = false;
-    command({ type: "show-forge", catalog_id: design.catalog_id, design_json: json });
+    command({
+      type: "show-strategic-scene",
+      scene: { type: "forge", catalog_id: design.catalog_id, design_json: json },
+    });
   } catch (error) {
     root.querySelector("[data-forge-submit]").disabled = true;
     root.querySelector("[data-forge-eta]").textContent = "Invalid recipe";
@@ -176,7 +161,7 @@ const initializeForge = async (root) => {
 };
 
 const forgeHostContains = (event) => {
-  if (!host || surface?.hidden) return false;
+  if (!host) return false;
   const bounds = host.getBoundingClientRect();
   return event.clientX >= bounds.left && event.clientX <= bounds.right
     && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
@@ -195,7 +180,6 @@ if (surface && canvas) {
     });
   runtimePromise.catch(() => hide());
   mount();
-  window.addEventListener("resize", positionSurface);
   document.addEventListener("strategic-page-mounted", mount);
   document.addEventListener("strategic-page-unmounting", hide);
   document.addEventListener("strategic-live-regions-refreshed", (event) => {
@@ -244,7 +228,6 @@ if (surface && canvas) {
     if (!link) return;
     event.preventDefault();
     document.body.setAttribute("data-tactical-active", "");
-    surface.hidden = false;
     command({
       type: "enter-tactical",
       server_addr: link.dataset.serverAddr,
