@@ -777,10 +777,10 @@
       return;
     }
     const buttons = people.map((npc) => {
-      const button = document.createElement("button"); button.type = "button"; button.className = "party-portrait settlement-npc-portrait"; button.dataset.npcId = npc.id; button.setAttribute("aria-label", `Talk to ${npc.name}`); button.setAttribute("aria-pressed", "false"); button.tabIndex = -1;
-      const portrait = document.createElement("span"); portrait.className = "party-portrait-initial settlement-npc-initials";
+      const button = document.createElement("button"); button.type = "button"; button.className = "scene-interactable scene-interactable--person party-portrait settlement-npc-portrait"; button.dataset.npcId = npc.id; button.setAttribute("aria-label", `Talk to ${npc.name}`); button.setAttribute("aria-pressed", "false"); button.tabIndex = -1;
+      const portrait = document.createElement("span"); portrait.className = "scene-interactable-visual party-portrait-initial settlement-npc-initials";
       const face = document.createElement("span"); face.className = npc.initials ? "party-portrait-face" : "party-portrait-face npc-portrait-silhouette"; face.setAttribute("aria-hidden", "true"); face.textContent = npc.initials || "";
-      const name = document.createElement("span"); name.className = "party-portrait-name settlement-npc-name"; name.textContent = npc.name;
+      const name = document.createElement("span"); name.className = "scene-interactable-label party-portrait-name settlement-npc-name"; name.textContent = npc.name;
       portrait.append(face, name); button.append(portrait); button.addEventListener("click", () => selectNpc(npc, button));
       button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });
       return button;
