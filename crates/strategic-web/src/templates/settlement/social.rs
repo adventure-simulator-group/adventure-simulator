@@ -7,7 +7,10 @@ use super::{
     trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
 use crate::spacetimedb::{Character, FoodLot, InventoryItem};
-use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, scene_interactable_link, sidebar_section, SceneInteractableLink};
+use crate::templates::{
+    SceneInteractableKind, SceneInteractableLink, decorative_game_icon, item_display_name,
+    item_type_icon, scene_interactable_link, sidebar_section,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct SocialPresentation {
@@ -525,7 +528,7 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
 /// settlement location. This is deliberately separate from the NPC loader so
 /// templates cannot accidentally infer fixtures from the people present.
 struct LocationFixture {
-    kind: &'static str,
+    visual_modifier: &'static str,
     label: &'static str,
     aria_label: &'static str,
     icon: &'static str,
@@ -541,7 +544,7 @@ fn location_fixtures(
     let mut fixtures = Vec::new();
     if !matches!(location_id, "overview" | "public-square" | "map") {
         fixtures.push(LocationFixture {
-            kind: "fixture fireplace-portrait",
+            visual_modifier: "fireplace-portrait",
             label: "Fireplace",
             aria_label: "Cook at fireplace",
             icon: "campfire",
@@ -551,7 +554,7 @@ fn location_fixtures(
     }
     if organization_service == Some("weapons") {
         fixtures.push(LocationFixture {
-            kind: "fixture forge-portrait",
+            visual_modifier: "forge-portrait",
             label: "Forge",
             aria_label: "Forge a weapon",
             icon: "anvil",
@@ -572,7 +575,7 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
             @for fixture in location_fixtures(settlement_id, location_id, organization_service) {
                 span data-location-fixture {
                     (scene_interactable_link(SceneInteractableLink {
-                        kind: fixture.kind, href: &fixture.href, label: fixture.label,
+                        kind: SceneInteractableKind::Fixture, visual_modifier: Some(fixture.visual_modifier), href: &fixture.href, label: fixture.label,
                         aria_label: fixture.aria_label, icon: fixture.icon, action_label: Some(fixture.action_label),
                     }))
                 }
@@ -1241,7 +1244,8 @@ mod tests {
         assert_eq!(ordinary.len(), 1);
         assert_eq!(ordinary[0].label, "Fireplace");
 
-        let weapons = location_fixtures("lubeck", "organization-weaponsmith-guild", Some("weapons"));
+        let weapons =
+            location_fixtures("lubeck", "organization-weaponsmith-guild", Some("weapons"));
         assert_eq!(weapons.len(), 2);
         assert_eq!(weapons[1].label, "Forge");
 
