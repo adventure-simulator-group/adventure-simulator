@@ -6792,20 +6792,35 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 }
                 let rendered_ankle = snapshot(foot, &parents, &transforms.p0())
                     .map(|rendered| rendered.global.translation());
+                let toe_role = if left {
+                    BoneRole::ToeLeft
+                } else {
+                    BoneRole::ToeRight
+                };
+                let rendered_toe = rig
+                    .get(&toe_role)
+                    .and_then(|toe| snapshot(*toe, &parents, &transforms.p0()))
+                    .map(|rendered| rendered.global.translation());
                 let reported_support = if enabled.0 {
                     rendered_ankle.is_some_and(|ankle| {
                         terrain
                             .and_then(|terrain| terrain.height_at(ankle.xz()))
                             .is_some_and(|height| {
-                                raised_support_is_actual(
-                                    support,
-                                    if left {
-                                        previous_left_support
-                                    } else {
-                                        previous_right_support
-                                    },
-                                    ankle.y,
-                                    height,
+                                raised_support_has_toe_clearance(
+                                    raised_support_is_actual(
+                                        support,
+                                        if left {
+                                            previous_left_support
+                                        } else {
+                                            previous_right_support
+                                        },
+                                        ankle.y,
+                                        height,
+                                    ),
+                                    rendered_toe.map(|toe| toe.y),
+                                    rendered_toe.and_then(|toe| {
+                                        terrain.and_then(|terrain| terrain.height_at(toe.xz()))
+                                    }),
                                 )
                             })
                     })
@@ -6909,19 +6924,34 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     continue;
                 };
                 let ankle = rendered.global.translation();
+                let toe_role = if left {
+                    BoneRole::ToeLeft
+                } else {
+                    BoneRole::ToeRight
+                };
+                let rendered_toe = rig
+                    .get(&toe_role)
+                    .and_then(|toe| snapshot(*toe, &parents, &transforms.p0()))
+                    .map(|rendered| rendered.global.translation());
                 let reported_support = if enabled.0 {
                     terrain
                         .and_then(|terrain| terrain.height_at(ankle.xz()))
                         .is_some_and(|height| {
-                            raised_support_is_actual(
-                                nominal_support,
-                                if left {
-                                    previous_left_support
-                                } else {
-                                    previous_right_support
-                                },
-                                ankle.y,
-                                height,
+                            raised_support_has_toe_clearance(
+                                raised_support_is_actual(
+                                    nominal_support,
+                                    if left {
+                                        previous_left_support
+                                    } else {
+                                        previous_right_support
+                                    },
+                                    ankle.y,
+                                    height,
+                                ),
+                                rendered_toe.map(|toe| toe.y),
+                                rendered_toe.and_then(|toe| {
+                                    terrain.and_then(|terrain| terrain.height_at(toe.xz()))
+                                }),
                             )
                         })
                 } else {
@@ -9234,9 +9264,19 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
             continue;
         }
         let stationary_guard = !skeleton.raised_locomotion().is_moving();
-        for (role, left, nominal_support) in [
-            (BoneRole::FootLeft, true, !raised.swing_left),
-            (BoneRole::FootRight, false, raised.swing_left),
+        for (role, toe_role, left, nominal_support) in [
+            (
+                BoneRole::FootLeft,
+                BoneRole::ToeLeft,
+                true,
+                !raised.swing_left,
+            ),
+            (
+                BoneRole::FootRight,
+                BoneRole::ToeRight,
+                false,
+                raised.swing_left,
+            ),
         ] {
             let nominal_support = if stationary_guard {
                 !raised.pivot_active || raised.pivot_left != left
@@ -9250,16 +9290,24 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
                 continue;
             };
             let ankle = global.translation();
+            let rendered_toe = rig
+                .get(&toe_role)
+                .and_then(|toe| globals.get(*toe).ok())
+                .map(GlobalTransform::translation);
             let support = terrain.height_at(ankle.xz()).is_some_and(|height| {
-                raised_support_is_actual(
-                    nominal_support,
-                    if left {
-                        terrain_leg_has_support(raised.left_support_weight)
-                    } else {
-                        terrain_leg_has_support(raised.right_support_weight)
-                    },
-                    ankle.y,
-                    height,
+                raised_support_has_toe_clearance(
+                    raised_support_is_actual(
+                        nominal_support,
+                        if left {
+                            terrain_leg_has_support(raised.left_support_weight)
+                        } else {
+                            terrain_leg_has_support(raised.right_support_weight)
+                        },
+                        ankle.y,
+                        height,
+                    ),
+                    rendered_toe.map(|toe| toe.y),
+                    rendered_toe.and_then(|toe| terrain.height_at(toe.xz())),
                 )
             });
             if left {
@@ -11415,6 +11463,17 @@ fn raised_support_is_actual(
         };
     nominal_support
         && (ankle_y - terrain_height - MEASURED_ANKLE_SOLE_OFFSET_METRES).abs() <= tolerance
+}
+
+fn raised_support_has_toe_clearance(
+    ankle_support: bool,
+    toe_y: Option<f32>,
+    toe_terrain_height: Option<f32>,
+) -> bool {
+    ankle_support
+        && toe_y
+            .zip(toe_terrain_height)
+            .is_none_or(|(toe, height)| toe - height >= -SOLE_CONTACT_TOLERANCE_METRES)
 }
 
 pub(super) fn balance_recovery_direction(
@@ -16711,6 +16770,21 @@ mod slope_cache_tests {
             true,
             MEASURED_ANKLE_SOLE_OFFSET_METRES + SOLE_CONTACT_TOLERANCE_METRES + 0.004,
             terrain_height,
+        ));
+        assert!(!raised_support_has_toe_clearance(
+            true,
+            Some(-SOLE_CONTACT_TOLERANCE_METRES - 0.001),
+            Some(terrain_height),
+        ));
+        assert!(raised_support_has_toe_clearance(
+            true,
+            Some(-SOLE_CONTACT_TOLERANCE_METRES + 0.001),
+            Some(terrain_height),
+        ));
+        assert!(!raised_support_has_toe_clearance(
+            false,
+            Some(terrain_height),
+            Some(terrain_height),
         ));
     }
 
