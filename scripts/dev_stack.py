@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import json
+import math
 import os
 import secrets
 from pathlib import Path
@@ -53,6 +54,16 @@ class TacticalPlayMode(str, Enum):
 
 DEFAULT_DIAGNOSTIC_SCENARIO = "directional-dives"
 GUARD_FOOTWORK_REPRO_SCENARIO = "guard-footwork-live-repro"
+CONTACT_AIRBORNE_LIMIT_METRES = 0.127  # Five inches.
+BOTH_FEET_BEHIND_LIMIT_SECONDS = 0.3
+ANATOMICAL_KNEE_FLEXION_LIMIT_DEGREES = 165.0
+ANIMATION_PRIORITY_WEIGHTS = {
+    "anatomical_joint_angles": 16,
+    "contact_airborne": 8,
+    "both_feet_behind": 4,
+    "planted_drag": 2,
+    "jitter_jerk": 1,
+}
 
 
 class ObsWebSocket:
@@ -2296,6 +2307,8 @@ def analyze_guard_footwork_repro(
     visible_stuck_frames: list[int] = []
     planted_drag_frames: list[int] = []
     both_feet_behind_frames: list[int] = []
+    contact_airborne_frames: list[int] = []
+    anatomically_invalid_frames: list[int] = []
     saw_guard_raised = False
     saw_guard_lowered = False
     saw_diagonal = False
@@ -2321,12 +2334,22 @@ def analyze_guard_footwork_repro(
     longest_ground_safety_slide_seconds = 0.0
     maximum_selected_acceleration_ratio = 0.0
     maximum_selected_acceleration_frame: int | None = None
+    maximum_selected_jerk_ratio = 0.0
+    maximum_selected_jerk_frame: int | None = None
+    maximum_contact_sole_clearance_metres = 0.0
+    maximum_knee_flexion_degrees = 0.0
+    minimum_knee_pole_hemisphere_dot = 1.0
     authoritative_ticks: set[int] = set()
     source_ticks: set[int] = set()
     saw_raised_moving = False
     controller_positions: list[tuple[float, float]] = []
     previous_elapsed: float | None = None
     previous_ankles: dict[str, tuple[float, float] | None] = {"left": None, "right": None}
+    previous_accelerations: dict[str, tuple[float, float, float] | None] = {
+        "left": None,
+        "right": None,
+    }
+    previous_acceleration_ticks: dict[str, int | None] = {"left": None, "right": None}
     drag_starts: dict[str, tuple[float, int] | None] = {"left": None, "right": None}
     longest_planted_drag_seconds = 0.0
     longest_planted_drag_start_frame: int | None = None
@@ -2359,9 +2382,14 @@ def analyze_guard_footwork_repro(
             stale_release_start_frame = None
             ground_safety_slide_starts = {"left": None, "right": None}
             previous_ankles = {"left": None, "right": None}
+            previous_accelerations = {"left": None, "right": None}
+            previous_acceleration_ticks = {"left": None, "right": None}
             drag_starts = {"left": None, "right": None}
             both_behind_start = None
         previous_elapsed = elapsed
+        procedural_clock = record.get("procedural_clock") or {}
+        semantic_tick = procedural_clock.get("semantic_tick")
+        semantic_tick = int(semantic_tick) if semantic_tick is not None else None
         authoritative = record.get("authoritative") or {}
         if authoritative.get("locomotion_sample_tick") is not None:
             authoritative_ticks.add(int(authoritative["locomotion_sample_tick"]))
@@ -2420,9 +2448,11 @@ def analyze_guard_footwork_repro(
             awaiting_start_frame = None
         motion = record.get("foot_motion") or {}
         recovery_or_reach_this_frame = False
+        selected_diagnostics: dict[str, dict[str, object]] = {}
         for side in ("left", "right"):
             selected = ((motion.get(side) or {}).get("selected") or {})
             diagnostic = selected.get("diagnostic") or {}
+            selected_diagnostics[side] = diagnostic
             owner = diagnostic.get("owner")
             if owner == "ground_safety_slide":
                 started = ground_safety_slide_starts[side]
@@ -2454,6 +2484,45 @@ def analyze_guard_footwork_repro(
                 if ratio > 1.001:
                     threshold_frames.setdefault("selected_acceleration", frame)
                     threshold_start_frames.setdefault("selected_acceleration", frame)
+            current_acceleration = (
+                tuple(float(component) for component in acceleration[:3])
+                if acceleration and len(acceleration) >= 3
+                else None
+            )
+            maximum_jerk = diagnostic.get("maximum_jerk")
+            previous_tick = previous_acceleration_ticks[side]
+            jerk_delta = (
+                (semantic_tick - previous_tick) / 64.0
+                if semantic_tick is not None
+                and previous_tick is not None
+                and semantic_tick > previous_tick
+                else frame_delta if semantic_tick is None else 0.0
+            )
+            if (
+                current_acceleration is not None
+                and previous_accelerations[side] is not None
+                and 0.0 < jerk_delta <= 0.1
+                and maximum_jerk is not None
+                and float(maximum_jerk) > 0.0
+            ):
+                jerk = sum(
+                    (
+                        (current_acceleration[index] - previous_accelerations[side][index])
+                        / jerk_delta
+                    )
+                    ** 2
+                    for index in range(3)
+                ) ** 0.5
+                ratio = jerk / float(maximum_jerk)
+                if ratio > maximum_selected_jerk_ratio:
+                    maximum_selected_jerk_ratio = ratio
+                    maximum_selected_jerk_frame = frame
+                if ratio > 1.001:
+                    threshold_frames.setdefault("selected_jerk", frame)
+                    threshold_start_frames.setdefault("selected_jerk", frame)
+            if semantic_tick is None or semantic_tick != previous_tick:
+                previous_accelerations[side] = current_acceleration
+                previous_acceleration_ticks[side] = semantic_tick
             if owner == "emergency_recovery":
                 append_bounded(emergency_frames, frame)
                 emergency_epochs[side].add(int(diagnostic.get("owner_epoch", 0)))
@@ -2511,6 +2580,25 @@ def analyze_guard_footwork_repro(
                 float(ankle_clearance) - 0.085
                 if ankle_clearance is not None else None
             )
+            contact_clearances = [
+                clearance
+                for clearance in (
+                    sole_clearance,
+                    float(toe_clearance) if toe_clearance is not None else None,
+                )
+                if clearance is not None
+            ]
+            contact_sole_clearance = min(contact_clearances) if contact_clearances else None
+            support = left_support if side == "left" else right_support
+            if support >= 0.5 and contact_sole_clearance is not None:
+                maximum_contact_sole_clearance_metres = max(
+                    maximum_contact_sole_clearance_metres,
+                    contact_sole_clearance,
+                )
+                if contact_sole_clearance > CONTACT_AIRBORNE_LIMIT_METRES:
+                    append_bounded(contact_airborne_frames, frame)
+                    threshold_frames.setdefault("contact_airborne", frame)
+                    threshold_start_frames.setdefault("contact_airborne", frame)
             if zero_support and (
                 (sole_clearance is not None and sole_clearance > 0.01)
                 or (toe_clearance is not None and float(toe_clearance) > 0.011)
@@ -2522,7 +2610,60 @@ def analyze_guard_footwork_repro(
                 (float(world_translation[0]), float(world_translation[2]))
                 if world_translation and len(world_translation) >= 3 else None
             )
-            support = left_support if side == "left" else right_support
+            hip_world = ((side_body.get("hip") or {}).get("world") or {}).get("translation")
+            knee_world = ((side_body.get("knee") or {}).get("world") or {}).get("translation")
+            if (
+                hip_world and len(hip_world) >= 3
+                and knee_world and len(knee_world) >= 3
+                and world_translation and len(world_translation) >= 3
+            ):
+                hip = tuple(float(value) for value in hip_world[:3])
+                knee = tuple(float(value) for value in knee_world[:3])
+                ankle3 = tuple(float(value) for value in world_translation[:3])
+                upper = tuple(hip[index] - knee[index] for index in range(3))
+                lower_leg = tuple(ankle3[index] - knee[index] for index in range(3))
+                upper_length = sum(value * value for value in upper) ** 0.5
+                lower_length = sum(value * value for value in lower_leg) ** 0.5
+                if upper_length > 1e-6 and lower_length > 1e-6:
+                    cosine = max(-1.0, min(1.0, sum(
+                        upper[index] * lower_leg[index] for index in range(3)
+                    ) / (upper_length * lower_length)))
+                    flexion = 180.0 - math.degrees(math.acos(cosine))
+                    maximum_knee_flexion_degrees = max(
+                        maximum_knee_flexion_degrees, flexion
+                    )
+                    invalid = flexion > ANATOMICAL_KNEE_FLEXION_LIMIT_DEGREES
+                    commanded_pole = selected_diagnostics[side].get("commanded_pole")
+                    if (
+                        selected_diagnostics[side].get("pole_tracking_active")
+                        and commanded_pole
+                        and len(commanded_pole) >= 3
+                    ):
+                        axis = tuple(ankle3[index] - hip[index] for index in range(3))
+                        axis_length = sum(value * value for value in axis) ** 0.5
+                        if axis_length > 1e-6:
+                            axis = tuple(value / axis_length for value in axis)
+                            hip_to_knee = tuple(knee[index] - hip[index] for index in range(3))
+                            axial = sum(hip_to_knee[index] * axis[index] for index in range(3))
+                            bend = tuple(
+                                hip_to_knee[index] - axis[index] * axial
+                                for index in range(3)
+                            )
+                            bend_length = sum(value * value for value in bend) ** 0.5
+                            pole = tuple(float(value) for value in commanded_pole[:3])
+                            pole_length = sum(value * value for value in pole) ** 0.5
+                            if bend_length > 1e-6 and pole_length > 1e-6:
+                                hemisphere = sum(
+                                    bend[index] * pole[index] for index in range(3)
+                                ) / (bend_length * pole_length)
+                                minimum_knee_pole_hemisphere_dot = min(
+                                    minimum_knee_pole_hemisphere_dot, hemisphere
+                                )
+                                invalid = invalid or hemisphere < 0.0
+                    if invalid:
+                        append_bounded(anatomically_invalid_frames, frame)
+                        threshold_frames.setdefault("anatomical_joint_angles", frame)
+                        threshold_start_frames.setdefault("anatomical_joint_angles", frame)
             dragging = False
             if (
                 current_ankle is not None
@@ -2647,7 +2788,7 @@ def analyze_guard_footwork_repro(
     )
     quarter_stride_seconds = max(0.08, min(0.30, median_half_step_seconds * 0.5))
     sustained_planted_drag = longest_planted_drag_seconds >= quarter_stride_seconds
-    sustained_both_behind = longest_both_behind_seconds >= quarter_stride_seconds
+    sustained_both_behind = longest_both_behind_seconds > BOTH_FEET_BEHIND_LIMIT_SECONDS
     if sustained_planted_drag and longest_planted_drag_end_frame is not None:
         threshold_frames["planted_drag"] = longest_planted_drag_end_frame
         threshold_start_frames["planted_drag"] = longest_planted_drag_start_frame or longest_planted_drag_end_frame
@@ -2667,6 +2808,8 @@ def analyze_guard_footwork_repro(
         "raised_owner_after_guard_lowered": longest_stale_release_seconds >= 0.5,
         "sustained_planted_drag": sustained_planted_drag,
         "sustained_both_feet_behind": sustained_both_behind,
+        "anatomically_invalid_joint_angles": bool(anatomically_invalid_frames),
+        "contact_foot_above_five_inches": bool(contact_airborne_frames),
     }
     known_failure_reproduced = harness_completed and (
         longest_syndrome_seconds >= 0.2
@@ -2683,10 +2826,27 @@ def analyze_guard_footwork_repro(
         or bool(hard_frames)
         or longest_ground_safety_slide_seconds >= 0.5
         or maximum_selected_acceleration_ratio > 1.001
+        or maximum_selected_jerk_ratio > 1.001
         or sustained_planted_drag
         or sustained_both_behind
+        or bool(anatomically_invalid_frames)
+        or bool(contact_airborne_frames)
     )
     failed_contracts = [
+        {
+            "contract": "anatomical_joint_angles",
+            "value": bool(anatomically_invalid_frames),
+            "limit": False,
+            "frame": threshold_frames.get("anatomical_joint_angles"),
+            "episode_start_frame": threshold_start_frames.get("anatomical_joint_angles"),
+        },
+        {
+            "contract": "contact_airborne_clearance_metres",
+            "value": maximum_contact_sole_clearance_metres,
+            "limit": CONTACT_AIRBORNE_LIMIT_METRES,
+            "frame": threshold_frames.get("contact_airborne"),
+            "episode_start_frame": threshold_start_frames.get("contact_airborne"),
+        },
         {
             "contract": "radial_extension",
             "value": maximum_radial_extension_metres,
@@ -2737,6 +2897,13 @@ def analyze_guard_footwork_repro(
             "episode_start_frame": threshold_start_frames.get("selected_acceleration"),
         },
         {
+            "contract": "selected_jerk_limit_ratio",
+            "value": maximum_selected_jerk_ratio,
+            "limit": 1.001,
+            "frame": threshold_frames.get("selected_jerk"),
+            "episode_start_frame": threshold_start_frames.get("selected_jerk"),
+        },
+        {
             "contract": "planted_drag_duration",
             "value": longest_planted_drag_seconds,
             "limit": quarter_stride_seconds,
@@ -2746,7 +2913,7 @@ def analyze_guard_footwork_repro(
         {
             "contract": "both_feet_behind_duration",
             "value": longest_both_behind_seconds,
-            "limit": quarter_stride_seconds,
+            "limit": BOTH_FEET_BEHIND_LIMIT_SECONDS,
             "frame": threshold_frames.get("both_feet_behind"),
             "episode_start_frame": threshold_start_frames.get("both_feet_behind"),
         },
@@ -2772,6 +2939,8 @@ def analyze_guard_footwork_repro(
         "visible_stuck_episode": visible_stuck_frames,
         "planted_drag": planted_drag_frames,
         "both_feet_behind": both_feet_behind_frames,
+        "contact_airborne": contact_airborne_frames,
+        "anatomically_invalid_joint_angles": anatomically_invalid_frames,
     }
     evidence_ranges = {
         name: contiguous_frame_ranges(frame_list)
@@ -2807,6 +2976,25 @@ def analyze_guard_footwork_repro(
         "frames": causal_records,
     }
     atomic_write_json(causal_slice_path, causal_slice)
+    priority_failures = {
+        "anatomical_joint_angles": bool(anatomically_invalid_frames),
+        "contact_airborne": bool(contact_airborne_frames),
+        "both_feet_behind": sustained_both_behind,
+        "planted_drag": sustained_planted_drag,
+        "jitter_jerk": (
+            maximum_selected_acceleration_ratio > 1.001
+            or maximum_selected_jerk_ratio > 1.001
+        ),
+    }
+    weighted_defect_score = sum(
+        ANIMATION_PRIORITY_WEIGHTS[name]
+        for name, failed in priority_failures.items()
+        if failed
+    )
+    total_priority_weight = sum(ANIMATION_PRIORITY_WEIGHTS.values())
+    animation_quality_score = round(
+        100.0 * (1.0 - weighted_defect_score / total_priority_weight), 3
+    )
     manifest: dict[str, object] = {
         "schema": "adventuresim.animation.guard_footwork_repro",
         "schema_version": 2,
@@ -2839,6 +3027,16 @@ def analyze_guard_footwork_repro(
         "longest_both_feet_behind_seconds": longest_both_behind_seconds,
         "maximum_selected_acceleration_ratio": maximum_selected_acceleration_ratio,
         "maximum_selected_acceleration_frame": maximum_selected_acceleration_frame,
+        "maximum_selected_jerk_ratio": maximum_selected_jerk_ratio,
+        "maximum_selected_jerk_frame": maximum_selected_jerk_frame,
+        "maximum_contact_sole_clearance_metres": maximum_contact_sole_clearance_metres,
+        "maximum_knee_flexion_degrees": maximum_knee_flexion_degrees,
+        "minimum_knee_pole_hemisphere_dot": minimum_knee_pole_hemisphere_dot,
+        "priority_order": list(ANIMATION_PRIORITY_WEIGHTS),
+        "priority_weights": ANIMATION_PRIORITY_WEIGHTS,
+        "priority_failures": priority_failures,
+        "weighted_defect_score": weighted_defect_score,
+        "animation_quality_score": animation_quality_score,
         "authoritative_sample_tick_count": len(authoritative_ticks),
         "presentation_source_tick_count": len(source_ticks),
         "controller_displacement_metres": controller_displacement,
@@ -2858,6 +3056,9 @@ def analyze_guard_footwork_repro(
         "harness_completed": harness_completed,
         "first_failure": first_failure,
         "failed_contracts": failed_contracts,
+        "priority_failures": priority_failures,
+        "weighted_defect_score": weighted_defect_score,
+        "animation_quality_score": animation_quality_score,
         "evidence_ranges": evidence_ranges,
         "manifest": str(manifest_path),
         "causal_slice": str(causal_slice_path),

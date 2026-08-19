@@ -289,15 +289,31 @@ class WorkflowTests(unittest.TestCase):
                         "was_moving": True,
                         "release_handoff_active": False,
                     },
-                    "foot_motion": {"selected_source": "raised_footwork"},
+                    "foot_motion": {
+                        "selected_source": "raised_footwork",
+                        **{
+                            side: {"selected": {"diagnostic": {
+                                "acceleration": [100.0 if frame % 2 else 0.0, 0.0, 0.0],
+                                "maximum_acceleration": 1000.0,
+                                "maximum_jerk": 10.0,
+                            }}}
+                            for side in ("left", "right")
+                        },
+                    },
                     "lower_body": {
                         side: {
                             "ankle_from_visual_pelvis_world": [-0.25, -0.8, 0.0],
+                            "hip": {"world": {
+                                "translation": [frame * 0.01, 1.0, offset],
+                            }},
+                            "knee": {"world": {
+                                "translation": [frame * 0.01, 1.2, offset],
+                            }},
                             "ankle": {
-                                "clearance": 0.085,
+                                "clearance": 0.30,
                                 "world": {"translation": [frame * 0.01, 0.085, offset]},
                             },
-                            "toe": {"clearance": 0.0},
+                            "toe": {"clearance": 0.20},
                         }
                         for side, offset in (("left", -0.2), ("right", 0.2))
                     },
@@ -309,6 +325,8 @@ class WorkflowTests(unittest.TestCase):
             self.assertTrue(result["harness_completed"])
             self.assertTrue(result["signatures"]["sustained_planted_drag"])
             self.assertTrue(result["signatures"]["sustained_both_feet_behind"])
+            self.assertTrue(result["signatures"]["anatomically_invalid_joint_angles"])
+            self.assertTrue(result["signatures"]["contact_foot_above_five_inches"])
             self.assertGreater(
                 result["longest_planted_drag_seconds"],
                 result["quarter_stride_seconds"],
@@ -320,6 +338,28 @@ class WorkflowTests(unittest.TestCase):
             contracts = {failure["contract"] for failure in result["failed_contracts"]}
             self.assertIn("planted_drag_duration", contracts)
             self.assertIn("both_feet_behind_duration", contracts)
+            self.assertIn("anatomical_joint_angles", contracts)
+            self.assertIn("contact_airborne_clearance_metres", contracts)
+            self.assertIn("selected_jerk_limit_ratio", contracts)
+            self.assertEqual(result["weighted_defect_score"], 31)
+            self.assertEqual(result["animation_quality_score"], 0.0)
+            self.assertEqual(
+                result["priority_order"],
+                [
+                    "anatomical_joint_angles",
+                    "contact_airborne",
+                    "both_feet_behind",
+                    "planted_drag",
+                    "jitter_jerk",
+                ],
+            )
+            weights = result["priority_weights"]
+            order = result["priority_order"]
+            for index, name in enumerate(order[:-1]):
+                self.assertGreater(
+                    weights[name],
+                    sum(weights[lower] for lower in order[index + 1:]),
+                )
             self.assertFalse(result["animation_acceptance_passed"])
 
     @mock.patch.object(dev_stack, "run_checked")

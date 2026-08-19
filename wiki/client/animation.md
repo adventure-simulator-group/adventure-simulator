@@ -734,6 +734,18 @@ presentation-amplified spikes without changing diagnostic thresholds. Per-owner
 incident detail is bounded; truncation itself fails validation instead of
 silently weakening the histogram.
 
+The native guard-footwork diagnostic reports a separate, priority-ordered
+quality score. Its binary defect weights are 16 for an anatomically invalid
+knee angle or bend hemisphere, 8 for a support-weighted foot whose complete
+sole is more than 0.127 m (five inches) above terrain, 4 for both feet remaining
+behind the hips for more than 0.3 seconds, 2 for planted-foot dragging lasting
+at least one quarter stride, and 1 for a selected foot target exceeding its
+declared acceleration or jerk limit. The weights are powers of two so a failure
+at one priority outweighs every lower-priority category combined. The manifest
+retains both the 0-31 weighted defect score and its 0-100 inverse quality score.
+These scores summarize failures; they do not replace the individual hard
+acceptance gates or permit one category to compensate for another.
+
 `state-machine-traversal` is one continuous, retained-state viewer scenario. The
 viewer's `--diagnostics-only` option evaluates the same three camera passes for
 every fixed-tick pose and writes the manifest without PNGs or the HTML review
