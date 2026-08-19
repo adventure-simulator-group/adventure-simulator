@@ -446,13 +446,15 @@ fn lower_body_snapshot(
             .and_then(|entity| transforms.compute_global_transform(*entity).ok())
             .map(|global| global.translation())
     };
-    let bone = |role: BoneRole| {
+    let bone = |role: BoneRole, sole_axis: Option<Vec3>| {
         let entity = *rig.get(&role)?;
         let global = transforms.compute_global_transform(entity).ok()?;
         let world = global.compute_transform();
         let owner_local_affine = owner_global.affine().inverse() * global.affine();
         let owner_local = GlobalTransform::from(owner_local_affine).compute_transform();
         let terrain_height = terrain.and_then(|terrain| terrain.height_at(world.translation.xz()));
+        let terrain_normal = terrain.and_then(|terrain| terrain.normal_at(world.translation.xz()));
+        let rendered_sole_normal = sole_axis.map(|axis| world.rotation * axis);
         Some(serde_json::json!({
             "entity": entity.to_bits(),
             "world": {
@@ -464,6 +466,8 @@ fn lower_body_snapshot(
                 "rotation_xyzw": owner_local.rotation.to_array(),
             },
             "terrain_height": terrain_height,
+            "terrain_normal": terrain_normal,
+            "rendered_sole_normal": rendered_sole_normal,
             "clearance": terrain_height.map(|height| world.translation.y - height),
         }))
     };
@@ -472,21 +476,21 @@ fn lower_body_snapshot(
     let right_ankle_world = world_position(BoneRole::FootRight);
     let owner_inverse = owner_global.affine().inverse();
     serde_json::json!({
-        "root": bone(BoneRole::Root),
-        "pelvis": bone(BoneRole::Pelvis),
+        "root": bone(BoneRole::Root, None),
+        "pelvis": bone(BoneRole::Pelvis, None),
         "left": {
-            "hip": bone(BoneRole::ThighLeft),
-            "knee": bone(BoneRole::ShinLeft),
-            "ankle": bone(BoneRole::FootLeft),
-            "toe": bone(BoneRole::ToeLeft),
+            "hip": bone(BoneRole::ThighLeft, None),
+            "knee": bone(BoneRole::ShinLeft, None),
+            "ankle": bone(BoneRole::FootLeft, rig.sole_axis(true)),
+            "toe": bone(BoneRole::ToeLeft, None),
             "ankle_from_visual_pelvis_world": left_ankle_world.zip(pelvis_world).map(|(ankle, pelvis)| ankle - pelvis),
             "ankle_owner_local": left_ankle_world.map(|ankle| owner_inverse.transform_point3(ankle)),
         },
         "right": {
-            "hip": bone(BoneRole::ThighRight),
-            "knee": bone(BoneRole::ShinRight),
-            "ankle": bone(BoneRole::FootRight),
-            "toe": bone(BoneRole::ToeRight),
+            "hip": bone(BoneRole::ThighRight, None),
+            "knee": bone(BoneRole::ShinRight, None),
+            "ankle": bone(BoneRole::FootRight, rig.sole_axis(false)),
+            "toe": bone(BoneRole::ToeRight, None),
             "ankle_from_visual_pelvis_world": right_ankle_world.zip(pelvis_world).map(|(ankle, pelvis)| ankle - pelvis),
             "ankle_owner_local": right_ankle_world.map(|ankle| owner_inverse.transform_point3(ankle)),
         },

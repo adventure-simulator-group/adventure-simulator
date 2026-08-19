@@ -59,6 +59,10 @@ CONTACT_PENETRATION_LIMIT_METRES = -0.01
 BOTH_FEET_BEHIND_LIMIT_SECONDS = 0.3
 ANATOMICAL_KNEE_FLEXION_LIMIT_DEGREES = 165.0
 PELVIS_VERTICAL_STEP_LIMIT_METRES = 0.05
+CONTACT_ORIENTATION_LIMIT_DEGREES = 5.0
+STANCE_WIDTH_MINIMUM_HIP_RATIO = 0.5
+STANCE_WIDTH_MAXIMUM_HIP_RATIO = 4.0
+CADENCE_DURATION_RATIO_LIMIT = 1.5
 ANIMATION_PRIORITY_WEIGHTS = {
     "anatomical_joint_angles": 16,
     "contact_airborne": 8,
@@ -2314,6 +2318,8 @@ def analyze_guard_footwork_repro(
     anatomically_invalid_frames: list[int] = []
     foot_crossover_frames: list[int] = []
     swing_scuff_frames: list[int] = []
+    contact_orientation_frames: list[int] = []
+    stance_width_frames: list[int] = []
     saw_guard_raised = False
     saw_guard_lowered = False
     saw_diagonal = False
@@ -2349,6 +2355,9 @@ def analyze_guard_footwork_repro(
     maximum_pelvis_vertical_step_frame: int | None = None
     minimum_stance_width_ratio = float("inf")
     maximum_stance_width_ratio = 0.0
+    maximum_contact_orientation_error_degrees = 0.0
+    longest_contact_orientation_error_seconds = 0.0
+    longest_stance_width_error_seconds = 0.0
     authoritative_ticks: set[int] = set()
     source_ticks: set[int] = set()
     saw_raised_moving = False
@@ -2362,6 +2371,11 @@ def analyze_guard_footwork_repro(
     previous_acceleration_ticks: dict[str, int | None] = {"left": None, "right": None}
     drag_starts: dict[str, tuple[float, int] | None] = {"left": None, "right": None}
     scuff_starts: dict[str, tuple[float, int] | None] = {"left": None, "right": None}
+    orientation_starts: dict[str, tuple[float, int] | None] = {
+        "left": None,
+        "right": None,
+    }
+    stance_width_start: tuple[float, int] | None = None
     longest_planted_drag_seconds = 0.0
     longest_planted_drag_start_frame: int | None = None
     longest_planted_drag_end_frame: int | None = None
@@ -2374,6 +2388,8 @@ def analyze_guard_footwork_repro(
     longest_both_behind_end_frame: int | None = None
     previous_sequence: int | None = None
     previous_sequence_elapsed: float | None = None
+    previous_command_index: int | None = None
+    sequence_edges_in_command = 0
     half_step_durations: list[float] = []
     threshold_frames: dict[str, int] = {}
     threshold_start_frames: dict[str, int] = {}
@@ -2400,6 +2416,8 @@ def analyze_guard_footwork_repro(
             previous_acceleration_ticks = {"left": None, "right": None}
             drag_starts = {"left": None, "right": None}
             scuff_starts = {"left": None, "right": None}
+            orientation_starts = {"left": None, "right": None}
+            stance_width_start = None
             both_behind_start = None
             previous_pelvis_y = None
             previous_pelvis_tick = None
@@ -2412,17 +2430,6 @@ def analyze_guard_footwork_repro(
             authoritative_ticks.add(int(authoritative["locomotion_sample_tick"]))
         cadence = record.get("cadence_identity") or {}
         sequence = cadence.get("raised_step_sequence")
-        if sequence is not None:
-            sequence = int(sequence)
-            if previous_sequence is not None and sequence != previous_sequence:
-                if previous_sequence_elapsed is not None:
-                    duration = elapsed - previous_sequence_elapsed
-                    if 0.05 <= duration <= 1.0:
-                        half_step_durations.append(duration)
-                previous_sequence_elapsed = elapsed
-            elif previous_sequence is None:
-                previous_sequence_elapsed = elapsed
-            previous_sequence = sequence
         if cadence.get("source_tick") is not None:
             source_ticks.add(int(cadence["source_tick"]))
         raised = record.get("raised_ownership") or {}
@@ -2438,11 +2445,37 @@ def analyze_guard_footwork_repro(
             saw_guard_lowered = True
             lowered_elapsed = elapsed if lowered_elapsed is None else lowered_elapsed
         scripted = record.get("input") or {}
+        command_index = scripted.get("command_index")
+        command_index = int(command_index) if command_index is not None else None
+        if command_index != previous_command_index:
+            previous_sequence = None
+            previous_sequence_elapsed = None
+            sequence_edges_in_command = 0
+            previous_command_index = command_index
         movement = (
             (scripted.get("request") or {}).get("movement")
             or request.get("movement")
             or [0.0, 0.0]
         )
+        moving_sample = bool(raised.get("was_moving")) and any(
+            abs(float(component)) > 0.1 for component in movement[:2]
+        )
+        if sequence is not None and moving_sample:
+            sequence = int(sequence)
+            if previous_sequence is not None and sequence != previous_sequence:
+                if previous_sequence_elapsed is not None:
+                    duration = elapsed - previous_sequence_elapsed
+                    if sequence_edges_in_command >= 1 and 0.05 <= duration <= 1.0:
+                        half_step_durations.append(duration)
+                    sequence_edges_in_command += 1
+                previous_sequence_elapsed = elapsed
+            elif previous_sequence is None:
+                previous_sequence_elapsed = elapsed
+            previous_sequence = sequence
+        elif not moving_sample:
+            previous_sequence = None
+            previous_sequence_elapsed = None
+            sequence_edges_in_command = 0
         if len(movement) >= 2 and abs(float(movement[0])) > 0.1 and abs(float(movement[1])) > 0.1:
             saw_diagonal = True
         left_support = float(raised.get("left_support_weight", 1.0))
@@ -2640,6 +2673,51 @@ def analyze_guard_footwork_repro(
                     append_bounded(contact_penetration_frames, frame)
                     threshold_frames.setdefault("contact_penetration", frame)
                     threshold_start_frames.setdefault("contact_penetration", frame)
+                terrain_normal = ankle.get("terrain_normal")
+                sole_normal = ankle.get("rendered_sole_normal")
+                orientation_error = None
+                if (
+                    terrain_normal and len(terrain_normal) >= 3
+                    and sole_normal and len(sole_normal) >= 3
+                ):
+                    normal = tuple(float(value) for value in terrain_normal[:3])
+                    normal_length = sum(value * value for value in normal) ** 0.5
+                    sole = tuple(float(value) for value in sole_normal[:3])
+                    sole_length = sum(value * value for value in sole) ** 0.5
+                    if normal_length > 1e-6 and sole_length > 1e-6:
+                        normal = tuple(value / normal_length for value in normal)
+                        sole = tuple(value / sole_length for value in sole)
+                        terrain_tilt = math.acos(max(-1.0, min(1.0, normal[1])))
+                        bounded_tilt = min(terrain_tilt, math.radians(28.0))
+                        horizontal = (normal[0], 0.0, normal[2])
+                        horizontal_length = sum(value * value for value in horizontal) ** 0.5
+                        desired = (
+                            (
+                                horizontal[0] / horizontal_length * math.sin(bounded_tilt),
+                                math.cos(bounded_tilt),
+                                horizontal[2] / horizontal_length * math.sin(bounded_tilt),
+                            )
+                            if horizontal_length > 1e-6 else (0.0, 1.0, 0.0)
+                        )
+                        orientation_error = math.degrees(math.acos(max(-1.0, min(1.0, sum(
+                            sole[index] * desired[index] for index in range(3)
+                        )))))
+                        maximum_contact_orientation_error_degrees = max(
+                            maximum_contact_orientation_error_degrees,
+                            orientation_error,
+                        )
+                if orientation_error is not None and orientation_error > CONTACT_ORIENTATION_LIMIT_DEGREES:
+                    append_bounded(contact_orientation_frames, frame)
+                    started = orientation_starts[side]
+                    if started is None:
+                        started = (elapsed, frame)
+                        orientation_starts[side] = started
+                    longest_contact_orientation_error_seconds = max(
+                        longest_contact_orientation_error_seconds,
+                        elapsed - started[0],
+                    )
+                else:
+                    orientation_starts[side] = None
             if zero_support and (
                 (sole_clearance is not None and sole_clearance > 0.01)
                 or (toe_clearance is not None and float(toe_clearance) > 0.011)
@@ -2773,6 +2851,20 @@ def analyze_guard_footwork_repro(
                 stance_ratio = abs(left_foot_side - right_foot_side) / hip_width
                 minimum_stance_width_ratio = min(minimum_stance_width_ratio, stance_ratio)
                 maximum_stance_width_ratio = max(maximum_stance_width_ratio, stance_ratio)
+                stance_invalid = (
+                    stance_ratio < STANCE_WIDTH_MINIMUM_HIP_RATIO
+                    or stance_ratio > STANCE_WIDTH_MAXIMUM_HIP_RATIO
+                )
+                if stance_invalid:
+                    append_bounded(stance_width_frames, frame)
+                    if stance_width_start is None:
+                        stance_width_start = (elapsed, frame)
+                    longest_stance_width_error_seconds = max(
+                        longest_stance_width_error_seconds,
+                        elapsed - stance_width_start[0],
+                    )
+                else:
+                    stance_width_start = None
         if both_behind_this_frame:
             append_bounded(both_feet_behind_frames, frame)
             if both_behind_start is None:
@@ -2878,6 +2970,13 @@ def analyze_guard_footwork_repro(
     )
     sustained_planted_drag = longest_planted_drag_seconds >= quarter_stride_seconds
     sustained_swing_scuff = longest_swing_scuff_seconds >= quarter_stride_seconds
+    sustained_contact_orientation_error = (
+        longest_contact_orientation_error_seconds >= quarter_stride_seconds
+    )
+    sustained_stance_width_error = (
+        longest_stance_width_error_seconds > BOTH_FEET_BEHIND_LIMIT_SECONDS
+    )
+    irregular_cadence = cadence_duration_ratio > CADENCE_DURATION_RATIO_LIMIT
     sustained_both_behind = longest_both_behind_seconds > BOTH_FEET_BEHIND_LIMIT_SECONDS
     if sustained_planted_drag and longest_planted_drag_end_frame is not None:
         threshold_frames["planted_drag"] = longest_planted_drag_end_frame
@@ -2906,6 +3005,9 @@ def analyze_guard_footwork_repro(
         "pelvis_vertical_discontinuity": (
             maximum_pelvis_vertical_step_metres > PELVIS_VERTICAL_STEP_LIMIT_METRES
         ),
+        "sustained_contact_orientation_error": sustained_contact_orientation_error,
+        "sustained_stance_width_error": sustained_stance_width_error,
+        "irregular_moving_cadence": irregular_cadence,
     }
     known_failure_reproduced = harness_completed and (
         longest_syndrome_seconds >= 0.2
@@ -2931,6 +3033,9 @@ def analyze_guard_footwork_repro(
         or bool(foot_crossover_frames)
         or sustained_swing_scuff
         or maximum_pelvis_vertical_step_metres > PELVIS_VERTICAL_STEP_LIMIT_METRES
+        or sustained_contact_orientation_error
+        or sustained_stance_width_error
+        or irregular_cadence
     )
     failed_contracts = [
         {
@@ -3032,6 +3137,13 @@ def analyze_guard_footwork_repro(
             "episode_start_frame": threshold_start_frames.get("planted_drag"),
         },
         {
+            "contract": "contact_orientation_duration",
+            "value": longest_contact_orientation_error_seconds,
+            "limit": quarter_stride_seconds,
+            "frame": contact_orientation_frames[-1] if sustained_contact_orientation_error else None,
+            "episode_start_frame": contact_orientation_frames[0] if sustained_contact_orientation_error else None,
+        },
+        {
             "contract": "swing_scuff_duration",
             "value": longest_swing_scuff_seconds,
             "limit": quarter_stride_seconds,
@@ -3044,6 +3156,20 @@ def analyze_guard_footwork_repro(
             "limit": BOTH_FEET_BEHIND_LIMIT_SECONDS,
             "frame": threshold_frames.get("both_feet_behind"),
             "episode_start_frame": threshold_start_frames.get("both_feet_behind"),
+        },
+        {
+            "contract": "stance_width_duration",
+            "value": longest_stance_width_error_seconds,
+            "limit": BOTH_FEET_BEHIND_LIMIT_SECONDS,
+            "frame": stance_width_frames[-1] if sustained_stance_width_error else None,
+            "episode_start_frame": stance_width_frames[0] if sustained_stance_width_error else None,
+        },
+        {
+            "contract": "moving_cadence_duration_ratio",
+            "value": cadence_duration_ratio,
+            "limit": CADENCE_DURATION_RATIO_LIMIT,
+            "frame": int(ordered[-1]["frame"]) if irregular_cadence and ordered else None,
+            "episode_start_frame": None,
         },
     ]
     failed_contracts = [
@@ -3072,6 +3198,8 @@ def analyze_guard_footwork_repro(
         "contact_ground_penetration": contact_penetration_frames,
         "foot_crossover": foot_crossover_frames,
         "swing_scuff": swing_scuff_frames,
+        "contact_orientation": contact_orientation_frames,
+        "stance_width": stance_width_frames,
     }
     evidence_ranges = {
         name: contiguous_frame_ranges(frame_list)
@@ -3117,11 +3245,16 @@ def analyze_guard_footwork_repro(
             or bool(hard_frames)
             or maximum_pelvis_vertical_step_metres > PELVIS_VERTICAL_STEP_LIMIT_METRES
         ),
-        "both_feet_behind": sustained_both_behind,
-        "planted_drag": sustained_planted_drag or sustained_swing_scuff,
+        "both_feet_behind": sustained_both_behind or sustained_stance_width_error,
+        "planted_drag": (
+            sustained_planted_drag
+            or sustained_swing_scuff
+            or sustained_contact_orientation_error
+        ),
         "jitter_jerk": (
             maximum_selected_acceleration_ratio > 1.001
             or maximum_selected_jerk_ratio > 1.001
+            or irregular_cadence
         ),
     }
     weighted_defect_score = sum(
@@ -3179,11 +3312,13 @@ def analyze_guard_footwork_repro(
         ),
         "maximum_stance_width_to_hip_width_ratio": maximum_stance_width_ratio,
         "cadence_half_step_duration_ratio": cadence_duration_ratio,
-        "provisional_non_gating_metrics": {
-            "stance_width_ratio": "calibrate visually before gating",
-            "cadence_duration_ratio": "calibrate across network jitter before gating",
-            "contact_foot_orientation": "unavailable until terrain normal is logged",
-        },
+        "maximum_contact_orientation_error_degrees": (
+            maximum_contact_orientation_error_degrees
+        ),
+        "longest_contact_orientation_error_seconds": (
+            longest_contact_orientation_error_seconds
+        ),
+        "longest_stance_width_error_seconds": longest_stance_width_error_seconds,
         "priority_order": list(ANIMATION_PRIORITY_WEIGHTS),
         "priority_weights": ANIMATION_PRIORITY_WEIGHTS,
         "priority_failures": priority_failures,

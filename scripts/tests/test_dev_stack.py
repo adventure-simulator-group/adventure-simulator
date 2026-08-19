@@ -270,7 +270,10 @@ class WorkflowTests(unittest.TestCase):
                     "authoritative": {"locomotion_sample_tick": frame // 6},
                     "cadence_identity": {
                         "source_tick": frame // 6,
-                        "raised_step_sequence": frame // 15,
+                        "raised_step_sequence": (
+                            0 if frame < 10 else 1 if frame < 20 else 2 if frame < 50
+                            else 3 if frame < 60 else 4
+                        ),
                     },
                     "controller_global_transform": {
                         "translation": [frame * 0.02, 0.0, 0.0],
@@ -319,10 +322,12 @@ class WorkflowTests(unittest.TestCase):
                             "ankle": {
                                 "clearance": 0.30 if side == "left" else 0.05,
                                 "world": {"translation": [frame * 0.01, 0.085, offset]},
+                                "terrain_normal": [0.0, 1.0, 0.0],
+                                "rendered_sole_normal": [1.0, 0.0, 0.0],
                             },
                             "toe": {"clearance": 0.20 if side == "left" else -0.02},
                             "ankle_owner_local": [
-                                0.2 if side == "left" else -0.2,
+                                0.5 if side == "left" else -0.5,
                                 0.085,
                                 offset,
                             ],
@@ -344,6 +349,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertTrue(result["signatures"]["foot_crossover"])
             self.assertTrue(result["signatures"]["sustained_swing_scuff"])
             self.assertTrue(result["signatures"]["pelvis_vertical_discontinuity"])
+            self.assertTrue(result["signatures"]["sustained_contact_orientation_error"])
+            self.assertTrue(result["signatures"]["sustained_stance_width_error"])
+            self.assertTrue(result["signatures"]["irregular_moving_cadence"])
             self.assertGreater(
                 result["longest_planted_drag_seconds"],
                 result["quarter_stride_seconds"],
@@ -362,6 +370,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("foot_crossover", contracts)
             self.assertIn("swing_scuff_duration", contracts)
             self.assertIn("pelvis_vertical_step_metres", contracts)
+            self.assertIn("contact_orientation_duration", contracts)
+            self.assertIn("stance_width_duration", contracts)
+            self.assertIn("moving_cadence_duration_ratio", contracts)
             self.assertEqual(result["weighted_defect_score"], 31)
             self.assertEqual(result["animation_quality_score"], 0.0)
             self.assertEqual(

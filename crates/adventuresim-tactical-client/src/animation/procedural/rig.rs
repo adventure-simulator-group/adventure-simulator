@@ -35,7 +35,7 @@ impl HumanoidRig {
         self.rig_scene
     }
 
-    pub(super) fn sole_axis(&self, left: bool) -> Option<Vec3> {
+    pub(crate) fn sole_axis(&self, left: bool) -> Option<Vec3> {
         self.sole_axes[usize::from(!left)]
     }
 
