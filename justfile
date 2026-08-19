@@ -352,6 +352,12 @@ tactical-play mode="animation" base_port="24920" graphics_preset="default" prese
 tactical-guard-footwork-repro base_port="24920" graphics_preset="default" present_mode="auto-vsync": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py tactical-play diagnostic {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace off --present-mode {{ quote(present_mode) }} --window-capture off --scene-input assets/tactical-scenes/dense-woodland.json --diagnostic-scenario guard-footwork-live-repro --expect-known-failure
 
+tactical-melee-action-repro base_port="24920" graphics_preset="default" present_mode="auto-vsync": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play diagnostic {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace off --present-mode {{ quote(present_mode) }} --window-capture off --scene-input assets/tactical-scenes/dense-woodland.json --diagnostic-scenario melee-action-lifecycle-repro --expect-known-failure
+
+tactical-quickstep-footwork-repro base_port="24920" graphics_preset="default" present_mode="auto-vsync": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play diagnostic {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace off --present-mode {{ quote(present_mode) }} --window-capture off --scene-input assets/tactical-scenes/dense-woodland.json --diagnostic-scenario guard-quickstep-footwork-repro --expect-known-failure
+
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
 tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":

@@ -1185,6 +1185,60 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn("_seed-world", recipe)
         self.assertNotIn("\n_seed-world ", source)
 
+    def test_melee_analyzer_separates_two_attack_epochs(self):
+        def frame(index, elapsed, action, phase, command_index, hand_x):
+            return {
+                "record_type": "frame", "frame": index, "elapsed_seconds": elapsed,
+                "input": {"command_index": command_index},
+                "live_input": {"direct_control": {"attack_just_pressed": index in (1, 5)}},
+                "semantic_route": {"inputs": {"action": action}},
+                "evaluation": {"action_phase": phase},
+                "upper_body": {
+                    side: {"hand": {"owner_local": {"translation": [hand_x, 0.0, 0.0]}}}
+                    for side in ("left", "right")
+                },
+            }
+        records = [
+            frame(0, 0.0, "None", 0.0, 2, 0.0),
+            frame(1, 0.1, "Attack", 0.1, 4, 0.02),
+            frame(2, 0.2, "Attack", 0.8, 4, 0.2),
+            frame(3, 0.4, "Attack", 1.0, 4, 0.25),
+            frame(4, 0.5, "None", 0.0, 4, 0.0),
+            frame(5, 0.6, "Attack", 0.1, 6, 0.01),
+            frame(6, 0.65, "None", 0.0, 8, 0.0),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary, "animation-state-test.jsonl")
+            log.write_text("\n".join(json.dumps(record) for record in records))
+            result = dev_stack.analyze_melee_action_repro(log, Path(temporary, "manifest.json"))
+        self.assertTrue(result["regression_reproduced"])
+        self.assertEqual(len(result["attack_episodes"]), 2)
+        self.assertTrue(result["failures"]["attack_ended_before_contact"])
+
+    def test_quickstep_analyzer_rejects_hard_reach_and_overextension(self):
+        record = {
+            "record_type": "frame", "frame": 7, "elapsed_seconds": 1.0,
+            "input": {"command_index": 12, "command_kind": "quickstep"},
+            "live_input": {"direct_control": {"dodge_just_pressed": True}},
+            "semantic_route": {"inputs": {"action": "Dodge"}},
+            "evaluation": {"airborne_phase": 0.0},
+            "foot_motion": {
+                "left": {"selected": {"reach_disposition": "hard", "diagnostic": {"support_weight": 1.0}}},
+                "right": {"selected": {"reach_disposition": "within", "diagnostic": {"support_weight": 1.0}}},
+            },
+            "lower_body": {
+                "left": {"ankle": {"clearance": 0.08}, "ankle_from_visual_pelvis_world": [0.0, -0.2, 1.0]},
+                "right": {"ankle": {"clearance": 0.08}, "ankle_from_visual_pelvis_world": [0.0, -0.2, 0.4]},
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary, "animation-state-test.jsonl")
+            log.write_text(json.dumps(record))
+            result = dev_stack.analyze_quickstep_footwork_repro(log, Path(temporary, "manifest.json"))
+        self.assertTrue(result["regression_reproduced"])
+        self.assertTrue(result["failures"]["hard_reach"])
+        self.assertTrue(result["failures"]["rendered_leg_overextended"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -659,6 +659,17 @@ threshold values, and contiguous evidence ranges, plus a bounded
 eight frames after that failure. Use those two files for ordinary iteration;
 open the full JSONL only when the causal slice is insufficient.
 
+Use `just tactical-melee-action-repro` and
+`just tactical-quickstep-footwork-repro` for the corresponding production-path
+action regressions. The melee scenario emits two ordinary one-shot attack
+edges and checks each action epoch independently for contact-phase progress and
+rendered hand travel. The quickstep scenario holds raised guard and movement
+while emitting the same one-shot directional dodge request as the live Space
+chord, then checks final propagated feet for hard reach, unsupported grounded
+frames, excessive contact clearance, and rendered leg extension. Both commands
+write compact manifests and use a successful exit to mean the known regression
+was reproduced; they do not alter animation or IK behavior.
+
 On Windows,
 `presentation_trace=auto` records a `presentmon-<session>.csv` ETW trace for the
 bounded diagnostic profile when PresentMon is installed. Use

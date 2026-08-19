@@ -61,6 +61,12 @@ enum ScriptCommand {
     Guard {
         raised: bool,
     },
+    Attack,
+    Quickstep {
+        direction: MoveDirection,
+        input_speed: f32,
+        duration_seconds: f32,
+    },
     WaitForSignal {
         path: String,
     },
@@ -298,6 +304,19 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
             {
                 return Err("wait duration_seconds must be positive".to_owned());
             }
+            ScriptCommand::Quickstep {
+                input_speed,
+                duration_seconds,
+                ..
+            } if !(0.0..=1.0).contains(input_speed)
+                || !duration_seconds.is_finite()
+                || *duration_seconds <= 0.0 =>
+            {
+                return Err(
+                    "quickstep input_speed must be 0..=1 and duration_seconds must be positive"
+                        .to_owned(),
+                );
+            }
             ScriptCommand::WaitForSignal { path } if path.trim().is_empty() => {
                 return Err("wait_for_signal path must not be empty".to_owned());
             }
@@ -312,6 +331,8 @@ fn drive_scripted_input(
     player: Query<(), With<ClientPlayer>>,
     mut script: ResMut<ScriptedInput>,
     mut input_override: ResMut<PlayerInputOverride>,
+    mut force_attack: ResMut<DebugForceAttackTrigger>,
+    mut force_quickstep: ResMut<DebugForceQuickstepTrigger>,
     mut status: ResMut<DiagnosticInputStatus>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -373,6 +394,13 @@ fn drive_scripted_input(
             continue;
         }
 
+        if matches!(&command, ScriptCommand::Attack) {
+            force_attack.0 = true;
+            script.command_index += 1;
+            script.command_elapsed = 0.0;
+            continue;
+        }
+
         if let ScriptCommand::WaitForSignal { path } = &command {
             let request = PlayerInputRequest {
                 look: script.look,
@@ -402,6 +430,11 @@ fn drive_scripted_input(
             )
         {
             script.posture_sequence = script.posture_sequence.wrapping_add(1);
+        }
+        if script.command_elapsed == 0.0
+            && let ScriptCommand::Quickstep { direction, .. } = &command
+        {
+            force_quickstep.0 = Some(direction.vector());
         }
         script.command_elapsed += delta;
         let (kind, duration, movement, posture) = match command {
@@ -453,9 +486,20 @@ fn drive_scripted_input(
             ScriptCommand::Wait { duration_seconds } => {
                 ("wait", duration_seconds, None, PostureCommand::default())
             }
+            ScriptCommand::Quickstep {
+                direction,
+                input_speed,
+                duration_seconds,
+            } => (
+                "quickstep",
+                duration_seconds,
+                Some(direction.vector() * input_speed),
+                PostureCommand::default(),
+            ),
             ScriptCommand::Rotate { .. }
             | ScriptCommand::Pace { .. }
             | ScriptCommand::Guard { .. }
+            | ScriptCommand::Attack
             | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
         let request = PlayerInputRequest {
@@ -519,6 +563,23 @@ mod tests {
             Some(ScriptCommand::Pace {
                 pace: ScriptPace::Walk
             })
+        ));
+    }
+
+    #[test]
+    fn melee_and_guard_quickstep_commands_parse_and_validate() {
+        let script: InputScript = serde_json::from_str(
+            r#"{"commands":[{"type":"guard","raised":true},{"type":"attack"},{"type":"quickstep","direction":"right","input_speed":1.0,"duration_seconds":1.0}]}"#,
+        )
+        .unwrap();
+        assert!(validate_script(&script).is_ok());
+        assert!(matches!(script.commands[1], ScriptCommand::Attack));
+        assert!(matches!(
+            script.commands[2],
+            ScriptCommand::Quickstep {
+                direction: MoveDirection::Right,
+                ..
+            }
         ));
     }
 

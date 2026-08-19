@@ -16,7 +16,10 @@ pub use bevy_replicon;
 pub mod prelude {
     pub use crate::AdventureSimulatorNetPlugins;
     #[cfg(feature = "client")]
-    pub use crate::client::{AdventureSimulatorClient, PlayerInputOverride};
+    pub use crate::client::{
+        AdventureSimulatorClient, DebugForceAttackTrigger, DebugForceQuickstepTrigger,
+        PlayerInputOverride,
+    };
     pub use crate::message::{
         DebugDumpWorldRequest, DebugGameTimeScaleRequest, DefendRequest, EquipmentAction,
         EquipmentActionRequest, EquipmentHand, JoinRequest, JumpCommand, MeleeActionRequest,

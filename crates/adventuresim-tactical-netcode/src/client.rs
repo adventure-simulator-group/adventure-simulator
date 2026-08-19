@@ -21,6 +21,7 @@ impl Plugin for AdventureSimulatorClientPlugin {
             .init_resource::<ReconnectCredential>()
             .init_resource::<DirectControlState>()
             .init_resource::<DebugForceAttackTrigger>()
+            .init_resource::<DebugForceQuickstepTrigger>()
             .init_resource::<PlayerInputOverride>()
             .add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
             .add_observer(on_client_added)
@@ -67,6 +68,10 @@ pub struct WeaponGuardInputState {
 #[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
 #[reflect(Resource)]
 pub struct DebugForceAttackTrigger(pub bool);
+
+#[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
+#[reflect(Resource)]
+pub struct DebugForceQuickstepTrigger(pub Option<Vec2>);
 
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct LastPlayerInputRequest(pub Option<PlayerInputRequest>);
@@ -178,6 +183,7 @@ fn update_direct_control_input(
     mut guard: ResMut<WeaponGuardInputState>,
     mut controls: ResMut<DirectControlState>,
     mut force_attack: ResMut<DebugForceAttackTrigger>,
+    mut force_quickstep: ResMut<DebugForceQuickstepTrigger>,
 ) {
     if keys.just_pressed(KeyCode::CapsLock) {
         controls.caps_jog = !controls.caps_jog;
@@ -408,7 +414,9 @@ fn update_direct_control_input(
     controls.crouch = raised
         && ((shift_down && !moving)
             || (left_trigger && right_bumper && !moving && !controls.reserved_throw_chord));
-    let quickstep_direction = if keyboard_quickstep {
+    let quickstep_direction = if let Some(direction) = force_quickstep.0.take() {
+        direction
+    } else if keyboard_quickstep {
         keyboard_direction
     } else if gamepad_quickstep {
         gamepad_direction

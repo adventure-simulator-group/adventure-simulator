@@ -282,6 +282,7 @@ pub(super) fn log_animation_diagnostics(
         });
         let lower_body =
             rig.map(|rig| lower_body_snapshot(rig, *global_transform, &transforms, terrain));
+        let upper_body = rig.map(|rig| upper_body_snapshot(rig, *global_transform, &transforms));
         let clips = playback
             .clips
             .iter()
@@ -377,11 +378,50 @@ pub(super) fn log_animation_diagnostics(
                 },
             },
             "lower_body": lower_body,
+            "upper_body": upper_body,
             "joint_jitter": jitter_diagnostics
                 .as_deref()
                 .map(|diagnostics| diagnostics.live_log_snapshot(entity)),
         }));
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn upper_body_snapshot(
+    rig: &HumanoidRig,
+    owner_global: GlobalTransform,
+    transforms: &TransformHelper,
+) -> serde_json::Value {
+    let bone = |role: BoneRole| {
+        let entity = *rig.get(&role)?;
+        let global = transforms.compute_global_transform(entity).ok()?;
+        let world = global.compute_transform();
+        let owner_local = GlobalTransform::from(owner_global.affine().inverse() * global.affine())
+            .compute_transform();
+        Some(serde_json::json!({
+            "entity": entity.to_bits(),
+            "world": {
+                "translation": world.translation,
+                "rotation_xyzw": world.rotation.to_array(),
+            },
+            "owner_local": {
+                "translation": owner_local.translation,
+                "rotation_xyzw": owner_local.rotation.to_array(),
+            },
+        }))
+    };
+    serde_json::json!({
+        "left": {
+            "shoulder": bone(BoneRole::UpperArmLeft),
+            "elbow": bone(BoneRole::ForearmLeft),
+            "hand": bone(BoneRole::HandLeft),
+        },
+        "right": {
+            "shoulder": bone(BoneRole::UpperArmRight),
+            "elbow": bone(BoneRole::ForearmRight),
+            "hand": bone(BoneRole::HandRight),
+        },
+    })
 }
 
 #[cfg(not(target_family = "wasm"))]

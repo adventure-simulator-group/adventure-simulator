@@ -54,6 +54,8 @@ class TacticalPlayMode(str, Enum):
 
 DEFAULT_DIAGNOSTIC_SCENARIO = "directional-dives"
 GUARD_FOOTWORK_REPRO_SCENARIO = "guard-footwork-live-repro"
+MELEE_ACTION_REPRO_SCENARIO = "melee-action-lifecycle-repro"
+QUICKSTEP_FOOTWORK_REPRO_SCENARIO = "guard-quickstep-footwork-repro"
 CONTACT_AIRBORNE_LIMIT_METRES = 0.127  # Five inches.
 CONTACT_PENETRATION_LIMIT_METRES = -0.01
 BOTH_FEET_BEHIND_LIMIT_SECONDS = 0.3
@@ -1646,9 +1648,48 @@ def guard_footwork_repro_commands() -> list[dict[str, object]]:
     ]
 
 
+def melee_action_repro_commands() -> list[dict[str, object]]:
+    return [
+        {"type": "pace", "pace": "walk"},
+        {"type": "guard", "raised": True},
+        {"type": "wait", "duration_seconds": 1.0},
+        {"type": "attack"},
+        {"type": "wait", "duration_seconds": 1.0},
+        {"type": "attack"},
+        {"type": "wait", "duration_seconds": 1.0},
+        {"type": "guard", "raised": False},
+        {"type": "wait", "duration_seconds": 0.5},
+    ]
+
+
+def quickstep_footwork_repro_commands() -> list[dict[str, object]]:
+    commands: list[dict[str, object]] = [
+        {"type": "pace", "pace": "walk"},
+        {"type": "guard", "raised": True},
+        {"type": "wait", "duration_seconds": 1.0},
+    ]
+    for direction in ("forward", "right", "backward", "left"):
+        commands.extend((
+            {
+                "type": "quickstep", "direction": direction,
+                "input_speed": 1.0, "duration_seconds": 1.0,
+            },
+            {"type": "wait", "duration_seconds": 0.5},
+        ))
+    commands.extend((
+        {"type": "guard", "raised": False},
+        {"type": "wait", "duration_seconds": 0.5},
+    ))
+    return commands
+
+
 def diagnostic_commands(scenario: str) -> list[dict[str, object]]:
     if scenario == GUARD_FOOTWORK_REPRO_SCENARIO:
         return guard_footwork_repro_commands()
+    if scenario == MELEE_ACTION_REPRO_SCENARIO:
+        return melee_action_repro_commands()
+    if scenario == QUICKSTEP_FOOTWORK_REPRO_SCENARIO:
+        return quickstep_footwork_repro_commands()
     if scenario != DEFAULT_DIAGNOSTIC_SCENARIO:
         raise ValueError(f"unknown diagnostic scenario: {scenario}")
     return [
@@ -1672,6 +1713,167 @@ def diagnostic_commands(scenario: str) -> list[dict[str, object]]:
         {"type": "guard", "raised": False},
         {"type": "wait", "duration_seconds": 0.5},
     ]
+
+
+def read_animation_frames(animation_log: Path) -> list[dict[str, object]]:
+    frames: dict[int, dict[str, object]] = {}
+    for segment in (animation_log.with_suffix(".previous.jsonl"), animation_log):
+        if not segment.is_file():
+            continue
+        for line in segment.read_text(encoding="utf-8").splitlines():
+            record = json.loads(line)
+            if record.get("record_type") == "frame" and "frame" in record:
+                frames[int(record["frame"])] = record
+    return [frames[index] for index in sorted(frames)]
+
+
+def _owner_local_bone(record: dict[str, object], side: str, bone: str) -> list[float] | None:
+    value = (((record.get("upper_body") or {}).get(side) or {}).get(bone) or {})
+    translation = (value.get("owner_local") or {}).get("translation")
+    return translation if isinstance(translation, list) and len(translation) >= 3 else None
+
+
+def analyze_melee_action_repro(animation_log: Path, manifest_path: Path) -> dict[str, object]:
+    frames = read_animation_frames(animation_log)
+    episodes: list[list[dict[str, object]]] = []
+    current: list[dict[str, object]] = []
+    for frame in frames:
+        attacking = str(
+            (((frame.get("semantic_route") or {}).get("inputs") or {}).get("action"))
+        ).lower() == "attack"
+        if attacking:
+            current.append(frame)
+        elif current:
+            episodes.append(current)
+            current = []
+    if current:
+        episodes.append(current)
+    episode_summaries: list[dict[str, object]] = []
+    previous_by_frame = {int(frame["frame"]): previous for previous, frame in zip(frames, frames[1:])}
+    for episode in episodes:
+        phases = [float((frame.get("evaluation") or {}).get("action_phase", 0.0)) for frame in episode]
+        baseline = previous_by_frame.get(int(episode[0]["frame"]))
+        maximum_displacement = 0.0
+        for frame in episode:
+            for side in ("left", "right"):
+                hand = _owner_local_bone(frame, side, "hand")
+                origin = _owner_local_bone(baseline, side, "hand") if baseline else None
+                if hand and origin:
+                    maximum_displacement = max(
+                        maximum_displacement,
+                        math.sqrt(sum((float(hand[i]) - float(origin[i])) ** 2 for i in range(3))),
+                    )
+        duration = (
+            float(episode[-1].get("elapsed_seconds", 0.0))
+            - float(episode[0].get("elapsed_seconds", 0.0))
+            if len(episode) >= 2 else 0.0
+        )
+        episode_summaries.append({
+            "first_frame": int(episode[0]["frame"]),
+            "last_frame": int(episode[-1]["frame"]),
+            "duration_seconds": duration,
+            "maximum_phase": max(phases, default=0.0),
+            "phase_regressed": any(b + 1e-4 < a for a, b in zip(phases, phases[1:])),
+            "maximum_hand_displacement_metres": maximum_displacement,
+        })
+    trigger_frames = [
+        int(frame["frame"]) for frame in frames
+        if bool((((frame.get("live_input") or {}).get("direct_control") or {}).get("attack_just_pressed")))
+    ]
+    completed = bool(frames) and (frames[-1].get("input") or {}).get("command_index", -1) >= 8
+    failures = {
+        "missing_or_duplicate_attack_edges": len(trigger_frames) != 2,
+        "attack_ended_before_contact": len(episode_summaries) != 2 or any(
+            float(episode["maximum_phase"]) < 0.75
+            or float(episode["duration_seconds"]) < 0.25
+            for episode in episode_summaries
+        ),
+        "action_phase_regressed": any(bool(episode["phase_regressed"]) for episode in episode_summaries),
+        "insufficient_rendered_hand_extension": len(episode_summaries) != 2 or any(
+            float(episode["maximum_hand_displacement_metres"]) < 0.15
+            for episode in episode_summaries
+        ),
+    }
+    result: dict[str, object] = {
+        "schema": "adventuresim.animation.melee_action_repro",
+        "source_log": str(animation_log),
+        "harness_completed": completed,
+        "regression_reproduced": completed and any(failures.values()),
+        "animation_acceptance_passed": completed and not any(failures.values()),
+        "attack_input_edge_frames": trigger_frames[:8],
+        "attack_episodes": episode_summaries,
+        "failures": failures,
+    }
+    atomic_write_json(manifest_path, result)
+    return result
+
+
+def analyze_quickstep_footwork_repro(animation_log: Path, manifest_path: Path) -> dict[str, object]:
+    frames = read_animation_frames(animation_log)
+    relevant = [
+        frame for frame in frames
+        if str((frame.get("input") or {}).get("command_kind", "")) == "quickstep"
+        or str((((frame.get("semantic_route") or {}).get("inputs") or {}).get("action"))).lower() == "dodge"
+    ]
+    dodge_edges = [
+        int(frame["frame"]) for frame in frames
+        if bool((((frame.get("live_input") or {}).get("direct_control") or {}).get("dodge_just_pressed")))
+    ]
+    hard_reach: list[int] = []
+    airborne_contact: list[int] = []
+    unsupported_grounded: list[int] = []
+    anatomical: list[int] = []
+    max_radial = 0.0
+    for frame in relevant:
+        frame_id = int(frame["frame"])
+        lower = frame.get("lower_body") or {}
+        evaluation = frame.get("evaluation") or {}
+        airborne = float(evaluation.get("airborne_phase", 0.0)) > 0.0
+        supports = []
+        for side in ("left", "right"):
+            selected = ((((frame.get("foot_motion") or {}).get(side) or {}).get("selected") or {}))
+            diagnostic = selected.get("diagnostic") or {}
+            support = float(diagnostic.get("support_weight", 0.0))
+            supports.append(support)
+            if selected.get("reach_disposition") == "hard":
+                hard_reach.append(frame_id)
+            clearance = ((((lower.get(side) or {}).get("ankle") or {}).get("clearance")))
+            if support > 0.5 and clearance is not None and float(clearance) > CONTACT_AIRBORNE_LIMIT_METRES:
+                airborne_contact.append(frame_id)
+            offset = (lower.get(side) or {}).get("ankle_from_visual_pelvis_world")
+            if isinstance(offset, list) and len(offset) >= 3:
+                max_radial = max(max_radial, math.sqrt(sum(float(v) ** 2 for v in offset[:3])))
+        if not airborne and max(supports, default=0.0) <= 0.01:
+            unsupported_grounded.append(frame_id)
+        jitter = frame.get("joint_jitter") or {}
+        if bool(jitter.get("anatomically_invalid")):
+            anatomical.append(frame_id)
+    completed = bool(frames) and (frames[-1].get("input") or {}).get("command_index", -1) >= 12
+    failures = {
+        "missing_quickstep_edges": len(dodge_edges) != 4,
+        "hard_reach": bool(hard_reach),
+        "contact_foot_over_five_inches": bool(airborne_contact),
+        "grounded_with_no_support": bool(unsupported_grounded),
+        "rendered_leg_overextended": max_radial > 0.90,
+        "anatomically_invalid": bool(anatomical),
+    }
+    first_failure = min(
+        hard_reach + airborne_contact + unsupported_grounded + anatomical,
+        default=None,
+    )
+    result: dict[str, object] = {
+        "schema": "adventuresim.animation.quickstep_footwork_repro",
+        "source_log": str(animation_log),
+        "harness_completed": completed,
+        "regression_reproduced": completed and any(failures.values()),
+        "animation_acceptance_passed": completed and not any(failures.values()),
+        "quickstep_input_edge_frames": dodge_edges[:12],
+        "first_failure_frame": first_failure,
+        "maximum_ankle_to_visual_pelvis_metres": max_radial,
+        "failures": failures,
+    }
+    atomic_write_json(manifest_path, result)
+    return result
 
 
 def await_diagnostic_client_after_server_exit(
@@ -3565,6 +3767,28 @@ def tactical_play(
                             if expect_known_failure:
                                 return 0 if manifest["known_failure_reproduced"] else 1
                             return 0 if manifest["animation_acceptance_passed"] else 1
+                        if diagnostic_scenario in (
+                            MELEE_ACTION_REPRO_SCENARIO,
+                            QUICKSTEP_FOOTWORK_REPRO_SCENARIO,
+                        ):
+                            stem = (
+                                "melee-action-repro" if diagnostic_scenario == MELEE_ACTION_REPRO_SCENARIO
+                                else "quickstep-footwork-repro"
+                            )
+                            manifest_path = run_dir / f"{stem}-manifest.json"
+                            analyzer = (
+                                analyze_melee_action_repro
+                                if diagnostic_scenario == MELEE_ACTION_REPRO_SCENARIO
+                                else analyze_quickstep_footwork_repro
+                            )
+                            manifest = analyzer(Path(str(config["animation_log"])), manifest_path)
+                            print(f"Animation regression evidence: {manifest_path}")
+                            print(f"Regression reproduced: {manifest['regression_reproduced']}")
+                            if not manifest["harness_completed"]:
+                                return 2
+                            if expect_known_failure:
+                                return 0 if manifest["regression_reproduced"] else 1
+                            return 0 if manifest["animation_acceptance_passed"] else 1
                         return 0
                 if server_process.poll() is not None:
                     if client_process is not None and mode is TacticalPlayMode.DIAGNOSTIC:
@@ -3830,7 +4054,12 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument("--expect-known-failure", action="store_true")
     tactical_play_parser.add_argument(
         "--diagnostic-scenario",
-        choices=(DEFAULT_DIAGNOSTIC_SCENARIO, GUARD_FOOTWORK_REPRO_SCENARIO),
+        choices=(
+            DEFAULT_DIAGNOSTIC_SCENARIO,
+            GUARD_FOOTWORK_REPRO_SCENARIO,
+            MELEE_ACTION_REPRO_SCENARIO,
+            QUICKSTEP_FOOTWORK_REPRO_SCENARIO,
+        ),
         default=DEFAULT_DIAGNOSTIC_SCENARIO,
     )
     sub.add_parser("tactical-status")
