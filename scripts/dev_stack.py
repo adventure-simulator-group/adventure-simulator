@@ -1617,7 +1617,7 @@ def guard_footwork_repro_commands() -> list[dict[str, object]]:
         },
         {
             "type": "move_vector", "local_x": 1.0, "local_y": 1.0,
-            "input_speed": 1.0, "duration_seconds": 5.75,
+            "input_speed": 1.0, "duration_seconds": 30.0,
         },
         {
             "type": "move_vector", "local_x": 1.0, "local_y": 0.0,
@@ -2294,6 +2294,8 @@ def analyze_guard_footwork_repro(
     overextension_frames: list[int] = []
     raised_after_lower_frames: list[int] = []
     visible_stuck_frames: list[int] = []
+    planted_drag_frames: list[int] = []
+    both_feet_behind_frames: list[int] = []
     saw_guard_raised = False
     saw_guard_lowered = False
     saw_diagonal = False
@@ -2324,6 +2326,18 @@ def analyze_guard_footwork_repro(
     saw_raised_moving = False
     controller_positions: list[tuple[float, float]] = []
     previous_elapsed: float | None = None
+    previous_ankles: dict[str, tuple[float, float] | None] = {"left": None, "right": None}
+    drag_starts: dict[str, tuple[float, int] | None] = {"left": None, "right": None}
+    longest_planted_drag_seconds = 0.0
+    longest_planted_drag_start_frame: int | None = None
+    longest_planted_drag_end_frame: int | None = None
+    both_behind_start: tuple[float, int] | None = None
+    longest_both_behind_seconds = 0.0
+    longest_both_behind_start_frame: int | None = None
+    longest_both_behind_end_frame: int | None = None
+    previous_sequence: int | None = None
+    previous_sequence_elapsed: float | None = None
+    half_step_durations: list[float] = []
     threshold_frames: dict[str, int] = {}
     threshold_start_frames: dict[str, int] = {}
 
@@ -2334,6 +2348,7 @@ def analyze_guard_footwork_repro(
     for record in ordered:
         frame = int(record["frame"])
         elapsed = float(record.get("elapsed_seconds", 0.0))
+        frame_delta = elapsed - previous_elapsed if previous_elapsed is not None else 0.0
         if previous_elapsed is not None and not (0.0 <= elapsed - previous_elapsed <= 0.1):
             awaiting_start = None
             awaiting_start_frame = None
@@ -2343,11 +2358,26 @@ def analyze_guard_footwork_repro(
             stale_release_start = None
             stale_release_start_frame = None
             ground_safety_slide_starts = {"left": None, "right": None}
+            previous_ankles = {"left": None, "right": None}
+            drag_starts = {"left": None, "right": None}
+            both_behind_start = None
         previous_elapsed = elapsed
         authoritative = record.get("authoritative") or {}
         if authoritative.get("locomotion_sample_tick") is not None:
             authoritative_ticks.add(int(authoritative["locomotion_sample_tick"]))
         cadence = record.get("cadence_identity") or {}
+        sequence = cadence.get("raised_step_sequence")
+        if sequence is not None:
+            sequence = int(sequence)
+            if previous_sequence is not None and sequence != previous_sequence:
+                if previous_sequence_elapsed is not None:
+                    duration = elapsed - previous_sequence_elapsed
+                    if 0.05 <= duration <= 1.0:
+                        half_step_durations.append(duration)
+                previous_sequence_elapsed = elapsed
+            elif previous_sequence is None:
+                previous_sequence_elapsed = elapsed
+            previous_sequence = sequence
         if cadence.get("source_tick") is not None:
             source_ticks.add(int(cadence["source_tick"]))
         raised = record.get("raised_ownership") or {}
@@ -2441,6 +2471,7 @@ def analyze_guard_footwork_repro(
         elevated_this_frame = False
         trailing_this_frame = False
         overextended_this_frame = False
+        both_behind_this_frame = True
         for side in ("left", "right"):
             side_body = lower.get(side) or {}
             ankle_delta = side_body.get("ankle_from_visual_pelvis_world")
@@ -2469,6 +2500,9 @@ def analyze_guard_footwork_repro(
                 if rearward >= 0.70:
                     append_bounded(trailing_frames, frame)
                     trailing_this_frame = True
+                both_behind_this_frame &= move_length > 0.1 and rearward > 0.02
+            else:
+                both_behind_this_frame = False
             ankle = side_body.get("ankle") or {}
             toe = side_body.get("toe") or {}
             ankle_clearance = ankle.get("clearance")
@@ -2483,6 +2517,48 @@ def analyze_guard_footwork_repro(
             ):
                 append_bounded(airborne_clearance_frames, frame)
                 elevated_this_frame = True
+            world_translation = (ankle.get("world") or {}).get("translation")
+            current_ankle = (
+                (float(world_translation[0]), float(world_translation[2]))
+                if world_translation and len(world_translation) >= 3 else None
+            )
+            support = left_support if side == "left" else right_support
+            dragging = False
+            if (
+                current_ankle is not None
+                and previous_ankles[side] is not None
+                and 0.0 < frame_delta <= 0.1
+                and bool(raised.get("was_moving"))
+                and support >= 0.5
+            ):
+                dx = current_ankle[0] - previous_ankles[side][0]
+                dz = current_ankle[1] - previous_ankles[side][1]
+                dragging = (dx * dx + dz * dz) ** 0.5 / frame_delta > 0.12
+            previous_ankles[side] = current_ankle
+            if dragging:
+                append_bounded(planted_drag_frames, frame)
+                started = drag_starts[side]
+                if started is None:
+                    started = (elapsed, frame)
+                    drag_starts[side] = started
+                duration = elapsed - started[0]
+                if duration > longest_planted_drag_seconds:
+                    longest_planted_drag_seconds = duration
+                    longest_planted_drag_start_frame = started[1]
+                    longest_planted_drag_end_frame = frame
+            else:
+                drag_starts[side] = None
+        if both_behind_this_frame:
+            append_bounded(both_feet_behind_frames, frame)
+            if both_behind_start is None:
+                both_behind_start = (elapsed, frame)
+            duration = elapsed - both_behind_start[0]
+            if duration > longest_both_behind_seconds:
+                longest_both_behind_seconds = duration
+                longest_both_behind_start_frame = both_behind_start[1]
+                longest_both_behind_end_frame = frame
+        else:
+            both_behind_start = None
         if lowered_elapsed is not None:
             stale_release_active = (
                 motion.get("selected_source") == "raised_footwork"
@@ -2565,6 +2641,19 @@ def analyze_guard_footwork_repro(
         and saw_raised_moving
         and controller_displacement >= 0.5
     )
+    sorted_half_steps = sorted(half_step_durations)
+    median_half_step_seconds = (
+        sorted_half_steps[len(sorted_half_steps) // 2] if sorted_half_steps else 0.32
+    )
+    quarter_stride_seconds = max(0.08, min(0.30, median_half_step_seconds * 0.5))
+    sustained_planted_drag = longest_planted_drag_seconds >= quarter_stride_seconds
+    sustained_both_behind = longest_both_behind_seconds >= quarter_stride_seconds
+    if sustained_planted_drag and longest_planted_drag_end_frame is not None:
+        threshold_frames["planted_drag"] = longest_planted_drag_end_frame
+        threshold_start_frames["planted_drag"] = longest_planted_drag_start_frame or longest_planted_drag_end_frame
+    if sustained_both_behind and longest_both_behind_end_frame is not None:
+        threshold_frames["both_feet_behind"] = longest_both_behind_end_frame
+        threshold_start_frames["both_feet_behind"] = longest_both_behind_start_frame or longest_both_behind_end_frame
     signatures = {
         "dual_zero_support": bool(zero_support_frames),
         "long_awaiting_step_sequence": longest_awaiting_seconds >= 0.5,
@@ -2576,6 +2665,8 @@ def analyze_guard_footwork_repro(
         "body_relative_overextension": bool(overextension_frames),
         "visible_stuck_episode": longest_visible_stuck_seconds >= 0.2,
         "raised_owner_after_guard_lowered": longest_stale_release_seconds >= 0.5,
+        "sustained_planted_drag": sustained_planted_drag,
+        "sustained_both_feet_behind": sustained_both_behind,
     }
     known_failure_reproduced = harness_completed and (
         longest_syndrome_seconds >= 0.2
@@ -2592,6 +2683,8 @@ def analyze_guard_footwork_repro(
         or bool(hard_frames)
         or longest_ground_safety_slide_seconds >= 0.5
         or maximum_selected_acceleration_ratio > 1.001
+        or sustained_planted_drag
+        or sustained_both_behind
     )
     failed_contracts = [
         {
@@ -2643,6 +2736,20 @@ def analyze_guard_footwork_repro(
             "frame": threshold_frames.get("selected_acceleration"),
             "episode_start_frame": threshold_start_frames.get("selected_acceleration"),
         },
+        {
+            "contract": "planted_drag_duration",
+            "value": longest_planted_drag_seconds,
+            "limit": quarter_stride_seconds,
+            "frame": threshold_frames.get("planted_drag"),
+            "episode_start_frame": threshold_start_frames.get("planted_drag"),
+        },
+        {
+            "contract": "both_feet_behind_duration",
+            "value": longest_both_behind_seconds,
+            "limit": quarter_stride_seconds,
+            "frame": threshold_frames.get("both_feet_behind"),
+            "episode_start_frame": threshold_start_frames.get("both_feet_behind"),
+        },
     ]
     failed_contracts = [
         contract for contract in failed_contracts if contract["frame"] is not None
@@ -2663,6 +2770,8 @@ def analyze_guard_footwork_repro(
         "body_relative_overextension": overextension_frames,
         "raised_after_guard_lowered": raised_after_lower_frames,
         "visible_stuck_episode": visible_stuck_frames,
+        "planted_drag": planted_drag_frames,
+        "both_feet_behind": both_feet_behind_frames,
     }
     evidence_ranges = {
         name: contiguous_frame_ranges(frame_list)
@@ -2724,6 +2833,10 @@ def analyze_guard_footwork_repro(
         "longest_visible_stuck_episode_seconds": longest_visible_stuck_seconds,
         "longest_raised_release_after_lower_seconds": longest_stale_release_seconds,
         "longest_ground_safety_slide_seconds": longest_ground_safety_slide_seconds,
+        "median_half_step_seconds": median_half_step_seconds,
+        "quarter_stride_seconds": quarter_stride_seconds,
+        "longest_planted_drag_seconds": longest_planted_drag_seconds,
+        "longest_both_feet_behind_seconds": longest_both_behind_seconds,
         "maximum_selected_acceleration_ratio": maximum_selected_acceleration_ratio,
         "maximum_selected_acceleration_frame": maximum_selected_acceleration_frame,
         "authoritative_sample_tick_count": len(authoritative_ticks),

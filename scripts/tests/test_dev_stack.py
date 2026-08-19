@@ -116,7 +116,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(commands[5]["duration_seconds"], 0.3)
         self.assertEqual(commands[6]["type"], "move_vector")
         self.assertEqual((commands[6]["local_x"], commands[6]["local_y"]), (1.0, 1.0))
-        self.assertEqual(commands[6]["duration_seconds"], 5.75)
+        self.assertEqual(commands[6]["duration_seconds"], 30.0)
         self.assertEqual(commands[-2], {"type": "guard", "raised": False})
 
     def test_guard_footwork_analyzer_reports_known_failure_without_accepting_it(self):
@@ -256,6 +256,71 @@ class WorkflowTests(unittest.TestCase):
             contracts = {failure["contract"] for failure in result["failed_contracts"]}
             self.assertIn("ground_safety_slide_duration", contracts)
             self.assertIn("selected_acceleration_limit_ratio", contracts)
+
+    def test_guard_footwork_rejects_stride_sustained_drag_and_both_feet_behind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "animation.jsonl"
+            records = [{"record_type": "session_header"}]
+            for frame in range(80):
+                records.append({
+                    "record_type": "frame",
+                    "frame": frame,
+                    "elapsed_seconds": frame / 60.0,
+                    "authoritative": {"locomotion_sample_tick": frame // 6},
+                    "cadence_identity": {
+                        "source_tick": frame // 6,
+                        "raised_step_sequence": frame // 15,
+                    },
+                    "controller_global_transform": {
+                        "translation": [frame * 0.02, 0.0, 0.0],
+                    },
+                    "last_emitted_player_input": {
+                        "weapon_guard": "Raised" if frame < 60 else "Lowered",
+                    },
+                    "input": {
+                        "command_kind": "move_vector",
+                        "request": {"movement": [1.0, 0.5]},
+                    },
+                    "raised_ownership": {
+                        "left_support_weight": 1.0,
+                        "right_support_weight": 1.0,
+                        "awaiting_step_sequence": False,
+                        "was_moving": True,
+                        "release_handoff_active": False,
+                    },
+                    "foot_motion": {"selected_source": "raised_footwork"},
+                    "lower_body": {
+                        side: {
+                            "ankle_from_visual_pelvis_world": [-0.25, -0.8, 0.0],
+                            "ankle": {
+                                "clearance": 0.085,
+                                "world": {"translation": [frame * 0.01, 0.085, offset]},
+                            },
+                            "toe": {"clearance": 0.0},
+                        }
+                        for side, offset in (("left", -0.2), ("right", 0.2))
+                    },
+                })
+            log.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+            result = dev_stack.analyze_guard_footwork_repro(
+                log, root / "manifest.json"
+            )
+            self.assertTrue(result["harness_completed"])
+            self.assertTrue(result["signatures"]["sustained_planted_drag"])
+            self.assertTrue(result["signatures"]["sustained_both_feet_behind"])
+            self.assertGreater(
+                result["longest_planted_drag_seconds"],
+                result["quarter_stride_seconds"],
+            )
+            self.assertGreater(
+                result["longest_both_feet_behind_seconds"],
+                result["quarter_stride_seconds"],
+            )
+            contracts = {failure["contract"] for failure in result["failed_contracts"]}
+            self.assertIn("planted_drag_duration", contracts)
+            self.assertIn("both_feet_behind_duration", contracts)
+            self.assertFalse(result["animation_acceptance_passed"])
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_authenticated_cli_token_is_forwarded_without_logging(self, run_checked):

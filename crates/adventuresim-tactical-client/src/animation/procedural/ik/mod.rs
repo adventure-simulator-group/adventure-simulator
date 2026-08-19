@@ -1700,6 +1700,19 @@ pub(crate) struct RaisedFootworkState {
     left_motion_owner_kind: FootMotionOwnerKind,
     right_motion_owner_kind: FootMotionOwnerKind,
     raised_motion_owned_this_tick: bool,
+    contact_gait: Option<ContactDrivenGuardGait>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ContactDrivenGuardGait {
+    left_plant: Vec3,
+    right_plant: Vec3,
+    swing_active: bool,
+    swing_left: bool,
+    swing_start: Vec3,
+    swing_target: Vec3,
+    progress: f32,
+    last_tick: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2719,6 +2732,7 @@ impl Default for RaisedFootworkState {
             left_motion_owner_kind: FootMotionOwnerKind::None,
             right_motion_owner_kind: FootMotionOwnerKind::None,
             raised_motion_owned_this_tick: false,
+            contact_gait: None,
         }
     }
 }
@@ -3842,19 +3856,37 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // a second, delayed crouch after quickstep contact.
             let raised_contact_ownership = raised_states.get(owner).ok().map(|footwork| {
                 let moving = skeleton.raised_locomotion().is_moving();
-                let left = raised_leg_contributes_pelvis_reach(footwork, moving, true)
-                    || raised_leg_is_stationary_contact_candidate(footwork, moving, true);
-                let right = raised_leg_contributes_pelvis_reach(footwork, moving, false)
-                    || raised_leg_is_stationary_contact_candidate(footwork, moving, false);
+                let body_relative_gait = moving
+                    && !memory.quickstep_handoff_pending
+                    && !memory.quickstep_guard_stance_held
+                    && !footwork.release_handoff_active;
+                // During ordinary gait the local Planted/Swinging state is
+                // the ownership authority. Prove the pelvis against both
+                // terrain-projected contact paths so the next foot is feasible
+                // before it becomes planted; support reporting still exposes
+                // only the actual planted side. Terrain contact is a sensor
+                // and must not delay this preparation until after hard reach.
+                let left = if body_relative_gait {
+                    true
+                } else {
+                    raised_leg_contributes_pelvis_reach(footwork, moving, true)
+                        || raised_leg_is_stationary_contact_candidate(footwork, moving, true)
+                };
+                let right = if body_relative_gait {
+                    true
+                } else {
+                    raised_leg_contributes_pelvis_reach(footwork, moving, false)
+                        || raised_leg_is_stationary_contact_candidate(footwork, moving, false)
+                };
                 let contact_target = |target: Option<Vec3>| {
                     target.map(|target| {
-                        if moving {
-                            target
-                        } else {
+                        if !moving || body_relative_gait {
                             terrain_conformed_guard_target(
                                 target,
                                 terrain.and_then(|terrain| terrain.height_at(target.xz())),
                             )
+                        } else {
+                            target
                         }
                     })
                 };
@@ -4396,21 +4428,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // the authoritative N -> N+1 edge is still retained below as the
             // identity confirmation for the already-running contact plan.
             if advances
-                && contact_driven_guard
-                && begin_next_contact_driven_guard_swing(
-                    &mut footwork,
-                    true,
-                    visible_left,
-                    visible_right,
-                    half_step,
-                    rig_origin,
-                    rig_rotation,
-                    left_authored,
-                    right_authored,
-                )
-            {
-                reseed_guard_cadence_ideal_history(&mut footwork, visible_left, visible_right);
-            } else if advances
                 && !contact_driven_guard
                 && begin_next_guard_swing_after_contact(
                     &mut footwork,
@@ -4426,32 +4443,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 )
             {
                 reseed_guard_cadence_ideal_history(&mut footwork, visible_left, visible_right);
-            }
-            if advances
-                && contact_driven_guard
-                && sequence_delta == 1
-                && footwork.swing_replan_segment.is_none()
-                && footwork.swing_emergency_brake.is_none()
-                && !footwork.swing_release_owner_active
-                && !support_owner_blocks_cadence(footwork.left_support_release_owner)
-                && !support_owner_blocks_cadence(footwork.right_support_release_owner)
-            {
-                // Contact owns an active landing; cadence owns only an idle
-                // coordinator. This lets sparse authoritative prediction
-                // repair identity without ever pre-empting a physical step.
-                adopt_guard_movement_identity(
-                    &mut footwork,
-                    swing_left,
-                    skeleton.raised_locomotion().step_sequence(),
-                    visible_left,
-                    visible_right,
-                );
-                footwork.left_support_weight = if swing_left { 0.0 } else { 1.0 };
-                footwork.right_support_weight = if swing_left { 1.0 } else { 0.0 };
-                footwork.step_origin = rig_origin;
-                footwork.step_rotation = rig_rotation;
-                reseed_guard_cadence_ideal_history(&mut footwork, visible_left, visible_right);
-                sequence_delta = 0;
             }
             // A dynamics-proven contact may intentionally outlive the authored
             // cadence estimate. Keep its old swing identity and defer the new
@@ -4636,6 +4627,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     left_motion_owner_kind: FootMotionOwnerKind::None,
                     right_motion_owner_kind: FootMotionOwnerKind::None,
                     raised_motion_owned_this_tick: raised_solver_follower,
+                    contact_gait: None,
                 };
             } else if !contact_driven_guard
                 && guard_cadence_may_turnover(
@@ -4871,6 +4863,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 .lerp(footwork.swing_end, horizontal_progress);
             let mut left_target = footwork.left_plant;
             let mut right_target = footwork.right_plant;
+            let mut left_explicit_ideal_motion = None;
+            let mut right_explicit_ideal_motion = None;
+            let mut left_direct_c2_sample = false;
+            let mut right_direct_c2_sample = false;
             let support_target = if footwork.swing_left {
                 right_target
             } else {
@@ -4926,14 +4922,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 .compute_global_transform(right_upper)
                 .ok()
                 .map(|global| global.translation());
+            if !contact_driven_guard {
+                footwork.contact_gait = None;
+            }
             if contact_driven_guard {
                 // Moving raised locomotion has exactly one lower-body owner:
                 // a body-relative procedural gait. Replicated cadence chooses
                 // phase and side, while terrain-conformed targets provide the
                 // physical stance. Persistent world contacts, release waits,
                 // and planner epochs must not compete with this generator.
-                footwork.swing_left = swing_left;
-                footwork.step_sequence = skeleton.raised_locomotion().step_sequence();
                 footwork.swing_replan_segment = None;
                 footwork.swing_emergency_brake = None;
                 footwork.swing_release_owner_active = false;
@@ -4954,40 +4951,156 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     .map(|(left, right)| (right - left).with_y(0.0).normalize_or_zero())
                     .filter(|axis| axis.length_squared() > 0.5)
                     .unwrap_or(rig_rotation * Vec3::X);
-                let gait_direction = skeleton.world_velocity.with_y(0.0).normalize_or_zero();
-                (left_target, right_target) = body_relative_guard_gait_targets(
+                let morphology_scale = left_planning_reach
+                    .zip(right_planning_reach)
+                    .map(|(left, right)| {
+                        ((left.hard_reach() + right.hard_reach()) * 0.5 / 0.938_72).clamp(0.25, 4.0)
+                    })
+                    .unwrap_or(1.0);
+                let step_rate = overgrowth_guard_step_rate(live_speed, morphology_scale);
+                let desired = overgrowth_guard_foot_targets(
                     gait_origin,
                     gait_lateral,
                     footwork.swing_stance_local,
-                    gait_direction,
-                    step_length,
-                    step_progress,
-                    swing_left,
+                    skeleton.world_velocity,
+                    step_rate,
                     enabled.0,
                     terrain,
                 );
-                if let (Some(hip), Some(reach)) = (left_hip_current, left_planning_reach) {
+                let mut gait = footwork.contact_gait.unwrap_or(ContactDrivenGuardGait {
+                    left_plant: visible_left,
+                    right_plant: visible_right,
+                    swing_active: false,
+                    swing_left,
+                    swing_start: if swing_left {
+                        visible_left
+                    } else {
+                        visible_right
+                    },
+                    swing_target: if swing_left { desired.0 } else { desired.1 },
+                    progress: 0.0,
+                    last_tick: semantic_tick,
+                });
+                let elapsed_ticks = semantic_tick.saturating_sub(gait.last_tick);
+                gait.last_tick = semantic_tick;
+                let stance_error = overgrowth_guard_stance_error(morphology_scale);
+                if !gait.swing_active {
+                    let left_error = gait.left_plant.distance(desired.0);
+                    let right_error = gait.right_plant.distance(desired.1);
+                    if left_error.max(right_error) > stance_error {
+                        gait.swing_left = if (left_error - right_error).abs() <= 0.001 {
+                            swing_left
+                        } else {
+                            left_error > right_error
+                        };
+                        gait.swing_start = if gait.swing_left {
+                            gait.left_plant
+                        } else {
+                            gait.right_plant
+                        };
+                        gait.swing_target = if gait.swing_left {
+                            desired.0
+                        } else {
+                            desired.1
+                        };
+                        gait.progress = 0.0;
+                        gait.swing_active = true;
+                    }
+                }
+                if gait.swing_active {
+                    gait.swing_target = if gait.swing_left {
+                        desired.0
+                    } else {
+                        desired.1
+                    };
+                    if advances {
+                        gait.progress = (gait.progress
+                            + elapsed_ticks as f32 * step_rate / CONTINUITY_SAMPLE_HZ)
+                            .min(1.0);
+                    }
+                    let blend = quintic_progress(gait.progress);
+                    let mut swing_target = gait.swing_start.lerp(gait.swing_target, blend);
+                    swing_target.y += c2_swing_arch(gait.progress) * GUARD_PIVOT_LIFT_METRES;
+                    if gait.swing_left {
+                        left_target = swing_target;
+                        right_target = gait.right_plant;
+                    } else {
+                        left_target = gait.left_plant;
+                        right_target = swing_target;
+                    }
+                    if advances && gait.progress >= 1.0 {
+                        if gait.swing_left {
+                            gait.left_plant = gait.swing_target;
+                            left_target = gait.left_plant;
+                        } else {
+                            gait.right_plant = gait.swing_target;
+                            right_target = gait.right_plant;
+                        }
+                        gait.swing_active = false;
+                        gait.progress = 0.0;
+                        footwork.step_sequence = footwork.step_sequence.wrapping_add(1);
+                    }
+                } else {
+                    left_target = gait.left_plant;
+                    right_target = gait.right_plant;
+                }
+                let direct_motion =
+                    |previous: Option<Vec3>, previous_velocity: Vec3, target: Vec3| {
+                        if !advances || elapsed_ticks == 0 {
+                            (previous_velocity, Vec3::ZERO)
+                        } else {
+                            let dt = elapsed_ticks as f32 / CONTINUITY_SAMPLE_HZ;
+                            let velocity =
+                                previous.map_or(Vec3::ZERO, |previous| (target - previous) / dt);
+                            (velocity, (velocity - previous_velocity) / dt)
+                        }
+                    };
+                let left_motion = direct_motion(
+                    footwork.left_solve_target,
+                    footwork.left_target_velocity,
+                    left_target,
+                );
+                let right_motion = direct_motion(
+                    footwork.right_solve_target,
+                    footwork.right_target_velocity,
+                    right_target,
+                );
+                left_explicit_ideal_motion = Some(left_motion);
+                right_explicit_ideal_motion = Some(right_motion);
+                left_direct_c2_sample = true;
+                right_direct_c2_sample = true;
+                footwork.contact_gait = Some(gait);
+                footwork.swing_left = gait.swing_left;
+                if gait.swing_left
+                    && let (Some(hip), Some(reach)) = (left_hip_current, left_planning_reach)
+                {
                     left_target = constrain_guard_gait_target_to_reach(
                         left_target,
                         hip,
                         reach.warning_reach() * 0.97,
                     );
                 }
-                if let (Some(hip), Some(reach)) = (right_hip_current, right_planning_reach) {
+                if !gait.swing_left
+                    && let (Some(hip), Some(reach)) = (right_hip_current, right_planning_reach)
+                {
                     right_target = constrain_guard_gait_target_to_reach(
                         right_target,
                         hip,
                         reach.warning_reach() * 0.97,
                     );
                 }
-                footwork.left_support_weight = if swing_left { 0.0 } else { 1.0 };
-                footwork.right_support_weight = if swing_left { 1.0 } else { 0.0 };
-                if !swing_left {
-                    footwork.left_plant = left_target;
-                }
-                if swing_left {
-                    footwork.right_plant = right_target;
-                }
+                footwork.left_plant = gait.left_plant;
+                footwork.right_plant = gait.right_plant;
+                footwork.left_support_weight = if gait.swing_active && gait.swing_left {
+                    0.0
+                } else {
+                    1.0
+                };
+                footwork.right_support_weight = if gait.swing_active && !gait.swing_left {
+                    0.0
+                } else {
+                    1.0
+                };
             }
             let left_hip_trajectory = left_planning_reach.and_then(|reach| {
                 PredictedHipTrajectory::from_retained_motion(
@@ -5200,10 +5313,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     footwork.right_hip_world = Some(current);
                 }
             }
-            let mut left_explicit_ideal_motion = None;
-            let mut right_explicit_ideal_motion = None;
-            let mut left_direct_c2_sample = false;
-            let mut right_direct_c2_sample = false;
             if let Some(mut segment) = footwork.swing_replan_segment {
                 // The cadence swing owner supersedes a stale release owner on
                 // that same leg. Leaving both installed lets the support path
@@ -6544,8 +6653,24 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     let offset = target - solve_hip;
                     let distance = offset.length();
                     if distance > warning_reach {
-                        let radial = offset / distance;
-                        target = solve_hip + radial * warning_reach;
+                        if contact_driven_guard {
+                            // A cadence target is a terrain contact, not an
+                            // arbitrary point inside the leg sphere. Preserve
+                            // its ground height and shorten only its planar
+                            // displacement. Radially projecting the complete
+                            // vector here lifted otherwise valid contacts into
+                            // the air, after the gait planner had already
+                            // conformed them to terrain.
+                            target = constrain_guard_gait_target_to_reach(
+                                target,
+                                solve_hip,
+                                warning_reach,
+                            );
+                        } else {
+                            let radial = offset / distance;
+                            target = solve_hip + radial * warning_reach;
+                        }
+                        let radial = (target - solve_hip).normalize_or_zero();
                         let (velocity, acceleration) = if left {
                             (
                                 &mut footwork.left_target_velocity,
@@ -12266,12 +12391,76 @@ fn body_relative_guard_gait_targets(
     (left, right)
 }
 
-/// Normalized body-relative swing displacement with planted-foot velocity at
-/// both ends. Its endpoint derivative is -1, matching the support path, so a
-/// cadence edge changes support identity without changing world velocity.
+fn guard_gait_targets_with_latched_support(
+    generated: (Vec3, Vec3),
+    plants: (Vec3, Vec3),
+    swing_left: bool,
+    terrain_enabled: bool,
+    terrain: Option<&SceneTerrain>,
+) -> (Vec3, Vec3) {
+    let conform = |plant: Vec3| {
+        if terrain_enabled {
+            terrain_conformed_guard_target(
+                plant,
+                terrain.and_then(|terrain| terrain.height_at(plant.xz())),
+            )
+        } else {
+            plant
+        }
+    };
+    if swing_left {
+        (generated.0, conform(plants.1))
+    } else {
+        (conform(plants.0), generated.1)
+    }
+}
+
+fn overgrowth_guard_step_rate(speed: f32, morphology_scale: f32) -> f32 {
+    (speed.max(0.0) / morphology_scale.max(0.01) * 1.5 + 1.0).max(2.0)
+}
+
+fn overgrowth_guard_stance_error(morphology_scale: f32) -> f32 {
+    0.10 * morphology_scale.clamp(0.25, 4.0)
+}
+
+fn overgrowth_guard_foot_targets(
+    current_hip_center: Vec3,
+    gait_lateral: Vec3,
+    stance_local: Vec3,
+    world_velocity: Vec3,
+    step_rate: f32,
+    terrain_enabled: bool,
+    terrain: Option<&SceneTerrain>,
+) -> (Vec3, Vec3) {
+    let lateral = gait_lateral.with_y(0.0).normalize_or_zero();
+    let track = stance_local
+        .x
+        .abs()
+        .clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
+    let target_center =
+        current_hip_center + world_velocity.with_y(0.0) / step_rate.max(f32::EPSILON);
+    let target = |side: f32| {
+        let mut target = target_center + lateral * (side * track);
+        target.y = current_hip_center.y + stance_local.y;
+        if terrain_enabled {
+            terrain_conformed_guard_target(
+                target,
+                terrain.and_then(|terrain| terrain.height_at(target.xz())),
+            )
+        } else {
+            target
+        }
+    };
+    (target(-1.0), target(1.0))
+}
+
+/// Normalized body-relative swing displacement from the rear contact to the
+/// forward contact. With a truly planted support foot, the swing must be at
+/// rest at lift-off and landing rather than matching the obsolete sliding
+/// support velocity.
 fn contact_matched_guard_swing_offset(progress: f32) -> f32 {
     let progress = progress.clamp(0.0, 1.0);
-    -0.5 - progress + 20.0 * progress.powi(3) - 30.0 * progress.powi(4) + 12.0 * progress.powi(5)
+    quintic_progress(progress) - 0.5
 }
 
 fn constrain_guard_gait_target_to_reach(target: Vec3, hip: Vec3, reach: f32) -> Vec3 {
@@ -15334,10 +15523,10 @@ mod slope_cache_tests {
         );
 
         let relative_velocity = |progress: f32| {
-            -1.0 + 60.0 * progress.powi(2) - 120.0 * progress.powi(3) + 60.0 * progress.powi(4)
+            30.0 * progress.powi(2) - 60.0 * progress.powi(3) + 30.0 * progress.powi(4)
         };
-        assert_eq!(relative_velocity(0.0), -1.0);
-        assert_eq!(relative_velocity(1.0), -1.0);
+        assert_eq!(relative_velocity(0.0), 0.0);
+        assert_eq!(relative_velocity(1.0), 0.0);
 
         for scale in [0.5, 1.0, 2.0] {
             let hip = Vec3::new(0.0, 0.92, 0.0) * scale;
@@ -15347,6 +15536,55 @@ mod slope_cache_tests {
             assert!(constrained.distance(hip) <= reach + 1.0e-5);
             assert!((constrained.y - target.y).abs() <= 1.0e-6);
         }
+    }
+
+    #[test]
+    fn body_relative_guard_gait_keeps_the_support_contact_latched() {
+        let origin = Vec3::ZERO;
+        let lateral = Vec3::X;
+        let stance = Vec3::new(-0.22, 0.085, 0.0);
+        let direction = Vec3::Z;
+        let plants = (Vec3::new(-0.22, 0.085, -0.11), Vec3::new(0.22, 0.085, 0.13));
+        for tick in 0..=32 {
+            let progress = tick as f32 / 32.0;
+            let generated = body_relative_guard_gait_targets(
+                origin, lateral, stance, direction, 0.46, progress, true, false, None,
+            );
+            let (left, right) =
+                guard_gait_targets_with_latched_support(generated, plants, true, false, None);
+            assert_eq!(right, plants.1);
+            assert!(left.is_finite());
+        }
+    }
+
+    #[test]
+    fn overgrowth_guard_target_tracks_future_hips_and_morphology() {
+        let current_hips = Vec3::new(4.0, 0.0, -3.0);
+        let velocity = Vec3::new(0.0, 0.4, 1.4);
+        let rate = overgrowth_guard_step_rate(1.4, 1.0);
+        let generated = overgrowth_guard_foot_targets(
+            current_hips,
+            Vec3::X,
+            Vec3::new(-0.22, 0.085, 0.0),
+            velocity,
+            rate,
+            false,
+            None,
+        );
+        assert!((generated.0.z - (current_hips.z + 1.4 / rate)).abs() <= 1.0e-6);
+        assert!((generated.0.x - 3.78).abs() <= 1.0e-6);
+        assert!((generated.1.x - 4.22).abs() <= 1.0e-6);
+        assert!((overgrowth_guard_stance_error(2.0) - 0.2).abs() <= 1.0e-6);
+    }
+
+    #[test]
+    fn overgrowth_guard_step_rate_increases_with_speed_and_normalizes_scale() {
+        assert_eq!(overgrowth_guard_step_rate(0.0, 1.0), 2.0);
+        assert!(overgrowth_guard_step_rate(4.0, 1.0) > overgrowth_guard_step_rate(1.0, 1.0));
+        assert_eq!(
+            overgrowth_guard_step_rate(2.0, 2.0),
+            overgrowth_guard_step_rate(1.0, 1.0)
+        );
     }
 
     #[test]
@@ -17853,6 +18091,33 @@ mod slope_cache_tests {
         }
         assert_eq!(state, PelvisFollowerState::default());
         assert!(recovery.is_none());
+    }
+
+    #[test]
+    fn raised_pelvis_recovery_replans_when_support_reverses_the_target() {
+        let dt = 1.0 / CONTINUITY_SAMPLE_HZ;
+        let mut state = PelvisFollowerState {
+            position: -0.08,
+            velocity: 0.0,
+            acceleration: 0.0,
+        };
+        let mut recovery = None;
+        for _ in 0..8 {
+            state = advance_pelvis_follower_with_recovery(state, &mut recovery, 0.0, dt);
+        }
+        assert!(state.velocity > 0.0);
+        let previous = state;
+        let mut lowered = advance_pelvis_follower_with_recovery(state, &mut recovery, -0.12, dt);
+        assert!(lowered.position.is_finite());
+        assert!(lowered.acceleration.abs() <= PELVIS_FOLLOWER_MAXIMUM_ACCELERATION + 0.0001);
+        assert!(
+            ((lowered.acceleration - previous.acceleration) / dt).abs()
+                <= PELVIS_FOLLOWER_MAXIMUM_JERK + 0.001
+        );
+        for _ in 0..128 {
+            lowered = advance_pelvis_follower_with_recovery(lowered, &mut recovery, -0.12, dt);
+        }
+        assert!(lowered.position < previous.position);
     }
 
     #[test]

@@ -903,15 +903,18 @@ pub(in crate::animation::procedural) fn advance_pelvis_follower_with_recovery(
     delta_seconds: f32,
 ) -> PelvisFollowerState {
     if let Some(segment) = *recovery {
-        let admitted_direction = (segment.end - segment.start.position).signum();
-        let requested_direction = (desired - segment.end).signum();
-        let extends_admitted_motion = admitted_direction != 0.0
-            && requested_direction == admitted_direction
-            && (desired - segment.end).abs() > 0.000001;
-        if extends_admitted_motion
-            && let Some(replanned) = plan_pelvis_recovery(current, desired, delta_seconds)
-        {
-            *recovery = Some(replanned);
+        // The support geometry is the sole target authority. Replan from the
+        // currently presented p/v/a whenever that target changes, including
+        // a reversal. Retaining an obsolete recovery endpoint while a planted
+        // foot requested renewed lowering let the pelvis rise until the
+        // downstream two-bone solver had to clamp the contact.
+        if (desired - segment.end).abs() > 0.000001 {
+            // `None` is meaningful here: an adverse carried velocity can make
+            // a monotone rest-to-rest segment impossible without first
+            // braking. Drop the obsolete segment and let the stateful bounded
+            // follower perform that brake rather than continuing toward the
+            // wrong endpoint.
+            *recovery = plan_pelvis_recovery(current, desired, delta_seconds);
         }
     }
     if recovery.is_none() && (desired - current.position).abs() > 0.000001 {
