@@ -55,8 +55,10 @@ class TacticalPlayMode(str, Enum):
 DEFAULT_DIAGNOSTIC_SCENARIO = "directional-dives"
 GUARD_FOOTWORK_REPRO_SCENARIO = "guard-footwork-live-repro"
 CONTACT_AIRBORNE_LIMIT_METRES = 0.127  # Five inches.
+CONTACT_PENETRATION_LIMIT_METRES = -0.01
 BOTH_FEET_BEHIND_LIMIT_SECONDS = 0.3
 ANATOMICAL_KNEE_FLEXION_LIMIT_DEGREES = 165.0
+PELVIS_VERTICAL_STEP_LIMIT_METRES = 0.05
 ANIMATION_PRIORITY_WEIGHTS = {
     "anatomical_joint_angles": 16,
     "contact_airborne": 8,
@@ -2308,7 +2310,10 @@ def analyze_guard_footwork_repro(
     planted_drag_frames: list[int] = []
     both_feet_behind_frames: list[int] = []
     contact_airborne_frames: list[int] = []
+    contact_penetration_frames: list[int] = []
     anatomically_invalid_frames: list[int] = []
+    foot_crossover_frames: list[int] = []
+    swing_scuff_frames: list[int] = []
     saw_guard_raised = False
     saw_guard_lowered = False
     saw_diagonal = False
@@ -2337,8 +2342,13 @@ def analyze_guard_footwork_repro(
     maximum_selected_jerk_ratio = 0.0
     maximum_selected_jerk_frame: int | None = None
     maximum_contact_sole_clearance_metres = 0.0
+    minimum_contact_sole_clearance_metres = 0.0
     maximum_knee_flexion_degrees = 0.0
     minimum_knee_pole_hemisphere_dot = 1.0
+    maximum_pelvis_vertical_step_metres = 0.0
+    maximum_pelvis_vertical_step_frame: int | None = None
+    minimum_stance_width_ratio = float("inf")
+    maximum_stance_width_ratio = 0.0
     authoritative_ticks: set[int] = set()
     source_ticks: set[int] = set()
     saw_raised_moving = False
@@ -2351,9 +2361,13 @@ def analyze_guard_footwork_repro(
     }
     previous_acceleration_ticks: dict[str, int | None] = {"left": None, "right": None}
     drag_starts: dict[str, tuple[float, int] | None] = {"left": None, "right": None}
+    scuff_starts: dict[str, tuple[float, int] | None] = {"left": None, "right": None}
     longest_planted_drag_seconds = 0.0
     longest_planted_drag_start_frame: int | None = None
     longest_planted_drag_end_frame: int | None = None
+    longest_swing_scuff_seconds = 0.0
+    previous_pelvis_y: float | None = None
+    previous_pelvis_tick: int | None = None
     both_behind_start: tuple[float, int] | None = None
     longest_both_behind_seconds = 0.0
     longest_both_behind_start_frame: int | None = None
@@ -2385,7 +2399,10 @@ def analyze_guard_footwork_repro(
             previous_accelerations = {"left": None, "right": None}
             previous_acceleration_ticks = {"left": None, "right": None}
             drag_starts = {"left": None, "right": None}
+            scuff_starts = {"left": None, "right": None}
             both_behind_start = None
+            previous_pelvis_y = None
+            previous_pelvis_tick = None
         previous_elapsed = elapsed
         procedural_clock = record.get("procedural_clock") or {}
         semantic_tick = procedural_clock.get("semantic_tick")
@@ -2537,6 +2554,22 @@ def analyze_guard_footwork_repro(
                 threshold_start_frames.setdefault("hard_reach", frame)
                 recovery_or_reach_this_frame = True
         lower = record.get("lower_body") or {}
+        pelvis_translation = (((lower.get("pelvis") or {}).get("world") or {}).get("translation"))
+        if pelvis_translation and len(pelvis_translation) >= 3:
+            pelvis_y = float(pelvis_translation[1])
+            tick_advanced = semantic_tick is None or semantic_tick != previous_pelvis_tick
+            pelvis_metric_active = bool(raised.get("was_moving")) or saw_guard_lowered
+            if previous_pelvis_y is not None and tick_advanced and pelvis_metric_active:
+                pelvis_step = abs(pelvis_y - previous_pelvis_y)
+                if pelvis_step > maximum_pelvis_vertical_step_metres:
+                    maximum_pelvis_vertical_step_metres = pelvis_step
+                    maximum_pelvis_vertical_step_frame = frame
+                if pelvis_step > PELVIS_VERTICAL_STEP_LIMIT_METRES:
+                    threshold_frames.setdefault("pelvis_vertical_step", frame)
+                    threshold_start_frames.setdefault("pelvis_vertical_step", frame)
+            if tick_advanced:
+                previous_pelvis_y = pelvis_y
+                previous_pelvis_tick = semantic_tick
         elevated_this_frame = False
         trailing_this_frame = False
         overextended_this_frame = False
@@ -2599,6 +2632,14 @@ def analyze_guard_footwork_repro(
                     append_bounded(contact_airborne_frames, frame)
                     threshold_frames.setdefault("contact_airborne", frame)
                     threshold_start_frames.setdefault("contact_airborne", frame)
+                minimum_contact_sole_clearance_metres = min(
+                    minimum_contact_sole_clearance_metres,
+                    contact_sole_clearance,
+                )
+                if contact_sole_clearance < CONTACT_PENETRATION_LIMIT_METRES:
+                    append_bounded(contact_penetration_frames, frame)
+                    threshold_frames.setdefault("contact_penetration", frame)
+                    threshold_start_frames.setdefault("contact_penetration", frame)
             if zero_support and (
                 (sole_clearance is not None and sole_clearance > 0.01)
                 or (toe_clearance is not None and float(toe_clearance) > 0.011)
@@ -2665,16 +2706,17 @@ def analyze_guard_footwork_repro(
                         threshold_frames.setdefault("anatomical_joint_angles", frame)
                         threshold_start_frames.setdefault("anatomical_joint_angles", frame)
             dragging = False
+            planar_ankle_speed = 0.0
             if (
                 current_ankle is not None
                 and previous_ankles[side] is not None
                 and 0.0 < frame_delta <= 0.1
                 and bool(raised.get("was_moving"))
-                and support >= 0.5
             ):
                 dx = current_ankle[0] - previous_ankles[side][0]
                 dz = current_ankle[1] - previous_ankles[side][1]
-                dragging = (dx * dx + dz * dz) ** 0.5 / frame_delta > 0.12
+                planar_ankle_speed = (dx * dx + dz * dz) ** 0.5 / frame_delta
+                dragging = support >= 0.5 and planar_ankle_speed > 0.12
             previous_ankles[side] = current_ankle
             if dragging:
                 append_bounded(planted_drag_frames, frame)
@@ -2689,6 +2731,48 @@ def analyze_guard_footwork_repro(
                     longest_planted_drag_end_frame = frame
             else:
                 drag_starts[side] = None
+            scuffing = (
+                bool(raised.get("was_moving"))
+                and support < 0.5
+                and contact_sole_clearance is not None
+                and contact_sole_clearance < 0.01
+                and planar_ankle_speed > 0.12
+            )
+            if scuffing:
+                append_bounded(swing_scuff_frames, frame)
+                started = scuff_starts[side]
+                if started is None:
+                    started = (elapsed, frame)
+                    scuff_starts[side] = started
+                longest_swing_scuff_seconds = max(
+                    longest_swing_scuff_seconds,
+                    elapsed - started[0],
+                )
+            else:
+                scuff_starts[side] = None
+        left_local = (lower.get("left") or {}).get("ankle_owner_local")
+        right_local = (lower.get("right") or {}).get("ankle_owner_local")
+        left_hip_local = ((((lower.get("left") or {}).get("hip") or {}).get("owner_local") or {}).get("translation"))
+        right_hip_local = ((((lower.get("right") or {}).get("hip") or {}).get("owner_local") or {}).get("translation"))
+        if all(
+            value and len(value) >= 3
+            for value in (left_local, right_local, left_hip_local, right_hip_local)
+        ):
+            pelvis_x = float((((lower.get("pelvis") or {}).get("owner_local") or {}).get("translation") or [0.0])[0])
+            left_side = float(left_hip_local[0]) - pelvis_x
+            right_side = float(right_hip_local[0]) - pelvis_x
+            left_foot_side = float(left_local[0]) - pelvis_x
+            right_foot_side = float(right_local[0]) - pelvis_x
+            crossover = left_side * left_foot_side < 0.0 or right_side * right_foot_side < 0.0
+            if crossover:
+                append_bounded(foot_crossover_frames, frame)
+                threshold_frames.setdefault("foot_crossover", frame)
+                threshold_start_frames.setdefault("foot_crossover", frame)
+            hip_width = abs(left_side - right_side)
+            if hip_width > 1e-4:
+                stance_ratio = abs(left_foot_side - right_foot_side) / hip_width
+                minimum_stance_width_ratio = min(minimum_stance_width_ratio, stance_ratio)
+                maximum_stance_width_ratio = max(maximum_stance_width_ratio, stance_ratio)
         if both_behind_this_frame:
             append_bounded(both_feet_behind_frames, frame)
             if both_behind_start is None:
@@ -2787,7 +2871,13 @@ def analyze_guard_footwork_repro(
         sorted_half_steps[len(sorted_half_steps) // 2] if sorted_half_steps else 0.32
     )
     quarter_stride_seconds = max(0.08, min(0.30, median_half_step_seconds * 0.5))
+    cadence_duration_ratio = (
+        max(half_step_durations) / min(half_step_durations)
+        if half_step_durations and min(half_step_durations) > 1e-6
+        else 1.0
+    )
     sustained_planted_drag = longest_planted_drag_seconds >= quarter_stride_seconds
+    sustained_swing_scuff = longest_swing_scuff_seconds >= quarter_stride_seconds
     sustained_both_behind = longest_both_behind_seconds > BOTH_FEET_BEHIND_LIMIT_SECONDS
     if sustained_planted_drag and longest_planted_drag_end_frame is not None:
         threshold_frames["planted_drag"] = longest_planted_drag_end_frame
@@ -2810,6 +2900,12 @@ def analyze_guard_footwork_repro(
         "sustained_both_feet_behind": sustained_both_behind,
         "anatomically_invalid_joint_angles": bool(anatomically_invalid_frames),
         "contact_foot_above_five_inches": bool(contact_airborne_frames),
+        "support_foot_ground_penetration": bool(contact_penetration_frames),
+        "foot_crossover": bool(foot_crossover_frames),
+        "sustained_swing_scuff": sustained_swing_scuff,
+        "pelvis_vertical_discontinuity": (
+            maximum_pelvis_vertical_step_metres > PELVIS_VERTICAL_STEP_LIMIT_METRES
+        ),
     }
     known_failure_reproduced = harness_completed and (
         longest_syndrome_seconds >= 0.2
@@ -2831,6 +2927,10 @@ def analyze_guard_footwork_repro(
         or sustained_both_behind
         or bool(anatomically_invalid_frames)
         or bool(contact_airborne_frames)
+        or bool(contact_penetration_frames)
+        or bool(foot_crossover_frames)
+        or sustained_swing_scuff
+        or maximum_pelvis_vertical_step_metres > PELVIS_VERTICAL_STEP_LIMIT_METRES
     )
     failed_contracts = [
         {
@@ -2841,11 +2941,32 @@ def analyze_guard_footwork_repro(
             "episode_start_frame": threshold_start_frames.get("anatomical_joint_angles"),
         },
         {
+            "contract": "foot_crossover",
+            "value": bool(foot_crossover_frames),
+            "limit": False,
+            "frame": threshold_frames.get("foot_crossover"),
+            "episode_start_frame": threshold_start_frames.get("foot_crossover"),
+        },
+        {
             "contract": "contact_airborne_clearance_metres",
             "value": maximum_contact_sole_clearance_metres,
             "limit": CONTACT_AIRBORNE_LIMIT_METRES,
             "frame": threshold_frames.get("contact_airborne"),
             "episode_start_frame": threshold_start_frames.get("contact_airborne"),
+        },
+        {
+            "contract": "contact_ground_penetration_metres",
+            "value": minimum_contact_sole_clearance_metres,
+            "limit": CONTACT_PENETRATION_LIMIT_METRES,
+            "frame": threshold_frames.get("contact_penetration"),
+            "episode_start_frame": threshold_start_frames.get("contact_penetration"),
+        },
+        {
+            "contract": "pelvis_vertical_step_metres",
+            "value": maximum_pelvis_vertical_step_metres,
+            "limit": PELVIS_VERTICAL_STEP_LIMIT_METRES,
+            "frame": threshold_frames.get("pelvis_vertical_step"),
+            "episode_start_frame": threshold_start_frames.get("pelvis_vertical_step"),
         },
         {
             "contract": "radial_extension",
@@ -2911,6 +3032,13 @@ def analyze_guard_footwork_repro(
             "episode_start_frame": threshold_start_frames.get("planted_drag"),
         },
         {
+            "contract": "swing_scuff_duration",
+            "value": longest_swing_scuff_seconds,
+            "limit": quarter_stride_seconds,
+            "frame": swing_scuff_frames[-1] if sustained_swing_scuff else None,
+            "episode_start_frame": swing_scuff_frames[0] if sustained_swing_scuff else None,
+        },
+        {
             "contract": "both_feet_behind_duration",
             "value": longest_both_behind_seconds,
             "limit": BOTH_FEET_BEHIND_LIMIT_SECONDS,
@@ -2941,6 +3069,9 @@ def analyze_guard_footwork_repro(
         "both_feet_behind": both_feet_behind_frames,
         "contact_airborne": contact_airborne_frames,
         "anatomically_invalid_joint_angles": anatomically_invalid_frames,
+        "contact_ground_penetration": contact_penetration_frames,
+        "foot_crossover": foot_crossover_frames,
+        "swing_scuff": swing_scuff_frames,
     }
     evidence_ranges = {
         name: contiguous_frame_ranges(frame_list)
@@ -2977,10 +3108,17 @@ def analyze_guard_footwork_repro(
     }
     atomic_write_json(causal_slice_path, causal_slice)
     priority_failures = {
-        "anatomical_joint_angles": bool(anatomically_invalid_frames),
-        "contact_airborne": bool(contact_airborne_frames),
+        "anatomical_joint_angles": (
+            bool(anatomically_invalid_frames) or bool(foot_crossover_frames)
+        ),
+        "contact_airborne": (
+            bool(contact_airborne_frames)
+            or bool(contact_penetration_frames)
+            or bool(hard_frames)
+            or maximum_pelvis_vertical_step_metres > PELVIS_VERTICAL_STEP_LIMIT_METRES
+        ),
         "both_feet_behind": sustained_both_behind,
-        "planted_drag": sustained_planted_drag,
+        "planted_drag": sustained_planted_drag or sustained_swing_scuff,
         "jitter_jerk": (
             maximum_selected_acceleration_ratio > 1.001
             or maximum_selected_jerk_ratio > 1.001
@@ -3030,8 +3168,22 @@ def analyze_guard_footwork_repro(
         "maximum_selected_jerk_ratio": maximum_selected_jerk_ratio,
         "maximum_selected_jerk_frame": maximum_selected_jerk_frame,
         "maximum_contact_sole_clearance_metres": maximum_contact_sole_clearance_metres,
+        "minimum_contact_sole_clearance_metres": minimum_contact_sole_clearance_metres,
         "maximum_knee_flexion_degrees": maximum_knee_flexion_degrees,
         "minimum_knee_pole_hemisphere_dot": minimum_knee_pole_hemisphere_dot,
+        "maximum_pelvis_vertical_step_metres": maximum_pelvis_vertical_step_metres,
+        "maximum_pelvis_vertical_step_frame": maximum_pelvis_vertical_step_frame,
+        "longest_swing_scuff_seconds": longest_swing_scuff_seconds,
+        "minimum_stance_width_to_hip_width_ratio": (
+            minimum_stance_width_ratio if math.isfinite(minimum_stance_width_ratio) else None
+        ),
+        "maximum_stance_width_to_hip_width_ratio": maximum_stance_width_ratio,
+        "cadence_half_step_duration_ratio": cadence_duration_ratio,
+        "provisional_non_gating_metrics": {
+            "stance_width_ratio": "calibrate visually before gating",
+            "cadence_duration_ratio": "calibrate across network jitter before gating",
+            "contact_foot_orientation": "unavailable until terrain normal is logged",
+        },
         "priority_order": list(ANIMATION_PRIORITY_WEIGHTS),
         "priority_weights": ANIMATION_PRIORITY_WEIGHTS,
         "priority_failures": priority_failures,

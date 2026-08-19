@@ -284,7 +284,7 @@ class WorkflowTests(unittest.TestCase):
                     },
                     "raised_ownership": {
                         "left_support_weight": 1.0,
-                        "right_support_weight": 1.0,
+                        "right_support_weight": 0.0 if frame < 30 else 1.0,
                         "awaiting_step_sequence": False,
                         "was_moving": True,
                         "release_handoff_active": False,
@@ -301,21 +301,34 @@ class WorkflowTests(unittest.TestCase):
                         },
                     },
                     "lower_body": {
+                        "pelvis": {
+                            "world": {"translation": [0.0, 1.0 + 0.1 * (frame % 2), 0.0]},
+                            "owner_local": {"translation": [0.0, 1.0, 0.0]},
+                        },
+                        **{
                         side: {
                             "ankle_from_visual_pelvis_world": [-0.25, -0.8, 0.0],
                             "hip": {"world": {
                                 "translation": [frame * 0.01, 1.0, offset],
+                            }, "owner_local": {
+                                "translation": [-0.1 if side == "left" else 0.1, 1.0, offset],
                             }},
                             "knee": {"world": {
                                 "translation": [frame * 0.01, 1.2, offset],
                             }},
                             "ankle": {
-                                "clearance": 0.30,
+                                "clearance": 0.30 if side == "left" else 0.05,
                                 "world": {"translation": [frame * 0.01, 0.085, offset]},
                             },
-                            "toe": {"clearance": 0.20},
+                            "toe": {"clearance": 0.20 if side == "left" else -0.02},
+                            "ankle_owner_local": [
+                                0.2 if side == "left" else -0.2,
+                                0.085,
+                                offset,
+                            ],
                         }
                         for side, offset in (("left", -0.2), ("right", 0.2))
+                        },
                     },
                 })
             log.write_text("\n".join(json.dumps(record) for record in records) + "\n")
@@ -327,6 +340,10 @@ class WorkflowTests(unittest.TestCase):
             self.assertTrue(result["signatures"]["sustained_both_feet_behind"])
             self.assertTrue(result["signatures"]["anatomically_invalid_joint_angles"])
             self.assertTrue(result["signatures"]["contact_foot_above_five_inches"])
+            self.assertTrue(result["signatures"]["support_foot_ground_penetration"])
+            self.assertTrue(result["signatures"]["foot_crossover"])
+            self.assertTrue(result["signatures"]["sustained_swing_scuff"])
+            self.assertTrue(result["signatures"]["pelvis_vertical_discontinuity"])
             self.assertGreater(
                 result["longest_planted_drag_seconds"],
                 result["quarter_stride_seconds"],
@@ -341,6 +358,10 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("anatomical_joint_angles", contracts)
             self.assertIn("contact_airborne_clearance_metres", contracts)
             self.assertIn("selected_jerk_limit_ratio", contracts)
+            self.assertIn("contact_ground_penetration_metres", contracts)
+            self.assertIn("foot_crossover", contracts)
+            self.assertIn("swing_scuff_duration", contracts)
+            self.assertIn("pelvis_vertical_step_metres", contracts)
             self.assertEqual(result["weighted_defect_score"], 31)
             self.assertEqual(result["animation_quality_score"], 0.0)
             self.assertEqual(

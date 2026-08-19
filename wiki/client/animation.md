@@ -745,6 +745,13 @@ at one priority outweighs every lower-priority category combined. The manifest
 retains both the 0-31 weighted defect score and its 0-100 inverse quality score.
 These scores summarize failures; they do not replace the individual hard
 acceptance gates or permit one category to compensate for another.
+The same analyzer also gates foot crossover with anatomical validity, support
+penetration and a greater-than-5 cm moving pelvis step with contact safety, and
+sustained swing-foot scuffing with dragging. It reports morphology-normalized
+stance width and cadence-duration variation without gating them until native
+captures establish visually defensible limits. Contact-orientation error is
+reported as unavailable because the live record does not yet contain the
+terrain normal needed for an honest comparison.
 
 `state-machine-traversal` is one continuous, retained-state viewer scenario. The
 viewer's `--diagnostics-only` option evaluates the same three camera passes for
