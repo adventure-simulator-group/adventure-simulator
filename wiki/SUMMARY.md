@@ -22,6 +22,7 @@
 - [Implementation](engineering/implementation.md)
 - [Networking](engineering/networking.md)
 - [Architecture reference](engineering/architecture.md)
+- [Animation testing](engineering/animation-testing.md)
 - [Strategic read cache](engineering/strategic-read-cache.md)
 - [Strategic NPC simulation](engineering/strategic-simulation.md)
 - [Puzzle laboratory](engineering/puzzle-lab.md)

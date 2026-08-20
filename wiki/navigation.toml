@@ -64,6 +64,11 @@ path = "engineering/architecture.md"
 
 [[item]]
 kind = "page"
+title = "Animation testing"
+path = "engineering/animation-testing.md"
+
+[[item]]
+kind = "page"
 title = "Strategic read cache"
 path = "engineering/strategic-read-cache.md"
 
