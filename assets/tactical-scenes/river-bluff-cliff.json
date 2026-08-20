@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generation_version": 84,
+  "generation_version": 61,
   "seed": 47112,
   "scene_key": "river-bluff",
   "source": {
@@ -845,7 +845,7 @@
         "face_height_cm": 900,
         "rock_depth_cm": 1400,
         "curvature_cm": 420,
-        "undercut_depth_cm": 80,
+        "undercut_depth_cm": 130,
         "collapse_offset_cm": 180,
         "collapse_radius_cm": 300,
         "talus_depth_cm": 700,

@@ -134,136 +134,117 @@ terrain so grazing views read embedded stones rather than open polygon caps.
 These non-colliding separately shaded instances do not enter the foliage wind
 or player-bending shader.
 
-Sparse river-bluff patches use compact deterministic recipes rather than meshes.
-A bounded classifier tests intended topology and heightfield fitting error: a
-resolved steep plane stays on the heightfield, while an unresolved scarp or true
-undercut selects the implicit representation. Recipes are capped at 524,288
-field samples and 100,000 extracted triangles. The committed cliff retains
-approximately 0.28--0.35-metre sampling across the face and crest; the bounded
-tile assigns the remaining samples longitudinally. Shared code owns its scalar field, thin face-following
-static collision bands, and nearest-surface-below dispatch for the upper and
-lower benches. The committed landform is a broad lower floodplain meeting a
-broad upper terrace at an asymmetric, concave 28-metre bluff boundary. Most of
-that boundary is a weathered, curved scarp with several metres of horizontal
-toe-to-crest retreat. Only the 4--7-metre-wide active collapse sector remains
-near-vertical and carries the shallow undercut. Metre-scale planform variation
-keeps the opposing flanks asymmetric; the crest and face then taper through
-long returned shoulders into surrounding terrain instead of terminating at
-squared patch edges. A continuous joint-bounded
+Sparse river-bluff patches use compact deterministic recipes rather than
+meshes. A bounded classifier tests intended topology and heightfield fitting
+error: a resolved steep plane stays on the heightfield, while an unresolved
+scarp or true undercut selects the implicit representation. Recipes are capped
+at 262,144 field samples and 100,000 extracted triangles; the committed cliff
+uses 0.28-metre sampling. Shared code owns its scalar field, thin
+face-following static collision bands, and nearest-surface-below dispatch for the upper
+and lower benches. The committed landform is a broad lower floodplain meeting
+a broad upper terrace at an asymmetric, concave 28-metre bluff boundary. Its
+central exposed sector carries metre-scale face undulation; the crest and face
+then taper through long returned shoulders into heightfield-owned terrain
+instead of terminating at squared patch edges. A continuous joint-bounded
 failure region is a strongly tapering wedge bounded by four landform-scale
 piecewise fracture vertices on each diagonally traversing side and a
-three-segment angular oblique release base. A few broad blended facet planes
-break up the recessed surface without introducing sub-grid grooves. It opens to
-a modestly lowered crest and pushes a fresh rock wedge rearward without cutting
-a hole through the mass. The client evaluates one continuous implicit terrain
-tile from the authored multi-valued bluff solid and solid-below the replicated
-authoritative `SceneTerrain`, including the aggregated fan. The authored
-contribution is an unbounded-downward, rearward terrace solid: the intersection
-of solid-below-crest and solid-behind the curved scarp. It therefore has no
-recipe box sides, back, or bottom to expose. Its
-40-by-38-metre local footprint extends six metres beyond both face ends, five
-metres beyond the fan, and twelve metres behind the rock mass, so every outer
-edge is ordinary single-valued ground. Surface Nets therefore extracts the face,
-crest, lower floodplain, upper terrace, and returned shoulders as one connected
-surface rather than filtering a local face out of a finite box. There is no
-local collar, crest cap, analytic stitch, finite back wall, or side shell.
-
-The ordinary playable terrain keeps collision and query authority throughout,
-while its base and camera-detail render meshes omit only cells strictly inside
-the tile rectangle. At the distant perimeter the client projects every open
-tile-boundary vertex onto the same authoritative heightfield triangle sampled by
-the regular terrain. The regular renderer retains boundary-straddling cells,
-producing a narrow coplanar overlap instead of a raster-cell gap. Pending tile
-presentation runs after ordinary terrain presentation and waits until
-`SceneTerrain` and its base material are present, so replication insertion
-order cannot drop the mesh. Its ground-material clone is then synchronized
-from the finalized source terrain material whenever presentation refreshes,
-preserving every ground map, palette, cover, and far-sward field while changing
-only the tile's camera-detail cutout flag. The client partitions the one
-extracted topology into disjoint ground and rock triangle sets that reuse the
-same positions and normals. Single-valued tile ground therefore uses the exact
-ordinary terrain material and ground map; only the exposed scarp uses sandstone
-vertex color. The tile-specific ground material preserves the base terrain's
-normal and roughness regime while disabling only its camera-local detail cutout;
-the camera-detail mesh now uses that same shading regime, so changing geometry
-owners cannot reveal the tile rectangle through normal or roughness response.
-The implicit tile alone supplies its surface. Ground triangles are
-selected from the authored scarp envelope: the face, undercut, and low toe are
-rock, while the crest, terrace, returns, and perimeter remain terrain regardless
-of coarse heightfield quantization. Client detail-ground vertices and all
-terrain-attached scatter placements (grass, understory, litter, and loose
-stone) query the same compact patch recipe for the highest single-valued
-surface, while cells crossing the scarp are omitted. Capture evidence reports
-the number of grass presentation entities seated on the upper terrace and
-fails the focused fixture when none are present. This is presentation-only and
-does not change heightfield collision authority. Ground cover and substrate remain inherited from the surrounding
-terrain rather than forming a rectangular evidence mask. Buntsandstein bedding uses two broad, subtly different
-warm-colour strata. Only one upper resistant bed projects by about 0.85 metres
-and one broad weaker interbed recesses by about 0.60 metres. Each is a
-finite-thickness course with a 0.84-metre full-strength interior and 1.0-metre
-continuous edges. The course centers are separated by 2.88 metres, so midpoint
-weights fall below five percent and the resistant course forms a real break in
-slope rather than broad material blending while retaining smooth extraction
-rather than a Gaussian bulge. Their warped, attenuated extrema retain at least
-0.85 metres of absolute face-depth separation, so extraction produces a
-continuous ledge silhouette rather than a sampled scalloped edge; the localized
-toe lip supplies the principal structural projection. Their slowly warped,
-laterally coherent profiles ease across the failure plane and fade into the
-returned ends rather than switching into short pointed segments. A localized
-resistant toe lip projects above a sheared, irregular toe undercut. The
-capture harness suppresses foreground grass in its dedicated grazing views
-without mutating authoritative ground semantics. The authoritative obstacle
-pass separately rejects generated trees throughout the patch's complete
-returned-shoulder width and the lower-front through upper-contact depth zone;
-this broad oblique-safe exclusion covers both camera-to-target corridors because
-ground semantics alone do not control woody obstacle placement. The recess is restricted to an approximately
-2.8--4.0-metre-wide shallow feathered sector beneath the lowest resistant bed,
-with only a 1.0--1.7-metre-wide core reaching full depth. Its asymmetric roof
-varies from roughly 0.45 metres at the flanks to a single local peak below 1.2
-metres, and recession depth feathers to a local 0.8-metre maximum. The base
-heightmap is replaced by matching local crest heights and benches. It is also
-the single-valued component of the client tile scalar, so the tile continues
-naturally across the upper terrace, lower floodplain, and returned shoulders
-before meeting ordinary ground at its distant perimeter. The heightfield rise
-stays tightly buried behind the central implicit scarp, but blends to a
-multi-metre, grade-bounded transition before entering the heightfield-owned
-returned shoulders. This prevents the coarse grid from exposing a grass-topped
-near-step or lateral wall outside the central collision sector. One deterministic,
-multi-lobed debris fan in the
-authoritative heightfield ties the missing scar volume to the toe without
-becoming a continuous skirt. Three separated metre-scale ridges are
-height-graded down the fan, with bare soil between them and an explicitly
-debris-free undercut flank. It uses ordinary heightfield collision and surface
-queries; the client creates no discrete debris entities, rigid bodies,
-colliders, or loose-stone scatter patches. The Gaussian tails settle
-continuously into the floodplain instead of creating a compact polygonal
-material boundary. The apron terminates against the intact resistant lip rather
-than following the recessed undercut rearward. Collision bands sample the same
-face at finer lateral and vertical intervals, remain only 0.7 metres deep, and
-begin behind the most recessed surface in each band. Bands intersecting the
-failure scar or localized undercut are omitted, so the authoritative proxy
-neither projects in front of the rock nor fills the authored air. The toe
-omission is bounded to the recipe's 0.8-metre clearance height; a fitted lip
-band begins at that exact elevation, and valid rock above it resumes the
-ordinary vertical-gap budget. A band that cannot span a sharp bed or release
-joint within the fit tolerance is divided laterally into narrow boxes,
-preserving collision on both sides while leaving the discontinuity open.
+three-segment angular oblique release
+base. A few broad blended facet planes break up the recessed surface without
+introducing sub-grid grooves. It opens to a
+modestly lowered crest and pushes a fresh rock wedge rearward without cutting
+a hole through the mass. The client retains
+triangles that follow the shared authored face equation within the bounded
+sample tolerance. Surface Nets top, back, bottom, and side closures are never
+rendered; ordinary heightfield terrain exclusively owns every horizontal upper
+and rear surface. Its short rise completes behind the conservative face
+envelope. The client projects the retained Surface Nets crest boundary back onto
+the authored smooth brink and recomputes its normals, removing sampled stair-step
+silhouettes without adding a separately shaded top strip. No client collar or
+implicit top closure is rendered; the buried ordinary heightfield supplies the
+upper ground. The authored face itself tapers into the lower bench at both
+returned ends. Exposure is never
+inferred from normals on the bowed face. Explicit semantic bounds continue to
+exclude the finite field's back, bottom, and side closures so they cannot form
+a freestanding block. The client retains the authored face through the returned
+shoulder while its crest smoothly converges to the lower bench before the
+finite scalar-field side. The heightfield remains behind this single visible
+surface. The client blends the remaining
+rock colour into the soil contact at the crest, toe, and lateral return. Those
+shoulders and the top brink authoritatively use bare stone or gravel ground
+semantics, suppressing grass that would otherwise create a dark material ramp.
+Buntsandstein bedding uses two broad, subtly different warm-colour strata.
+Only one upper resistant bed projects by about 0.85 metres and one broad
+weaker interbed recesses by about 0.60 metres. Each is a finite-thickness course
+with a 0.84-metre full-strength interior and 1.0-metre continuous edges. The
+course centers are separated by 2.88 metres, so midpoint weights fall below
+five percent and the resistant course forms a real break in slope rather than
+broad material blending while retaining smooth extraction rather
+than a Gaussian bulge. Their warped, attenuated extrema retain at least 0.85
+metres of absolute face-depth separation, so extraction produces a continuous
+ledge silhouette rather than
+a sampled scalloped edge; the localized toe lip supplies
+the principal structural projection. Their slowly warped,
+laterally coherent profiles ease across the failure plane and fade into
+the returned ends rather than switching into short pointed segments. A
+localized resistant toe lip projects above a sheared, irregular toe undercut.
+The generated ground recipe also clears a bounded twenty-six-metre evidence
+corridor, including a complete source-grid footprint around the active toe, to
+bare or loose-stone cover, preventing
+deterministic grass or understory placement from obscuring either close view.
+The authoritative obstacle pass separately rejects generated trees throughout
+the patch's complete returned-shoulder width and the lower-front through
+upper-contact depth zone; this broad oblique-safe exclusion covers both
+camera-to-target corridors because ground semantics alone do not control woody
+obstacle placement.
+Client understory generation independently requires tall-grass cover before
+spawning hazel, so the authoritative bare and loose-stone patch corridor also
+suppresses presentation-only woody shrubs.
+The recess is restricted to an approximately 2.8--4.0-metre-wide shallow feathered sector
+beneath the lowest resistant bed, with only a 1.0--1.7-metre-wide core reaching
+full depth. Its asymmetric roof varies from roughly 0.45 metres at the flanks
+to a single local peak below 1.2 metres, and recession depth feathers to
+a local 1.3-metre maximum.
+The base heightmap is replaced by matching local crest heights and benches.
+Across the central implicit sector its transition lies behind a conservatively
+sampled envelope of every authored face displacement, keeping heightfield
+triangles out of the undercut and failure surface. Returned collision remains
+heightfield-owned, but its upper rise stays behind the implicit render return;
+the visible face converges into ordinary lower terrain before extraction
+reaches the finite field side. One deterministic, multi-lobed
+stone-substrate fan in the authoritative heightfield ties the missing scar
+volume to the toe without becoming a continuous skirt. Three separated
+metre-scale ridges are height-graded down the fan, with bare stone between them
+and an explicitly debris-free undercut flank. It uses ordinary
+heightfield collision and surface queries; the client creates no discrete
+debris entities, rigid bodies, or colliders.
+The apron terminates against the intact resistant lip rather than following the
+recessed undercut rearward, keeping loose-stone semantics off the upper brink.
+Collision bands sample the same face at finer lateral and vertical intervals,
+remain only 0.7 metres deep, and begin behind the most recessed surface in each
+band. Bands intersecting the failure scar or localized undercut are omitted,
+so the authoritative proxy neither projects in front of the rock nor fills the
+authored air. The toe omission is bounded to the recipe's 1.3-metre clearance
+height; a fitted lip band begins at that exact elevation, and valid rock above
+it resumes the ordinary vertical-gap budget. A band
+that cannot span a sharp bed or release joint within the
+fit tolerance is divided laterally into narrow boxes, preserving collision on
+both sides while leaving the discontinuity open.
 Implicit collision is limited to the full-height central half of the authored
 face. At the same normalized threshold where the crest begins tapering, the
 ordinary heightfield collider takes exclusive ownership of both returned
-shoulders. Rendering does not change owner at that local transition: the one
-continuous implicit tile carries both regions out to the distant, exact
-heightfield boundary. There is no pair of overlapping visible surfaces,
-exact-line stitch, finite side, or separately shaded rear collar.
+shoulders. The implicit render face continues across the returned shoulder and
+its authored crest falls continuously to zero at the scalar-field side. The
+heightfield rise remains behind it, so there is no pair of overlapping visible
+surfaces, exact-line stitch, finite side, or separately shaded rear collar.
 Review overlays draw moderately dense thin cyan rectangle outlines for
 alternating authoritative proxy bands. Because fitted proxy fronts lie behind
-the rendered rock, the review-only outlines are projected onto the corresponding
-authored face with a two-centimetre camera bias; they still sample only retained
-boxes, so neither the undercut nor failure scar receives cyan fill.
-Heightfield-owned returned shoulders require no implicit overlay. The capture
-manifest reports central solid-column coverage, maximum vertical and crest gaps,
-maximum front offset, and exact undercut clearance alongside the image-space
-cyan gate.
+the rendered rock, the review-only outlines are projected onto the
+corresponding authored face with a two-centimetre camera bias; they still
+sample only retained boxes, so neither the undercut nor failure scar receives
+cyan fill. Heightfield-owned returned shoulders require no implicit overlay.
+The capture manifest reports central
+solid-column coverage, maximum vertical and crest gaps, maximum front offset,
+and exact undercut clearance alongside the image-space cyan gate.
 
 Grass, shrubs, reeds, leaves, and twigs are deterministic shared-mesh foliage
 with no gameplay collider. Grass uses overlapping 3.2-metre shared macro patches

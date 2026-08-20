@@ -141,7 +141,6 @@ pub(super) struct TerrainPatchSummary {
     pub(super) debris_free_undercut_flank: bool,
     pub(super) discrete_debris_entities: usize,
     pub(super) discrete_debris_colliders: usize,
-    pub(super) upper_terrace_scatter_entities: usize,
 }
 
 #[derive(Serialize)]

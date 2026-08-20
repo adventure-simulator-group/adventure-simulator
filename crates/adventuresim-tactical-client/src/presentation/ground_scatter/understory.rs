@@ -1,5 +1,5 @@
 use adventuresim_tactical_core::prelude::{
-    GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain, TerrainPatchRecipe,
+    GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain,
 };
 use bevy::{
     camera::visibility::VisibilityRange,
@@ -96,7 +96,6 @@ fn ground_allows_species(surface: GroundSurface, species: UnderstorySpecies) -> 
 pub(super) fn spawn(
     commands: &mut Commands,
     terrain: &SceneTerrain,
-    terrain_patches: &[TerrainPatchRecipe],
     ground: &SceneGround,
     cache: &WoodyUnderstoryPresentationCache,
     base_seed: u64,
@@ -128,9 +127,7 @@ pub(super) fn spawn(
             {
                 continue;
             }
-            let Some(transform) =
-                foliage_transform(terrain, terrain_patches, world_x, world_z, hash)
-            else {
+            let Some(transform) = foliage_transform(terrain, world_x, world_z, hash) else {
                 continue;
             };
             let presentation = cache.presentation(species);

@@ -1,6 +1,4 @@
-use adventuresim_tactical_core::prelude::{
-    GroundCover, RockLithology, SceneGround, SceneTerrain, TerrainPatchRecipe,
-};
+use adventuresim_tactical_core::prelude::{GroundCover, RockLithology, SceneGround, SceneTerrain};
 use bevy::{
     asset::RenderAssetUsages,
     camera::visibility::{NoFrustumCulling, VisibilityRange},
@@ -116,7 +114,6 @@ pub(super) fn spawn(
     materials: &mut Assets<StandardMaterial>,
     billboard_materials: &mut Assets<TacticalPebbleBillboardMaterial>,
     terrain: &SceneTerrain,
-    terrain_patches: &[TerrainPatchRecipe],
     ground: &SceneGround,
     base_seed: u64,
 ) {
@@ -169,17 +166,9 @@ pub(super) fn spawn(
             grid_x as f32 * ground.grid_scale() - ground.width() * 0.5,
             grid_z as f32 * ground.grid_scale() - ground.depth() * 0.5,
         );
-        if !super::super::terrain::presented_ground_allows_scatter(
-            terrain_patches,
-            position,
-            half_extent,
-        ) {
-            continue;
-        }
-        let (Some(height), Some(normal)) = (
-            super::super::terrain::presented_ground_height(terrain, terrain_patches, position),
-            super::super::terrain::presented_ground_normal(terrain, terrain_patches, position),
-        ) else {
+        let (Some(height), Some(normal)) =
+            (terrain.height_at(position), terrain.normal_at(position))
+        else {
             continue;
         };
         if normal.y < 0.72 {

@@ -264,9 +264,7 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
         CapturePose::GroundCover,
         65.0,
         1000
-    )
-    .suppress_grass()
-    .detail(DetailRequirement::GrassSuppressed),
+    ),
     v!(
         "tree-silhouette",
         "Neutral English oak silhouette plate",

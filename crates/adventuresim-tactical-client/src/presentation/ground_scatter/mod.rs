@@ -1,6 +1,4 @@
-use adventuresim_tactical_core::prelude::{
-    SceneEnvironment, SceneGround, SceneId, SceneTerrain, TerrainPatchRecipe,
-};
+use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneId, SceneTerrain};
 use bevy::{
     color::{ColorToComponents, LinearRgba},
     ecs::change_detection::DetectChanges,
@@ -209,7 +207,6 @@ pub(super) fn spawn_ground_foliage(
     terrain: &SceneTerrain,
     ground: &SceneGround,
     environment: &SceneEnvironment,
-    terrain_patches: &[TerrainPatchRecipe],
 ) {
     let canopy = bps(environment.canopy_bps);
     let water = bps(environment.water_bps);
@@ -335,7 +332,6 @@ pub(super) fn spawn_ground_foliage(
         commands,
         terrain,
         ground,
-        terrain_patches,
         grass_seed,
         grass_profile,
         &grass::Assets {
@@ -349,7 +345,6 @@ pub(super) fn spawn_ground_foliage(
     understory::spawn(
         commands,
         terrain,
-        terrain_patches,
         ground,
         understory_cache,
         base_seed,
@@ -366,7 +361,6 @@ pub(super) fn spawn_ground_foliage(
         commands,
         meshes,
         terrain,
-        terrain_patches,
         ground,
         base_seed,
         &litter::Assets {
@@ -385,7 +379,6 @@ pub(super) fn spawn_ground_foliage(
         standard_materials,
         pebble_billboard_materials,
         terrain,
-        terrain_patches,
         ground,
         base_seed,
     );
@@ -441,17 +434,13 @@ pub(in crate::presentation) fn grass_terminal_pigment(environment: &SceneEnviron
 
 fn foliage_transform(
     terrain: &SceneTerrain,
-    terrain_patches: &[TerrainPatchRecipe],
     world_x: f32,
     world_z: f32,
     hash: u64,
 ) -> Option<Transform> {
     let sample = Vec2::new(world_x, world_z);
-    if !super::terrain::presented_ground_allows_scatter(terrain_patches, sample, 1.0) {
-        return None;
-    }
-    let height = super::terrain::presented_ground_height(terrain, terrain_patches, sample)?;
-    let normal = super::terrain::presented_ground_normal(terrain, terrain_patches, sample)?;
+    let height = terrain.height_at(sample)?;
+    let normal = terrain.normal_at(sample)?;
     if normal.y < 0.72 {
         return None;
     }
@@ -486,9 +475,7 @@ pub(super) fn present_ground_scatter(
     mut understory_cache: ResMut<WoodyUnderstoryPresentationCache>,
     mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
-    terrain_patches: Query<&TerrainPatchRecipe>,
 ) {
-    let terrain_patches = terrain_patches.iter().copied().collect::<Vec<_>>();
     for (entity, scene_id, terrain, ground, environment) in &scenes {
         let started = std::time::Instant::now();
         tracing::info!("Generating tactical ground scatter");
@@ -507,7 +494,6 @@ pub(super) fn present_ground_scatter(
             terrain,
             ground,
             environment,
-            &terrain_patches,
         );
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis(),

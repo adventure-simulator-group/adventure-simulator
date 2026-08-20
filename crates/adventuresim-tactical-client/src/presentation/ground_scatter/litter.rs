@@ -1,6 +1,4 @@
-use adventuresim_tactical_core::prelude::{
-    GroundCover, SceneGround, SceneTerrain, TerrainPatchRecipe,
-};
+use adventuresim_tactical_core::prelude::{GroundCover, SceneGround, SceneTerrain};
 use bevy::{
     asset::RenderAssetUsages,
     camera::visibility::VisibilityRange,
@@ -56,7 +54,6 @@ pub(super) fn spawn(
     commands: &mut Commands,
     meshes: &mut bevy::prelude::Assets<Mesh>,
     terrain: &SceneTerrain,
-    terrain_patches: &[TerrainPatchRecipe],
     ground: &SceneGround,
     base_seed: u64,
     assets: &Assets,
@@ -90,15 +87,9 @@ pub(super) fn spawn(
             if unit_hash(hash) >= density * 0.92 {
                 continue;
             }
-            let Some(transform) = forest_floor_patch_transform(
-                terrain,
-                terrain_patches,
-                ground,
-                cell_origin,
-                hash,
-                0.8,
-                0.001,
-            ) else {
+            let Some(transform) =
+                forest_floor_patch_transform(terrain, ground, cell_origin, hash, 0.8, 0.001)
+            else {
                 continue;
             };
             if sample.cover == GroundCover::LeafLitter {
@@ -119,15 +110,9 @@ pub(super) fn spawn(
             if unit_hash(hash) >= density * 0.62 {
                 continue;
             }
-            let Some(transform) = forest_floor_patch_transform(
-                terrain,
-                terrain_patches,
-                ground,
-                cell_origin,
-                hash,
-                0.72,
-                0.006,
-            ) else {
+            let Some(transform) =
+                forest_floor_patch_transform(terrain, ground, cell_origin, hash, 0.72, 0.006)
+            else {
                 continue;
             };
             if sample.cover == GroundCover::LeafLitter {
@@ -153,15 +138,9 @@ pub(super) fn spawn(
             if unit_hash(hash) >= plant_chance {
                 continue;
             }
-            let Some(transform) = forest_floor_patch_transform(
-                terrain,
-                terrain_patches,
-                ground,
-                cell_origin,
-                hash,
-                0.7,
-                0.004,
-            ) else {
+            let Some(transform) =
+                forest_floor_patch_transform(terrain, ground, cell_origin, hash, 0.7, 0.004)
+            else {
                 continue;
             };
             append_litter_batch(
@@ -366,7 +345,6 @@ pub(super) fn forest_floor_leaf_material(
 
 fn forest_floor_patch_transform(
     terrain: &SceneTerrain,
-    terrain_patches: &[TerrainPatchRecipe],
     ground: &SceneGround,
     cell_origin: Vec2,
     hash: u64,
@@ -387,7 +365,7 @@ fn forest_floor_patch_transform(
     }) {
         return None;
     }
-    let mut transform = foliage_transform(terrain, terrain_patches, position.x, position.y, hash)?;
+    let mut transform = foliage_transform(terrain, position.x, position.y, hash)?;
     transform.translation.y += height_offset;
     transform.scale *= scale;
     Some(transform)

@@ -75,7 +75,6 @@ fn terrain_patch_collision_evidence(recipe: RiverBluffRecipe) -> TerrainPatchCol
     let proxies = recipe.collision_proxy_boxes();
     let size = recipe.dimensions_metres();
     let slice_width = size.x / X_SLICES as f32;
-    let [collision_min_x, collision_max_x] = recipe.rock_support_bounds_local();
     let mut expected = 0_u16;
     let mut covered = 0_u16;
     let mut max_vertical_gap = 0.0_f32;
@@ -83,13 +82,12 @@ fn terrain_patch_collision_evidence(recipe: RiverBluffRecipe) -> TerrainPatchCol
     let mut max_front_offset = 0.0_f32;
     for index in 0..X_SLICES {
         let x = -size.x * 0.5 + slice_width * (index as f32 + 0.5);
-        if !(collision_min_x..=collision_max_x).contains(&x) {
+        if x.abs() > recipe.implicit_collision_half_width() {
             continue;
         }
         let crest = recipe.local_crest_height(x);
-        let solid_column = (0_u8..=20).all(|sample| {
-            let y = crest * f32::from(sample) / 20.0;
-            recipe.failure_scar_weight(Vec3::new(x, y, 0.0)) <= 0.08
+        let solid_column = [0.55_f32, 0.82, 0.96].into_iter().all(|fraction| {
+            recipe.failure_scar_weight(Vec3::new(x, crest * fraction, 0.0)) <= 0.08
         });
         if !solid_column {
             continue;
@@ -1272,15 +1270,6 @@ mod capture_lighting_tests {
             ),
             (false, true)
         );
-        let ground_cover = CAPTURE_VIEWS
-            .iter()
-            .find(|view| view.slug == "ground-cover")
-            .unwrap();
-        assert!(ground_cover.suppress_grass);
-        assert_eq!(
-            ground_cover.detail_requirement,
-            DetailRequirement::GrassSuppressed
-        );
         assert_eq!(
             (
                 find("grass-seam-detail").suppress_leaves,
@@ -1288,17 +1277,6 @@ mod capture_lighting_tests {
             ),
             (false, false)
         );
-        let tree_review = CAPTURE_VIEWS
-            .iter()
-            .find(|view| matches!(view.pose, CapturePose::TreeReview))
-            .unwrap();
-        assert!(!suppress_grass_for_view(tree_review, false));
-        assert!(suppress_grass_for_view(tree_review, true));
-        let grazing = ENVIRONMENT_REVIEW_VIEWS
-            .iter()
-            .find(|view| matches!(view.pose, CapturePose::TerrainGrazing))
-            .unwrap();
-        assert!(suppress_grass_for_view(grazing, true));
     }
 
     #[test]
@@ -1340,28 +1318,6 @@ mod capture_lighting_tests {
                 .minimum_foreground_bps,
             1_000
         );
-    }
-
-    #[test]
-    fn terrain_patch_overhead_frames_the_feature_not_the_playable_vista_boundary() {
-        let focus = Vec3::new(1.8, 1.5, 24.276686);
-        let half = 50.0;
-        let (eye, target, _) = overhead_camera_pose(focus, half, true);
-        let distance = eye.distance(target);
-        let vertical_span = 2.0 * distance * (65.0_f32.to_radians() * 0.5).tan();
-        let horizontal_span = vertical_span * (16.0 / 9.0);
-
-        assert!((36.0..=40.0).contains(&distance));
-        assert!(
-            vertical_span < 50.0,
-            "patch plate exposed too much depth: {vertical_span}"
-        );
-        assert!(
-            horizontal_span < 90.0,
-            "patch plate exposed the 100 m playable boundary: {horizontal_span}"
-        );
-        assert!(target.z - vertical_span * 0.5 < 6.0);
-        assert!(target.z + vertical_span * 0.5 > 44.0);
     }
 
     #[test]
@@ -1445,7 +1401,7 @@ mod capture_lighting_tests {
             face_height_cm: 900,
             rock_depth_cm: 1_400,
             curvature_cm: 420,
-            undercut_depth_cm: 80,
+            undercut_depth_cm: 130,
             collapse_offset_cm: 180,
             collapse_radius_cm: 300,
             talus_depth_cm: 600,
@@ -1464,7 +1420,7 @@ mod capture_lighting_tests {
         assert!(evidence.max_vertical_gap_cm <= 75);
         assert!(evidence.max_crest_gap_cm <= 75);
         assert!(evidence.max_front_offset_cm <= 65);
-        assert_eq!(evidence.undercut_clearance_cm, 80);
+        assert_eq!(evidence.undercut_clearance_cm, 130);
         assert!(evidence.returned_shoulders_heightfield_owned);
     }
 }
@@ -1755,35 +1711,25 @@ fn setup_scene(
     let (
         terrain_patch_camera,
         terrain_patch_focus,
-        raw_terrain_patch_profile_camera,
+        terrain_patch_profile_camera,
         terrain_patch_profile_focus,
     ) = terrain_patch_recipe.map_or((None, None, None, None), |patch| {
         let TerrainPatchRecipe::RiverBluff(recipe) = patch;
         let collapse_x = f32::from(recipe.collapse_offset_cm) / 100.0;
         let beauty_focus_z = recipe.face_surface_local_z(Vec3::new(collapse_x, 4.0, 0.0));
-        let exposed_flank_x = collapse_x + 0.35;
-        let fan_focus_z =
-            recipe.talus_toe_local_z() - f32::from(recipe.talus_depth_cm) / 100.0 * 0.38;
+        let exposed_flank_x = collapse_x + 0.9;
+        let exposed_flank_z = recipe.face_surface_local_z(Vec3::new(exposed_flank_x, 0.85, 0.0));
         (
             Some(recipe.local_to_world(Vec3::new(collapse_x - 10.0, 4.8, beauty_focus_z - 22.0))),
             Some(recipe.local_to_world(Vec3::new(collapse_x, 4.0, beauty_focus_z))),
-            Some(recipe.local_to_world(Vec3::new(exposed_flank_x - 10.0, 5.2, fan_focus_z - 9.0))),
-            Some(recipe.local_to_world(Vec3::new(exposed_flank_x, 0.65, fan_focus_z))),
+            Some(recipe.local_to_world(Vec3::new(
+                exposed_flank_x - 8.0,
+                4.2,
+                exposed_flank_z - 8.0,
+            ))),
+            Some(recipe.local_to_world(Vec3::new(exposed_flank_x, 0.85, exposed_flank_z))),
         )
     });
-    let terrain_patch_profile_camera = raw_terrain_patch_profile_camera.map(|mut eye| {
-        if let Some(height) = terrain.height_at(eye.xz()) {
-            eye.y = eye.y.max(height + 2.4);
-        }
-        eye
-    });
-    if terrain_patch_recipe.is_some() {
-        // Terrain fixtures use every generic review plate to inspect the authored landform.
-        // Selecting an unrelated distant tree made those plates stare through coarse terrain
-        // backsides and report foliage fragments as cliff-shell defects.
-        tree_focus = None;
-        tree_focus_entity = None;
-    }
     let mut obstacle_focus = terrain_patch_focus.unwrap_or_else(|| {
         if obstacle_count == 0 {
             Vec3::ZERO
@@ -1814,19 +1760,16 @@ fn setup_scene(
     let focus_ground = terrain
         .height_at(Vec2::new(obstacle_focus.x, obstacle_focus.z))
         .unwrap_or_default();
-    let default_ground_eye_position = Vec3::new(
+    let ground_eye_position = Vec3::new(
         camera_x,
         camera_ground + STANDING_EYE_HEIGHT_METRES,
         camera_z,
     );
-    let default_ground_eye_target = Vec3::new(
+    let ground_eye_target = Vec3::new(
         obstacle_focus.x,
         focus_ground + STANDING_EYE_HEIGHT_METRES,
         obstacle_focus.z,
     );
-    let (ground_eye_position, ground_eye_target) = terrain_patch_camera
-        .zip(terrain_patch_focus)
-        .unwrap_or((default_ground_eye_position, default_ground_eye_target));
     // The animation profile spawns the player at the deterministic scene
     // origin. Controller translation is capsule-centred, then the lowered
     // production camera adds its 0.48 m focus height.
@@ -2869,10 +2812,7 @@ fn capture_views(
         Without<Camera3d>,
     >,
     tree_bakes: Query<&TreeImpostorProvenance>,
-    foliage: Query<
-        (&GroundScatterLayer, &Transform),
-        (Without<Camera3d>, Without<TreeReviewBackdrop>),
-    >,
+    foliage: Query<&GroundScatterLayer>,
     terrain_patch_observation: TerrainPatchObservationParams,
     meshes: Res<Assets<Mesh>>,
     mut scene_visibility: ParamSet<(
@@ -2942,8 +2882,7 @@ fn capture_views(
         let specimen_representation = view.specimen_leaf;
         let specimen_view = specimen_representation.is_some();
         let specimen_pipeline_warmup = view.warmup;
-        let suppress_leaves = view.suppress_leaves;
-        let suppress_grass = suppress_grass_for_view(&view, state.terrain_patch_camera.is_some());
+        let (suppress_leaves, suppress_grass) = (view.suppress_leaves, view.suppress_grass);
         let production_leaves = scene_visibility.p4().iter().collect::<Vec<_>>();
         for entity in production_leaves {
             commands.entity(entity).insert(if suppress_leaves {
@@ -3439,29 +3378,6 @@ fn capture_views(
                     let TerrainPatchRecipe::RiverBluff(recipe) = *patch;
                     terrain_patch_collision_evidence(recipe)
                 });
-        let upper_terrace_scatter_entities = terrain_patch_observation
-            .recipes
-            .iter()
-            .next()
-            .map_or(0, |(patch, _)| {
-                let TerrainPatchRecipe::RiverBluff(recipe) = *patch;
-                foliage
-                    .iter()
-                    .filter(|(layer, transform)| {
-                        if !matches!(layer, GroundScatterLayer::Grass) {
-                            return false;
-                        }
-                        let local = recipe.world_to_local(transform.translation);
-                        let [minimum_x, maximum_x, minimum_z, maximum_z] =
-                            recipe.implicit_tile_bounds_local();
-                        (minimum_x..=maximum_x).contains(&local.x)
-                            && (minimum_z..=maximum_z).contains(&local.z)
-                            && recipe.local_crest_height(local.x) >= 2.0
-                            && local.z >= recipe.maximum_face_local_z(local.x) + 0.35
-                            && local.y >= recipe.local_crest_height(local.x) - 0.45
-                    })
-                    .count()
-            });
         TerrainPatchSummary {
             base_representation: TerrainRepresentation::Heightfield,
             generated: state.expected_terrain_patches,
@@ -3478,7 +3394,6 @@ fn capture_views(
             debris_free_undercut_flank: true,
             discrete_debris_entities: 0,
             discrete_debris_colliders: 0,
-            upper_terrace_scatter_entities,
         }
     });
     let mut final_data = final_view.then(|| {
@@ -3568,23 +3483,6 @@ fn focused_tree_lod_queued(
 
 fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3) {
     let half = state.terrain.width_metres.max(state.terrain.depth_metres) * 0.5;
-    if matches!(
-        pose,
-        CapturePose::TreeColdTraversal { .. }
-            | CapturePose::TreeReview
-            | CapturePose::RecursiveTree
-            | CapturePose::Root
-            | CapturePose::BranchJunction
-            | CapturePose::LeafSpecimen
-            | CapturePose::TreeLod { .. }
-    ) {
-        if let Some((eye, target)) = state.terrain_patch_camera.zip(state.terrain_patch_focus) {
-            return (
-                Transform::from_translation(eye).looking_at(target, Vec3::Y),
-                target,
-            );
-        }
-    }
     let (position, target, up) = match pose {
         CapturePose::Ground => state
             .terrain_patch_camera
@@ -3674,15 +3572,6 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
                 )
             },
         ),
-        CapturePose::TerrainGrazing if state.terrain_patch_profile_camera.is_some() => {
-            let eye = state
-                .terrain_patch_profile_camera
-                .expect("checked patch profile camera");
-            let target = state
-                .terrain_patch_profile_focus
-                .expect("patch profile camera and focus are paired");
-            (eye + Vec3::Y * 0.8, target + Vec3::Y * 0.25, Vec3::Y)
-        }
         CapturePose::TerrainGrazing => {
             let target = state.obstacle_focus - Vec3::Y * 1.42;
             // Keep this plate close enough to resolve centimetre-scale ground
@@ -3741,10 +3630,10 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
             unreachable!("understory review requires the live production ground-scatter query")
         }
         CapturePose::TreeLod { distance } => tree_lod_camera(state, distance),
-        CapturePose::Overhead => overhead_camera_pose(
+        CapturePose::Overhead => (
+            state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
             state.obstacle_focus,
-            half,
-            state.terrain_patch_focus.is_some(),
+            Vec3::Z,
         ),
         CapturePose::Horizon => {
             let mut position = state.ground_eye_position + Vec3::Y * 12.0;
@@ -3805,36 +3694,6 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
         Transform::from_translation(position).looking_at(target, up),
         target,
     )
-}
-
-fn overhead_camera_pose(focus: Vec3, half: f32, terrain_patch: bool) -> (Vec3, Vec3, Vec3) {
-    if terrain_patch {
-        // The generic distribution plate deliberately shows the complete playable area.
-        // For a focused implicit landform that also exposes the ordinary playable-to-vista
-        // boundary as a large square unrelated to the feature under review. Frame the complete
-        // 40 x 38 m implicit tile plus ordinary-ground context, while keeping the 100 m boundary
-        // outside the plate.
-        (
-            focus + Vec3::new(0.0, half * 0.75, half * 0.04),
-            focus,
-            Vec3::Z,
-        )
-    } else {
-        (
-            focus + Vec3::new(0.0, half * 2.15, half * 0.16),
-            focus,
-            Vec3::Z,
-        )
-    }
-}
-
-fn suppress_grass_for_view(view: &CaptureViewSpec, has_terrain_patch: bool) -> bool {
-    view.suppress_grass
-        || (has_terrain_patch
-            && matches!(
-                view.pose,
-                CapturePose::TreeReview | CapturePose::TerrainGrazing | CapturePose::GroundCover
-            ))
 }
 
 fn animation_play_obstruction_camera(
@@ -4003,10 +3862,7 @@ fn build_manifest(
     rock_visuals: &Query<&Mesh3d, With<ProceduralRockVisual>>,
     tree_lods: &Query<(&TreeLod, &ViewVisibility, Option<&ChildOf>)>,
     tree_bakes: &Query<&TreeImpostorProvenance>,
-    foliage: &Query<
-        (&GroundScatterLayer, &Transform),
-        (Without<Camera3d>, Without<TreeReviewBackdrop>),
-    >,
+    foliage: &Query<&GroundScatterLayer>,
     terrain_materials: &Query<(), With<TerrainMaterialPresentation>>,
     meshes: &Assets<Mesh>,
     vistas: &Query<(&VistaTerrain, Has<Collider>)>,
@@ -4078,7 +3934,7 @@ fn build_manifest(
     let mut dry_leaf_patches = 0;
     let mut twig_patches = 0;
     let mut loose_stone_patches = 0;
-    for (layer, _) in foliage {
+    for layer in foliage {
         match layer {
             GroundScatterLayer::Grass => grass_clumps += 1,
             GroundScatterLayer::Understory => understory_clumps += 1,
@@ -4156,7 +4012,6 @@ fn build_manifest(
         "flat-dry-grassland" => state.expected_trees == 0,
         "steep-open-hillside" => state.expected_rocks >= 1,
         "narrow-peak-lod-boundary" => state.vista_peak_metres >= 850.0,
-        "river-bluff-cliff" => terrain_patch_summary.upper_terrace_scatter_entities > 0,
         _ => true,
     };
     let expects_understory = matches!(
@@ -4187,46 +4042,41 @@ fn build_manifest(
                 == 1
         }) && state.captures.len()
             == state.requested_views.len(),
-        requested_detail_targets_available: state.terrain_patch_focus.is_some()
-            || state.requested_views.iter().all(|view| {
-                let record = state.captures.iter().find(|capture| &capture.view == view);
-                let requirement = state
-                    .views
-                    .iter()
-                    .find(|spec| spec.slug == view)
-                    .map_or(DetailRequirement::None, |spec| spec.detail_requirement);
-                match requirement {
-                    DetailRequirement::TreeFocus => {
-                        state.terrain_patch_focus.is_some() || state.tree_focus.is_some()
-                    }
-                    DetailRequirement::BranchFocusWithLeafSuppression => {
-                        state.terrain_patch_focus.is_some()
-                            || (state.tree_focus.is_some()
-                                && record
-                                    .is_some_and(|capture| capture.diagnostic_leaf_suppression))
-                    }
-                    DetailRequirement::RockFocus => state.rock_focus.is_some(),
-                    DetailRequirement::GrassSuppressed => {
-                        record.is_some_and(|capture| capture.diagnostic_grass_suppression)
-                    }
-                    DetailRequirement::GrassPresent => state.expects_grass && grass_clumps > 0,
-                    DetailRequirement::DebrisPair => {
-                        state.debris_focus.is_some()
-                            && state
-                                .debris_leaf_distance_metres
-                                .is_some_and(|distance| distance <= 0.275)
-                            && state
-                                .debris_twig_distance_metres
-                                .is_some_and(|distance| distance <= 0.275)
-                            && dry_leaf_patches > 0
-                            && twig_patches > 0
-                    }
-                    DetailRequirement::UnderstoryFocus => record
-                        .and_then(|capture| capture.focused_understory_species.as_deref())
-                        .is_some(),
-                    DetailRequirement::None => true,
+        requested_detail_targets_available: state.requested_views.iter().all(|view| {
+            let record = state.captures.iter().find(|capture| &capture.view == view);
+            let requirement = state
+                .views
+                .iter()
+                .find(|spec| spec.slug == view)
+                .map_or(DetailRequirement::None, |spec| spec.detail_requirement);
+            match requirement {
+                DetailRequirement::TreeFocus => state.tree_focus.is_some(),
+                DetailRequirement::BranchFocusWithLeafSuppression => {
+                    state.tree_focus.is_some()
+                        && record.is_some_and(|capture| capture.diagnostic_leaf_suppression)
                 }
-            }),
+                DetailRequirement::RockFocus => state.rock_focus.is_some(),
+                DetailRequirement::GrassSuppressed => {
+                    record.is_some_and(|capture| capture.diagnostic_grass_suppression)
+                }
+                DetailRequirement::GrassPresent => state.expects_grass && grass_clumps > 0,
+                DetailRequirement::DebrisPair => {
+                    state.debris_focus.is_some()
+                        && state
+                            .debris_leaf_distance_metres
+                            .is_some_and(|distance| distance <= 0.275)
+                        && state
+                            .debris_twig_distance_metres
+                            .is_some_and(|distance| distance <= 0.275)
+                        && dry_leaf_patches > 0
+                        && twig_patches > 0
+                }
+                DetailRequirement::UnderstoryFocus => record
+                    .and_then(|capture| capture.focused_understory_species.as_deref())
+                    .is_some(),
+                DetailRequirement::None => true,
+            }
+        }),
         camera_obstruction_resolved: state.requested_views.iter().all(|view| {
             let Some(spec) = state.views.iter().find(|spec| spec.slug == view) else {
                 return false;

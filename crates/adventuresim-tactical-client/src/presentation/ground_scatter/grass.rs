@@ -1,6 +1,5 @@
 use adventuresim_tactical_core::prelude::{
     EnvironmentalSample, GroundCover, SceneEnvironment, SceneGround, SceneTerrain, TacticalSurface,
-    TerrainPatchRecipe,
 };
 use bevy::{
     asset::RenderAssetUsages,
@@ -163,7 +162,6 @@ pub(super) fn spawn(
     commands: &mut Commands,
     terrain: &SceneTerrain,
     ground: &SceneGround,
-    terrain_patches: &[TerrainPatchRecipe],
     base_seed: u64,
     profile: GrassCommunityProfile,
     assets: &Assets,
@@ -187,7 +185,6 @@ pub(super) fn spawn(
             let Some(transform) = grass_patch_placement(
                 terrain,
                 ground,
-                terrain_patches,
                 Vec2::new(eligibility_world_x, eligibility_world_z),
                 Vec2::new(world_x, world_z),
             ) else {
@@ -230,9 +227,7 @@ pub(super) fn spawn(
                 (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
                 (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
             );
-            let Some(transform) =
-                grass_patch_placement(terrain, ground, terrain_patches, centre, centre)
-            else {
+            let Some(transform) = grass_patch_placement(terrain, ground, centre, centre) else {
                 continue;
             };
             let meshes =
@@ -323,22 +318,10 @@ fn ground_allows_grass_patch(ground: &SceneGround, centre: Vec2) -> bool {
         })
     })
 }
-fn grass_patch_transform(
-    terrain: &SceneTerrain,
-    terrain_patches: &[TerrainPatchRecipe],
-    world_x: f32,
-    world_z: f32,
-) -> Option<Transform> {
+fn grass_patch_transform(terrain: &SceneTerrain, world_x: f32, world_z: f32) -> Option<Transform> {
     let sample = Vec2::new(world_x, world_z);
-    if !super::super::terrain::presented_ground_allows_scatter(
-        terrain_patches,
-        sample,
-        GRASS_PATCH_SPACING * 0.58,
-    ) {
-        return None;
-    }
-    let height = super::super::terrain::presented_ground_height(terrain, terrain_patches, sample)?;
-    let normal = super::super::terrain::presented_ground_normal(terrain, terrain_patches, sample)?;
+    let height = terrain.height_at(sample)?;
+    let normal = terrain.normal_at(sample)?;
     if normal.y < 0.72 {
         return None;
     }
@@ -351,7 +334,6 @@ fn grass_patch_transform(
 fn grass_patch_placement(
     terrain: &SceneTerrain,
     ground: &SceneGround,
-    terrain_patches: &[TerrainPatchRecipe],
     legacy_predicate_centre: Vec2,
     render_centre: Vec2,
 ) -> Option<Transform> {
@@ -364,7 +346,7 @@ fn grass_patch_placement(
     {
         return None;
     }
-    grass_patch_transform(terrain, terrain_patches, render_centre.x, render_centre.y)
+    grass_patch_transform(terrain, render_centre.x, render_centre.y)
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::presentation) enum GrassMeshLod {
@@ -940,51 +922,9 @@ fn append_crossed_spikelet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_tactical_core::prelude::{GroundSurface, RiverBluffRecipe};
+    use adventuresim_tactical_core::prelude::GroundSurface;
     use bevy::{mesh::VertexAttributeValues, prelude::default};
     use std::collections::BTreeSet;
-
-    fn patch_aware_test_recipe() -> RiverBluffRecipe {
-        RiverBluffRecipe {
-            seed: 7_094_698_234_423_137_900,
-            center_cm: [0, 0, 0],
-            yaw_milliradians: 0,
-            face_width_cm: 2_800,
-            face_height_cm: 900,
-            rock_depth_cm: 1_400,
-            curvature_cm: 420,
-            undercut_depth_cm: 80,
-            collapse_offset_cm: 180,
-            collapse_radius_cm: 300,
-            talus_depth_cm: 700,
-            heightfield_error_cm: 650,
-            error_tolerance_cm: 75,
-            vertical_intersections: 2,
-            sample_spacing_cm: 28,
-        }
-    }
-
-    #[test]
-    fn patch_aware_grass_uses_upper_terrace_and_omits_the_scarp() {
-        let terrain = SceneTerrain::from_heightmap(41, 41, 2.0, vec![0.0; 41 * 41]).unwrap();
-        let recipe = patch_aware_test_recipe();
-        let patches = [TerrainPatchRecipe::RiverBluff(recipe)];
-        let upper_z = recipe.maximum_face_local_z(0.0) + 2.0;
-        let upper = grass_patch_transform(&terrain, &patches, 0.0, upper_z)
-            .expect("upper terrace must receive patch-aware grass presentation");
-        assert!(
-            (upper.translation.y - recipe.local_crest_height(0.0)).abs() <= 0.05,
-            "upper-terrace grass was not seated on the implicit top: {upper:?}"
-        );
-        let lower = grass_patch_transform(&terrain, &patches, 0.0, -10.0)
-            .expect("ordinary lower ground must retain grass presentation");
-        assert!(lower.translation.y.abs() <= 0.01);
-        let scarp_z = recipe.face_surface_local_z(Vec3::new(0.0, 4.0, 0.0));
-        assert!(
-            grass_patch_transform(&terrain, &patches, 0.0, scarp_z).is_none(),
-            "grass presentation must not bridge the multi-valued scarp"
-        );
-    }
 
     #[test]
     fn coherent_sward_selector_honors_habitat_profiles_deterministically() {
@@ -1305,7 +1245,7 @@ mod tests {
         assert!(max_z - min_z > worst_adjacent_centre_distance);
 
         let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).unwrap();
-        let transform = grass_patch_transform(&terrain, &[], 0.0, 0.0).unwrap();
+        let transform = grass_patch_transform(&terrain, 0.0, 0.0).unwrap();
         assert_eq!(transform.scale, Vec3::ONE);
         assert_eq!(transform.rotation, Quat::IDENTITY);
     }
@@ -1326,7 +1266,7 @@ mod tests {
         let rendered = Vec2::ZERO;
         assert!(ground_allows_grass_patch(&ground, legacy));
         assert!(ground_allows_grass_patch(&ground, rendered));
-        assert!(grass_patch_placement(&terrain, &ground, &[], legacy, rendered).is_some());
+        assert!(grass_patch_placement(&terrain, &ground, legacy, rendered).is_some());
     }
 
     #[test]
@@ -1335,10 +1275,9 @@ mod tests {
         let ground =
             SceneGround::from_samples(81, 81, 0.1, vec![GroundSurface::default(); 81 * 81])
                 .unwrap();
-        assert!(grass_patch_transform(&terrain, &[], 0.0, 0.0).is_some());
+        assert!(grass_patch_transform(&terrain, 0.0, 0.0).is_some());
         assert!(
-            grass_patch_placement(&terrain, &ground, &[], Vec2::ZERO, Vec2::new(2.0, 0.0))
-                .is_none()
+            grass_patch_placement(&terrain, &ground, Vec2::ZERO, Vec2::new(2.0, 0.0)).is_none()
         );
     }
 
@@ -1348,8 +1287,8 @@ mod tests {
             .flat_map(|_| (0..9).map(|x| x as f32 * 0.25))
             .collect::<Vec<_>>();
         let terrain = SceneTerrain::from_heightmap(9, 3, 1.0, heights).unwrap();
-        let left = grass_patch_transform(&terrain, &[], -1.6, 0.0).unwrap();
-        let right = grass_patch_transform(&terrain, &[], 1.6, 0.0).unwrap();
+        let left = grass_patch_transform(&terrain, -1.6, 0.0).unwrap();
+        let right = grass_patch_transform(&terrain, 1.6, 0.0).unwrap();
         let near = grass_patch_mesh(
             Color::WHITE,
             GrassMeshLod::Near,
