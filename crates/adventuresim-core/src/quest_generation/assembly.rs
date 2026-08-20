@@ -311,7 +311,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
             ),
             spoken_text: format!(
-                "I marked {primary_evidence_reference} worth inspecting at {evidence_site_label}. It may be examined firsthand."
+                "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. It may be examined firsthand."
             ),
             challenge_text: format!(
                 "{primary_evidence_reference} worth inspecting at {evidence_site_label}"
