@@ -1127,10 +1127,10 @@ mod legacy_tests {
         state.advance_action(20);
         assert_eq!(state.action_phase(), 0.5);
         state.advance_action(25);
-        assert_eq!(state.action_phase(), 0.75);
-        state.advance_action(30);
+        assert!((state.action_phase() - (0.5 + 0.5 * 5.0 / 30.0)).abs() < 0.0001);
+        state.advance_action(50);
         assert_eq!(state.action_phase(), 1.0);
-        state.advance_action(31);
+        state.advance_action(51);
         assert!(state.action_view().is_none());
     }
 

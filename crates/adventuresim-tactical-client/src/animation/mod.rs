@@ -220,7 +220,14 @@ fn evaluate_skeletons(
             &evaluation.action
         };
         let mut weighted = Vec::<WeightedClip>::new();
-        let base_layer = if evaluation.action.is_empty() && !evaluation.lower_body.is_empty() {
+        let upper_body_action = !evaluation.action.is_empty()
+            && matches!(
+                skeleton.action_kind(),
+                SkeletonAction::Attack | SkeletonAction::Block
+            );
+        let base_layer = if upper_body_action
+            || (evaluation.action.is_empty() && !evaluation.lower_body.is_empty())
+        {
             ClipLayer::Upper
         } else {
             ClipLayer::Whole
@@ -235,8 +242,13 @@ fn evaluate_skeletons(
                 base_layer,
             );
         }
-        if evaluation.action.is_empty() {
-            for sample in &evaluation.lower_body {
+        if evaluation.action.is_empty() || upper_body_action {
+            let lower_body = if evaluation.lower_body.is_empty() {
+                &evaluation.base
+            } else {
+                &evaluation.lower_body
+            };
+            for sample in lower_body {
                 append_resolved_sample_layer(
                     &mut weighted,
                     &runtime,

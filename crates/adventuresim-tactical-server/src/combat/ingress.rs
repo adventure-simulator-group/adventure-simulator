@@ -25,7 +25,7 @@ pub(super) fn on_defender_response(
     let Ok(mut skeleton) = skeletons.get_mut(entity) else {
         return;
     };
-    let start = animation_tick(&time);
+    let start = skeleton.locomotion_sample_tick;
     let admitted = match **event {
         DefendRequest::Dodge if skeleton.action_kind() != SkeletonAction::Dodge => skeleton
             .begin_dodge(DodgeSpec::default(), start, start + 8)
@@ -65,7 +65,7 @@ pub(super) fn on_melee_attack_started(
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
-    let start = animation_tick(&time);
+    let start = skeleton.locomotion_sample_tick;
     if skeleton
         .begin_attack(
             AttackSpec::new(animation),
@@ -280,7 +280,7 @@ pub(super) fn on_melee_action_request(
                 .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
                 .unwrap_or_default()
                 .saturating_sub(WINDUP_JITTER_TOLERANCE);
-            let start = animation_tick(&time);
+            let start = skeleton.locomotion_sample_tick;
             if skeleton
                 .begin_attack(
                     AttackSpec::new(animation),
@@ -394,7 +394,7 @@ pub(super) fn on_ranged_attack_started(
     let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
         return;
     };
-    let start = animation_tick(&time);
+    let start = skeleton.locomotion_sample_tick;
     if skeleton
         .begin_attack(
             AttackSpec::default(),
@@ -410,10 +410,6 @@ pub(super) fn on_ranged_attack_started(
         event.windup,
         RANGED_NETWORK_ALLOWANCE,
     );
-}
-
-fn animation_tick(time: &Time<()>) -> u64 {
-    (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64
 }
 
 fn duration_ticks(duration: CombatDuration) -> u64 {

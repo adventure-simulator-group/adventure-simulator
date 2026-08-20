@@ -11,6 +11,7 @@ pub(super) const PRESENTATION_PHASE_DRIFT_DEADBAND: f32 = 0.04;
 pub(super) const PRESENTATION_PHASE_DRIFT_MEASUREMENT_BLEND: f32 = 0.15;
 pub(super) const PRESENTATION_PHASE_SNAP_ERROR: f32 = 0.20;
 pub(super) const MAX_PRESENTATION_SOURCE_GAP_TICKS: u64 = 32;
+const MINIMUM_ATTACK_PRESENTATION_PREPARATION_TICKS: u64 = 20;
 
 /// Client-only locomotion state used for rendering between replicated server
 /// samples. Gameplay semantics and presentation events continue to read the
@@ -26,6 +27,91 @@ pub(crate) struct PresentedSkeleton {
     pub(crate) last_phase_correction_delta: f32,
     pub(crate) last_phase_measurement_error: Option<f32>,
     pub(crate) last_phase_source_changed: bool,
+    action_clock: Option<PresentedActionClock>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum PresentedActionSpec {
+    Dodge {
+        direction: Vec2,
+        preparation_ticks: u64,
+    },
+    Attack {
+        target_height: f32,
+        animation: AttackAnimation,
+        preparation_ticks: u64,
+    },
+    Block {
+        incoming_line: AttackLine,
+        preparation_ticks: u64,
+    },
+}
+
+impl PresentedActionSpec {
+    fn same_visual_action(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Dodge { direction: a, .. }, Self::Dodge { direction: b, .. }) => {
+                a.distance_squared(b) <= 1.0e-6
+            }
+            (
+                Self::Attack {
+                    target_height: a,
+                    animation: a_animation,
+                    ..
+                },
+                Self::Attack {
+                    target_height: b,
+                    animation: b_animation,
+                    ..
+                },
+            ) => a_animation == b_animation && (a - b).abs() <= 1.0e-4,
+            (
+                Self::Block {
+                    incoming_line: a, ..
+                },
+                Self::Block {
+                    incoming_line: b, ..
+                },
+            ) => a == b,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PresentedActionClock {
+    spec: PresentedActionSpec,
+    source_start_tick: u64,
+    elapsed_ticks: u64,
+    completed: bool,
+    terminal_contact_ticks_remaining: u8,
+}
+
+impl PresentedActionClock {
+    fn new(spec: PresentedActionSpec, source_start_tick: u64) -> Self {
+        Self {
+            spec,
+            source_start_tick,
+            elapsed_ticks: 0,
+            completed: false,
+            // Dodge landing is a contact contract, not merely the final
+            // authored sample. Keep that exact pose for one additional
+            // semantic tick so lower-body ownership transfers after impact.
+            terminal_contact_ticks_remaining: u8::from(matches!(
+                spec,
+                PresentedActionSpec::Dodge { .. }
+            )),
+        }
+    }
+
+    fn dodge_terminal_tick(self) -> Option<u64> {
+        match self.spec {
+            PresentedActionSpec::Dodge {
+                preparation_ticks, ..
+            } => Some(preparation_ticks.saturating_mul(2)),
+            _ => None,
+        }
+    }
 }
 
 impl PresentedSkeleton {
@@ -41,7 +127,15 @@ impl PresentedSkeleton {
             last_phase_correction_delta: 0.0,
             last_phase_measurement_error: None,
             last_phase_source_changed: false,
+            action_clock: None,
         }
+    }
+
+    pub(crate) fn action_presentation_tick(&self) -> u64 {
+        self.action_clock
+            .map_or(self.state.locomotion_sample_tick, |clock| {
+                clock.elapsed_ticks
+            })
     }
 
     pub(crate) fn cadence_diagnostic_snapshot(&self) -> serde_json::Value {
@@ -56,6 +150,146 @@ impl PresentedSkeleton {
             "raised_phase": self.state.gait_phase,
         })
     }
+}
+
+fn presented_action_spec(state: &SkeletonState) -> Option<(PresentedActionSpec, u64)> {
+    match state.action_view()? {
+        ActionView::Dodge {
+            direction,
+            timeline,
+        } => Some((
+            PresentedActionSpec::Dodge {
+                direction,
+                preparation_ticks: timeline.preparation_ticks,
+            },
+            timeline.start_tick,
+        )),
+        ActionView::Attack {
+            target_height,
+            animation,
+            timeline,
+        } => Some((
+            PresentedActionSpec::Attack {
+                target_height,
+                animation,
+                preparation_ticks: timeline
+                    .preparation_ticks
+                    .max(MINIMUM_ATTACK_PRESENTATION_PREPARATION_TICKS),
+            },
+            timeline.start_tick,
+        )),
+        ActionView::Block {
+            incoming_line,
+            timeline,
+        } => Some((
+            PresentedActionSpec::Block {
+                incoming_line,
+                preparation_ticks: timeline.preparation_ticks,
+            },
+            timeline.start_tick,
+        )),
+    }
+}
+
+fn apply_presented_action(state: &mut SkeletonState, clock: PresentedActionClock) {
+    state.clear_action_for_presentation();
+    let start = 0;
+    let admitted = match clock.spec {
+        PresentedActionSpec::Dodge {
+            direction,
+            preparation_ticks,
+        } => state.begin_dodge(
+            DodgeSpec { direction },
+            start,
+            start.saturating_add(preparation_ticks),
+        ),
+        PresentedActionSpec::Attack {
+            target_height,
+            animation,
+            preparation_ticks,
+        } => state.begin_attack(
+            AttackSpec {
+                target_height,
+                animation,
+            },
+            start,
+            start.saturating_add(preparation_ticks),
+        ),
+        PresentedActionSpec::Block {
+            incoming_line,
+            preparation_ticks,
+        } => state.begin_block(
+            BlockSpec { incoming_line },
+            start,
+            start.saturating_add(preparation_ticks),
+        ),
+    };
+    debug_assert!(admitted.is_ok());
+    state.advance_action(clock.elapsed_ticks);
+}
+
+fn advance_presented_action(
+    clock: &mut Option<PresentedActionClock>,
+    previous: &SkeletonState,
+    authoritative: &SkeletonState,
+    next: &mut SkeletonState,
+    delta_seconds: f32,
+) {
+    let authoritative_action = presented_action_spec(authoritative);
+    let mut newly_started = false;
+    match (*clock, authoritative_action) {
+        (None, Some((spec, source_start_tick))) => {
+            *clock = Some(PresentedActionClock::new(spec, source_start_tick));
+            newly_started = true;
+        }
+        (Some(mut active), Some((spec, source_start_tick)))
+            if active.spec.same_visual_action(spec) =>
+        {
+            // A server echo can replace the locally predicted start tick. It
+            // is still the same visual action and must not restart or jump.
+            active.source_start_tick = source_start_tick;
+            *clock = Some(active);
+        }
+        (Some(_), Some((spec, source_start_tick))) => {
+            *clock = Some(PresentedActionClock::new(spec, source_start_tick));
+            newly_started = true;
+        }
+        (Some(active), None) if active.completed => *clock = None,
+        (Some(_), None) | (None, None) => {}
+    }
+
+    let Some(mut active) = *clock else {
+        return;
+    };
+    if !newly_started && !active.completed {
+        let elapsed = (delta_seconds * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64;
+        active.elapsed_ticks = active.elapsed_ticks.saturating_add(elapsed);
+    }
+    let reached_dodge_contact = active
+        .dodge_terminal_tick()
+        .is_some_and(|terminal| active.elapsed_ticks >= terminal);
+    if let Some(terminal) = active.dodge_terminal_tick() {
+        active.elapsed_ticks = active.elapsed_ticks.min(terminal);
+    }
+    if active.completed {
+        next.clear_action_for_presentation();
+    } else {
+        apply_presented_action(next, active);
+        if reached_dodge_contact {
+            if active.terminal_contact_ticks_remaining == 0 {
+                active.completed = true;
+            } else {
+                active.terminal_contact_ticks_remaining -= 1;
+            }
+        } else {
+            active.completed = next.action_kind() == SkeletonAction::None;
+        }
+    }
+    // A local action remains visually authoritative through sparse or early
+    // authoritative retirement. The previous parameter documents that this
+    // is a presentation handoff, not a gameplay-state mutation.
+    let _ = previous;
+    *clock = Some(active);
 }
 
 impl std::ops::Deref for PresentedSkeleton {
@@ -168,6 +402,14 @@ pub(super) fn advance_presented_skeleton(
         presented.phase_error_remaining = 0.0;
         presented.raised_phase_ahead = 0.0;
     }
+
+    advance_presented_action(
+        &mut presented.action_clock,
+        &previous,
+        authoritative,
+        &mut next,
+        delta_seconds,
+    );
 
     presented.state = next;
     presented.source_tick = authoritative.locomotion_sample_tick;

@@ -90,7 +90,7 @@ pub(crate) enum BoneRole {
 
 impl BoneRole {
     pub(super) const COUNT: usize = 34;
-    pub(super) const ALL: [Self; Self::COUNT] = [
+    pub(crate) const ALL: [Self; Self::COUNT] = [
         Self::Root,
         Self::Pelvis,
         Self::StomachOne,

@@ -57,11 +57,16 @@ GUARD_FOOTWORK_REPRO_SCENARIO = "guard-footwork-live-repro"
 MELEE_ACTION_REPRO_SCENARIO = "melee-action-lifecycle-repro"
 QUICKSTEP_FOOTWORK_REPRO_SCENARIO = "guard-quickstep-footwork-repro"
 CONTACT_AIRBORNE_LIMIT_METRES = 0.127  # Five inches.
+QUICKSTEP_IMPACT_SOLE_CLEARANCE_METRES = 0.01
+STATIONARY_ATTACK_FOOT_EXCURSION_METRES = 0.05
 CONTACT_PENETRATION_LIMIT_METRES = -0.01
 BOTH_FEET_BEHIND_LIMIT_SECONDS = 0.3
 ANATOMICAL_KNEE_FLEXION_LIMIT_DEGREES = 165.0
 PELVIS_VERTICAL_STEP_LIMIT_METRES = 0.05
 CONTACT_ORIENTATION_LIMIT_DEGREES = 5.0
+MELEE_MINIMUM_AUTHORED_CONTACT_TRAVEL_METRES = 0.15
+MELEE_MINIMUM_THRUST_ELBOW_ANGLE_DEGREES = 160.0
+MELEE_MINIMUM_RENDERED_ACTION_DOMINANCE = 0.94
 STANCE_WIDTH_MINIMUM_HIP_RATIO = 0.5
 STANCE_WIDTH_MAXIMUM_HIP_RATIO = 4.0
 CADENCE_DURATION_RATIO_LIMIT = 1.5
@@ -1733,6 +1738,35 @@ def _owner_local_bone(record: dict[str, object], side: str, bone: str) -> list[f
     return translation if isinstance(translation, list) and len(translation) >= 3 else None
 
 
+def _maximum_distance_from_origin(points: list[list[float]]) -> float:
+    if not points:
+        return 0.0
+    origin = points[0]
+    return max(
+        math.sqrt(sum((float(point[i]) - float(origin[i])) ** 2 for i in range(3)))
+        for point in points
+    )
+
+
+def _bone_global_translation(record: dict[str, object], role: str) -> list[float] | None:
+    translation = ((record.get("bone_globals") or {}).get(role) or {}).get("translation")
+    return translation if isinstance(translation, list) and len(translation) >= 3 else None
+
+
+def _joint_angle_degrees(a: list[float] | None, joint: list[float] | None,
+                         b: list[float] | None) -> float | None:
+    if a is None or joint is None or b is None:
+        return None
+    first = [float(a[i]) - float(joint[i]) for i in range(3)]
+    second = [float(b[i]) - float(joint[i]) for i in range(3)]
+    first_length = math.sqrt(sum(value * value for value in first))
+    second_length = math.sqrt(sum(value * value for value in second))
+    if first_length <= 1e-6 or second_length <= 1e-6:
+        return None
+    cosine = sum(first[i] * second[i] for i in range(3)) / (first_length * second_length)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
 def analyze_melee_action_repro(animation_log: Path, manifest_path: Path) -> dict[str, object]:
     frames = read_animation_frames(animation_log)
     episodes: list[list[dict[str, object]]] = []
@@ -1752,7 +1786,34 @@ def analyze_melee_action_repro(animation_log: Path, manifest_path: Path) -> dict
     previous_by_frame = {int(frame["frame"]): previous for previous, frame in zip(frames, frames[1:])}
     for episode in episodes:
         phases = [float((frame.get("evaluation") or {}).get("action_phase", 0.0)) for frame in episode]
+        action_weights = [
+            float(layer.get("weight", 0.0))
+            for frame in episode
+            for layer in ((frame.get("evaluation") or {}).get("action") or [])
+            if isinstance(layer, dict)
+        ]
         baseline = previous_by_frame.get(int(episode[0]["frame"]))
+        contact_frame = min(
+            episode,
+            key=lambda frame: abs(float((frame.get("evaluation") or {}).get("action_phase", 0.0)) - 0.5),
+        )
+        contact_clip_weights = [
+            float(clip.get("weight", 0.0))
+            for clip in ((contact_frame.get("playback") or {}).get("clips") or [])
+            if isinstance(clip, dict)
+            and str(clip.get("layer", "whole")).lower() != "lower"
+            and float(clip.get("weight", 0.0)) > 1e-6
+        ]
+        contact_total_weight = sum(contact_clip_weights)
+        contact_dominant_fraction = (
+            max(contact_clip_weights, default=0.0) / contact_total_weight
+            if contact_total_weight > 1e-6 else 0.0
+        )
+        contact_left_elbow_angle = _joint_angle_degrees(
+            _bone_global_translation(contact_frame, "left_shoulder"),
+            _bone_global_translation(contact_frame, "left_elbow"),
+            _bone_global_translation(contact_frame, "left_hand"),
+        )
         maximum_displacement = 0.0
         for frame in episode:
             for side in ("left", "right"):
@@ -1768,13 +1829,26 @@ def analyze_melee_action_repro(animation_log: Path, manifest_path: Path) -> dict
             - float(episode[0].get("elapsed_seconds", 0.0))
             if len(episode) >= 2 else 0.0
         )
+        ankle_excursions = {
+            side: _maximum_distance_from_origin([
+                point for frame in episode
+                if (point := _bone_global_translation(frame, f"{side}_foot"))
+                and isinstance(point, list) and len(point) >= 3
+            ])
+            for side in ("left", "right")
+        }
         episode_summaries.append({
             "first_frame": int(episode[0]["frame"]),
             "last_frame": int(episode[-1]["frame"]),
             "duration_seconds": duration,
             "maximum_phase": max(phases, default=0.0),
+            "maximum_action_weight": max(action_weights, default=0.0),
+            "contact_resolved_clip_weights": contact_clip_weights,
+            "contact_dominant_clip_fraction": contact_dominant_fraction,
+            "contact_left_elbow_angle_degrees": contact_left_elbow_angle,
             "phase_regressed": any(b + 1e-4 < a for a, b in zip(phases, phases[1:])),
             "maximum_hand_displacement_metres": maximum_displacement,
+            "maximum_ankle_excursion_metres": ankle_excursions,
         })
     trigger_frames = [
         int(frame["frame"]) for frame in frames
@@ -1789,8 +1863,29 @@ def analyze_melee_action_repro(animation_log: Path, manifest_path: Path) -> dict
             for episode in episode_summaries
         ),
         "action_phase_regressed": any(bool(episode["phase_regressed"]) for episode in episode_summaries),
+        "attack_pose_never_reaches_full_weight": len(episode_summaries) != 2 or any(
+            float(episode["maximum_action_weight"]) < 0.999
+            or len(episode["contact_resolved_clip_weights"]) > 2
+            or float(episode["contact_dominant_clip_fraction"])
+            < MELEE_MINIMUM_RENDERED_ACTION_DOMINANCE
+            for episode in episode_summaries
+        ),
+        "stationary_attack_moves_a_foot": len(episode_summaries) != 2 or any(
+            max(
+                float(value)
+                for value in (episode["maximum_ankle_excursion_metres"] or {}).values()
+            ) > STATIONARY_ATTACK_FOOT_EXCURSION_METRES
+            for episode in episode_summaries
+        ),
         "insufficient_rendered_hand_extension": len(episode_summaries) != 2 or any(
-            float(episode["maximum_hand_displacement_metres"]) < 0.15
+            float(episode["maximum_hand_displacement_metres"])
+            < MELEE_MINIMUM_AUTHORED_CONTACT_TRAVEL_METRES
+            for episode in episode_summaries
+        ),
+        "thrust_contact_arm_not_extended": len(episode_summaries) != 2 or any(
+            episode["contact_left_elbow_angle_degrees"] is None
+            or float(episode["contact_left_elbow_angle_degrees"])
+            < MELEE_MINIMUM_THRUST_ELBOW_ANGLE_DEGREES
             for episode in episode_summaries
         ),
     }
@@ -1810,9 +1905,19 @@ def analyze_melee_action_repro(animation_log: Path, manifest_path: Path) -> dict
 
 def analyze_quickstep_footwork_repro(animation_log: Path, manifest_path: Path) -> dict[str, object]:
     frames = read_animation_frames(animation_log)
+    edge_by_command = {
+        int((frame.get("input") or {}).get("command_index", -1)): int(frame["frame"])
+        for frame in frames
+        if bool((((frame.get("live_input") or {}).get("direct_control") or {}).get("dodge_just_pressed")))
+    }
     relevant = [
         frame for frame in frames
-        if str((frame.get("input") or {}).get("command_kind", "")) == "quickstep"
+        if (
+            str((frame.get("input") or {}).get("command_kind", "")) == "quickstep"
+            and int((frame.get("input") or {}).get("command_index", -1)) in edge_by_command
+            and int(frame["frame"])
+            >= edge_by_command[int((frame.get("input") or {}).get("command_index", -1))]
+        )
         or str((((frame.get("semantic_route") or {}).get("inputs") or {}).get("action"))).lower() == "dodge"
     ]
     dodge_edges = [
@@ -1824,27 +1929,58 @@ def analyze_quickstep_footwork_repro(animation_log: Path, manifest_path: Path) -
     unsupported_grounded: list[int] = []
     anatomical: list[int] = []
     max_radial = 0.0
+    max_supported_radial = 0.0
+    impact_contacts: list[dict[str, object]] = []
+    previous_dodge = False
     for frame in relevant:
         frame_id = int(frame["frame"])
         lower = frame.get("lower_body") or {}
         evaluation = frame.get("evaluation") or {}
         airborne = float(evaluation.get("airborne_phase", 0.0)) > 0.0
+        route_action = str(
+            (((frame.get("semantic_route") or {}).get("inputs") or {}).get("action"))
+        ).lower()
+        dodge = route_action == "dodge"
         supports = []
+        impact_clearances: dict[str, float | None] = {}
         for side in ("left", "right"):
             selected = ((((frame.get("foot_motion") or {}).get(side) or {}).get("selected") or {}))
             diagnostic = selected.get("diagnostic") or {}
-            support = float(diagnostic.get("support_weight", 0.0))
+            logged_support = diagnostic.get("support_weight")
+            if logged_support is None:
+                logged_support = (frame.get("raised_ownership") or {}).get(
+                    f"{side}_support_weight", 0.0
+                )
+            support = float(logged_support)
             supports.append(support)
             if selected.get("reach_disposition") == "hard":
                 hard_reach.append(frame_id)
             clearance = ((((lower.get(side) or {}).get("ankle") or {}).get("clearance")))
+            impact_clearances[side] = (
+                float(clearance) - 0.085 if clearance is not None else None
+            )
             if support > 0.5 and clearance is not None and float(clearance) > CONTACT_AIRBORNE_LIMIT_METRES:
                 airborne_contact.append(frame_id)
             offset = (lower.get(side) or {}).get("ankle_from_visual_pelvis_world")
             if isinstance(offset, list) and len(offset) >= 3:
-                max_radial = max(max_radial, math.sqrt(sum(float(v) ** 2 for v in offset[:3])))
+                radial = math.sqrt(sum(float(v) ** 2 for v in offset[:3]))
+                max_radial = max(max_radial, radial)
+                if support > 0.5:
+                    max_supported_radial = max(max_supported_radial, radial)
         if not airborne and max(supports, default=0.0) <= 0.01:
             unsupported_grounded.append(frame_id)
+        if previous_dodge and not dodge:
+            impact_contacts.append({
+                "frame": frame_id,
+                "left_sole_clearance_metres": impact_clearances.get("left"),
+                "right_sole_clearance_metres": impact_clearances.get("right"),
+                "both_feet_grounded": all(
+                    clearance is not None
+                    and clearance <= QUICKSTEP_IMPACT_SOLE_CLEARANCE_METRES
+                    for clearance in impact_clearances.values()
+                ),
+            })
+        previous_dodge = dodge
         jitter = frame.get("joint_jitter") or {}
         if bool(jitter.get("anatomically_invalid")):
             anatomical.append(frame_id)
@@ -1854,7 +1990,13 @@ def analyze_quickstep_footwork_repro(animation_log: Path, manifest_path: Path) -
         "hard_reach": bool(hard_reach),
         "contact_foot_over_five_inches": bool(airborne_contact),
         "grounded_with_no_support": bool(unsupported_grounded),
-        "rendered_leg_overextended": max_radial > 0.90,
+        # A deliberately airborne swing can pass outside the visual-pelvis
+        # stance radius without being anatomically invalid. The severe defect
+        # is a foot which claims support while held at that extension; hard
+        # two-bone reach remains independently gated for either leg.
+        "rendered_leg_overextended": max_supported_radial > 0.90,
+        "impact_missing_dual_foot_contact": len(impact_contacts) != len(dodge_edges)
+        or any(not bool(contact["both_feet_grounded"]) for contact in impact_contacts),
         "anatomically_invalid": bool(anatomical),
     }
     first_failure = min(
@@ -1870,6 +2012,8 @@ def analyze_quickstep_footwork_repro(animation_log: Path, manifest_path: Path) -
         "quickstep_input_edge_frames": dodge_edges[:12],
         "first_failure_frame": first_failure,
         "maximum_ankle_to_visual_pelvis_metres": max_radial,
+        "maximum_supported_ankle_to_visual_pelvis_metres": max_supported_radial,
+        "impact_contacts": impact_contacts,
         "failures": failures,
     }
     atomic_write_json(manifest_path, result)

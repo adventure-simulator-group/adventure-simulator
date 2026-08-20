@@ -66,6 +66,107 @@ mod legacy_tests {
     }
 
     #[test]
+    fn presented_attack_ignores_a_half_phase_server_echo_and_reaches_contact_locally() {
+        let mut locally_started = SkeletonState::default();
+        locally_started
+            .begin_attack(AttackSpec::default(), 100, 120)
+            .unwrap();
+        let mut presented = PresentedSkeleton::new(locally_started, None);
+
+        let mut delayed_echo = SkeletonState::default();
+        delayed_echo
+            .begin_attack(AttackSpec::default(), 80, 100)
+            .unwrap();
+        delayed_echo.advance_action(100);
+        assert_eq!(delayed_echo.action_phase(), 0.5);
+
+        advance_presented_skeleton(&mut presented, &delayed_echo, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        assert_eq!(presented.action_phase(), 0.0);
+        for _ in 0..20 {
+            advance_presented_skeleton(&mut presented, &delayed_echo, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        }
+        assert_eq!(presented.action_phase(), 0.5);
+
+        // Early authoritative retirement cannot truncate the visual recovery.
+        let retired = SkeletonState::default();
+        advance_presented_skeleton(&mut presented, &retired, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        assert!(presented.action_kind() == SkeletonAction::Attack);
+        assert!(presented.action_phase() > 0.5);
+    }
+
+    #[test]
+    fn presented_dodge_survives_early_authoritative_exit_until_its_landing_span() {
+        let mut local = SkeletonState::default();
+        local
+            .begin_dodge(DodgeSpec { direction: Vec2::X }, 40, 60)
+            .unwrap();
+        let mut presented = PresentedSkeleton::new(local.clone(), None);
+
+        advance_presented_skeleton(&mut presented, &local, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        assert_eq!(presented.action_phase(), 0.0);
+        assert_eq!(presented.action_presentation_tick(), 0);
+
+        let retired = SkeletonState::default();
+        for expected_tick in 1..=35 {
+            advance_presented_skeleton(&mut presented, &retired, 1.0 / LOCOMOTION_SAMPLE_HZ);
+            assert_eq!(presented.action_presentation_tick(), expected_tick);
+            assert_eq!(presented.action_kind(), SkeletonAction::Dodge);
+        }
+        assert!(presented.action_phase() > 0.5);
+    }
+
+    #[test]
+    fn presented_dodge_does_not_restart_for_a_normalized_server_echo() {
+        let mut predicted = SkeletonState::default();
+        predicted
+            .begin_dodge(
+                DodgeSpec {
+                    direction: Vec2::new(1.0, 0.001),
+                },
+                40,
+                60,
+            )
+            .unwrap();
+        let mut presented = PresentedSkeleton::new(predicted.clone(), None);
+        advance_presented_skeleton(&mut presented, &predicted, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        advance_presented_skeleton(&mut presented, &predicted, 4.0 / LOCOMOTION_SAMPLE_HZ);
+        assert_eq!(presented.action_presentation_tick(), 4);
+
+        let mut echoed = SkeletonState::default();
+        echoed
+            .begin_dodge(DodgeSpec { direction: Vec2::X }, 44, 66)
+            .unwrap();
+        advance_presented_skeleton(&mut presented, &echoed, 1.0 / LOCOMOTION_SAMPLE_HZ);
+
+        assert_eq!(presented.action_presentation_tick(), 5);
+        assert!(presented.action_phase() > 0.0);
+    }
+
+    #[test]
+    fn presented_dodge_holds_exact_landing_for_one_tick_before_guard_handoff() {
+        let mut local = SkeletonState::default();
+        local
+            .begin_dodge(DodgeSpec { direction: Vec2::X }, 40, 60)
+            .unwrap();
+        let retired = SkeletonState::default();
+        let mut presented = PresentedSkeleton::new(local.clone(), None);
+
+        advance_presented_skeleton(&mut presented, &local, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        for _ in 0..40 {
+            advance_presented_skeleton(&mut presented, &retired, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        }
+        assert_eq!(presented.action_kind(), SkeletonAction::Dodge);
+        assert_eq!(presented.action_phase(), 1.0);
+
+        advance_presented_skeleton(&mut presented, &retired, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        assert_eq!(presented.action_kind(), SkeletonAction::Dodge);
+        assert_eq!(presented.action_phase(), 1.0);
+
+        advance_presented_skeleton(&mut presented, &retired, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        assert_eq!(presented.action_kind(), SkeletonAction::None);
+    }
+
+    #[test]
     fn asset_validation_resolves_deterministic_routes() {
         let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
@@ -865,6 +966,46 @@ mod legacy_tests {
                 .iter()
                 .any(|sample| sample.clip.handle.id() == contact)
         );
+    }
+
+    #[test]
+    fn attack_contact_has_one_full_upper_clip_and_an_independent_lower_guard() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([SemanticPose::Guard, SemanticPose::AttackThrust]);
+        let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        state.begin_attack(AttackSpec::default(), 0, 20).unwrap();
+        state.advance_action(20);
+        let evaluation = AnimationEvaluation::from_skeleton(&state);
+
+        let mut upper = Vec::new();
+        for sample in &evaluation.action {
+            append_resolved_sample_layer(
+                &mut upper,
+                &runtime,
+                &catalog,
+                HUMANOID_UNARMED_PACK,
+                *sample,
+                ClipLayer::Upper,
+            );
+        }
+        let mut lower = Vec::new();
+        for sample in &evaluation.base {
+            append_resolved_sample_layer(
+                &mut lower,
+                &runtime,
+                &catalog,
+                HUMANOID_UNARMED_PACK,
+                *sample,
+                ClipLayer::Lower,
+            );
+        }
+
+        assert_eq!(upper.len(), 1);
+        assert_eq!(upper[0].clip.layer, ClipLayer::Upper);
+        assert!((upper[0].weight - 1.0).abs() < 0.0001);
+        assert_eq!(lower.len(), 1);
+        assert_eq!(lower[0].clip.layer, ClipLayer::Lower);
+        assert!((lower[0].weight - 1.0).abs() < 0.0001);
     }
 
     #[test]

@@ -110,7 +110,7 @@ impl AnimationDiagnosticLog {
         let header = serde_json::to_vec(&serde_json::json!({
             "record_type": "session_header",
             "schema": "adventuresim.animation.live",
-            "schema_version": 1,
+            "schema_version": 2,
             "session_name": self.path.file_stem().and_then(|name| name.to_str()),
             "log_path": self.path,
             "continued": continued,
@@ -283,6 +283,7 @@ pub(super) fn log_animation_diagnostics(
         let lower_body =
             rig.map(|rig| lower_body_snapshot(rig, *global_transform, &transforms, terrain));
         let upper_body = rig.map(|rig| upper_body_snapshot(rig, *global_transform, &transforms));
+        let bone_globals = rig.map(|rig| bone_global_snapshot(rig, &transforms));
         let clips = playback
             .clips
             .iter()
@@ -291,6 +292,7 @@ pub(super) fn log_animation_diagnostics(
                     "weight": clip.weight,
                     "time_seconds": clip.time_seconds,
                     "mirrored_weight": clip.mirrored_weight,
+                    "layer": format!("{:?}", clip.clip.layer).to_ascii_lowercase(),
                 })
             })
             .collect::<Vec<_>>();
@@ -379,11 +381,36 @@ pub(super) fn log_animation_diagnostics(
             },
             "lower_body": lower_body,
             "upper_body": upper_body,
+            "bone_globals": bone_globals,
             "joint_jitter": jitter_diagnostics
                 .as_deref()
                 .map(|diagnostics| diagnostics.live_log_snapshot(entity)),
         }));
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn bone_global_snapshot(rig: &HumanoidRig, transforms: &TransformHelper) -> serde_json::Value {
+    let mut bones = serde_json::Map::with_capacity(BoneRole::ALL.len());
+    for role in BoneRole::ALL {
+        let Some(entity) = rig.get(&role).copied() else {
+            continue;
+        };
+        let Ok(global) = transforms.compute_global_transform(entity) else {
+            continue;
+        };
+        let transform = global.compute_transform();
+        bones.insert(
+            role.label().to_owned(),
+            serde_json::json!({
+                "entity": entity.to_bits(),
+                "translation": transform.translation,
+                "rotation_xyzw": transform.rotation.to_array(),
+                "scale": transform.scale,
+            }),
+        );
+    }
+    serde_json::Value::Object(bones)
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -567,7 +594,7 @@ mod tests {
             .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap());
         let header = records.next().unwrap();
         assert_eq!(header["schema"], "adventuresim.animation.live");
-        assert_eq!(header["schema_version"], 1);
+        assert_eq!(header["schema_version"], 2);
         assert_eq!(records.next().unwrap()["semantic_tick"], 7);
         drop(log);
         std::fs::remove_file(path).unwrap();

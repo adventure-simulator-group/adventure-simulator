@@ -504,8 +504,10 @@ struct LegIkMemory {
     // frame instead of reacquiring the authored feet from scratch.
     quickstep_handoff_pending: bool,
     quickstep_guard_stance_held: bool,
+    quickstep_guard_stance_hold_tick: Option<u64>,
     quickstep_left_landing_local: Option<Vec3>,
     quickstep_right_landing_local: Option<Vec3>,
+    quickstep_pelvis_local: Option<Transform>,
     // The last propagated ankle positions are the last pose the player
     // actually saw. At the start of a stop, FK has already restored the new
     // idle sample before IK runs, so sampling globals in the IK pass would
@@ -1173,8 +1175,10 @@ fn reset_terrain_ik_preserving_anatomical_evaluation(memory: &mut LegIkMemory) {
 fn discard_quickstep_contact_handoff(memory: &mut LegIkMemory) {
     memory.quickstep_handoff_pending = false;
     memory.quickstep_guard_stance_held = false;
+    memory.quickstep_guard_stance_hold_tick = None;
     memory.quickstep_left_landing_local = None;
     memory.quickstep_right_landing_local = None;
+    memory.quickstep_pelvis_local = None;
     memory.left_foot_plant = None;
     memory.right_foot_plant = None;
     memory.left_foot_plant_acquired = false;
@@ -1187,6 +1191,15 @@ fn discard_quickstep_contact_handoff(memory: &mut LegIkMemory) {
     memory.right_authored_world_target = None;
     memory.left_support_weight = None;
     memory.right_support_weight = None;
+}
+
+fn quickstep_handoff_can_settle(
+    pending: bool,
+    action: SkeletonAction,
+    live_speed: f32,
+    converged: bool,
+) -> bool {
+    pending && action != SkeletonAction::Dodge && live_speed <= 0.05 && converged
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -2266,7 +2279,11 @@ fn stationary_guard_comfort_endpoint(
     terrain: Option<&SceneTerrain>,
 ) -> Vec3 {
     let Some(reach) = reach else {
-        return authored;
+        let mut grounded = authored;
+        if let Some(height) = terrain.and_then(|terrain| terrain.height_at(authored.xz())) {
+            grounded.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+        }
+        return grounded;
     };
     // Preserve several semantic samples of flexion reserve at rest. This is
     // proportional to the actual two-bone chain rather than a character-scale
@@ -2782,6 +2799,83 @@ fn reseed_raised_from_quickstep_handoff(
     footwork.right_knee_bend_world = memory.right_terrain_pole_world;
     footwork.left_end_direction = memory.left_terrain_end_direction;
     footwork.right_end_direction = memory.right_terrain_end_direction;
+}
+
+fn consume_quickstep_handoff_into_guard(
+    footwork: &mut RaisedFootworkState,
+    memory: &mut LegIkMemory,
+    replicated_swing_left: bool,
+    replicated_step_sequence: u32,
+    visible_left: Vec3,
+    visible_right: Vec3,
+    semantic_tick: u64,
+) {
+    // A grounded quickstep already ends with one complete visible lower-body
+    // pose.  It must transfer directly into the guard cadence scheduler.  A
+    // concurrent raised-release blend is an obsolete second owner: retaining
+    // it can finish after the transfer, deinitialize footwork, and launch the
+    // newly selected swing from a rapidly moving authored target.
+    // The action exit is a fresh guard-owner acquisition. Retaining any part
+    // of the preceding raised release/pelvis owner feeds the old support
+    // correction back through the next dodge and compounds it each cycle.
+    let quickstep_pelvis_local = memory.quickstep_pelvis_local;
+    *footwork = RaisedFootworkState::default();
+    footwork.visible_pelvis_local_transform = quickstep_pelvis_local;
+    memory.raised_pelvis_shift = 0.0;
+    memory.raised_pelvis_shift_velocity = 0.0;
+    memory.raised_pelvis_shift_acceleration = 0.0;
+    memory.raised_pelvis_follower_valid = true;
+    memory.raised_pelvis_recovery = None;
+
+    // Contact is a rest boundary. The quickstep owner may still carry the
+    // authored airborne follower derivatives on its final evaluation; those
+    // derivatives are not part of the landed state and made each subsequent
+    // dodge begin from a progressively larger upward impulse.
+    memory.left_foot_follower = FootFollowerState::from_presented_pose(
+        visible_left,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        visible_left,
+        Vec3::ZERO,
+        Vec3::ZERO,
+    );
+    memory.right_foot_follower = FootFollowerState::from_presented_pose(
+        visible_right,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        visible_right,
+        Vec3::ZERO,
+        Vec3::ZERO,
+    );
+    reseed_raised_from_quickstep_handoff(footwork, memory, visible_left, visible_right);
+    adopt_guard_movement_identity(
+        footwork,
+        replicated_swing_left,
+        replicated_step_sequence,
+        visible_left,
+        visible_right,
+    );
+    footwork.initialized = true;
+    // Let the guard pelvis acquisition start from the exact quickstep pelvis
+    // on the next evaluation. Marking this as already moving bypassed that
+    // transfer and made the guard pelvis immediately pull a planted ankle to
+    // hard reach on the first post-impact frame.
+    footwork.was_moving = false;
+    footwork.release_handoff_active = false;
+    footwork.release_handoff_progress = 0.0;
+    footwork.release_left_start = visible_left;
+    footwork.release_right_start = visible_right;
+    footwork.release_pelvis_offset_owner = Vec3::ZERO;
+    footwork.left_support_release_owner = None;
+    footwork.right_support_release_owner = None;
+    footwork.pivot_active = false;
+    footwork.pivot_progress = 0.0;
+    memory.quickstep_handoff_pending = false;
+    memory.quickstep_guard_stance_held = true;
+    memory.quickstep_guard_stance_hold_tick = Some(semantic_tick);
+    memory.quickstep_left_landing_local = None;
+    memory.quickstep_right_landing_local = None;
+    memory.quickstep_pelvis_local = None;
 }
 
 fn reseed_guard_cadence_ideal_history(
@@ -3326,6 +3420,13 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             raised_guard_ground_contact_is_valid(skeleton, raised_footwork_was_active);
         if let Ok(mut state) = raised_states.get_mut(owner) {
             state.raised_motion_owned_this_tick = false;
+        }
+        if skeleton.action_kind() == SkeletonAction::Dodge {
+            // Quickstep is the sole lower-body and pelvis presentation owner
+            // for the complete action. Treating the still-initialized raised
+            // state as a release handoff here applies an obsolete guard pelvis
+            // before quickstep solves, feeding the offset back every dodge.
+            continue;
         }
         if locomotion::owns(skeleton) && !raised_footwork_was_active {
             if let Ok(mut state) = raised_states.get_mut(owner) {
@@ -4360,20 +4461,22 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 right_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
             let live_speed = skeleton.world_velocity.with_y(0.0).length();
             let visible_left = if memory.quickstep_handoff_pending {
-                let landing_local = memory
-                    .quickstep_left_landing_local
-                    .unwrap_or_else(|| rig_rotation.inverse() * (left_authored - rig_origin));
-                memory.quickstep_left_landing_local = Some(landing_local);
-                rig_origin + rig_rotation * landing_local
+                memory.left_foot_world_target.unwrap_or_else(|| {
+                    let landing_local = memory
+                        .quickstep_left_landing_local
+                        .unwrap_or_else(|| rig_rotation.inverse() * (left_authored - rig_origin));
+                    rig_origin + rig_rotation * landing_local
+                })
             } else {
                 memory.left_foot_world_target.unwrap_or(left_authored)
             };
             let visible_right = if memory.quickstep_handoff_pending {
-                let landing_local = memory
-                    .quickstep_right_landing_local
-                    .unwrap_or_else(|| rig_rotation.inverse() * (right_authored - rig_origin));
-                memory.quickstep_right_landing_local = Some(landing_local);
-                rig_origin + rig_rotation * landing_local
+                memory.right_foot_world_target.unwrap_or_else(|| {
+                    let landing_local = memory
+                        .quickstep_right_landing_local
+                        .unwrap_or_else(|| rig_rotation.inverse() * (right_authored - rig_origin));
+                    rig_origin + rig_rotation * landing_local
+                })
             } else {
                 memory.right_foot_world_target.unwrap_or(right_authored)
             };
@@ -4697,9 +4800,46 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 &parents,
                 &transforms.p0(),
             );
+            // A grounded quickstep landing is already a complete pair of
+            // visible foot contacts. Transfer those contacts once into the
+            // ordinary raised scheduler; do not retain a separate quickstep
+            // owner until body speed reaches zero, because held movement may
+            // legitimately never reach zero and would strand both feet.
+            let mut quickstep_handoff_consumed_this_evaluation = false;
+            if memory.quickstep_handoff_pending
+                && skeleton.is_grounded()
+                && skeleton.action_kind() != SkeletonAction::Dodge
+            {
+                // Preserve the exact completed impact contacts for this one
+                // ownership boundary. The guard owner is rebuilt below and
+                // releases the hold on the next semantic tick, so these world
+                // contacts cannot persist into another dodge/cadence cycle.
+                let quickstep_left = memory.left_foot_world_target.unwrap_or_else(|| {
+                    stationary_guard_comfort_endpoint(left_authored, left_planning_reach, terrain)
+                });
+                let quickstep_right = memory.right_foot_world_target.unwrap_or_else(|| {
+                    stationary_guard_comfort_endpoint(right_authored, right_planning_reach, terrain)
+                });
+                consume_quickstep_handoff_into_guard(
+                    &mut footwork,
+                    &mut memory,
+                    swing_left,
+                    skeleton.raised_locomotion().step_sequence(),
+                    quickstep_left,
+                    quickstep_right,
+                    semantic_tick,
+                );
+                quickstep_handoff_consumed_this_evaluation = true;
+            }
             let quickstep_handoff_active = memory.quickstep_handoff_pending;
-            if memory.quickstep_guard_stance_held && live_speed > 0.05 {
+            if memory.quickstep_guard_stance_held
+                && memory
+                    .quickstep_guard_stance_hold_tick
+                    .is_none_or(|hold_tick| semantic_tick > hold_tick)
+                && live_speed > 0.05
+            {
                 memory.quickstep_guard_stance_held = false;
+                memory.quickstep_guard_stance_hold_tick = None;
                 memory.quickstep_left_landing_local = None;
                 memory.quickstep_right_landing_local = None;
             }
@@ -4731,9 +4871,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 footwork.awaiting_step_sequence = false;
             }
             if quickstep_handoff_active {
-                // Residual velocity is the quickstep's landing brake, not a new
-                // guard step. Carry the already completed guard stance with the
-                // body until braking ends, then return it to stationary guard.
                 reseed_raised_from_quickstep_handoff(
                     &mut footwork,
                     &memory,
@@ -4964,6 +5101,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     footwork.swing_stance_local,
                     skeleton.world_velocity,
                     step_rate,
+                    morphology_scale,
                     enabled.0,
                     terrain,
                 );
@@ -5625,13 +5763,46 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     footwork.pivot_active = false;
                     footwork.pivot_progress = 0.0;
                 }
+                if skeleton.action_kind() != SkeletonAction::None
+                    && skeleton.action_presentation_tick() == 0
+                    && footwork.left_support_release_owner.is_none()
+                    && footwork.right_support_release_owner.is_none()
+                {
+                    // Upper-body actions retain the exact visible stationary
+                    // stance. A pivot that happened to be active at attack
+                    // onset must not keep integrating under an unrelated
+                    // action and masquerade as an attack-authored step.
+                    footwork.left_plant = visible_left;
+                    footwork.right_plant = visible_right;
+                    footwork.left_solve_target = Some(visible_left);
+                    footwork.right_solve_target = Some(visible_right);
+                    footwork.left_target_velocity = Vec3::ZERO;
+                    footwork.right_target_velocity = Vec3::ZERO;
+                    footwork.left_target_acceleration = Vec3::ZERO;
+                    footwork.right_target_acceleration = Vec3::ZERO;
+                    footwork.left_desired_target = Some(visible_left);
+                    footwork.right_desired_target = Some(visible_right);
+                    footwork.left_ideal_velocity = Vec3::ZERO;
+                    footwork.right_ideal_velocity = Vec3::ZERO;
+                    footwork.left_ideal_acceleration = Vec3::ZERO;
+                    footwork.right_ideal_acceleration = Vec3::ZERO;
+                    footwork.left_ideal_history_valid = true;
+                    footwork.right_ideal_history_valid = true;
+                    left_explicit_ideal_motion = Some((Vec3::ZERO, Vec3::ZERO));
+                    right_explicit_ideal_motion = Some((Vec3::ZERO, Vec3::ZERO));
+                }
                 // Rotation has no controller velocity and therefore cannot
                 // advance the replicated guard cadence. Keep the stance
                 // plausible in presentation by correcting one world plant at
                 // a time once the rotated authored stance is far enough away.
                 // The endpoint is latched so continued camera motion cannot
                 // make the foot chase a target that never lands.
-                if guard_pelvis_blocks_stationary_pivot(footwork.pelvis_acquisition) {
+                if skeleton.action_kind() != SkeletonAction::None
+                    || guard_pelvis_blocks_stationary_pivot(footwork.pelvis_acquisition)
+                {
+                    // A one-shot upper-body action cannot silently request a
+                    // lower-body stance correction. Retain both truthful
+                    // plants until idle owns stationary pivoting again.
                     footwork.pivot_active = false;
                     footwork.pivot_progress = 0.0;
                 } else if advances && !quickstep_handoff_active && !quickstep_stance_held {
@@ -6088,6 +6259,18 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 right_explicit_ideal_motion = None;
                 left_direct_c2_sample = false;
                 right_direct_c2_sample = false;
+            }
+            if quickstep_stance_held || quickstep_handoff_consumed_this_evaluation {
+                // The handoff tick is the impact contract: both feet are the
+                // freshly acquired terrain contacts at rest. Do not let the
+                // current guard phase or a restored release owner synthesize
+                // a swing sample over that boundary before cadence resumes.
+                left_target = footwork.left_plant;
+                right_target = footwork.right_plant;
+                left_explicit_ideal_motion = Some((Vec3::ZERO, Vec3::ZERO));
+                right_explicit_ideal_motion = Some((Vec3::ZERO, Vec3::ZERO));
+                left_direct_c2_sample = true;
+                right_direct_c2_sample = true;
             }
             if footwork.release_handoff_active
                 && raised_release_uses_transition_authored_target(skeleton)
@@ -6584,10 +6767,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     let authored_local = rig_rotation.inverse() * (right_authored - rig_origin);
                     local.distance(authored_local) <= 0.001
                 });
-            if memory.quickstep_handoff_pending && live_speed <= 0.05 && quickstep_handoff_converged
-            {
+            if quickstep_handoff_can_settle(
+                memory.quickstep_handoff_pending,
+                skeleton.action_kind(),
+                live_speed,
+                quickstep_handoff_converged,
+            ) {
                 memory.quickstep_handoff_pending = false;
                 memory.quickstep_guard_stance_held = true;
+                memory.quickstep_guard_stance_hold_tick = Some(semantic_tick);
             }
 
             let mut airborne_orientation_owned = [true; 2];
@@ -12488,6 +12676,7 @@ fn overgrowth_guard_foot_targets(
     stance_local: Vec3,
     world_velocity: Vec3,
     step_rate: f32,
+    morphology_scale: f32,
     terrain_enabled: bool,
     terrain: Option<&SceneTerrain>,
 ) -> (Vec3, Vec3) {
@@ -12500,6 +12689,19 @@ fn overgrowth_guard_foot_targets(
         current_hip_center + world_velocity.with_y(0.0) / step_rate.max(f32::EPSILON);
     let target = |side: f32| {
         let mut target = target_center + lateral * (side * track);
+        // The gait's future-hip lead and lateral stance are coupled. Bounding
+        // each component independently permits their diagonal sum to put a
+        // visually straight leg at the anatomical edge. Keep the combined
+        // planar stance inside a morphology-scaled disk around the hips; this
+        // remains stable when speed or limb scale changes and leaves the hard
+        // two-bone reach limit as a true emergency guard.
+        let planar = target.xz() - current_hip_center.xz();
+        let planar_limit = 0.50 * morphology_scale.clamp(0.25, 4.0);
+        if planar.length_squared() > planar_limit * planar_limit {
+            let constrained = current_hip_center.xz() + planar.normalize_or_zero() * planar_limit;
+            target.x = constrained.x;
+            target.z = constrained.y;
+        }
         target.y = current_hip_center.y + stance_local.y;
         if terrain_enabled {
             terrain_conformed_guard_target(
@@ -13476,6 +13678,22 @@ mod slope_cache_tests {
     }
 
     #[test]
+    fn quickstep_handoff_cannot_settle_before_the_action_exit() {
+        assert!(!quickstep_handoff_can_settle(
+            true,
+            SkeletonAction::Dodge,
+            0.0,
+            true,
+        ));
+        assert!(quickstep_handoff_can_settle(
+            true,
+            SkeletonAction::None,
+            0.0,
+            true,
+        ));
+    }
+
+    #[test]
     fn quickstep_handoff_reseeds_stale_guard_solves_from_the_visible_landing() {
         let visible_left = Vec3::new(1.7458137, 1.9343445, -10.977574);
         let visible_right = Vec3::new(2.2413998, 1.9726762, -10.548973);
@@ -13516,6 +13734,84 @@ mod slope_cache_tests {
                 .distance(Vec3::new(1.057, 2.645, -10.933))
                 > 0.98
         );
+    }
+
+    #[test]
+    fn quickstep_handoff_atomically_retires_the_old_raised_release_owner() {
+        let visible_left = Vec3::new(-0.2, 0.085, 1.0);
+        let visible_right = Vec3::new(0.2, 0.085, 0.8);
+        let mut memory = LegIkMemory {
+            quickstep_handoff_pending: true,
+            quickstep_guard_stance_held: true,
+            quickstep_left_landing_local: Some(Vec3::NEG_X),
+            quickstep_right_landing_local: Some(Vec3::X),
+            quickstep_pelvis_local: Some(Transform::from_translation(Vec3::Y * 0.2)),
+            raised_pelvis_shift: -0.4,
+            raised_pelvis_shift_velocity: 0.8,
+            raised_pelvis_shift_acceleration: -1.6,
+            raised_pelvis_follower_valid: true,
+            ..default()
+        };
+        let mut footwork = RaisedFootworkState {
+            initialized: false,
+            was_moving: false,
+            awaiting_step_sequence: true,
+            release_handoff_active: true,
+            release_handoff_progress: 0.875,
+            release_pelvis_offset_owner: Vec3::Y * -0.2,
+            left_support_release_owner: Some(SupportReleaseOwner::TerminalHold {
+                endpoint: Vec3::splat(3.0),
+            }),
+            pivot_active: true,
+            pivot_progress: 0.5,
+            ..default()
+        };
+
+        consume_quickstep_handoff_into_guard(
+            &mut footwork,
+            &mut memory,
+            true,
+            17,
+            visible_left,
+            visible_right,
+            29,
+        );
+
+        assert!(footwork.initialized && !footwork.was_moving);
+        assert_eq!(
+            footwork.visible_pelvis_local_transform,
+            Some(Transform::from_translation(Vec3::Y * 0.2))
+        );
+        assert!(footwork.swing_left);
+        assert_eq!(footwork.step_sequence, 17);
+        assert_eq!(footwork.left_plant, visible_left);
+        assert_eq!(footwork.right_plant, visible_right);
+        assert!(!footwork.release_handoff_active);
+        assert_eq!(footwork.release_handoff_progress, 0.0);
+        assert_eq!(footwork.release_pelvis_offset_owner, Vec3::ZERO);
+        assert!(footwork.left_support_release_owner.is_none());
+        assert!(footwork.right_support_release_owner.is_none());
+        assert!(!footwork.awaiting_step_sequence);
+        assert!(!footwork.pivot_active);
+        assert!(!memory.quickstep_handoff_pending);
+        assert!(memory.quickstep_guard_stance_held);
+        assert_eq!(memory.quickstep_guard_stance_hold_tick, Some(29));
+        assert_eq!(memory.raised_pelvis_shift, 0.0);
+        assert_eq!(memory.raised_pelvis_shift_velocity, 0.0);
+        assert_eq!(memory.raised_pelvis_shift_acceleration, 0.0);
+        assert!(memory.raised_pelvis_recovery.is_none());
+        for (follower, expected) in [
+            (memory.left_foot_follower, visible_left),
+            (memory.right_foot_follower, visible_right),
+        ] {
+            let follower = follower.expect("landed handoff follower");
+            assert_eq!(follower.position, expected);
+            assert_eq!(follower.velocity, Vec3::ZERO);
+            assert_eq!(follower.acceleration, Vec3::ZERO);
+            assert_eq!(follower.previous_ideal, expected);
+            assert_eq!(follower.previous_ideal_velocity, Vec3::ZERO);
+            assert_eq!(follower.previous_ideal_acceleration, Vec3::ZERO);
+        }
     }
 
     #[test]
@@ -15627,12 +15923,14 @@ mod slope_cache_tests {
             Vec3::new(-0.22, 0.085, 0.0),
             velocity,
             rate,
+            1.0,
             false,
             None,
         );
-        assert!((generated.0.z - (current_hips.z + 1.4 / rate)).abs() <= 1.0e-6);
-        assert!((generated.0.x - 3.78).abs() <= 1.0e-6);
-        assert!((generated.1.x - 4.22).abs() <= 1.0e-6);
+        assert!(generated.0.xz().distance(current_hips.xz()) <= 0.500_001);
+        assert!(generated.1.xz().distance(current_hips.xz()) <= 0.500_001);
+        assert!(generated.0.z > current_hips.z + 0.43);
+        assert!(generated.1.z > current_hips.z + 0.43);
         assert!((overgrowth_guard_stance_error(2.0) - 0.2).abs() <= 1.0e-6);
     }
 

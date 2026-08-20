@@ -501,16 +501,8 @@ fn on_attack_fired_hook(
     mut cmd: Commands,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: TacticalPlayerViewer,
-    time: Res<Time>,
 ) {
-    try_start_attack(
-        event.context,
-        false,
-        &mut cmd,
-        &mut q_character,
-        &viewer,
-        &time,
-    );
+    try_start_attack(event.context, false, &mut cmd, &mut q_character, &viewer);
 }
 
 fn try_start_attack(
@@ -519,7 +511,6 @@ fn try_start_attack(
     cmd: &mut Commands,
     q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: &TacticalPlayerViewer,
-    time: &Time,
 ) {
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
@@ -543,13 +534,15 @@ fn try_start_attack(
         warn!("Trying to attack without a usable equipped weapon");
         return;
     }
-    let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+    let start = skeleton.locomotion_sample_tick;
+    let contact =
+        start.saturating_add((windup_secs * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64);
     if ranged {
         if attacking {
             return;
         }
         if skeleton
-            .begin_attack(AttackSpec::default(), start, start + 19)
+            .begin_attack(AttackSpec::default(), start, contact)
             .is_err()
         {
             return;
@@ -576,7 +569,7 @@ fn try_start_attack(
             return;
         };
         if skeleton
-            .begin_attack(AttackSpec::new(animation), start, start + 19)
+            .begin_attack(AttackSpec::new(animation), start, contact)
             .is_err()
         {
             return;
@@ -600,7 +593,6 @@ fn flush_buffered_melee_attacks(
         With<ControlledPlayer>,
     >,
     viewer: TacticalPlayerViewer,
-    time: Res<Time>,
 ) {
     for (entity, buffered, attacking, mut skeleton) in &mut characters {
         if attacking {
@@ -615,9 +607,11 @@ fn flush_buffered_melee_attacks(
         else {
             continue;
         };
-        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        let start = skeleton.locomotion_sample_tick;
+        let contact =
+            start.saturating_add((windup_secs * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64);
         if skeleton
-            .begin_attack(AttackSpec::new(animation), start, start + 19)
+            .begin_attack(AttackSpec::new(animation), start, contact)
             .is_err()
         {
             continue;
@@ -637,7 +631,6 @@ fn apply_direct_combat_controls(
     players: Query<Entity, With<ControlledPlayer>>,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: TacticalPlayerViewer,
-    time: Res<Time>,
 ) {
     for entity in &players {
         if controls.attack_just_pressed {
@@ -647,12 +640,11 @@ fn apply_direct_combat_controls(
                 &mut cmd,
                 &mut q_character,
                 &viewer,
-                &time,
             );
         }
         if controls.dodge_just_pressed {
             if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
-                let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+                let start = skeleton.locomotion_sample_tick;
                 let admitted = skeleton.begin_dodge(
                     DodgeSpec {
                         direction: controls.quickstep_direction,

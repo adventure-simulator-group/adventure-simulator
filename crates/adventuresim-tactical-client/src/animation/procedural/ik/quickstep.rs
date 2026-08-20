@@ -1,5 +1,11 @@
 use super::*;
 
+// Quickstep is a short, client-presented action whose contact owner is checked
+// against the live hip before every sample. The guard follower's horizon-wide
+// pelvis-correction tube grows larger than the available leg reserve over a
+// dodge and makes every terrain contact impossible by construction.
+const QUICKSTEP_HIP_PATH_TOLERANCE_METRES: f32 = 0.01;
+
 const QUICKSTEP_RELEASE_FLEXION_RESERVE_RADIANS: f32 = 35.0_f32.to_radians();
 
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -13,6 +19,8 @@ pub(in crate::animation) struct QuickstepIkState {
     right_release_phase: Option<f32>,
     left_contact_segment: Option<C2FootSegment>,
     right_contact_segment: Option<C2FootSegment>,
+    left_impact_correction: Option<(Vec3, Vec3)>,
+    right_impact_correction: Option<(Vec3, Vec3)>,
     left_contact_event: Option<ContactMotionEvent>,
     right_contact_event: Option<ContactMotionEvent>,
     left_motion_owner_epoch: u64,
@@ -45,6 +53,7 @@ pub(in crate::animation) struct QuickstepIkState {
     pelvis_shift_velocity: f32,
     pelvis_shift_acceleration: f32,
     pelvis_recovery: Option<PelvisRecoverySegment>,
+    presented_pelvis_local: Option<Transform>,
     evaluation_tick: Option<u64>,
 }
 
@@ -52,8 +61,7 @@ fn seed_quickstep_from_presentation(
     action_start_tick: Option<u64>,
     presentation: Option<LegIkMemory>,
 ) -> QuickstepIkState {
-    let pelvis_follower =
-        presentation.map_or(PelvisFollowerState::default(), raised_pelvis_follower_seed);
+    let pelvis_follower = PelvisFollowerState::default();
     QuickstepIkState {
         action_start_tick,
         left_motion_owner_epoch: action_start_tick.unwrap_or(0),
@@ -149,6 +157,19 @@ pub(in crate::animation) fn apply(
         let previous_presentation = diagnostics.get_mut(owner).ok().map(|state| state.0);
         if skeleton.action_kind() != SkeletonAction::Dodge {
             if state.left_takeoff_world.is_some() || state.right_takeoff_world.is_some() {
+                // Terrain/guard evaluates before quickstep in the procedural
+                // chain. On the action-source exit edge it cannot yet own the
+                // final landed pose, so re-present the last completed
+                // quickstep chains once before retiring this owner. This is a
+                // pure presentation handoff; state does not advance.
+                if let Some(memory) = previous_presentation {
+                    locomotion::apply_retained_raised_lower_body(
+                        rig,
+                        memory,
+                        state.presented_pelvis_local,
+                        &mut transforms.p1(),
+                    );
+                }
                 if let Ok(mut diagnostic) = diagnostics.get_mut(owner) {
                     if let Some(segment) = state
                         .left_contact_segment
@@ -223,6 +244,7 @@ pub(in crate::animation) fn apply(
                 .saturating_add(timeline.preparation_ticks)
                 .saturating_add(timeline.preparation_ticks.saturating_add(3) / 4)
         });
+        let action_tick = skeleton.action_presentation_tick();
         if state.action_start_tick != action_start_tick {
             state = seed_quickstep_from_presentation(action_start_tick, previous_presentation);
         }
@@ -351,14 +373,15 @@ pub(in crate::animation) fn apply(
                 state.right_release_phase
             };
             if release_phase.is_none()
-                && quickstep_foot_must_release(
-                    skeleton.is_grounded(),
-                    action_phase,
-                    upper_snapshot.global.translation(),
-                    takeoff,
-                    warning_reach,
-                    reach,
-                )
+                && (action_tick == 0
+                    || quickstep_foot_must_release(
+                        skeleton.is_grounded(),
+                        action_phase,
+                        upper_snapshot.global.translation(),
+                        takeoff,
+                        warning_reach,
+                        reach,
+                    ))
             {
                 latch_quickstep_release(&mut release_phase, action_phase);
             }
@@ -424,8 +447,8 @@ pub(in crate::animation) fn apply(
                     previous_hip,
                     previous_hip_velocity,
                     delta_seconds,
-                    MAX_PELVIS_CORRECTION_STEP,
-                    PELVIS_CORRECTION_SPEED,
+                    QUICKSTEP_HIP_PATH_TOLERANCE_METRES,
+                    0.0,
                 )
             });
             let mut contact_segment = if left {
@@ -439,7 +462,7 @@ pub(in crate::animation) fn apply(
                 && evaluation_advances
             {
                 let contact_seconds = action_landing_tick
-                    .map(|tick| tick.saturating_sub(skeleton.locomotion_sample_tick) as f32)
+                    .map(|tick| tick.saturating_sub(action_tick) as f32)
                     .unwrap_or(0.0)
                     / CONTINUITY_SAMPLE_HZ;
                 let semantic_landing = takeoff + skeleton.world_velocity * contact_seconds;
@@ -470,7 +493,7 @@ pub(in crate::animation) fn apply(
                     });
                 match plan {
                     FootEndpointPlan::Segment(segment) => {
-                        let segment = segment.with_owner_epoch(skeleton.locomotion_sample_tick);
+                        let segment = segment.with_owner_epoch(action_tick);
                         previous_desired = Some(segment.start);
                         previous_ideal_velocity = segment.start_velocity;
                         previous_ideal_acceleration = segment.start_acceleration;
@@ -480,7 +503,7 @@ pub(in crate::animation) fn apply(
                     FootEndpointPlan::MustReleaseOrReplan(release_plan) => {
                         let release_segment = match release_plan {
                             FootReleasePlan::Segment(segment) => {
-                                Some(segment.with_owner_epoch(skeleton.locomotion_sample_tick))
+                                Some(segment.with_owner_epoch(action_tick))
                             }
                             FootReleasePlan::EmergencyBrake { .. } => None,
                         };
@@ -513,11 +536,7 @@ pub(in crate::animation) fn apply(
                 explicit_ideal_motion = Some((Vec3::ZERO, Vec3::ZERO));
             }
             if let Some(mut segment) = contact_segment {
-                advance_c2_segment_tick(
-                    &mut segment,
-                    evaluation_advances,
-                    skeleton.locomotion_sample_tick,
-                );
+                advance_c2_segment_tick(&mut segment, evaluation_advances, action_tick);
                 let sample = guard_swing_replan_sample(segment);
                 if evaluation_advances
                     && !direct_c2_sample_is_live_reachable(
@@ -556,7 +575,7 @@ pub(in crate::animation) fn apply(
                 }
             }
             let desired_target = target;
-            let tracked = if direct_c2_sample {
+            let mut tracked = if direct_c2_sample {
                 let (velocity, acceleration) = explicit_ideal_motion
                     .expect("a direct quickstep C2 sample carries analytic derivatives");
                 direct_c2_guard_target_sample(target, velocity, acceleration)
@@ -576,6 +595,71 @@ pub(in crate::animation) fn apply(
                     reach_envelope,
                 )
             };
+            // A live trajectory departure may invalidate the predictive
+            // contact owner. The interval ending at the authored 0.625 contact
+            // phase is therefore an explicit visual-impact contract: each
+            // ankle converges to a terrain-conformed, currently reachable
+            // point, then holds through action exit. This is client presentation state;
+            // it does not alter tactical collision or movement authority.
+            if action_phase >= 0.375 {
+                let correction = if left {
+                    &mut state.left_impact_correction
+                } else {
+                    &mut state.right_impact_correction
+                };
+                if let Some(terrain) = terrain {
+                    // Reach shortening must remain on the terrain manifold.
+                    // A radial post-clamp lifts the ankle toward the hip and
+                    // made later dodge impacts progressively airborne. The
+                    // search also falls back toward terrain beneath the hip
+                    // when the authored ankle XZ is outside the terrain map.
+                    let reachable_target = ground_safety_slide_endpoint(
+                        authored,
+                        upper_snapshot.global.translation(),
+                        // Land with proportional flexion reserve. A target at
+                        // 99.5% of maximum reach was already in the warning
+                        // band; one ordinary network/presentation root sample
+                        // made it hard-infeasible and forced the ankle upward
+                        // on the first guard frame. This ratio scales with the
+                        // actual limb lengths rather than character units.
+                        reach * 0.92,
+                        Some(terrain),
+                    );
+                    if let Some((_, endpoint)) = correction.as_mut() {
+                        *endpoint = reachable_target;
+                    } else {
+                        *correction = Some((tracked.position, reachable_target));
+                    }
+                }
+                if let Some((start, end)) = *correction {
+                    let correction_progress = ((action_phase - 0.375) / 0.25).clamp(0.0, 1.0);
+                    let duration_seconds = action_landing_tick
+                        .and_then(|landing| action_start_tick.map(|start| landing - start))
+                        .map(|ticks| ticks as f32 / CONTINUITY_SAMPLE_HZ / 2.5)
+                        .unwrap_or(0.16)
+                        .max(1.0 / CONTINUITY_SAMPLE_HZ);
+                    let sample = guard_quintic_sample(
+                        start,
+                        end,
+                        correction_progress,
+                        duration_seconds,
+                        0.0,
+                    );
+                    tracked = direct_c2_guard_target_sample(
+                        sample.position,
+                        sample.velocity,
+                        sample.acceleration,
+                    );
+                    contact_segment = None;
+                    forced_release = false;
+                    completed_contact = correction_progress >= 1.0 - f32::EPSILON;
+                    contact_event = Some(if completed_contact {
+                        ContactMotionEvent::Completed
+                    } else {
+                        ContactMotionEvent::Promised
+                    });
+                }
+            }
             target = tracked.position;
             if left {
                 state.left_solve_world = Some(target);
@@ -619,7 +703,7 @@ pub(in crate::animation) fn apply(
                     contact_event,
                     Some(ContactMotionEvent::AbortedLiveReach { .. })
                 ) {
-                    state.left_motion_owner_epoch = skeleton.locomotion_sample_tick;
+                    state.left_motion_owner_epoch = action_tick;
                 }
                 state.left_release_owner_active = forced_release;
                 if evaluation_advances && delta_seconds > f32::EPSILON {
@@ -640,7 +724,7 @@ pub(in crate::animation) fn apply(
                     contact_event,
                     Some(ContactMotionEvent::AbortedLiveReach { .. })
                 ) {
-                    state.right_motion_owner_epoch = skeleton.locomotion_sample_tick;
+                    state.right_motion_owner_epoch = action_tick;
                 }
                 state.right_release_owner_active = forced_release;
                 if evaluation_advances && delta_seconds > f32::EPSILON {
@@ -797,24 +881,38 @@ pub(in crate::animation) fn apply(
                     )
                 })
                 .flatten(),
-            left_direct_c2_active: state.left_contact_segment.is_some(),
-            right_direct_c2_active: state.right_contact_segment.is_some(),
+            left_direct_c2_active: state.left_contact_segment.is_some()
+                || state.left_impact_correction.is_some(),
+            right_direct_c2_active: state.right_contact_segment.is_some()
+                || state.right_impact_correction.is_some(),
             left_contact_endpoint: state
                 .left_contact_segment
                 .filter(|segment| segment.end.is_contact())
-                .map(|segment| segment.end.position()),
+                .map(|segment| segment.end.position())
+                .or_else(|| state.left_impact_correction.map(|(_, end)| end)),
             right_contact_endpoint: state
                 .right_contact_segment
                 .filter(|segment| segment.end.is_contact())
-                .map(|segment| segment.end.position()),
+                .map(|segment| segment.end.position())
+                .or_else(|| state.right_impact_correction.map(|(_, end)| end)),
             left_contact_progress: state
                 .left_contact_segment
                 .filter(|segment| segment.end.is_contact())
-                .map(|segment| segment.timing.progress()),
+                .map(|segment| segment.timing.progress())
+                .or_else(|| {
+                    state
+                        .left_impact_correction
+                        .map(|_| ((action_phase - 0.375) / 0.25).clamp(0.0, 1.0))
+                }),
             right_contact_progress: state
                 .right_contact_segment
                 .filter(|segment| segment.end.is_contact())
-                .map(|segment| segment.timing.progress()),
+                .map(|segment| segment.timing.progress())
+                .or_else(|| {
+                    state
+                        .right_impact_correction
+                        .map(|_| ((action_phase - 0.375) / 0.25).clamp(0.0, 1.0))
+                }),
             left_contact_tick: state
                 .left_contact_segment
                 .filter(|segment| segment.end.is_contact())
@@ -834,7 +932,12 @@ pub(in crate::animation) fn apply(
             left_contact_initial_lag: state
                 .left_contact_segment
                 .filter(|segment| segment.end.is_contact())
-                .map(|segment| segment.start.distance(segment.end.position())),
+                .map(|segment| segment.start.distance(segment.end.position()))
+                .or_else(|| {
+                    state
+                        .left_impact_correction
+                        .map(|(start, end)| start.distance(end))
+                }),
             left_contact_event: state.left_contact_event,
             right_contact_event: state.right_contact_event,
             left_solve_hip: solve_inputs[0].map(|input| input.0),
@@ -850,9 +953,22 @@ pub(in crate::animation) fn apply(
             right_contact_initial_lag: state
                 .right_contact_segment
                 .filter(|segment| segment.end.is_contact())
-                .map(|segment| segment.start.distance(segment.end.position())),
+                .map(|segment| segment.start.distance(segment.end.position()))
+                .or_else(|| {
+                    state
+                        .right_impact_correction
+                        .map(|(start, end)| start.distance(end))
+                }),
             ..default()
         };
+        state.presented_pelvis_local = rig.get(&BoneRole::Pelvis).and_then(|pelvis| {
+            transforms
+                .p1()
+                .get_mut(*pelvis)
+                .ok()
+                .map(|transform| *transform)
+        });
+        memory.quickstep_pelvis_local = state.presented_pelvis_local;
         memory.left_foot_target = rendered_targets[0];
         memory.right_foot_target = rendered_targets[1];
         if let Ok(mut current) = diagnostics.get_mut(owner) {
@@ -999,7 +1115,7 @@ mod tests {
     }
 
     #[test]
-    fn quickstep_onset_seeds_from_the_previous_rendered_foot_pose() {
+    fn quickstep_onset_seeds_feet_but_owns_an_authored_pelvis() {
         let left = Vec3::new(-0.2, 0.1, 0.0);
         let right = Vec3::new(0.2, 0.1, 0.0);
         let left_rotation = Quat::from_rotation_y(0.2);
@@ -1018,9 +1134,9 @@ mod tests {
         assert_eq!(state.left_solve_world, Some(left));
         assert_eq!(state.right_solve_world, Some(right));
         assert_eq!(state.left_takeoff_rotation_world, Some(left_rotation));
-        assert_eq!(state.pelvis_shift, -0.25);
-        let next = advance_pelvis_shift(state.pelvis_shift, 0.0, 1.0 / 64.0);
-        assert!((next - state.pelvis_shift).abs() <= MAX_PELVIS_CORRECTION_STEP);
+        assert_eq!(state.pelvis_shift, 0.0);
+        assert_eq!(state.pelvis_shift_velocity, 0.0);
+        assert_eq!(state.pelvis_shift_acceleration, 0.0);
     }
 
     #[test]

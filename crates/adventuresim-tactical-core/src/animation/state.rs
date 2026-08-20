@@ -634,20 +634,33 @@ pub fn supine_get_up_counter_yaw_delta(
 struct ActionTimeline {
     start_tick: u64,
     preparation_ticks: u64,
+    recovery_ticks: u64,
     phase: f32,
 }
 
+const MINIMUM_ATTACK_VISUAL_TICKS: u64 = 40;
+
 impl ActionTimeline {
     fn new(start_tick: u64, contact_tick: u64) -> Self {
+        Self::with_recovery(
+            start_tick,
+            contact_tick,
+            contact_tick.saturating_sub(start_tick),
+        )
+    }
+
+    fn with_recovery(start_tick: u64, contact_tick: u64, recovery_ticks: u64) -> Self {
         Self {
             start_tick,
             preparation_ticks: contact_tick.saturating_sub(start_tick).max(1),
+            recovery_ticks: recovery_ticks.max(1),
             phase: 0.0,
         }
     }
 
     fn normalized(mut self) -> Self {
         self.preparation_ticks = self.preparation_ticks.max(1);
+        self.recovery_ticks = self.recovery_ticks.max(1);
         self.phase = if self.phase.is_finite() {
             self.phase.clamp(0.0, 1.0)
         } else {
@@ -787,6 +800,7 @@ impl ActionState {
 pub struct ActionTimelineView {
     pub start_tick: u64,
     pub preparation_ticks: u64,
+    pub recovery_ticks: u64,
     pub phase: f32,
 }
 
@@ -812,6 +826,7 @@ impl ActionTimeline {
         ActionTimelineView {
             start_tick: self.start_tick,
             preparation_ticks: self.preparation_ticks,
+            recovery_ticks: self.recovery_ticks,
             phase: self.phase,
         }
     }
@@ -1639,14 +1654,24 @@ impl SkeletonState {
         } else {
             AttackSpec::default().target_height
         };
+        let preparation_ticks = contact_tick.saturating_sub(start_tick).max(1);
+        let recovery_ticks =
+            preparation_ticks.max(MINIMUM_ATTACK_VISUAL_TICKS.saturating_sub(preparation_ticks));
         self.replace_action(
             ActionState(ActionKind::Attack {
                 target_height,
                 animation: spec.animation,
-                timeline: ActionTimeline::new(start_tick, contact_tick),
+                timeline: ActionTimeline::with_recovery(start_tick, contact_tick, recovery_ticks),
             }),
             start_tick,
         )
+    }
+
+    /// Clears only the transient action timeline so a client presentation
+    /// replica can rebuild that action on its own monotonic visual clock.
+    /// Gameplay authority must continue to use the typed begin/advance APIs.
+    pub fn clear_action_for_presentation(&mut self) {
+        self.action = ActionState::default();
     }
 
     pub fn begin_block(
@@ -1664,8 +1689,8 @@ impl SkeletonState {
         )
     }
 
-    /// Advances an action whose contact is the midpoint of its visual
-    /// timeline. Recovery gets the same bounded duration as preparation.
+    /// Advances an action with independently authored preparation and recovery
+    /// spans. Gameplay contact can be early without truncating visual recovery.
     pub fn advance_action(&mut self, current_tick: u64) {
         let timeline = match &mut self.action {
             ActionState(ActionKind::Idle) => return,
@@ -1674,8 +1699,9 @@ impl SkeletonState {
             | ActionState(ActionKind::Block { timeline, .. }) => timeline,
         };
         let preparation = timeline.preparation_ticks.max(1);
+        let recovery = timeline.recovery_ticks.max(1);
         let contact_tick = timeline.start_tick.saturating_add(preparation);
-        let end_tick = contact_tick.saturating_add(preparation);
+        let end_tick = contact_tick.saturating_add(recovery);
         if current_tick >= end_tick {
             if current_tick > end_tick || end_tick == u64::MAX {
                 self.action = ActionState::default();
@@ -1687,7 +1713,7 @@ impl SkeletonState {
         timeline.phase = if current_tick <= contact_tick {
             0.5 * current_tick.saturating_sub(timeline.start_tick) as f32 / preparation as f32
         } else {
-            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / preparation as f32
+            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / recovery as f32
         };
     }
 }

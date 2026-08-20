@@ -1215,6 +1215,66 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(result["attack_episodes"]), 2)
         self.assertTrue(result["failures"]["attack_ended_before_contact"])
 
+    def test_melee_analyzer_requires_full_action_weight_and_stationary_feet(self):
+        def frame(index, action, weight, left_x, right_x, competing_weight=0.0, phase=0.5):
+            return {
+                "record_type": "frame", "frame": index,
+                "elapsed_seconds": index / 10.0,
+                "input": {"command_index": 8},
+                "live_input": {"direct_control": {"attack_just_pressed": index in (1, 5)}},
+                "semantic_route": {"inputs": {"action": action}},
+                "evaluation": {
+                    "action_phase": phase if action == "Attack" else 0.0,
+                    "action": ([{"weight": weight}] if action == "Attack" else []),
+                },
+                "playback": {
+                    "clips": (
+                        [{"weight": weight}] +
+                        ([{"weight": competing_weight}] if competing_weight > 0.0 else [])
+                        if action == "Attack" else []
+                    ),
+                },
+                "upper_body": {
+                    side: {"hand": {"owner_local": {"translation": [index * 0.1, 0.0, 0.0]}}}
+                    for side in ("left", "right")
+                },
+                "lower_body": {
+                    "left": {"ankle_owner_local": [left_x, 0.0, 0.0]},
+                    "right": {"ankle_owner_local": [right_x, 0.0, 0.0]},
+                },
+                "bone_globals": {
+                    "left_shoulder": {"translation": [0.0, 0.0, 0.0]},
+                    "left_elbow": {"translation": [1.0, 0.0, 0.0]},
+                    "left_hand": {"translation": [1.0, 1.0, 0.0]},
+                    "left_foot": {"translation": [left_x, 0.0, 0.0]},
+                    "right_foot": {"translation": [right_x, 0.0, 0.0]},
+                },
+            }
+        records = [
+            frame(0, "None", 0.0, 0.0, 0.0),
+            frame(1, "Attack", 0.5, 0.0, 0.0, phase=0.25),
+            frame(2, "Attack", 1.0, 0.08, 0.0, competing_weight=0.5),
+            frame(3, "None", 0.0, 0.0, 0.0),
+            frame(5, "Attack", 1.0, 0.0, 0.0),
+            frame(6, "Attack", 1.0, 0.0, 0.0),
+            frame(7, "None", 0.0, 0.0, 0.0),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary, "animation-state-test.jsonl")
+            log.write_text("\n".join(json.dumps(record) for record in records))
+            result = dev_stack.analyze_melee_action_repro(
+                log, Path(temporary, "manifest.json")
+            )
+        self.assertTrue(result["failures"]["attack_pose_never_reaches_full_weight"])
+        self.assertTrue(result["failures"]["stationary_attack_moves_a_foot"])
+        self.assertEqual(result["attack_episodes"][1]["maximum_action_weight"], 1.0)
+        self.assertAlmostEqual(
+            result["attack_episodes"][0]["contact_dominant_clip_fraction"], 2.0 / 3.0
+        )
+        self.assertAlmostEqual(
+            result["attack_episodes"][0]["contact_left_elbow_angle_degrees"], 90.0
+        )
+
     def test_quickstep_analyzer_rejects_hard_reach_and_overextension(self):
         record = {
             "record_type": "frame", "frame": 7, "elapsed_seconds": 1.0,
@@ -1238,6 +1298,87 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(result["regression_reproduced"])
         self.assertTrue(result["failures"]["hard_reach"])
         self.assertTrue(result["failures"]["rendered_leg_overextended"])
+
+    def test_quickstep_analyzer_ignores_pre_edge_and_airborne_swing_extension(self):
+        def frame(index, *, edge, action, support, radial):
+            return {
+                "record_type": "frame", "frame": index, "elapsed_seconds": index / 64.0,
+                "input": {"command_index": 4, "command_kind": "quickstep"},
+                "live_input": {"direct_control": {"dodge_just_pressed": edge}},
+                "semantic_route": {"inputs": {"action": action}},
+                "evaluation": {"airborne_phase": 1.0 if action == "Dodge" else 0.0},
+                "raised_ownership": {
+                    "left_support_weight": support, "right_support_weight": support,
+                },
+                "foot_motion": {
+                    side: {"selected": {"reach_disposition": "within", "diagnostic": {}}}
+                    for side in ("left", "right")
+                },
+                "lower_body": {
+                    side: {
+                        "ankle": {"clearance": 0.08},
+                        "ankle_from_visual_pelvis_world": [0.0, 0.0, radial],
+                    }
+                    for side in ("left", "right")
+                },
+            }
+        records = [
+            frame(0, edge=False, action="None", support=1.0, radial=1.1),
+            frame(1, edge=True, action="Dodge", support=0.0, radial=1.0),
+            frame(2, edge=False, action="Dodge", support=0.0, radial=0.95),
+            frame(3, edge=False, action="None", support=1.0, radial=0.85),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary, "animation-state-test.jsonl")
+            log.write_text("\n".join(json.dumps(record) for record in records))
+            result = dev_stack.analyze_quickstep_footwork_repro(
+                log, Path(temporary, "manifest.json")
+            )
+        self.assertFalse(result["failures"]["rendered_leg_overextended"])
+        self.assertEqual(result["maximum_ankle_to_visual_pelvis_metres"], 1.0)
+        self.assertEqual(result["maximum_supported_ankle_to_visual_pelvis_metres"], 0.85)
+
+    def test_quickstep_analyzer_requires_both_feet_grounded_on_impact(self):
+        def frame(index, action, left_clearance, right_clearance, edge=False):
+            return {
+                "record_type": "frame", "frame": index,
+                "elapsed_seconds": index / 64.0,
+                "input": {"command_index": 12, "command_kind": "quickstep"},
+                "live_input": {"direct_control": {"dodge_just_pressed": edge}},
+                "semantic_route": {"inputs": {"action": action}},
+                "evaluation": {"airborne_phase": 1.0 if action == "Dodge" else 0.0},
+                "raised_ownership": {
+                    "left_support_weight": 0.0, "right_support_weight": 0.0,
+                },
+                "foot_motion": {
+                    side: {"selected": {"reach_disposition": "within", "diagnostic": {}}}
+                    for side in ("left", "right")
+                },
+                "lower_body": {
+                    "left": {
+                        "ankle": {"clearance": left_clearance},
+                        "ankle_from_visual_pelvis_world": [0.0, -0.8, 0.0],
+                    },
+                    "right": {
+                        "ankle": {"clearance": right_clearance},
+                        "ankle_from_visual_pelvis_world": [0.0, -0.8, 0.0],
+                    },
+                },
+            }
+        records = [
+            frame(1, "Dodge", 0.30, 0.20, edge=True),
+            frame(2, "Dodge", 0.16, 0.10),
+            frame(3, "None", 0.085, 0.15),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary, "animation-state-test.jsonl")
+            log.write_text("\n".join(json.dumps(record) for record in records))
+            result = dev_stack.analyze_quickstep_footwork_repro(
+                log, Path(temporary, "manifest.json")
+            )
+        self.assertTrue(result["failures"]["impact_missing_dual_foot_contact"])
+        self.assertEqual(len(result["impact_contacts"]), 1)
+        self.assertFalse(result["impact_contacts"][0]["both_feet_grounded"])
 
 
 if __name__ == "__main__":
