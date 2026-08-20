@@ -67,15 +67,18 @@ The native viewer can edit the same high-level authority used by generation:
 
 ```powershell
 cargo run -p adventuresim-building-generator --bin building-viewer -- `
-  --fixture fachwerk-merchant-house --editor --document building-document.json
+  --editor --document building-document.json
 ```
 
 Middle-drag orbits, Shift+middle-drag pans, the wheel zooms, and `F` frames the
 current selection. Resolved walls, openings, and timber framing map back to
 stable grid selectors; hovering uses a grey outline and selection a white one.
 The property window can add or remove wall openings, change eligible civilian
-wall finishes, and change a timber-frame program. Archetypes can be switched
-without restarting the viewer.
+wall finishes, and change a timber-frame program. The **Fixtures** menu lists
+every curated fixture. Switching fixtures replaces the building while keeping
+the current camera, lighting, and editor scene in place. If neither a fixture
+nor an existing document is supplied at launch, the editor starts with the
+town-house fixture.
 
 `BuildingDocument` is versioned JSON containing a `BuildingProgram` plus an
 ordered edit log. Each UI command regenerates the complete plan and runs the

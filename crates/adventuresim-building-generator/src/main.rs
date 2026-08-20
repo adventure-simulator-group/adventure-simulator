@@ -196,7 +196,7 @@ struct Args {
     #[arg(
         long,
         value_enum,
-        required_unless_present_any = ["validate_crown_suite", "validate_projected_suite", "validate_openings_suite", "validate_roof_suite", "validate_church_suite", "validate_timber_suite", "validate_artillery_suite", "validate_final_building_suite"]
+        required_unless_present_any = ["editor", "validate_crown_suite", "validate_projected_suite", "validate_openings_suite", "validate_roof_suite", "validate_church_suite", "validate_timber_suite", "validate_artillery_suite", "validate_final_building_suite"]
     )]
     fixture: Option<BuildingArchetype>,
 
@@ -356,8 +356,7 @@ fn main() {
         return;
     }
     viewer::run(
-        args.fixture
-            .expect("--fixture is required unless a proof-suite validator is used"),
+        args.fixture.unwrap_or(BuildingArchetype::TownHouse),
         args.view,
         args.seed,
         args.output,
@@ -372,4 +371,16 @@ fn main() {
 #[cfg(target_family = "wasm")]
 fn main() {
     panic!("building-viewer is a native-only prototype");
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn editor_does_not_require_a_fixture_argument() {
+        let args = Args::try_parse_from(["building-viewer", "--editor"]).unwrap();
+        assert!(args.editor);
+        assert_eq!(args.fixture, None);
+    }
 }

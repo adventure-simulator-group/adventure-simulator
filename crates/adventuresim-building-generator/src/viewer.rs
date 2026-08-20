@@ -2115,7 +2115,17 @@ enum EditorTarget {
 struct EditorSelectable(EditorTarget);
 
 #[derive(Component)]
-struct EditorSceneEntity;
+struct EditorBuildingEntity;
+
+#[derive(Component)]
+struct EditorEnvironmentEntity;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum SceneSetup {
+    Full,
+    EditorInitial,
+    EditorBuilding,
+}
 
 #[derive(Resource)]
 struct EditorRuntime {
@@ -2246,22 +2256,26 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
         .default_pos([VIEW_WIDTH as f32 - 310.0, 20.0])
         .resizable(true)
         .show(contexts.ctx_mut()?, |ui| {
-            ui.label(format!("{:?}", runtime.document.program.archetype));
-            egui::ComboBox::from_label("Archetype")
-                .selected_text(format!("{:?}", runtime.document.program.archetype))
-                .show_ui(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                ui.menu_button("Fixtures", |ui| {
                     for archetype in BuildingArchetype::ALL {
                         if ui
                             .selectable_label(
                                 runtime.document.program.archetype == archetype,
-                                format!("{:?}", archetype),
+                                archetype.slug(),
                             )
                             .clicked()
                         {
                             action = Some(EditorUiAction::ChangeArchetype(archetype));
+                            ui.close();
                         }
                     }
                 });
+            });
+            ui.label(format!(
+                "Fixture: {}",
+                runtime.document.program.archetype.slug()
+            ));
             ui.small("MMB orbit · Shift+MMB pan · wheel zoom · F frame");
             ui.separator();
 
@@ -2579,12 +2593,14 @@ fn editor_owner_targets(
     (owner_targets, item_targets)
 }
 
-fn configure_editor_scene(world: &mut World, plan: &BuildingPlan) {
+fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_camera: bool) {
     let (owner_targets, item_targets) = editor_owner_targets(plan);
 
     let mesh_entities = {
-        let mut query =
-            world.query::<(Entity, Option<&GeometryOwner>, Option<&ResolvedRenderItem>)>();
+        let mut query = world.query_filtered::<
+            (Entity, Option<&GeometryOwner>, Option<&ResolvedRenderItem>),
+            Without<EditorEnvironmentEntity>,
+        >();
         query
             .iter(world)
             .filter(|(entity, _, _)| world.get::<Mesh3d>(*entity).is_some())
@@ -2595,7 +2611,7 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan) {
     };
     for (entity, owner, item) in mesh_entities {
         let mut entity_mut = world.entity_mut(entity);
-        entity_mut.insert(EditorSceneEntity);
+        entity_mut.insert(EditorBuildingEntity);
         let target = item
             .and_then(|item| item_targets.get(&item).copied())
             .or_else(|| owner.and_then(|owner| owner_targets.get(&owner).copied()));
@@ -2614,6 +2630,10 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan) {
         }
     }
 
+    if !initialize_camera {
+        return;
+    }
+
     let focus = Vec3::new(
         0.0,
         plan.storey_height_metres * plan.storeys.len() as f32 * 0.45,
@@ -2628,36 +2648,17 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan) {
             .get::<Transform>(entity)
             .expect("editor camera must have a transform");
         let radius = transform.translation.distance(focus).max(3.0);
-        world.entity_mut(entity).insert((
-            EditorSceneEntity,
-            PanOrbitCamera {
-                focus,
-                target_focus: focus,
-                radius: Some(radius),
-                target_radius: radius,
-                button_orbit: MouseButton::Middle,
-                button_pan: MouseButton::Middle,
-                modifier_pan: Some(KeyCode::ShiftLeft),
-                zoom_lower_limit: 0.5,
-                ..default()
-            },
-        ));
-    }
-
-    let light_entities = {
-        let mut query =
-            world.query_filtered::<Entity, Or<(With<DirectionalLight>, With<PointLight>)>>();
-        query.iter(world).collect::<Vec<_>>()
-    };
-    for entity in light_entities {
-        world.entity_mut(entity).insert(EditorSceneEntity);
-    }
-    let text_entities = {
-        let mut query = world.query_filtered::<Entity, With<Text2d>>();
-        query.iter(world).collect::<Vec<_>>()
-    };
-    for entity in text_entities {
-        world.entity_mut(entity).insert(EditorSceneEntity);
+        world.entity_mut(entity).insert(PanOrbitCamera {
+            focus,
+            target_focus: focus,
+            radius: Some(radius),
+            target_radius: radius,
+            button_orbit: MouseButton::Middle,
+            button_pan: MouseButton::Middle,
+            modifier_pan: Some(KeyCode::ShiftLeft),
+            zoom_lower_limit: 0.5,
+            ..default()
+        });
     }
 }
 
@@ -2714,7 +2715,7 @@ fn rebuild_editor_scene(world: &mut World) {
         return;
     }
     let old_entities = {
-        let mut query = world.query_filtered::<Entity, With<EditorSceneEntity>>();
+        let mut query = world.query_filtered::<Entity, With<EditorBuildingEntity>>();
         query.iter(world).collect::<Vec<_>>()
     };
     for entity in old_entities {
@@ -2727,8 +2728,9 @@ fn rebuild_editor_scene(world: &mut World) {
         ViewerView::Exterior,
         ProjectedProofKind::Machicolation,
         None,
+        SceneSetup::EditorBuilding,
     );
-    configure_editor_scene(world, &plan);
+    configure_editor_scene(world, &plan, false);
     world.resource_mut::<EditorRuntime>().pending_rebuild = false;
 }
 
@@ -6476,9 +6478,20 @@ pub(crate) fn run(
     }
     let startup_plan = plan.clone();
     app.add_systems(Startup, move |world: &mut World| {
-        setup(world, &startup_plan, view, projected_kind, roof_proof);
+        setup(
+            world,
+            &startup_plan,
+            view,
+            projected_kind,
+            roof_proof,
+            if editor {
+                SceneSetup::EditorInitial
+            } else {
+                SceneSetup::Full
+            },
+        );
         if editor {
-            configure_editor_scene(world, &startup_plan);
+            configure_editor_scene(world, &startup_plan, true);
         }
     })
     .add_systems(Last, capture_when_ready);
@@ -6494,6 +6507,7 @@ fn setup(
     view: ViewerView,
     projected_kind: ProjectedProofKind,
     roof_proof: Option<RoofProofView>,
+    scene_setup: SceneSetup,
 ) {
     let palette = create_palette(world);
     let dimensions = plan.dimensions_metres();
@@ -6591,14 +6605,18 @@ fn setup(
         let position = tower.centre_metres() + origin;
         span.max((position.abs() + Vec2::splat(tower.radius_metres())).length() * 2.0)
     });
-    if plan.artillery_castle.is_some() {
-        spawn_artillery_ground(world, Vec2::splat(scene_span), origin);
-    } else {
-        spawn_ground(
-            world,
-            Vec2::splat(scene_span),
-            crown_proof || architectural_proof,
-        );
+    if scene_setup != SceneSetup::EditorBuilding {
+        if scene_setup == SceneSetup::EditorInitial {
+            spawn_ground(world, Vec2::splat(100.0), false);
+        } else if plan.artillery_castle.is_some() {
+            spawn_artillery_ground(world, Vec2::splat(scene_span), origin);
+        } else {
+            spawn_ground(
+                world,
+                Vec2::splat(scene_span),
+                crown_proof || architectural_proof,
+            );
+        }
     }
     for storey in &plan.storeys {
         if projected_proof
@@ -8104,153 +8122,157 @@ fn setup(
     } else {
         Vec3::Y
     };
-    world.spawn((
-        Camera3d::default(),
-        Transform::from_translation(camera_position).looking_at(target, camera_up),
-    ));
-    {
-        let mut capture = world.resource_mut::<CaptureState>();
-        capture.manifest.camera_position = camera_position.to_array();
-        capture.manifest.camera_target = target.to_array();
-    }
-    world.spawn((
-        DirectionalLight {
-            illuminance: if projected_proof {
-                20_000.0
-            } else if crown_proof || roof_proof.is_some() || timber_proof_suffix(view).is_some() {
-                28_000.0
-            } else {
-                24_000.0
-            },
-            shadow_maps_enabled: true,
-            ..default()
-        },
-        // An oblique south-eastern key separates the gate front, return walls,
-        // tower curvature, and projecting crown. `looking_at` keeps the light
-        // direction legible instead of relying on opaque Euler rotations.
-        Transform::from_translation(sun_position).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-    if roof_proof.is_some_and(|proof| roof_proof_slug(proof).ends_with("-interior")) {
-        // Section proofs expose the unlit underside of a physically opaque
-        // roof. A restrained, deterministic attic fill keeps rafters and the
-        // surviving weather face readable without flattening the exterior key.
+    if scene_setup != SceneSetup::EditorBuilding {
         world.spawn((
-            PointLight {
-                intensity: 75_000.0,
-                range: (roof_focus_extent * 2.5).max(12.0),
-                shadow_maps_enabled: false,
-                color: Color::srgb(0.78, 0.84, 0.94),
-                ..default()
-            },
-            Transform::from_translation(roof_focus - Vec3::Y * roof_focus_extent * 0.35),
+            Camera3d::default(),
+            Transform::from_translation(camera_position).looking_at(target, camera_up),
         ));
-    }
-    if church_section_proof(view)
-        && let Some((camera, focus)) = church_camera
-    {
-        // A restrained camera-side working fill makes the exposed vault,
-        // springing, and service-route faces readable without replacing the
-        // oblique shadowed daylight used by the whole-building regressions.
-        world.spawn((
-            PointLight {
-                intensity: 85_000.0,
-                range: camera.distance(focus).clamp(18.0, 36.0),
-                shadow_maps_enabled: false,
-                color: Color::srgb(0.78, 0.84, 0.94),
-                ..default()
-            },
-            Transform::from_translation(camera.lerp(focus, 0.32)),
-        ));
-    }
-    if view == ViewerView::ArtilleryGateInterior
-        && let Some((camera, focus)) = artillery_camera
-    {
-        world.spawn((
-            PointLight {
-                intensity: 320_000.0,
-                range: 28.0,
-                shadow_maps_enabled: false,
-                color: Color::srgb(0.78, 0.84, 0.94),
-                ..default()
-            },
-            Transform::from_translation(camera.lerp(focus, 0.38)),
-        ));
-    }
-    if view == ViewerView::ArtilleryRondelCasemate
-        && let Some((camera, focus)) = artillery_camera
-    {
-        // Working daylight inside the opened casemate: this remains a lit,
-        // shadowed material proof, but the camera-side fill prevents the two
-        // surviving gun recesses and smoke throats from collapsing to black.
-        world.spawn((
-            PointLight {
-                intensity: 180_000.0,
-                range: 22.0,
-                shadow_maps_enabled: false,
-                color: Color::srgb(0.78, 0.84, 0.94),
-                ..default()
-            },
-            Transform::from_translation(camera.lerp(focus, 0.30)),
-        ));
-    }
-    if roof_proof.is_some_and(|proof| roof_proof_slug(proof) == "roof-cross-gable-exterior") {
-        // The facade-derived Zwerchhaus faces west in the curated fixture and
-        // is consequently on the key-light shadow side.  A restrained cool
-        // proof fill reveals its jambs, eave split, and apron without erasing
-        // the directional roof modeling.
-        world.spawn((
-            PointLight {
-                intensity: 95_000.0,
-                range: 18.0,
-                shadow_maps_enabled: false,
-                color: Color::srgb(0.78, 0.84, 0.94),
-                ..default()
-            },
-            Transform::from_translation(roof_focus + Vec3::new(-5.0, 4.0, 2.0)),
-        ));
-    }
-    if roof_proof.is_some_and(|proof| {
-        matches!(
-            roof_proof_slug(proof),
-            "roof-abutment-tower-exterior" | "roof-abutment-tower-cutaway"
-        )
-    }) {
-        world.spawn((
-            PointLight {
-                intensity: 70_000.0,
-                range: 20.0,
-                shadow_maps_enabled: false,
-                color: Color::srgb(0.80, 0.85, 0.92),
-                ..default()
-            },
-            Transform::from_translation(roof_focus + Vec3::new(5.0, 3.0, -5.0)),
-        ));
-    }
-    world.insert_resource(GlobalAmbientLight {
-        color: Color::srgb(0.72, 0.78, 0.88),
-        brightness: if view == ViewerView::ProjectedSockets {
-            300.0
-        } else if view == ViewerView::ProjectedInterior {
-            420.0
-        } else if view == ViewerView::ProjectedUnderside {
-            380.0
-        } else if roof_proof.is_some_and(|proof| roof_proof_slug(proof).ends_with("-interior")) {
-            400.0
-        } else if roof_proof
-            .is_some_and(|proof| roof_proof_slug(proof) == "roof-cross-gable-exterior")
         {
-            320.0
-        } else if roof_proof.is_some() {
-            240.0
-        } else if crown_proof || projected_proof {
-            340.0
-        } else if timber_proof_suffix(view).is_some() {
-            220.0
-        } else {
-            380.0
-        },
-        affects_lightmapped_meshes: true,
-    });
+            let mut capture = world.resource_mut::<CaptureState>();
+            capture.manifest.camera_position = camera_position.to_array();
+            capture.manifest.camera_target = target.to_array();
+        }
+        world.spawn((
+            DirectionalLight {
+                illuminance: if projected_proof {
+                    20_000.0
+                } else if crown_proof || roof_proof.is_some() || timber_proof_suffix(view).is_some()
+                {
+                    28_000.0
+                } else {
+                    24_000.0
+                },
+                shadow_maps_enabled: true,
+                ..default()
+            },
+            // An oblique south-eastern key separates the gate front, return walls,
+            // tower curvature, and projecting crown. `looking_at` keeps the light
+            // direction legible instead of relying on opaque Euler rotations.
+            Transform::from_translation(sun_position).looking_at(Vec3::ZERO, Vec3::Y),
+        ));
+        if roof_proof.is_some_and(|proof| roof_proof_slug(proof).ends_with("-interior")) {
+            // Section proofs expose the unlit underside of a physically opaque
+            // roof. A restrained, deterministic attic fill keeps rafters and the
+            // surviving weather face readable without flattening the exterior key.
+            world.spawn((
+                PointLight {
+                    intensity: 75_000.0,
+                    range: (roof_focus_extent * 2.5).max(12.0),
+                    shadow_maps_enabled: false,
+                    color: Color::srgb(0.78, 0.84, 0.94),
+                    ..default()
+                },
+                Transform::from_translation(roof_focus - Vec3::Y * roof_focus_extent * 0.35),
+            ));
+        }
+        if church_section_proof(view)
+            && let Some((camera, focus)) = church_camera
+        {
+            // A restrained camera-side working fill makes the exposed vault,
+            // springing, and service-route faces readable without replacing the
+            // oblique shadowed daylight used by the whole-building regressions.
+            world.spawn((
+                PointLight {
+                    intensity: 85_000.0,
+                    range: camera.distance(focus).clamp(18.0, 36.0),
+                    shadow_maps_enabled: false,
+                    color: Color::srgb(0.78, 0.84, 0.94),
+                    ..default()
+                },
+                Transform::from_translation(camera.lerp(focus, 0.32)),
+            ));
+        }
+        if view == ViewerView::ArtilleryGateInterior
+            && let Some((camera, focus)) = artillery_camera
+        {
+            world.spawn((
+                PointLight {
+                    intensity: 320_000.0,
+                    range: 28.0,
+                    shadow_maps_enabled: false,
+                    color: Color::srgb(0.78, 0.84, 0.94),
+                    ..default()
+                },
+                Transform::from_translation(camera.lerp(focus, 0.38)),
+            ));
+        }
+        if view == ViewerView::ArtilleryRondelCasemate
+            && let Some((camera, focus)) = artillery_camera
+        {
+            // Working daylight inside the opened casemate: this remains a lit,
+            // shadowed material proof, but the camera-side fill prevents the two
+            // surviving gun recesses and smoke throats from collapsing to black.
+            world.spawn((
+                PointLight {
+                    intensity: 180_000.0,
+                    range: 22.0,
+                    shadow_maps_enabled: false,
+                    color: Color::srgb(0.78, 0.84, 0.94),
+                    ..default()
+                },
+                Transform::from_translation(camera.lerp(focus, 0.30)),
+            ));
+        }
+        if roof_proof.is_some_and(|proof| roof_proof_slug(proof) == "roof-cross-gable-exterior") {
+            // The facade-derived Zwerchhaus faces west in the curated fixture and
+            // is consequently on the key-light shadow side.  A restrained cool
+            // proof fill reveals its jambs, eave split, and apron without erasing
+            // the directional roof modeling.
+            world.spawn((
+                PointLight {
+                    intensity: 95_000.0,
+                    range: 18.0,
+                    shadow_maps_enabled: false,
+                    color: Color::srgb(0.78, 0.84, 0.94),
+                    ..default()
+                },
+                Transform::from_translation(roof_focus + Vec3::new(-5.0, 4.0, 2.0)),
+            ));
+        }
+        if roof_proof.is_some_and(|proof| {
+            matches!(
+                roof_proof_slug(proof),
+                "roof-abutment-tower-exterior" | "roof-abutment-tower-cutaway"
+            )
+        }) {
+            world.spawn((
+                PointLight {
+                    intensity: 70_000.0,
+                    range: 20.0,
+                    shadow_maps_enabled: false,
+                    color: Color::srgb(0.80, 0.85, 0.92),
+                    ..default()
+                },
+                Transform::from_translation(roof_focus + Vec3::new(5.0, 3.0, -5.0)),
+            ));
+        }
+        world.insert_resource(GlobalAmbientLight {
+            color: Color::srgb(0.72, 0.78, 0.88),
+            brightness: if view == ViewerView::ProjectedSockets {
+                300.0
+            } else if view == ViewerView::ProjectedInterior {
+                420.0
+            } else if view == ViewerView::ProjectedUnderside {
+                380.0
+            } else if roof_proof.is_some_and(|proof| roof_proof_slug(proof).ends_with("-interior"))
+            {
+                400.0
+            } else if roof_proof
+                .is_some_and(|proof| roof_proof_slug(proof) == "roof-cross-gable-exterior")
+            {
+                320.0
+            } else if roof_proof.is_some() {
+                240.0
+            } else if crown_proof || projected_proof {
+                340.0
+            } else if timber_proof_suffix(view).is_some() {
+                220.0
+            } else {
+                380.0
+            },
+            affects_lightmapped_meshes: true,
+        });
+    }
     world.insert_resource(palette);
     record_mesh_audit(world);
 }
@@ -8370,6 +8392,7 @@ fn spawn_ground(world: &mut World, dimensions: Vec2, crown_proof: bool) {
         });
     world.spawn((
         Name::new("ground"),
+        EditorEnvironmentEntity,
         Mesh3d(mesh),
         MeshMaterial3d(material),
         Transform::from_xyz(0.0, -0.02, 0.0),
@@ -8417,6 +8440,7 @@ fn spawn_artillery_ground(world: &mut World, dimensions: Vec2, origin: Vec2) {
             .add(Mesh::from(Cuboid::new(size.x, size.y, size.z)));
         world.spawn((
             Name::new("artillery terrain outside dry ditch"),
+            EditorEnvironmentEntity,
             ClosedSolid,
             Mesh3d(mesh),
             MeshMaterial3d(material.clone()),
@@ -14404,6 +14428,41 @@ fn subject_pixel_bps(data: Option<&[u8]>) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixture_reconfiguration_preserves_camera_and_editor_environment() {
+        let plan = generate(&BuildingProgram::fixture(BuildingArchetype::TownHouse, 42)).unwrap();
+        let mut world = World::new();
+        let camera = world
+            .spawn((
+                Camera3d::default(),
+                Transform::from_xyz(12.0, 8.0, -10.0),
+                PanOrbitCamera {
+                    focus: Vec3::new(3.0, 2.0, 1.0),
+                    target_focus: Vec3::new(3.0, 2.0, 1.0),
+                    radius: Some(17.0),
+                    target_radius: 17.0,
+                    ..default()
+                },
+            ))
+            .id();
+        let environment = world
+            .spawn((
+                Mesh3d(Handle::default()),
+                EditorEnvironmentEntity,
+                Name::new("editor ground"),
+            ))
+            .id();
+        let building = world.spawn(Mesh3d(Handle::default())).id();
+
+        configure_editor_scene(&mut world, &plan, false);
+
+        let orbit = world.get::<PanOrbitCamera>(camera).unwrap();
+        assert_eq!(orbit.focus, Vec3::new(3.0, 2.0, 1.0));
+        assert_eq!(orbit.radius, Some(17.0));
+        assert!(world.get::<EditorBuildingEntity>(environment).is_none());
+        assert!(world.get::<EditorBuildingEntity>(building).is_some());
+    }
 
     #[test]
     fn editor_maps_resolved_owners_to_stable_individual_targets() {
