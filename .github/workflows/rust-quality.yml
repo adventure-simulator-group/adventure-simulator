@@ -40,7 +40,11 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
       - name: Install configured Linux linker
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y mold
+        run: >-
+          sudo apt-get update && sudo apt-get install --no-install-recommends -y
+          mold libasound2-dev libudev-dev libwayland-dev libx11-dev
+          libxcursor-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev
+          libxrandr-dev libxi-dev
       - name: Check formatting
         run: |
           cargo fmt --all -- --check
