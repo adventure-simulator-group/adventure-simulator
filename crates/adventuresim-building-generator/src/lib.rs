@@ -5,8 +5,10 @@
 //! deterministic [`BuildingPlan`] that a renderer or future authoritative
 //! gameplay adapter can consume.
 
+mod audit;
 mod generator;
 mod model;
 
-pub use generator::{GenerationError, generate};
+pub use audit::{AuditIssue, MeshAuditReport, audit_plan, audit_triangle_mesh};
+pub use generator::{GenerationError, generate, set_roof_pitch};
 pub use model::*;
