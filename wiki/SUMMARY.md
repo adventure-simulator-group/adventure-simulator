@@ -26,6 +26,7 @@
 - [Strategic NPC simulation](engineering/strategic-simulation.md)
 - [Puzzle laboratory](engineering/puzzle-lab.md)
 - [Tactical automated testing](engineering/tactical-testing.md)
+- [Animation testing](engineering/animation-testing.md)
 
 # Client
 
