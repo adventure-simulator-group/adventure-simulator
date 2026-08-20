@@ -83,6 +83,11 @@ title = "Tactical automated testing"
 path = "engineering/tactical-testing.md"
 
 [[item]]
+kind = "page"
+title = "Animation testing"
+path = "engineering/animation-testing.md"
+
+[[item]]
 kind = "part"
 title = "Client"
 
