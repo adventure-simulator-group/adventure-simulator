@@ -786,6 +786,58 @@ impl BuildingProgram {
     }
 }
 
+pub const BUILDING_DOCUMENT_SCHEMA_VERSION: u32 = 1;
+
+/// Stable grid address used by editor commands. Unlike resolved mesh IDs, this
+/// remains meaningful when the building is regenerated after an edit.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct WallSelector {
+    pub storey_level: u16,
+    pub cell: Cell,
+    pub direction: Direction,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum BuildingEdit {
+    AddWindow {
+        wall: WallSelector,
+        width_metres: f32,
+        sill_metres: f32,
+        height_metres: f32,
+    },
+    RemoveOpening {
+        wall: WallSelector,
+    },
+    SetWallStyle {
+        style: WallStyle,
+    },
+    SetTimberFrameStyle {
+        style: TimberFrameStyle,
+    },
+}
+
+/// Versioned, serializable authority edited by the interactive building
+/// editor. Resolved geometry is deliberately absent: it is regenerated and
+/// audited transactionally from this document.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BuildingDocument {
+    pub schema_version: u32,
+    pub program: BuildingProgram,
+    #[serde(default)]
+    pub edits: Vec<BuildingEdit>,
+}
+
+impl BuildingDocument {
+    pub fn fixture(archetype: BuildingArchetype, seed: u64) -> Self {
+        Self {
+            schema_version: BUILDING_DOCUMENT_SCHEMA_VERSION,
+            program: BuildingProgram::fixture(archetype, seed),
+            edits: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Room {
     pub id: u16,

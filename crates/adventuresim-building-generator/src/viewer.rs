@@ -1,14 +1,14 @@
 use std::{fs, path::PathBuf};
 
 use adventuresim_building_generator::{
-    BattlementKind, BattlementRun, BuildingArchetype, BuildingPlan, BuildingProgram,
+    BattlementKind, BattlementRun, BuildingArchetype, BuildingDocument, BuildingEdit, BuildingPlan,
     CELL_SIZE_METRES, CrownPath, CurtainWallRun, Direction, DormerKind, FiringPosition,
     GableProfile, GateClosure, GateClosureKind, GateDefense, GatehouseLoadPath, GuardOpeningKind,
     Opening, OpeningKind, ProjectedDefenseDeployment, ProjectedDefensePath, ProjectedDefenseTarget,
     RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace, RoofKind, RoofMaterial,
     RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle, TowerPortal,
-    TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallStyle, WallWalk, audit_plan,
-    audit_triangle_mesh, generate,
+    TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId, WallStyle,
+    WallWalk, audit_plan, audit_triangle_mesh, edit_document, generate, generate_document,
 };
 use bevy::{
     app::AppExit,
@@ -18,9 +18,15 @@ use bevy::{
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::{PresentMode, WindowResolution},
 };
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
+use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use serde::{Deserialize, Serialize};
 
 use crate::{ProjectedProofKind, RoofProofView, ViewerView};
+
+#[cfg(test)]
+use adventuresim_building_generator::BuildingProgram;
 
 const VIEW_WIDTH: u32 = 1440;
 const VIEW_HEIGHT: u32 = 900;
@@ -2097,6 +2103,634 @@ struct LightingCalibration {
 /// carrying this marker and consume the semantic shell/portal recipe instead.
 #[derive(Component)]
 struct NonCollidingVisualization;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum EditorTarget {
+    Wall(WallSelector),
+    Opening(WallSelector),
+    TimberMember(u64),
+}
+
+#[derive(Component)]
+struct EditorSelectable(EditorTarget);
+
+#[derive(Component)]
+struct EditorSceneEntity;
+
+#[derive(Resource)]
+struct EditorRuntime {
+    document: BuildingDocument,
+    plan: BuildingPlan,
+    document_path: PathBuf,
+    undo: Vec<BuildingDocument>,
+    redo: Vec<BuildingDocument>,
+    selected: Option<EditorTarget>,
+    hovered: Option<EditorTarget>,
+    error: Option<String>,
+    status: String,
+    window_width_metres: f32,
+    window_sill_metres: f32,
+    window_height_metres: f32,
+    pending_rebuild: bool,
+}
+
+impl EditorRuntime {
+    fn new(document: BuildingDocument, plan: BuildingPlan, document_path: PathBuf) -> Self {
+        Self {
+            document,
+            plan,
+            document_path,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            selected: None,
+            hovered: None,
+            error: None,
+            status: "Ready".to_owned(),
+            window_width_metres: 0.8,
+            window_sill_metres: 0.9,
+            window_height_metres: 1.1,
+            pending_rebuild: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum EditorUiAction {
+    ChangeArchetype(BuildingArchetype),
+    AddWindow(WallSelector),
+    RemoveOpening(WallSelector),
+    SetWallStyle(WallStyle),
+    SetTimberStyle(TimberFrameStyle),
+    Undo,
+    Redo,
+    Save,
+    Load,
+}
+
+fn editor_target_label(target: EditorTarget) -> String {
+    match target {
+        EditorTarget::Wall(wall) => format!(
+            "Wall L{} ({}, {}) {:?}",
+            wall.storey_level, wall.cell.x, wall.cell.z, wall.direction
+        ),
+        EditorTarget::Opening(wall) => format!(
+            "Opening L{} ({}, {}) {:?}",
+            wall.storey_level, wall.cell.x, wall.cell.z, wall.direction
+        ),
+        EditorTarget::TimberMember(id) => format!("Timber member {id}"),
+    }
+}
+
+fn editor_pointer_over(
+    event: On<Pointer<Over>>,
+    selectables: Query<&EditorSelectable>,
+    mut runtime: ResMut<EditorRuntime>,
+) {
+    if let Ok(selectable) = selectables.get(event.entity) {
+        runtime.hovered = Some(selectable.0);
+    }
+}
+
+fn editor_pointer_out(
+    event: On<Pointer<Out>>,
+    selectables: Query<&EditorSelectable>,
+    mut runtime: ResMut<EditorRuntime>,
+) {
+    if let Ok(selectable) = selectables.get(event.entity)
+        && runtime.hovered == Some(selectable.0)
+    {
+        runtime.hovered = None;
+    }
+}
+
+fn editor_pointer_click(
+    event: On<Pointer<Click>>,
+    selectables: Query<&EditorSelectable>,
+    mut runtime: ResMut<EditorRuntime>,
+) {
+    if event.button == PointerButton::Primary
+        && let Ok(selectable) = selectables.get(event.entity)
+    {
+        runtime.selected = Some(selectable.0);
+        runtime.status = editor_target_label(selectable.0);
+        runtime.error = None;
+    }
+}
+
+fn update_editor_outlines(
+    runtime: Res<EditorRuntime>,
+    mut outlines: Query<(&EditorSelectable, &mut OutlineVolume)>,
+) {
+    if !runtime.is_changed() {
+        return;
+    }
+    for (selectable, mut outline) in &mut outlines {
+        if runtime.selected == Some(selectable.0) {
+            outline.visible = true;
+            outline.colour = Color::WHITE;
+            outline.width = 4.0;
+        } else if runtime.hovered == Some(selectable.0) {
+            outline.visible = true;
+            outline.colour = Color::srgb(0.55, 0.55, 0.55);
+            outline.width = 3.0;
+        } else {
+            outline.visible = false;
+        }
+    }
+}
+
+fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> Result {
+    let mut action = None;
+    egui::Window::new("Building editor")
+        .default_size([290.0, 650.0])
+        .default_pos([VIEW_WIDTH as f32 - 310.0, 20.0])
+        .resizable(true)
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.label(format!("{:?}", runtime.document.program.archetype));
+            egui::ComboBox::from_label("Archetype")
+                .selected_text(format!("{:?}", runtime.document.program.archetype))
+                .show_ui(ui, |ui| {
+                    for archetype in BuildingArchetype::ALL {
+                        if ui
+                            .selectable_label(
+                                runtime.document.program.archetype == archetype,
+                                format!("{:?}", archetype),
+                            )
+                            .clicked()
+                        {
+                            action = Some(EditorUiAction::ChangeArchetype(archetype));
+                        }
+                    }
+                });
+            ui.small("MMB orbit · Shift+MMB pan · wheel zoom · F frame");
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(!runtime.undo.is_empty(), egui::Button::new("Undo"))
+                    .clicked()
+                {
+                    action = Some(EditorUiAction::Undo);
+                }
+                if ui
+                    .add_enabled(!runtime.redo.is_empty(), egui::Button::new("Redo"))
+                    .clicked()
+                {
+                    action = Some(EditorUiAction::Redo);
+                }
+                if ui.button("Save").clicked() {
+                    action = Some(EditorUiAction::Save);
+                }
+                if ui.button("Load").clicked() {
+                    action = Some(EditorUiAction::Load);
+                }
+            });
+            ui.small(runtime.document_path.display().to_string());
+            ui.separator();
+
+            if let Some(selected) = runtime.selected {
+                ui.label(editor_target_label(selected));
+                match selected {
+                    EditorTarget::Wall(wall) => {
+                        ui.add(
+                            egui::DragValue::new(&mut runtime.window_width_metres)
+                                .range(0.35..=1.2)
+                                .speed(0.05)
+                                .prefix("width ")
+                                .suffix(" m"),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut runtime.window_sill_metres)
+                                .range(0.3..=2.2)
+                                .speed(0.05)
+                                .prefix("sill ")
+                                .suffix(" m"),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut runtime.window_height_metres)
+                                .range(0.45..=1.8)
+                                .speed(0.05)
+                                .prefix("height ")
+                                .suffix(" m"),
+                        );
+                        if ui.button("Add window").clicked() {
+                            action = Some(EditorUiAction::AddWindow(wall));
+                        }
+                    }
+                    EditorTarget::Opening(wall) => {
+                        if ui.button("Remove opening").clicked() {
+                            action = Some(EditorUiAction::RemoveOpening(wall));
+                        }
+                    }
+                    EditorTarget::TimberMember(_) => {
+                        ui.label("Fachwerk pattern (building scope)");
+                        let current = runtime
+                            .document
+                            .program
+                            .timber_frame_style
+                            .unwrap_or(TimberFrameStyle::LateMedieval);
+                        for (style, label) in [
+                            (TimberFrameStyle::LateMedieval, "Late medieval"),
+                            (
+                                TimberFrameStyle::NorthernCloseStudded,
+                                "Northern close-studded",
+                            ),
+                            (TimberFrameStyle::EarlyModernOrnate, "Early modern ornate"),
+                        ] {
+                            if ui.selectable_label(current == style, label).clicked() {
+                                action = Some(EditorUiAction::SetTimberStyle(style));
+                            }
+                        }
+                    }
+                }
+            } else {
+                ui.label("Hover a feature, then click to select it.");
+            }
+
+            ui.separator();
+            ui.label("Wall finish (building scope)");
+            let current_wall = runtime.document.program.wall_style;
+            let civilian = matches!(
+                runtime.document.program.archetype,
+                BuildingArchetype::TownHouse
+                    | BuildingArchetype::HallHouse
+                    | BuildingArchetype::FachwerkCottage
+                    | BuildingArchetype::FachwerkMerchantHouse
+                    | BuildingArchetype::RenaissanceTownHall
+            );
+            ui.add_enabled_ui(civilian, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (style, label) in [
+                        (WallStyle::TimberFrame, "Timber/plaster"),
+                        (WallStyle::Plaster, "Plaster"),
+                        (WallStyle::Brick, "Brick"),
+                        (WallStyle::Stone, "Stone"),
+                    ] {
+                        if ui.selectable_label(current_wall == style, label).clicked() {
+                            action = Some(EditorUiAction::SetWallStyle(style));
+                        }
+                    }
+                });
+            });
+            if !civilian {
+                ui.small("The selected fixture's structural material is fixed.");
+            }
+
+            ui.separator();
+            ui.label(&runtime.status);
+            if let Some(error) = &runtime.error {
+                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+            }
+        });
+
+    if let Some(action) = action {
+        perform_editor_action(&mut runtime, action);
+    }
+    Ok(())
+}
+
+fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
+    match action {
+        EditorUiAction::ChangeArchetype(archetype) => {
+            let document = BuildingDocument::fixture(archetype, runtime.document.program.seed);
+            match generate_document(&document) {
+                Ok(plan) => {
+                    runtime.undo.push(runtime.document.clone());
+                    runtime.redo.clear();
+                    runtime.document = document;
+                    runtime.plan = plan;
+                    runtime.selected = None;
+                    runtime.hovered = None;
+                    runtime.pending_rebuild = true;
+                    runtime.status = format!("Loaded {:?} fixture", archetype);
+                    runtime.error = None;
+                }
+                Err(error) => runtime.error = Some(error.to_string()),
+            }
+        }
+        EditorUiAction::AddWindow(wall) => apply_editor_edit(
+            runtime,
+            BuildingEdit::AddWindow {
+                wall,
+                width_metres: runtime.window_width_metres,
+                sill_metres: runtime.window_sill_metres,
+                height_metres: runtime.window_height_metres,
+            },
+        ),
+        EditorUiAction::RemoveOpening(wall) => {
+            apply_editor_edit(runtime, BuildingEdit::RemoveOpening { wall });
+        }
+        EditorUiAction::SetWallStyle(style) => {
+            apply_editor_edit(runtime, BuildingEdit::SetWallStyle { style });
+        }
+        EditorUiAction::SetTimberStyle(style) => {
+            apply_editor_edit(runtime, BuildingEdit::SetTimberFrameStyle { style });
+        }
+        EditorUiAction::Undo => {
+            if let Some(previous) = runtime.undo.pop() {
+                match generate_document(&previous) {
+                    Ok(plan) => {
+                        runtime.redo.push(runtime.document.clone());
+                        runtime.document = previous;
+                        runtime.plan = plan;
+                        runtime.pending_rebuild = true;
+                        runtime.status = "Undid edit".to_owned();
+                        runtime.error = None;
+                    }
+                    Err(error) => runtime.error = Some(error.to_string()),
+                }
+            }
+        }
+        EditorUiAction::Redo => {
+            if let Some(next) = runtime.redo.pop() {
+                match generate_document(&next) {
+                    Ok(plan) => {
+                        runtime.undo.push(runtime.document.clone());
+                        runtime.document = next;
+                        runtime.plan = plan;
+                        runtime.pending_rebuild = true;
+                        runtime.status = "Redid edit".to_owned();
+                        runtime.error = None;
+                    }
+                    Err(error) => runtime.error = Some(error.to_string()),
+                }
+            }
+        }
+        EditorUiAction::Save => match serde_json::to_vec_pretty(&runtime.document)
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| {
+                fs::write(&runtime.document_path, bytes).map_err(|error| error.to_string())
+            }) {
+            Ok(()) => {
+                runtime.status = format!("Saved {}", runtime.document_path.display());
+                runtime.error = None;
+            }
+            Err(error) => runtime.error = Some(error),
+        },
+        EditorUiAction::Load => match fs::read(&runtime.document_path)
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| {
+                serde_json::from_slice::<BuildingDocument>(&bytes)
+                    .map_err(|error| error.to_string())
+            })
+            .and_then(|document| {
+                generate_document(&document)
+                    .map(|plan| (document, plan))
+                    .map_err(|error| error.to_string())
+            }) {
+            Ok((document, plan)) => {
+                runtime.undo.push(runtime.document.clone());
+                runtime.redo.clear();
+                runtime.document = document;
+                runtime.plan = plan;
+                runtime.selected = None;
+                runtime.pending_rebuild = true;
+                runtime.status = format!("Loaded {}", runtime.document_path.display());
+                runtime.error = None;
+            }
+            Err(error) => runtime.error = Some(error),
+        },
+    }
+}
+
+fn apply_editor_edit(runtime: &mut EditorRuntime, edit: BuildingEdit) {
+    match edit_document(&runtime.document, edit) {
+        Ok((document, plan)) => {
+            runtime.undo.push(runtime.document.clone());
+            runtime.redo.clear();
+            runtime.document = document;
+            runtime.plan = plan;
+            runtime.selected = None;
+            runtime.hovered = None;
+            runtime.pending_rebuild = true;
+            runtime.status = "Edit applied and full building audit passed".to_owned();
+            runtime.error = None;
+        }
+        Err(error) => runtime.error = Some(error.to_string()),
+    }
+}
+
+fn editor_owner_targets(
+    plan: &BuildingPlan,
+) -> (
+    std::collections::HashMap<u32, EditorTarget>,
+    std::collections::HashMap<u64, EditorTarget>,
+) {
+    let mut owner_targets = std::collections::HashMap::<u32, EditorTarget>::new();
+    let mut item_targets = std::collections::HashMap::<u64, EditorTarget>::new();
+    for wall in &plan.wall_assemblies {
+        if let WallSourceId::StoreyWall {
+            storey_level,
+            wall_index,
+        } = wall.source
+            && let Some(segment) = plan
+                .storeys
+                .iter()
+                .find(|storey| storey.level == storey_level)
+                .and_then(|storey| storey.walls.get(wall_index))
+        {
+            owner_targets.insert(
+                wall.owner.0,
+                EditorTarget::Wall(WallSelector {
+                    storey_level,
+                    cell: segment.cell,
+                    direction: segment.direction,
+                }),
+            );
+        }
+    }
+    for opening in &plan.opening_assemblies {
+        if let WallSourceId::StoreyWall {
+            storey_level,
+            wall_index,
+        } = opening.host_source
+            && let Some(segment) = plan
+                .storeys
+                .iter()
+                .find(|storey| storey.level == storey_level)
+                .and_then(|storey| storey.walls.get(wall_index))
+        {
+            let target = EditorTarget::Opening(WallSelector {
+                storey_level,
+                cell: segment.cell,
+                direction: segment.direction,
+            });
+            let mut ids = opening.jamb_solids.to_vec();
+            ids.extend([
+                opening.head_solid,
+                opening.spandrel_solid,
+                opening.wall_above_interface,
+            ]);
+            ids.extend(opening.sill_solid);
+            ids.extend(opening.closure_solids.iter().copied());
+            ids.extend(opening.reveal_surfaces.iter().copied());
+            ids.extend(opening.mount_solid);
+            ids.extend(opening.stance_surface);
+            for id in ids {
+                item_targets.insert(id.0, target);
+            }
+        }
+    }
+    if let Some(frame) = &plan.timber_frame {
+        for member in &frame.members {
+            item_targets.insert(member.solid.0, EditorTarget::TimberMember(member.id.0));
+        }
+    }
+    (owner_targets, item_targets)
+}
+
+fn configure_editor_scene(world: &mut World, plan: &BuildingPlan) {
+    let (owner_targets, item_targets) = editor_owner_targets(plan);
+
+    let mesh_entities = {
+        let mut query =
+            world.query::<(Entity, Option<&GeometryOwner>, Option<&ResolvedRenderItem>)>();
+        query
+            .iter(world)
+            .filter(|(entity, _, _)| world.get::<Mesh3d>(*entity).is_some())
+            .map(|(entity, owner, item)| {
+                (entity, owner.map(|owner| owner.0), item.map(|item| item.id))
+            })
+            .collect::<Vec<_>>()
+    };
+    for (entity, owner, item) in mesh_entities {
+        let mut entity_mut = world.entity_mut(entity);
+        entity_mut.insert(EditorSceneEntity);
+        let target = item
+            .and_then(|item| item_targets.get(&item).copied())
+            .or_else(|| owner.and_then(|owner| owner_targets.get(&owner).copied()));
+        if let Some(target) = target {
+            entity_mut.insert((
+                EditorSelectable(target),
+                OutlineVolume {
+                    visible: false,
+                    colour: Color::WHITE,
+                    width: 4.0,
+                },
+                OutlineMode::FloodFlat,
+            ));
+        } else {
+            entity_mut.insert(Pickable::IGNORE);
+        }
+    }
+
+    let focus = Vec3::new(
+        0.0,
+        plan.storey_height_metres * plan.storeys.len() as f32 * 0.45,
+        0.0,
+    );
+    let camera_entities = {
+        let mut query = world.query_filtered::<Entity, With<Camera3d>>();
+        query.iter(world).collect::<Vec<_>>()
+    };
+    for entity in camera_entities {
+        let transform = *world
+            .get::<Transform>(entity)
+            .expect("editor camera must have a transform");
+        let radius = transform.translation.distance(focus).max(3.0);
+        world.entity_mut(entity).insert((
+            EditorSceneEntity,
+            PanOrbitCamera {
+                focus,
+                target_focus: focus,
+                radius: Some(radius),
+                target_radius: radius,
+                button_orbit: MouseButton::Middle,
+                button_pan: MouseButton::Middle,
+                modifier_pan: Some(KeyCode::ShiftLeft),
+                zoom_lower_limit: 0.5,
+                ..default()
+            },
+        ));
+    }
+
+    let light_entities = {
+        let mut query =
+            world.query_filtered::<Entity, Or<(With<DirectionalLight>, With<PointLight>)>>();
+        query.iter(world).collect::<Vec<_>>()
+    };
+    for entity in light_entities {
+        world.entity_mut(entity).insert(EditorSceneEntity);
+    }
+    let text_entities = {
+        let mut query = world.query_filtered::<Entity, With<Text2d>>();
+        query.iter(world).collect::<Vec<_>>()
+    };
+    for entity in text_entities {
+        world.entity_mut(entity).insert(EditorSceneEntity);
+    }
+}
+
+fn frame_editor_selection(
+    keys: Res<ButtonInput<KeyCode>>,
+    runtime: Res<EditorRuntime>,
+    targets: Query<(
+        &EditorSelectable,
+        &GlobalTransform,
+        Option<&ResolvedRenderItem>,
+        Option<&RoofRenderItem>,
+    )>,
+    mut cameras: Query<&mut PanOrbitCamera>,
+) {
+    if !keys.just_pressed(KeyCode::KeyF) {
+        return;
+    }
+    let Some(selected) = runtime.selected else {
+        return;
+    };
+    let mut minimum = Vec3::splat(f32::INFINITY);
+    let mut maximum = Vec3::splat(f32::NEG_INFINITY);
+    let mut found = false;
+    for (selectable, transform, resolved, roof) in &targets {
+        if selectable.0 != selected {
+            continue;
+        }
+        let half_size = resolved
+            .map(|item| item.local_half_size)
+            .or_else(|| roof.map(|item| item.local_half_size))
+            .unwrap_or(Vec3::splat(0.25));
+        let centre = transform.translation();
+        minimum = minimum.min(centre - half_size);
+        maximum = maximum.max(centre + half_size);
+        found = true;
+    }
+    if !found {
+        return;
+    }
+    let focus = (minimum + maximum) * 0.5;
+    let radius = (maximum - minimum).length().max(1.0) * 1.6;
+    for mut camera in &mut cameras {
+        camera.target_focus = focus;
+        camera.target_radius = radius;
+        camera.force_update = true;
+    }
+}
+
+fn rebuild_editor_scene(world: &mut World) {
+    let pending = world
+        .get_resource::<EditorRuntime>()
+        .is_some_and(|runtime| runtime.pending_rebuild);
+    if !pending {
+        return;
+    }
+    let old_entities = {
+        let mut query = world.query_filtered::<Entity, With<EditorSceneEntity>>();
+        query.iter(world).collect::<Vec<_>>()
+    };
+    for entity in old_entities {
+        let _ = world.despawn(entity);
+    }
+    let plan = world.resource::<EditorRuntime>().plan.clone();
+    setup(
+        world,
+        &plan,
+        ViewerView::Exterior,
+        ProjectedProofKind::Machicolation,
+        None,
+    );
+    configure_editor_scene(world, &plan);
+    world.resource_mut::<EditorRuntime>().pending_rebuild = false;
+}
 
 fn stable_evidence_hash(bytes: &[u8]) -> String {
     format!("fnv1a64:{:016x}", stable_u64(bytes))
@@ -4526,6 +5160,8 @@ pub(crate) fn run(
     settle_frames: u32,
     projected_kind: ProjectedProofKind,
     roof_proof: Option<RoofProofView>,
+    editor: bool,
+    document_path: Option<PathBuf>,
 ) {
     let seed = if view == ViewerView::ArtilleryBridgeDenied {
         702
@@ -4540,7 +5176,25 @@ pub(crate) fn run(
     } else {
         seed
     };
-    let mut program = BuildingProgram::fixture(archetype, seed);
+    let editor_document_path =
+        document_path.unwrap_or_else(|| PathBuf::from("building-document.json"));
+    let mut document = if editor && editor_document_path.exists() {
+        let bytes = fs::read(&editor_document_path).unwrap_or_else(|error| {
+            panic!(
+                "failed to read editor document {}: {error}",
+                editor_document_path.display()
+            )
+        });
+        serde_json::from_slice::<BuildingDocument>(&bytes).unwrap_or_else(|error| {
+            panic!(
+                "failed to decode editor document {}: {error}",
+                editor_document_path.display()
+            )
+        })
+    } else {
+        BuildingDocument::fixture(archetype, seed)
+    };
+    let mut program = document.program.clone();
     if let Some(proof) = roof_proof {
         program.roof_pitch_degrees = match proof {
             RoofProofView::RoofGableLowPitch => 25.0,
@@ -4575,7 +5229,12 @@ pub(crate) fn run(
             program.roof_demonstrator = Some(RoofKind::Pavilion);
         }
     }
-    let plan = generate(&program).expect("curated building fixture must generate");
+    document.program = program.clone();
+    let plan = if editor {
+        generate_document(&document).expect("editor document must generate")
+    } else {
+        generate(&program).expect("curated building fixture must generate")
+    };
     let plan_bytes = serde_json::to_vec(&plan).expect("serialize building plan for evidence hash");
     let plan_hash = stable_evidence_hash(&plan_bytes);
     let evidence_hash = stable_evidence_hash(
@@ -5795,9 +6454,32 @@ pub(crate) fn run(
         primed: false,
         in_flight: false,
         manifest,
-    })
-    .add_systems(Startup, move |world: &mut World| {
-        setup(world, &plan, view, projected_kind, roof_proof)
+    });
+    if editor {
+        app.add_plugins((
+            MeshPickingPlugin,
+            OutlinePlugin::JUMP_FLOOD,
+            EguiPlugin::default(),
+            PanOrbitCameraPlugin,
+        ))
+        .insert_resource(EditorRuntime::new(
+            document,
+            plan.clone(),
+            editor_document_path,
+        ))
+        .add_observer(editor_pointer_over)
+        .add_observer(editor_pointer_out)
+        .add_observer(editor_pointer_click)
+        .add_systems(EguiPrimaryContextPass, editor_ui)
+        .add_systems(Update, (update_editor_outlines, frame_editor_selection))
+        .add_systems(PostUpdate, rebuild_editor_scene);
+    }
+    let startup_plan = plan.clone();
+    app.add_systems(Startup, move |world: &mut World| {
+        setup(world, &startup_plan, view, projected_kind, roof_proof);
+        if editor {
+            configure_editor_scene(world, &startup_plan);
+        }
     })
     .add_systems(Last, capture_when_ready);
     let exit = app.run();
@@ -11859,7 +12541,11 @@ fn spawn_resolved_crowns(
                 | SolidRole::DitchFloor
                 | SolidRole::DitchScarp
                 | SolidRole::DitchCounterscarp => &palette.earth,
-                SolidRole::FrameInfill => &palette.plaster,
+                SolidRole::FrameInfill => match plan.wall_style {
+                    WallStyle::Brick => &palette.brick,
+                    WallStyle::Stone => &palette.stone,
+                    WallStyle::TimberFrame | WallStyle::Plaster => &palette.plaster,
+                },
                 SolidRole::FrameFloor
                 | SolidRole::WalkSurface
                 | SolidRole::DrainageChannel
@@ -11899,10 +12585,21 @@ fn spawn_resolved_crowns(
                 | SolidRole::OpeningHead
                 | SolidRole::OpeningSpandrel => match wall.map(|wall| wall.material) {
                     Some(adventuresim_building_generator::WallMaterialClass::TimberInfill) => {
-                        &palette.plaster
+                        match plan.wall_style {
+                            WallStyle::Brick => &palette.brick,
+                            WallStyle::Stone => &palette.stone,
+                            WallStyle::TimberFrame | WallStyle::Plaster => &palette.plaster,
+                        }
                     }
                     Some(adventuresim_building_generator::WallMaterialClass::InternalTimber) => {
                         &palette.timber
+                    }
+                    Some(adventuresim_building_generator::WallMaterialClass::CivilianMasonry) => {
+                        match plan.wall_style {
+                            WallStyle::Brick => &palette.brick,
+                            WallStyle::Plaster | WallStyle::TimberFrame => &palette.plaster,
+                            WallStyle::Stone => &palette.stone,
+                        }
                     }
                     _ => &palette.stone,
                 },
@@ -13707,6 +14404,49 @@ fn subject_pixel_bps(data: Option<&[u8]>) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_maps_resolved_owners_to_stable_individual_targets() {
+        let plan = generate(&BuildingProgram::fixture(
+            BuildingArchetype::FachwerkMerchantHouse,
+            42,
+        ))
+        .unwrap();
+        let (owner_targets, item_targets) = editor_owner_targets(&plan);
+
+        for wall in &plan.wall_assemblies {
+            if matches!(wall.source, WallSourceId::StoreyWall { .. }) {
+                assert!(
+                    matches!(
+                        owner_targets.get(&wall.owner.0),
+                        Some(EditorTarget::Wall(_))
+                    ),
+                    "storey wall owner {} must remain selectable, got {:?}",
+                    wall.owner.0,
+                    owner_targets.get(&wall.owner.0)
+                );
+            }
+        }
+        for opening in &plan.opening_assemblies {
+            if matches!(opening.host_source, WallSourceId::StoreyWall { .. }) {
+                assert!(
+                    matches!(
+                        item_targets.get(&opening.head_solid.0),
+                        Some(EditorTarget::Opening(_))
+                    ),
+                    "opening head {} must remain selectable",
+                    opening.head_solid.0
+                );
+            }
+        }
+        let frame = plan.timber_frame.as_ref().unwrap();
+        for member in &frame.members {
+            assert_eq!(
+                item_targets.get(&member.solid.0),
+                Some(&EditorTarget::TimberMember(member.id.0))
+            );
+        }
+    }
 
     #[test]
     fn splayed_jamb_mesh_is_a_closed_consistently_wound_solid() {

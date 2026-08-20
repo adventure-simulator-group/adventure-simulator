@@ -113,6 +113,9 @@ name = "adventuresim-building-generator"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_egui",
+ "bevy_mod_outline",
+ "bevy_panorbit_camera",
  "clap",
  "earcut",
  "geo",
@@ -2350,6 +2353,16 @@ dependencies = [
  "nonmax",
  "thiserror 1.0.69",
  "wgpu-types 29.0.4",
+]
+
+[[package]]
+name = "bevy_panorbit_camera"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b036abdcedf4ea3e9eec4e51190b962b53165d2a6e4de4a56c7cf4c49a52809"
+dependencies = [
+ "bevy",
+ "bevy_egui",
 ]
 
 [[package]]

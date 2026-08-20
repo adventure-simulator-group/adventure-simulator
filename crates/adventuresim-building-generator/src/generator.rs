@@ -6,10 +6,11 @@ use thiserror::Error;
 
 use crate::{
     AccessBrace, AccessDoor, AccessGuardSegment, AccessLanding, AccessLedger, AccessStairFlight,
-    AuditIssue, Bartizan, BattlementKind, BattlementRun, BuildingArchetype, BuildingPlan,
-    BuildingProgram, CELL_SIZE_METRES, CROWN_DRAIN_CHANNEL_WIDTH_METRES, Cell, CellDiameter,
-    CrownAssembly, CrownJunction, CrownJunctionKind, CrownMaterial, CrownPath, CrownPattern,
-    CrownPhase, CrownProfile, CurtainWallRun, DefenderSample, DefensiveCircuit, DefensiveJunction,
+    AuditIssue, BUILDING_DOCUMENT_SCHEMA_VERSION, Bartizan, BattlementKind, BattlementRun,
+    BuildingArchetype, BuildingDocument, BuildingEdit, BuildingPlan, BuildingProgram,
+    CELL_SIZE_METRES, CROWN_DRAIN_CHANNEL_WIDTH_METRES, Cell, CellDiameter, CrownAssembly,
+    CrownJunction, CrownJunctionKind, CrownMaterial, CrownPath, CrownPattern, CrownPhase,
+    CrownProfile, CurtainWallRun, DefenderSample, DefensiveCircuit, DefensiveJunction,
     DefensiveJunctionKind, Direction, DormerKind, DrainageCatchment, DrainageRoute, FiringPosition,
     Footprint, GRID_UNIT_METRES, GableProfile, GateClosure, GateClosureKind, GateDefense,
     GateGuardChamber, GateOperatingPosition, GatehouseAssemblySpec, GatehouseLoadPath,
@@ -59,6 +60,14 @@ pub enum GenerationError {
         issues_count: usize,
         issues: Vec<AuditIssue>,
     },
+    #[error("building document schema {found} is unsupported; expected {expected}")]
+    UnsupportedDocumentSchema { found: u32, expected: u32 },
+    #[error("building edit target was not found: {0}")]
+    EditTargetNotFound(String),
+    #[error("building edit conflicts with existing authority: {0}")]
+    EditConflict(String),
+    #[error("building edit is not supported for this program: {0}")]
+    UnsupportedEdit(String),
 }
 
 /// Dedicated projected-defense study tags change only the defense assembly,
@@ -81,8 +90,63 @@ fn layout_seed(program: &BuildingProgram) -> u64 {
 /// Programs that cannot produce a valid building are rejected with a typed error;
 /// callers never receive a knowingly invalid plan.
 pub fn generate(program: &BuildingProgram) -> Result<BuildingPlan, GenerationError> {
-    let plan = generate_unchecked(program)?;
+    let plan = generate_unchecked(program, &[])?;
     validate_generated_plan(plan)
+}
+
+/// Regenerates and audits a versioned editor document.
+pub fn generate_document(document: &BuildingDocument) -> Result<BuildingPlan, GenerationError> {
+    if document.schema_version != BUILDING_DOCUMENT_SCHEMA_VERSION {
+        return Err(GenerationError::UnsupportedDocumentSchema {
+            found: document.schema_version,
+            expected: BUILDING_DOCUMENT_SCHEMA_VERSION,
+        });
+    }
+    let mut program = document.program.clone();
+    for edit in &document.edits {
+        match *edit {
+            BuildingEdit::SetWallStyle { style } => {
+                if !matches!(
+                    program.archetype,
+                    BuildingArchetype::TownHouse
+                        | BuildingArchetype::HallHouse
+                        | BuildingArchetype::FachwerkCottage
+                        | BuildingArchetype::FachwerkMerchantHouse
+                        | BuildingArchetype::RenaissanceTownHall
+                ) {
+                    return Err(GenerationError::UnsupportedEdit(format!(
+                        "{:?} has no editable civilian wall finish",
+                        program.archetype
+                    )));
+                }
+                program.wall_style = style;
+            }
+            BuildingEdit::SetTimberFrameStyle { style } => {
+                if program.timber_frame_style.is_none() {
+                    return Err(GenerationError::UnsupportedEdit(format!(
+                        "{:?} has no timber-frame program",
+                        program.archetype
+                    )));
+                }
+                program.timber_frame_style = Some(style);
+            }
+            BuildingEdit::AddWindow { .. } | BuildingEdit::RemoveOpening { .. } => {}
+        }
+    }
+    let plan = generate_unchecked(&program, &document.edits)?;
+    validate_generated_plan(plan)
+}
+
+/// Applies one editor command transactionally. The returned document is only
+/// produced when its regenerated plan passes the complete structural audit.
+pub fn edit_document(
+    document: &BuildingDocument,
+    edit: BuildingEdit,
+) -> Result<(BuildingDocument, BuildingPlan), GenerationError> {
+    let mut candidate = document.clone();
+    candidate.edits.push(edit);
+    let plan = generate_document(&candidate)?;
+    Ok((candidate, plan))
 }
 
 fn validate_generated_plan(plan: BuildingPlan) -> Result<BuildingPlan, GenerationError> {
@@ -97,7 +161,10 @@ fn validate_generated_plan(plan: BuildingPlan) -> Result<BuildingPlan, Generatio
     }
 }
 
-fn generate_unchecked(program: &BuildingProgram) -> Result<BuildingPlan, GenerationError> {
+fn generate_unchecked(
+    program: &BuildingProgram,
+    edits: &[BuildingEdit],
+) -> Result<BuildingPlan, GenerationError> {
     let footprint_cells = footprint_cells(program.footprint)?;
     let (width, depth) = program.footprint.dimensions();
     let mut storeys = Vec::with_capacity(program.storeys.len());
@@ -133,13 +200,14 @@ fn generate_unchecked(program: &BuildingProgram) -> Result<BuildingPlan, Generat
             }
         }
         let walls = derive_walls(&footprint_cells, &assignments);
-        let openings = derive_openings(
+        let mut openings = derive_openings(
             &walls,
             &storey_program.rooms,
             program.archetype,
             layout_seed.wrapping_add(level as u64),
             level,
         )?;
+        apply_opening_edits(storey_program, level as u16, &walls, &mut openings, edits)?;
         storeys.push(StoreyPlan {
             level: level as u16,
             rooms,
@@ -279,6 +347,7 @@ fn generate_unchecked(program: &BuildingProgram) -> Result<BuildingPlan, Generat
     );
     let timber_frame = resolve_timber_frame_assembly(
         program,
+        edits,
         &mut wall_assemblies,
         &opening_assemblies,
         &roofs,
@@ -338,6 +407,81 @@ fn generate_unchecked(program: &BuildingProgram) -> Result<BuildingPlan, Generat
         },
         artillery_castle,
     })
+}
+
+fn apply_opening_edits(
+    _storey_program: &crate::StoreyProgram,
+    level: u16,
+    walls: &[crate::WallSegment],
+    openings: &mut Vec<Opening>,
+    edits: &[BuildingEdit],
+) -> Result<(), GenerationError> {
+    for edit in edits {
+        let selector = match edit {
+            BuildingEdit::AddWindow { wall, .. } | BuildingEdit::RemoveOpening { wall } => *wall,
+            BuildingEdit::SetWallStyle { .. } | BuildingEdit::SetTimberFrameStyle { .. } => {
+                continue;
+            }
+        };
+        if selector.storey_level != level {
+            continue;
+        }
+        let wall_index = walls
+            .iter()
+            .position(|wall| wall.cell == selector.cell && wall.direction == selector.direction)
+            .ok_or_else(|| {
+                GenerationError::EditTargetNotFound(format!(
+                    "storey {} cell ({}, {}) {:?} wall",
+                    level, selector.cell.x, selector.cell.z, selector.direction
+                ))
+            })?;
+        match *edit {
+            BuildingEdit::AddWindow {
+                width_metres,
+                sill_metres,
+                height_metres,
+                ..
+            } => {
+                if !walls[wall_index].exterior() {
+                    return Err(GenerationError::UnsupportedEdit(
+                        "the MVP adds windows only to exterior grid walls".to_owned(),
+                    ));
+                }
+                if openings.iter().any(|opening| opening.wall == wall_index) {
+                    return Err(GenerationError::EditConflict(format!(
+                        "wall already owns an opening on storey {level}"
+                    )));
+                }
+                if !(0.35..=1.20).contains(&width_metres)
+                    || !(0.30..=2.20).contains(&sill_metres)
+                    || !(0.45..=1.80).contains(&height_metres)
+                {
+                    return Err(GenerationError::UnsupportedEdit(
+                        "window dimensions are outside the editor project envelope".to_owned(),
+                    ));
+                }
+                openings.push(Opening {
+                    wall: wall_index,
+                    kind: OpeningKind::Window,
+                    width_metres,
+                    sill_metres,
+                    height_metres,
+                });
+                openings.sort_by_key(|opening| opening.wall);
+            }
+            BuildingEdit::RemoveOpening { .. } => {
+                let before = openings.len();
+                openings.retain(|opening| opening.wall != wall_index);
+                if openings.len() == before {
+                    return Err(GenerationError::EditTargetNotFound(format!(
+                        "opening on storey {level} wall {wall_index}"
+                    )));
+                }
+            }
+            BuildingEdit::SetWallStyle { .. } | BuildingEdit::SetTimberFrameStyle { .. } => {}
+        }
+    }
+    Ok(())
 }
 
 struct TimberFrameBuilder<'a> {
@@ -1008,6 +1152,7 @@ fn triangulate_panel_polygon(polygon: &Polygon<f32>) -> Vec<[Vec2; 3]> {
 
 fn resolve_timber_frame_assembly(
     program: &BuildingProgram,
+    edits: &[BuildingEdit],
     walls: &mut [crate::WallAssembly],
     openings: &[crate::OpeningAssembly],
     roofs: &[RoofPiece],
@@ -1263,12 +1408,29 @@ fn resolve_timber_frame_assembly(
                         section * 0.78,
                         crate::TimberFramePhase::PrimaryConstruction,
                     ));
-                    let (brace_start, brace_end) =
-                        if (wall_index + usize::from(level)).is_multiple_of(2) {
-                            (left_bottom, right_top)
-                        } else {
-                            (right_bottom, left_top)
-                        };
+                    let editor_style = edits.iter().rev().find_map(|edit| match edit {
+                        BuildingEdit::SetTimberFrameStyle { style } => Some(*style),
+                        _ => None,
+                    });
+                    let rising = editor_style.map_or_else(
+                        || (wall_index + usize::from(level)).is_multiple_of(2),
+                        |style| match style {
+                            crate::TimberFrameStyle::LateMedieval => {
+                                (wall_index + usize::from(level)).is_multiple_of(2)
+                            }
+                            crate::TimberFrameStyle::NorthernCloseStudded => {
+                                wall_index.is_multiple_of(2)
+                            }
+                            crate::TimberFrameStyle::EarlyModernOrnate => {
+                                (wall_index / 2 + usize::from(level)).is_multiple_of(2)
+                            }
+                        },
+                    );
+                    let (brace_start, brace_end) = if rising {
+                        (left_bottom, right_top)
+                    } else {
+                        (right_bottom, left_top)
+                    };
                     member_ids.push(builder.member(
                         crate::TimberMemberRole::StoreyBrace,
                         brace_start,
@@ -21916,7 +22078,7 @@ mod tests {
             for seed in SEEDS {
                 let program = BuildingProgram::fixture(archetype, seed);
                 let plan = generate(&program).unwrap_or_else(|error| {
-                    panic!("{archetype:?} seed {seed} must be supported: {error}")
+                    panic!("{archetype:?} seed {seed} must be supported: {error:?}")
                 });
                 assert!(
                     crate::audit_plan(&plan).is_empty(),
@@ -21928,9 +22090,11 @@ mod tests {
 
     #[test]
     fn invalid_generated_plan_is_rejected_at_the_public_boundary() {
-        let mut plan =
-            generate_unchecked(&BuildingProgram::fixture(BuildingArchetype::TownHouse, 42))
-                .unwrap();
+        let mut plan = generate_unchecked(
+            &BuildingProgram::fixture(BuildingArchetype::TownHouse, 42),
+            &[],
+        )
+        .unwrap();
         let removed = plan.resolved_geometry.solids.pop().unwrap();
 
         let error = validate_generated_plan(plan).unwrap_err();
@@ -21953,6 +22117,148 @@ mod tests {
             generate(&program),
             Err(GenerationError::EmptyStorey { level: 0 })
         ));
+    }
+
+    #[test]
+    fn editor_window_command_is_transactional_and_serializable() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let base = generate_document(&document).unwrap();
+        let storey = &base.storeys[1];
+        let (wall_index, wall) = storey
+            .walls
+            .iter()
+            .enumerate()
+            .find(|(index, wall)| {
+                wall.exterior() && !storey.openings.iter().any(|opening| opening.wall == *index)
+            })
+            .expect("fixture has an unopened exterior wall");
+        let selector = crate::WallSelector {
+            storey_level: storey.level,
+            cell: wall.cell,
+            direction: wall.direction,
+        };
+        let (edited, plan) = edit_document(
+            &document,
+            BuildingEdit::AddWindow {
+                wall: selector,
+                width_metres: 0.80,
+                sill_metres: 0.90,
+                height_metres: 1.10,
+            },
+        )
+        .unwrap();
+        assert!(crate::audit_plan(&plan).is_empty());
+        assert!(
+            plan.storeys[1].openings.iter().any(|opening| {
+                opening.wall == wall_index && opening.kind == OpeningKind::Window
+            })
+        );
+
+        let encoded = serde_json::to_vec(&edited).unwrap();
+        let decoded: BuildingDocument = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&generate_document(&decoded).unwrap()).unwrap(),
+            serde_json::to_vec(&plan).unwrap()
+        );
+    }
+
+    #[test]
+    fn invalid_editor_command_preserves_the_previous_document() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let opening = plan.storeys[0].openings[0];
+        let wall = plan.storeys[0].walls[opening.wall];
+        let result = edit_document(
+            &document,
+            BuildingEdit::AddWindow {
+                wall: crate::WallSelector {
+                    storey_level: 0,
+                    cell: wall.cell,
+                    direction: wall.direction,
+                },
+                width_metres: 0.8,
+                sill_metres: 0.9,
+                height_metres: 1.1,
+            },
+        );
+        assert!(matches!(result, Err(GenerationError::EditConflict(_))));
+        assert!(document.edits.is_empty());
+    }
+
+    #[test]
+    fn editor_document_rejects_unknown_schema_and_inapplicable_styles() {
+        let mut future = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        future.schema_version += 1;
+        assert!(matches!(
+            generate_document(&future),
+            Err(GenerationError::UnsupportedDocumentSchema { .. })
+        ));
+
+        let cathedral = BuildingDocument::fixture(BuildingArchetype::Cathedral, 42);
+        assert!(matches!(
+            edit_document(
+                &cathedral,
+                BuildingEdit::SetWallStyle {
+                    style: crate::WallStyle::TimberFrame,
+                }
+            ),
+            Err(GenerationError::UnsupportedEdit(_))
+        ));
+        assert!(matches!(
+            edit_document(
+                &cathedral,
+                BuildingEdit::SetTimberFrameStyle {
+                    style: crate::TimberFrameStyle::EarlyModernOrnate,
+                }
+            ),
+            Err(GenerationError::UnsupportedEdit(_))
+        ));
+    }
+
+    #[test]
+    fn editor_style_edits_regenerate_a_valid_civilian_building() {
+        let document = BuildingDocument::fixture(BuildingArchetype::FachwerkMerchantHouse, 42);
+        let (document, plan) = edit_document(
+            &document,
+            BuildingEdit::SetWallStyle {
+                style: crate::WallStyle::Brick,
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.wall_style, crate::WallStyle::Brick);
+        assert!(crate::audit_plan(&plan).is_empty());
+        let original_braces = plan
+            .timber_frame
+            .as_ref()
+            .unwrap()
+            .members
+            .iter()
+            .filter(|member| member.role == crate::TimberMemberRole::StoreyBrace)
+            .map(|member| (member.start, member.end))
+            .collect::<Vec<_>>();
+
+        let (_, plan) = edit_document(
+            &document,
+            BuildingEdit::SetTimberFrameStyle {
+                style: crate::TimberFrameStyle::NorthernCloseStudded,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            plan.timber_frame_style,
+            Some(crate::TimberFrameStyle::NorthernCloseStudded)
+        );
+        let edited_braces = plan
+            .timber_frame
+            .as_ref()
+            .unwrap()
+            .members
+            .iter()
+            .filter(|member| member.role == crate::TimberMemberRole::StoreyBrace)
+            .map(|member| (member.start, member.end))
+            .collect::<Vec<_>>();
+        assert_ne!(original_braces, edited_braces);
+        assert!(crate::audit_plan(&plan).is_empty());
     }
 
     #[test]

@@ -268,6 +268,14 @@ struct Args {
     #[arg(long)]
     output: Option<PathBuf>,
 
+    /// Open the semantic building editor instead of the passive viewer.
+    #[arg(long, conflicts_with = "output")]
+    editor: bool,
+
+    /// Versioned editor document to load/save. Defaults to building-document.json.
+    #[arg(long, value_name = "PATH", requires = "editor")]
+    document: Option<PathBuf>,
+
     /// Frames allowed for render pipelines to settle before capture.
     #[arg(long, default_value_t = 240)]
     settle_frames: u32,
@@ -356,6 +364,8 @@ fn main() {
         args.settle_frames,
         args.projected_kind,
         args.roof_proof,
+        args.editor,
+        args.document,
     );
 }
 
