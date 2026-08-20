@@ -39,6 +39,8 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+      - name: Install configured Linux linker
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y mold
       - name: Check formatting
         run: |
           cargo fmt --all -- --check
