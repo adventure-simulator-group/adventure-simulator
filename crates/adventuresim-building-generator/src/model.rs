@@ -393,6 +393,12 @@ impl BuildingArchetype {
     }
 }
 
+/// High-level input recipe for procedural building generation.
+///
+/// The recipe is intentionally allowed to describe combinations that cannot be
+/// built. The public [`crate::generate`] boundary is the validator: every
+/// successful result has passed the complete structural audit, while an
+/// unbuildable recipe returns [`crate::GenerationError`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuildingProgram {
     pub archetype: BuildingArchetype,
