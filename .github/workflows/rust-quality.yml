@@ -35,7 +35,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-07-13
-          components: rustfmt
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
