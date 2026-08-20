@@ -519,7 +519,7 @@ fn ensure_understory_presentations(
     let species = [
         (
             &mut cache.hazel,
-            0xc0a1_5a2e_11_u64,
+            0x00c0_a15a_2e11_u64,
             COMMON_HAZEL_PARAMETERS,
             COMMON_HAZEL_BARK,
             Color::srgb_u8(118, 104, 78),
@@ -527,7 +527,7 @@ fn ensure_understory_presentations(
         ),
         (
             &mut cache.blackthorn,
-            0xb1ac_7a0e_31_u64,
+            0x00b1_ac7a_0e31_u64,
             BLACKTHORN_PARAMETERS,
             BLACKTHORN_BARK,
             Color::srgb_u8(61, 52, 44),
@@ -535,7 +535,7 @@ fn ensure_understory_presentations(
         ),
         (
             &mut cache.hawthorn,
-            0xa7a7_4a0e_51_u64,
+            0x00a7_a74a_0e51_u64,
             COMMON_HAWTHORN_PARAMETERS,
             COMMON_HAWTHORN_BARK,
             Color::srgb_u8(91, 76, 60),

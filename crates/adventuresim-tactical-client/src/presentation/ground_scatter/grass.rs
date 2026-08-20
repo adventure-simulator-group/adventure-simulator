@@ -710,7 +710,7 @@ fn grass_ribbon_patch_mesh(
         let branch_count = species.inflorescence_branch_count();
         if lod == GrassMeshLod::Near
             && branch_count > 0
-            && unit_hash(splitmix64(hash ^ 0x7061_6e69_636c_65)) < 0.125
+            && unit_hash(splitmix64(hash ^ 0x0070_616e_6963_6c65)) < 0.125
         {
             let total_height = height * height_scale * species.height_scale();
             inflorescences.push(GrassInflorescence {

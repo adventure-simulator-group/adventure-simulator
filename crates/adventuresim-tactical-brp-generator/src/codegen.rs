@@ -154,7 +154,7 @@ fn render_fields_class(
         let mut depth = 0u32;
         let expr = field
             .encoding
-            .from_brp_expr(&format!("data[\"{}\"]", field.name), &mut depth);
+            .resolve_brp_expr(&format!("data[\"{}\"]", field.name), &mut depth);
         let ident = crate::resolve::python_ident(&field.name);
         lines.push(format!("            {}={},", ident, expr));
     }
@@ -185,6 +185,6 @@ fn render_transparent_class(
         class.class_name
     ));
     let mut depth = 0u32;
-    let expr = encoding.from_brp_expr("value", &mut depth);
+    let expr = encoding.resolve_brp_expr("value", &mut depth);
     lines.push(format!("        return cls(value={expr})"));
 }

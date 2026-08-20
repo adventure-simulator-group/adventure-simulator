@@ -676,8 +676,8 @@ fn set_activity(profile: &mut AgentProfile, preference: ActivityPreference) {
 mod tests {
     use super::*;
     use adventuresim_core::autoresolve::{
-        BattleOpening, CombatArmor, CombatAttributes, CombatEquipment, CombatSkills,
-        CombatWeapon, Combatant, authored_threat_combatant, autoresolve_combat_power,
+        BattleOpening, CombatArmor, CombatAttributes, CombatEquipment, CombatSkills, CombatWeapon,
+        Combatant, authored_threat_combatant, autoresolve_combat_power,
         combat_power_meets_safety_margin, resolve_battle,
     };
     use adventuresim_core::equipment::WeaponSkillDistribution;

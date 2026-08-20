@@ -304,7 +304,7 @@ fn ordered_at_location(
                 .map(|key| (key, entity))
         })
         .collect();
-    found.sort_by(|left, right| right.0.cmp(&left.0));
+    found.sort_by_key(|left| std::cmp::Reverse(left.0));
     let mut reachable = Vec::new();
     let mut visited = HashSet::new();
     for (_, entity) in found {
@@ -1007,12 +1007,7 @@ mod tests {
 
     #[test]
     fn hand_only_weapons_fail_closed_for_parent_placement() {
-        for item_id in [
-            "halberd",
-            "hunting_spear",
-            "military_pike",
-            "spear",
-        ] {
+        for item_id in ["halberd", "hunting_spear", "military_pike", "spear"] {
             assert!(!parent_placement_allowed(item_id), "{item_id}");
             let equipment = item_catalog::definition(item_id)
                 .unwrap()
