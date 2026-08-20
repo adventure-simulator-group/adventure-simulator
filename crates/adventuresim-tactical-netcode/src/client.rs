@@ -607,6 +607,7 @@ mod tests {
         world.insert_resource(ButtonInput::<MouseButton>::default());
         world.insert_resource(WeaponGuardInputState::default());
         world.insert_resource(DirectControlState::default());
+        world.insert_resource(DebugForceAttackTrigger::default());
         let mut schedule = Schedule::default();
         schedule.add_systems(update_direct_control_input);
         (world, schedule)
