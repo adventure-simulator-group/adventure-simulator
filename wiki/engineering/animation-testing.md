@@ -48,8 +48,11 @@ just tactical-play animation
 
 `just animation-test` first runs the viewer's focused Rust regression tests and
 then captures the complete deterministic scenario matrix. Its `manifest.json`
-is the machine-readable result; the rendered frames and `index.html` are for
-visual assessment. Pass `output=...` to keep separate runs for comparison.
+is the machine-readable result; `quality_score.quality_percent` contains the
+weighted score, `quality_score.categories` explains the deductions, and
+`quality_score.acceptance_passed` remains the separate hard-gate result. The
+rendered frames and `index.html` are for visual assessment. Pass `output=...`
+to keep separate runs for comparison.
 
 The native `tactical-play animation` mode remains the production-path check for
 networking, replication, terrain, and rendering behavior. The viewer is the
@@ -129,6 +132,15 @@ A category contributes its weight once, regardless of how many frames failed.
 Episode durations and evidence ranges remain in the manifest for diagnosis.
 The animation passes only when the harness completed and every applicable hard
 contract passed; a score of 97 is not a substitute for acceptance.
+
+Jitter diagnostics are computed from the final presented pose at the capture
+sample rate. Bone translations and rotations are converted to parent-relative
+joint space, then finite differences produce velocity, acceleration, and jerk.
+Each incident records its joint, derivative class, frame window, measured
+value, threshold, and severity. Absolute limits, relative limits, and a noise
+floor are all applied. This current-main port validates the final pose; it does
+not yet retain a parallel authored-pose history for authored-versus-procedural
+attribution, so that remains a follow-up gap rather than an implied pass.
 
 ## Guard-footwork metrics
 

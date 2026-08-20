@@ -22,6 +22,7 @@ use bevy::{
 };
 use serde::Serialize;
 
+use crate::animation::jitter::{self, JitterBone, JitterFrame, JitterValidationSummary};
 use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
     AnimationPlayback, AnimationRuntime, ArmIkState, BoneRole, HumanoidBone, LegIkDiagnostics,
@@ -430,10 +431,29 @@ struct CaptureManifest {
     pipeline: &'static str,
     views: [CaptureView; 3],
     validation: CaptureValidation,
+    quality_score: QualityScore,
     scenarios: Vec<ScenarioMetrics>,
     frames: Vec<FrameSample>,
     presentation_events: Vec<PresentationEventSample>,
     semantic_route_path_counts: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Serialize)]
+struct QualityScore {
+    weighted_defect_score: u8,
+    maximum_weighted_defect_score: u8,
+    quality_percent: f32,
+    acceptance_passed: bool,
+    categories: QualityCategories,
+}
+
+#[derive(Debug, Serialize)]
+struct QualityCategories {
+    anatomical_invalid_joints_failed: bool,
+    contact_foot_airborne_failed: bool,
+    both_feet_behind_hips_failed: bool,
+    foot_dragging_failed: bool,
+    jitter_and_jerk_failed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -475,6 +495,7 @@ struct CaptureValidation {
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
     semantic_route_paths_exercised: bool,
+    jitter_validation: JitterValidationSummary,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -2621,6 +2642,68 @@ fn tracked_bone(role: BoneRole) -> Option<&'static str> {
     })
 }
 
+fn jitter_frames(frames: &[FrameSample]) -> Vec<JitterFrame> {
+    frames
+        .iter()
+        .map(|frame| JitterFrame {
+            scenario: frame.scenario.clone(),
+            scenario_frame: frame.scenario_frame,
+            time_seconds: frame.time_seconds,
+            bones: frame
+                .bones
+                .iter()
+                .map(|(name, bone)| {
+                        let position = if name == "pelvis" {
+                            // The capture root is authoritative locomotion, not
+                            // a skeletal joint. Exclude its world translation
+                            // from limb jitter while retaining pelvis rotation.
+                            Vec3::ZERO
+                        } else {
+                            Vec3::from_array(bone.position)
+                        };
+                    let rotation = Quat::from_array(bone.rotation_xyzw);
+                    let (position, rotation) = parent_bone(name)
+                        .and_then(|parent| frame.bones.get(parent))
+                        .map_or((position, rotation), |parent| {
+                            let parent_position = Vec3::from_array(parent.position);
+                            let parent_rotation = Quat::from_array(parent.rotation_xyzw);
+                            (
+                                parent_rotation.inverse() * (position - parent_position),
+                                parent_rotation.inverse() * rotation,
+                            )
+                        });
+                    (
+                        name.clone(),
+                        JitterBone {
+                            position: position.to_array(),
+                            rotation_xyzw: rotation.to_array(),
+                        },
+                    )
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+fn parent_bone(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "chest" | "left_hip" | "right_hip" => "pelvis",
+        "head" | "left_shoulder" | "right_shoulder" => "chest",
+        "left_elbow" => "left_shoulder",
+        "right_elbow" => "right_shoulder",
+        "left_hand" => "left_elbow",
+        "right_hand" => "right_elbow",
+        "left_knee" => "left_hip",
+        "right_knee" => "right_hip",
+        "left_foot" => "left_knee",
+        "right_foot" => "right_knee",
+        "left_toe" => "left_foot",
+        "right_toe" => "right_foot",
+        "pelvis" => return None,
+        _ => return None,
+    })
+}
+
 fn wait_or_fail(sequence: &mut CaptureSequence, reason: &str, exit: &mut MessageWriter<AppExit>) {
     sequence.waiting += 1;
     if sequence.waiting < 1200 {
@@ -2645,6 +2728,7 @@ fn finish_capture(
     let frames = std::mem::take(&mut sequence.samples);
     let presentation_events = std::mem::take(&mut sequence.presentation_events);
     let scenarios = scenario_metrics(&frames);
+    let jitter_validation = jitter::validate(&jitter_frames(&frames), Default::default());
     let finite_transforms = frames.iter().all(|frame| {
         frame.bones.values().all(|bone| {
             bone.position.into_iter().all(f32::is_finite)
@@ -3234,44 +3318,49 @@ fn finish_capture(
             .or_insert(0) += 1;
         counts
     });
+    let validation = CaptureValidation {
+        finite_transforms,
+        all_scenarios_complete,
+        all_artifacts_written,
+        continuity_within_review_bounds,
+        biomechanics_within_review_bounds,
+        no_ground_penetration,
+        raised_guard_fixed_support,
+        flat_controller_height_stable,
+        phase_owned_height_valid,
+        run_flight_valid,
+        body_response_valid,
+        straight_run_torso_sway_valid,
+        speed_ramp_phase_continuity_valid,
+        contact_sequences_valid,
+        cadence_contact_valid,
+        event_stream_valid,
+        landing_response_valid,
+        landing_foot_preservation_valid,
+        ordinary_swing_tracking_valid,
+        reported_support_contacts_valid,
+        run_contact_acquisition_valid,
+        stop_settle_capture_valid,
+        final_support_balance_valid,
+        hard_stop_maximum_pelvis_step_metres,
+        hard_stop_height_continuity_valid,
+        repeated_evaluation_valid,
+        semantic_route_paths_exercised,
+        jitter_validation,
+        views_are_distinct,
+        duplicate_view_frames: sequence.duplicate_view_frames.clone(),
+        note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
+    };
+    let quality_score = quality_score(&frames, &scenarios, &validation);
+    let acceptance_passed = validation_passed(&validation);
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
         playback_backend,
         pose_buffer: pose_buffer_metrics,
         pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, direct semantic routing, fixed-rate pose-buffer FK with per-joint inertialization, and final procedural passes",
         views: VIEWS,
-        validation: CaptureValidation {
-            finite_transforms,
-            all_scenarios_complete,
-            all_artifacts_written,
-            continuity_within_review_bounds,
-            biomechanics_within_review_bounds,
-            no_ground_penetration,
-            raised_guard_fixed_support,
-            flat_controller_height_stable,
-            phase_owned_height_valid,
-            run_flight_valid,
-            body_response_valid,
-            straight_run_torso_sway_valid,
-            speed_ramp_phase_continuity_valid,
-            contact_sequences_valid,
-            cadence_contact_valid,
-            event_stream_valid,
-            landing_response_valid,
-            landing_foot_preservation_valid,
-            ordinary_swing_tracking_valid,
-            reported_support_contacts_valid,
-            run_contact_acquisition_valid,
-            stop_settle_capture_valid,
-            final_support_balance_valid,
-            hard_stop_maximum_pelvis_step_metres,
-            hard_stop_height_continuity_valid,
-            repeated_evaluation_valid,
-            semantic_route_paths_exercised,
-            views_are_distinct,
-            duplicate_view_frames: sequence.duplicate_view_frames.clone(),
-            note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
-        },
+        validation,
+        quality_score,
         scenarios,
         frames,
         presentation_events,
@@ -3287,34 +3376,7 @@ fn finish_capture(
     fs::write(&index_path, review_html(&manifest))
         .unwrap_or_else(|error| panic!("failed to write {index_path:?}: {error}"));
     info!(path = ?index_path, "Animation review capture completed");
-    if finite_transforms
-        && all_scenarios_complete
-        && all_artifacts_written
-        && continuity_within_review_bounds
-        && biomechanics_within_review_bounds
-        && no_ground_penetration
-        && raised_guard_fixed_support
-        && flat_controller_height_stable
-        && phase_owned_height_valid
-        && run_flight_valid
-        && body_response_valid
-        && straight_run_torso_sway_valid
-        && speed_ramp_phase_continuity_valid
-        && contact_sequences_valid
-        && cadence_contact_valid
-        && event_stream_valid
-        && landing_response_valid
-        && landing_foot_preservation_valid
-        && ordinary_swing_tracking_valid
-        && reported_support_contacts_valid
-        && run_contact_acquisition_valid
-        && stop_settle_capture_valid
-        && final_support_balance_valid
-        && hard_stop_height_continuity_valid
-        && repeated_evaluation_valid
-        && semantic_route_paths_exercised
-        && views_are_distinct
-    {
+    if acceptance_passed {
         exit.write(AppExit::Success);
     } else {
         let failure_path = sequence.output.join("failure.txt");
@@ -3325,6 +3387,139 @@ fn finish_capture(
         .unwrap_or_else(|error| panic!("failed to write {failure_path:?}: {error}"));
         exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
     }
+}
+
+fn validation_passed(validation: &CaptureValidation) -> bool {
+    validation.finite_transforms
+        && validation.all_scenarios_complete
+        && validation.all_artifacts_written
+        && validation.continuity_within_review_bounds
+        && validation.biomechanics_within_review_bounds
+        && validation.no_ground_penetration
+        && validation.raised_guard_fixed_support
+        && validation.flat_controller_height_stable
+        && validation.phase_owned_height_valid
+        && validation.run_flight_valid
+        && validation.body_response_valid
+        && validation.straight_run_torso_sway_valid
+        && validation.speed_ramp_phase_continuity_valid
+        && validation.contact_sequences_valid
+        && validation.cadence_contact_valid
+        && validation.event_stream_valid
+        && validation.landing_response_valid
+        && validation.landing_foot_preservation_valid
+        && validation.ordinary_swing_tracking_valid
+        && validation.reported_support_contacts_valid
+        && validation.run_contact_acquisition_valid
+        && validation.stop_settle_capture_valid
+        && validation.final_support_balance_valid
+        && validation.hard_stop_height_continuity_valid
+        && validation.repeated_evaluation_valid
+        && validation.semantic_route_paths_exercised
+        && validation.jitter_validation.diagnostics_complete
+        && validation
+            .jitter_validation
+            .unacceptable_final_incident_count
+            == 0
+        && validation.views_are_distinct
+}
+
+fn quality_score(
+    frames: &[FrameSample],
+    scenarios: &[ScenarioMetrics],
+    validation: &CaptureValidation,
+) -> QualityScore {
+    let anatomical_invalid_joints_failed = scenarios.iter().any(|metrics| {
+        procedural_leg_solver_gates_apply(&metrics.scenario)
+            && (metrics.minimum_knee_flexion_degrees < 3.9
+                || metrics.minimum_knee_hemisphere_dot < 0.0
+                || metrics.minimum_signed_foot_track_metres < -0.01
+                || metrics.minimum_inter_foot_separation_metres
+                    < inter_foot_separation_limit(&metrics.scenario)
+                || metrics.maximum_knee_foot_yaw_offset_degrees > 22.6)
+    });
+    let contact_foot_airborne_failed = !validation.no_ground_penetration
+        || !validation.run_flight_valid
+        || !validation.reported_support_contacts_valid
+        || !validation.run_contact_acquisition_valid;
+    let both_feet_behind_hips_failed = both_feet_behind_hips(frames);
+    let foot_dragging_failed = scenarios.iter().any(|metrics| {
+        let supported_slip_limit = supported_foot_slip_limit(&metrics.scenario);
+        metrics.maximum_supported_foot_slip_metres_per_frame > supported_slip_limit
+            || metrics.maximum_planted_foot_drift_metres > planted_drift_limit(&metrics.scenario)
+    });
+    let jitter_and_jerk_failed = !validation.jitter_validation.diagnostics_complete
+        || validation
+            .jitter_validation
+            .unacceptable_final_incident_count
+            > 0;
+    let categories = QualityCategories {
+        anatomical_invalid_joints_failed,
+        contact_foot_airborne_failed,
+        both_feet_behind_hips_failed,
+        foot_dragging_failed,
+        jitter_and_jerk_failed,
+    };
+    let weighted_defect_score = weighted_defect_score(&categories);
+    let capture_complete = validation.all_scenarios_complete && validation.all_artifacts_written;
+    let quality_percent = if capture_complete {
+        100.0 * (1.0 - f32::from(weighted_defect_score) / 31.0)
+    } else {
+        0.0
+    };
+    QualityScore {
+        weighted_defect_score,
+        maximum_weighted_defect_score: 31,
+        quality_percent,
+        acceptance_passed: validation_passed(validation),
+        categories,
+    }
+}
+
+fn weighted_defect_score(categories: &QualityCategories) -> u8 {
+    u8::from(categories.anatomical_invalid_joints_failed) * 16
+        + u8::from(categories.contact_foot_airborne_failed) * 8
+        + u8::from(categories.both_feet_behind_hips_failed) * 4
+        + u8::from(categories.foot_dragging_failed) * 2
+        + u8::from(categories.jitter_and_jerk_failed)
+}
+
+fn both_feet_behind_hips(frames: &[FrameSample]) -> bool {
+    let mut duration = 0.0_f32;
+    for pair in frames.windows(2) {
+        let [before, after] = pair else {
+            continue;
+        };
+        if before.scenario != after.scenario || after.speed_metres_per_second <= 0.05 {
+            duration = 0.0;
+            continue;
+        }
+        let Some(direction) = Vec3::from_array(after.world_travel_direction).try_normalize() else {
+            duration = 0.0;
+            continue;
+        };
+        let behind = [("left_hip", "left_foot"), ("right_hip", "right_foot")]
+            .into_iter()
+            .all(|(hip, foot)| {
+                let Some(hip) = after.bones.get(hip) else {
+                    return false;
+                };
+                let Some(foot) = after.bones.get(foot) else {
+                    return false;
+                };
+                (Vec3::from_array(foot.position) - Vec3::from_array(hip.position)).dot(direction)
+                    < -0.02
+            });
+        if behind {
+            duration += (after.time_seconds - before.time_seconds).max(0.0);
+            if duration >= 0.3 {
+                return true;
+            }
+        } else {
+            duration = 0.0;
+        }
+    }
+    false
 }
 
 fn foot_continuity_limit(scenario: &str) -> f32 {
@@ -4547,6 +4742,16 @@ fn review_html(manifest: &CaptureManifest) -> String {
             .collect::<Vec<_>>(),
     )
     .expect("review scenario names must serialize");
+    let quality_summary = format!(
+        "Quality score: {:.2}% ({}/31 weighted defect points); acceptance: {}",
+        manifest.quality_score.quality_percent,
+        manifest.quality_score.weighted_defect_score,
+        if manifest.quality_score.acceptance_passed {
+            "passed"
+        } else {
+            "failed"
+        },
+    );
     let scenario_buttons = manifest
         .scenarios
         .iter()
@@ -4598,7 +4803,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
 <html><head><meta charset="utf-8"><title>Animation review</title><style>
 body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,select{{margin:4px;padding:8px}}img{{max-width:min(960px,100%);background:#222}}table{{border-collapse:collapse;margin-top:20px}}td,th{{border:1px solid #526171;padding:6px}}.note{{max-width:960px;color:#b9c7d5}}#contact{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:20px}}#contact img{{width:100%}}
 </style></head><body><h1>Tactical locomotion review</h1>
-<p class="note">This runs the shared tactical player, hills scene, gameplay camera, 64 Hz authoritative locomotion projection, authored FK, and final procedural passes. Gameplay images are raw; side/front diagnostics add the cyan skeleton and support markers. Use normal speed first, then slow motion.</p>
+<p class="note">{quality_summary}</p><p class="note">This runs the shared tactical player, hills scene, gameplay camera, 64 Hz authoritative locomotion projection, authored FK, and final procedural passes. Gameplay images are raw; side/front diagnostics add the cyan skeleton and support markers. Use normal speed first, then slow motion.</p>
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
@@ -4613,6 +4818,67 @@ document.querySelectorAll('button').forEach(b=>b.onclick=()=>{{scenario=b.datase
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quality_score_uses_the_documented_power_of_two_weights() {
+        let categories = QualityCategories {
+            anatomical_invalid_joints_failed: true,
+            contact_foot_airborne_failed: true,
+            both_feet_behind_hips_failed: true,
+            foot_dragging_failed: true,
+            jitter_and_jerk_failed: true,
+        };
+        assert_eq!(weighted_defect_score(&categories), 31);
+
+        let categories = QualityCategories {
+            anatomical_invalid_joints_failed: false,
+            contact_foot_airborne_failed: false,
+            both_feet_behind_hips_failed: false,
+            foot_dragging_failed: false,
+            jitter_and_jerk_failed: true,
+        };
+        assert_eq!(weighted_defect_score(&categories), 1);
+    }
+
+    #[test]
+    fn quality_score_is_zero_for_an_incomplete_capture() {
+        let validation = CaptureValidation {
+            finite_transforms: true,
+            all_scenarios_complete: false,
+            all_artifacts_written: true,
+            continuity_within_review_bounds: true,
+            biomechanics_within_review_bounds: true,
+            no_ground_penetration: true,
+            raised_guard_fixed_support: true,
+            flat_controller_height_stable: true,
+            phase_owned_height_valid: true,
+            run_flight_valid: true,
+            body_response_valid: true,
+            straight_run_torso_sway_valid: true,
+            speed_ramp_phase_continuity_valid: true,
+            contact_sequences_valid: true,
+            cadence_contact_valid: true,
+            event_stream_valid: true,
+            landing_response_valid: true,
+            landing_foot_preservation_valid: true,
+            ordinary_swing_tracking_valid: true,
+            reported_support_contacts_valid: true,
+            run_contact_acquisition_valid: true,
+            stop_settle_capture_valid: true,
+            final_support_balance_valid: true,
+            hard_stop_maximum_pelvis_step_metres: None,
+            hard_stop_height_continuity_valid: true,
+            repeated_evaluation_valid: true,
+            semantic_route_paths_exercised: true,
+            jitter_validation: jitter::validate(&[], Default::default()),
+            views_are_distinct: true,
+            duplicate_view_frames: Vec::new(),
+            note: "test",
+        };
+        let score = quality_score(&[], &[], &validation);
+        assert_eq!(score.quality_percent, 0.0);
+        assert!(!score.acceptance_passed);
+    }
 
     fn unique_test_output(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(

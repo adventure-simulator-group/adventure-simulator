@@ -9,6 +9,7 @@ use bevy::{
     gltf::Gltf, prelude::*,
 };
 
+pub(crate) mod jitter;
 pub(crate) mod pose_buffer;
 mod procedural;
 
