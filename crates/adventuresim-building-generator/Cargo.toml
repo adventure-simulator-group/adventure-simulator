@@ -17,6 +17,9 @@ geo.workspace = true
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
 bevy = { workspace = true, default-features = true, features = ["png"] }
+bevy_egui.workspace = true
+bevy_mod_outline.workspace = true
+bevy_panorbit_camera.workspace = true
 
 [lints]
 workspace = true

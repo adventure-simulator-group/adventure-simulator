@@ -35,7 +35,7 @@ roofs, towers, stairs, and battlements are derived structures. Circular towers
 therefore do not have to pretend that their circumference is a staircase of
 square cells.
 
-Nine curated programs exercise the current vocabulary:
+Ten curated programs exercise the current vocabulary:
 
 - `town-house`: narrow, two-storey timber-frame house with a steep street gable;
 - `hall-house`: broad hall plan beneath a steep half-hip roof;
@@ -57,7 +57,32 @@ Nine curated programs exercise the current vocabulary:
   fighting towers; and
 - `walled-keep`: a detached central keep inside a gated outer curtain with
   four accessible corner towers and fighting platforms on both defensive
-  layers.
+  layers; and
+- `artillery-rondel-castle`: a retained medieval keep inside an earth-backed
+  1544 retrofit with four rondels, a dry ditch, and a deniable bridge.
+
+## Interactive editor
+
+The native viewer can edit the same high-level authority used by generation:
+
+```powershell
+cargo run -p adventuresim-building-generator --bin building-viewer -- `
+  --fixture fachwerk-merchant-house --editor --document building-document.json
+```
+
+Middle-drag orbits, Shift+middle-drag pans, the wheel zooms, and `F` frames the
+current selection. Resolved walls, openings, and timber framing map back to
+stable grid selectors; hovering uses a grey outline and selection a white one.
+The property window can add or remove wall openings, change eligible civilian
+wall finishes, and change a timber-frame program. Archetypes can be switched
+without restarting the viewer.
+
+`BuildingDocument` is versioned JSON containing a `BuildingProgram` plus an
+ordered edit log. Each UI command regenerates the complete plan and runs the
+same audit as `generate`; an invalid command reports an error and leaves the
+current document and scene unchanged. Undo and redo operate on document
+snapshots. Save and load never serialize resolved meshes, which remain derived
+evidence rather than a parallel editing authority.
 
 The timber renderer treats *Fachwerk* as a structural system rather than a
 painted facade. Its three patterns can place continuous sills and wall plates,
