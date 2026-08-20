@@ -1247,7 +1247,8 @@ mod tests {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_terrain.wgsl"
-        ));
+        ))
+        .replace("\r\n", "\n");
         assert!(shader.contains("var ground_map: texture_2d<f32>"));
         assert!(shader.contains("var soil_height_ao: texture_2d<f32>"));
         assert!(shader.contains("var litter_surface: texture_2d<f32>"));

@@ -506,7 +506,8 @@ mod tests {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_tree_bark.wgsl"
-        ));
+        ))
+        .replace("\r\n", "\n");
         assert!(shader.contains("fn triplanar_height_ao"));
         assert!(shader.contains("let height_metres = (sample.r - 0.5)"));
         assert!(shader.contains("let height_dx = dpdx(height_metres)"));
