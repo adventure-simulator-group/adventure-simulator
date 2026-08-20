@@ -2653,14 +2653,14 @@ fn jitter_frames(frames: &[FrameSample]) -> Vec<JitterFrame> {
                 .bones
                 .iter()
                 .map(|(name, bone)| {
-                        let position = if name == "pelvis" {
-                            // The capture root is authoritative locomotion, not
-                            // a skeletal joint. Exclude its world translation
-                            // from limb jitter while retaining pelvis rotation.
-                            Vec3::ZERO
-                        } else {
-                            Vec3::from_array(bone.position)
-                        };
+                    let position = if name == "pelvis" {
+                        // The capture root is authoritative locomotion, not
+                        // a skeletal joint. Exclude its world translation
+                        // from limb jitter while retaining pelvis rotation.
+                        Vec3::ZERO
+                    } else {
+                        Vec3::from_array(bone.position)
+                    };
                     let rotation = Quat::from_array(bone.rotation_xyzw);
                     let (position, rotation) = parent_bone(name)
                         .and_then(|parent| frame.bones.get(parent))

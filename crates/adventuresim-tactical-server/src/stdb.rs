@@ -115,7 +115,7 @@ impl SpacetimeDb {
             })
     }
 
-    pub fn take_terminal_results(&self) -> Vec<TerminalSubmissionResult> {
+    pub(crate) fn take_terminal_results(&self) -> Vec<TerminalSubmissionResult> {
         std::mem::take(&mut *self.terminal_results.lock().unwrap())
     }
 }

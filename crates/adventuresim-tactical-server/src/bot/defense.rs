@@ -137,16 +137,16 @@ pub(super) fn on_targeted_attack_started(
     else {
         return;
     };
-    if let Ok((_, state, chances)) = q_ai.get(event.target) {
-        if !state.is_incapacitated() {
-            try_start_reaction(
-                &mut cmd,
-                event.target,
-                attacker_look,
-                defender_look,
-                chances.copied().unwrap_or_default(),
-            );
-        }
+    if let Ok((_, state, chances)) = q_ai.get(event.target)
+        && !state.is_incapacitated()
+    {
+        try_start_reaction(
+            &mut cmd,
+            event.target,
+            attacker_look,
+            defender_look,
+            chances.copied().unwrap_or_default(),
+        );
     }
 }
 
@@ -169,16 +169,16 @@ pub(super) fn on_targeted_ranged_attack_started(
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, target]) else {
         return;
     };
-    if let Ok((_, state, chances)) = q_ai.get(target) {
-        if !state.is_incapacitated() {
-            try_start_reaction(
-                &mut cmd,
-                target,
-                attacker_look,
-                defender_look,
-                chances.copied().unwrap_or_default(),
-            );
-        }
+    if let Ok((_, state, chances)) = q_ai.get(target)
+        && !state.is_incapacitated()
+    {
+        try_start_reaction(
+            &mut cmd,
+            target,
+            attacker_look,
+            defender_look,
+            chances.copied().unwrap_or_default(),
+        );
     }
 }
 

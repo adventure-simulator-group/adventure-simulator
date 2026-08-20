@@ -220,7 +220,7 @@ impl Encoding {
     }
 
     /// The reverse of [`Self::to_brp_expr`].
-    pub fn from_brp_expr(&self, expr: &str, depth: &mut u32) -> String {
+    pub fn resolve_brp_expr(&self, expr: &str, depth: &mut u32) -> String {
         match self {
             Encoding::Bool
             | Encoding::Int
@@ -235,7 +235,7 @@ impl Encoding {
                 } else {
                     let v = format!("v{depth}");
                     *depth += 1;
-                    let inner = elem.from_brp_expr(&v, depth);
+                    let inner = elem.resolve_brp_expr(&v, depth);
                     format!("[{inner} for {v} in {expr}]")
                 }
             }
@@ -245,7 +245,7 @@ impl Encoding {
                 } else {
                     let v = format!("v{depth}");
                     *depth += 1;
-                    let inner_expr = inner.from_brp_expr(&v, depth);
+                    let inner_expr = inner.resolve_brp_expr(&v, depth);
                     format!("(({inner_expr}) if ({v} := {expr}) is not None else None)")
                 }
             }
@@ -314,10 +314,10 @@ impl Resolver {
         preferred_kind: Option<StructKind>,
     ) -> String {
         if let Some(existing) = self.classes.get_mut(type_path) {
-            if let Some(kind) = preferred_kind {
-                if existing.kind == StructKind::Nested {
-                    existing.kind = kind;
-                }
+            if let Some(kind) = preferred_kind
+                && existing.kind == StructKind::Nested
+            {
+                existing.kind = kind;
             }
             return existing.class_name.clone();
         }
@@ -412,13 +412,12 @@ impl Resolver {
         }
 
         if type_path.starts_with("core::option::Option<") {
-            if let Some(TypeInfo::Enum(enum_info)) = type_info {
-                if let Some(VariantInfo::Tuple(some_variant)) = enum_info.variant("Some") {
-                    if let Some(field) = some_variant.field_at(0) {
-                        let inner = self.resolve_type(field.type_info(), field.type_path());
-                        return Encoding::OptionOf(Box::new(inner));
-                    }
-                }
+            if let Some(TypeInfo::Enum(enum_info)) = type_info
+                && let Some(VariantInfo::Tuple(some_variant)) = enum_info.variant("Some")
+                && let Some(field) = some_variant.field_at(0)
+            {
+                let inner = self.resolve_type(field.type_info(), field.type_path());
+                return Encoding::OptionOf(Box::new(inner));
             }
             return Encoding::Any(type_path.to_string());
         }

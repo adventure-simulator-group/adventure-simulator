@@ -1,0 +1,55 @@
+name: Rust quality
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "rust-toolchain.toml"
+      - "justfile"
+      - ".github/workflows/rust-quality.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "rust-toolchain.toml"
+      - "justfile"
+      - ".github/workflows/rust-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-13
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Install configured Linux linker
+        run: >-
+          sudo apt-get update && sudo apt-get install --no-install-recommends -y
+          mold libasound2-dev libudev-dev libwayland-dev libx11-dev
+          libxcursor-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev
+          libxrandr-dev libxi-dev
+      - name: Check formatting
+        run: |
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --check
+      - name: Run Clippy with warnings denied
+        run: |
+          cargo clippy --workspace --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
+          cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else

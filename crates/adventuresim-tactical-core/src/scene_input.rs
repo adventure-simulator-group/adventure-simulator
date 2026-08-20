@@ -480,7 +480,7 @@ fn build_scene_ground(
                     ^ ((sample_x as u64) << 16)
                     ^ sample_z as u64;
                 let litter_roll =
-                    (splitmix64(coordinate ^ 0x1eaf_1177_e2) % 10_000) as f32 / 10_000.0;
+                    (splitmix64(coordinate ^ 0x001e_af11_77e2) % 10_000) as f32 / 10_000.0;
                 if distance <= TREE_DENSE_LEAF_LITTER_RADIUS_METRES
                     || litter_roll < tree_leaf_litter_probability(distance)
                 {

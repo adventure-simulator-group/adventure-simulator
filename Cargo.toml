@@ -102,6 +102,8 @@ spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"
 
 [workspace.lints.clippy]
+# These are retained for existing domain-facing APIs whose argument lists are
+# part of their explicit simulation contracts. New code should avoid them.
 type_complexity = "allow"
 too_many_arguments = "allow"
 
