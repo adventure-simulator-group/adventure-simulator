@@ -72,7 +72,8 @@ test("modal character actions retain the raised-button contract while social use
   assert.match(template, /data-social-conversation/);
   assert.doesNotMatch(socialTemplate, /aria-labelledby="social-dialog-title"/);
   assert.doesNotMatch(template, /cooking-dialog-title/);
-  assert.match(template, /aria-label="Cook at fireplace"/);
+  // Maud emits this attribute from the `aria_label` field on LocationFixture.
+  assert.match(template, /aria_label: "Cook at fireplace"/);
   assert.match(styles, /\.character-menu-button[\s\S]*background: var\(--tactile-background\)/);
   assert.match(styles, /\.character-menu-button[\s\S]*box-shadow: var\(--tactile-shadow\)/);
   assert.match(styles, /\.character-menu-button:focus-visible[\s\S]*outline: 2px solid var\(--accent-light\)/);

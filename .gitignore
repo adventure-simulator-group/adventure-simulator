@@ -61,3 +61,4 @@ output/
 **/__pycache__/
 *.stdout.log
 *.stderr.log
+crates/strategic-web/node_modules/

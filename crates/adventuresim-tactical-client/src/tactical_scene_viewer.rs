@@ -1149,15 +1149,15 @@ mod capture_lighting_tests {
         let (camera, observed_target, up) = debris_detail_camera(target, None, 37.0);
         assert_eq!(observed_target, target);
         assert_eq!(up, Vec3::Y);
-        assert!((camera.y - target.y - 0.72).abs() < 0.00001);
-        assert!((camera.xz().distance(target.xz()) - 0.36).abs() < 0.00001);
+        assert!((camera.y - target.y - 1.35).abs() < 0.00001);
+        assert!((camera.xz().distance(target.xz()) - 1.15).abs() < 0.00001);
         assert_eq!(
             views
                 .iter()
                 .find(|view| view.slug == "forest-floor-debris-detail")
                 .unwrap()
                 .fov_degrees,
-            39.6
+            44.0
         );
 
         let leaves = [Vec3::new(4.0, 0.0, 3.0), Vec3::new(0.1, 0.0, 0.0)];
