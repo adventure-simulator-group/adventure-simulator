@@ -22,6 +22,14 @@ roof pitch. `generate` produces:
 - eight distinct defensive crowns, continuous wall walks, tower-top decks,
   detached curtain walls, square bell towers, and corbelled corner bartizans.
 
+`generate` is also the public validity boundary. An `Ok(BuildingPlan)` has
+passed the complete semantic and geometric audit; a recipe that cannot produce
+an audit-clean building returns a typed `GenerationError::StructuralContract`
+containing the audit findings. Internal unchecked construction exists only so
+the generator's mutation tests can prove that this boundary rejects corrupted
+plans. The fixture seed matrix continuously exercises all archetypes at zero,
+adjacent, ordinary proof, large, and wrapping-boundary seeds.
+
 The grid is topological rather than voxel geometry. Floors, wall openings,
 roofs, towers, stairs, and battlements are derived structures. Circular towers
 therefore do not have to pretend that their circumference is a staircase of

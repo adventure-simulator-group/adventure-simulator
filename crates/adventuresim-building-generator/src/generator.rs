@@ -6,10 +6,10 @@ use thiserror::Error;
 
 use crate::{
     AccessBrace, AccessDoor, AccessGuardSegment, AccessLanding, AccessLedger, AccessStairFlight,
-    Bartizan, BattlementKind, BattlementRun, BuildingArchetype, BuildingPlan, BuildingProgram,
-    CELL_SIZE_METRES, CROWN_DRAIN_CHANNEL_WIDTH_METRES, Cell, CellDiameter, CrownAssembly,
-    CrownJunction, CrownJunctionKind, CrownMaterial, CrownPath, CrownPattern, CrownPhase,
-    CrownProfile, CurtainWallRun, DefenderSample, DefensiveCircuit, DefensiveJunction,
+    AuditIssue, Bartizan, BattlementKind, BattlementRun, BuildingArchetype, BuildingPlan,
+    BuildingProgram, CELL_SIZE_METRES, CROWN_DRAIN_CHANNEL_WIDTH_METRES, Cell, CellDiameter,
+    CrownAssembly, CrownJunction, CrownJunctionKind, CrownMaterial, CrownPath, CrownPattern,
+    CrownPhase, CrownProfile, CurtainWallRun, DefenderSample, DefensiveCircuit, DefensiveJunction,
     DefensiveJunctionKind, Direction, DormerKind, DrainageCatchment, DrainageRoute, FiringPosition,
     Footprint, GRID_UNIT_METRES, GableProfile, GateClosure, GateClosureKind, GateDefense,
     GateGuardChamber, GateOperatingPosition, GatehouseAssemblySpec, GatehouseLoadPath,
@@ -54,6 +54,11 @@ pub enum GenerationError {
     DisconnectedRoom { level: usize, room: u16 },
     #[error("storey {level} does not have enough shared boundaries to connect its rooms")]
     DisconnectedStorey { level: usize },
+    #[error("generated building failed the structural contract with {issues_count} audit issue(s)")]
+    StructuralContract {
+        issues_count: usize,
+        issues: Vec<AuditIssue>,
+    },
 }
 
 /// Dedicated projected-defense study tags change only the defense assembly,
@@ -70,7 +75,29 @@ fn layout_seed(program: &BuildingProgram) -> u64 {
     }
 }
 
+/// Generates a building that satisfies the complete structural contract.
+///
+/// `Ok` is a strong guarantee: the returned plan has passed [`crate::audit_plan`].
+/// Programs that cannot produce a valid building are rejected with a typed error;
+/// callers never receive a knowingly invalid plan.
 pub fn generate(program: &BuildingProgram) -> Result<BuildingPlan, GenerationError> {
+    let plan = generate_unchecked(program)?;
+    validate_generated_plan(plan)
+}
+
+fn validate_generated_plan(plan: BuildingPlan) -> Result<BuildingPlan, GenerationError> {
+    let issues = crate::audit_plan(&plan);
+    if issues.is_empty() {
+        Ok(plan)
+    } else {
+        Err(GenerationError::StructuralContract {
+            issues_count: issues.len(),
+            issues,
+        })
+    }
+}
+
+fn generate_unchecked(program: &BuildingProgram) -> Result<BuildingPlan, GenerationError> {
     let footprint_cells = footprint_cells(program.footprint)?;
     let (width, depth) = program.footprint.dimensions();
     let mut storeys = Vec::with_capacity(program.storeys.len());
@@ -2320,7 +2347,7 @@ fn resolve_timber_frame_assembly(
         if let Some((cut_min, cut_max)) = cut_bounds {
             x_stations.extend([cut_min.x, cut_max.x]);
             x_stations.sort_by(f32::total_cmp);
-            x_stations.dedup_by(|left, right| (*left - *right).abs() < 0.02);
+            x_stations.dedup_by(|left, right| (*left - *right).abs() < 0.08);
         }
         let mut upper_girder_z = dimensions.y * 0.67;
         if (upper_girder_z - stair_end.y).abs() < 0.40 {
@@ -2342,7 +2369,7 @@ fn resolve_timber_frame_assembly(
         if level > 0 {
             joist_z_stations.extend([stair_min.y, stair_max.y]);
             joist_z_stations.sort_by(f32::total_cmp);
-            joist_z_stations.dedup_by(|left, right| (*left - *right).abs() < 0.001);
+            joist_z_stations.dedup_by(|left, right| (*left - *right).abs() < 0.08);
         }
         let joist_section = section * 0.90;
         let girder_section = Vec2::new(section.x * 1.35, section.y * 1.20);
@@ -17363,7 +17390,18 @@ fn derive_stairs(
     if storeys.len() < 2 {
         return Vec::new();
     }
-    if !towers.is_empty() {
+    // A roof-kernel demonstrator may add an isolated round tower to an
+    // otherwise civilian fixture. It is evidence geometry, not the occupied
+    // building's circulation authority, so it must not replace the real
+    // StairHall route.
+    let towers_own_circulation = matches!(
+        program.archetype,
+        BuildingArchetype::CastleGatehouse
+            | BuildingArchetype::CourtyardCastle
+            | BuildingArchetype::WalledKeep
+            | BuildingArchetype::ArtilleryRondelCastle
+    );
+    if towers_own_circulation && !towers.is_empty() {
         let mut stairs = towers
             .iter()
             .map(|tower| {
@@ -21867,6 +21905,55 @@ mod tests {
     use crate::{
         BuildingArchetype, BuildingProgram, DormerKind, OpeningKind, RoofKind, TimberFrameStyle,
     };
+
+    #[test]
+    fn fixture_seed_matrix_generates_audit_clean_buildings() {
+        // Exercise seeds selected to cover zero, adjacent values, the curated
+        // proof seeds, large values, and wrapping arithmetic boundaries.
+        const SEEDS: [u64; 8] = [0, 1, 2, 17, 42, 47, 101, u64::MAX];
+
+        for archetype in BuildingArchetype::ALL {
+            for seed in SEEDS {
+                let program = BuildingProgram::fixture(archetype, seed);
+                let plan = generate(&program).unwrap_or_else(|error| {
+                    panic!("{archetype:?} seed {seed} must be supported: {error}")
+                });
+                assert!(
+                    crate::audit_plan(&plan).is_empty(),
+                    "{archetype:?} seed {seed} escaped the public boundary with audit issues"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_generated_plan_is_rejected_at_the_public_boundary() {
+        let mut plan =
+            generate_unchecked(&BuildingProgram::fixture(BuildingArchetype::TownHouse, 42))
+                .unwrap();
+        let removed = plan.resolved_geometry.solids.pop().unwrap();
+
+        let error = validate_generated_plan(plan).unwrap_err();
+        let GenerationError::StructuralContract {
+            issues_count,
+            issues,
+        } = error
+        else {
+            panic!("invalid resolved plan must fail the structural contract");
+        };
+        assert_eq!(issues_count, issues.len());
+        assert!(!issues.is_empty(), "removing {removed:?} must be audited");
+    }
+
+    #[test]
+    fn malformed_high_level_program_returns_a_typed_error() {
+        let mut program = BuildingProgram::fixture(BuildingArchetype::TownHouse, 42);
+        program.storeys[0].rooms.clear();
+        assert!(matches!(
+            generate(&program),
+            Err(GenerationError::EmptyStorey { level: 0 })
+        ));
+    }
 
     #[test]
     fn roof_pitch_handle_recomputes_graph_or_rejects_topology_events() {
