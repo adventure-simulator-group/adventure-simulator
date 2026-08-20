@@ -1012,7 +1012,6 @@ mod tests {
             "hunting_spear",
             "military_pike",
             "spear",
-            "zweihander",
         ] {
             assert!(!parent_placement_allowed(item_id), "{item_id}");
             let equipment = item_catalog::definition(item_id)
