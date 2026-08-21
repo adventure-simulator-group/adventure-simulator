@@ -87,9 +87,14 @@ storey and the planned wall/roof visibility states. `1`–`6`, `Esc`, `Page Up`,
 The current `BuildingDocument` remains the strict procedural-programme path:
 only Select, Openings, and Finish activate an audited edit today. With a
 freeform player-build document loaded, Construct adds a wall tool: drag across
-the scene to snap its endpoints to the build grid and place one wall spanning
-the crossed cells. Roof and Site intentionally explain that they need further
-freeform tools instead of accepting an edit that cannot be saved or rendered.
+the scene to snap its endpoints to the build grid and place the corresponding
+per-cell semantic wall segments. A freeform save contains the same pre-mesh
+assembly as the generated plan—storeys, walls, openings, roof recipes, and
+per-wall finishes—not render cuboids. **Detach generated building** copies
+that assembly into a freeform document; the detached build no longer has a
+programme to edit. Timber/frame walls use the generated wall renderer, so
+their plaster infill and fachwerk stay one wall feature and obey wall
+visibility together.
 
 ## Headless editor test ABI
 
@@ -102,7 +107,11 @@ cargo run -p adventuresim-building-generator --bin building-viewer -- `
 ```
 
 The command writes one JSON snapshot per action to standard output. Each
-snapshot contains the active storey, visibility state, freeform parts,
+selection, advisory findings, status, and any error. UI freeform mutations and
+the script runner share the same player-build edit reducer.
+snapshot contains the active storey, visibility state, freeform assembly
+summary, selection, advisory findings, status, and any error. UI freeform
+mutations and the script runner share the same player-build edit reducer.
 selection, advisory findings, status, and any error. UI freeform mutations and
 the script runner share the same player-build edit reducer.
 `draw_wall` accepts start/end metres, material, and storey; it uses the same

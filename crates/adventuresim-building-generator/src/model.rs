@@ -846,11 +846,97 @@ impl BuildingDocument {
     }
 }
 
-/// A freeform player-build document is intentionally separate from the
-/// generated-programme document.  Parts may overlap, be unsupported, or fail
-/// to describe a recognisable historic programme; renderability and lossless
-/// saving are the only commit requirements.
-pub const PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION: u32 = 1;
+/// The editable, pre-mesh portion of a building plan.  Both generated and
+/// freeform buildings use these exact semantic storeys, wall segments,
+/// openings, roof recipes, and finish overrides.  A player build is detached
+/// from its programme, not converted into unrelated render primitives.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EditableBuildingAssembly {
+    pub footprint: Footprint,
+    pub storey_height_metres: f32,
+    pub wall_style: WallStyle,
+    #[serde(default)]
+    pub wall_style_overrides: Vec<WallStyleOverride>,
+    pub timber_frame_style: Option<TimberFrameStyle>,
+    pub upper_storey_projection_metres: f32,
+    pub storeys: Vec<StoreyPlan>,
+    pub roofs: Vec<RoofPiece>,
+    pub roof_dormers: Vec<RoofDormer>,
+    pub stairs: Vec<Stair>,
+}
+
+impl EditableBuildingAssembly {
+    pub fn empty() -> Self {
+        Self {
+            footprint: Footprint::Rectangle { width: 1, depth: 1 },
+            storey_height_metres: 3.0,
+            wall_style: WallStyle::TimberFrame,
+            wall_style_overrides: Vec::new(),
+            timber_frame_style: Some(TimberFrameStyle::LateMedieval),
+            upper_storey_projection_metres: 0.0,
+            storeys: Vec::new(),
+            roofs: Vec::new(),
+            roof_dormers: Vec::new(),
+            stairs: Vec::new(),
+        }
+    }
+
+    pub fn from_plan(plan: &BuildingPlan) -> Self {
+        Self {
+            footprint: plan.footprint,
+            storey_height_metres: plan.storey_height_metres,
+            wall_style: plan.wall_style,
+            wall_style_overrides: plan.wall_style_overrides.clone(),
+            timber_frame_style: plan.timber_frame_style,
+            upper_storey_projection_metres: plan.upper_storey_projection_metres,
+            storeys: plan.storeys.clone(),
+            roofs: plan.roofs.clone(),
+            roof_dormers: plan.roof_dormers.clone(),
+            stairs: plan.stairs.clone(),
+        }
+    }
+
+    pub fn wall_style_for(&self, selector: WallSelector) -> WallStyle {
+        self.wall_style_overrides
+            .iter()
+            .rev()
+            .find(|override_| override_.wall == selector)
+            .map_or(self.wall_style, |override_| override_.style)
+    }
+
+    fn storey_mut(&mut self, level: u16) -> &mut StoreyPlan {
+        if let Some(index) = self.storeys.iter().position(|storey| storey.level == level) {
+            return &mut self.storeys[index];
+        }
+        self.storeys.push(StoreyPlan {
+            level,
+            rooms: Vec::new(),
+            walls: Vec::new(),
+            openings: Vec::new(),
+        });
+        self.storeys.sort_by_key(|storey| storey.level);
+        self.storeys
+            .iter_mut()
+            .find(|storey| storey.level == level)
+            .expect("new storey must be present")
+    }
+
+    fn has_wall(&self, selector: WallSelector) -> bool {
+        self.storeys
+            .iter()
+            .find(|storey| storey.level == selector.storey_level)
+            .is_some_and(|storey| {
+                storey
+                    .walls
+                    .iter()
+                    .any(|wall| wall.cell == selector.cell && wall.direction == selector.direction)
+            })
+    }
+}
+
+/// Freeform saves are disposable development data.  Version two deliberately
+/// replaces the former generic-cuboid list with the shared building assembly.
+pub const PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -897,6 +983,19 @@ pub struct PlayerBuildPart {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PlayerBuildEdit {
+    DrawWall {
+        start: GridPoint,
+        end: GridPoint,
+        storey: u16,
+        style: WallStyle,
+    },
+    RemoveWall {
+        wall: WallSelector,
+    },
+    SetWallMaterial {
+        wall: WallSelector,
+        style: WallStyle,
+    },
     Place {
         part: PlayerBuildPart,
     },
@@ -927,7 +1026,11 @@ pub enum PlayerBuildEdit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlayerBuildDocument {
     pub schema_version: u32,
-    #[serde(default)]
+    pub assembly: EditableBuildingAssembly,
+    /// Compatibility-only working data for callers compiled against the first
+    /// editor ABI. It is never serialized and new edits reject it; all saved
+    /// player buildings are semantic assemblies.
+    #[serde(skip)]
     pub parts: Vec<PlayerBuildPart>,
 }
 
@@ -935,6 +1038,15 @@ impl PlayerBuildDocument {
     pub fn empty() -> Self {
         Self {
             schema_version: PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
+            assembly: EditableBuildingAssembly::empty(),
+            parts: Vec::new(),
+        }
+    }
+
+    pub fn from_plan(plan: &BuildingPlan) -> Self {
+        Self {
+            schema_version: PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
+            assembly: EditableBuildingAssembly::from_plan(plan),
             parts: Vec::new(),
         }
     }
@@ -951,17 +1063,113 @@ impl PlayerBuildDocument {
         }
         let mut next = self.clone();
         match edit {
-            PlayerBuildEdit::Place { part } => {
-                if !part_dimensions_are_renderable(&part) {
-                    return Err(
-                        "player-build part dimensions must be finite and positive".to_owned()
-                    );
+            PlayerBuildEdit::DrawWall {
+                start,
+                end,
+                storey,
+                style,
+            } => {
+                if start.x != end.x && start.z != end.z {
+                    return Err("freeform walls must follow the square grid".to_owned());
                 }
-                if next.parts.iter().any(|existing| existing.id == part.id) {
-                    return Err(format!("player-build part {} already exists", part.id));
+                if start == end {
+                    return Err("freeform wall must span at least one grid cell".to_owned());
                 }
-                next.parts.push(part);
-                next.parts.sort_by_key(|part| part.id);
+                let mut added = 0;
+                let mut overrides = Vec::new();
+                {
+                    let storey_plan = next.assembly.storey_mut(storey);
+                    if start.z == end.z {
+                        let direction = Direction::North;
+                        for x in start.x.min(end.x)..start.x.max(end.x) {
+                            let selector = WallSelector {
+                                storey_level: storey,
+                                cell: Cell::new(x as i16, (start.z - 1) as i16),
+                                direction,
+                            };
+                            if !storey_plan.walls.iter().any(|wall| {
+                                wall.cell == selector.cell && wall.direction == selector.direction
+                            }) {
+                                storey_plan.walls.push(WallSegment {
+                                    cell: selector.cell,
+                                    direction,
+                                    inside_room: 0,
+                                    outside_room: None,
+                                });
+                                overrides.push(WallStyleOverride {
+                                    wall: selector,
+                                    style,
+                                });
+                                added += 1;
+                            }
+                        }
+                    } else {
+                        let direction = Direction::East;
+                        for z in start.z.min(end.z)..start.z.max(end.z) {
+                            let selector = WallSelector {
+                                storey_level: storey,
+                                cell: Cell::new((start.x - 1) as i16, z as i16),
+                                direction,
+                            };
+                            if !storey_plan.walls.iter().any(|wall| {
+                                wall.cell == selector.cell && wall.direction == selector.direction
+                            }) {
+                                storey_plan.walls.push(WallSegment {
+                                    cell: selector.cell,
+                                    direction,
+                                    inside_room: 0,
+                                    outside_room: None,
+                                });
+                                overrides.push(WallStyleOverride {
+                                    wall: selector,
+                                    style,
+                                });
+                                added += 1;
+                            }
+                        }
+                    }
+                }
+                next.assembly.wall_style_overrides.extend(overrides);
+                if added == 0 {
+                    return Err("the drawn wall already exists".to_owned());
+                }
+            }
+            PlayerBuildEdit::RemoveWall { wall } => {
+                let Some(storey) = next
+                    .assembly
+                    .storeys
+                    .iter_mut()
+                    .find(|storey| storey.level == wall.storey_level)
+                else {
+                    return Err("player-build wall was not found".to_owned());
+                };
+                let count = storey.walls.len();
+                storey.walls.retain(|candidate| {
+                    !(candidate.cell == wall.cell && candidate.direction == wall.direction)
+                });
+                if storey.walls.len() == count {
+                    return Err("player-build wall was not found".to_owned());
+                }
+                next.assembly
+                    .wall_style_overrides
+                    .retain(|override_| override_.wall != wall);
+            }
+            PlayerBuildEdit::SetWallMaterial { wall, style } => {
+                if !next.assembly.has_wall(wall) {
+                    return Err("player-build wall was not found".to_owned());
+                }
+                next.assembly
+                    .wall_style_overrides
+                    .retain(|override_| override_.wall != wall);
+                next.assembly
+                    .wall_style_overrides
+                    .push(WallStyleOverride { wall, style });
+            }
+            PlayerBuildEdit::Place { part: _ } => {
+                return Err(
+                    "generic freeform parts were replaced by semantic building assemblies"
+                        .to_owned(),
+                );
             }
             PlayerBuildEdit::Move {
                 id,
@@ -1031,28 +1239,36 @@ pub enum PlayerBuildAdvice {
 /// preference into a hidden placement veto.
 pub fn analyse_player_build(document: &PlayerBuildDocument) -> Vec<PlayerBuildAdvice> {
     let mut advice = Vec::new();
-    if !document.parts.iter().any(|part| {
-        matches!(
-            part.kind,
-            PlayerBuildPartKind::Door | PlayerBuildPartKind::Gate
-        ) && part.storey == 0
-    }) {
+    let has_exterior_door = document
+        .assembly
+        .storeys
+        .iter()
+        .find(|storey| storey.level == 0)
+        .is_some_and(|storey| {
+            storey.openings.iter().any(|opening| {
+                matches!(opening.kind, OpeningKind::Door | OpeningKind::Gate)
+                    && storey
+                        .walls
+                        .get(opening.wall)
+                        .is_some_and(|wall| wall.exterior())
+            })
+        });
+    if !has_exterior_door {
         advice.push(PlayerBuildAdvice::NoExteriorDoor);
     }
     for storey in document
-        .parts
+        .assembly
+        .storeys
         .iter()
-        .map(|part| part.storey)
+        .map(|storey| storey.level)
         .filter(|storey| *storey > 0)
         .collect::<std::collections::BTreeSet<_>>()
     {
-        let has_lower_structure = document.parts.iter().any(|part| {
-            part.storey < storey
-                && matches!(
-                    part.kind,
-                    PlayerBuildPartKind::Wall | PlayerBuildPartKind::Room
-                )
-        });
+        let has_lower_structure = document
+            .assembly
+            .storeys
+            .iter()
+            .any(|candidate| candidate.level < storey && !candidate.walls.is_empty());
         if !has_lower_structure {
             advice.push(PlayerBuildAdvice::UpperStoreyWithoutSupport { storey });
         }
@@ -3582,54 +3798,48 @@ impl BuildingPlan {
 mod tests {
     use super::*;
 
-    fn wall(id: u64) -> PlayerBuildPart {
-        PlayerBuildPart {
-            id,
-            kind: PlayerBuildPartKind::Wall,
-            material: PlayerBuildMaterial::Stone,
-            storey: 0,
-            x_metres: 0.0,
-            z_metres: 0.0,
-            elevation_metres: 0.0,
-            rotation_degrees: 0.0,
-            width_metres: 3.0,
-            depth_metres: WALL_THICKNESS_METRES,
-            height_metres: 3.0,
-        }
-    }
-
     #[test]
-    fn player_build_edits_preserve_non_programme_geometry() {
+    fn player_build_edits_preserve_shared_wall_assembly() {
         let placed = PlayerBuildDocument::empty()
-            .apply(PlayerBuildEdit::Place { part: wall(7) })
-            .unwrap()
-            .apply(PlayerBuildEdit::Move {
-                id: 7,
-                x_metres: 7.25,
-                z_metres: -1.5,
+            .apply(PlayerBuildEdit::DrawWall {
+                start: GridPoint::new(0, 0),
+                end: GridPoint::new(3, 0),
+                storey: 0,
+                style: WallStyle::TimberFrame,
             })
             .unwrap()
-            .apply(PlayerBuildEdit::Rotate {
-                id: 7,
-                rotation_degrees: -90.0,
+            .apply(PlayerBuildEdit::SetWallMaterial {
+                wall: WallSelector {
+                    storey_level: 0,
+                    cell: Cell::new(1, -1),
+                    direction: Direction::North,
+                },
+                style: WallStyle::Brick,
             })
             .unwrap();
-        assert_eq!(placed.parts[0].x_metres, 7.25);
-        assert_eq!(placed.parts[0].rotation_degrees, 270.0);
+        assert_eq!(placed.assembly.storeys[0].walls.len(), 3);
+        assert_eq!(
+            placed.assembly.wall_style_for(WallSelector {
+                storey_level: 0,
+                cell: Cell::new(1, -1),
+                direction: Direction::North,
+            }),
+            WallStyle::Brick
+        );
         let decoded: PlayerBuildDocument = serde_json::from_slice(
             &serde_json::to_vec(&placed).expect("player build should serialize"),
         )
         .expect("player build should deserialize");
-        assert_eq!(decoded.parts, placed.parts);
+        assert_eq!(decoded.assembly.storeys[0].walls.len(), 3);
     }
 
     #[test]
-    fn player_build_rejects_only_unrenderable_part_data() {
-        let invalid = PlayerBuildDocument::empty().apply(PlayerBuildEdit::Place {
-            part: PlayerBuildPart {
-                width_metres: 0.0,
-                ..wall(1)
-            },
+    fn player_build_rejects_non_grid_wall_data() {
+        let invalid = PlayerBuildDocument::empty().apply(PlayerBuildEdit::DrawWall {
+            start: GridPoint::new(0, 0),
+            end: GridPoint::new(1, 1),
+            storey: 0,
+            style: WallStyle::Stone,
         });
         assert!(invalid.is_err());
     }
@@ -3637,11 +3847,11 @@ mod tests {
     #[test]
     fn player_build_analysis_is_advisory() {
         let document = PlayerBuildDocument::empty()
-            .apply(PlayerBuildEdit::Place {
-                part: PlayerBuildPart {
-                    storey: 1,
-                    ..wall(9)
-                },
+            .apply(PlayerBuildEdit::DrawWall {
+                start: GridPoint::new(0, 0),
+                end: GridPoint::new(1, 0),
+                storey: 1,
+                style: WallStyle::Stone,
             })
             .unwrap();
         assert_eq!(
@@ -3651,6 +3861,6 @@ mod tests {
                 PlayerBuildAdvice::UpperStoreyWithoutSupport { storey: 1 },
             ]
         );
-        assert_eq!(document.parts.len(), 1);
+        assert_eq!(document.assembly.storeys[0].walls.len(), 1);
     }
 }

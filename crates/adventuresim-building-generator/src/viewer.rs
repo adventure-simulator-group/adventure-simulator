@@ -2128,6 +2128,14 @@ struct EditorEnvironmentEntity;
 #[derive(Component)]
 struct PlayerBuildEntity;
 
+/// Scoped while the shared wall renderer is producing a detached/freeform
+/// assembly. Keeping this at the primitive spawn boundary means every host
+/// wall and fachwerk beam receives exactly the same visibility control.
+#[derive(Clone, Copy, Resource)]
+struct PlayerBuildSpawnContext {
+    storey: usize,
+}
+
 /// Render metadata used by the build-mode visibility controls. It is kept on
 /// both generated programme geometry and freeform parts so the controls have
 /// one authoritative ECS path.
@@ -2416,10 +2424,10 @@ fn editor_snapshot(runtime: &EditorRuntime) -> EditorSnapshot {
         .as_ref()
         .map(|document| document.parts.clone())
         .unwrap_or_default();
-    let advice_document = PlayerBuildDocument {
-        schema_version: adventuresim_building_generator::PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
-        parts: parts.clone(),
-    };
+    let advice_document = runtime
+        .player_build
+        .clone()
+        .unwrap_or_else(PlayerBuildDocument::empty);
     EditorSnapshot {
         active_storey: runtime.active_storey,
         mode: runtime.mode,
@@ -2540,6 +2548,7 @@ enum EditorUiAction {
     SetWallStyle(WallSelector, WallStyle),
     SetTimberStyle(TimberFrameStyle),
     NewPlayerBuild,
+    DetachPlayerBuild,
     Undo,
     Redo,
     Save,
@@ -2617,29 +2626,24 @@ fn place_dragged_wall(
     material: PlayerBuildMaterial,
     storey: u16,
 ) {
-    let (start, end, rotation_degrees, length) = wall_drag_spec(start, end);
-    let id = runtime
-        .player_build
-        .as_ref()
-        .and_then(|document| document.parts.iter().map(|part| part.id).max())
-        .unwrap_or(0)
-        + 1;
+    let (start, end, _, _) = wall_drag_spec(start, end);
+    let Some(style) = player_build_wall_style(material) else {
+        runtime.error = Some("that material is not a wall finish".to_owned());
+        return;
+    };
     apply_player_build_edit(
         runtime,
-        PlayerBuildEdit::Place {
-            part: PlayerBuildPart {
-                id,
-                kind: PlayerBuildPartKind::Wall,
-                material,
-                storey,
-                x_metres: (start.x + end.x) * 0.5,
-                z_metres: (start.y + end.y) * 0.5,
-                elevation_metres: f32::from(storey) * runtime.plan.storey_height_metres,
-                rotation_degrees,
-                width_metres: length,
-                depth_metres: WALL_THICKNESS_METRES,
-                height_metres: runtime.player_height_metres,
-            },
+        PlayerBuildEdit::DrawWall {
+            start: adventuresim_building_generator::GridPoint::new(
+                (start.x / CELL_SIZE_METRES).round() as i32,
+                (start.y / CELL_SIZE_METRES).round() as i32,
+            ),
+            end: adventuresim_building_generator::GridPoint::new(
+                (end.x / CELL_SIZE_METRES).round() as i32,
+                (end.y / CELL_SIZE_METRES).round() as i32,
+            ),
+            storey,
+            style,
         },
     );
 }
@@ -2816,6 +2820,12 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                 ui.menu_button("File", |ui| {
                     if runtime.player_build.is_none() && ui.button("New freeform build").clicked() {
                         action = Some(EditorUiAction::NewPlayerBuild);
+                        ui.close();
+                    }
+                    if runtime.player_build.is_none()
+                        && ui.button("Detach generated building").clicked()
+                    {
+                        action = Some(EditorUiAction::DetachPlayerBuild);
                         ui.close();
                     }
                     if ui.button("Save document").clicked() {
@@ -3052,6 +3062,7 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                     for (material, label) in [
                         (PlayerBuildMaterial::Stone, "Stone"),
                         (PlayerBuildMaterial::Brick, "Brick"),
+                        (PlayerBuildMaterial::Plaster, "Plaster"),
                         (PlayerBuildMaterial::TimberFrame, "Frame"),
                         (PlayerBuildMaterial::Timber, "Timber"),
                         (PlayerBuildMaterial::Tile, "Tile"),
@@ -3108,10 +3119,10 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                         if ui.button("Remove").clicked() { action = Some(EditorUiAction::RemovePlayerPart(id)); }
                     });
                 }
-                let advice_document = PlayerBuildDocument {
-                    schema_version: adventuresim_building_generator::PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
-                    parts: player_parts,
-                };
+                let advice_document = runtime
+                    .player_build
+                    .clone()
+                    .unwrap_or_else(PlayerBuildDocument::empty);
                 for advice in analyse_player_build(&advice_document) {
                     ui.colored_label(
                         egui::Color32::from_rgb(210, 150, 70),
@@ -3125,6 +3136,10 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                 if ui.button("New freeform build").clicked() {
                     action = Some(EditorUiAction::NewPlayerBuild);
                 }
+                if ui.button("Detach generated building").clicked() {
+                    action = Some(EditorUiAction::DetachPlayerBuild);
+                }
+                ui.small("Detaching copies the editable storeys, walls, openings, roofs, and finishes. It cannot be converted back into a programme.");
             }
 
             ui.separator();
@@ -3240,6 +3255,24 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
             runtime.mode = EditorMode::Construct;
             runtime.pending_player_rebuild = true;
             runtime.status = "New freeform build: drag in Construct mode to draw walls".to_owned();
+            runtime.error = None;
+        }
+        EditorUiAction::DetachPlayerBuild => {
+            let stem = runtime
+                .document_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("building-document");
+            runtime.player_build = Some(PlayerBuildDocument::from_plan(&runtime.plan));
+            runtime.player_build_path = Some(
+                runtime
+                    .document_path
+                    .with_file_name(format!("{stem}-player-build.json")),
+            );
+            runtime.selected_player_part = None;
+            runtime.mode = EditorMode::Construct;
+            runtime.pending_player_rebuild = true;
+            runtime.status = "Detached generated building into freeform assembly".to_owned();
             runtime.error = None;
         }
         EditorUiAction::Undo => {
@@ -3868,65 +3901,54 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
     }
 }
 
-fn player_build_colour(material: PlayerBuildMaterial) -> Color {
+fn player_build_wall_style(material: PlayerBuildMaterial) -> Option<WallStyle> {
     match material {
-        PlayerBuildMaterial::Stone => Color::srgb(0.42, 0.40, 0.36),
-        PlayerBuildMaterial::Brick => Color::srgb(0.48, 0.23, 0.16),
-        PlayerBuildMaterial::Plaster => Color::srgb(0.72, 0.66, 0.53),
+        PlayerBuildMaterial::Stone => Some(WallStyle::Stone),
+        PlayerBuildMaterial::Brick => Some(WallStyle::Brick),
+        PlayerBuildMaterial::Plaster => Some(WallStyle::Plaster),
         PlayerBuildMaterial::TimberFrame | PlayerBuildMaterial::Timber => {
-            Color::srgb(0.28, 0.16, 0.08)
+            Some(WallStyle::TimberFrame)
         }
-        PlayerBuildMaterial::Tile => Color::srgb(0.36, 0.12, 0.08),
-        PlayerBuildMaterial::Thatch => Color::srgb(0.55, 0.43, 0.18),
-        PlayerBuildMaterial::Earth => Color::srgb(0.30, 0.22, 0.12),
+        PlayerBuildMaterial::Tile | PlayerBuildMaterial::Thatch | PlayerBuildMaterial::Earth => {
+            None
+        }
     }
 }
 
-/// Player-build parts are rendered directly from their own document.  They do
-/// not enter the generated-plan mesh or audit pipeline: the programme remains
-/// a separate optional source of architecture and analysis.
+/// Player builds use the same semantic wall renderer as the generated plan.
+/// A TimberFrame style consequently creates plaster infill and its grouped
+/// fachwerk members together, rather than a brown placeholder cuboid.
 fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
-    for part in &document.parts {
-        let thickness = if matches!(part.kind, PlayerBuildPartKind::Wall) {
-            part.depth_metres.min(WALL_THICKNESS_METRES).max(0.05)
-        } else {
-            part.depth_metres
-        };
-        let mesh = world.resource_mut::<Assets<Mesh>>().add(Cuboid::new(
-            part.width_metres,
-            part.height_metres,
-            thickness,
-        ));
-        let material = world
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
-                base_color: player_build_colour(part.material),
-                perceptual_roughness: 0.82,
-                ..default()
-            });
-        world.spawn((
-            Name::new(format!("player build {:?} {}", part.kind, part.id)),
-            PlayerBuildEntity,
-            EditorVisibilityTarget {
-                storey: usize::from(part.storey),
-                role: match part.kind {
-                    PlayerBuildPartKind::Wall => EditorVisibilityRole::Wall,
-                    PlayerBuildPartKind::Roof => EditorVisibilityRole::Roof,
-                    _ => EditorVisibilityRole::Wall,
-                },
-            },
-            EditorBaseMaterial(material.clone()),
-            EditorAppearanceIsTranslucent(false),
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Visibility::Visible,
-            Transform::from_xyz(
-                part.x_metres,
-                part.elevation_metres + part.height_metres * 0.5,
-                part.z_metres,
-            )
-            .with_rotation(Quat::from_rotation_y(part.rotation_degrees.to_radians())),
-        ));
+    let palette = create_palette(world);
+    for storey in &document.assembly.storeys {
+        let base_y = f32::from(storey.level) * document.assembly.storey_height_metres;
+        world.insert_resource(PlayerBuildSpawnContext {
+            storey: usize::from(storey.level),
+        });
+        for (wall_index, wall) in storey.walls.iter().copied().enumerate() {
+            let selector = WallSelector {
+                storey_level: storey.level,
+                cell: wall.cell,
+                direction: wall.direction,
+            };
+            let opening = storey
+                .openings
+                .iter()
+                .find(|opening| opening.wall == wall_index);
+            spawn_wall(
+                world,
+                &palette,
+                wall,
+                opening,
+                Vec2::ZERO,
+                base_y,
+                document.assembly.storey_height_metres,
+                document.assembly.wall_style_for(selector),
+                document.assembly.timber_frame_style,
+                document.assembly.upper_storey_projection_metres * f32::from(storey.level),
+            );
+        }
+        world.remove_resource::<PlayerBuildSpawnContext>();
     }
 }
 
@@ -14779,17 +14801,31 @@ fn spawn_box(
     let mesh = world
         .resource_mut::<Assets<Mesh>>()
         .add(Cuboid::new(size.x, size.y, size.z));
-    world.spawn((
-        Name::new(name),
-        ClosedSolid,
-        Mesh3d(mesh),
-        MeshMaterial3d(material.clone()),
-        Transform {
-            translation,
-            rotation,
-            ..default()
-        },
-    ));
+    let entity = world
+        .spawn((
+            Name::new(name),
+            ClosedSolid,
+            Mesh3d(mesh),
+            MeshMaterial3d(material.clone()),
+            Transform {
+                translation,
+                rotation,
+                ..default()
+            },
+        ))
+        .id();
+    if let Some(context) = world.get_resource::<PlayerBuildSpawnContext>().copied() {
+        world.entity_mut(entity).insert((
+            PlayerBuildEntity,
+            EditorVisibilityTarget {
+                storey: context.storey,
+                role: EditorVisibilityRole::Wall,
+            },
+            EditorBaseMaterial(material.clone()),
+            EditorAppearanceIsTranslucent(false),
+            Visibility::Visible,
+        ));
+    }
 }
 
 fn capture_when_ready(
@@ -15825,26 +15861,23 @@ mod tests {
         );
         perform_editor_command(
             &mut runtime,
-            EditorCommand::PlacePart {
-                part: PlayerBuildPart {
-                    id: 7,
-                    kind: PlayerBuildPartKind::Wall,
-                    material: PlayerBuildMaterial::Stone,
-                    storey: 0,
-                    x_metres: 2.0,
-                    z_metres: -1.0,
-                    elevation_metres: 0.0,
-                    rotation_degrees: 0.0,
-                    width_metres: 3.0,
-                    depth_metres: WALL_THICKNESS_METRES,
-                    height_metres: 3.0,
-                },
+            EditorCommand::DrawWall {
+                start_x_metres: 0.0,
+                start_z_metres: 0.0,
+                end_x_metres: CELL_SIZE_METRES,
+                end_z_metres: 0.0,
+                material: PlayerBuildMaterial::Stone,
+                storey: 0,
             },
         );
         perform_editor_command(&mut runtime, EditorCommand::CycleWalls);
         let snapshot = editor_snapshot(&runtime);
-        assert_eq!(snapshot.parts.len(), 1);
-        assert_eq!(snapshot.parts[0].id, 7);
+        assert_eq!(
+            runtime.player_build.as_ref().unwrap().assembly.storeys[0]
+                .walls
+                .len(),
+            1
+        );
         assert_eq!(snapshot.walls, WallVisibility::Cutaway);
         assert!(snapshot.error.is_none());
     }
@@ -15871,19 +15904,21 @@ mod tests {
                 storey: 0,
             },
         );
-        let wall = runtime
-            .player_build
-            .as_ref()
-            .unwrap()
-            .parts
-            .first()
-            .unwrap();
-        assert_eq!(wall.kind, PlayerBuildPartKind::Wall);
-        assert_eq!(wall.material, PlayerBuildMaterial::Brick);
-        assert_eq!(wall.rotation_degrees, 0.0);
-        assert_eq!(wall.width_metres, CELL_SIZE_METRES * 3.0);
-        assert_eq!(wall.x_metres, CELL_SIZE_METRES * 1.5);
-        assert_eq!(wall.z_metres, 0.0);
+        let assembly = &runtime.player_build.as_ref().unwrap().assembly;
+        assert_eq!(assembly.storeys[0].walls.len(), 3);
+        assert!(
+            assembly.storeys[0]
+                .walls
+                .iter()
+                .all(|wall| wall.direction == Direction::North)
+        );
+        assert!(assembly.storeys[0].walls.iter().all(|wall| {
+            assembly.wall_style_for(WallSelector {
+                storey_level: 0,
+                cell: wall.cell,
+                direction: wall.direction,
+            }) == WallStyle::Brick
+        }));
     }
 
     #[test]
@@ -15898,7 +15933,7 @@ mod tests {
             player_build.schema_version,
             PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION
         );
-        assert!(player_build.parts.is_empty());
+        assert!(player_build.assembly.storeys.is_empty());
         assert_eq!(runtime.mode, EditorMode::Construct);
         assert_eq!(
             runtime.player_build_path,
@@ -15911,37 +15946,22 @@ mod tests {
     fn player_build_visibility_changes_entity_components_for_hide_and_levels() {
         let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
         let plan = generate_document(&document).unwrap();
-        let player_build = PlayerBuildDocument {
-            schema_version: PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
-            parts: vec![
-                PlayerBuildPart {
-                    id: 1,
-                    kind: PlayerBuildPartKind::Wall,
-                    material: PlayerBuildMaterial::Stone,
-                    storey: 0,
-                    x_metres: 0.0,
-                    z_metres: 0.0,
-                    elevation_metres: 0.0,
-                    rotation_degrees: 0.0,
-                    width_metres: 3.0,
-                    depth_metres: WALL_THICKNESS_METRES,
-                    height_metres: 3.0,
-                },
-                PlayerBuildPart {
-                    id: 2,
-                    kind: PlayerBuildPartKind::Roof,
-                    material: PlayerBuildMaterial::Tile,
-                    storey: 1,
-                    x_metres: 0.0,
-                    z_metres: 0.0,
-                    elevation_metres: 3.0,
-                    rotation_degrees: 0.0,
-                    width_metres: 3.0,
-                    depth_metres: 3.0,
-                    height_metres: 1.0,
-                },
-            ],
-        };
+        let player_build = PlayerBuildDocument::empty()
+            .apply(PlayerBuildEdit::DrawWall {
+                start: adventuresim_building_generator::GridPoint::new(0, 0),
+                end: adventuresim_building_generator::GridPoint::new(1, 0),
+                storey: 0,
+                style: WallStyle::TimberFrame,
+            })
+            .unwrap()
+            .apply(PlayerBuildEdit::DrawWall {
+                start: adventuresim_building_generator::GridPoint::new(0, 0),
+                end: adventuresim_building_generator::GridPoint::new(1, 0),
+                storey: 1,
+                style: WallStyle::TimberFrame,
+            })
+            .unwrap();
+        assert_eq!(player_build.assembly.storeys.len(), 2);
         let mut world = World::new();
         world.init_resource::<Assets<Mesh>>();
         world.init_resource::<Assets<StandardMaterial>>();
@@ -15963,12 +15983,12 @@ mod tests {
         world.run_system_once(update_editor_visibility).unwrap();
         let mut query = world.query::<(&EditorVisibilityTarget, &Visibility)>();
         let visibilities = query.iter(&world).collect::<Vec<_>>();
-        assert_eq!(visibilities.len(), 2);
+        assert!(!visibilities.is_empty());
         for (_, visibility) in visibilities {
             assert_eq!(
                 *visibility,
                 Visibility::Hidden,
-                "the wall and roof should be hidden by their control state"
+                "the semantic wall and its fachwerk members should be hidden together"
             );
         }
 
@@ -15984,7 +16004,7 @@ mod tests {
             .iter(&world)
             .map(|(entity, target)| (entity, target.role))
             .collect::<Vec<_>>();
-        assert_eq!(entities.len(), 2);
+        assert!(!entities.is_empty());
         for (entity, _) in &entities {
             assert_eq!(
                 *world.get::<Visibility>(*entity).unwrap(),
