@@ -80,6 +80,16 @@ the current camera, lighting, and editor scene in place. If neither a fixture
 nor an existing document is supplied at launch, the editor starts with the
 town-house fixture.
 
+The editor uses a build-mode shell: a mode strip exposes Select, Construct,
+Openings, Roof, Site, and Finish, while a storey rail presents the current
+storey and the planned wall/roof visibility states. `1`–`6`, `Esc`, `Page Up`,
+`Page Down`, `Home`, `R`, `Ctrl+Z`, and `Ctrl+Y` mirror those visible controls.
+The current `BuildingDocument` remains the strict procedural-programme path:
+only Select, Openings, and Finish activate an audited edit today. Construct,
+Roof, and Site intentionally explain that they need the future freeform
+player-build document instead of accepting an edit that cannot be saved or
+rendered.
+
 `BuildingDocument` is versioned JSON containing a `BuildingProgram` plus an
 ordered edit log. Each UI command regenerates the complete plan and runs the
 same audit as `generate`; an invalid command reports an error and leaves the

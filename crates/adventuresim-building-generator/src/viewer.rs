@@ -2127,6 +2127,98 @@ enum SceneSetup {
     EditorBuilding,
 }
 
+/// The visible editor modes deliberately follow the direct-manipulation
+/// vocabulary used by the build workbench.  Only tools backed by the current
+/// semantic document are enabled; unavailable modes remain discoverable
+/// instead of pretending that a click has changed the building.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EditorMode {
+    Select,
+    Construct,
+    Openings,
+    Roof,
+    Site,
+    Finish,
+}
+
+impl EditorMode {
+    const ALL: [(Self, &'static str, &'static str); 6] = [
+        (Self::Select, "Select", "1"),
+        (Self::Construct, "Construct", "2"),
+        (Self::Openings, "Openings", "3"),
+        (Self::Roof, "Roof", "4"),
+        (Self::Site, "Site", "5"),
+        (Self::Finish, "Finish", "6"),
+    ];
+
+    fn availability(self) -> &'static str {
+        match self {
+            Self::Select => "Inspect walls, openings, and timber members directly on the building.",
+            Self::Openings => "Select a wall, then place the audited window opening below.",
+            Self::Finish => "Apply a compatible finish to the current programme.",
+            Self::Construct => {
+                "Freeform wall and room authoring requires the player-build document."
+            }
+            Self::Roof => "Freeform roof and stair handles require the player-build document.",
+            Self::Site => "Site dressing requires the player-build document and site authority.",
+        }
+    }
+
+    fn is_available(self) -> bool {
+        matches!(self, Self::Select | Self::Openings | Self::Finish)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WallVisibility {
+    Up,
+    Cutaway,
+    Down,
+}
+
+impl WallVisibility {
+    fn next(self) -> Self {
+        match self {
+            Self::Up => Self::Cutaway,
+            Self::Cutaway => Self::Down,
+            Self::Down => Self::Up,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Up => "Walls: Up",
+            Self::Cutaway => "Walls: Cutaway",
+            Self::Down => "Walls: Down",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RoofVisibility {
+    Show,
+    Ghost,
+    Hide,
+}
+
+impl RoofVisibility {
+    fn next(self) -> Self {
+        match self {
+            Self::Show => Self::Ghost,
+            Self::Ghost => Self::Hide,
+            Self::Hide => Self::Show,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Show => "Roof: Show",
+            Self::Ghost => "Roof: Ghost",
+            Self::Hide => "Roof: Hide",
+        }
+    }
+}
+
 #[derive(Resource)]
 struct EditorRuntime {
     document: BuildingDocument,
@@ -2141,6 +2233,10 @@ struct EditorRuntime {
     window_width_metres: f32,
     window_sill_metres: f32,
     window_height_metres: f32,
+    mode: EditorMode,
+    active_storey: usize,
+    wall_visibility: WallVisibility,
+    roof_visibility: RoofVisibility,
     pending_rebuild: bool,
 }
 
@@ -2159,6 +2255,10 @@ impl EditorRuntime {
             window_width_metres: 0.8,
             window_sill_metres: 0.9,
             window_height_metres: 1.1,
+            mode: EditorMode::Select,
+            active_storey: 0,
+            wall_visibility: WallVisibility::Up,
+            roof_visibility: RoofVisibility::Show,
             pending_rebuild: false,
         }
     }
@@ -2175,6 +2275,11 @@ enum EditorUiAction {
     Redo,
     Save,
     Load,
+    SetMode(EditorMode),
+    CycleWalls,
+    CycleRoofs,
+    PreviousStorey,
+    NextStorey,
 }
 
 fn editor_target_label(target: EditorTarget) -> String {
@@ -2251,55 +2356,118 @@ fn update_editor_outlines(
 
 fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> Result {
     let mut action = None;
-    egui::Window::new("Building editor")
-        .default_size([290.0, 650.0])
-        .default_pos([VIEW_WIDTH as f32 - 310.0, 20.0])
-        .resizable(true)
+    egui::Area::new(egui::Id::new("building-editor-mode-strip"))
+        .anchor(egui::Align2::LEFT_TOP, [8.0, 8.0])
         .show(contexts.ctx_mut()?, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("Fixtures", |ui| {
-                    for archetype in BuildingArchetype::ALL {
-                        if ui
-                            .selectable_label(
-                                runtime.document.program.archetype == archetype,
-                                archetype.slug(),
-                            )
-                            .clicked()
-                        {
-                            action = Some(EditorUiAction::ChangeArchetype(archetype));
-                            ui.close();
-                        }
+            ui.horizontal_wrapped(|ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Save document").clicked() {
+                        action = Some(EditorUiAction::Save);
+                        ui.close();
                     }
+                    if ui.button("Load document").clicked() {
+                        action = Some(EditorUiAction::Load);
+                        ui.close();
+                    }
+                    ui.separator();
+                    ui.menu_button("Fixtures", |ui| {
+                        for archetype in BuildingArchetype::ALL {
+                            if ui
+                                .selectable_label(
+                                    runtime.document.program.archetype == archetype,
+                                    archetype.slug(),
+                                )
+                                .clicked()
+                            {
+                                action = Some(EditorUiAction::ChangeArchetype(archetype));
+                                ui.close();
+                            }
+                        }
+                    });
                 });
-            });
-            ui.label(format!(
-                "Fixture: {}",
-                runtime.document.program.archetype.slug()
-            ));
-            ui.small("MMB orbit · Shift+MMB pan · wheel zoom · F frame");
-            ui.separator();
-
-            ui.horizontal(|ui| {
                 if ui
                     .add_enabled(!runtime.undo.is_empty(), egui::Button::new("Undo"))
+                    .on_hover_text("Ctrl+Z")
                     .clicked()
                 {
                     action = Some(EditorUiAction::Undo);
                 }
                 if ui
                     .add_enabled(!runtime.redo.is_empty(), egui::Button::new("Redo"))
+                    .on_hover_text("Ctrl+Y")
                     .clicked()
                 {
                     action = Some(EditorUiAction::Redo);
                 }
-                if ui.button("Save").clicked() {
-                    action = Some(EditorUiAction::Save);
-                }
-                if ui.button("Load").clicked() {
-                    action = Some(EditorUiAction::Load);
+                ui.separator();
+                for (mode, label, shortcut) in EditorMode::ALL {
+                    let button = egui::Button::new(format!("{label} {shortcut}"));
+                    let response = ui
+                        .add_enabled(mode.is_available(), button.selected(runtime.mode == mode))
+                        .on_disabled_hover_text(mode.availability())
+                        .on_hover_text(mode.availability());
+                    if response.clicked() {
+                        action = Some(EditorUiAction::SetMode(mode));
+                    }
                 }
             });
-            ui.small(runtime.document_path.display().to_string());
+        });
+    egui::Area::new(egui::Id::new("building-editor-storeys"))
+        .anchor(egui::Align2::LEFT_TOP, [8.0, 48.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.set_width(150.0);
+            ui.strong("Storey");
+            if ui.button("▲ Higher").on_hover_text("Page Up").clicked() {
+                action = Some(EditorUiAction::NextStorey);
+            }
+            for level in (0..runtime.plan.storeys.len()).rev() {
+                let label = if level == 0 {
+                    "Ground".to_owned()
+                } else {
+                    format!("Level {level}")
+                };
+                if ui
+                    .selectable_label(runtime.active_storey == level, label)
+                    .clicked()
+                {
+                    runtime.active_storey = level;
+                    runtime.status = format!("Active storey: {level}");
+                }
+            }
+            if ui.button("▼ Lower").on_hover_text("Page Down").clicked() {
+                action = Some(EditorUiAction::PreviousStorey);
+            }
+            ui.separator();
+            if ui
+                .button(runtime.wall_visibility.label())
+                .on_hover_text("Home")
+                .clicked()
+            {
+                action = Some(EditorUiAction::CycleWalls);
+            }
+            if ui
+                .button(runtime.roof_visibility.label())
+                .on_hover_text("R")
+                .clicked()
+            {
+                action = Some(EditorUiAction::CycleRoofs);
+            }
+            ui.separator();
+            ui.small("Visibility settings are retained while you edit this document.");
+        });
+    egui::Window::new("Inspector")
+        .default_size([320.0, 560.0])
+        .default_pos([VIEW_WIDTH as f32 - 340.0, 74.0])
+        .resizable(true)
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.strong(format!("{} mode", EditorMode::ALL
+                .iter()
+                .find(|(mode, _, _)| *mode == runtime.mode)
+                .map(|(_, label, _)| *label)
+                .unwrap_or("Select")));
+            ui.small(EditorMode::availability(runtime.mode));
+            ui.label(format!("Programme: {}", runtime.document.program.archetype.slug()));
+            ui.small("MMB orbit · Shift+MMB pan · wheel zoom · F frame · Esc select");
             ui.separator();
 
             if let Some(selected) = runtime.selected {
@@ -2327,9 +2495,10 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                                 .prefix("height ")
                                 .suffix(" m"),
                         );
-                        if ui.button("Add window").clicked() {
+                        if ui.button("Place window").clicked() {
                             action = Some(EditorUiAction::AddWindow(wall));
                         }
+                        ui.small("Doors, gates, arches, and freeform walls are part of the player-build document, not this audited programme editor.");
                     }
                     EditorTarget::Opening(wall) => {
                         if ui.button("Remove opening").clicked() {
@@ -2358,7 +2527,7 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                     }
                 }
             } else {
-                ui.label("Hover a feature, then click to select it.");
+                ui.label("Hover a feature, then click to inspect it.");
             }
 
             ui.separator();
@@ -2504,6 +2673,70 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
             }
             Err(error) => runtime.error = Some(error),
         },
+        EditorUiAction::SetMode(mode) => {
+            runtime.mode = mode;
+            runtime.status = format!("{} mode", mode.availability());
+            runtime.error = None;
+        }
+        EditorUiAction::CycleWalls => {
+            runtime.wall_visibility = runtime.wall_visibility.next();
+            runtime.status = runtime.wall_visibility.label().to_owned();
+        }
+        EditorUiAction::CycleRoofs => {
+            runtime.roof_visibility = runtime.roof_visibility.next();
+            runtime.status = runtime.roof_visibility.label().to_owned();
+        }
+        EditorUiAction::PreviousStorey => {
+            runtime.active_storey = runtime.active_storey.saturating_sub(1);
+            runtime.status = format!("Active storey: {}", runtime.active_storey);
+        }
+        EditorUiAction::NextStorey => {
+            runtime.active_storey =
+                (runtime.active_storey + 1).min(runtime.plan.storeys.len().saturating_sub(1));
+            runtime.status = format!("Active storey: {}", runtime.active_storey);
+        }
+    }
+}
+
+fn editor_keyboard_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<EditorRuntime>) {
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let action = if control && keys.just_pressed(KeyCode::KeyZ) {
+        Some(EditorUiAction::Undo)
+    } else if control && keys.just_pressed(KeyCode::KeyY) {
+        Some(EditorUiAction::Redo)
+    } else if keys.just_pressed(KeyCode::Escape) {
+        Some(EditorUiAction::SetMode(EditorMode::Select))
+    } else if keys.just_pressed(KeyCode::Digit1) {
+        Some(EditorUiAction::SetMode(EditorMode::Select))
+    } else if keys.just_pressed(KeyCode::Digit2) {
+        Some(EditorUiAction::SetMode(EditorMode::Construct))
+    } else if keys.just_pressed(KeyCode::Digit3) {
+        Some(EditorUiAction::SetMode(EditorMode::Openings))
+    } else if keys.just_pressed(KeyCode::Digit4) {
+        Some(EditorUiAction::SetMode(EditorMode::Roof))
+    } else if keys.just_pressed(KeyCode::Digit5) {
+        Some(EditorUiAction::SetMode(EditorMode::Site))
+    } else if keys.just_pressed(KeyCode::Digit6) {
+        Some(EditorUiAction::SetMode(EditorMode::Finish))
+    } else if keys.just_pressed(KeyCode::Home) {
+        Some(EditorUiAction::CycleWalls)
+    } else if keys.just_pressed(KeyCode::KeyR) {
+        Some(EditorUiAction::CycleRoofs)
+    } else if keys.just_pressed(KeyCode::PageUp) {
+        Some(EditorUiAction::NextStorey)
+    } else if keys.just_pressed(KeyCode::PageDown) {
+        Some(EditorUiAction::PreviousStorey)
+    } else {
+        None
+    };
+    if let Some(action) = action {
+        if let EditorUiAction::SetMode(mode) = action
+            && !mode.is_available()
+        {
+            runtime.status = mode.availability().to_owned();
+            return;
+        }
+        perform_editor_action(&mut runtime, action);
     }
 }
 
@@ -6473,7 +6706,14 @@ pub(crate) fn run(
         .add_observer(editor_pointer_out)
         .add_observer(editor_pointer_click)
         .add_systems(EguiPrimaryContextPass, editor_ui)
-        .add_systems(Update, (update_editor_outlines, frame_editor_selection))
+        .add_systems(
+            Update,
+            (
+                update_editor_outlines,
+                frame_editor_selection,
+                editor_keyboard_shortcuts,
+            ),
+        )
         .add_systems(PostUpdate, rebuild_editor_scene);
     }
     let startup_plan = plan.clone();
