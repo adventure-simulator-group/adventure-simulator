@@ -2141,6 +2141,7 @@ struct EditorVisibilityTarget {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EditorVisibilityRole {
     Wall,
+    Floor,
     Roof,
 }
 
@@ -3439,22 +3440,26 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
             Option<&ResolvedRenderItem>,
             Option<&RoofRenderItem>,
             Option<&MeshMaterial3d<StandardMaterial>>,
+            Option<&Name>,
+            Option<&Transform>,
         ), Without<EditorEnvironmentEntity>>();
         query
             .iter(world)
             .filter(|(entity, ..)| world.get::<Mesh3d>(*entity).is_some())
-            .map(|(entity, owner, item, roof, material)| {
+            .map(|(entity, owner, item, roof, material, name, transform)| {
                 (
                     entity,
                     owner.map(|owner| owner.0),
                     item.map(|item| item.id),
                     roof.is_some(),
                     material.map(|material| material.0.clone()),
+                    name.is_some_and(|name| name.as_str() == "room floor"),
+                    transform.map(|transform| transform.translation.y),
                 )
             })
             .collect::<Vec<_>>()
     };
-    for (entity, owner, item, is_roof, material) in mesh_entities {
+    for (entity, owner, item, is_roof, material, is_room_floor, elevation) in mesh_entities {
         let hide_fachwerk = item
             .and_then(|item| item_targets.get(&item).copied())
             .and_then(|target| match target {
@@ -3511,6 +3516,14 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                             storey,
                             role: EditorVisibilityRole::Wall,
                         })
+                })
+                .or_else(|| {
+                    is_room_floor.then(|| EditorVisibilityTarget {
+                        storey: (elevation.unwrap_or_default() / plan.storey_height_metres)
+                            .floor()
+                            .max(0.0) as usize,
+                        role: EditorVisibilityRole::Floor,
+                    })
                 })
         };
         if let (Some(target), Some(material)) = (visibility_target, material) {
@@ -15668,6 +15681,17 @@ mod tests {
                 },
             ))
             .id();
+        let floor_material = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let upper_floor = world
+            .spawn((
+                Name::new("room floor"),
+                Mesh3d(Handle::default()),
+                MeshMaterial3d(floor_material),
+                Transform::from_xyz(0.0, plan.storey_height_metres + 0.06, 0.0),
+            ))
+            .id();
         configure_editor_scene(&mut world, &plan, false);
         assert_eq!(
             world.get::<EditorVisibilityTarget>(wall).unwrap().role,
@@ -15676,6 +15700,13 @@ mod tests {
         assert_eq!(
             world.get::<EditorVisibilityTarget>(roof).unwrap().role,
             EditorVisibilityRole::Roof
+        );
+        assert_eq!(
+            world
+                .get::<EditorVisibilityTarget>(upper_floor)
+                .unwrap()
+                .role,
+            EditorVisibilityRole::Floor
         );
         world.insert_resource(EditorRuntime::new(
             document,
@@ -15693,6 +15724,10 @@ mod tests {
         world.run_system_once(update_editor_visibility).unwrap();
         assert_eq!(*world.get::<Visibility>(wall).unwrap(), Visibility::Hidden);
         assert_eq!(*world.get::<Visibility>(roof).unwrap(), Visibility::Hidden);
+        assert_eq!(
+            *world.get::<Visibility>(upper_floor).unwrap(),
+            Visibility::Hidden
+        );
     }
 
     #[test]
