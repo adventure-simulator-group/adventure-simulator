@@ -3405,6 +3405,20 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                     })
                     .collect()
             });
+    let timber_floor_storeys =
+        plan.timber_frame
+            .as_ref()
+            .map_or_else(std::collections::HashMap::new, |frame| {
+                frame
+                    .floors
+                    .iter()
+                    .flat_map(|floor| {
+                        std::iter::once(floor.floor_solid)
+                            .chain(floor.floor_solids.iter().copied())
+                            .map(move |solid| (solid.0, usize::from(floor.level)))
+                    })
+                    .collect::<std::collections::HashMap<_, _>>()
+            });
     let roof_storeys = plan
         .roof_assemblies
         .iter()
@@ -3515,6 +3529,13 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                         .map(|storey| EditorVisibilityTarget {
                             storey,
                             role: EditorVisibilityRole::Wall,
+                        })
+                })
+                .or_else(|| {
+                    item.and_then(|item| timber_floor_storeys.get(&item).copied())
+                        .map(|storey| EditorVisibilityTarget {
+                            storey,
+                            role: EditorVisibilityRole::Floor,
                         })
                 })
                 .or_else(|| {
@@ -9421,9 +9442,10 @@ fn record_mesh_audit(world: &mut World) {
             issue_count += 1;
         }
     }
-    let mut state = world.resource_mut::<CaptureState>();
-    state.manifest.audited_closed_mesh_count = handles.len();
-    state.manifest.mesh_integrity_issue_count = issue_count;
+    if let Some(mut state) = world.get_resource_mut::<CaptureState>() {
+        state.manifest.audited_closed_mesh_count = handles.len();
+        state.manifest.mesh_integrity_issue_count = issue_count;
+    }
 }
 
 fn create_palette(world: &mut World) -> RenderPalette {
@@ -15797,6 +15819,50 @@ mod tests {
             *world.get::<Visibility>(late_upper_floor).unwrap(),
             Visibility::Hidden
         );
+    }
+
+    #[test]
+    fn ground_level_hides_every_upper_mesh_in_the_real_fachwerk_editor_scene() {
+        let document = BuildingDocument::fixture(BuildingArchetype::FachwerkMerchantHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.init_resource::<Assets<StandardMaterial>>();
+        setup(
+            &mut world,
+            &plan,
+            ViewerView::Exterior,
+            ProjectedProofKind::Machicolation,
+            None,
+            SceneSetup::EditorBuilding,
+        );
+        configure_editor_scene(&mut world, &plan, false);
+        world.insert_resource(EditorRuntime::new(
+            document,
+            plan,
+            PathBuf::from("test-building-document.json"),
+            None,
+            None,
+        ));
+        world.run_system_once(update_editor_visibility).unwrap();
+
+        let mut query = world.query::<(&EditorVisibilityTarget, &Visibility, &Name)>();
+        let upper = query
+            .iter(&world)
+            .filter(|(target, _, _)| target.storey > 0)
+            .collect::<Vec<_>>();
+        assert!(
+            !upper.is_empty(),
+            "the fixture should include visible upper-level editor geometry"
+        );
+        for (_, visibility, name) in upper {
+            assert_eq!(
+                *visibility,
+                Visibility::Hidden,
+                "upper mesh {} remained visible with Ground selected",
+                name
+            );
+        }
     }
 
     #[test]
