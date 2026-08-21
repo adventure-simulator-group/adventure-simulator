@@ -35,6 +35,15 @@ roofs, towers, stairs, and battlements are derived structures. Circular towers
 therefore do not have to pretend that their circumference is a staircase of
 square cells.
 
+Multi-storey programs declare their required vertical connections explicitly.
+Before allocating ordinary rooms, the civilian solver reserves one shared
+stair-and-landing core on every served storey. Walls and doors are derived
+around that reservation, so a generated straight stair must arrive inside a
+connected stair hall with a 0.90-metre clear landing and a real doorway into
+the storey's room graph. The freeform grid remains permissive: a player-build
+document can represent a blocked stair, but `generate` rejects the same result
+from a procedural program.
+
 Ten curated programs exercise the current vocabulary:
 
 - `town-house`: narrow, two-storey timber-frame house with a steep street gable;

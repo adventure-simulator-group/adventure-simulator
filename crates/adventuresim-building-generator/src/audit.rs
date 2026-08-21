@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     BattlementKind, BuildingArchetype, BuildingPlan, CROWN_DRAIN_CHANNEL_WIDTH_METRES,
     CrownJunctionKind, CrownPath, DefensiveCircuit, DefensiveJunction, DefensiveJunctionKind,
-    Direction, GateClosureKind, ProjectedDefenseDeployment, ProjectedDefenseKind,
+    Direction, GateClosureKind, OpeningKind, ProjectedDefenseDeployment, ProjectedDefenseKind,
     ProjectedDefenseMaterial, ProjectedDefensePath, ProjectedDefensePhase, ProjectedDefenseTarget,
-    ResolvedItemId, ResolvedSolid, RoofEdgeKind, RoofPiece, SolidRole, Stair, StructuralNodeId,
-    SurfaceRole, TowerPortalKind, VoidRole, WALL_THICKNESS_METRES, WallWalk,
+    ResolvedItemId, ResolvedSolid, RoofEdgeKind, RoofPiece, RoomKind, SolidRole, Stair,
+    StructuralNodeId, SurfaceRole, TowerPortalKind, VoidRole, WALL_THICKNESS_METRES, WallWalk,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -107,6 +107,7 @@ pub fn audit_plan(plan: &BuildingPlan) -> Vec<AuditIssue> {
     audit_roof_assemblies(plan, &mut issues);
     audit_church_assembly(plan, &mut issues);
     audit_timber_frame(plan, &mut issues);
+    audit_vertical_circulation(plan, &mut issues);
     audit_artillery_castle(plan, &mut issues);
 
     if matches!(
@@ -168,6 +169,79 @@ pub fn audit_plan(plan: &BuildingPlan) -> Vec<AuditIssue> {
     audit_fortified_profile(plan, &mut issues);
     audit_gatehouse_assemblies(plan, &mut issues);
     issues
+}
+
+fn audit_vertical_circulation(plan: &BuildingPlan, issues: &mut Vec<AuditIssue>) {
+    for (index, stair) in plan.stairs.iter().copied().enumerate() {
+        let Stair::Straight {
+            start,
+            direction,
+            base_height_metres,
+            rise_metres,
+            run_metres,
+            ..
+        } = stair
+        else {
+            continue;
+        };
+        let axis = direction_vector(direction);
+        let lateral = Vec2::new(-axis.y, axis.x);
+        let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+        let landing = start + axis * run;
+        let arrival_height = base_height_metres + rise_metres;
+        let level = (arrival_height / plan.storey_height_metres).round() as u16;
+        let Some(storey) = plan.storeys.iter().find(|storey| storey.level == level) else {
+            issues.push(issue(
+                "invalid_vertical_circulation",
+                format!("straight stair {index} reaches missing storey {level}"),
+            ));
+            continue;
+        };
+        let Some(stair_hall) = storey.rooms.iter().find(|room| {
+            room.kind == RoomKind::StairHall
+                && room.cells.iter().any(|cell| {
+                    let min = cell.centre() - Vec2::splat(crate::CELL_SIZE_METRES * 0.5);
+                    let max = cell.centre() + Vec2::splat(crate::CELL_SIZE_METRES * 0.5);
+                    landing.cmpge(min).all() && landing.cmple(max).all()
+                })
+        }) else {
+            issues.push(issue(
+                "invalid_vertical_circulation",
+                format!(
+                    "straight stair {index} does not arrive inside a stair hall on storey {level}"
+                ),
+            ));
+            continue;
+        };
+        let landing_envelope_is_inside = [-0.45_f32, 0.0, 0.45].into_iter().all(|across| {
+            [-0.45_f32, 0.0, 0.45].into_iter().all(|along| {
+                let sample = landing + lateral * across + axis * along;
+                stair_hall.cells.iter().any(|cell| {
+                    let min = cell.centre() - Vec2::splat(crate::CELL_SIZE_METRES * 0.5 + 0.001);
+                    let max = cell.centre() + Vec2::splat(crate::CELL_SIZE_METRES * 0.5 + 0.001);
+                    sample.cmpge(min).all() && sample.cmple(max).all()
+                })
+            })
+        });
+        let has_room_door = storey.openings.iter().any(|opening| {
+            if opening.kind != OpeningKind::Door {
+                return false;
+            }
+            let Some(wall) = storey.walls.get(opening.wall).copied() else {
+                return false;
+            };
+            wall.outside_room.is_some()
+                && (wall.inside_room == stair_hall.id || wall.outside_room == Some(stair_hall.id))
+        });
+        if !landing_envelope_is_inside || !has_room_door {
+            issues.push(issue(
+                "invalid_vertical_circulation",
+                format!(
+                    "straight stair {index} lacks a 0.90 m clear landing and room-graph doorway on storey {level}"
+                ),
+            ));
+        }
+    }
 }
 
 fn audit_artillery_castle(plan: &BuildingPlan, issues: &mut Vec<AuditIssue>) {
@@ -4664,7 +4738,8 @@ fn audit_roof_assemblies(plan: &BuildingPlan, issues: &mut Vec<AuditIssue>) {
                                         base_height_metres,
                                         rise_metres,
                                         width_metres,
-                                        tread_count,
+                                        tread_count: _,
+                                        run_metres,
                                     } => {
                                         if spout_top < base_height_metres - 0.08
                                             || spout_bottom
@@ -4678,7 +4753,9 @@ fn audit_roof_assemblies(plan: &BuildingPlan, issues: &mut Vec<AuditIssue>) {
                                             crate::Direction::East => Vec2::X,
                                             crate::Direction::West => -Vec2::X,
                                         };
-                                        let end = start + axis * tread_count as f32 * 0.28;
+                                        let run_metres =
+                                            if run_metres > 0.0 { run_metres } else { 3.8 };
+                                        let end = start + axis * run_metres;
                                         let delta = end - start;
                                         let t = ((spout_plan - start).dot(delta)
                                             / delta.length_squared().max(0.000_001))
@@ -14201,6 +14278,7 @@ mod tests {
             rise_metres: pipe.centre.y + pipe.size.y,
             width_metres: 1.0,
             tread_count: 12,
+            run_metres: 3.8,
         });
         assert!(has(&spout_through_stair, "invalid_roof_drainage_network"));
 
@@ -14320,6 +14398,7 @@ mod tests {
             rise_metres: 1.2,
             width_metres: 1.0,
             tread_count: 8,
+            run_metres: 3.8,
         });
         assert!(has(&splash_on_stair, "invalid_roof_drainage_network"));
 

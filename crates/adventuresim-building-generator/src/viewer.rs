@@ -2128,6 +2128,30 @@ struct EditorEnvironmentEntity;
 #[derive(Component)]
 struct PlayerBuildEntity;
 
+/// World-space bounds of a detached floor piece. This makes the semantic
+/// player-build renderer inspectable by circulation tests and automation
+/// without reading back GPU mesh buffers.
+#[derive(Clone, Copy, Component)]
+#[allow(dead_code)]
+struct PlayerBuildFloorPrism {
+    min: Vec3,
+    max: Vec3,
+}
+
+/// Marks the long local axis of an inspectable detached stair stringer.
+#[derive(Component)]
+struct PlayerBuildStairStringer;
+
+/// Conservative world-space bounds for a player-build box primitive. These
+/// are intentionally ECS data so route tests and external inspection tools
+/// can validate the scene without GPU readback or screenshots.
+#[derive(Clone, Copy, Component)]
+#[allow(dead_code)]
+struct PlayerBuildRenderPrism {
+    min: Vec3,
+    max: Vec3,
+}
+
 /// Scoped while the shared wall renderer is producing a detached/freeform
 /// assembly. Keeping this at the primitive spawn boundary means every host
 /// wall and fachwerk beam receives exactly the same visibility control.
@@ -3997,20 +4021,14 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
             storey: usize::from(storey.level),
             role: EditorVisibilityRole::Floor,
         });
+        let stair_cuts = player_stair_floor_cuts(
+            &document.assembly.stairs,
+            base_y,
+            document.assembly.storey_height_metres,
+        );
         for room in &storey.rooms {
             for cell in &room.cells {
-                spawn_box(
-                    world,
-                    &palette.floor,
-                    Vec3::new(CELL_SIZE_METRES - 0.04, 0.12, CELL_SIZE_METRES - 0.04),
-                    Vec3::new(
-                        cell.centre().x + origin.x,
-                        base_y + 0.06,
-                        cell.centre().y + origin.y,
-                    ),
-                    Quat::IDENTITY,
-                    "player build floor tile",
-                );
+                spawn_player_floor_tile(world, &palette, *cell, base_y, origin, &stair_cuts);
             }
         }
         world.insert_resource(PlayerBuildSpawnContext {
@@ -4084,6 +4102,114 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
         );
     }
     world.remove_resource::<PlayerBuildSpawnContext>();
+}
+
+/// The floor aperture at the head of a straight flight. This matches the
+/// resolver's stair-floor cut instead of leaving a whole grid tile across the
+/// last tread after a generated building is detached.
+fn player_stair_floor_cuts(
+    stairs: &[Stair],
+    floor_y: f32,
+    storey_height: f32,
+) -> Vec<(Vec2, Vec2)> {
+    stairs
+        .iter()
+        .filter_map(|stair| match *stair {
+            Stair::Straight {
+                start,
+                direction,
+                base_height_metres,
+                rise_metres,
+                width_metres,
+                run_metres,
+                ..
+            } if (base_height_metres + rise_metres - floor_y).abs() < storey_height * 0.08 => {
+                let axis = direction_vector_2d(direction);
+                let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+                let end = start + axis * run;
+                // A floor opening must begin where the ascending occupant's
+                // 1.90 m clearance prism first reaches this floor, not only
+                // at the final tread. Include a small envelope beyond both
+                // ends of that prism for the approach and landing.
+                let lateral = Vec2::new(-axis.y, axis.x) * (width_metres.max(0.90) * 0.5);
+                let clearance_start =
+                    ((rise_metres - 1.90) / rise_metres.max(0.001) * run - 0.30).clamp(0.0, run);
+                let inner = start + axis * clearance_start;
+                let outer = end + axis * 0.30;
+                Some((
+                    (inner - lateral)
+                        .min(inner + lateral)
+                        .min(outer - lateral)
+                        .min(outer + lateral),
+                    (inner - lateral)
+                        .max(inner + lateral)
+                        .max(outer - lateral)
+                        .max(outer + lateral),
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn spawn_player_floor_tile(
+    world: &mut World,
+    palette: &RenderPalette,
+    cell: Cell,
+    base_y: f32,
+    origin: Vec2,
+    cuts: &[(Vec2, Vec2)],
+) {
+    let half = (CELL_SIZE_METRES - 0.04) * 0.5;
+    let centre = cell.centre();
+    let tile_min = centre - Vec2::splat(half);
+    let tile_max = centre + Vec2::splat(half);
+    let mut rectangles = vec![(tile_min, tile_max)];
+    for (cut_min, cut_max) in cuts {
+        let mut remaining = Vec::new();
+        for (min, max) in rectangles {
+            let overlap_min = min.max(*cut_min);
+            let overlap_max = max.min(*cut_max);
+            if overlap_min.x >= overlap_max.x || overlap_min.y >= overlap_max.y {
+                remaining.push((min, max));
+                continue;
+            }
+            // Subtract an axis-aligned stair opening while keeping the four
+            // surrounding floor pieces separately selectable/renderable.
+            remaining.extend([
+                (min, Vec2::new(max.x, overlap_min.y)),
+                (Vec2::new(min.x, overlap_max.y), max),
+                (
+                    Vec2::new(min.x, overlap_min.y),
+                    Vec2::new(overlap_min.x, overlap_max.y),
+                ),
+                (
+                    Vec2::new(overlap_max.x, overlap_min.y),
+                    Vec2::new(max.x, overlap_max.y),
+                ),
+            ]);
+        }
+        rectangles = remaining;
+    }
+    for (min, max) in rectangles {
+        let size = max - min;
+        if size.min_element() <= 0.01 {
+            continue;
+        }
+        let centre = (min + max) * 0.5 + origin;
+        let entity = spawn_box(
+            world,
+            &palette.floor,
+            Vec3::new(size.x, 0.12, size.y),
+            Vec3::new(centre.x, base_y + 0.06, centre.y),
+            Quat::IDENTITY,
+            "player build floor tile",
+        );
+        world.entity_mut(entity).insert(PlayerBuildFloorPrism {
+            min: Vec3::new(min.x + origin.x, base_y, min.y + origin.y),
+            max: Vec3::new(max.x + origin.x, base_y + 0.12, max.y + origin.y),
+        });
+    }
 }
 
 fn freeform_wall_faces(
@@ -8444,6 +8570,12 @@ fn setup(
         spawn_square_tower(world, &palette, tower, origin, view);
     }
     for stair in plan.stairs.iter().copied() {
+        // The programme renderer already draws the timber resolver's flight
+        // from resolved geometry. The semantic recipe remains for detached
+        // editing, but rendering it here would duplicate that same stair.
+        if plan.timber_frame.is_some() {
+            continue;
+        }
         if timber_isolated_view(view) {
             continue;
         }
@@ -10050,19 +10182,21 @@ fn spawn_wall(
             InteriorWallFinish::Plastered | InteriorWallFinish::ExposedFrame => &palette.plaster,
             InteriorWallFinish::Boarded => &palette.timber,
         };
-        let size = if horizontal {
-            Vec3::new(CELL_SIZE_METRES, storey_height, 0.09)
-        } else {
-            Vec3::new(0.09, storey_height, CELL_SIZE_METRES)
-        };
-        spawn_box(
+        spawn_wall_body(
             world,
             material,
-            size,
-            Vec3::new(centre.x, base_y + storey_height * 0.5, centre.y),
-            Quat::IDENTITY,
-            "thin plastered internal wall",
+            horizontal,
+            centre,
+            base_y,
+            storey_height,
+            0.09,
+            opening,
         );
+        if let Some(opening) = opening {
+            spawn_opening_depth(
+                world, palette, wall, *opening, horizontal, centre, outward, base_y,
+            );
+        }
         if interior_finish == InteriorWallFinish::ExposedFrame {
             spawn_timber_frame(
                 world,
@@ -10084,70 +10218,19 @@ fn spawn_wall(
         WallStyle::Brick => &palette.brick,
         WallStyle::Stone => &palette.stone,
     };
+    spawn_wall_body(
+        world,
+        material,
+        horizontal,
+        centre,
+        base_y,
+        storey_height,
+        WALL_THICKNESS_METRES,
+        opening,
+    );
     if let Some(opening) = opening {
-        let side_width = (CELL_SIZE_METRES - opening.width_metres) * 0.5;
-        for sign in [-1.0, 1.0] {
-            let offset = sign * (opening.width_metres + side_width) * 0.5;
-            if horizontal {
-                centre.x += offset;
-            } else {
-                centre.y += offset;
-            }
-            spawn_wall_box(
-                world,
-                material,
-                horizontal,
-                side_width,
-                storey_height,
-                centre,
-                base_y,
-                "wall pier",
-            );
-            if horizontal {
-                centre.x -= offset;
-            } else {
-                centre.y -= offset;
-            }
-        }
-        if opening.sill_metres > 0.0 {
-            spawn_wall_box_at_height(
-                world,
-                material,
-                horizontal,
-                opening.width_metres,
-                opening.sill_metres,
-                centre,
-                base_y + opening.sill_metres * 0.5,
-                "wall below opening",
-            );
-        }
-        let header_base = opening.sill_metres + opening.height_metres;
-        if header_base < storey_height {
-            let header_height = storey_height - header_base;
-            spawn_wall_box_at_height(
-                world,
-                material,
-                horizontal,
-                opening.width_metres,
-                header_height,
-                centre,
-                base_y + header_base + header_height * 0.5,
-                "wall header",
-            );
-        }
         spawn_opening_depth(
             world, palette, wall, *opening, horizontal, centre, outward, base_y,
-        );
-    } else {
-        spawn_wall_box(
-            world,
-            material,
-            horizontal,
-            CELL_SIZE_METRES,
-            storey_height,
-            centre,
-            base_y,
-            "wall",
         );
     }
 
@@ -10219,7 +10302,7 @@ fn spawn_opening_depth(
         OpeningKind::ArrowSlit => &palette.void,
         OpeningKind::Door | OpeningKind::Gate => &palette.door,
     };
-    spawn_box(
+    let plane = spawn_box(
         world,
         material,
         plane_size,
@@ -10236,6 +10319,14 @@ fn spawn_opening_depth(
             OpeningKind::Gate => "recessed gate leaf",
         },
     );
+    if matches!(opening.kind, OpeningKind::Door | OpeningKind::Gate) {
+        // The leaf is an operable visual state, not permanent wall material.
+        // Circulation and editor inspection therefore see the clear doorway.
+        world
+            .entity_mut(plane)
+            .remove::<PlayerBuildRenderPrism>()
+            .insert(NonCollidingVisualization);
+    }
 
     if opening.kind == OpeningKind::Window && wall.exterior() {
         let face = centre + outward * (WALL_THICKNESS_METRES * 0.56);
@@ -10521,22 +10612,100 @@ fn spawn_timber_beam(
     );
 }
 
-fn spawn_wall_box(
+#[allow(clippy::too_many_arguments)]
+fn spawn_wall_body(
+    world: &mut World,
+    material: &Handle<StandardMaterial>,
+    horizontal: bool,
+    centre: Vec2,
+    base_y: f32,
+    storey_height: f32,
+    depth: f32,
+    opening: Option<&Opening>,
+) {
+    let Some(opening) = opening else {
+        spawn_wall_box_with_depth(
+            world,
+            material,
+            horizontal,
+            CELL_SIZE_METRES,
+            storey_height,
+            depth,
+            centre,
+            base_y,
+            "wall",
+        );
+        return;
+    };
+    let side_width = (CELL_SIZE_METRES - opening.width_metres) * 0.5;
+    for sign in [-1.0, 1.0] {
+        let offset = sign * (opening.width_metres + side_width) * 0.5;
+        let pier_centre = if horizontal {
+            centre + Vec2::X * offset
+        } else {
+            centre + Vec2::Y * offset
+        };
+        spawn_wall_box_with_depth(
+            world,
+            material,
+            horizontal,
+            side_width,
+            storey_height,
+            depth,
+            pier_centre,
+            base_y,
+            "wall pier",
+        );
+    }
+    if opening.sill_metres > 0.0 {
+        spawn_wall_box_at_height_with_depth(
+            world,
+            material,
+            horizontal,
+            opening.width_metres,
+            opening.sill_metres,
+            depth,
+            centre,
+            base_y + opening.sill_metres * 0.5,
+            "wall below opening",
+        );
+    }
+    let header_base = opening.sill_metres + opening.height_metres;
+    if header_base < storey_height {
+        let header_height = storey_height - header_base;
+        spawn_wall_box_at_height_with_depth(
+            world,
+            material,
+            horizontal,
+            opening.width_metres,
+            header_height,
+            depth,
+            centre,
+            base_y + header_base + header_height * 0.5,
+            "wall header",
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_wall_box_with_depth(
     world: &mut World,
     material: &Handle<StandardMaterial>,
     horizontal: bool,
     length: f32,
     height: f32,
+    depth: f32,
     centre: Vec2,
     base_y: f32,
     name: &'static str,
 ) {
-    spawn_wall_box_at_height(
+    spawn_wall_box_at_height_with_depth(
         world,
         material,
         horizontal,
         length,
         height,
+        depth,
         centre,
         base_y + height * 0.5,
         name,
@@ -10553,10 +10722,35 @@ fn spawn_wall_box_at_height(
     y: f32,
     name: &'static str,
 ) {
+    spawn_wall_box_at_height_with_depth(
+        world,
+        material,
+        horizontal,
+        length,
+        height,
+        WALL_THICKNESS_METRES,
+        centre,
+        y,
+        name,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_wall_box_at_height_with_depth(
+    world: &mut World,
+    material: &Handle<StandardMaterial>,
+    horizontal: bool,
+    length: f32,
+    height: f32,
+    depth: f32,
+    centre: Vec2,
+    y: f32,
+    name: &'static str,
+) {
     let size = if horizontal {
-        Vec3::new(length.max(0.02), height.max(0.02), WALL_THICKNESS_METRES)
+        Vec3::new(length.max(0.02), height.max(0.02), depth)
     } else {
-        Vec3::new(WALL_THICKNESS_METRES, height.max(0.02), length.max(0.02))
+        Vec3::new(depth, height.max(0.02), length.max(0.02))
     };
     spawn_box(
         world,
@@ -10878,14 +11072,16 @@ fn spawn_roof(
             tag_player_build_entity(world, entity, &palette.roof_secondary);
         }
         RoofKind::Shed => spawn_shed_roof(world, &palette.roof, roof),
-        RoofKind::Flat => spawn_box(
-            world,
-            &palette.roof_secondary,
-            Vec3::new(roof.size.x, 0.18, roof.size.y),
-            Vec3::new(roof.centre.x, roof.base_height_metres + 0.09, roof.centre.y),
-            Quat::IDENTITY,
-            "flat roof",
-        ),
+        RoofKind::Flat => {
+            spawn_box(
+                world,
+                &palette.roof_secondary,
+                Vec3::new(roof.size.x, 0.18, roof.size.y),
+                Vec3::new(roof.centre.x, roof.base_height_metres + 0.09, roof.centre.y),
+                Quat::IDENTITY,
+                "flat roof",
+            );
+        }
         RoofKind::Conical => spawn_conical_roof(world, &palette.roof_secondary, roof),
     }
 }
@@ -13154,29 +13350,52 @@ fn spawn_stair(world: &mut World, palette: &RenderPalette, stair: Stair, origin:
             rise_metres,
             width_metres,
             tread_count,
+            run_metres,
         } => {
-            let forward = match direction {
-                Direction::North => Vec2::Y,
-                Direction::East => Vec2::X,
-                Direction::South => -Vec2::Y,
-                Direction::West => -Vec2::X,
-            };
-            for tread in 0..tread_count {
-                let progress = tread as f32 / tread_count.max(1) as f32;
-                let position = start + origin + forward * progress * 3.8;
+            let forward = direction_vector_2d(direction);
+            let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+            let count = tread_count.max(1);
+            let going = run / f32::from(count);
+            let yaw = -forward.y.atan2(forward.x);
+            let tread_yaw = forward.x.atan2(forward.y);
+            let slope = rise_metres.atan2(run);
+            let stringer_rotation = Quat::from_rotation_y(yaw) * Quat::from_rotation_z(slope);
+            let lateral = Vec2::new(-forward.y, forward.x);
+            // Match the resolved timber flight: two sloping stringers and
+            // treads one rise above the lower floor, with the upper floor
+            // itself acting as the final landing.
+            for side in [-1.0_f32, 1.0] {
+                let position = start
+                    + origin
+                    + forward * (run * 0.5)
+                    + lateral * side * (width_metres * 0.5 - 0.0675);
+                let entity = spawn_box(
+                    world,
+                    &palette.timber,
+                    Vec3::new(run.hypot(rise_metres), 0.135, 0.135),
+                    Vec3::new(
+                        position.x,
+                        base_height_metres + rise_metres * 0.5 - 0.03,
+                        position.y,
+                    ),
+                    stringer_rotation,
+                    "straight stair stringer",
+                );
+                world.entity_mut(entity).insert(PlayerBuildStairStringer);
+            }
+            for tread in 1..count {
+                let progress = f32::from(tread) / f32::from(count);
+                let position = start + origin + forward * (progress * run);
                 spawn_box(
                     world,
                     &palette.stair,
-                    Vec3::new(width_metres, 0.14, 0.28),
+                    Vec3::new(width_metres, 0.05, going * 0.96),
                     Vec3::new(
                         position.x,
-                        base_height_metres + progress * rise_metres,
+                        base_height_metres + progress * rise_metres - 0.025,
                         position.y,
                     ),
-                    Quat::from_rotation_y(match direction {
-                        Direction::North | Direction::South => 0.0,
-                        Direction::East | Direction::West => std::f32::consts::FRAC_PI_2,
-                    }),
+                    Quat::from_rotation_y(tread_yaw),
                     "straight stair tread",
                 );
             }
@@ -15017,7 +15236,7 @@ fn spawn_box(
     translation: Vec3,
     rotation: Quat,
     name: &'static str,
-) {
+) -> Entity {
     let mesh = world
         .resource_mut::<Assets<Mesh>>()
         .add(Cuboid::new(size.x, size.y, size.z));
@@ -15035,6 +15254,20 @@ fn spawn_box(
         ))
         .id();
     tag_player_build_entity(world, entity, material);
+    if world.get_resource::<PlayerBuildSpawnContext>().is_some() {
+        let half = size * 0.5;
+        let axes = [rotation * Vec3::X, rotation * Vec3::Y, rotation * Vec3::Z];
+        let extent = Vec3::new(
+            half.x * axes[0].x.abs() + half.y * axes[1].x.abs() + half.z * axes[2].x.abs(),
+            half.x * axes[0].y.abs() + half.y * axes[1].y.abs() + half.z * axes[2].y.abs(),
+            half.x * axes[0].z.abs() + half.y * axes[1].z.abs() + half.z * axes[2].z.abs(),
+        );
+        world.entity_mut(entity).insert(PlayerBuildRenderPrism {
+            min: translation - extent,
+            max: translation + extent,
+        });
+    }
+    entity
 }
 
 fn tag_player_build_entity(world: &mut World, entity: Entity, material: &Handle<StandardMaterial>) {
@@ -16496,6 +16729,270 @@ mod tests {
                 name
             );
         }
+    }
+
+    #[test]
+    fn timber_programme_and_detached_build_share_one_stair_authority() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let Stair::Straight {
+            start,
+            direction,
+            run_metres,
+            ..
+        } = plan.stairs[0]
+        else {
+            panic!("town-house fixture must retain a straight editable stair");
+        };
+        let axis = match direction {
+            Direction::North => Vec2::Y,
+            Direction::East => Vec2::X,
+            Direction::South => -Vec2::Y,
+            Direction::West => -Vec2::X,
+        };
+        let timber = plan.timber_frame.as_ref().expect("town-house timber frame");
+        let first_tread = timber.circulation.stair_solids[0];
+        let first_tread = plan
+            .resolved_geometry
+            .solids
+            .iter()
+            .find(|solid| solid.id == first_tread)
+            .expect("resolved first timber stair tread");
+        assert!(
+            (Vec2::new(first_tread.centre.x, first_tread.centre.z)
+                - (start + axis * (run_metres / 18.0)))
+                .length()
+                < 0.02,
+            "editable stair must start at the resolver-selected clear flight"
+        );
+
+        let mut programme_world = World::new();
+        programme_world.init_resource::<Assets<Mesh>>();
+        programme_world.init_resource::<Assets<StandardMaterial>>();
+        setup(
+            &mut programme_world,
+            &plan,
+            ViewerView::Exterior,
+            ProjectedProofKind::Machicolation,
+            None,
+            SceneSetup::EditorBuilding,
+        );
+        let mut programme_names = programme_world.query::<&Name>();
+        assert!(
+            programme_names
+                .iter(&programme_world)
+                .all(|name| name.as_str() != "straight stair tread"),
+            "programme must not render a second generic stair over its resolved timber flight"
+        );
+
+        let mut detached_world = World::new();
+        detached_world.init_resource::<Assets<Mesh>>();
+        detached_world.init_resource::<Assets<StandardMaterial>>();
+        setup_player_build_scene(&mut detached_world, &PlayerBuildDocument::from_plan(&plan));
+        let expected_uncut_upper_tiles = plan.storeys[1]
+            .rooms
+            .iter()
+            .map(|room| room.cells.len())
+            .sum::<usize>();
+        let mut detached_floor_tiles = detached_world.query::<(&Name, &EditorVisibilityTarget)>();
+        assert!(
+            detached_floor_tiles
+                .iter(&detached_world)
+                .filter(|(name, target)| {
+                    name.as_str() == "player build floor tile" && target.storey == 1
+                })
+                .count()
+                > expected_uncut_upper_tiles,
+            "the upper floor tile at the stair arrival must be split around an opening"
+        );
+        let mut detached_names = detached_world.query::<&Name>();
+        assert!(
+            detached_names
+                .iter(&detached_world)
+                .any(|name| name.as_str() == "straight stair tread"),
+            "detached build must render the shared editable stair recipe"
+        );
+    }
+
+    #[test]
+    fn detached_stair_has_a_full_height_clear_arrival_opening() {
+        let plan = generate_document(&BuildingDocument::fixture(BuildingArchetype::TownHouse, 42))
+            .unwrap();
+        let document = PlayerBuildDocument::from_plan(&plan);
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.init_resource::<Assets<StandardMaterial>>();
+        setup_player_build_scene(&mut world, &document);
+
+        let (width, depth) = document.assembly.footprint.dimensions();
+        let origin = Vec2::new(
+            -f32::from(width) * CELL_SIZE_METRES * 0.5,
+            -f32::from(depth) * CELL_SIZE_METRES * 0.5,
+        );
+        let floors = world
+            .query::<&PlayerBuildFloorPrism>()
+            .iter(&world)
+            .copied()
+            .collect::<Vec<_>>();
+        let mut blockers = Vec::new();
+        for stair in document.assembly.stairs {
+            let Stair::Straight {
+                start,
+                direction,
+                base_height_metres,
+                rise_metres,
+                width_metres: _,
+                tread_count,
+                run_metres,
+            } = stair
+            else {
+                continue;
+            };
+            let axis = direction_vector_2d(direction);
+            let lateral = Vec2::new(-axis.y, axis.x);
+            let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+            for tread in 1..tread_count {
+                let progress = f32::from(tread) / f32::from(tread_count);
+                let centre = start + origin + axis * (progress * run);
+                let foot_y = base_height_metres + progress * rise_metres;
+                // The same 0.90 m route width / 1.90 m clearance contract as
+                // timber circulation, evaluated against detached ECS floors.
+                let body_min = Vec3::new(
+                    centre.x - lateral.x.abs() * 0.45 - axis.x.abs() * 0.30,
+                    foot_y,
+                    centre.y - lateral.y.abs() * 0.45 - axis.y.abs() * 0.30,
+                );
+                let body_max = Vec3::new(
+                    centre.x + lateral.x.abs() * 0.45 + axis.x.abs() * 0.30,
+                    foot_y + 1.90,
+                    centre.y + lateral.y.abs() * 0.45 + axis.y.abs() * 0.30,
+                );
+                if let Some(floor) = floors.iter().find(|floor| {
+                    body_min.x < floor.max.x
+                        && body_max.x > floor.min.x
+                        && body_min.y < floor.max.y
+                        && body_max.y > floor.min.y
+                        && body_min.z < floor.max.z
+                        && body_max.z > floor.min.z
+                }) {
+                    blockers.push((tread, body_min, body_max, floor.min, floor.max));
+                }
+            }
+        }
+        assert!(
+            blockers.is_empty(),
+            "detached stair occupant volume intersects floor material: {blockers:?}"
+        );
+        let mut stringers = world.query_filtered::<&Transform, With<PlayerBuildStairStringer>>();
+        let stringer_axes = stringers
+            .iter(&world)
+            .map(|transform| transform.rotation * Vec3::X)
+            .collect::<Vec<_>>();
+        assert!(!stringer_axes.is_empty(), "detached stair has stringers");
+        assert!(
+            stringer_axes.iter().all(|axis| axis.y > 0.0),
+            "detached stair stringers must rise in the declared ascent direction: {stringer_axes:?}"
+        );
+    }
+
+    #[test]
+    fn detached_stair_landings_reach_real_room_doorways() {
+        let plan = generate_document(&BuildingDocument::fixture(BuildingArchetype::TownHouse, 42))
+            .unwrap();
+        let document = PlayerBuildDocument::from_plan(&plan);
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.init_resource::<Assets<StandardMaterial>>();
+        setup_player_build_scene(&mut world, &document);
+
+        let (width, depth) = document.assembly.footprint.dimensions();
+        let origin = Vec2::new(
+            -f32::from(width) * CELL_SIZE_METRES * 0.5,
+            -f32::from(depth) * CELL_SIZE_METRES * 0.5,
+        );
+        let mut wall_query = world.query::<(&PlayerBuildRenderPrism, &EditorVisibilityTarget)>();
+        let upper_walls = wall_query
+            .iter(&world)
+            .filter_map(|(prism, target)| {
+                (target.storey == 1 && target.role == EditorVisibilityRole::Wall).then_some(*prism)
+            })
+            .collect::<Vec<_>>();
+        let upper_storey = document
+            .assembly
+            .storeys
+            .iter()
+            .find(|storey| storey.level == 1)
+            .expect("town-house fixture has an upper storey");
+        let doorways = upper_storey
+            .openings
+            .iter()
+            .filter(|opening| opening.kind == OpeningKind::Door)
+            .map(|opening| upper_storey.walls[opening.wall].centre() + origin)
+            .collect::<Vec<_>>();
+        assert!(!doorways.is_empty(), "upper storey has room doorways");
+        let Stair::Straight {
+            start,
+            direction,
+            run_metres,
+            ..
+        } = document.assembly.stairs[0]
+        else {
+            panic!("town-house fixture has a straight stair");
+        };
+        let axis = direction_vector_2d(direction);
+        let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+        let landing = start + origin + axis * run;
+        let cell_size = 0.10;
+        let min = origin + Vec2::splat(0.05);
+        let max = origin
+            + Vec2::new(
+                f32::from(width) * CELL_SIZE_METRES - 0.05,
+                f32::from(depth) * CELL_SIZE_METRES - 0.05,
+            );
+        let index = |point: Vec2| {
+            let local = ((point - min) / cell_size).round().as_ivec2();
+            (local.x, local.y)
+        };
+        let point = |index: (i32, i32)| {
+            min + Vec2::new(index.0 as f32 * cell_size, index.1 as f32 * cell_size)
+        };
+        let walkable = |position: Vec2| {
+            position.cmpge(min).all()
+                && position.cmple(max).all()
+                && upper_walls.iter().all(|wall| {
+                    let foot_min = Vec3::new(position.x - 0.45, 3.01, position.y - 0.15);
+                    let foot_max = Vec3::new(position.x + 0.45, 4.91, position.y + 0.15);
+                    foot_max.x <= wall.min.x
+                        || foot_min.x >= wall.max.x
+                        || foot_max.y <= wall.min.y
+                        || foot_min.y >= wall.max.y
+                        || foot_max.z <= wall.min.z
+                        || foot_min.z >= wall.max.z
+                })
+        };
+        let start = index(landing);
+        assert!(
+            walkable(point(start)),
+            "upper stair landing is inside a wall"
+        );
+        let mut seen = std::collections::HashSet::from([start]);
+        let mut queue = std::collections::VecDeque::from([start]);
+        while let Some(current) = queue.pop_front() {
+            for offset in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let next = (current.0 + offset.0, current.1 + offset.1);
+                if seen.insert(next) && walkable(point(next)) {
+                    queue.push_back(next);
+                }
+            }
+        }
+        assert!(
+            doorways.iter().any(|doorway| {
+                seen.iter()
+                    .map(|cell| point(*cell))
+                    .any(|position| position.distance(*doorway) <= cell_size * 1.5)
+            }),
+            "no 0.90 m-wide, 1.90 m-high route reaches an upper room doorway from the stair landing"
+        );
     }
 
     #[test]

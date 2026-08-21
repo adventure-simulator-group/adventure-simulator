@@ -28,8 +28,26 @@ use crate::{
     RoofPhase, RoofPiece, RoofPivotPolicy, RoofPlaneEquation, Room, RoomKind, RoomRequirement,
     RoundTower, SolidRole, SquareTower, Stair, StoreyPlan, StructuralNode, StructuralNodeId,
     StructuralNodeKind, SupportInterface, SurfaceRole, TowerChordInterface, TowerPortal,
-    TowerPortalKind, TraversalEnvelope, VoidRole, WallWalk,
+    TowerPortalKind, TraversalEnvelope, VerticalConnectionRequirement, VoidRole, WallWalk,
 };
+
+const STRAIGHT_STAIR_RUN_METRES: f32 = 3.2;
+
+#[derive(Clone, Debug)]
+struct StraightStairCore {
+    lowest_storey: u16,
+    highest_storey: u16,
+    landing_room: RoomKind,
+    origin: Vec2,
+    direction: Direction,
+    reserved_cells: Vec<Cell>,
+}
+
+impl StraightStairCore {
+    fn serves(&self, level: u16) -> bool {
+        (self.lowest_storey..=self.highest_storey).contains(&level)
+    }
+}
 
 fn grid_point(position: Vec2) -> GridPoint {
     let x = (position.x / GRID_UNIT_METRES).round() as i32;
@@ -55,6 +73,8 @@ pub enum GenerationError {
     DisconnectedRoom { level: usize, room: u16 },
     #[error("storey {level} does not have enough shared boundaries to connect its rooms")]
     DisconnectedStorey { level: usize },
+    #[error("vertical circulation requirement {connection} cannot be satisfied: {reason}")]
+    UnsatisfiedVerticalCirculation { connection: usize, reason: String },
     #[error("generated building failed the structural contract with {issues_count} audit issue(s)")]
     StructuralContract {
         issues_count: usize,
@@ -209,7 +229,8 @@ fn generate_unchecked(
     let (width, depth) = program.footprint.dimensions();
     let mut storeys = Vec::with_capacity(program.storeys.len());
     let layout_seed = layout_seed(program);
-
+    // Preserve the public boundary's earliest programme-shape errors before
+    // validating requirements that refer to those storeys.
     for (level, storey_program) in program.storeys.iter().enumerate() {
         if storey_program.rooms.is_empty() {
             return Err(GenerationError::EmptyStorey { level });
@@ -221,7 +242,35 @@ fn generate_unchecked(
                 cells: footprint_cells.len(),
             });
         }
+    }
+    let straight_stair_core = resolve_straight_stair_core(program, &footprint_cells)?;
 
+    for (level, storey_program) in program.storeys.iter().enumerate() {
+        let mut reservations = BTreeMap::new();
+        if let Some(core) = straight_stair_core
+            .as_ref()
+            .filter(|core| core.serves(level as u16))
+        {
+            let Some(room_index) = storey_program
+                .rooms
+                .iter()
+                .position(|room| room.kind == core.landing_room)
+            else {
+                return Err(GenerationError::UnsatisfiedVerticalCirculation {
+                    connection: 0,
+                    reason: format!(
+                        "storey {level} has no {:?} to contain its stair core",
+                        core.landing_room
+                    ),
+                });
+            };
+            reservations.extend(
+                core.reserved_cells
+                    .iter()
+                    .copied()
+                    .map(|cell| (cell, room_index)),
+            );
+        }
         let assignments = allocate_rooms(
             &footprint_cells,
             width,
@@ -229,6 +278,7 @@ fn generate_unchecked(
             &storey_program.rooms,
             layout_seed.wrapping_add(level as u64 * 0x9e37_79b9),
             program.archetype,
+            &reservations,
         );
         let rooms = collect_rooms(&assignments, &storey_program.rooms);
         for room in &rooms {
@@ -271,7 +321,7 @@ fn generate_unchecked(
     let gatehouse_assemblies = derive_gatehouse_assemblies(program);
     let towers = derive_towers(program, &gatehouse_assemblies, &curtain_walls);
     let square_towers = derive_square_towers(program);
-    let mut stairs = derive_stairs(program, &storeys, &towers);
+    let mut stairs = derive_stairs(program, &storeys, &towers, straight_stair_core.as_ref());
     let battlements = derive_battlements(program);
     let wall_walks = derive_wall_walks(program, &battlements, &towers);
     let crowns = derive_crowns(program, &battlements, &towers);
@@ -392,7 +442,7 @@ fn generate_unchecked(
         &opening_assemblies,
         &roofs,
         &roof_dormers,
-        &stairs,
+        &mut stairs,
         &mut roof_assemblies,
         &mut resolved_geometry,
     );
@@ -1226,7 +1276,7 @@ fn resolve_timber_frame_assembly(
     openings: &[crate::OpeningAssembly],
     roofs: &[RoofPiece],
     dormers: &[RoofDormer],
-    stairs: &[Stair],
+    stairs: &mut Vec<Stair>,
     roof_assemblies: &mut [RoofAssembly],
     geometry: &mut ResolvedGeometry,
 ) -> Option<crate::TimberFrameAssembly> {
@@ -2436,6 +2486,7 @@ fn resolve_timber_frame_assembly(
                 start,
                 direction,
                 width_metres,
+                run_metres,
                 ..
             } => Some((
                 start,
@@ -2444,7 +2495,12 @@ fn resolve_timber_frame_assembly(
                 // metre occupant prism. `stair_width` is the structural cut;
                 // the route/void below remains the clear one-metre core.
                 width_metres.max(1.0) + 0.36,
-                3.20_f32.min(dimensions.max_element() - 1.0),
+                (if run_metres > 0.0 {
+                    run_metres
+                } else {
+                    STRAIGHT_STAIR_RUN_METRES
+                })
+                .min(dimensions.max_element() - 1.0),
             )),
             Stair::Spiral { .. } => None,
         })
@@ -2503,30 +2559,81 @@ fn resolve_timber_frame_assembly(
             .distance(preferred_stair_origin)
             .total_cmp(&right.0.distance(preferred_stair_origin))
     });
-    let (stair_origin, stair_axis) = stair_candidates
-        .into_iter()
-        .find(|(origin, axis)| {
-            let end = *origin + *axis * stair_run;
-            let lateral = Vec2::new(-axis.y, axis.x);
-            let side = lateral * stair_width * 0.5;
-            let min = (*origin - side)
-                .min(*origin + side)
-                .min(end - side)
-                .min(end + side);
-            let max = (*origin - side)
-                .max(*origin + side)
-                .max(end - side)
-                .max(end + side);
-            min.cmpge(Vec2::splat(0.20)).all()
-                && max.cmple(dimensions - Vec2::splat(0.20)).all()
-                && stair_wall_bounds.iter().all(|(wall_min, wall_max)| {
-                    max.x <= wall_min.x + 0.01
-                        || min.x >= wall_max.x - 0.01
-                        || max.y <= wall_min.y + 0.01
-                        || min.y >= wall_max.y - 0.01
-                })
-        })
-        .unwrap_or((preferred_stair_origin, preferred_stair_axis));
+    let candidate_is_clear = |origin: Vec2, axis: Vec2| {
+        let end = origin + axis * stair_run;
+        let lateral = Vec2::new(-axis.y, axis.x);
+        let side = lateral * stair_width * 0.5;
+        let min = (origin - side)
+            .min(origin + side)
+            .min(end - side)
+            .min(end + side);
+        let max = (origin - side)
+            .max(origin + side)
+            .max(end - side)
+            .max(end + side);
+        min.cmpge(Vec2::splat(0.20)).all()
+            && max.cmple(dimensions - Vec2::splat(0.20)).all()
+            && stair_wall_bounds.iter().all(|(wall_min, wall_max)| {
+                max.x <= wall_min.x + 0.01
+                    || min.x >= wall_max.x - 0.01
+                    || max.y <= wall_min.y + 0.01
+                    || min.y >= wall_max.y - 0.01
+            })
+    };
+    let programme_owns_stair = program.vertical_connections.iter().any(|connection| {
+        matches!(
+            connection,
+            VerticalConnectionRequirement::StraightStair { .. }
+        )
+    });
+    let (stair_origin, stair_axis) = if programme_owns_stair {
+        debug_assert!(candidate_is_clear(
+            preferred_stair_origin,
+            preferred_stair_axis
+        ));
+        (preferred_stair_origin, preferred_stair_axis)
+    } else {
+        stair_candidates
+            .into_iter()
+            .find(|(origin, axis)| candidate_is_clear(*origin, *axis))
+            .unwrap_or((preferred_stair_origin, preferred_stair_axis))
+    };
+    // The programme-to-grid solver owns the core. This assembly expands that
+    // authority into alternating physical flights without choosing a new site.
+    let mut straight_flight_index = 0_u16;
+    for stair in stairs
+        .iter_mut()
+        .filter(|stair| matches!(stair, Stair::Straight { .. }))
+    {
+        let ascending_forward = straight_flight_index.is_multiple_of(2);
+        let Stair::Straight {
+            start,
+            direction,
+            base_height_metres: _,
+            rise_metres,
+            width_metres,
+            tread_count,
+            run_metres,
+        } = stair
+        else {
+            unreachable!();
+        };
+        *start = if ascending_forward {
+            stair_origin
+        } else {
+            stair_origin + stair_axis * stair_run
+        };
+        *direction = cardinal_direction(if ascending_forward {
+            stair_axis
+        } else {
+            -stair_axis
+        });
+        *rise_metres = program.storey_height_metres;
+        *width_metres = 1.0;
+        *tread_count = 18;
+        *run_metres = stair_run;
+        straight_flight_index += 1;
+    }
     let stair_lateral = Vec2::new(-stair_axis.y, stair_axis.x);
     let stair_end = stair_origin + stair_axis * stair_run;
     let side = stair_lateral * stair_width * 0.5;
@@ -2549,8 +2656,17 @@ fn resolve_timber_frame_assembly(
         let flight_lateral = Vec2::new(-flight_axis.y, flight_axis.x);
         let flight_end = flight_origin + flight_axis * stair_run;
         let clear_side = flight_lateral * 0.50;
-        let cut_inner = flight_end - flight_axis * 0.30;
-        let cut_outer = flight_end - flight_axis * 0.11;
+        // The floor must be removed from the point where a person ascending
+        // the flight first needs 1.90 m of headroom through the landing.
+        // The old 0.19 m slot at the final tread satisfied bookkeeping but
+        // left the physical circulation envelope buried in the upper floor.
+        let clearance_start = ((program.storey_height_metres - 1.90)
+            / program.storey_height_metres.max(0.001)
+            * stair_run
+            - 0.30)
+            .clamp(0.0, stair_run);
+        let cut_inner = flight_origin + flight_axis * clearance_start;
+        let cut_outer = flight_end + flight_axis * 0.30;
         let clear_min = (cut_inner - clear_side)
             .min(cut_inner + clear_side)
             .min(cut_outer - clear_side)
@@ -2786,22 +2902,20 @@ fn resolve_timber_frame_assembly(
         let floor_rects = if level == 0 {
             vec![(Vec2::splat(0.15), dimensions - Vec2::splat(0.15))]
         } else {
+            let (cut_min, cut_max) = cut_bounds.expect("upper timber floor has stair cut");
             vec![
                 (
                     Vec2::new(0.15, 0.15),
-                    Vec2::new(stair_min.x, dimensions.y - 0.15),
+                    Vec2::new(cut_min.x, dimensions.y - 0.15),
                 ),
                 (
-                    Vec2::new(stair_max.x, 0.15),
+                    Vec2::new(cut_max.x, 0.15),
                     Vec2::new(dimensions.x - 0.15, dimensions.y - 0.15),
                 ),
+                (Vec2::new(cut_min.x, 0.15), Vec2::new(cut_max.x, cut_min.y)),
                 (
-                    Vec2::new(stair_min.x, 0.15),
-                    Vec2::new(stair_max.x, stair_min.y),
-                ),
-                (
-                    Vec2::new(stair_min.x, stair_max.y),
-                    Vec2::new(stair_max.x, dimensions.y - 0.15),
+                    Vec2::new(cut_min.x, cut_max.y),
+                    Vec2::new(cut_max.x, dimensions.y - 0.15),
                 ),
             ]
         };
@@ -2847,10 +2961,10 @@ fn resolve_timber_frame_assembly(
                     ]
                     .into_iter()
                     .find(|(_, point)| {
-                        point.x >= min.x + 0.01
-                            && point.x <= max.x - 0.01
-                            && point.z >= min.y + 0.01
-                            && point.z <= max.y - 0.01
+                        point.x >= min.x - 0.001
+                            && point.x <= max.x + 0.001
+                            && point.z >= min.y - 0.001
+                            && point.z <= max.y + 0.001
                     })
                 });
                 if let Some((node, point)) = endpoint {
@@ -3942,6 +4056,193 @@ fn footprint_cells(footprint: Footprint) -> Result<Vec<Cell>, GenerationError> {
     Ok(cells)
 }
 
+fn resolve_straight_stair_core(
+    program: &BuildingProgram,
+    footprint: &[Cell],
+) -> Result<Option<StraightStairCore>, GenerationError> {
+    if program.storeys.len() > 1 && program.vertical_connections.is_empty() {
+        return Err(GenerationError::UnsatisfiedVerticalCirculation {
+            connection: 0,
+            reason: "a multi-storey programme declares no vertical connection".to_owned(),
+        });
+    }
+    for (connection, requirement) in program.vertical_connections.iter().enumerate() {
+        let (lowest_storey, highest_storey) = match *requirement {
+            VerticalConnectionRequirement::StraightStair {
+                lowest_storey,
+                highest_storey,
+                ..
+            }
+            | VerticalConnectionRequirement::TowerSpiral {
+                lowest_storey,
+                highest_storey,
+            } => (lowest_storey, highest_storey),
+        };
+        if lowest_storey >= highest_storey || usize::from(highest_storey) >= program.storeys.len() {
+            return Err(GenerationError::UnsatisfiedVerticalCirculation {
+                connection,
+                reason: format!(
+                    "invalid served-storey range {lowest_storey}..={highest_storey} for {} storeys",
+                    program.storeys.len()
+                ),
+            });
+        }
+    }
+    for lower_storey in 0..program.storeys.len().saturating_sub(1) as u16 {
+        let covered = program.vertical_connections.iter().any(|requirement| {
+            let (lowest_storey, highest_storey) = match *requirement {
+                VerticalConnectionRequirement::StraightStair {
+                    lowest_storey,
+                    highest_storey,
+                    ..
+                }
+                | VerticalConnectionRequirement::TowerSpiral {
+                    lowest_storey,
+                    highest_storey,
+                } => (lowest_storey, highest_storey),
+            };
+            lowest_storey <= lower_storey && highest_storey > lower_storey
+        });
+        if !covered {
+            return Err(GenerationError::UnsatisfiedVerticalCirculation {
+                connection: 0,
+                reason: format!(
+                    "no declared connector crosses storeys {lower_storey} and {}",
+                    lower_storey + 1
+                ),
+            });
+        }
+    }
+    let straight = program
+        .vertical_connections
+        .iter()
+        .enumerate()
+        .filter_map(|(index, requirement)| match *requirement {
+            VerticalConnectionRequirement::StraightStair {
+                lowest_storey,
+                highest_storey,
+                landing_room,
+            } => Some((index, lowest_storey, highest_storey, landing_room)),
+            VerticalConnectionRequirement::TowerSpiral { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    let Some(&(connection, lowest_storey, highest_storey, landing_room)) = straight.first() else {
+        return Ok(None);
+    };
+    if straight.len() > 1 {
+        return Err(GenerationError::UnsatisfiedVerticalCirculation {
+            connection,
+            reason: "the bounded civilian solver supports one shared straight stair core"
+                .to_owned(),
+        });
+    }
+    if lowest_storey != 0 || usize::from(highest_storey) + 1 != program.storeys.len() {
+        return Err(GenerationError::UnsatisfiedVerticalCirculation {
+            connection,
+            reason: "the bounded civilian stair core must serve every occupied storey".to_owned(),
+        });
+    }
+    for level in lowest_storey..=highest_storey {
+        if !program.storeys[usize::from(level)]
+            .rooms
+            .iter()
+            .any(|room| room.kind == landing_room)
+        {
+            return Err(GenerationError::UnsatisfiedVerticalCirculation {
+                connection,
+                reason: format!("storey {level} has no {landing_room:?} landing room"),
+            });
+        }
+    }
+
+    // A 4 x 2 cell core contains the 3.2 m flight, its 1.0 m clear width,
+    // stringers, and a landing at both ends.  Reserving the same room cells on
+    // every served storey prevents later wall derivation from boxing in an
+    // otherwise physically valid stair.
+    let usable = footprint.iter().copied().collect::<HashSet<_>>();
+    let (width, depth) = program.footprint.dimensions();
+    let building_centre = Vec2::new(f32::from(width), f32::from(depth)) * 0.5;
+    let mut candidates = Vec::new();
+    for z in 0..i16::try_from(depth).unwrap() {
+        for x in 0..i16::try_from(width).unwrap() {
+            let anchor = Cell::new(x, z);
+            for direction in Direction::ALL {
+                let (long, lateral) = match direction {
+                    Direction::North | Direction::South => ((0_i16, 1_i16), (1_i16, 0_i16)),
+                    Direction::East | Direction::West => ((1_i16, 0_i16), (0_i16, 1_i16)),
+                };
+                let cells = (0..4_i16)
+                    .flat_map(|along| {
+                        (0..2_i16).map(move |across| {
+                            Cell::new(
+                                anchor.x + long.0 * along + lateral.0 * across,
+                                anchor.z + long.1 * along + lateral.1 * across,
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if !cells.iter().all(|cell| usable.contains(cell)) {
+                    continue;
+                }
+                let rectangle_centre =
+                    cells.iter().map(|cell| cell.centre()).sum::<Vec2>() / cells.len() as f32;
+                let origin = match direction {
+                    Direction::North => Vec2::new(
+                        (f32::from(anchor.x) + 1.0) * CELL_SIZE_METRES,
+                        (f32::from(anchor.z) + 0.5) * CELL_SIZE_METRES,
+                    ),
+                    Direction::South => Vec2::new(
+                        (f32::from(anchor.x) + 1.0) * CELL_SIZE_METRES,
+                        (f32::from(anchor.z) + 3.5) * CELL_SIZE_METRES,
+                    ),
+                    Direction::East => Vec2::new(
+                        (f32::from(anchor.x) + 0.5) * CELL_SIZE_METRES,
+                        (f32::from(anchor.z) + 1.0) * CELL_SIZE_METRES,
+                    ),
+                    Direction::West => Vec2::new(
+                        (f32::from(anchor.x) + 3.5) * CELL_SIZE_METRES,
+                        (f32::from(anchor.z) + 1.0) * CELL_SIZE_METRES,
+                    ),
+                };
+                let centre_distance =
+                    (rectangle_centre / CELL_SIZE_METRES - building_centre).length_squared();
+                let direction_salt = match direction {
+                    Direction::North => 0,
+                    Direction::East => 1,
+                    Direction::South => 2,
+                    Direction::West => 3,
+                };
+                candidates.push((
+                    centre_distance,
+                    stable_noise(layout_seed(program), 0x51a1 + direction_salt, anchor),
+                    origin,
+                    direction,
+                    cells,
+                ));
+            }
+        }
+    }
+    candidates.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    let Some((_, _, origin, direction, reserved_cells)) = candidates.into_iter().next() else {
+        return Err(GenerationError::UnsatisfiedVerticalCirculation {
+            connection,
+            reason: "the footprint has no contiguous 4 x 2 cell stair-and-landing core".to_owned(),
+        });
+    };
+    Ok(Some(StraightStairCore {
+        lowest_storey,
+        highest_storey,
+        landing_room,
+        origin,
+        direction,
+        reserved_cells,
+    }))
+}
+
 fn allocate_rooms(
     footprint: &[Cell],
     width: u16,
@@ -3949,10 +4250,14 @@ fn allocate_rooms(
     requirements: &[RoomRequirement],
     seed: u64,
     archetype: BuildingArchetype,
+    reservations: &BTreeMap<Cell, usize>,
 ) -> BTreeMap<Cell, usize> {
     let usable = footprint.iter().copied().collect::<BTreeSet<_>>();
-    let mut assignments = BTreeMap::new();
+    let mut assignments = reservations.clone();
     let mut room_seeds = vec![None; requirements.len()];
+    for (cell, room_index) in reservations {
+        room_seeds[*room_index].get_or_insert(*cell);
+    }
 
     if let Some(passage_index) = requirements
         .iter()
@@ -4295,12 +4600,16 @@ fn derive_openings(
             let right = &requirements[usize::from(pair.1)];
             let preferred = left.preferred_neighbours.contains(&right.kind)
                 || right.preferred_neighbours.contains(&left.kind);
-            (preferred, pair, candidates)
+            let circulation_required =
+                left.kind == RoomKind::StairHall || right.kind == RoomKind::StairHall;
+            (circulation_required, preferred, pair, candidates)
         })
         .collect::<Vec<_>>();
-    edges.sort_by_key(|(preferred, pair, _)| (!*preferred, *pair));
+    edges.sort_by_key(|(circulation_required, preferred, pair, _)| {
+        (!*circulation_required, !*preferred, *pair)
+    });
     let mut sets = DisjointSets::new(requirements.len());
-    for (_, (left, right), candidates) in edges {
+    for (_, _, (left, right), candidates) in edges {
         if sets.union(usize::from(left), usize::from(right)) {
             let wall_index = candidates[candidates.len() / 2];
             openings.push(Opening {
@@ -17617,6 +17926,7 @@ fn derive_stairs(
     program: &BuildingProgram,
     storeys: &[StoreyPlan],
     towers: &[RoundTower],
+    straight_core: Option<&StraightStairCore>,
 ) -> Vec<Stair> {
     if storeys.len() < 2 {
         return Vec::new();
@@ -17678,6 +17988,35 @@ fn derive_stairs(
         return stairs;
     }
 
+    if let Some(core) = straight_core {
+        let axis = direction_vector(core.direction);
+        let opposite = cardinal_direction(-axis);
+        let far_origin = core.origin + axis * STRAIGHT_STAIR_RUN_METRES;
+        return (core.lowest_storey..core.highest_storey)
+            .enumerate()
+            .map(|(flight_index, level)| {
+                let ascending_forward = flight_index.is_multiple_of(2);
+                Stair::Straight {
+                    start: if ascending_forward {
+                        core.origin
+                    } else {
+                        far_origin
+                    },
+                    direction: if ascending_forward {
+                        core.direction
+                    } else {
+                        opposite
+                    },
+                    base_height_metres: f32::from(level) * program.storey_height_metres,
+                    rise_metres: program.storey_height_metres,
+                    width_metres: 1.0,
+                    tread_count: 18,
+                    run_metres: STRAIGHT_STAIR_RUN_METRES,
+                }
+            })
+            .collect();
+    }
+
     let stair_room = storeys[0]
         .rooms
         .iter()
@@ -17693,6 +18032,7 @@ fn derive_stairs(
                 rise_metres: program.storey_height_metres,
                 width_metres: 1.0,
                 tread_count: 17,
+                run_metres: STRAIGHT_STAIR_RUN_METRES,
             }]
         })
         .unwrap_or_default()
@@ -22186,6 +22526,76 @@ mod tests {
             generate(&program),
             Err(GenerationError::EmptyStorey { level: 0 })
         ));
+    }
+
+    #[test]
+    fn multi_storey_program_without_vertical_connection_is_rejected() {
+        let mut program = BuildingProgram::fixture(BuildingArchetype::TownHouse, 42);
+        program.vertical_connections.clear();
+        assert!(matches!(
+            generate(&program),
+            Err(GenerationError::UnsatisfiedVerticalCirculation { .. })
+        ));
+
+        let mut missing_landing_room = BuildingProgram::fixture(BuildingArchetype::TownHouse, 42);
+        missing_landing_room.storeys[1]
+            .rooms
+            .retain(|room| room.kind != RoomKind::StairHall);
+        assert!(matches!(
+            generate(&missing_landing_room),
+            Err(GenerationError::UnsatisfiedVerticalCirculation { .. })
+        ));
+
+        let mut uncovered_storey =
+            BuildingProgram::fixture(BuildingArchetype::FachwerkMerchantHouse, 42);
+        uncovered_storey.vertical_connections[0] = VerticalConnectionRequirement::StraightStair {
+            lowest_storey: 0,
+            highest_storey: 1,
+            landing_room: RoomKind::StairHall,
+        };
+        assert!(matches!(
+            generate(&uncovered_storey),
+            Err(GenerationError::UnsatisfiedVerticalCirculation { .. })
+        ));
+    }
+
+    #[test]
+    fn civilian_programmes_reserve_each_straight_stair_arrival_in_a_connected_hall() {
+        for archetype in [
+            BuildingArchetype::TownHouse,
+            BuildingArchetype::FachwerkMerchantHouse,
+            BuildingArchetype::RenaissanceTownHall,
+        ] {
+            let plan = generate(&BuildingProgram::fixture(archetype, 42))
+                .unwrap_or_else(|error| panic!("{archetype:?}: {error:?}"));
+            let straight_stairs = plan
+                .stairs
+                .iter()
+                .filter(|stair| matches!(stair, Stair::Straight { .. }))
+                .count();
+            assert_eq!(straight_stairs, plan.storeys.len() - 1, "{archetype:?}");
+            assert!(
+                crate::audit_plan(&plan)
+                    .iter()
+                    .all(|issue| issue.code != "invalid_vertical_circulation"),
+                "{archetype:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn circulation_audit_rejects_a_stair_moved_out_of_its_reserved_hall() {
+        let mut plan =
+            generate(&BuildingProgram::fixture(BuildingArchetype::TownHouse, 42)).unwrap();
+        let Stair::Straight { start, .. } = &mut plan.stairs[0] else {
+            panic!("town house has a straight stair");
+        };
+        *start = Vec2::splat(-20.0);
+        assert!(
+            crate::audit_plan(&plan)
+                .iter()
+                .any(|issue| issue.code == "invalid_vertical_circulation")
+        );
     }
 
     #[test]

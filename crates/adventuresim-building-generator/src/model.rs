@@ -225,6 +225,25 @@ pub struct StoreyProgram {
     pub rooms: Vec<RoomRequirement>,
 }
 
+/// A required, generated connection between occupied storeys.
+///
+/// This is programme intent rather than editable geometry.  The procedural
+/// layout solver must satisfy it before walls and openings become authoritative;
+/// detached player builds remain free to contain incomplete or blocked stairs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum VerticalConnectionRequirement {
+    StraightStair {
+        lowest_storey: u16,
+        highest_storey: u16,
+        landing_room: RoomKind,
+    },
+    TowerSpiral {
+        lowest_storey: u16,
+        highest_storey: u16,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Footprint {
@@ -417,6 +436,7 @@ pub struct BuildingProgram {
     pub footprint: Footprint,
     pub storey_height_metres: f32,
     pub storeys: Vec<StoreyProgram>,
+    pub vertical_connections: Vec<VerticalConnectionRequirement>,
     pub wall_style: WallStyle,
     pub timber_frame_style: Option<TimberFrameStyle>,
     pub upper_storey_projection_metres: f32,
@@ -468,6 +488,11 @@ impl BuildingProgram {
                         ],
                     },
                 ],
+                vertical_connections: vec![VerticalConnectionRequirement::StraightStair {
+                    lowest_storey: 0,
+                    highest_storey: 1,
+                    landing_room: StairHall,
+                }],
                 wall_style: WallStyle::TimberFrame,
                 timber_frame_style: Some(TimberFrameStyle::LateMedieval),
                 upper_storey_projection_metres: 0.22,
@@ -494,6 +519,7 @@ impl BuildingProgram {
                         RoomRequirement::new(Storage, 15).exterior(),
                     ],
                 }],
+                vertical_connections: Vec::new(),
                 wall_style: WallStyle::TimberFrame,
                 timber_frame_style: Some(TimberFrameStyle::NorthernCloseStudded),
                 upper_storey_projection_metres: 0.0,
@@ -517,6 +543,7 @@ impl BuildingProgram {
                         RoomRequirement::new(EntranceHall, 7).exterior(),
                     ],
                 }],
+                vertical_connections: Vec::new(),
                 wall_style: WallStyle::TimberFrame,
                 timber_frame_style: Some(TimberFrameStyle::NorthernCloseStudded),
                 upper_storey_projection_metres: 0.0,
@@ -565,6 +592,11 @@ impl BuildingProgram {
                         ],
                     },
                 ],
+                vertical_connections: vec![VerticalConnectionRequirement::StraightStair {
+                    lowest_storey: 0,
+                    highest_storey: 2,
+                    landing_room: StairHall,
+                }],
                 wall_style: WallStyle::TimberFrame,
                 timber_frame_style: Some(TimberFrameStyle::EarlyModernOrnate),
                 upper_storey_projection_metres: 0.28,
@@ -600,6 +632,11 @@ impl BuildingProgram {
                         ],
                     },
                 ],
+                vertical_connections: vec![VerticalConnectionRequirement::StraightStair {
+                    lowest_storey: 0,
+                    highest_storey: 1,
+                    landing_room: StairHall,
+                }],
                 wall_style: WallStyle::TimberFrame,
                 timber_frame_style: Some(TimberFrameStyle::EarlyModernOrnate),
                 upper_storey_projection_metres: 0.24,
@@ -626,6 +663,7 @@ impl BuildingProgram {
                         RoomRequirement::new(EntranceHall, 20).exterior(),
                     ],
                 }],
+                vertical_connections: Vec::new(),
                 wall_style: WallStyle::Stone,
                 timber_frame_style: None,
                 upper_storey_projection_metres: 0.0,
@@ -661,6 +699,10 @@ impl BuildingProgram {
                         ],
                     },
                 ],
+                vertical_connections: vec![VerticalConnectionRequirement::TowerSpiral {
+                    lowest_storey: 0,
+                    highest_storey: 1,
+                }],
                 wall_style: WallStyle::Stone,
                 timber_frame_style: None,
                 upper_storey_projection_metres: 0.0,
@@ -701,6 +743,10 @@ impl BuildingProgram {
                         ],
                     },
                 ],
+                vertical_connections: vec![VerticalConnectionRequirement::TowerSpiral {
+                    lowest_storey: 0,
+                    highest_storey: 1,
+                }],
                 wall_style: WallStyle::Stone,
                 timber_frame_style: None,
                 upper_storey_projection_metres: 0.0,
@@ -742,6 +788,10 @@ impl BuildingProgram {
                         ],
                     },
                 ],
+                vertical_connections: vec![VerticalConnectionRequirement::TowerSpiral {
+                    lowest_storey: 0,
+                    highest_storey: 2,
+                }],
                 wall_style: WallStyle::Stone,
                 timber_frame_style: None,
                 upper_storey_projection_metres: 0.0,
@@ -786,6 +836,10 @@ impl BuildingProgram {
                         ],
                     },
                 ],
+                vertical_connections: vec![VerticalConnectionRequirement::TowerSpiral {
+                    lowest_storey: 0,
+                    highest_storey: 2,
+                }],
                 wall_style: WallStyle::Stone,
                 timber_frame_style: None,
                 upper_storey_projection_metres: 0.0,
@@ -797,7 +851,7 @@ impl BuildingProgram {
     }
 }
 
-pub const BUILDING_DOCUMENT_SCHEMA_VERSION: u32 = 2;
+pub const BUILDING_DOCUMENT_SCHEMA_VERSION: u32 = 3;
 
 /// Stable grid address used by editor commands. Unlike resolved mesh IDs, this
 /// remains meaningful when the building is regenerated after an edit.
@@ -1800,6 +1854,10 @@ pub enum Stair {
         rise_metres: f32,
         width_metres: f32,
         tread_count: u16,
+        /// The horizontal flight length. Zero retains the former 3.8 m
+        /// default when an older player-build document is loaded.
+        #[serde(default)]
+        run_metres: f32,
     },
     Spiral {
         centre: Vec2,
