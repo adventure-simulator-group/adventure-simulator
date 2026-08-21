@@ -259,6 +259,17 @@ pub enum WallStyle {
     Stone,
 }
 
+/// Room-side treatment of a timber-framed wall.  This is deliberately
+/// independent from the weather face: visible fachwerk is an exterior
+/// expression, while inhabited rooms were normally plastered.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InteriorWallFinish {
+    Plastered,
+    Boarded,
+    ExposedFrame,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TimberFrameStyle {
@@ -855,6 +866,8 @@ pub struct EditableBuildingAssembly {
     pub footprint: Footprint,
     pub storey_height_metres: f32,
     pub wall_style: WallStyle,
+    #[serde(default = "default_interior_wall_finish")]
+    pub interior_wall_finish: InteriorWallFinish,
     #[serde(default)]
     pub wall_style_overrides: Vec<WallStyleOverride>,
     pub timber_frame_style: Option<TimberFrameStyle>,
@@ -871,6 +884,7 @@ impl EditableBuildingAssembly {
             footprint: Footprint::Rectangle { width: 1, depth: 1 },
             storey_height_metres: 3.0,
             wall_style: WallStyle::TimberFrame,
+            interior_wall_finish: InteriorWallFinish::Plastered,
             wall_style_overrides: Vec::new(),
             timber_frame_style: Some(TimberFrameStyle::LateMedieval),
             upper_storey_projection_metres: 0.0,
@@ -886,6 +900,7 @@ impl EditableBuildingAssembly {
             footprint: plan.footprint,
             storey_height_metres: plan.storey_height_metres,
             wall_style: plan.wall_style,
+            interior_wall_finish: InteriorWallFinish::Plastered,
             wall_style_overrides: plan.wall_style_overrides.clone(),
             timber_frame_style: plan.timber_frame_style,
             upper_storey_projection_metres: plan.upper_storey_projection_metres,
@@ -983,6 +998,9 @@ pub struct PlayerBuildPart {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PlayerBuildEdit {
+    SetInteriorWallFinish {
+        finish: InteriorWallFinish,
+    },
     UpdateRoof {
         index: usize,
         roof: RoofPiece,
@@ -1075,6 +1093,9 @@ impl PlayerBuildDocument {
         }
         let mut next = self.clone();
         match edit {
+            PlayerBuildEdit::SetInteriorWallFinish { finish } => {
+                next.assembly.interior_wall_finish = finish;
+            }
             PlayerBuildEdit::UpdateRoof { index, roof } => {
                 if !roof_recipe_is_renderable(roof) {
                     return Err("roof dimensions, elevation, pitch, and eaves must be finite and positive where required".to_owned());
@@ -1288,6 +1309,10 @@ impl PlayerBuildDocument {
             .find(|part| part.id == id)
             .ok_or_else(|| format!("player-build part {id} was not found"))
     }
+}
+
+const fn default_interior_wall_finish() -> InteriorWallFinish {
+    InteriorWallFinish::Plastered
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3971,6 +3996,20 @@ mod tests {
             .unwrap();
         assert_eq!(edited.assembly.roofs[0].kind, RoofKind::Hip);
         assert_eq!(edited.assembly.roofs[0].pitch_degrees, 30.0);
+    }
+
+    #[test]
+    fn player_build_keeps_interior_finish_separate_from_exterior_wall_style() {
+        let document = PlayerBuildDocument::empty()
+            .apply(PlayerBuildEdit::SetInteriorWallFinish {
+                finish: InteriorWallFinish::Boarded,
+            })
+            .unwrap();
+        assert_eq!(document.assembly.wall_style, WallStyle::TimberFrame);
+        assert_eq!(
+            document.assembly.interior_wall_finish,
+            InteriorWallFinish::Boarded
+        );
     }
 
     #[test]

@@ -4,13 +4,13 @@ use adventuresim_building_generator::{
     BattlementKind, BattlementRun, BuildingArchetype, BuildingDocument, BuildingEdit, BuildingPlan,
     CELL_SIZE_METRES, Cell, CrownPath, CurtainWallRun, Direction, DormerKind, FiringPosition,
     GableProfile, GateClosure, GateClosureKind, GateDefense, GatehouseLoadPath, GuardOpeningKind,
-    Opening, OpeningKind, PlayerBuildDocument, PlayerBuildEdit, PlayerBuildMaterial,
-    PlayerBuildPart, ProjectedDefenseDeployment, ProjectedDefensePath, ProjectedDefenseTarget,
-    RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace, RoofKind, RoofMaterial,
-    RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle, TowerPortal,
-    TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId, WallStyle,
-    WallWalk, analyse_player_build, audit_plan, audit_triangle_mesh, edit_document, generate,
-    generate_document,
+    InteriorWallFinish, Opening, OpeningKind, PlayerBuildDocument, PlayerBuildEdit,
+    PlayerBuildMaterial, PlayerBuildPart, ProjectedDefenseDeployment, ProjectedDefensePath,
+    ProjectedDefenseTarget, RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace,
+    RoofKind, RoofMaterial, RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle,
+    TowerPortal, TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId,
+    WallStyle, WallWalk, analyse_player_build, audit_plan, audit_triangle_mesh, edit_document,
+    generate, generate_document,
 };
 use bevy::{
     app::AppExit,
@@ -2593,6 +2593,7 @@ enum EditorUiAction {
     NewPlayerBuild,
     DetachPlayerBuild,
     UpdatePlayerRoof(usize),
+    SetPlayerInteriorWallFinish(InteriorWallFinish),
     Undo,
     Redo,
     Save,
@@ -3135,6 +3136,23 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                     }
                 });
                 ui.small("Drag to place walls. Click the ground to place a floor tile.");
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Interior:");
+                    let current = runtime
+                        .player_build
+                        .as_ref()
+                        .map(|document| document.assembly.interior_wall_finish)
+                        .unwrap_or(InteriorWallFinish::Plastered);
+                    for (finish, label) in [
+                        (InteriorWallFinish::Plastered, "Plaster"),
+                        (InteriorWallFinish::Boarded, "Boards"),
+                        (InteriorWallFinish::ExposedFrame, "Exposed frame"),
+                    ] {
+                        if ui.selectable_label(current == finish, label).clicked() {
+                            action = Some(EditorUiAction::SetPlayerInteriorWallFinish(finish));
+                        }
+                    }
+                });
                 if runtime.mode == EditorMode::Roof {
                     ui.separator();
                     ui.strong("Roof pieces");
@@ -3333,6 +3351,9 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
                 roof: runtime.player_roof,
             },
         ),
+        EditorUiAction::SetPlayerInteriorWallFinish(finish) => {
+            apply_player_build_edit(runtime, PlayerBuildEdit::SetInteriorWallFinish { finish })
+        }
         EditorUiAction::NewPlayerBuild => {
             let stem = runtime
                 .document_path
@@ -4016,6 +4037,7 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
                     base_y,
                     document.assembly.storey_height_metres,
                     document.assembly.wall_style_for(selector),
+                    document.assembly.interior_wall_finish,
                     document.assembly.timber_frame_style,
                     document.assembly.upper_storey_projection_metres * f32::from(storey.level),
                 );
@@ -4023,6 +4045,14 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
         }
         world.remove_resource::<PlayerBuildSpawnContext>();
     }
+    world.insert_resource(PlayerBuildSpawnContext {
+        storey: 0,
+        role: EditorVisibilityRole::Structure,
+    });
+    for stair in document.assembly.stairs.iter().copied() {
+        spawn_stair(world, &palette, stair, origin);
+    }
+    world.remove_resource::<PlayerBuildSpawnContext>();
     world.insert_resource(PlayerBuildSpawnContext {
         storey: document
             .assembly
@@ -4041,6 +4071,15 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
             roof,
             origin,
             roof_index,
+            document.assembly.wall_style,
+        );
+    }
+    for dormer in document.assembly.roof_dormers.iter().copied() {
+        spawn_roof_dormer(
+            world,
+            &palette,
+            dormer,
+            origin,
             document.assembly.wall_style,
         );
     }
@@ -8228,6 +8267,7 @@ fn setup(
                 base_y,
                 storey_height,
                 plan.wall_style,
+                InteriorWallFinish::Plastered,
                 plan.timber_frame_style,
                 plan.upper_storey_projection_metres * f32::from(storey.level),
             );
@@ -9990,6 +10030,7 @@ fn spawn_wall(
     base_y: f32,
     storey_height: f32,
     style: WallStyle,
+    interior_finish: InteriorWallFinish,
     timber_frame_style: Option<TimberFrameStyle>,
     projection_metres: f32,
 ) {
@@ -10003,6 +10044,40 @@ fn spawn_wall(
     };
     if wall.exterior() {
         centre += outward * projection_metres;
+    }
+    if !wall.exterior() {
+        let material = match interior_finish {
+            InteriorWallFinish::Plastered | InteriorWallFinish::ExposedFrame => &palette.plaster,
+            InteriorWallFinish::Boarded => &palette.timber,
+        };
+        let size = if horizontal {
+            Vec3::new(CELL_SIZE_METRES, storey_height, 0.09)
+        } else {
+            Vec3::new(0.09, storey_height, CELL_SIZE_METRES)
+        };
+        spawn_box(
+            world,
+            material,
+            size,
+            Vec3::new(centre.x, base_y + storey_height * 0.5, centre.y),
+            Quat::IDENTITY,
+            "thin plastered internal wall",
+        );
+        if interior_finish == InteriorWallFinish::ExposedFrame {
+            spawn_timber_frame(
+                world,
+                palette,
+                wall,
+                timber_frame_style.unwrap_or(TimberFrameStyle::LateMedieval),
+                horizontal,
+                CELL_SIZE_METRES,
+                centre,
+                base_y,
+                storey_height,
+                opening,
+            );
+        }
+        return;
     }
     let material = match style {
         WallStyle::TimberFrame | WallStyle::Plaster => &palette.plaster,

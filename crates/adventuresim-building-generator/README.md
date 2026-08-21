@@ -100,6 +100,11 @@ programme to edit. Timber/frame walls use the generated wall renderer, so
 their plaster infill and fachwerk stay one wall feature and obey wall
 visibility together.
 
+The exterior wall finish and room-side finish are separate properties. New
+freeform interiors use thin plastered partitions by default; boarding and
+exposed internal framing are explicit choices rather than automatic copies of
+the exterior fachwerk.
+
 ## Headless editor test ABI
 
 Freeform editor mutations have a typed JSON command ABI for deterministic
