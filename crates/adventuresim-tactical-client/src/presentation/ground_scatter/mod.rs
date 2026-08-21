@@ -20,8 +20,8 @@ use super::obstacles::tree::{
     TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial, TreeLeafRepresentation,
     blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
     procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
-    procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
-    procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
+    procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    procedural_woody_sparse_leaf_card_mesh,
 };
 use super::{
     PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
@@ -71,8 +71,7 @@ pub(crate) struct GroundLitterDiagnostics {
 pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,
     cambered_leaves: Option<Handle<Mesh>>,
-    leaf_cards: Option<Handle<Mesh>>,
-    sparse_leaf_cards: Option<Handle<Mesh>>,
+    minimal_leaf_cards: Option<Handle<Mesh>>,
     bark: Option<Handle<StandardMaterial>>,
     leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
 }
@@ -239,12 +238,9 @@ pub(super) fn spawn_ground_foliage(
     // understory. Keep the expensive new density in open terrain instead of
     // charging every woodland for meadow-level geometry beneath deep shade.
     let grass_density = grass_scatter_density(canopy, water, cultivation, snow);
-    // Equal-area QHD benchmarks show that the full woody hazel/reed-like
-    // specimen, rather than the trees themselves, dominates dense woodland
-    // and wetland cost. Keep sparse woodland's established occupancy while
-    // capping denser biomes near one plant in four lattice cells. This leaves
-    // traversable openings and gives every terrain family a comparable GPU
-    // budget without reducing the much cheaper canopy-tree population.
+    // Equal-area QHD benchmarks show that full woody understory dominates
+    // dense woodland and wetland cost. Reserve physical shrubs for deliberate
+    // close thickets: the terrain carries their distant background appearance.
     let understory_chance = understory_scatter_chance(canopy, wetland, cultivation);
     let (grass_color, grass_dryness) = grass_pigment(environment);
     let grass_profile = GrassCommunityProfile::from_environment(environment);
@@ -432,7 +428,10 @@ pub(super) fn spawn_ground_foliage(
 }
 
 fn understory_scatter_chance(canopy: f32, wetland: f32, cultivation: f32) -> f32 {
-    (canopy * 0.52 + wetland * 0.3 + cultivation * 0.08).clamp(0.0, 0.24)
+    // This is intentionally about 70% below the original physical-shrub
+    // occupancy. Community multipliers retain dense, readable clumps rather
+    // than turning the reduced population into evenly spaced specimens.
+    (canopy * 0.156 + wetland * 0.09 + cultivation * 0.024).clamp(0.0, 0.075)
 }
 
 fn grass_scatter_density(canopy: f32, water: f32, cultivation: f32, snow: f32) -> f32 {
@@ -594,8 +593,11 @@ fn ensure_understory_presentations(
         let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, parameters);
         cache.branches = Some(meshes.add(procedural_woody_branch_mesh(&branches, 3, bark)));
         cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
-        cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
-        cache.sparse_leaf_cards = Some(meshes.add(procedural_woody_sparse_leaf_card_mesh(&leaves)));
+        // A single minimal card tier replaces the former full-card and far
+        // sparse-card tiers. It carries the close shrub silhouette only until
+        // the terrain and distant canopy can take over.
+        cache.minimal_leaf_cards =
+            Some(meshes.add(procedural_woody_sparse_leaf_card_mesh(&leaves)));
         cache.bark = Some(materials.add(StandardMaterial {
             base_color: bark_color,
             perceptual_roughness: 0.96,
