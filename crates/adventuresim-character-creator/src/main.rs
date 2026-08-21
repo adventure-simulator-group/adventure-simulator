@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use adventuresim_character_creator::{CharacterRecipe, IdentityGroup};
-use adventuresim_mhr::{Mhr, MhrConfig, NUM_FACE_EXPRESSION_BLEND_SHAPES};
+use fabelgeist_mhr::{Mhr, MhrConfig, NUM_FACE_EXPRESSION_BLEND_SHAPES};
 use anyhow::{Context, Result};
 use bevy::{
     asset::RenderAssetUsages,

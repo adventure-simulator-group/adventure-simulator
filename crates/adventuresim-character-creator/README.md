@@ -1,6 +1,6 @@
 # Character creator
 
-Native, non-authoritative character design tool backed by `adventuresim-mhr`. It loads
+Native, non-authoritative character design tool backed by `fabelgeist-mhr`. It loads
 Meta's Momentum Human Rig assets locally, exposes its 45 identity coefficients
 and 72 expression coefficients, and previews the generated mesh in Bevy.
 

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2107)
+## Files (2200)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -281,43 +281,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-dialogue/src/authoring_schema.rs` — Rust source module for this component.
 - `crates/adventuresim-dialogue/src/bin/dialogue-check.rs` — Rust source module.
 - `crates/adventuresim-dialogue/src/lib.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/Cargo.toml` — Cargo package/workspace manifest.
-- `crates/adventuresim-fbx/src/curve.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/lib.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/link.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/node.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/node_animation.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/object.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/prop.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/reader.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/scene.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/take.rs` — Rust source module for this component.
-- `crates/adventuresim-fbx/src/transform_channel.rs` — Rust source module for this component.
-- `crates/adventuresim-mhr/Cargo.lock` — Locked Rust dependency versions.
-- `crates/adventuresim-mhr/Cargo.toml` — Cargo package/workspace manifest.
-- `crates/adventuresim-mhr/src/character/blend_shapes.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/character/character.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/character/mesh.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/character/mod.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/character/skeleton.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/character/skin_weights.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/lib.rs` — Rust source module for this component.
-- `crates/adventuresim-mhr/src/math/mod.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/math/transform.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/model/mhr.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/model/mhr_config.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/model/mhr_output.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/model/mod.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/model_def/mod.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/model_def/parameter_limit.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/model_def/parameter_transform.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/pose_correctives.rs` — Rust source module for this component.
-- `crates/adventuresim-mhr/src/skel_state.rs` — Rust source module for this component.
-- `crates/adventuresim-mhr/src/storage/dtype.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/storage/mod.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/storage/npy_array.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/storage/npz.rs` — Rust source module.
-- `crates/adventuresim-mhr/src/storage/zip_archive.rs` — Rust source module.
 - `crates/adventuresim-puzzles/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-puzzles/src/analysis.rs` — Rust source module for this component.
 - `crates/adventuresim-puzzles/src/bin/puzzle-lab.rs` — Rust source module.
@@ -1572,6 +1535,136 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-world-schema/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-world-schema/src/language.rs` — Rust source module for this component.
 - `crates/adventuresim-world-schema/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-animation/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-animation/src/animation/mod.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/mod.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/profile.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/profiles/infer.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/profiles/mixamo.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/profiles/mod.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/resolve.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/retargeter.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/semantic.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/animation/retarget/tests.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-animation/src/skeleton/auto_rigger.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/skeleton/mixamo.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/skeleton/mod.rs` — Rust source module.
+- `crates/fabelgeist-animation/src/skeleton/skinning.rs` — Rust source module.
+- `crates/fabelgeist-fbx/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-fbx/src/animation.rs` — Rust source module for this component.
+- `crates/fabelgeist-fbx/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-fs/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-fs/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-gpu/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-gpu/src/data/camera.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/bind_group.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/buffer/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/advancing_front.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/advect/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/broadcast.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/distance_field.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/distance_field_jfa.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/divergence/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/dual_contouring/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/gather/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/gather/tests/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/gradient/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/map/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/map/tests/helper.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/map/tests/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/marching_cubes/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/marching_cubes/tables.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/matmul.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/pass/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/perlin_noise.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/pipeline/compute_shader.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/pipeline/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/reduce/max.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/reduce/min.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/reduce/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/reduce/tests/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/reshape.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/scan.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/scatter.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/signature.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/simplex_noise.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/stencil.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/stream/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/stream/tests/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/test_utils.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/texture_ops.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/compute/transpose.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/parameters/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/parameters/parameter.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/resource.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/sampler/address_mode.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/sampler/filter_mode.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/sampler/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/shader.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/texture/format.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/texture/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/texture/srgb_converter.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/texture/texture_2d/image.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/texture/texture_2d/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/texture/texture_3d/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/gpu/texture/texture_cube/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/layout/horizontal_alignment.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/layout/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/layout/vertical_alignment.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/skeleton/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/skeleton/pose.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/ui/button.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/ui/button_styling.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/ui/context.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/ui/font.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/ui/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/ui/text_input_styling.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/ui/text_style.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/data/view.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/globals/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/globals/wgpu_context/blitter.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/globals/wgpu_context/mod.rs` — Rust source module.
+- `crates/fabelgeist-gpu/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-gpu/src/prelude.rs` — Rust source module for this component.
+- `crates/fabelgeist-math/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-math/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-math/src/math/cos.rs` — Rust source module.
+- `crates/fabelgeist-math/src/math/mod.rs` — Rust source module.
+- `crates/fabelgeist-math/src/math/pi.rs` — Rust source module.
+- `crates/fabelgeist-math/src/math/sin.rs` — Rust source module.
+- `crates/fabelgeist-math/src/matrix/mat2.rs` — Rust source module.
+- `crates/fabelgeist-math/src/matrix/mat3.rs` — Rust source module.
+- `crates/fabelgeist-math/src/matrix/mat4.rs` — Rust source module.
+- `crates/fabelgeist-math/src/matrix/mod.rs` — Rust source module.
+- `crates/fabelgeist-math/src/transform.rs` — Rust source module for this component.
+- `crates/fabelgeist-math/src/vector/deadzone.rs` — Rust source module.
+- `crates/fabelgeist-math/src/vector/mod.rs` — Rust source module.
+- `crates/fabelgeist-math/src/vector/vec2.rs` — Rust source module.
+- `crates/fabelgeist-math/src/vector/vec3.rs` — Rust source module.
+- `crates/fabelgeist-math/src/vector/vec4.rs` — Rust source module.
+- `crates/fabelgeist-mhr/Cargo.lock` — Locked Rust dependency versions.
+- `crates/fabelgeist-mhr/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-mhr/README.md` — Component overview and usage notes.
+- `crates/fabelgeist-mhr/src/character.rs` — Rust source module for this component.
+- `crates/fabelgeist-mhr/src/correctives.rs` — Rust source module for this component.
+- `crates/fabelgeist-mhr/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-mhr/src/math.rs` — Rust source module for this component.
+- `crates/fabelgeist-mhr/src/model.rs` — Rust source module for this component.
+- `crates/fabelgeist-mhr/src/model_def.rs` — Rust source module for this component.
+- `crates/fabelgeist-mhr/src/skel_state.rs` — Rust source module for this component.
+- `crates/fabelgeist-numpy-storage/Cargo.lock` — Locked Rust dependency versions.
+- `crates/fabelgeist-numpy-storage/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-numpy-storage/README.md` — Component overview and usage notes.
+- `crates/fabelgeist-numpy-storage/src/lib.rs` — Rust source module for this component.
+- `crates/fabelgeist-numpy-storage/src/npy.rs` — Rust source module for this component.
+- `crates/fabelgeist-numpy-storage/src/npz.rs` — Rust source module for this component.
+- `crates/fabelgeist-numpy-storage/src/zip.rs` — Rust source module for this component.
+- `crates/fabelgeist-timer/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/fabelgeist-timer/src/lib.rs` — Rust source module for this component.
 - `crates/strategic-web/AGENTS.md` — Project documentation.
 - `crates/strategic-web/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/strategic-web/Dockerfile` — Container build definition.
