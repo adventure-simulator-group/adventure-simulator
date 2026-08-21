@@ -506,17 +506,17 @@ pub(in crate::presentation) fn grass_lod_visibility(lod: GrassMeshLod) -> Visibi
     match lod {
         GrassMeshLod::Near => VisibilityRange {
             start_margin: 0.0..0.0,
-            end_margin: 18.0..26.0,
+            end_margin: 16.0..20.0,
             use_aabb: false,
         },
         GrassMeshLod::Far => VisibilityRange {
-            start_margin: 18.0..26.0,
-            end_margin: 62.0..76.0,
+            start_margin: 16.0..20.0,
+            end_margin: 52.0..58.0,
             use_aabb: false,
         },
         GrassMeshLod::Vista => VisibilityRange {
-            start_margin: 58.0..72.0,
-            end_margin: 124.0..140.0,
+            start_margin: 50.0..54.0,
+            end_margin: 100.0..110.0,
             use_aabb: false,
         },
     }
@@ -1507,6 +1507,16 @@ mod tests {
         let near = grass_lod_visibility(GrassMeshLod::Near);
         let far = grass_lod_visibility(GrassMeshLod::Far);
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
+
+        assert_eq!(near.start_margin, 0.0..0.0);
+        assert_eq!(near.end_margin, 16.0..20.0);
+        assert_eq!(far.start_margin, 16.0..20.0);
+        assert_eq!(far.end_margin, 52.0..58.0);
+        assert_eq!(vista.start_margin, 50.0..54.0);
+        assert_eq!(vista.end_margin, 100.0..110.0);
+
+        // The next LOD begins fading before the previous one has finished,
+        // so the range never exposes an uncovered distance interval.
         assert_eq!(near.end_margin, far.start_margin);
         assert!(far.end_margin.start >= vista.start_margin.start);
         assert!(far.end_margin.end >= vista.start_margin.end);
