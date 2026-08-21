@@ -1827,6 +1827,10 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_foliage.wgsl"
         ));
+        assert!(
+            !shader.contains("world_position.xz +="),
+            "WGSL vector swizzles are not valid compound-assignment targets"
+        );
         let cheap_vertex_start = shader
             .find("if foliage.quality.x > 0.5 {")
             .expect("cheap vertex selector");

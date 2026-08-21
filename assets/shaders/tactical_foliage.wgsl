@@ -97,7 +97,13 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         let wind_phase = globals.time * foliage.wind.w
             + dot(root_world.xz, wind_direction) * 0.16;
         let broad_wind = sin(wind_phase) * foliage.wind.z * height_fraction * height_fraction;
-        world_position.xz += wind_direction * broad_wind * blade_visibility;
+        let wind_offset = wind_direction * broad_wind * blade_visibility;
+        world_position = vec4<f32>(
+            world_position.x + wind_offset.x,
+            world_position.y,
+            world_position.z + wind_offset.y,
+            world_position.w,
+        );
 
         out.world_position = world_position;
         out.position = position_world_to_clip(world_position.xyz);
