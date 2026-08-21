@@ -1,8 +1,9 @@
 use super::geometry::BarkRecipe;
 use super::impostor::{
-    BEECH_TREE_BAKE_STYLE, OAK_TREE_BAKE_STYLE, TreeBakeStyle, TreeImpostorProvenance, TreeLodBake,
-    bake_tree_lod, bake_tree_lod_with_style, tree_impostor_material, tree_leaf_visibility,
-    tree_lod_name, tree_lod_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
+    BEECH_TREE_BAKE_STYLE, OAK_TREE_BAKE_STYLE, TREE_LEAF_HANDOFF_END, TREE_LEAF_HANDOFF_START,
+    TreeBakeStyle, TreeImpostorProvenance, TreeLodBake, bake_tree_lod, bake_tree_lod_with_style,
+    tree_impostor_material, tree_leaf_visibility, tree_lod_name, tree_lod_visibility,
+    tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
     COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
@@ -741,12 +742,13 @@ pub(in crate::presentation) fn stream_tree_lod_children(
 }
 
 fn tree_streamed_leaf_representation(scaled_distance: f32) -> Option<TreeLeafRepresentation> {
-    // The material visibility ranges overlap from roughly 3.5-5 m. Widen the
-    // residency overlap slightly so projection and cluster-size adjustments
-    // cannot expose an ungenerated representation at the handoff.
-    if scaled_distance < 3.0 {
+    // Keep residency decisions on the same projected-scale-aware base band as
+    // tree_leaf_visibility. The cluster-specific visibility range may widen
+    // this overlap, but it must never request a representation after its
+    // corresponding visibility range has become active.
+    if scaled_distance < TREE_LEAF_HANDOFF_START {
         Some(TreeLeafRepresentation::TexturedMesh)
-    } else if scaled_distance > 6.0 {
+    } else if scaled_distance > TREE_LEAF_HANDOFF_END {
         Some(TreeLeafRepresentation::AlphaCard)
     } else {
         None
@@ -1171,12 +1173,12 @@ mod tests {
     #[test]
     fn leaf_residency_only_overlaps_near_the_representation_handoff() {
         assert_eq!(
-            tree_streamed_leaf_representation(2.0),
+            tree_streamed_leaf_representation(1.4),
             Some(TreeLeafRepresentation::TexturedMesh)
         );
-        assert_eq!(tree_streamed_leaf_representation(4.0), None);
+        assert_eq!(tree_streamed_leaf_representation(2.0), None);
         assert_eq!(
-            tree_streamed_leaf_representation(7.0),
+            tree_streamed_leaf_representation(2.6),
             Some(TreeLeafRepresentation::AlphaCard)
         );
     }

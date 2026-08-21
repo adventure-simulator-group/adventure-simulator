@@ -16,6 +16,8 @@ pub(in crate::presentation) const TREE_IMPOSTOR_RENDER_METHOD: &str =
 const TREE_IMPOSTOR_TILE_SIZES: [u32; 4] = [64, 112, 160, 256];
 const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 1.0;
 const WHOLE_TREE_BAKE_EXPOSURE: f32 = 0.91;
+pub(in crate::presentation) const TREE_LEAF_HANDOFF_START: f32 = 1.5;
+pub(in crate::presentation) const TREE_LEAF_HANDOFF_END: f32 = 2.5;
 
 #[derive(Component, Clone, Debug)]
 pub(crate) struct TreeImpostorProvenance {
@@ -840,7 +842,8 @@ pub(in crate::presentation) fn tree_leaf_visibility(
     cluster_radius: f32,
 ) -> VisibilityRange {
     let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
-    let leaf_transition = (3.5 * focal_scale * cluster_scale)..(5.0 * focal_scale * cluster_scale);
+    let leaf_transition = (TREE_LEAF_HANDOFF_START * focal_scale * cluster_scale)
+        ..(TREE_LEAF_HANDOFF_END * focal_scale * cluster_scale);
     let aggregate_transition =
         tree_projected_lod_visibility(0, focal_scale, cluster_radius).end_margin;
     let (start_margin, end_margin) = match representation {
@@ -1077,6 +1080,27 @@ mod tests {
     }
 
     #[test]
+    fn leaf_handoff_scales_with_projection_and_cluster_radius_without_a_gap() {
+        for (focal_scale, cluster_radius) in [(0.55, 1.8), (1.0, 3.5), (2.4, 6.0)] {
+            let cambered_leaf = tree_leaf_visibility(
+                TreeLeafRepresentation::TexturedMesh,
+                focal_scale,
+                cluster_radius,
+            );
+            let alpha_leaf = tree_leaf_visibility(
+                TreeLeafRepresentation::AlphaCard,
+                focal_scale,
+                cluster_radius,
+            );
+            assert_eq!(cambered_leaf.end_margin, alpha_leaf.start_margin);
+            let ratio = cambered_leaf.end_margin.end / cambered_leaf.end_margin.start;
+            let expected_ratio = TREE_LEAF_HANDOFF_END / TREE_LEAF_HANDOFF_START;
+            assert!((ratio - expected_ratio).abs() < 1e-5);
+            assert!(!cambered_leaf.is_abrupt() && !alpha_leaf.is_abrupt());
+        }
+    }
+
+    #[test]
     fn production_tree_lod_ranges_handoff_before_detail_is_subpixel() {
         let expected = [
             (0.0..0.0, 6.0..8.0),
@@ -1092,7 +1116,7 @@ mod tests {
         }
         assert_eq!(
             tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5).end_margin,
-            3.5..5.0
+            1.5..2.5
         );
         assert_eq!(tree_trunk_visibility().end_margin, 50.0..60.0);
     }
