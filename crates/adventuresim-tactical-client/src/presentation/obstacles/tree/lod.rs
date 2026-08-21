@@ -363,14 +363,15 @@ mod tests {
             );
         }
 
-        let mut isolation = app
-            .world_mut()
-            .resource_mut::<TacticalTreeBenchmarkIsolation>();
-        isolation.hide_detailed_leaves = true;
-        isolation.hide_canopy_cards = true;
-        isolation.hide_buds = true;
-        isolation.hide_trunks = true;
-        drop(isolation);
+        {
+            let mut isolation = app
+                .world_mut()
+                .resource_mut::<TacticalTreeBenchmarkIsolation>();
+            isolation.hide_detailed_leaves = true;
+            isolation.hide_canopy_cards = true;
+            isolation.hide_buds = true;
+            isolation.hide_trunks = true;
+        }
         app.update();
 
         for entity in [

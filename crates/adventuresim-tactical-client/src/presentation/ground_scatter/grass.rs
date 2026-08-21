@@ -1338,11 +1338,7 @@ mod tests {
             ] {
                 assert_eq!(mesh.attribute(attribute).unwrap().len(), vertices_per_blade);
             }
-            assert!(
-                indices
-                    .iter()
-                    .all(|index| { usize::try_from(*index).unwrap() < vertices_per_blade })
-            );
+            assert!(indices.iter().all(|index| *index < vertices_per_blade));
             assert_eq!(indices.len() % 3, 0);
             let expected_indices = match lod {
                 GrassMeshLod::Near => vec![
