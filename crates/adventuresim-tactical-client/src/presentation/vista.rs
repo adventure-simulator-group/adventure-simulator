@@ -1545,7 +1545,7 @@ mod tests {
         // aligned lattice, so the playable-to-vista seam cannot extend the
         // physical-grass budget beyond the terrain handoff.
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
-        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(vista.end_margin, 35.0..40.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }

@@ -477,16 +477,14 @@ added on the back side rather than merely removed from reflected diffuse. This
 does not change leaf topology, alpha coverage, entity count, draw count,
 exposure, or global lighting. Non-colliding grass and understory use
 automatically instanced shared meshes, layered shader wind, and root-to-tip
-shading. Grass cross-fades from a 9,216-blade, fifteen-vertex near-field macro
-patch to a stable 1,600-blade, seven-vertex subset at distance; rejected blades
-are absent from the far mesh rather than collapsed after vertex shading. The
-3.2-metre patch spacing cuts grass render entities by roughly an order of
-magnitude while retaining the original macro-patch footprint at four times the
-authored blade density near the player and camera. The distant mesh retains the
-earlier density because individual blades are subpixel there. The 4x near mesh
-cross-fades to the original far topology over 18--26 metres rather than paying
-four times the vertex cost throughout the former 34--44 metre high-detail
-radius. A deterministic scalar mask derived from the same authoritative
+shading. Grass cross-fades from a 1,024-blade, eleven-vertex near-field macro
+patch to a stable 64-blade, seven-vertex cheap tier at 8--10 metres, then to
+16 broad five-vertex vista tufts at 30--35 metres. Rejected blades are absent
+from the reduced meshes rather than collapsed after vertex shading. The
+3.2-metre patch spacing retains the established overlapping macro-patch
+footprint while the 32-by-32 close grid restricts expensive interaction and
+full foliage shading to the range where individual blades are visible. A
+deterministic scalar mask derived from the same authoritative
 ground-cover contour as the terrain rejects blades on dirt and leaf litter and
 progressively thins the grass-side boundary. Tree crowns guarantee a compact
 litter core at the trunk, then use a deterministic radially tapered litter
@@ -508,7 +506,7 @@ topology, deterministic mixed-age height, independent width, clumping, lean,
 and curvature variation avoids a repeated vertical-curtain silhouette. A shared
 world-space meadow field keeps the full
 authored density within seven metres, then introduces short juvenile pockets and
-irregular occupancy before the 18--26 metre cross-fade. The authoritative
+irregular occupancy before the 8--10 metre cross-fade. The authoritative
 grass-side mask uses a broader nonlinear feather, and surviving boundary blades
 shorten with coverage, so dirt and leaf-litter transitions do not terminate as a
 same-height wall. This composition also derives a stable age cohort from the

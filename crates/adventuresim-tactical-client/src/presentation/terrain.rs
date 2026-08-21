@@ -1304,7 +1304,7 @@ mod tests {
     #[test]
     fn terminal_terrain_sward_starts_when_the_final_grass_lod_fades() {
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
-        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(vista.end_margin, 35.0..40.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }

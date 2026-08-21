@@ -143,13 +143,13 @@ without moving render-mesh extraction into the dispatcher or tactical server.
 
 Grass, shrubs, reeds, leaves, and twigs are deterministic shared-mesh foliage
 with no gameplay collider. Grass uses overlapping 3.2-metre shared macro patches
-containing 9,216 individually oriented ribbons: each nearby blade samples a
-cubic longitudinal curve with fifteen vertices, then cross-fades to a stable
-1,600-blade subset using seven vertices per ribbon. The retained blades widen by
-the square root of the density ratio, preserving aggregate coverage while
-eliminating the rejected blades before vertex shading. Internal blade spacing
-matches the former one-metre patch, so the larger footprint cuts grass render
-entities by roughly an order of magnitude without reducing near-field density.
+containing 1,024 individually oriented ribbons only near the camera. They
+cross-fade at 8--10 metres to a stable 64-shoot, seven-vertex cheap tier, then
+at 30--35 metres to 16 broad, five-vertex vista tufts. The retained shoots widen
+by the square root of the density ratio, preserving aggregate coverage while
+eliminating the rejected geometry before vertex shading. The 32-by-32 close grid
+keeps the established macro-patch footprint and overlap while limiting expensive
+interactive blades to the distance where their individual form is visible.
 Canopy, water, cultivation, and snow select stable blades within the shared mesh
 rather than opening macro-patch-sized holes. Both representations evaluate the
 same authored lean, layered spatial wind, and player displacement curve, and an
@@ -165,7 +165,7 @@ and complementary dithering is applied in the foliage fragment shader, so a
 coverage mask copies authoritative playable detail, then blends over twelve
 metres into regional sward coverage; the playable rectangle itself is never
 baked in as a grass-free border. Near ribbons fade into seven-vertex far
-ribbons, which fade into 6.4-metre patch impostors containing 576 broad,
+ribbons, which fade into 6.4-metre patch impostors containing 16 broad,
 five-vertex tuft silhouettes. Regional coverage is sampled continuously per
 blade rather than quantized into four patch-wide density levels or used to
 discard entire macro patches, so ecological variation does not create square
@@ -173,10 +173,10 @@ holes. These are materially different geometry rather than blades merely
 discarded in the vertex shader, following the high/low geometry and far-field
 impostor division described in Eric Wohllaib's GDC 2021
 [*Procedural Grass in Ghost of Tsushima*](https://gdcvault.com/play/1027033/)
-talk. They fade by 140 metres. Beneath every geometric tier, the terrain keeps
+talk. They fade by 40 metres. Beneath every geometric tier, the terrain keeps
 the local solid soil, litter, mud, cultivation, or stone substrate instead of
 painting grass green onto the ground; the blades alone provide the near-field
-sward color. Only while the final vista blades fade from 124 to 140 metres does
+sward color. Only while the final vista blades fade from 35 to 40 metres does
 the terrain introduce an optical-average molded-plastic pigment derived from the
 same environmental grass palette. It compensates for the species/cohort
 darkening, blade occlusion, and thin-foliage lighting that act after the blade
