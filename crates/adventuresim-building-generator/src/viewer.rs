@@ -3981,6 +3981,27 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
         }
         world.remove_resource::<PlayerBuildSpawnContext>();
     }
+    world.insert_resource(PlayerBuildSpawnContext {
+        storey: document
+            .assembly
+            .storeys
+            .iter()
+            .map(|storey| usize::from(storey.level))
+            .max()
+            .unwrap_or(0),
+        role: EditorVisibilityRole::Roof,
+    });
+    for (roof_index, roof) in document.assembly.roofs.iter().copied().enumerate() {
+        spawn_roof(
+            world,
+            &palette,
+            roof,
+            origin,
+            roof_index,
+            document.assembly.wall_style,
+        );
+    }
+    world.remove_resource::<PlayerBuildSpawnContext>();
 }
 
 fn freeform_wall_faces(
@@ -10733,11 +10754,14 @@ fn spawn_roof(
         RoofKind::Hip | RoofKind::HalfHip | RoofKind::Pavilion => {
             let mesh = roof_surface_mesh(roof);
             let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
-            world.spawn((
-                Name::new(format!("roof piece {roof_index}")),
-                Mesh3d(handle),
-                MeshMaterial3d(palette.roof_secondary.clone()),
-            ));
+            let entity = world
+                .spawn((
+                    Name::new(format!("roof piece {roof_index}")),
+                    Mesh3d(handle),
+                    MeshMaterial3d(palette.roof_secondary.clone()),
+                ))
+                .id();
+            tag_player_build_entity(world, entity, &palette.roof_secondary);
         }
         RoofKind::Shed => spawn_shed_roof(world, &palette.roof, roof),
         RoofKind::Flat => spawn_box(
@@ -14881,6 +14905,10 @@ fn spawn_box(
             },
         ))
         .id();
+    tag_player_build_entity(world, entity, material);
+}
+
+fn tag_player_build_entity(world: &mut World, entity: Entity, material: &Handle<StandardMaterial>) {
     if let Some(context) = world.get_resource::<PlayerBuildSpawnContext>().copied() {
         world.entity_mut(entity).insert((
             PlayerBuildEntity,
@@ -16065,6 +16093,24 @@ mod tests {
                 .map(|storey| storey.walls.len())
                 .sum::<usize>(),
             expected_wall_count
+        );
+    }
+
+    #[test]
+    fn detached_assembly_renders_roofs_with_roof_visibility_targets() {
+        let plan = generate_document(&BuildingDocument::fixture(BuildingArchetype::TownHouse, 42))
+            .unwrap();
+        assert!(!plan.roofs.is_empty());
+        let document = PlayerBuildDocument::from_plan(&plan);
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.init_resource::<Assets<StandardMaterial>>();
+        setup_player_build_scene(&mut world, &document);
+        let mut roofs = world.query::<&EditorVisibilityTarget>();
+        assert!(
+            roofs
+                .iter(&world)
+                .any(|target| target.role == EditorVisibilityRole::Roof)
         );
     }
 
