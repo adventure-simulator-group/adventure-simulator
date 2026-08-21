@@ -3664,7 +3664,7 @@ fn update_editor_visibility(
     runtime: Res<EditorRuntime>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut targets: Query<(
-        &EditorVisibilityTarget,
+        Ref<EditorVisibilityTarget>,
         &EditorBaseMaterial,
         &mut EditorAppearanceIsTranslucent,
         &mut MeshMaterial3d<StandardMaterial>,
@@ -3672,12 +3672,16 @@ fn update_editor_visibility(
         Option<&EditorFachwerkForFinishedWall>,
     )>,
 ) {
-    if !runtime.is_changed() {
+    let runtime_changed = runtime.is_changed();
+    if !runtime_changed && targets.iter().all(|(target, ..)| !target.is_added()) {
         return;
     }
     for (target, base_material, mut appearance, mut material, mut visibility, hide_fachwerk) in
         &mut targets
     {
+        if !runtime_changed && !target.is_added() {
+            continue;
+        }
         let above_active_storey = target.storey > runtime.active_storey;
         let hidden_wall = target.role == EditorVisibilityRole::Wall
             && runtime.wall_visibility == WallVisibility::Down;
@@ -15759,6 +15763,31 @@ mod tests {
         );
         assert_eq!(
             *world.get::<Visibility>(upper_frame).unwrap(),
+            Visibility::Hidden
+        );
+
+        // A rebuild can add geometry after the runtime change has already
+        // been observed. Newly tagged entities must still inherit Ground's
+        // current visibility state on the next update.
+        world.clear_trackers();
+        let late_material = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let late_upper_floor = world
+            .spawn((
+                EditorVisibilityTarget {
+                    storey: 1,
+                    role: EditorVisibilityRole::Floor,
+                },
+                EditorBaseMaterial(late_material.clone()),
+                EditorAppearanceIsTranslucent(false),
+                MeshMaterial3d(late_material),
+                Visibility::Visible,
+            ))
+            .id();
+        world.run_system_once(update_editor_visibility).unwrap();
+        assert_eq!(
+            *world.get::<Visibility>(late_upper_floor).unwrap(),
             Visibility::Hidden
         );
     }
