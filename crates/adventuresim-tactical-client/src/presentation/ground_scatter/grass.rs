@@ -24,10 +24,79 @@ pub(super) struct Assets {
     pub vista_material: Handle<TacticalFoliageMaterial>,
 }
 
-pub(super) struct CommunityMeshes {
-    pub near: Handle<Mesh>,
-    pub far: Handle<Mesh>,
-    pub vista: Handle<Mesh>,
+pub(in crate::presentation) struct CommunityMeshes {
+    near: [Handle<Mesh>; GrassTopology::COUNT],
+    far: [Handle<Mesh>; GrassTopology::COUNT],
+    vista: [Handle<Mesh>; GrassTopology::COUNT],
+}
+
+impl CommunityMeshes {
+    pub(in crate::presentation) fn new(
+        mut build: impl FnMut(GrassMeshLod, GrassTopology) -> Handle<Mesh>,
+    ) -> Self {
+        Self {
+            near: GrassTopology::ALL.map(|topology| build(GrassMeshLod::Near, topology)),
+            far: GrassTopology::ALL.map(|topology| build(GrassMeshLod::Far, topology)),
+            vista: GrassTopology::ALL.map(|topology| build(GrassMeshLod::Vista, topology)),
+        }
+    }
+
+    pub(in crate::presentation) fn mesh(
+        &self,
+        lod: GrassMeshLod,
+        topology: GrassTopology,
+    ) -> &Handle<Mesh> {
+        match lod {
+            GrassMeshLod::Near => &self.near[topology.index()],
+            GrassMeshLod::Far => &self.far[topology.index()],
+            GrassMeshLod::Vista => &self.vista[topology.index()],
+        }
+    }
+}
+
+/// A deterministic subset of the shared grass patch topology. The continuous
+/// ground mask still rejects individual blades at authored boundaries; this
+/// only avoids submitting obviously unused blades for sparsely covered patches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::presentation) enum GrassTopology {
+    Quarter,
+    Half,
+    ThreeQuarters,
+    Full,
+}
+
+impl GrassTopology {
+    pub(in crate::presentation) const ALL: [Self; 4] =
+        [Self::Quarter, Self::Half, Self::ThreeQuarters, Self::Full];
+    pub(in crate::presentation) const COUNT: usize = Self::ALL.len();
+
+    pub(in crate::presentation) const fn index(self) -> usize {
+        self as usize
+    }
+
+    pub(in crate::presentation) const fn density(self) -> f32 {
+        match self {
+            Self::Quarter => 0.25,
+            Self::Half => 0.50,
+            Self::ThreeQuarters => 0.75,
+            Self::Full => 1.0,
+        }
+    }
+
+    pub(in crate::presentation) fn for_local_coverage(coverage: f32) -> Option<Self> {
+        let coverage = coverage.clamp(0.0, 1.0);
+        if coverage <= f32::EPSILON {
+            None
+        } else if coverage <= 0.25 {
+            Some(Self::Quarter)
+        } else if coverage <= 0.50 {
+            Some(Self::Half)
+        } else if coverage <= 0.75 {
+            Some(Self::ThreeQuarters)
+        } else {
+            Some(Self::Full)
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -190,13 +259,16 @@ pub(super) fn spawn(
             ) else {
                 continue;
             };
+            let Some(topology) = grass_patch_topology(ground, Vec2::new(world_x, world_z)) else {
+                continue;
+            };
             let meshes = &assets.community_meshes
                 [grass_community_at(Vec2::new(world_x, world_z), base_seed, profile).index()];
             commands.spawn((
                 Name::new("Tactical grass near ribbons"),
                 GroundScatterLayer::Grass,
                 NotShadowCaster,
-                Mesh3d(meshes.near.clone()),
+                Mesh3d(meshes.mesh(GrassMeshLod::Near, topology).clone()),
                 MeshMaterial3d(assets.near_material.clone()),
                 grass_lod_visibility(GrassMeshLod::Near),
                 transform,
@@ -205,7 +277,7 @@ pub(super) fn spawn(
                 Name::new("Tactical grass far ribbons"),
                 GroundScatterLayer::Grass,
                 NotShadowCaster,
-                Mesh3d(meshes.far.clone()),
+                Mesh3d(meshes.mesh(GrassMeshLod::Far, topology).clone()),
                 MeshMaterial3d(assets.far_material.clone()),
                 grass_lod_visibility(GrassMeshLod::Far),
                 transform,
@@ -230,13 +302,16 @@ pub(super) fn spawn(
             let Some(transform) = grass_patch_placement(terrain, ground, centre, centre) else {
                 continue;
             };
+            let Some(topology) = grass_patch_topology(ground, centre) else {
+                continue;
+            };
             let meshes =
                 &assets.community_meshes[grass_community_at(centre, base_seed, profile).index()];
             commands.spawn((
                 Name::new("Tactical grass vista tufts"),
                 GroundScatterLayer::Grass,
                 NotShadowCaster,
-                Mesh3d(meshes.vista.clone()),
+                Mesh3d(meshes.mesh(GrassMeshLod::Vista, topology).clone()),
                 MeshMaterial3d(assets.vista_material.clone()),
                 grass_lod_visibility(GrassMeshLod::Vista),
                 transform,
@@ -317,6 +392,23 @@ fn ground_allows_grass_patch(ground: &SceneGround, centre: Vec2) -> bool {
                 .is_some_and(|sample| sample.cover == GroundCover::TallGrass)
         })
     })
+}
+
+fn grass_patch_topology(ground: &SceneGround, centre: Vec2) -> Option<GrassTopology> {
+    let half_extent = GRASS_PATCH_SPACING * 0.58;
+    let mut total = 0.0;
+    let mut samples = 0;
+    for z in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+        for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let coverage = ground
+                .ground_at(centre + Vec2::new(x, z) * half_extent)
+                .filter(|sample| sample.cover == GroundCover::TallGrass)
+                .map_or(0.0, |sample| f32::from(sample.cover_density_bps) / 10_000.0);
+            total += coverage;
+            samples += 1;
+        }
+    }
+    GrassTopology::for_local_coverage(total / samples as f32)
 }
 fn grass_patch_transform(terrain: &SceneTerrain, world_x: f32, world_z: f32) -> Option<Transform> {
     let sample = Vec2::new(world_x, world_z);
@@ -1209,6 +1301,74 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(distinct_pigments.len() <= 4);
         assert!(distinct_pigments.len() >= 3);
+    }
+
+    #[test]
+    fn local_coverage_selects_monotonic_deterministic_topologies_and_skips_zero() {
+        assert_eq!(GrassTopology::for_local_coverage(0.0), None);
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.01),
+            Some(GrassTopology::Quarter)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.25),
+            Some(GrassTopology::Quarter)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.26),
+            Some(GrassTopology::Half)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.51),
+            Some(GrassTopology::ThreeQuarters)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.76),
+            Some(GrassTopology::Full)
+        );
+
+        let zero = SceneGround::from_samples(41, 41, 0.1, vec![GroundSurface::default(); 41 * 41])
+            .unwrap();
+        assert_eq!(grass_patch_topology(&zero, Vec2::ZERO), None);
+
+        let topology_for_density = |density| {
+            let sample = GroundSurface {
+                cover: GroundCover::TallGrass,
+                cover_density_bps: density,
+                ..default()
+            };
+            let ground = SceneGround::from_samples(41, 41, 0.1, vec![sample; 41 * 41]).unwrap();
+            grass_patch_topology(&ground, Vec2::ZERO)
+        };
+        assert_eq!(topology_for_density(2_500), Some(GrassTopology::Quarter));
+        assert_eq!(topology_for_density(5_000), Some(GrassTopology::Half));
+        assert_eq!(
+            topology_for_density(7_500),
+            Some(GrassTopology::ThreeQuarters)
+        );
+        assert_eq!(topology_for_density(10_000), Some(GrassTopology::Full));
+
+        let variants = GrassTopology::ALL.map(|topology| {
+            grass_patch_mesh(
+                Color::WHITE,
+                GrassMeshLod::Far,
+                topology.density(),
+                GrassCommunity::MesicMeadow,
+            )
+        });
+        let repeated = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Far,
+            GrassTopology::Half.density(),
+            GrassCommunity::MesicMeadow,
+        );
+        assert_eq!(
+            variants[1].attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        for pair in variants.windows(2) {
+            assert!(pair[0].count_vertices() <= pair[1].count_vertices());
+        }
     }
 
     #[test]

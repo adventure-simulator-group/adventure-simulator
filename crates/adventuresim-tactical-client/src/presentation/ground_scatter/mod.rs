@@ -37,7 +37,7 @@ mod understory;
 
 use grass::grass_material;
 pub(in crate::presentation) use grass::{
-    GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod,
+    GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod, GrassTopology,
     VISTA_GRASS_PATCH_SPACING, grass_community_at, grass_lod_visibility, grass_patch_mesh,
     vista_grass_material,
 };
@@ -227,25 +227,15 @@ pub(super) fn spawn_ground_foliage(
     let understory_chance = understory_scatter_chance(canopy, wetland, cultivation);
     let (grass_color, grass_dryness) = grass_pigment(environment);
     let grass_profile = GrassCommunityProfile::from_environment(environment);
-    let grass_community_meshes = GrassCommunity::ALL.map(|community| grass::CommunityMeshes {
-        near: meshes.add(grass_patch_mesh(
-            grass_color,
-            GrassMeshLod::Near,
-            grass_density,
-            community,
-        )),
-        far: meshes.add(grass_patch_mesh(
-            grass_color,
-            GrassMeshLod::Far,
-            grass_density,
-            community,
-        )),
-        vista: meshes.add(grass_patch_mesh(
-            grass_color,
-            GrassMeshLod::Vista,
-            grass_density,
-            community,
-        )),
+    let grass_community_meshes = GrassCommunity::ALL.map(|community| {
+        grass::CommunityMeshes::new(|lod, topology| {
+            meshes.add(grass_patch_mesh(
+                grass_color,
+                lod,
+                grass_density * topology.density(),
+                community,
+            ))
+        })
     });
     ensure_understory_presentations(
         meshes,

@@ -215,8 +215,16 @@ fn spawn_near_vista_scatter(
     // continue across it, so crossing the boundary cannot introduce an LOD
     // edge or replace blank space with a close representation.
     for grass_lod in [GrassMeshLod::Near, GrassMeshLod::Far] {
-        let community_meshes = GrassCommunity::ALL
-            .map(|community| meshes.add(grass_patch_mesh(grass_color, grass_lod, 1.0, community)));
+        let community_meshes = GrassCommunity::ALL.map(|community| {
+            GrassTopology::ALL.map(|topology| {
+                meshes.add(grass_patch_mesh(
+                    grass_color,
+                    grass_lod,
+                    topology.density(),
+                    community,
+                ))
+            })
+        });
         let material = foliage_materials.add(vista_grass_material(
             wind_scale,
             grass_dryness,
@@ -230,6 +238,7 @@ fn spawn_near_vista_scatter(
             coarser_lod,
             playable_half_extent,
             playable_terrain,
+            playable_ground,
             grass_seed,
             grass_seed,
             GRASS_PATCH_SPACING,
@@ -242,12 +251,14 @@ fn spawn_near_vista_scatter(
     }
 
     let vista_meshes = GrassCommunity::ALL.map(|community| {
-        meshes.add(grass_patch_mesh(
-            grass_color,
-            GrassMeshLod::Vista,
-            1.0,
-            community,
-        ))
+        GrassTopology::ALL.map(|topology| {
+            meshes.add(grass_patch_mesh(
+                grass_color,
+                GrassMeshLod::Vista,
+                topology.density(),
+                community,
+            ))
+        })
     });
     let vista_material = foliage_materials.add(vista_grass_material(
         wind_scale,
@@ -262,6 +273,7 @@ fn spawn_near_vista_scatter(
         coarser_lod,
         playable_half_extent,
         playable_terrain,
+        playable_ground,
         grass_seed ^ 0x7669_7374_615f_6c6f,
         grass_seed,
         VISTA_GRASS_PATCH_SPACING,
@@ -398,13 +410,50 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn vista_allows_grass_patch(lod: &VistaLod, centre: Vec2, half_extent: f32) -> bool {
-    [-1.0, 0.0, 1.0].into_iter().any(|z| {
-        [-1.0, 0.0, 1.0].into_iter().any(|x| {
-            sample_vista_environment(lod, centre + Vec2::new(x, z) * half_extent)
-                .is_some_and(|sample| vista_sward_coverage(sample) > 0.0)
-        })
-    })
+fn vista_grass_patch_topology(
+    lod: &VistaLod,
+    playable_half_extent: Vec2,
+    playable_ground: &SceneGround,
+    centre: Vec2,
+    half_extent: f32,
+) -> Option<GrassTopology> {
+    let mut total = 0.0;
+    let mut samples = 0;
+    for z in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+        for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let point = centre + Vec2::new(x, z) * half_extent;
+            total +=
+                stitched_vista_topology_coverage(lod, playable_half_extent, playable_ground, point);
+            samples += 1;
+        }
+    }
+    GrassTopology::for_local_coverage(total / samples as f32)
+}
+
+fn stitched_vista_topology_coverage(
+    lod: &VistaLod,
+    playable_half_extent: Vec2,
+    playable_ground: &SceneGround,
+    point: Vec2,
+) -> f32 {
+    let boundary = point.clamp(-playable_half_extent, playable_half_extent);
+    let playable_coverage = playable_ground
+        .ground_at(boundary)
+        .filter(|sample| sample.cover == GroundCover::TallGrass)
+        .map_or(0.0, |sample| f32::from(sample.cover_density_bps) / 10_000.0);
+    let outside = (point.abs() - playable_half_extent)
+        .max(Vec2::ZERO)
+        .max_element();
+    if outside <= 0.0 {
+        return playable_coverage;
+    }
+    let vista_coverage = sample_vista_environment(lod, point)
+        .map(vista_sward_coverage)
+        .unwrap_or(0.0);
+    playable_coverage.lerp(
+        vista_coverage,
+        smoothstep01(outside / VISTA_GRASS_BOUNDARY_STITCH_METRES),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -414,11 +463,12 @@ fn spawn_vista_grass_lattice(
     coarser_lod: Option<&VistaLod>,
     playable_half_extent: Vec2,
     playable_terrain: &SceneTerrain,
+    playable_ground: &SceneGround,
     seed: u64,
     community_seed: u64,
     spacing: f32,
     outer_collar: f32,
-    meshes: &[Handle<Mesh>; 3],
+    meshes: &[[Handle<Mesh>; GrassTopology::COUNT]; 3],
     profile: GrassCommunityProfile,
     material: &Handle<TacticalFoliageMaterial>,
     visibility: VisibilityRange,
@@ -442,11 +492,18 @@ fn spawn_vista_grass_lattice(
             let Some(sample) = sample_vista_environment(lod, point) else {
                 continue;
             };
-            if !vista_allows_grass_patch(lod, point, spacing * 0.58) {
+            let Some(topology) = vista_grass_patch_topology(
+                lod,
+                playable_half_extent,
+                playable_ground,
+                point,
+                spacing * 0.58,
+            ) else {
                 continue;
-            }
+            };
             let local_profile = profile.localized(sample);
-            let mesh = &meshes[grass_community_at(point, community_seed, local_profile) as usize];
+            let mesh = &meshes[grass_community_at(point, community_seed, local_profile) as usize]
+                [topology.index()];
             let Some(transform) = vista_scatter_transform(
                 lod,
                 coarser_lod,
