@@ -422,7 +422,7 @@ fn spawn_streamed_tree_children(
                 tree_lod_visibility(lod),
             ));
             if lod <= 2 {
-                parent.spawn((
+                let mut aggregate_wood = parent.spawn((
                     Name::new(tree_lod_name(lod, false)),
                     StreamedTreeChild,
                     TreeLod(lod),
@@ -435,6 +435,9 @@ fn spawn_streamed_tree_children(
                     aggregate_tree_wood_material(cached.aggregate_bark_material.clone()),
                     tree_lod_visibility(lod),
                 ));
+                if !aggregate_tree_wood_casts_shadows(lod) {
+                    aggregate_wood.insert(NotShadowCaster);
+                }
             }
         }
         if new_mask & (1 << 5) != 0 {
@@ -461,6 +464,10 @@ fn aggregate_tree_wood_material(
     material: Handle<TacticalTreeAggregateBarkMaterial>,
 ) -> MeshMaterial3d<TacticalTreeAggregateBarkMaterial> {
     MeshMaterial3d(material)
+}
+
+fn aggregate_tree_wood_casts_shadows(lod: u8) -> bool {
+    lod != 2
 }
 
 fn bake_tree_card_for_cached(cached: &CachedTreePresentation, lod: u8) -> TreeLodBake {
@@ -1186,6 +1193,32 @@ mod tests {
         let entity = world.entity(entity);
         assert!(entity.contains::<MeshMaterial3d<TacticalTreeAggregateBarkMaterial>>());
         assert!(!entity.contains::<MeshMaterial3d<TacticalTreeBarkMaterial>>());
+    }
+
+    #[test]
+    fn only_lod2_aggregate_wood_is_excluded_from_shadow_casting() {
+        let mut world = World::new();
+        for lod in [1, 2] {
+            let mut entity = world.spawn((
+                PlayableTreeAggregateWood,
+                TreeLod(lod),
+                aggregate_tree_wood_material(Handle::default()),
+            ));
+            if !aggregate_tree_wood_casts_shadows(lod) {
+                entity.insert(NotShadowCaster);
+            }
+        }
+
+        let mut aggregate_wood = world.query::<(&TreeLod, Has<NotShadowCaster>)>();
+        let mut policies = aggregate_wood
+            .iter(&world)
+            .map(|(lod, not_shadow_caster)| (lod.0, not_shadow_caster))
+            .collect::<Vec<_>>();
+        policies.sort_unstable_by_key(|(lod, _)| *lod);
+
+        assert_eq!(policies, [(1, false), (2, true)]);
+        assert!(aggregate_tree_wood_casts_shadows(1));
+        assert!(!aggregate_tree_wood_casts_shadows(2));
     }
 
     #[test]

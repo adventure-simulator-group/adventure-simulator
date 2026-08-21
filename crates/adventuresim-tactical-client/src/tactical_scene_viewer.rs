@@ -2142,6 +2142,10 @@ fn benchmark_scene_performance(
     litter_diagnostics: Query<&GroundLitterDiagnostics>,
     loose_stone_pebble_patches: Query<&LooseStonePebblePatch>,
     visible_tree_lods: Query<(&TreeLod, &ViewVisibility, Option<&TreeLeafRepresentation>)>,
+    aggregate_wood_shadow_casters: Query<
+        (&TreeLod, Has<NotShadowCaster>),
+        With<PlayableTreeAggregateWood>,
+    >,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(state), Some(capture)) = (state.as_deref_mut(), capture.as_deref()) else {
@@ -2322,6 +2326,17 @@ fn benchmark_scene_performance(
                 .filter(|(_, _, _, wood, _, _)| *wood)
                 .count(),
         );
+        for lod in [1_u8, 2] {
+            counts.insert(
+                format!("tree_lod{lod}_aggregate_wood_shadow_caster_entities"),
+                aggregate_wood_shadow_casters
+                    .iter()
+                    .filter(|(tree_lod, not_shadow_caster)| {
+                        tree_lod.0 == lod && !*not_shadow_caster
+                    })
+                    .count(),
+            );
+        }
         counts.insert(
             "tree_bud_entities".to_owned(),
             visibility_layers
