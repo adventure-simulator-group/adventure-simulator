@@ -1013,6 +1013,46 @@ impl PlayerBuildDocument {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PlayerBuildAdvice {
+    NoExteriorDoor,
+    UpperStoreyWithoutSupport { storey: u16 },
+}
+
+/// Advisory-only findings for freeform construction.  These never change a
+/// player-build document and therefore cannot turn historical or structural
+/// preference into a hidden placement veto.
+pub fn analyse_player_build(document: &PlayerBuildDocument) -> Vec<PlayerBuildAdvice> {
+    let mut advice = Vec::new();
+    if !document.parts.iter().any(|part| {
+        matches!(
+            part.kind,
+            PlayerBuildPartKind::Door | PlayerBuildPartKind::Gate
+        ) && part.storey == 0
+    }) {
+        advice.push(PlayerBuildAdvice::NoExteriorDoor);
+    }
+    for storey in document
+        .parts
+        .iter()
+        .map(|part| part.storey)
+        .filter(|storey| *storey > 0)
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        let has_lower_structure = document.parts.iter().any(|part| {
+            part.storey < storey
+                && matches!(
+                    part.kind,
+                    PlayerBuildPartKind::Wall | PlayerBuildPartKind::Room
+                )
+        });
+        if !has_lower_structure {
+            advice.push(PlayerBuildAdvice::UpperStoreyWithoutSupport { storey });
+        }
+    }
+    advice
+}
+
 fn part_dimensions_are_renderable(part: &PlayerBuildPart) -> bool {
     [
         part.x_metres,
@@ -3577,5 +3617,25 @@ mod tests {
             },
         });
         assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn player_build_analysis_is_advisory() {
+        let document = PlayerBuildDocument::empty()
+            .apply(PlayerBuildEdit::Place {
+                part: PlayerBuildPart {
+                    storey: 1,
+                    ..wall(9)
+                },
+            })
+            .unwrap();
+        assert_eq!(
+            analyse_player_build(&document),
+            vec![
+                PlayerBuildAdvice::NoExteriorDoor,
+                PlayerBuildAdvice::UpperStoreyWithoutSupport { storey: 1 },
+            ]
+        );
+        assert_eq!(document.parts.len(), 1);
     }
 }
