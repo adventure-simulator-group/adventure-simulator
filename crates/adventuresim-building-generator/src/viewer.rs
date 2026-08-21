@@ -2233,6 +2233,7 @@ struct EditorRuntime {
     window_width_metres: f32,
     window_sill_metres: f32,
     window_height_metres: f32,
+    opening_kind: OpeningKind,
     mode: EditorMode,
     active_storey: usize,
     wall_visibility: WallVisibility,
@@ -2255,6 +2256,7 @@ impl EditorRuntime {
             window_width_metres: 0.8,
             window_sill_metres: 0.9,
             window_height_metres: 1.1,
+            opening_kind: OpeningKind::Window,
             mode: EditorMode::Select,
             active_storey: 0,
             wall_visibility: WallVisibility::Up,
@@ -2267,7 +2269,7 @@ impl EditorRuntime {
 #[derive(Clone, Copy)]
 enum EditorUiAction {
     ChangeArchetype(BuildingArchetype),
-    AddWindow(WallSelector),
+    AddOpening(WallSelector, OpeningKind),
     RemoveOpening(WallSelector),
     SetWallStyle(WallStyle),
     SetTimberStyle(TimberFrameStyle),
@@ -2474,6 +2476,44 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                 ui.label(editor_target_label(selected));
                 match selected {
                     EditorTarget::Wall(wall) => {
+                        ui.label("Opening type");
+                        ui.horizontal_wrapped(|ui| {
+                            for (kind, label) in [
+                                (OpeningKind::Window, "Window"),
+                                (OpeningKind::Door, "Door"),
+                                (OpeningKind::Gate, "Gate"),
+                                (OpeningKind::ArrowSlit, "Arrow slit"),
+                            ] {
+                                if ui
+                                    .selectable_label(runtime.opening_kind == kind, label)
+                                    .clicked()
+                                {
+                                    runtime.opening_kind = kind;
+                                    match kind {
+                                        OpeningKind::Window => {
+                                            runtime.window_width_metres = 0.8;
+                                            runtime.window_sill_metres = 0.9;
+                                            runtime.window_height_metres = 1.1;
+                                        }
+                                        OpeningKind::Door => {
+                                            runtime.window_width_metres = 0.95;
+                                            runtime.window_sill_metres = 0.0;
+                                            runtime.window_height_metres = 2.1;
+                                        }
+                                        OpeningKind::Gate => {
+                                            runtime.window_width_metres = 2.4;
+                                            runtime.window_sill_metres = 0.0;
+                                            runtime.window_height_metres = 2.8;
+                                        }
+                                        OpeningKind::ArrowSlit => {
+                                            runtime.window_width_metres = 0.25;
+                                            runtime.window_sill_metres = 1.2;
+                                            runtime.window_height_metres = 1.0;
+                                        }
+                                    }
+                                }
+                            }
+                        });
                         ui.add(
                             egui::DragValue::new(&mut runtime.window_width_metres)
                                 .range(0.35..=1.2)
@@ -2495,10 +2535,10 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                                 .prefix("height ")
                                 .suffix(" m"),
                         );
-                        if ui.button("Place window").clicked() {
-                            action = Some(EditorUiAction::AddWindow(wall));
+                        if ui.button("Place opening").clicked() {
+                            action = Some(EditorUiAction::AddOpening(wall, runtime.opening_kind));
                         }
-                        ui.small("Doors, gates, arches, and freeform walls are part of the player-build document, not this audited programme editor.");
+                        ui.small("Doors, gates, and arrow slits are audited against their wall. Arches and freeform walls are part of the player-build document.");
                     }
                     EditorTarget::Opening(wall) => {
                         if ui.button("Remove opening").clicked() {
@@ -2591,10 +2631,11 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
                 Err(error) => runtime.error = Some(error.to_string()),
             }
         }
-        EditorUiAction::AddWindow(wall) => apply_editor_edit(
+        EditorUiAction::AddOpening(wall, kind) => apply_editor_edit(
             runtime,
-            BuildingEdit::AddWindow {
+            BuildingEdit::AddOpening {
                 wall,
+                opening_kind: kind,
                 width_metres: runtime.window_width_metres,
                 sill_metres: runtime.window_sill_metres,
                 height_metres: runtime.window_height_metres,

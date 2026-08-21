@@ -130,7 +130,7 @@ pub fn generate_document(document: &BuildingDocument) -> Result<BuildingPlan, Ge
                 }
                 program.timber_frame_style = Some(style);
             }
-            BuildingEdit::AddWindow { .. } | BuildingEdit::RemoveOpening { .. } => {}
+            BuildingEdit::AddOpening { .. } | BuildingEdit::RemoveOpening { .. } => {}
         }
     }
     let plan = generate_unchecked(&program, &document.edits)?;
@@ -418,7 +418,7 @@ fn apply_opening_edits(
 ) -> Result<(), GenerationError> {
     for edit in edits {
         let selector = match edit {
-            BuildingEdit::AddWindow { wall, .. } | BuildingEdit::RemoveOpening { wall } => *wall,
+            BuildingEdit::AddOpening { wall, .. } | BuildingEdit::RemoveOpening { wall } => *wall,
             BuildingEdit::SetWallStyle { .. } | BuildingEdit::SetTimberFrameStyle { .. } => {
                 continue;
             }
@@ -436,33 +436,57 @@ fn apply_opening_edits(
                 ))
             })?;
         match *edit {
-            BuildingEdit::AddWindow {
+            BuildingEdit::AddOpening {
+                opening_kind: kind,
                 width_metres,
                 sill_metres,
                 height_metres,
                 ..
             } => {
-                if !walls[wall_index].exterior() {
-                    return Err(GenerationError::UnsupportedEdit(
-                        "the MVP adds windows only to exterior grid walls".to_owned(),
-                    ));
+                if matches!(
+                    kind,
+                    OpeningKind::Window | OpeningKind::Gate | OpeningKind::ArrowSlit
+                ) && !walls[wall_index].exterior()
+                {
+                    return Err(GenerationError::UnsupportedEdit(format!(
+                        "{kind:?} openings require an exterior grid wall"
+                    )));
                 }
                 if openings.iter().any(|opening| opening.wall == wall_index) {
                     return Err(GenerationError::EditConflict(format!(
                         "wall already owns an opening on storey {level}"
                     )));
                 }
-                if !(0.35..=1.20).contains(&width_metres)
-                    || !(0.30..=2.20).contains(&sill_metres)
-                    || !(0.45..=1.80).contains(&height_metres)
-                {
-                    return Err(GenerationError::UnsupportedEdit(
-                        "window dimensions are outside the editor project envelope".to_owned(),
-                    ));
+                let dimensions_are_valid = match kind {
+                    OpeningKind::Window => {
+                        (0.35..=1.20).contains(&width_metres)
+                            && (0.30..=2.20).contains(&sill_metres)
+                            && (0.45..=1.80).contains(&height_metres)
+                    }
+                    OpeningKind::Door => {
+                        (0.70..=1.40).contains(&width_metres)
+                            && sill_metres.abs() <= 0.01
+                            && (1.80..=2.60).contains(&height_metres)
+                    }
+                    OpeningKind::Gate => {
+                        (1.50..=3.80).contains(&width_metres)
+                            && sill_metres.abs() <= 0.01
+                            && (2.20..=3.40).contains(&height_metres)
+                    }
+                    OpeningKind::ArrowSlit => {
+                        (0.15..=0.45).contains(&width_metres)
+                            && (0.80..=1.80).contains(&sill_metres)
+                            && (0.70..=1.50).contains(&height_metres)
+                    }
+                };
+                if !dimensions_are_valid {
+                    return Err(GenerationError::UnsupportedEdit(format!(
+                        "{kind:?} dimensions are outside the editor project envelope"
+                    )));
                 }
                 openings.push(Opening {
                     wall: wall_index,
-                    kind: OpeningKind::Window,
+                    kind,
                     width_metres,
                     sill_metres,
                     height_metres,
@@ -22139,8 +22163,9 @@ mod tests {
         };
         let (edited, plan) = edit_document(
             &document,
-            BuildingEdit::AddWindow {
+            BuildingEdit::AddOpening {
                 wall: selector,
+                opening_kind: OpeningKind::Window,
                 width_metres: 0.80,
                 sill_metres: 0.90,
                 height_metres: 1.10,
@@ -22163,6 +22188,45 @@ mod tests {
     }
 
     #[test]
+    fn editor_opening_command_supports_audited_doors() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let storey = &plan.storeys[1];
+        let wall = storey
+            .walls
+            .iter()
+            .enumerate()
+            .find(|(index, wall)| {
+                wall.exterior() && !storey.openings.iter().any(|opening| opening.wall == *index)
+            })
+            .map(|(_, wall)| wall)
+            .expect("fixture has an unopened exterior wall");
+        let (edited, edited_plan) = edit_document(
+            &document,
+            BuildingEdit::AddOpening {
+                wall: crate::WallSelector {
+                    storey_level: storey.level,
+                    cell: wall.cell,
+                    direction: wall.direction,
+                },
+                opening_kind: OpeningKind::Door,
+                width_metres: 0.95,
+                sill_metres: 0.0,
+                height_metres: 2.1,
+            },
+        )
+        .unwrap();
+        assert!(crate::audit_plan(&edited_plan).is_empty());
+        assert!(edited.edits.iter().any(|edit| matches!(
+            edit,
+            BuildingEdit::AddOpening {
+                opening_kind: OpeningKind::Door,
+                ..
+            }
+        )));
+    }
+
+    #[test]
     fn invalid_editor_command_preserves_the_previous_document() {
         let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
         let plan = generate_document(&document).unwrap();
@@ -22170,12 +22234,13 @@ mod tests {
         let wall = plan.storeys[0].walls[opening.wall];
         let result = edit_document(
             &document,
-            BuildingEdit::AddWindow {
+            BuildingEdit::AddOpening {
                 wall: crate::WallSelector {
                     storey_level: 0,
                     cell: wall.cell,
                     direction: wall.direction,
                 },
+                opening_kind: OpeningKind::Window,
                 width_metres: 0.8,
                 sill_metres: 0.9,
                 height_metres: 1.1,

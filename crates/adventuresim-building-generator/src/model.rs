@@ -786,7 +786,7 @@ impl BuildingProgram {
     }
 }
 
-pub const BUILDING_DOCUMENT_SCHEMA_VERSION: u32 = 1;
+pub const BUILDING_DOCUMENT_SCHEMA_VERSION: u32 = 2;
 
 /// Stable grid address used by editor commands. Unlike resolved mesh IDs, this
 /// remains meaningful when the building is regenerated after an edit.
@@ -800,8 +800,9 @@ pub struct WallSelector {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum BuildingEdit {
-    AddWindow {
+    AddOpening {
         wall: WallSelector,
+        opening_kind: OpeningKind,
         width_metres: f32,
         sill_metres: f32,
         height_metres: f32,
