@@ -330,13 +330,12 @@ const GRASS_BLADE_SPACING: f32 = 3.51 / (GRASS_PATCH_GRID_SIDE - 1) as f32;
 // Keep neighbouring near-flat macro patches inside the blade footprint even
 // when their deterministic centre jitter diverges in opposite directions.
 const GRASS_PATCH_JITTER_FRACTION: f32 = 0.04;
-const GRASS_FAR_GRID_COORDINATES: [usize; 40] = [
-    0, 2, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27, 29, 32, 34, 37, 39, 41, 44, 46, 49, 51, 54, 56, 58,
-    61, 63, 66, 68, 71, 73, 76, 78, 80, 83, 85, 88, 90, 93, 95,
+const GRASS_FAR_GRID_COORDINATES: [usize; 28] = [
+    0, 4, 7, 11, 14, 18, 21, 25, 28, 32, 35, 39, 42, 46, 49, 53, 56, 60, 63, 67, 70, 74, 77, 81,
+    84, 88, 91, 95,
 ];
-const GRASS_VISTA_GRID_COORDINATES: [usize; 24] = [
-    0, 4, 8, 12, 17, 21, 25, 29, 33, 37, 41, 45, 50, 54, 58, 62, 66, 70, 74, 78, 83, 87, 91, 95,
-];
+const GRASS_VISTA_GRID_COORDINATES: [usize; 16] =
+    [0, 6, 13, 19, 25, 32, 38, 44, 51, 57, 63, 70, 76, 82, 89, 95];
 pub(in crate::presentation) const VISTA_GRASS_PATCH_SPACING: f32 = 6.4;
 pub(super) fn grass_material(
     wind_scale: f32,
@@ -489,7 +488,7 @@ impl GrassMeshLod {
         match self {
             Self::Near => return 1.0,
             // These intentionally read as broad clump silhouettes rather than
-            // pretending that 576 survivors remain close-range blades.
+            // pretending that 256 survivors remain close-range blades.
             Self::Vista => return 2.4,
             Self::Far => {}
         }
@@ -1202,9 +1201,9 @@ mod tests {
             .unwrap();
         assert!(near_positions.len() > 9_216 * 15);
         let near_blade_positions = &near_positions[..9_216 * 15];
-        assert_eq!(far_positions.len(), 1_600 * 7);
-        assert_eq!(vista.count_vertices(), 576 * 5);
-        assert!(576.0 / VISTA_GRASS_PATCH_SPACING.powi(2) >= 14.0);
+        assert_eq!(far_positions.len(), 784 * 7);
+        assert_eq!(vista.count_vertices(), 256 * 5);
+        assert!(256.0 / VISTA_GRASS_PATCH_SPACING.powi(2) >= 6.0);
         assert!(near_blade_positions.len() > far_positions.len());
         assert!(far_positions.len() > vista.count_vertices());
         let sparse_positions = sparse
@@ -1301,6 +1300,36 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(distinct_pigments.len() <= 4);
         assert!(distinct_pigments.len() >= 3);
+
+        let repeated_far = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Far,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let repeated_vista = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Vista,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        assert_eq!(
+            far.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_far.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        assert_eq!(
+            vista.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_vista.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+
+        let Some(VertexAttributeValues::Float32x2(vista_roots)) =
+            vista.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("vista grass mesh must carry stable blade roots");
+        };
+        assert_eq!(vista_roots.len(), vista.count_vertices());
+        assert!(vista_roots.iter().any(|root| root[0] < -1.7));
+        assert!(vista_roots.iter().any(|root| root[0] > 1.7));
     }
 
     #[test]
@@ -1519,7 +1548,7 @@ mod tests {
             GrassCommunity::MesicMeadow,
         );
         assert!(near.count_vertices() > 9_216 * 15);
-        assert_eq!(far.count_vertices(), 1_600 * 7);
+        assert_eq!(far.count_vertices(), 784 * 7);
     }
 
     #[test]
