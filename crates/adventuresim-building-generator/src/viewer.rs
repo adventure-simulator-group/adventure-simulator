@@ -2251,24 +2251,6 @@ pub(crate) enum RoofVisibility {
     Hide,
 }
 
-impl RoofVisibility {
-    fn next(self) -> Self {
-        match self {
-            Self::Show => Self::Ghost,
-            Self::Ghost => Self::Hide,
-            Self::Hide => Self::Show,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Show => "Roof: Show",
-            Self::Ghost => "Roof: Ghost",
-            Self::Hide => "Roof: Hide",
-        }
-    }
-}
-
 #[derive(Resource)]
 struct EditorRuntime {
     document: BuildingDocument,
@@ -2364,6 +2346,29 @@ impl EditorRuntime {
             show_generated_building: true,
             pending_rebuild: false,
         }
+    }
+
+    fn highest_visible_storey(&self) -> usize {
+        let highest_wall_storey = self
+            .player_build
+            .as_ref()
+            .map(|document| {
+                document
+                    .assembly
+                    .storeys
+                    .iter()
+                    .map(|storey| usize::from(storey.level))
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or_else(|| self.plan.storeys.len().saturating_sub(1));
+        let has_roof = self
+            .player_build
+            .as_ref()
+            .map_or(!self.plan.roofs.is_empty(), |document| {
+                !document.assembly.roofs.is_empty()
+            });
+        highest_wall_storey + usize::from(has_roof)
     }
 }
 
@@ -2541,7 +2546,7 @@ fn perform_editor_command(runtime: &mut EditorRuntime, command: EditorCommand) {
             apply_player_build_edit(runtime, PlayerBuildEdit::Remove { id })
         }
         EditorCommand::SetActiveStorey { storey } => {
-            runtime.active_storey = storey.min(runtime.plan.storeys.len().saturating_sub(1));
+            runtime.active_storey = storey.min(runtime.highest_visible_storey());
             runtime.status = format!("Active storey: {}", runtime.active_storey);
         }
         EditorCommand::CycleWalls => {
@@ -2549,8 +2554,8 @@ fn perform_editor_command(runtime: &mut EditorRuntime, command: EditorCommand) {
             runtime.status = runtime.wall_visibility.label().to_owned();
         }
         EditorCommand::CycleRoofs => {
-            runtime.roof_visibility = runtime.roof_visibility.next();
-            runtime.status = runtime.roof_visibility.label().to_owned();
+            runtime.active_storey = runtime.highest_visible_storey();
+            runtime.status = "Active storey: Roof".to_owned();
         }
     }
 }
@@ -2594,7 +2599,6 @@ enum EditorUiAction {
     Load,
     SetMode(EditorMode),
     CycleWalls,
-    CycleRoofs,
     PreviousStorey,
     NextStorey,
     MovePlayerPart(u64),
@@ -2947,8 +2951,16 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
             if ui.button("▲ Higher").on_hover_text("Page Up").clicked() {
                 action = Some(EditorUiAction::NextStorey);
             }
-            for level in (0..runtime.plan.storeys.len()).rev() {
-                let label = if level == 0 {
+            for level in (0..=runtime.highest_visible_storey()).rev() {
+                let label = if level == runtime.highest_visible_storey()
+                    && (runtime
+                        .player_build
+                        .as_ref()
+                        .map_or(!runtime.plan.roofs.is_empty(), |document| {
+                            !document.assembly.roofs.is_empty()
+                        })) {
+                    "Roof".to_owned()
+                } else if level == 0 {
                     "Ground".to_owned()
                 } else {
                     format!("Level {level}")
@@ -2971,13 +2983,6 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                 .clicked()
             {
                 action = Some(EditorUiAction::CycleWalls);
-            }
-            if ui
-                .button(runtime.roof_visibility.label())
-                .on_hover_text("R")
-                .clicked()
-            {
-                action = Some(EditorUiAction::CycleRoofs);
             }
             ui.separator();
             ui.small("Visibility settings are retained while you edit this document.");
@@ -3456,17 +3461,13 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
             runtime.wall_visibility = runtime.wall_visibility.next();
             runtime.status = runtime.wall_visibility.label().to_owned();
         }
-        EditorUiAction::CycleRoofs => {
-            runtime.roof_visibility = runtime.roof_visibility.next();
-            runtime.status = runtime.roof_visibility.label().to_owned();
-        }
         EditorUiAction::PreviousStorey => {
             runtime.active_storey = runtime.active_storey.saturating_sub(1);
             runtime.status = format!("Active storey: {}", runtime.active_storey);
         }
         EditorUiAction::NextStorey => {
             runtime.active_storey =
-                (runtime.active_storey + 1).min(runtime.plan.storeys.len().saturating_sub(1));
+                (runtime.active_storey + 1).min(runtime.highest_visible_storey());
             runtime.status = format!("Active storey: {}", runtime.active_storey);
         }
         EditorUiAction::MovePlayerPart(id) => apply_player_build_edit(
@@ -3538,8 +3539,6 @@ fn editor_keyboard_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMu
         Some(EditorUiAction::SetMode(EditorMode::Finish))
     } else if keys.just_pressed(KeyCode::Home) {
         Some(EditorUiAction::CycleWalls)
-    } else if keys.just_pressed(KeyCode::KeyR) {
-        Some(EditorUiAction::CycleRoofs)
     } else if keys.just_pressed(KeyCode::PageUp) {
         Some(EditorUiAction::NextStorey)
     } else if keys.just_pressed(KeyCode::PageDown) {
@@ -3769,32 +3768,11 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                     })
                     .collect::<std::collections::HashMap<_, _>>()
             });
+    let roof_storey = plan.storeys.len();
     let roof_storeys = plan
         .roof_assemblies
         .iter()
-        .map(|roof| {
-            let base_elevation = roof
-                .faces
-                .iter()
-                .flat_map(|face| face.polygon.iter())
-                .map(|point| point.y)
-                .chain(
-                    roof.enclosure_faces
-                        .iter()
-                        .flat_map(|face| face.polygon.iter())
-                        .map(|point| point.y),
-                )
-                .fold(f32::INFINITY, f32::min);
-            let storey = if base_elevation.is_finite() {
-                ((base_elevation / plan.storey_height_metres)
-                    .floor()
-                    .max(0.0) as usize)
-                    .saturating_sub(1)
-            } else {
-                plan.storeys.len()
-            };
-            (roof.owner.0, storey)
-        })
+        .map(|roof| (roof.owner.0, roof_storey))
         .collect::<std::collections::HashMap<_, _>>();
 
     let mesh_entities = {
@@ -3815,7 +3793,7 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                     entity,
                     owner.map(|owner| owner.0),
                     item.map(|item| item.id),
-                    roof.is_some(),
+                    roof.is_some() || name.is_some_and(|name| name.as_str().contains("gable")),
                     material.map(|material| material.0.clone()),
                     name.is_some_and(|name| name.as_str() == "room floor"),
                     transform.map(|transform| transform.translation.y),
@@ -3861,12 +3839,12 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
         let mut entity_mut = world.entity_mut(entity);
         entity_mut.insert(EditorBuildingEntity);
         let visibility_target = if is_roof {
-            owner
-                .and_then(|owner| roof_storeys.get(&owner).copied())
-                .map(|storey| EditorVisibilityTarget {
-                    storey,
-                    role: EditorVisibilityRole::Roof,
-                })
+            Some(EditorVisibilityTarget {
+                storey: owner
+                    .and_then(|owner| roof_storeys.get(&owner).copied())
+                    .unwrap_or(roof_storey),
+                role: EditorVisibilityRole::Roof,
+            })
         } else {
             owner
                 .and_then(|owner| wall_storeys.get(&owner).copied())
@@ -4052,7 +4030,8 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
             .iter()
             .map(|storey| usize::from(storey.level))
             .max()
-            .unwrap_or(0),
+            .unwrap_or(0)
+            + 1,
         role: EditorVisibilityRole::Roof,
     });
     for (roof_index, roof) in document.assembly.roofs.iter().copied().enumerate() {
@@ -4127,19 +4106,15 @@ fn update_editor_visibility(
         let above_active_storey = target.storey > runtime.active_storey;
         let hidden_wall = target.role == EditorVisibilityRole::Wall
             && runtime.wall_visibility == WallVisibility::Down;
-        let hidden_roof = target.role == EditorVisibilityRole::Roof
-            && runtime.roof_visibility == RoofVisibility::Hide;
-        *visibility =
-            if above_active_storey || hidden_wall || hidden_roof || hide_fachwerk.is_some() {
-                Visibility::Hidden
-            } else {
-                Visibility::Visible
-            };
+        *visibility = if above_active_storey || hidden_wall || hide_fachwerk.is_some() {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
         let translucent = match target.role {
             EditorVisibilityRole::Wall if runtime.wall_visibility == WallVisibility::Cutaway => {
                 true
             }
-            EditorVisibilityRole::Roof if runtime.roof_visibility == RoofVisibility::Ghost => true,
             _ => false,
         };
         if appearance.0 != translucent {

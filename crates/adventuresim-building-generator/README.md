@@ -82,8 +82,10 @@ town-house fixture.
 
 The editor uses a build-mode shell: a mode strip exposes Select, Construct,
 Openings, Roof, Site, and Finish, while a storey rail presents the current
-storey and the planned wall/roof visibility states. `1`–`6`, `Esc`, `Page Up`,
-`Page Down`, `Home`, `R`, `Ctrl+Z`, and `Ctrl+Y` mirror those visible controls.
+storey and wall visibility state. The roof is the virtual storey immediately
+above the highest occupied floor, not an independent visibility toggle.
+`1`–`6`, `Esc`, `Page Up`, `Page Down`, `Home`, `Ctrl+Z`, and `Ctrl+Y` mirror
+those visible controls.
 The current `BuildingDocument` remains the strict procedural-programme path:
 only Select, Openings, and Finish activate an audited edit today. With a
 freeform player-build document loaded, Construct adds a wall tool: drag across
