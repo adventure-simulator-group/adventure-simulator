@@ -12,6 +12,60 @@ use super::{
     BarkRecipe, ENGLISH_OAK_BARK, TreeBranchSegment, branch_frame, transport_branch_frame,
 };
 
+/// Geometry budgets for live woody branch sweeps.
+///
+/// `FullDetail` is the authored trunk and LOD0 branch mesh. Aggregate crown
+/// tiers deliberately opt into their own budgets so reducing distant geometry
+/// cannot silently change close tree silhouettes or root contact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum WoodyBranchMeshQuality {
+    FullDetail,
+    AggregateLod1,
+    AggregateLod2,
+}
+
+impl WoodyBranchMeshQuality {
+    fn radial_sides(self, depth: u8) -> u32 {
+        match self {
+            Self::FullDetail => {
+                if depth == 0 {
+                    16
+                } else {
+                    (8_u32.saturating_sub(u32::from(depth))).max(4)
+                }
+            }
+            // LOD1 keeps a little more roundness on scaffold branches, while
+            // its covered terminal wood falls to four sides.
+            Self::AggregateLod1 => match depth {
+                0 => 16,
+                1 => 5,
+                _ => 4,
+            },
+            // LOD2 contains only depth-one scaffold wood. Four sides are
+            // enough behind its larger impostor cards.
+            Self::AggregateLod2 => {
+                if depth == 0 {
+                    16
+                } else {
+                    4
+                }
+            }
+        }
+    }
+
+    fn axial_spacing_metres(self) -> f32 {
+        match self {
+            Self::FullDetail => 0.45,
+            Self::AggregateLod1 => 0.75,
+            Self::AggregateLod2 => 1.1,
+        }
+    }
+
+    fn uses_rounded_terminal(self) -> bool {
+        matches!(self, Self::FullDetail)
+    }
+}
+
 pub(in crate::presentation) fn procedural_tree_branch_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
@@ -22,7 +76,21 @@ pub(in crate::presentation) fn procedural_tree_branch_mesh(
 pub(in crate::presentation) fn procedural_woody_branch_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
+    bark: BarkRecipe,
+) -> Mesh {
+    procedural_woody_branch_mesh_with_quality(
+        branches,
+        maximum_depth,
+        bark,
+        WoodyBranchMeshQuality::FullDetail,
+    )
+}
+
+fn procedural_woody_branch_mesh_with_quality(
+    branches: &[TreeBranchSegment],
+    maximum_depth: u8,
     _bark: BarkRecipe,
+    quality: WoodyBranchMeshQuality,
 ) -> Mesh {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
@@ -46,11 +114,7 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
         let curve = &visible[curve_start..curve_end];
         append_branch_curve_tube(
             curve,
-            if curve[0].depth == 0 {
-                16
-            } else {
-                (8_u32.saturating_sub(u32::from(curve[0].depth))).max(4)
-            },
+            quality,
             &mut positions,
             &mut normals,
             &mut uvs,
@@ -149,13 +213,14 @@ pub(in crate::presentation) fn procedural_woody_crown_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
     bark: BarkRecipe,
+    quality: WoodyBranchMeshQuality,
 ) -> Mesh {
     let crown = branches
         .iter()
         .filter(|branch| branch.depth > 0 && branch.depth <= maximum_depth)
         .copied()
         .collect::<Vec<_>>();
-    procedural_woody_branch_mesh(&crown, maximum_depth, bark)
+    procedural_woody_branch_mesh_with_quality(&crown, maximum_depth, bark, quality)
 }
 
 #[derive(Clone)]
@@ -745,7 +810,7 @@ pub(in crate::presentation) fn procedural_tree_branch_group_mesh(
 
 fn append_branch_curve_tube(
     curve: &[TreeBranchSegment],
-    sides: u32,
+    quality: WoodyBranchMeshQuality,
     positions: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
     uvs: &mut Vec<[f32; 2]>,
@@ -756,6 +821,7 @@ fn append_branch_curve_tube(
 
     let first = curve[0];
     let last = curve[curve.len() - 1];
+    let sides = quality.radial_sides(first.depth);
     let first_direction = (first.end - first.start).normalize();
     let last_direction = (last.end - last.start).normalize();
     let surface_root = first.depth == 0
@@ -796,7 +862,7 @@ fn append_branch_curve_tube(
         };
         // Smooth wood needs only enough axial sampling to preserve the authored
         // skeleton curve and taper. Fine bark is intentionally material-only.
-        let spacing = 0.45;
+        let spacing = quality.axial_spacing_metres();
         let steps = ((branch.end - branch.start).length() / spacing)
             .ceil()
             .max(1.0) as u32;
@@ -885,7 +951,7 @@ fn append_branch_curve_tube(
         }
     }
     let end_ring = base + (rings.len() as u32 - 1) * ring_stride;
-    if last.is_limb_tip {
+    if last.is_limb_tip && quality.uses_rounded_terminal() {
         // A pair of shrinking rings gives every terminal axis a rounded,
         // natural taper. Flat caps read as sawn-off limbs and become black
         // rectangular artifacts in the descendant renders.
@@ -962,6 +1028,22 @@ fn append_branch_curve_tube(
                 shoulder + ring_stride + next,
             ]);
         }
+    } else if last.is_limb_tip {
+        // Aggregate wood sits behind baked canopy cards. A single tapered cap
+        // preserves the branch silhouette without the two extra rounded rings
+        // that close the near-field mesh.
+        let tip = positions.len() as u32;
+        let bud_length = last.end_radius;
+        positions.push((last.end + last_direction * bud_length * 0.7).to_array());
+        normals.push(last_direction.to_array());
+        uvs.push([
+            0.0,
+            (accumulated_distance + bud_length * 0.7) / BARK_TEXTURE_HEIGHT_METRES,
+        ]);
+        for side in 0..sides {
+            let next = side + 1;
+            indices.extend_from_slice(&[tip, end_ring + side, end_ring + next]);
+        }
     }
 }
 
@@ -1014,6 +1096,128 @@ mod tests {
             uvs.iter().map(|uv| uv[1]).fold(0.0_f32, f32::max) > 0.5,
             "a two-metre-long axis must advance a full physical bark tile"
         );
+    }
+
+    #[test]
+    fn aggregate_wood_quality_tiers_reduce_representative_geometry_without_invalid_surface_data() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let full_lod1 = procedural_woody_crown_mesh(
+            &branches,
+            2,
+            ENGLISH_OAK_BARK,
+            WoodyBranchMeshQuality::FullDetail,
+        );
+        let aggregate_lod1 = procedural_woody_crown_mesh(
+            &branches,
+            2,
+            ENGLISH_OAK_BARK,
+            WoodyBranchMeshQuality::AggregateLod1,
+        );
+        let full_lod2 = procedural_woody_crown_mesh(
+            &branches,
+            1,
+            ENGLISH_OAK_BARK,
+            WoodyBranchMeshQuality::FullDetail,
+        );
+        let aggregate_lod2 = procedural_woody_crown_mesh(
+            &branches,
+            1,
+            ENGLISH_OAK_BARK,
+            WoodyBranchMeshQuality::AggregateLod2,
+        );
+        let repeated_lod1 = procedural_woody_crown_mesh(
+            &branches,
+            2,
+            ENGLISH_OAK_BARK,
+            WoodyBranchMeshQuality::AggregateLod1,
+        );
+
+        for mesh in [&aggregate_lod1, &aggregate_lod2] {
+            let positions = mesh
+                .attribute(Mesh::ATTRIBUTE_POSITION)
+                .and_then(VertexAttributeValues::as_float3)
+                .expect("aggregate mesh has positions");
+            let normals = mesh
+                .attribute(Mesh::ATTRIBUTE_NORMAL)
+                .and_then(VertexAttributeValues::as_float3)
+                .expect("aggregate mesh has normals");
+            let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+            else {
+                panic!("aggregate mesh has float UVs");
+            };
+            let indices = mesh.indices().expect("aggregate mesh is indexed");
+
+            assert_eq!(positions.len(), normals.len());
+            assert_eq!(positions.len(), uvs.len());
+            assert_eq!(indices.len() % 3, 0);
+            assert!(indices.iter().all(|index| index < positions.len()));
+            assert!(positions.iter().flatten().all(|value| value.is_finite()));
+            assert!(uvs.iter().flatten().all(|value| value.is_finite()));
+            assert!(normals.iter().all(|normal| {
+                let normal = Vec3::from_array(*normal);
+                normal.is_finite() && (normal.length() - 1.0).abs() < 1.0e-3
+            }));
+
+            let minimum = positions
+                .iter()
+                .map(|position| Vec3::from_array(*position))
+                .reduce(Vec3::min)
+                .expect("aggregate mesh has a bound");
+            let maximum = positions
+                .iter()
+                .map(|position| Vec3::from_array(*position))
+                .reduce(Vec3::max)
+                .expect("aggregate mesh has a bound");
+            assert!(minimum.is_finite() && maximum.is_finite());
+            assert!(minimum.cmple(maximum).all());
+        }
+
+        // Seed 42 is the representative oak fixture used by the tree suite.
+        // These exact reductions guard both the LOD budget and the simplified
+        // one-cap terminal topology: 9,540/15,523 -> 4,810/7,099 for LOD1,
+        // and 1,119/1,897 -> 462/700 for LOD2 (vertices/triangles).
+        assert_eq!(full_lod1.count_vertices(), 9_540);
+        assert_eq!(
+            full_lod1.indices().expect("full LOD1 is indexed").len() / 3,
+            15_523
+        );
+        assert_eq!(aggregate_lod1.count_vertices(), 4_810);
+        assert_eq!(
+            aggregate_lod1
+                .indices()
+                .expect("aggregate LOD1 is indexed")
+                .len()
+                / 3,
+            7_099
+        );
+        assert_eq!(full_lod2.count_vertices(), 1_119);
+        assert_eq!(
+            full_lod2.indices().expect("full LOD2 is indexed").len() / 3,
+            1_897
+        );
+        assert_eq!(aggregate_lod2.count_vertices(), 462);
+        assert_eq!(
+            aggregate_lod2
+                .indices()
+                .expect("aggregate LOD2 is indexed")
+                .len()
+                / 3,
+            700
+        );
+
+        assert_eq!(
+            aggregate_lod1.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_lod1.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        assert_eq!(
+            aggregate_lod1.attribute(Mesh::ATTRIBUTE_NORMAL),
+            repeated_lod1.attribute(Mesh::ATTRIBUTE_NORMAL)
+        );
+        assert_eq!(
+            aggregate_lod1.attribute(Mesh::ATTRIBUTE_UV_0),
+            repeated_lod1.attribute(Mesh::ATTRIBUTE_UV_0)
+        );
+        assert_eq!(aggregate_lod1.indices(), repeated_lod1.indices());
     }
 
     #[test]

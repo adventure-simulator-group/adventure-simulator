@@ -10,13 +10,13 @@ use super::{
     PlayableTreeDetailedLeaves, PlayableTreeDetailedWood, PlayableTreeTrunk,
     TacticalTreeAggregateBarkMaterial, TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial,
     TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
-    TreeLodRenderOverride, TreeTrunkLod, beech_aggregate_bark_material, beech_bark_material,
-    beech_leaf_material, oak_aggregate_bark_material, oak_bark_material, oak_leaf_material,
-    procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
-    procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
-    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
-    procedural_woody_branch_mesh, procedural_woody_crown_mesh, procedural_woody_plant_leaves,
-    procedural_woody_plant_skeleton,
+    TreeLodRenderOverride, TreeTrunkLod, WoodyBranchMeshQuality, beech_aggregate_bark_material,
+    beech_bark_material, beech_leaf_material, oak_aggregate_bark_material, oak_bark_material,
+    oak_leaf_material, procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh,
+    procedural_oak_leaves, procedural_oak_skeleton_with_gnarling,
+    procedural_oak_textured_leaf_group_mesh, procedural_tree_branch_group_mesh,
+    procedural_tree_branch_mesh, procedural_tree_skeleton, procedural_woody_branch_mesh,
+    procedural_woody_crown_mesh, procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
 };
 use crate::presentation::{
     ActiveTacticalScene, ActiveVistaSurface, ProceduralEnvironmentAssets, SceneEnvironment,
@@ -81,6 +81,10 @@ pub(crate) struct TreeAssetResidencyDiagnostics {
     pub(crate) leaf_card_vertices: usize,
     pub(crate) bud_vertices: usize,
     pub(crate) aggregate_branch_vertices: usize,
+    /// Aggregate live-wood geometry in LOD1/LOD2 order. This keeps the two
+    /// deliberately different tube budgets attributable in benchmark output.
+    pub(crate) aggregate_branch_vertices_by_lod: [usize; 2],
+    pub(crate) aggregate_branch_triangles_by_lod: [usize; 2],
     /// LOD1 is the near aggregate canopy. Tracking it separately makes the
     /// macro-cluster card reduction visible in the scene benchmark rather than
     /// burying it in the combined impostor total.
@@ -620,16 +624,29 @@ fn ensure_tree_assets_resident(
         }
         ensure_tree_card_resident(cached, lod, meshes, tree_materials, images, diagnostics);
         if lod <= 2 && cached.aggregate_branch_meshes[lod as usize - 1].is_none() {
-            let depth = if lod == 1 { 2 } else { 1 };
+            let (depth, quality) = if lod == 1 {
+                (2, WoodyBranchMeshQuality::AggregateLod1)
+            } else {
+                (1, WoodyBranchMeshQuality::AggregateLod2)
+            };
             let mesh = match cached.species {
                 TreePresentationSpecies::EnglishOak => {
-                    procedural_woody_crown_mesh(&cached.branches, depth, ENGLISH_OAK_BARK)
+                    procedural_woody_crown_mesh(&cached.branches, depth, ENGLISH_OAK_BARK, quality)
                 }
                 TreePresentationSpecies::CommonBeech => {
-                    procedural_woody_crown_mesh(&cached.branches, depth, COMMON_BEECH_BARK)
+                    procedural_woody_crown_mesh(&cached.branches, depth, COMMON_BEECH_BARK, quality)
                 }
             };
-            diagnostics.aggregate_branch_vertices += mesh.count_vertices();
+            let aggregate_index = lod as usize - 1;
+            let vertices = mesh.count_vertices();
+            let triangles = mesh
+                .indices()
+                .expect("aggregate branch mesh is indexed")
+                .len()
+                / 3;
+            diagnostics.aggregate_branch_vertices += vertices;
+            diagnostics.aggregate_branch_vertices_by_lod[aggregate_index] += vertices;
+            diagnostics.aggregate_branch_triangles_by_lod[aggregate_index] += triangles;
             cached.aggregate_branch_meshes[lod as usize - 1] = Some(meshes.add(mesh));
         }
     }
@@ -1221,6 +1238,48 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_residency_records_exact_lod_tier_geometry_budgets() {
+        let variant_seed = 42;
+        let branches = procedural_tree_skeleton(variant_seed, 0.0);
+        let leaves = procedural_oak_leaves(variant_seed, &branches, 0.0);
+        let mut cached = CachedTreePresentation {
+            variant_seed,
+            species: TreePresentationSpecies::EnglishOak,
+            species_name: TreePresentationSpecies::EnglishOak.name(),
+            branches,
+            leaves,
+            trunk_mesh: None,
+            cluster_layout: None,
+            clusters: None,
+            aggregate_branch_meshes: [None, None],
+            lod_cards: [None, None, None, None],
+            bark_material: Handle::default(),
+            aggregate_bark_material: Handle::default(),
+            leaf_material: Handle::default(),
+            bud_material: Handle::default(),
+        };
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<TacticalTreeImpostorMaterial>::default();
+        let mut images = Assets::<Image>::default();
+        let mut diagnostics = TreeAssetResidencyDiagnostics::default();
+
+        ensure_tree_assets_resident(
+            &mut cached,
+            (1 << 2) | (1 << 3),
+            None,
+            &mut meshes,
+            &mut materials,
+            &mut images,
+            &mut diagnostics,
+        );
+
+        assert!(cached.aggregate_branch_meshes.iter().all(Option::is_some));
+        assert_eq!(diagnostics.aggregate_branch_vertices_by_lod, [4_810, 462]);
+        assert_eq!(diagnostics.aggregate_branch_triangles_by_lod, [7_099, 700]);
+        assert_eq!(diagnostics.aggregate_branch_vertices, 5_272);
+    }
+
+    #[test]
     fn complete_live_oak_mesh_suite_remains_constructible() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
@@ -1235,12 +1294,16 @@ mod tests {
             vertex_count +=
                 procedural_oak_bud_group_mesh(&branches, primary_group).count_vertices();
         }
-        vertex_count += [2, 1]
-            .into_iter()
-            .map(|depth| {
-                procedural_woody_crown_mesh(&branches, depth, ENGLISH_OAK_BARK).count_vertices()
-            })
-            .sum::<usize>();
+        vertex_count += [
+            (2, WoodyBranchMeshQuality::AggregateLod1),
+            (1, WoodyBranchMeshQuality::AggregateLod2),
+        ]
+        .into_iter()
+        .map(|(depth, quality)| {
+            procedural_woody_crown_mesh(&branches, depth, ENGLISH_OAK_BARK, quality)
+                .count_vertices()
+        })
+        .sum::<usize>();
         assert!(vertex_count > 0);
     }
 

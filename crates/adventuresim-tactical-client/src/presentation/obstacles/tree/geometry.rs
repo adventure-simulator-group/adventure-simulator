@@ -303,7 +303,7 @@ pub(in crate::presentation) use skeleton::{
     procedural_woody_plant_skeleton,
 };
 pub(in crate::presentation) use wood_mesh::{
-    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh,
+    WoodyBranchMeshQuality, procedural_tree_branch_group_mesh, procedural_tree_branch_mesh,
     procedural_woody_branch_bake_mesh, procedural_woody_branch_mesh, procedural_woody_crown_mesh,
 };
 
