@@ -4,6 +4,11 @@ use super::*;
 
 const CLOUD_SHADER: &str = "shaders/tactical_clouds.wgsl";
 const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
+/// The tactical sky is already strongly aerial-perspective limited at this
+/// range. Keeping this bounded avoids spending cloud march work on a horizon
+/// that is visually absorbed into haze.
+const CLOUD_MAX_TRACE_DISTANCE_METRES: f32 = 16_000.0;
+const CLOUD_AERIAL_FADE_START_FRACTION: f32 = 0.68;
 /// Deliberately smaller than Earth's radius so cloud decks bend into the
 /// tactical horizon within the renderer's bounded trace distance.
 const CLOUD_CURVATURE_RADIUS_METRES: f32 = 180_000.0;
@@ -238,7 +243,7 @@ pub(in crate::presentation) fn setup_tactical_clouds(
                 sort_bias: cloud_sort_bias(slot),
                 lighting: Vec4::new(0.0, 1.0, 0.0, 1.43),
                 shape: Vec4::new(0.45, 0.9, 0.0, 0.0),
-                layer: Vec4::new(1_250.0, 1_850.0, 0.000_34, 24_000.0),
+                layer: cloud_layer_uniform(1_250.0, 1_850.0, 0.000_34),
                 motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
                 spectral: Vec4::ONE,
                 geometry: cloud_shell_geometry(),
@@ -440,11 +445,10 @@ pub(in crate::presentation) fn update_tactical_clouds(
             parameters.profile,
             parameters.seed,
         );
-        material.layer = Vec4::new(
+        material.layer = cloud_layer_uniform(
             parameters.bottom_metres,
             parameters.thickness_metres,
             parameters.horizontal_scale,
-            24_000.0,
         );
         material.motion = Vec4::new(
             wind_offset.x,
@@ -476,6 +480,36 @@ fn cloud_shell_geometry() -> Vec4 {
         CLOUD_CURVATURE_RADIUS_METRES,
         CLOUD_AERIAL_EXTINCTION_PER_METRE,
     )
+}
+
+/// Every cloud material receives its trace limit through this one path. The
+/// default shell material and its per-frame weather/capture refresh therefore
+/// cannot accidentally use different visibility horizons.
+fn cloud_layer_uniform(bottom_metres: f32, thickness_metres: f32, horizontal_scale: f32) -> Vec4 {
+    Vec4::new(
+        bottom_metres,
+        thickness_metres,
+        horizontal_scale,
+        CLOUD_MAX_TRACE_DISTANCE_METRES,
+    )
+}
+
+#[cfg(test)]
+fn cloud_aerial_fade_start_metres() -> f32 {
+    CLOUD_MAX_TRACE_DISTANCE_METRES * CLOUD_AERIAL_FADE_START_FRACTION
+}
+
+#[cfg(test)]
+fn cloud_shell_vertical_trace_interval(layer: CloudLayerParameters) -> Option<(f32, f32)> {
+    // At the tactical camera anchor, the upward vertical ray reaches the
+    // shell at the layer's configured bottom and top altitudes. This is the
+    // least ambiguous guaranteed intersection for every supported deck;
+    // oblique rays have a longer shell path until curvature turns them below
+    // the layer.
+    let start = layer.bottom_metres;
+    let end = layer.bottom_metres + layer.thickness_metres;
+    (end > start && start < CLOUD_MAX_TRACE_DISTANCE_METRES)
+        .then_some((start, end.min(CLOUD_MAX_TRACE_DISTANCE_METRES)))
 }
 
 #[cfg(test)]
@@ -716,6 +750,73 @@ mod tests {
         assert!(distant < base_metres - 1_000.0);
         assert!(distant > 0.0);
         assert_eq!(cloud_shell_geometry().xy(), Vec2::ZERO);
+    }
+
+    #[test]
+    fn tactical_trace_limit_covers_every_supported_cloud_deck() {
+        // These are the tallest bounds emitted by the authoritative weather
+        // diagnosis: low convective, middle, and high decks. Capture
+        // overrides are tested below as independently constructed layers.
+        let diagnosed_layers = [
+            CloudLayerSnapshot {
+                form: CloudForm::Cumulonimbus,
+                coverage_bps: 8_500,
+                optical_density_bps: 8_500,
+                base_metres: 3_000,
+                top_metres: 12_000,
+            },
+            CloudLayerSnapshot {
+                form: CloudForm::Nimbostratus,
+                coverage_bps: 8_000,
+                optical_density_bps: 8_000,
+                base_metres: 2_600,
+                top_metres: 5_400,
+            },
+            CloudLayerSnapshot {
+                form: CloudForm::Cirrostratus,
+                coverage_bps: 7_000,
+                optical_density_bps: 3_750,
+                base_metres: 6_200,
+                top_metres: 10_500,
+            },
+        ];
+        let captures = [
+            TacticalCloudCaptureProfile::Cumulus,
+            TacticalCloudCaptureProfile::Stratocumulus,
+            TacticalCloudCaptureProfile::Cirrus,
+            TacticalCloudCaptureProfile::Overcast,
+            TacticalCloudCaptureProfile::Storm,
+        ];
+        let layers = diagnosed_layers
+            .into_iter()
+            .map(CloudLayerParameters::from_layer)
+            .chain(
+                captures
+                    .into_iter()
+                    .map(|profile| CloudLayerParameters::capture(profile).unwrap()),
+            );
+
+        for layer in layers {
+            let (start, end) = cloud_shell_vertical_trace_interval(layer)
+                .expect("supported cloud deck must intersect the tactical upward ray");
+            assert!(start < end);
+            assert!(end <= CLOUD_MAX_TRACE_DISTANCE_METRES);
+        }
+    }
+
+    #[test]
+    fn cloud_trace_distance_and_aerial_fade_are_pinned() {
+        assert_eq!(CLOUD_MAX_TRACE_DISTANCE_METRES, 16_000.0);
+        assert_eq!(cloud_aerial_fade_start_metres(), 10_880.0);
+        assert_eq!(
+            cloud_layer_uniform(1_250.0, 1_850.0, 0.000_34),
+            Vec4::new(1_250.0, 1_850.0, 0.000_34, 16_000.0),
+        );
+
+        let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
+        assert!(shader.contains(
+            "let distance_fade = 1.0 - smoothstep(cloud_layer.w * 0.68, cloud_layer.w, distance);"
+        ));
     }
 
     #[test]
