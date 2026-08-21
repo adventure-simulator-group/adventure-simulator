@@ -259,6 +259,8 @@ fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 
     return exp(-min(optical_depth, 6.0));
 }
 
+const SUNLIGHT_TRANSMITTANCE_INTERVAL = 2u;
+
 fn henyey_greenstein(cosine: f32, eccentricity: f32) -> f32 {
     let g2 = eccentricity * eccentricity;
     let denominator = pow(max(1.0 + g2 - 2.0 * eccentricity * cosine, 0.04), 1.5);
@@ -334,6 +336,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var distance = trace_start + coarse_step * ray_jitter;
     var fine_marching = false;
     var fine_empty_steps = 0u;
+    // Detailed self-shadowing is materially lower frequency than the fine
+    // integration samples. Start each occupied segment with a fresh result,
+    // then reuse it for the immediately following occupied sample.
+    var occupied_fine_steps = 0u;
+    var sun_visibility = 1.0;
     var transmittance = 1.0;
     var visible_opacity = 0.0;
     var radiance = vec3<f32>(0.0);
@@ -381,7 +388,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 0.0,
                 1.0,
             );
-            let sun_visibility = sunlight_transmittance(position, sun_direction);
+            if occupied_fine_steps % SUNLIGHT_TRANSMITTANCE_INTERVAL == 0u {
+                sun_visibility = sunlight_transmittance(position, sun_direction);
+            }
+            occupied_fine_steps += 1u;
             let powder = 1.0 - exp(-density * 2.4);
             let clear_ambient = mix(
                 vec3<f32>(0.30, 0.36, 0.43),
@@ -430,6 +440,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             if fine_empty_steps >= 3u {
                 fine_marching = false;
                 fine_empty_steps = 0u;
+                occupied_fine_steps = 0u;
                 step_length = coarse_step;
             }
         }

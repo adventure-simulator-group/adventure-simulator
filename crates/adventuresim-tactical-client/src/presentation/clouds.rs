@@ -662,4 +662,30 @@ mod tests {
         );
         assert!(shader.contains("optical_depth += sample_density(sample_position)"));
     }
+
+    #[test]
+    fn cloud_shader_amortizes_detailed_self_shadow_sampling() {
+        let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
+        let shadow = shader
+            .split_once("fn sunlight_transmittance")
+            .expect("cloud shader must define direct-light self-shadowing")
+            .1
+            .split_once("fn henyey_greenstein")
+            .expect("self-shadowing must precede phase lighting")
+            .0;
+        let fragment = shader
+            .split_once("@fragment")
+            .expect("cloud shader must have a fragment entry point")
+            .1;
+
+        assert!(shadow.contains("optical_depth += sample_density(sample_position)"));
+        assert!(shader.contains("const SUNLIGHT_TRANSMITTANCE_INTERVAL = 2u;"));
+        assert!(fragment.contains("var occupied_fine_steps = 0u;"));
+        assert!(fragment.contains("var sun_visibility = 1.0;"));
+        assert!(fragment.contains(
+            "if occupied_fine_steps % SUNLIGHT_TRANSMITTANCE_INTERVAL == 0u {\n                sun_visibility = sunlight_transmittance(position, sun_direction);\n            }\n            occupied_fine_steps += 1u;"
+        ));
+        assert!(fragment.contains("occupied_fine_steps = 0u;"));
+        assert!(!fragment.contains("let sun_visibility = sunlight_transmittance"));
+    }
 }
