@@ -119,6 +119,11 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // reserved future shaping control. Understory cards retain the older
         // crossed-plane deformation path.
         shape: Vec4::ZERO,
+        // Far and vista grass set `quality.x` to select the cheap path before
+        // any interactive ribbon reconstruction or full PBR work begins.
+        quality: Vec4::ZERO,
+        lighting: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
+        ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
         ground_mask_transform: Vec4::ZERO,
         ground_mask: None,
     }
@@ -167,6 +172,7 @@ pub(super) fn update_celestial_material_lighting(
     mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut pebble_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
+    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
 ) {
     if !celestial.is_changed() {
         return;
@@ -195,6 +201,14 @@ pub(super) fn update_celestial_material_lighting(
         material.ambient = celestial
             .ambient_color
             .extend(celestial.material_ambient_response);
+    }
+    for (_, material) in foliage_materials.iter_mut() {
+        if material.quality.x > 0.5 {
+            material.lighting = direction.extend(celestial.material_light_factor);
+            material.ambient = celestial
+                .ambient_color
+                .extend(celestial.material_ambient_response);
+        }
     }
 }
 
@@ -565,6 +579,12 @@ pub(in crate::presentation) struct TacticalFoliageMaterial {
     shading: Vec4,
     #[uniform(0)]
     shape: Vec4,
+    #[uniform(0)]
+    quality: Vec4,
+    #[uniform(0)]
+    lighting: Vec4,
+    #[uniform(0)]
+    ambient: Vec4,
     #[uniform(0)]
     ground_mask_transform: Vec4,
     #[texture(1)]

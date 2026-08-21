@@ -8,8 +8,8 @@ use bevy::{
     light::NotShadowCaster,
     mesh::{Indices, PrimitiveTopology},
     prelude::{
-        Color, Commands, Handle, Image, Mesh, Mesh3d, MeshMaterial3d, Name, Quat, Transform, Vec2,
-        Vec3, Vec4,
+        Color, Commands, Component, Handle, Image, Mesh, Mesh3d, MeshMaterial3d, Name, Quat,
+        Transform, Vec2, Vec3, Vec4,
     },
 };
 
@@ -22,6 +22,24 @@ pub(super) struct Assets {
     pub near_material: Handle<TacticalFoliageMaterial>,
     pub far_material: Handle<TacticalFoliageMaterial>,
     pub vista_material: Handle<TacticalFoliageMaterial>,
+}
+
+/// Selects the material contract used by every grass distance tier.  Keeping
+/// this on the entity makes scene diagnostics prove that only the close field
+/// retains player-responsive, fully lit foliage.
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum GrassMaterialPath {
+    FullInteractive,
+    CheapLod,
+}
+
+impl GrassMaterialPath {
+    pub(in crate::presentation) const fn for_lod(lod: GrassMeshLod) -> Self {
+        match lod {
+            GrassMeshLod::Near => Self::FullInteractive,
+            GrassMeshLod::Far | GrassMeshLod::Vista => Self::CheapLod,
+        }
+    }
 }
 
 pub(in crate::presentation) struct CommunityMeshes {
@@ -267,6 +285,7 @@ pub(super) fn spawn(
             commands.spawn((
                 Name::new("Tactical grass near ribbons"),
                 GroundScatterLayer::Grass,
+                GrassMaterialPath::for_lod(GrassMeshLod::Near),
                 NotShadowCaster,
                 Mesh3d(meshes.mesh(GrassMeshLod::Near, topology).clone()),
                 MeshMaterial3d(assets.near_material.clone()),
@@ -276,6 +295,7 @@ pub(super) fn spawn(
             commands.spawn((
                 Name::new("Tactical grass far ribbons"),
                 GroundScatterLayer::Grass,
+                GrassMaterialPath::for_lod(GrassMeshLod::Far),
                 NotShadowCaster,
                 Mesh3d(meshes.mesh(GrassMeshLod::Far, topology).clone()),
                 MeshMaterial3d(assets.far_material.clone()),
@@ -310,6 +330,7 @@ pub(super) fn spawn(
             commands.spawn((
                 Name::new("Tactical grass vista tufts"),
                 GroundScatterLayer::Grass,
+                GrassMaterialPath::for_lod(GrassMeshLod::Vista),
                 NotShadowCaster,
                 Mesh3d(meshes.mesh(GrassMeshLod::Vista, topology).clone()),
                 MeshMaterial3d(assets.vista_material.clone()),
@@ -350,12 +371,21 @@ pub(super) fn grass_material(
     // environmental dryness factor. Woodland shade and wet cover retain green
     // growth; exposed low-moisture swards develop coherent senescent cohorts.
     material.shading.y = grass_dryness;
+    material.shading.w = if lod == GrassMeshLod::Near { 1.0 } else { 0.0 };
     TacticalFoliageMaterial {
         // The far mesh is still substantially reduced, but retains enough
         // shoots to keep a dense meadow from visually collapsing at distance.
         shape: Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(grass_density)),
         ground_mask_transform: Vec4::new(1.0 / ground.width(), 1.0 / ground.depth(), 0.5, 0.5),
         ground_mask: Some(ground_mask),
+        // A uniform material selector lets an entire Far/Vista draw bypass
+        // player interaction, camera-facing reconstruction, and full PBR.
+        quality: Vec4::new(
+            if lod == GrassMeshLod::Near { 0.0 } else { 1.0 },
+            0.0,
+            0.0,
+            0.0,
+        ),
         ..material
     }
 }
@@ -369,10 +399,12 @@ pub(in crate::presentation) fn vista_grass_material(
 ) -> TacticalFoliageMaterial {
     let mut material = foliage_material(wind_scale, true);
     material.shading.y = grass_dryness;
+    material.shading.w = if lod == GrassMeshLod::Near { 1.0 } else { 0.0 };
+    material.quality.x = if lod == GrassMeshLod::Near { 0.0 } else { 1.0 };
     material.shape = match lod {
-        // Keep close and intermediate exterior grass optically identical to
-        // the playable representation. Only its one-pixel regional coverage
-        // mask differs from the playable ground-cover mask.
+        // The close exterior field keeps the full interactive representation.
+        // Far/Vista retain this authored footprint while their material's
+        // quality selector uses the cheap wind and Lambert path.
         GrassMeshLod::Near | GrassMeshLod::Far => {
             Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(1.0))
         }
@@ -1016,7 +1048,11 @@ fn append_crossed_spikelet(
 mod tests {
     use super::*;
     use adventuresim_tactical_core::prelude::GroundSurface;
-    use bevy::{mesh::VertexAttributeValues, prelude::default};
+    use bevy::{
+        mesh::VertexAttributeValues,
+        pbr::Material,
+        prelude::{AlphaMode, default},
+    };
     use std::collections::BTreeSet;
 
     #[test]
@@ -1587,7 +1623,9 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_foliage.wgsl"
         ));
-        assert_eq!(shader.matches("textureSampleLevel(").count(), 1);
+        // Near keeps its existing authoritative mask fetch while the cheap
+        // Far/Vista branch has one equivalent fetch of its own.
+        assert_eq!(shader.matches("textureSampleLevel(").count(), 2);
         assert!(shader.contains("let effective_coverage = ground_coverage * clump_coverage"));
         assert!(shader.contains("let edge_growth = mix(0.26, 1.0"));
         assert!(!shader.contains("let tip_age"));
@@ -1615,6 +1653,82 @@ mod tests {
         );
         assert_eq!(near.count_vertices(), 165_636);
         assert_eq!(far.count_vertices(), 784 * 7);
+    }
+
+    #[test]
+    fn far_and_vista_select_the_cheap_noninteractive_grass_path() {
+        let ground = SceneGround::from_samples(2, 2, 1.0, vec![GroundSurface::default(); 4])
+            .expect("a flat ground mask is valid");
+        let near = grass_material(
+            0.3,
+            GrassMeshLod::Near,
+            1.0,
+            0.2,
+            Handle::default(),
+            &ground,
+        );
+        let far = grass_material(0.3, GrassMeshLod::Far, 1.0, 0.2, Handle::default(), &ground);
+        let vista = grass_material(
+            0.3,
+            GrassMeshLod::Vista,
+            1.0,
+            0.2,
+            Handle::default(),
+            &ground,
+        );
+
+        assert_eq!(
+            GrassMaterialPath::for_lod(GrassMeshLod::Near),
+            GrassMaterialPath::FullInteractive
+        );
+        assert_eq!(
+            GrassMaterialPath::for_lod(GrassMeshLod::Far),
+            GrassMaterialPath::CheapLod
+        );
+        assert_eq!(
+            GrassMaterialPath::for_lod(GrassMeshLod::Vista),
+            GrassMaterialPath::CheapLod
+        );
+        assert_eq!(near.quality.x, 0.0);
+        assert_eq!(near.shading.w, 1.0);
+        for material in [&far, &vista] {
+            assert_eq!(material.quality.x, 1.0);
+            assert_eq!(material.shading.w, 0.0);
+            assert_eq!(material.alpha_mode(), AlphaMode::AlphaToCoverage);
+        }
+    }
+
+    #[test]
+    fn cheap_grass_branch_pins_reduced_vertex_and_fragment_work() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_foliage.wgsl"
+        ));
+        let cheap_vertex_start = shader
+            .find("if foliage.quality.x > 0.5 {")
+            .expect("cheap vertex selector");
+        let expensive_vertex_start = shader.find("let spatial_noise").expect("full vertex path");
+        let cheap_vertex = &shader[cheap_vertex_start..expensive_vertex_start];
+        assert_eq!(cheap_vertex.matches("textureSampleLevel(").count(), 1);
+        assert_eq!(cheap_vertex.matches("sin(").count(), 1);
+        assert!(!cheap_vertex.contains("interaction_offset"));
+        assert!(!cheap_vertex.contains("camera_side"));
+        assert!(!cheap_vertex.contains("rotate_between"));
+
+        let fragment = shader
+            .split("fn fragment")
+            .nth(1)
+            .expect("foliage fragment");
+        let cheap_fragment_start = fragment
+            .find("if foliage.quality.x > 0.5 {")
+            .expect("cheap fragment selector");
+        let full_fragment_start = fragment
+            .find("let height_fraction")
+            .expect("full fragment path");
+        let cheap_fragment = &fragment[cheap_fragment_start..full_fragment_start];
+        assert!(cheap_fragment.contains("main_pass_post_lighting_processing"));
+        assert!(!cheap_fragment.contains("apply_pbr_lighting"));
+        assert!(!cheap_fragment.contains("diffuse_transmission"));
     }
 
     #[test]
