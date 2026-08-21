@@ -121,6 +121,22 @@ pub fn generate_document(document: &BuildingDocument) -> Result<BuildingPlan, Ge
                 }
                 program.wall_style = style;
             }
+            BuildingEdit::SetWallMaterial { style, .. } => {
+                if !matches!(
+                    program.archetype,
+                    BuildingArchetype::TownHouse
+                        | BuildingArchetype::HallHouse
+                        | BuildingArchetype::FachwerkCottage
+                        | BuildingArchetype::FachwerkMerchantHouse
+                        | BuildingArchetype::RenaissanceTownHall
+                ) {
+                    return Err(GenerationError::UnsupportedEdit(format!(
+                        "{:?} has no editable civilian wall finish",
+                        program.archetype
+                    )));
+                }
+                let _ = style;
+            }
             BuildingEdit::SetTimberFrameStyle { style } => {
                 if program.timber_frame_style.is_none() {
                     return Err(GenerationError::UnsupportedEdit(format!(
@@ -133,7 +149,31 @@ pub fn generate_document(document: &BuildingDocument) -> Result<BuildingPlan, Ge
             BuildingEdit::AddOpening { .. } | BuildingEdit::RemoveOpening { .. } => {}
         }
     }
-    let plan = generate_unchecked(&program, &document.edits)?;
+    let mut plan = generate_unchecked(&program, &document.edits)?;
+    for edit in &document.edits {
+        let BuildingEdit::SetWallMaterial { wall, style } = *edit else {
+            continue;
+        };
+        let exists =
+            plan.storeys
+                .iter()
+                .find(|storey| storey.level == wall.storey_level)
+                .is_some_and(|storey| {
+                    storey.walls.iter().any(|segment| {
+                        segment.cell == wall.cell && segment.direction == wall.direction
+                    })
+                });
+        if !exists {
+            return Err(GenerationError::EditTargetNotFound(format!(
+                "storey {} cell ({}, {}) {:?} wall",
+                wall.storey_level, wall.cell.x, wall.cell.z, wall.direction
+            )));
+        }
+        plan.wall_style_overrides
+            .retain(|override_| override_.wall != wall);
+        plan.wall_style_overrides
+            .push(crate::WallStyleOverride { wall, style });
+    }
     validate_generated_plan(plan)
 }
 
@@ -369,6 +409,7 @@ fn generate_unchecked(
         footprint: program.footprint,
         storey_height_metres: program.storey_height_metres,
         wall_style: program.wall_style,
+        wall_style_overrides: Vec::new(),
         timber_frame_style: program.timber_frame_style,
         upper_storey_projection_metres: program.upper_storey_projection_metres,
         storeys,
@@ -419,7 +460,9 @@ fn apply_opening_edits(
     for edit in edits {
         let selector = match edit {
             BuildingEdit::AddOpening { wall, .. } | BuildingEdit::RemoveOpening { wall } => *wall,
-            BuildingEdit::SetWallStyle { .. } | BuildingEdit::SetTimberFrameStyle { .. } => {
+            BuildingEdit::SetWallStyle { .. }
+            | BuildingEdit::SetWallMaterial { .. }
+            | BuildingEdit::SetTimberFrameStyle { .. } => {
                 continue;
             }
         };
@@ -502,7 +545,9 @@ fn apply_opening_edits(
                     )));
                 }
             }
-            BuildingEdit::SetWallStyle { .. } | BuildingEdit::SetTimberFrameStyle { .. } => {}
+            BuildingEdit::SetWallStyle { .. }
+            | BuildingEdit::SetWallMaterial { .. }
+            | BuildingEdit::SetTimberFrameStyle { .. } => {}
         }
     }
     Ok(())

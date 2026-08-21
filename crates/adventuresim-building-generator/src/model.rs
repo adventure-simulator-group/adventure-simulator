@@ -813,6 +813,13 @@ pub enum BuildingEdit {
     SetWallStyle {
         style: WallStyle,
     },
+    /// A finish attached to one semantic wall rather than the programme as a
+    /// whole. Timber/plaster makes that wall's fachwerk part of the wall,
+    /// instead of an independently editable collection of members.
+    SetWallMaterial {
+        wall: WallSelector,
+        style: WallStyle,
+    },
     SetTimberFrameStyle {
         style: TimberFrameStyle,
     },
@@ -2822,6 +2829,12 @@ pub struct WallAssembly {
     pub replaced_by_owner: Option<GeometryOwnerId>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WallStyleOverride {
+    pub wall: WallSelector,
+    pub style: WallStyle,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpeningAssembly {
     pub id: OpeningAssemblyId,
@@ -3524,6 +3537,8 @@ pub struct BuildingPlan {
     pub footprint: Footprint,
     pub storey_height_metres: f32,
     pub wall_style: WallStyle,
+    #[serde(default)]
+    pub wall_style_overrides: Vec<WallStyleOverride>,
     pub timber_frame_style: Option<TimberFrameStyle>,
     pub upper_storey_projection_metres: f32,
     pub storeys: Vec<StoreyPlan>,

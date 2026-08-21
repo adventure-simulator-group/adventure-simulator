@@ -2154,6 +2154,9 @@ struct EditorBaseMaterial(Handle<StandardMaterial>);
 #[derive(Component)]
 struct EditorAppearanceIsTranslucent(bool);
 
+#[derive(Component)]
+struct EditorFachwerkForFinishedWall;
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum SceneSetup {
     Full,
@@ -2492,7 +2495,7 @@ enum EditorUiAction {
     ChangeArchetype(BuildingArchetype),
     AddOpening(WallSelector, OpeningKind),
     RemoveOpening(WallSelector),
-    SetWallStyle(WallStyle),
+    SetWallStyle(WallSelector, WallStyle),
     SetTimberStyle(TimberFrameStyle),
     Undo,
     Redo,
@@ -2892,8 +2895,22 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
             }
 
             ui.separator();
-            ui.label("Wall finish (building scope)");
-            let current_wall = runtime.document.program.wall_style;
+            ui.label("Wall finish");
+            let selected_wall = runtime.selected.and_then(|target| match target {
+                EditorTarget::Wall(wall) => Some(wall),
+                EditorTarget::Opening(wall) => Some(wall),
+                EditorTarget::TimberMember(_) => None,
+            });
+            let current_wall = selected_wall
+                .and_then(|wall| {
+                    runtime
+                        .plan
+                        .wall_style_overrides
+                        .iter()
+                        .find(|override_| override_.wall == wall)
+                        .map(|override_| override_.style)
+                })
+                .unwrap_or(runtime.document.program.wall_style);
             let civilian = matches!(
                 runtime.document.program.archetype,
                 BuildingArchetype::TownHouse
@@ -2902,7 +2919,7 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                     | BuildingArchetype::FachwerkMerchantHouse
                     | BuildingArchetype::RenaissanceTownHall
             );
-            ui.add_enabled_ui(civilian, |ui| {
+            ui.add_enabled_ui(civilian && selected_wall.is_some(), |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for (style, label) in [
                         (WallStyle::TimberFrame, "Timber/plaster"),
@@ -2911,13 +2928,16 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                         (WallStyle::Stone, "Stone"),
                     ] {
                         if ui.selectable_label(current_wall == style, label).clicked() {
-                            action = Some(EditorUiAction::SetWallStyle(style));
+                            action = selected_wall
+                                .map(|wall| EditorUiAction::SetWallStyle(wall, style));
                         }
                     }
                 });
             });
             if !civilian {
                 ui.small("The selected fixture's structural material is fixed.");
+            } else if selected_wall.is_none() {
+                ui.small("Select a wall or its fachwerk to change that wall's finish.");
             }
 
             ui.separator();
@@ -2965,8 +2985,8 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
         EditorUiAction::RemoveOpening(wall) => {
             apply_editor_edit(runtime, BuildingEdit::RemoveOpening { wall });
         }
-        EditorUiAction::SetWallStyle(style) => {
-            apply_editor_edit(runtime, BuildingEdit::SetWallStyle { style });
+        EditorUiAction::SetWallStyle(wall, style) => {
+            apply_editor_edit(runtime, BuildingEdit::SetWallMaterial { wall, style });
         }
         EditorUiAction::SetTimberStyle(style) => {
             apply_editor_edit(runtime, BuildingEdit::SetTimberFrameStyle { style });
@@ -3266,8 +3286,53 @@ fn editor_owner_targets(
         }
     }
     if let Some(frame) = &plan.timber_frame {
+        let wall_targets = plan
+            .wall_assemblies
+            .iter()
+            .filter_map(|wall| match wall.source {
+                WallSourceId::StoreyWall {
+                    storey_level,
+                    wall_index,
+                } => plan
+                    .storeys
+                    .iter()
+                    .find(|storey| storey.level == storey_level)
+                    .and_then(|storey| storey.walls.get(wall_index))
+                    .map(|segment| {
+                        (
+                            wall.id,
+                            EditorTarget::Wall(WallSelector {
+                                storey_level,
+                                cell: segment.cell,
+                                direction: segment.direction,
+                            }),
+                        )
+                    }),
+                _ => None,
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        let member_solids = frame
+            .members
+            .iter()
+            .map(|member| (member.id, member.solid.0))
+            .collect::<std::collections::HashMap<_, _>>();
+        for bay in &frame.bays {
+            let Some(target) = bay.wall.and_then(|wall| wall_targets.get(&wall)).copied() else {
+                continue;
+            };
+            for item in bay
+                .member_ids
+                .iter()
+                .filter_map(|member| member_solids.get(member).copied())
+                .chain(bay.infill_solids.iter().map(|solid| solid.0))
+            {
+                item_targets.insert(item, target);
+            }
+        }
         for member in &frame.members {
-            item_targets.insert(member.solid.0, EditorTarget::TimberMember(member.id.0));
+            item_targets
+                .entry(member.solid.0)
+                .or_insert(EditorTarget::TimberMember(member.id.0));
         }
     }
     (owner_targets, item_targets)
@@ -3280,6 +3345,65 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
         .iter()
         .map(|wall| (wall.owner.0, usize::from(wall.storey_level)))
         .collect::<std::collections::HashMap<_, _>>();
+    let wall_finish_by_owner = plan
+        .wall_assemblies
+        .iter()
+        .filter_map(|assembly| match assembly.source {
+            WallSourceId::StoreyWall {
+                storey_level,
+                wall_index,
+            } => plan
+                .storeys
+                .iter()
+                .find(|storey| storey.level == storey_level)
+                .and_then(|storey| storey.walls.get(wall_index))
+                .and_then(|segment| {
+                    plan.wall_style_overrides
+                        .iter()
+                        .find(|override_| {
+                            override_.wall
+                                == WallSelector {
+                                    storey_level,
+                                    cell: segment.cell,
+                                    direction: segment.direction,
+                                }
+                        })
+                        .map(|override_| (assembly.owner.0, override_.style))
+                }),
+            _ => None,
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let timber_wall_storeys =
+        plan.timber_frame
+            .as_ref()
+            .map_or_else(std::collections::HashMap::new, |frame| {
+                let wall_levels = plan
+                    .wall_assemblies
+                    .iter()
+                    .map(|wall| (wall.id, usize::from(wall.storey_level)))
+                    .collect::<std::collections::HashMap<_, _>>();
+                let member_solids = frame
+                    .members
+                    .iter()
+                    .map(|member| (member.id, member.solid.0))
+                    .collect::<std::collections::HashMap<_, _>>();
+                frame
+                    .bays
+                    .iter()
+                    .filter_map(|bay| {
+                        bay.wall
+                            .and_then(|wall| wall_levels.get(&wall).copied())
+                            .map(|level| (bay, level))
+                    })
+                    .flat_map(|(bay, level)| {
+                        bay.member_ids
+                            .iter()
+                            .filter_map(|member| member_solids.get(member).copied())
+                            .chain(bay.infill_solids.iter().map(|solid| solid.0))
+                            .map(move |item| (item, level))
+                    })
+                    .collect()
+            });
     let roof_storeys = plan
         .roof_assemblies
         .iter()
@@ -3297,9 +3421,10 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                 )
                 .fold(f32::INFINITY, f32::min);
             let storey = if base_elevation.is_finite() {
-                (base_elevation / plan.storey_height_metres)
+                ((base_elevation / plan.storey_height_metres)
                     .floor()
-                    .max(0.0) as usize
+                    .max(0.0) as usize)
+                    .saturating_sub(1)
             } else {
                 plan.storeys.len()
             };
@@ -3330,6 +3455,40 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
             .collect::<Vec<_>>()
     };
     for (entity, owner, item, is_roof, material) in mesh_entities {
+        let hide_fachwerk = item
+            .and_then(|item| item_targets.get(&item).copied())
+            .and_then(|target| match target {
+                EditorTarget::Wall(wall) => plan
+                    .wall_style_overrides
+                    .iter()
+                    .find(|override_| override_.wall == wall)
+                    .map(|override_| override_.style != WallStyle::TimberFrame),
+                _ => None,
+            })
+            .unwrap_or(false);
+        let material = if !is_roof {
+            owner
+                .and_then(|owner| wall_finish_by_owner.get(&owner).copied())
+                .map(|style| {
+                    let colour = match style {
+                        WallStyle::TimberFrame | WallStyle::Plaster => {
+                            Color::srgb(0.72, 0.66, 0.53)
+                        }
+                        WallStyle::Brick => Color::srgb(0.48, 0.23, 0.16),
+                        WallStyle::Stone => Color::srgb(0.42, 0.40, 0.36),
+                    };
+                    world
+                        .resource_mut::<Assets<StandardMaterial>>()
+                        .add(StandardMaterial {
+                            base_color: colour,
+                            perceptual_roughness: 0.82,
+                            ..default()
+                        })
+                })
+                .or(material)
+        } else {
+            material
+        };
         let mut entity_mut = world.entity_mut(entity);
         entity_mut.insert(EditorBuildingEntity);
         let visibility_target = if is_roof {
@@ -3346,6 +3505,13 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                     storey,
                     role: EditorVisibilityRole::Wall,
                 })
+                .or_else(|| {
+                    item.and_then(|item| timber_wall_storeys.get(&item).copied())
+                        .map(|storey| EditorVisibilityTarget {
+                            storey,
+                            role: EditorVisibilityRole::Wall,
+                        })
+                })
         };
         if let (Some(target), Some(material)) = (visibility_target, material) {
             entity_mut.insert((
@@ -3354,6 +3520,9 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                 EditorAppearanceIsTranslucent(false),
                 Visibility::Visible,
             ));
+        }
+        if hide_fachwerk {
+            entity_mut.insert(EditorFachwerkForFinishedWall);
         }
         let target = item
             .and_then(|item| item_targets.get(&item).copied())
@@ -3476,22 +3645,26 @@ fn update_editor_visibility(
         &mut EditorAppearanceIsTranslucent,
         &mut MeshMaterial3d<StandardMaterial>,
         &mut Visibility,
+        Option<&EditorFachwerkForFinishedWall>,
     )>,
 ) {
     if !runtime.is_changed() {
         return;
     }
-    for (target, base_material, mut appearance, mut material, mut visibility) in &mut targets {
+    for (target, base_material, mut appearance, mut material, mut visibility, hide_fachwerk) in
+        &mut targets
+    {
         let above_active_storey = target.storey > runtime.active_storey;
         let hidden_wall = target.role == EditorVisibilityRole::Wall
             && runtime.wall_visibility == WallVisibility::Down;
         let hidden_roof = target.role == EditorVisibilityRole::Roof
             && runtime.roof_visibility == RoofVisibility::Hide;
-        *visibility = if above_active_storey || hidden_wall || hidden_roof {
-            Visibility::Hidden
-        } else {
-            Visibility::Visible
-        };
+        *visibility =
+            if above_active_storey || hidden_wall || hidden_roof || hide_fachwerk.is_some() {
+                Visibility::Hidden
+            } else {
+                Visibility::Visible
+            };
         let translucent = match target.role {
             EditorVisibilityRole::Wall if runtime.wall_visibility == WallVisibility::Cutaway => {
                 true
@@ -15592,12 +15765,18 @@ mod tests {
             }
         }
         let frame = plan.timber_frame.as_ref().unwrap();
+        let mut wall_grouped_members = 0;
         for member in &frame.members {
-            assert_eq!(
-                item_targets.get(&member.solid.0),
-                Some(&EditorTarget::TimberMember(member.id.0))
-            );
+            match item_targets.get(&member.solid.0) {
+                Some(EditorTarget::Wall(_)) => wall_grouped_members += 1,
+                Some(EditorTarget::TimberMember(id)) if *id == member.id.0 => {}
+                target => panic!("unexpected timber target for {}: {target:?}", member.id.0),
+            }
         }
+        assert!(
+            wall_grouped_members > 0,
+            "fachwerk bays should select their wall"
+        );
     }
 
     #[test]
