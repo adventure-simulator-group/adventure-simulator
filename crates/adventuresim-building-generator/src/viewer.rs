@@ -10906,14 +10906,29 @@ fn spawn_gable_roof(
             ]
         }
     };
+    let local_triangles = triangles
+        .iter()
+        .map(|triangle| {
+            triangle
+                .iter()
+                .map(|point| {
+                    point - Vec3::new(roof.centre.x, roof.base_height_metres, roof.centre.y)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     let mesh = world
         .resource_mut::<Assets<Mesh>>()
-        .add(flat_face_mesh(&triangles));
-    world.spawn((
-        Name::new("gable infill"),
-        Mesh3d(mesh),
-        MeshMaterial3d(facade_material.clone()),
-    ));
+        .add(flat_face_mesh(&local_triangles));
+    let entity = world
+        .spawn((
+            Name::new("gable infill"),
+            Mesh3d(mesh),
+            MeshMaterial3d(facade_material.clone()),
+            Transform::from_xyz(roof.centre.x, roof.base_height_metres, roof.centre.y),
+        ))
+        .id();
+    tag_player_build_entity(world, entity, facade_material);
     spawn_gable_detail(world, palette, roof, rise, wall_style);
 }
 
