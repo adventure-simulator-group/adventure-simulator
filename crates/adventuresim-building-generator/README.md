@@ -90,6 +90,21 @@ Roof, and Site intentionally explain that they need the future freeform
 player-build document instead of accepting an edit that cannot be saved or
 rendered.
 
+## Headless editor test ABI
+
+Freeform editor mutations have a typed JSON command ABI for deterministic
+tests and debugging. Run a script without opening a window:
+
+```powershell
+cargo run -p adventuresim-building-generator --bin building-viewer -- `
+  --editor-script editor-actions.json
+```
+
+The command writes one JSON snapshot per action to standard output. Each
+snapshot contains the active storey, visibility state, freeform parts,
+selection, advisory findings, status, and any error. UI freeform mutations and
+the script runner share the same player-build edit reducer.
+
 `BuildingDocument` is versioned JSON containing a `BuildingProgram` plus an
 ordered edit log. Each UI command regenerates the complete plan and runs the
 same audit as `generate`; an invalid command reports an error and leaves the
