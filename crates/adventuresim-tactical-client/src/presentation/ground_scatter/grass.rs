@@ -19,9 +19,30 @@ use super::{GroundScatterLayer, TacticalFoliageMaterial, foliage_material};
 
 pub(super) struct Assets {
     pub community_meshes: [CommunityMeshes; GrassCommunity::COUNT],
-    pub near_material: Handle<TacticalFoliageMaterial>,
-    pub far_material: Handle<TacticalFoliageMaterial>,
-    pub vista_material: Handle<TacticalFoliageMaterial>,
+    pub near_materials: GrassMaterialHandles,
+    pub far_materials: GrassMaterialHandles,
+    pub vista_materials: GrassMaterialHandles,
+}
+
+/// The two immutable material variants used by one grass LOD.  The selected
+/// handle makes the ground-mask path uniform for a whole draw, rather than
+/// requiring divergent per-blade decisions in the shader.
+#[derive(Clone)]
+pub(super) struct GrassMaterialHandles {
+    pub boundary: Handle<TacticalFoliageMaterial>,
+    pub interior: Handle<TacticalFoliageMaterial>,
+}
+
+impl GrassMaterialHandles {
+    pub(super) fn for_mask_mode(
+        &self,
+        mask_mode: GrassGroundMaskMode,
+    ) -> Handle<TacticalFoliageMaterial> {
+        match mask_mode {
+            GrassGroundMaskMode::Boundary => self.boundary.clone(),
+            GrassGroundMaskMode::Interior => self.interior.clone(),
+        }
+    }
 }
 
 /// Selects the material contract used by every grass distance tier.  Keeping
@@ -38,6 +59,24 @@ impl GrassMaterialPath {
         match lod {
             GrassMeshLod::Near => Self::FullInteractive,
             GrassMeshLod::Far | GrassMeshLod::Vista => Self::CheapLod,
+        }
+    }
+}
+
+/// Records whether this patch's draw may skip the authored ground-cover mask.
+/// Boundary is deliberately the default: only a conservative all-grass
+/// footprint is eligible for the interior material.
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum GrassGroundMaskMode {
+    Boundary,
+    Interior,
+}
+
+impl GrassGroundMaskMode {
+    const fn shader_flag(self) -> f32 {
+        match self {
+            Self::Boundary => 0.0,
+            Self::Interior => 1.0,
         }
     }
 }
@@ -280,15 +319,18 @@ pub(super) fn spawn(
             let Some(topology) = grass_patch_topology(ground, Vec2::new(world_x, world_z)) else {
                 continue;
             };
+            let mask_mode =
+                grass_ground_mask_mode(ground, Vec2::new(world_x, world_z), GrassMeshLod::Near);
             let meshes = &assets.community_meshes
                 [grass_community_at(Vec2::new(world_x, world_z), base_seed, profile).index()];
             commands.spawn((
                 Name::new("Tactical grass near ribbons"),
                 GroundScatterLayer::Grass,
                 GrassMaterialPath::for_lod(GrassMeshLod::Near),
+                mask_mode,
                 NotShadowCaster,
                 Mesh3d(meshes.mesh(GrassMeshLod::Near, topology).clone()),
-                MeshMaterial3d(assets.near_material.clone()),
+                MeshMaterial3d(assets.near_materials.for_mask_mode(mask_mode)),
                 grass_lod_visibility(GrassMeshLod::Near),
                 transform,
             ));
@@ -296,9 +338,10 @@ pub(super) fn spawn(
                 Name::new("Tactical grass far ribbons"),
                 GroundScatterLayer::Grass,
                 GrassMaterialPath::for_lod(GrassMeshLod::Far),
+                mask_mode,
                 NotShadowCaster,
                 Mesh3d(meshes.mesh(GrassMeshLod::Far, topology).clone()),
-                MeshMaterial3d(assets.far_material.clone()),
+                MeshMaterial3d(assets.far_materials.for_mask_mode(mask_mode)),
                 grass_lod_visibility(GrassMeshLod::Far),
                 transform,
             ));
@@ -325,15 +368,17 @@ pub(super) fn spawn(
             let Some(topology) = grass_patch_topology(ground, centre) else {
                 continue;
             };
+            let mask_mode = grass_ground_mask_mode(ground, centre, GrassMeshLod::Vista);
             let meshes =
                 &assets.community_meshes[grass_community_at(centre, base_seed, profile).index()];
             commands.spawn((
                 Name::new("Tactical grass vista tufts"),
                 GroundScatterLayer::Grass,
                 GrassMaterialPath::for_lod(GrassMeshLod::Vista),
+                mask_mode,
                 NotShadowCaster,
                 Mesh3d(meshes.mesh(GrassMeshLod::Vista, topology).clone()),
-                MeshMaterial3d(assets.vista_material.clone()),
+                MeshMaterial3d(assets.vista_materials.for_mask_mode(mask_mode)),
                 grass_lod_visibility(GrassMeshLod::Vista),
                 transform,
             ));
@@ -362,6 +407,12 @@ pub(in crate::presentation) const VISTA_GRASS_PATCH_SPACING: f32 = 6.4;
 /// same terminal representation contract.
 pub(in crate::presentation) const TERMINAL_SWARD_FADE_START_METRES: f32 = 55.0;
 pub(in crate::presentation) const TERMINAL_SWARD_FADE_END_METRES: f32 = 65.0;
+// `grass_cover_mask_pixels` feathers authored non-grass cover over this
+// radius. The organic source lookup can warp by one cell; 1.5 cells also
+// covers its rounding and bilinear filtering. Any uncertainty stays on the
+// boundary material, which retains the exact texture-driven collapse.
+const GRASS_MASK_FEATHER_METRES: f32 = 4.8;
+const GRASS_MASK_SOURCE_WARP_GUARD_CELLS: f32 = 1.5;
 pub(super) fn grass_material(
     wind_scale: f32,
     lod: GrassMeshLod,
@@ -369,6 +420,7 @@ pub(super) fn grass_material(
     grass_dryness: f32,
     ground_mask: Handle<Image>,
     ground: &SceneGround,
+    mask_mode: GrassGroundMaskMode,
 ) -> TacticalFoliageMaterial {
     let mut material = foliage_material(wind_scale, true);
     // Grass uses this otherwise generic meadow-variation lane as a replicated
@@ -386,7 +438,7 @@ pub(super) fn grass_material(
         // player interaction, camera-facing reconstruction, and full PBR.
         quality: Vec4::new(
             if lod == GrassMeshLod::Near { 0.0 } else { 1.0 },
-            0.0,
+            mask_mode.shader_flag(),
             0.0,
             0.0,
         ),
@@ -445,6 +497,36 @@ fn grass_patch_topology(ground: &SceneGround, centre: Vec2) -> Option<GrassTopol
     }
     GrassTopology::for_local_coverage(total / samples as f32)
 }
+
+fn grass_ground_mask_mode(
+    ground: &SceneGround,
+    centre: Vec2,
+    lod: GrassMeshLod,
+) -> GrassGroundMaskMode {
+    let half_extent = lod.masked_root_half_extent()
+        + GRASS_MASK_FEATHER_METRES
+        + ground.grid_scale() * GRASS_MASK_SOURCE_WARP_GUARD_CELLS;
+    // A patch near the edge cannot establish the complete authoritative
+    // footprint, so it always preserves the texture mask's edge behaviour.
+    if centre.x.abs() + half_extent > ground.width() * 0.5
+        || centre.y.abs() + half_extent > ground.depth() * 0.5
+    {
+        return GrassGroundMaskMode::Boundary;
+    }
+    let touches_non_grass = [
+        GroundCover::Bare,
+        GroundCover::LeafLitter,
+        GroundCover::LooseStone,
+        GroundCover::Reeds,
+    ]
+    .into_iter()
+    .any(|cover| ground.cover_intersects_square(centre, half_extent, cover));
+    if touches_non_grass {
+        GrassGroundMaskMode::Boundary
+    } else {
+        GrassGroundMaskMode::Interior
+    }
+}
 fn grass_patch_transform(terrain: &SceneTerrain, world_x: f32, world_z: f32) -> Option<Transform> {
     let sample = Vec2::new(world_x, world_z);
     let height = terrain.height_at(sample)?;
@@ -485,6 +567,16 @@ pub(in crate::presentation) enum GrassMeshLod {
 }
 
 impl GrassMeshLod {
+    fn masked_root_half_extent(self) -> f32 {
+        let blade_spacing = GRASS_BLADE_SPACING
+            * if self == Self::Vista {
+                VISTA_GRASS_PATCH_SPACING / GRASS_PATCH_SPACING
+            } else {
+                1.0
+            };
+        blade_spacing * (GRASS_PATCH_GRID_SIDE - 1) as f32 * 0.5
+    }
+
     fn row_heights(self) -> &'static [f32] {
         match self {
             // Five paired rows plus a shared tip: eleven vertices preserve the
@@ -1636,14 +1728,20 @@ mod tests {
     }
 
     #[test]
-    fn grass_composition_reuses_existing_mask_fetch_and_preserves_topology() {
+    fn grass_composition_guards_boundary_mask_fetches_and_preserves_topology() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_foliage.wgsl"
         ));
-        // Near keeps its existing authoritative mask fetch while the cheap
-        // Far/Vista branch has one equivalent fetch of its own.
+        // The full Near and cheap Far/Vista paths each retain one boundary
+        // fetch. Both are nested under the uniform interior selector, so an
+        // interior material cannot sample or collapse a grass blade.
         assert_eq!(shader.matches("textureSampleLevel(").count(), 2);
+        assert_eq!(shader.matches("if foliage.quality.y < 0.5 {").count(), 2);
+        assert!(
+            shader
+                .contains("if foliage.quality.y < 0.5 {\n            let mask_uv = root_world.xz")
+        );
         assert!(shader.contains("let effective_coverage = ground_coverage * clump_coverage"));
         assert!(shader.contains("let edge_growth = mix(0.26, 1.0"));
         assert!(!shader.contains("let tip_age"));
@@ -1674,27 +1772,9 @@ mod tests {
     }
 
     #[test]
-    fn far_and_vista_select_the_cheap_noninteractive_grass_path() {
+    fn mask_mode_selects_uniform_material_flags_for_every_grass_lod() {
         let ground = SceneGround::from_samples(2, 2, 1.0, vec![GroundSurface::default(); 4])
             .expect("a flat ground mask is valid");
-        let near = grass_material(
-            0.3,
-            GrassMeshLod::Near,
-            1.0,
-            0.2,
-            Handle::default(),
-            &ground,
-        );
-        let far = grass_material(0.3, GrassMeshLod::Far, 1.0, 0.2, Handle::default(), &ground);
-        let vista = grass_material(
-            0.3,
-            GrassMeshLod::Vista,
-            1.0,
-            0.2,
-            Handle::default(),
-            &ground,
-        );
-
         assert_eq!(
             GrassMaterialPath::for_lod(GrassMeshLod::Near),
             GrassMaterialPath::FullInteractive
@@ -1707,13 +1787,38 @@ mod tests {
             GrassMaterialPath::for_lod(GrassMeshLod::Vista),
             GrassMaterialPath::CheapLod
         );
-        assert_eq!(near.quality.x, 0.0);
-        assert_eq!(near.shading.w, 1.0);
-        for material in [&far, &vista] {
-            assert_eq!(material.quality.x, 1.0);
-            assert_eq!(material.shading.w, 0.0);
-            assert_eq!(material.alpha_mode(), AlphaMode::AlphaToCoverage);
+        for lod in [GrassMeshLod::Near, GrassMeshLod::Far, GrassMeshLod::Vista] {
+            let boundary = grass_material(
+                0.3,
+                lod,
+                1.0,
+                0.2,
+                Handle::default(),
+                &ground,
+                GrassGroundMaskMode::Boundary,
+            );
+            let interior = grass_material(
+                0.3,
+                lod,
+                1.0,
+                0.2,
+                Handle::default(),
+                &ground,
+                GrassGroundMaskMode::Interior,
+            );
+            assert_eq!(boundary.quality.y, 0.0);
+            assert_eq!(interior.quality.y, 1.0);
+            assert_eq!(
+                boundary.quality.x,
+                if lod == GrassMeshLod::Near { 0.0 } else { 1.0 }
+            );
+            assert_eq!(interior.quality.x, boundary.quality.x);
+            assert_eq!(boundary.alpha_mode(), AlphaMode::AlphaToCoverage);
+            assert_eq!(interior.alpha_mode(), AlphaMode::AlphaToCoverage);
         }
+        let exterior_vista =
+            vista_grass_material(0.3, 0.2, Handle::default(), Vec4::ONE, GrassMeshLod::Vista);
+        assert_eq!(exterior_vista.quality.y, 0.0);
     }
 
     #[test]
@@ -1728,6 +1833,7 @@ mod tests {
         let expensive_vertex_start = shader.find("let spatial_noise").expect("full vertex path");
         let cheap_vertex = &shader[cheap_vertex_start..expensive_vertex_start];
         assert_eq!(cheap_vertex.matches("textureSampleLevel(").count(), 1);
+        assert!(cheap_vertex.contains("if foliage.quality.y < 0.5 {"));
         assert_eq!(cheap_vertex.matches("sin(").count(), 1);
         assert!(!cheap_vertex.contains("interaction_offset"));
         assert!(!cheap_vertex.contains("camera_side"));
@@ -1747,6 +1853,36 @@ mod tests {
         assert!(cheap_fragment.contains("main_pass_post_lighting_processing"));
         assert!(!cheap_fragment.contains("apply_pbr_lighting"));
         assert!(!cheap_fragment.contains("diffuse_transmission"));
+    }
+
+    #[test]
+    fn conservative_ground_mask_classification_only_marks_clear_tall_grass_as_interior() {
+        const WIDTH: usize = 201;
+        let mut samples = vec![GroundSurface::default(); WIDTH * WIDTH];
+        // The central leaf-litter island is inside every LOD's conservative
+        // root, feather, and source-warp footprint. Two otherwise identical
+        // patches are far enough away to be genuine interior draws.
+        samples[100 * WIDTH + 108].cover = GroundCover::LeafLitter;
+        let ground = SceneGround::from_samples(WIDTH, WIDTH, 1.0, samples).unwrap();
+        let centres = [Vec2::new(-24.0, 0.0), Vec2::ZERO, Vec2::new(24.0, 0.0)];
+        for lod in [GrassMeshLod::Near, GrassMeshLod::Far, GrassMeshLod::Vista] {
+            let modes = centres.map(|centre| grass_ground_mask_mode(&ground, centre, lod));
+            let interiors = modes
+                .iter()
+                .filter(|&&mode| mode == GrassGroundMaskMode::Interior)
+                .count();
+            let boundaries = modes
+                .iter()
+                .filter(|&&mode| mode == GrassGroundMaskMode::Boundary)
+                .count();
+            assert_eq!((interiors, boundaries), (2, 1), "{lod:?}");
+            assert_eq!(modes[1], GrassGroundMaskMode::Boundary, "{lod:?}");
+        }
+        assert_eq!(
+            grass_ground_mask_mode(&ground, Vec2::new(96.0, 0.0), GrassMeshLod::Near),
+            GrassGroundMaskMode::Boundary,
+            "scene edges retain the texture path"
+        );
     }
 
     #[test]

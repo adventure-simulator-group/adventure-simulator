@@ -68,16 +68,21 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     if foliage.quality.x > 0.5 {
         var position = vertex.position;
         var blade_visibility = 1.0;
-        let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
-            + foliage.ground_mask_transform.zw;
-        let ground_coverage = textureSampleLevel(
-            ground_mask_texture,
-            ground_mask_sampler,
-            mask_uv,
-            0.0,
-        ).r;
-        if blade_threshold > ground_coverage {
-            blade_visibility = 0.0;
+        // `quality.y` is uniform per material/draw. Interior patches have a
+        // conservatively verified authoritative TallGrass footprint, so they
+        // skip both the mask read and boundary-only blade collapse.
+        if foliage.quality.y < 0.5 {
+            let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
+                + foliage.ground_mask_transform.zw;
+            let ground_coverage = textureSampleLevel(
+                ground_mask_texture,
+                ground_mask_sampler,
+                mask_uv,
+                0.0,
+            ).r;
+            if blade_threshold > ground_coverage {
+                blade_visibility = 0.0;
+            }
         }
         let width_compensation = max(foliage.shape.w, 1.0);
         let adjusted_xz = root_local.xz
@@ -120,25 +125,26 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         * sin(root_world.x * 0.037 - root_world.z * 0.053);
     var ground_coverage = 1.0;
     if foliage.shape.x > 0.5 {
-        let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
-            + foliage.ground_mask_transform.zw;
-        ground_coverage = textureSampleLevel(
-            ground_mask_texture,
-            ground_mask_sampler,
-            mask_uv,
-            0.0,
-        ).r;
-        // Preserve the four-times-density close field, then open it into
-        // irregular meadow clumps as it approaches the original-density LOD.
-        // This uses the existing world-space wave and mask fetch, so topology,
-        // draw count, and texture-sample count stay unchanged.
-        let meadow_zone = smoothstep(-0.36, 0.52, spatial_noise);
-        let camera_distance = distance(root_world.xyz, view.lod_view_world_position.xyz);
-        let distance_opening = smoothstep(7.0, 24.0, camera_distance);
-        let clump_coverage = mix(1.0, mix(0.54, 1.0, meadow_zone), distance_opening);
-        let effective_coverage = ground_coverage * clump_coverage;
-        if blade_threshold > effective_coverage {
-            blade_visibility = 0.0;
+        if foliage.quality.y < 0.5 {
+            let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
+                + foliage.ground_mask_transform.zw;
+            ground_coverage = textureSampleLevel(
+                ground_mask_texture,
+                ground_mask_sampler,
+                mask_uv,
+                0.0,
+            ).r;
+            // Preserve the four-times-density close field, then open it into
+            // irregular meadow clumps as it approaches the original-density LOD.
+            // Boundary patches retain the authored mask's exact collapse.
+            let meadow_zone = smoothstep(-0.36, 0.52, spatial_noise);
+            let camera_distance = distance(root_world.xyz, view.lod_view_world_position.xyz);
+            let distance_opening = smoothstep(7.0, 24.0, camera_distance);
+            let clump_coverage = mix(1.0, mix(0.54, 1.0, meadow_zone), distance_opening);
+            let effective_coverage = ground_coverage * clump_coverage;
+            if blade_threshold > effective_coverage {
+                blade_visibility = 0.0;
+            }
         }
         position = root_local + (position - root_local) * blade_visibility;
     }

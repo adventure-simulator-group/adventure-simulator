@@ -35,12 +35,12 @@ mod litter;
 mod loose_stone;
 mod understory;
 
-use grass::grass_material;
 pub(in crate::presentation) use grass::{
     GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod, GrassTopology,
     TERMINAL_SWARD_FADE_END_METRES, TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING,
     grass_community_at, grass_lod_visibility, grass_patch_mesh, vista_grass_material,
 };
+use grass::{GrassGroundMaskMode, GrassMaterialHandles, grass_material};
 use litter::{
     DRY_LEAF_MESH_VARIANTS, TWIG_MESH_VARIANTS, dry_leaf_patch_mesh, forest_floor_leaf_material,
     twig_patch_mesh,
@@ -270,30 +270,66 @@ pub(super) fn spawn_ground_foliage(
         ground,
         stable_text_seed(&environment.scene_digest),
     ));
-    let grass_near_material = materials.add(grass_material(
-        grass_wind_scale,
-        GrassMeshLod::Near,
-        grass_density,
-        grass_dryness,
-        grass_mask.clone(),
-        ground,
-    ));
-    let grass_far_material = materials.add(grass_material(
-        grass_wind_scale,
-        GrassMeshLod::Far,
-        grass_density,
-        grass_dryness,
-        grass_mask.clone(),
-        ground,
-    ));
-    let grass_vista_material = materials.add(grass_material(
-        grass_wind_scale,
-        GrassMeshLod::Vista,
-        grass_density,
-        grass_dryness,
-        grass_mask,
-        ground,
-    ));
+    let grass_near_materials = GrassMaterialHandles {
+        boundary: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Near,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Boundary,
+        )),
+        interior: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Near,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Interior,
+        )),
+    };
+    let grass_far_materials = GrassMaterialHandles {
+        boundary: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Far,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Boundary,
+        )),
+        interior: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Far,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Interior,
+        )),
+    };
+    let grass_vista_materials = GrassMaterialHandles {
+        boundary: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Vista,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Boundary,
+        )),
+        interior: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Vista,
+            grass_density,
+            grass_dryness,
+            grass_mask,
+            ground,
+            GrassGroundMaskMode::Interior,
+        )),
+    };
     let dry_leaf_meshes = ground_foliage_cache
         .dry_leaf_meshes
         .get_or_insert_with(|| {
@@ -347,9 +383,9 @@ pub(super) fn spawn_ground_foliage(
         grass_profile,
         &grass::Assets {
             community_meshes: grass_community_meshes,
-            near_material: grass_near_material,
-            far_material: grass_far_material,
-            vista_material: grass_vista_material,
+            near_materials: grass_near_materials,
+            far_materials: grass_far_materials,
+            vista_materials: grass_vista_materials,
         },
     );
 
