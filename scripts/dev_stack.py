@@ -1567,6 +1567,7 @@ def tactical_session_config(
     window_capture: str = "auto",
     capture_source: str = "window",
     render_backend: str = "auto",
+    input_script: str | None = None,
 ) -> dict[str, object]:
     return {
         "repository": str(ROOT.resolve()),
@@ -1589,6 +1590,7 @@ def tactical_session_config(
         "window_capture": window_capture,
         "capture_source": capture_source,
         "render_backend": render_backend,
+        "input_script_source": input_script,
     }
 
 
@@ -1632,7 +1634,7 @@ def launch_recorded_tactical_client(
             capture_ready = run_dir / f"capture-ready-{suffix}.json"
             commands.append({"type": "wait_for_signal", "path": str(capture_ready)})
             config["capture_ready_signal"] = str(capture_ready)
-        commands.extend([
+        default_commands: list[dict[str, object]] = [
             {"type": "rotate", "degrees_right": 90.0},
             {
                 "type": "move", "direction": "forward",
@@ -1668,7 +1670,32 @@ def launch_recorded_tactical_client(
             },
             {"type": "guard", "raised": False},
             {"type": "wait", "duration_seconds": 0.5},
-        ])
+        ]
+        input_script_source = config.get("input_script_source")
+        if input_script_source:
+            source_path = Path(str(input_script_source))
+            if not source_path.is_absolute():
+                source_path = ROOT / source_path
+            try:
+                source = json.loads(source_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ValueError(
+                    f"failed to read diagnostic input script {source_path}: {error}"
+                ) from error
+            source_commands = source.get("commands") if isinstance(source, dict) else None
+            if not isinstance(source_commands, list) or not source_commands:
+                raise ValueError(
+                    f"diagnostic input script must contain a non-empty commands list: {source_path}"
+                )
+            if not all(isinstance(command, dict) for command in source_commands):
+                raise ValueError(
+                    f"diagnostic input script commands must be objects: {source_path}"
+                )
+            commands.extend(source_commands)
+            client_config["input_script_source"] = str(source_path.resolve())
+            config["input_script_source"] = str(source_path.resolve())
+        else:
+            commands.extend(default_commands)
         atomic_write_json(input_script, {
             "commands": commands
         })
@@ -1678,8 +1705,9 @@ def launch_recorded_tactical_client(
         ])
         client_config["input_script"] = str(input_script)
         config["input_script"] = str(input_script)
-        client_config["animation_attack_screenshot"] = str(attack_screenshot)
-        config["animation_attack_screenshot"] = str(attack_screenshot)
+        if not input_script_source:
+            client_config["animation_attack_screenshot"] = str(attack_screenshot)
+            config["animation_attack_screenshot"] = str(attack_screenshot)
     environment = os.environ.copy()
     if config.get("render_backend", "auto") == "auto":
         environment.pop("WGPU_BACKEND", None)
@@ -2141,7 +2169,10 @@ def tactical_play(
     capture_source: str = "window",
     render_backend: str = "auto",
     scene_input: str | None = None,
+    input_script: str | None = None,
 ) -> int:
+    if input_script and mode is not TacticalPlayMode.DIAGNOSTIC:
+        raise ValueError("--input-script is only valid for tactical-play diagnostic")
     launch_client = mode is not TacticalPlayMode.NETWORKING
     code = build_tactical_play(launch_client)
     if code:
@@ -2162,6 +2193,7 @@ def tactical_play(
         values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
         graphics_preset,
         present_mode, window_capture, capture_source, render_backend,
+        input_script,
     )
     session_file = run_dir / "tactical-session.json"
 
@@ -2573,6 +2605,7 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
     )
+    tactical_play_parser.add_argument("--input-script")
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
     reseeder = sub.add_parser("reseed-tactical-mission")
@@ -2638,6 +2671,7 @@ def main() -> int:
                 TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
                 args.presentation_trace, args.present_mode, args.window_capture,
                 args.capture_source, args.render_backend, args.scene_input,
+                args.input_script,
             )
         if args.command == "tactical-status":
             return tactical_status()

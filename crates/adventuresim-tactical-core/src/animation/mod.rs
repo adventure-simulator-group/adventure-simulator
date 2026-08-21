@@ -25,6 +25,6 @@ pub use semantic::*;
 pub use state::*;
 
 #[cfg(test)]
-use {evaluation::gait_pair, state::initial_guard_swing_foot};
+use evaluation::gait_pair;
 
 include!("tests.rs");

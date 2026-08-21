@@ -93,10 +93,9 @@ pub enum StanceState {
 }
 
 /// Compact authoritative input for client-side raised-guard foot placement.
-/// Speed follows the controller continuously so acceleration changes cadence
-/// during the current step. Ordinary turns wait for the next foot handoff;
-/// material opposite-direction reversals perform an immediate safe semantic
-/// handoff so the support side agrees with the already-reversed gameplay root.
+/// The authority replicates only observed motion. Exact visual plants, swing
+/// ownership, and progress are client presentation state, as in Overgrowth's
+/// velocity-driven foot stance.
 /// This invariant-bearing type intentionally does not implement Bevy reflection;
 /// reflected field mutation would bypass its validated constructors.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -105,15 +104,8 @@ pub struct RaisedLocomotionIntent(RaisedLocomotionKind);
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum RaisedLocomotionKind {
-    Planted {
-        step_sequence: u32,
-    },
-    Moving {
-        local_direction: Vec2,
-        speed: f32,
-        swing_foot: LeadFoot,
-        step_sequence: u32,
-    },
+    Planted,
+    Moving { local_direction: Vec2, speed: f32 },
 }
 
 #[derive(Deserialize)]
@@ -126,49 +118,40 @@ impl<'de> Deserialize<'de> for RaisedLocomotionIntent {
     {
         let RaisedLocomotionWire(value) = RaisedLocomotionWire::deserialize(deserializer)?;
         Ok(match value {
-            RaisedLocomotionKind::Planted { step_sequence } => Self::planted(step_sequence),
+            RaisedLocomotionKind::Planted => Self::planted(),
             RaisedLocomotionKind::Moving {
                 local_direction,
                 speed,
-                swing_foot,
-                step_sequence,
-            } => Self::moving(local_direction, speed, swing_foot, step_sequence),
+            } => Self::moving(local_direction, speed),
         })
     }
 }
 
 impl Default for RaisedLocomotionIntent {
     fn default() -> Self {
-        Self::planted(0)
+        Self::planted()
     }
 }
 
 impl RaisedLocomotionIntent {
-    pub fn planted(step_sequence: u32) -> Self {
-        Self(RaisedLocomotionKind::Planted { step_sequence })
+    pub fn planted() -> Self {
+        Self(RaisedLocomotionKind::Planted)
     }
 
     /// Creates validated moving intent. Invalid or effectively stationary
     /// input becomes planted while retaining its handoff identity.
-    pub fn moving(
-        local_direction: Vec2,
-        speed: f32,
-        swing_foot: LeadFoot,
-        step_sequence: u32,
-    ) -> Self {
+    pub fn moving(local_direction: Vec2, speed: f32) -> Self {
         let direction = local_direction.normalize_or_zero();
         if !local_direction.is_finite()
             || !speed.is_finite()
             || direction == Vec2::ZERO
             || speed <= 0.05
         {
-            return Self::planted(step_sequence);
+            return Self::planted();
         }
         Self(RaisedLocomotionKind::Moving {
             local_direction: direction,
             speed,
-            swing_foot,
-            step_sequence,
         })
     }
 
@@ -181,28 +164,14 @@ impl RaisedLocomotionIntent {
             RaisedLocomotionKind::Moving {
                 local_direction, ..
             } => local_direction,
-            RaisedLocomotionKind::Planted { .. } => Vec2::ZERO,
+            RaisedLocomotionKind::Planted => Vec2::ZERO,
         }
     }
 
     pub fn speed(self) -> f32 {
         match self.0 {
             RaisedLocomotionKind::Moving { speed, .. } => speed,
-            RaisedLocomotionKind::Planted { .. } => 0.0,
-        }
-    }
-
-    pub fn swing_foot(self) -> Option<LeadFoot> {
-        match self.0 {
-            RaisedLocomotionKind::Moving { swing_foot, .. } => Some(swing_foot),
-            RaisedLocomotionKind::Planted { .. } => None,
-        }
-    }
-
-    pub fn step_sequence(self) -> u32 {
-        match self.0 {
-            RaisedLocomotionKind::Planted { step_sequence }
-            | RaisedLocomotionKind::Moving { step_sequence, .. } => step_sequence,
+            RaisedLocomotionKind::Planted => 0.0,
         }
     }
 
@@ -985,7 +954,7 @@ impl SkeletonState {
             && locomotion.is_moving()
         {
             self.stance = StanceState::Raised {
-                locomotion: RaisedLocomotionIntent::planted(locomotion.step_sequence()),
+                locomotion: RaisedLocomotionIntent::planted(),
             };
         }
     }
@@ -1028,7 +997,7 @@ impl SkeletonState {
             let locomotion = if self.body == BodyState::Grounded(GroundedPosture::Upright) {
                 locomotion
             } else {
-                RaisedLocomotionIntent::planted(locomotion.step_sequence())
+                RaisedLocomotionIntent::planted()
             };
             self.stance = StanceState::Raised { locomotion };
         }
@@ -1626,8 +1595,6 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     };
     let previous_world_velocity = skeleton.world_velocity;
     let was_supported = skeleton.body.is_surface_supported();
-    let previous_guard_sequence = skeleton.raised_locomotion().step_sequence();
-    let previous_guard_swing = skeleton.raised_locomotion().swing_foot();
     let local_velocity = controller_yaw(input.orientation).inverse() * linear_velocity;
     let physical_speed = local_velocity.xz().length();
     let contiguous_sample = input.tick == skeleton.locomotion_sample_tick.wrapping_add(1);
@@ -1676,14 +1643,10 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     };
     if skeleton.weapon_guard() == WeaponGuardState::Raised && skeleton.posture() == Posture::Upright
     {
-        advance_raised_locomotion_intent(skeleton, local_velocity, delta_seconds);
-        let handoffs = skeleton
-            .raised_locomotion()
-            .step_sequence()
-            .wrapping_sub(previous_guard_sequence);
-        advance_contact_identity(skeleton, handoffs, previous_guard_swing);
+        let handoffs = advance_raised_locomotion_intent(skeleton, local_velocity, delta_seconds);
+        advance_contact_identity(skeleton, handoffs, None);
     } else {
-        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted(previous_guard_sequence));
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
         if input.grounded && ground_speed > 0.05 {
             let profile = locomotion_profile(skeleton);
             let phase = skeleton.gait_phase.rem_euclid(1.0);
@@ -1729,63 +1692,28 @@ fn advance_raised_locomotion_intent(
     skeleton: &mut SkeletonState,
     observed_local_velocity: Vec3,
     delta_seconds: f32,
-) {
-    let mut intent = skeleton.raised_locomotion();
+) -> u32 {
+    let intent = skeleton.raised_locomotion();
     let observed_speed = observed_local_velocity.xz().length();
     let observed = (observed_speed > 0.05).then(|| {
         RaisedLocomotionIntent::moving(
             Vec2::new(observed_local_velocity.x, observed_local_velocity.z),
             observed_speed,
-            skeleton.lead_foot,
-            intent.step_sequence(),
         )
     });
     if !intent.is_moving() {
         let Some(observed) = observed else {
             skeleton.gait_phase = 0.0;
             skeleton.set_raised_locomotion(intent);
-            return;
+            return 0;
         };
-        intent = RaisedLocomotionIntent::moving(
-            observed.local_direction(),
-            observed.speed(),
-            initial_guard_swing_foot(observed.local_direction(), skeleton.lead_foot),
-            observed.step_sequence(),
-        );
+        skeleton.set_raised_locomotion(observed);
         skeleton.gait_phase = 0.0;
     }
 
-    if let Some(observed) = observed {
-        // Do not latch the tiny velocity from the first acceleration tick for
-        // a complete pulse. Cadence and reach adapt immediately; only a hard
-        // direction change waits until the current swing foot lands.
-        let mut direction = intent.local_direction();
-        let mut swing_foot = intent.swing_foot().unwrap_or(skeleton.lead_foot);
-        let mut step_sequence = intent.step_sequence();
-        if direction.dot(observed.local_direction()) < -0.5 {
-            // Gameplay root velocity reverses immediately. Hand support off
-            // immediately too, rather than dragging the old world plant
-            // across its anatomical corridor until the scheduled seam.
-            direction = observed.local_direction();
-            swing_foot = match swing_foot {
-                LeadFoot::Left => LeadFoot::Right,
-                LeadFoot::Right => LeadFoot::Left,
-            };
-            step_sequence = step_sequence.wrapping_add(1);
-            intent = RaisedLocomotionIntent::moving(
-                direction,
-                observed.speed(),
-                swing_foot,
-                step_sequence,
-            );
-            skeleton.gait_phase = if skeleton.gait_phase < 0.5 { 0.5 } else { 0.0 };
-            skeleton.set_raised_locomotion(intent);
-            return;
-        }
-        intent =
-            RaisedLocomotionIntent::moving(direction, observed.speed(), swing_foot, step_sequence);
-    }
-    let speed = intent.speed();
+    let moving = observed.unwrap_or(intent);
+    skeleton.set_raised_locomotion(moving);
+    let speed = moving.speed();
     let phase = skeleton.gait_phase.rem_euclid(1.0);
     let profile = LocomotionProfile {
         step_distance: guard_step_length(speed),
@@ -1796,53 +1724,13 @@ fn advance_raised_locomotion_intent(
     let crossed_handoff = handoffs > 0;
 
     if observed.is_none() && crossed_handoff {
-        let step_sequence = intent.step_sequence().wrapping_add(1);
-        intent = RaisedLocomotionIntent::planted(step_sequence);
         skeleton.gait_phase = if phase < 0.5 { 0.5 } else { 0.0 };
-        skeleton.set_raised_locomotion(intent);
-        return;
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
+        return handoffs;
     }
 
     skeleton.gait_phase = next_phase.rem_euclid(1.0);
-    if crossed_handoff && let Some(observed) = observed {
-        if handoffs % 2 == 1 {
-            let swing_foot = match intent.swing_foot().unwrap_or(skeleton.lead_foot) {
-                LeadFoot::Left => LeadFoot::Right,
-                LeadFoot::Right => LeadFoot::Left,
-            };
-            intent = RaisedLocomotionIntent::moving(
-                observed.local_direction(),
-                observed.speed(),
-                swing_foot,
-                intent.step_sequence(),
-            );
-        }
-        intent = RaisedLocomotionIntent::moving(
-            observed.local_direction(),
-            observed.speed(),
-            intent.swing_foot().unwrap_or(skeleton.lead_foot),
-            intent.step_sequence().wrapping_add(handoffs),
-        );
-    }
-    skeleton.set_raised_locomotion(intent);
-}
-
-pub(super) fn initial_guard_swing_foot(direction: Vec2, lead: LeadFoot) -> LeadFoot {
-    if direction.x.abs() >= direction.y.abs() {
-        if direction.x.is_sign_negative() {
-            LeadFoot::Left
-        } else {
-            LeadFoot::Right
-        }
-    } else if direction.y.is_sign_positive() {
-        // Retreat begins with the forward foot; advance begins with the rear.
-        lead
-    } else {
-        match lead {
-            LeadFoot::Left => LeadFoot::Right,
-            LeadFoot::Right => LeadFoot::Left,
-        }
-    }
+    handoffs
 }
 
 /// Ground distance covered by one procedural combat-stance step. Raised

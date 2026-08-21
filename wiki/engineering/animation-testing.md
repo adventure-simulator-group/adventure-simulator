@@ -106,23 +106,27 @@ large analysis of a simplified fixture.
 
 ## Acceptance and scoring
 
-The guard-footwork analyzer groups defects into five priorities. Their weights
-are powers of two:
+The guard-footwork analyzer has two structural locomotion gates followed by five
+power-of-two priorities:
 
-| Priority | Weight | Share of 31 | Why it has this priority |
-| --- | ---: | ---: | --- |
-| Anatomically invalid joints | 16 | 51.6% | A reversed knee or crossed leg is physically invalid and can look catastrophic even for one frame. Its weight exceeds all lower priorities combined. |
-| Contact foot airborne | 8 | 25.8% | A foot claiming contact while visibly floating, penetrating terrain, or exceeding hard reach breaks the physical premise of foot placement. |
-| Both feet behind the hips | 4 | 12.9% | A sustained rearward stance makes locomotion appear detached from the body even when each foot remains reachable. |
-| Foot dragging | 2 | 6.5% | Sustained sliding or scuffing destroys the impression of planted weight, but is less severe than an invalid or floating leg. |
-| Jitter and jerk | 1 | 3.2% | Discontinuities are distracting, though a correctly placed but slightly jerky foot is preferable to a smoothly floating one. |
+| Priority | Score effect | Why it has this priority |
+| --- | ---: | --- |
+| Catastrophic horizontal foot displacement | Force quality to 0 | A foot held over 0.65 m horizontally from its hip for 0.1 s is a grossly broken pose. Smoothness cannot compensate for it. |
+| Missing visible guard step | Force quality to 0 | Advancing gait phase and contact metadata do not constitute locomotion unless the final swing-foot transform travels, clears the floor, exchanges support, and replants. |
+| Anatomically invalid joints | Weight 16 | A reversed knee or crossed leg is physically invalid and can look catastrophic even for one frame. Its weight exceeds all lower weighted priorities combined. |
+| Contact foot airborne | Weight 8 | A foot claiming contact while visibly floating, penetrating terrain, or exceeding hard reach breaks the physical premise of foot placement. |
+| Both feet behind the hips | Weight 4 | A sustained rearward stance makes locomotion appear detached from the body even when each foot remains reachable. |
+| Foot dragging | Weight 2 | Sustained sliding or scuffing destroys the impression of planted weight, but is less severe than an invalid or floating leg. |
+| Jitter and jerk | Weight 1 | Discontinuities are distracting, though a correctly placed but slightly jerky foot is preferable to a smoothly misplaced or floating one. |
 
 Each weight is greater than the sum of all lower weights. The ordering therefore
 survives aggregation: fixing one anatomical failure is always more valuable
 than fixing every lower-priority category while leaving it in place.
 
-The weighted defect score is the sum of the weights of the failed categories.
-The displayed quality score is:
+Without a structural locomotion failure, the weighted defect score is the sum
+of the failed weighted categories. A catastrophic displacement or missing
+visible guard step assigns the full defect score of 31 by itself. The displayed
+quality score is:
 
 ```text
 quality = 100 * (1 - weighted_defect_score / 31)
@@ -149,6 +153,8 @@ stride” means half the median measured half-step, clamped to 0.08–0.30 secon
 
 | Metric | Failure condition | Priority or role | Justification |
 | --- | --- | --- | --- |
+| Horizontal hip-foot offset | Either foot remains more than 0.65 m horizontally from its hip for over 0.1 s | Catastrophic | Detects the straight, side-pinned leg failure independent of rig-axis convention, even when the foot is perfectly still and therefore has excellent derivative metrics. |
+| Visible guard half-step | Between consecutive contact edges, the final global swing-foot transform moves less than 0.05 m horizontally, gains less than 0.03 m of terrain-relative clearance, fails to exchange support, or fails to replant | Structural | Prevents a semantic gait clock from passing while both rendered feet remain in a rigid pose and slide with the controller. Every completed half-step must satisfy all four observables. |
 | Knee flexion | More than 165 degrees | Anatomical | Rejects a nearly inverted two-bone solution while leaving a small numerical margin below perfectly straight. |
 | Knee bend hemisphere | Tracked pole hemisphere dot product below zero | Anatomical | Detects the knee choosing the opposite bend solution even if its flexion angle alone looks plausible. |
 | Foot crossover | Either foot crosses the pelvis centerline relative to its own hip | Anatomical | Detects crossed legs and side-identity failures. |
@@ -216,6 +222,13 @@ binary gates rather than the weighted guard score.
 | Grounded support | A grounded frame has no foot with meaningful support | Detects a landing with no physical contact owner. |
 | Hard reach | Either leg reports hard reach | Rejects a clamped or infeasible dodge pose. |
 | Supported radial extension | A supporting ankle is more than 0.90 m from the visual pelvis | Allows an intentionally airborne swing to extend, but not a planted leg. |
+
+Raised-guard footwork owns a client-local alternating support/swing state. A
+landing is constructed on the swinging foot's anatomical side of the support
+contact, while intermediate airborne samples are exempt from planted-pair
+separation checks. Landing completion advances the contact state independently
+of analytic IK success, so a reach failure can be reported but cannot freeze
+the gait at the end of a swing or reset both feet to authored FK.
 | Impact contact | On every `Dodge` to ordinary transition, both soles must be within 0.01 m of terrain | Requires both feet to have arrived when impact and movement end. |
 
 ## Interpreting and changing metrics
@@ -232,3 +245,41 @@ still useful because a person can notice an odd silhouette, rhythm, or gesture
 that no current metric names. The correct response is to add a reproducible
 command sequence and measurable contract, not to replace the native test with
 a smaller synthetic simulation.
+
+## Directional raised-guard benchmark
+
+Use `just animation-direction-benchmark` to record production-client bone
+transforms while the character holds guard and walks forward, backward, left,
+and right at identical input speed. The script gives each direction four
+seconds, separated by one second at rest. An initial unguarded forward walk is
+an unscored warm-up so first-use streaming does not systematically contaminate
+the first scored direction. The script deliberately disables OBS and PresentMon
+because the JSONL animation trace is the benchmark artifact.
+
+Pass the reported `animation-state-*.jsonl` file to
+`scripts/analyze_animation_direction_trace.py`. The analyzer discards the first
+second and final half-second of every direction, converts the same 17 tracked
+bones used by the viewer to parent-local transforms, and applies the viewer's
+angular/local-position acceleration and jerk thresholds. It also measures the
+longest-to-shortest half-step ratio against the viewer's 1.5 limit. A sustained
+horizontal hip-foot offset above 0.65 m or a completed contact interval without
+at least 0.05 m of swing travel and 0.03 m of clearance gain forces the
+direction's quality score to zero. Otherwise its continuous motion score is
+`100 / (1 + worst normalized threshold ratio)`:
+50 means either the 95th percentile of the noisiest bone and derivative class,
+or the cadence deviation from an even 1.0 ratio, reaches its allowed threshold.
+A higher number is smoother. The analyzer reports the derivative-only value as
+`motion_smoothness_score` so a static invalid pose cannot hide behind it. This
+comparative score does not replace the binary acceptance gates or the viewer's
+weighted quality score.
+
+Catastrophic placement is also evaluated over the entire raised-guard interval,
+including the rests between directional commands. If a foot becomes stuck when
+movement stops, `benchmark_quality_score` is therefore zero even though the
+steady-state derivative scores remain useful for diagnosing the preceding gait.
+
+The analyzer marks the whole benchmark invalid if any sampled direction has a
+render delta above 50 ms or an authoritative locomotion-sample gap above four
+ticks. It reports those frames separately under `timing`; their derivative and
+cadence spikes are transport or scheduling evidence, not directional animation
+evidence. An invalid benchmark exits with status 1 and must be recorded again.

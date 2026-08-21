@@ -455,6 +455,8 @@ struct QualityScore {
 
 #[derive(Debug, Serialize)]
 struct QualityCategories {
+    catastrophic_foot_displacement_failed: bool,
+    guard_step_liveness_failed: bool,
     anatomical_invalid_joints_failed: bool,
     contact_foot_airborne_failed: bool,
     both_feet_behind_hips_failed: bool,
@@ -481,6 +483,7 @@ struct CaptureValidation {
     biomechanics_within_review_bounds: bool,
     no_ground_penetration: bool,
     raised_guard_fixed_support: bool,
+    raised_guard_step_liveness_valid: bool,
     flat_controller_height_stable: bool,
     phase_owned_height_valid: bool,
     run_flight_valid: bool,
@@ -577,6 +580,11 @@ struct ScenarioMetrics {
     maximum_dive_axis_motion_error_degrees: f32,
     maximum_supported_foot_slip_metres_per_frame: f32,
     maximum_planted_foot_drift_metres: f32,
+    guard_step_liveness_required: bool,
+    completed_guard_half_step_count: usize,
+    visible_guard_half_step_count: usize,
+    minimum_guard_swing_travel_metres: f32,
+    minimum_guard_swing_clearance_gain_metres: f32,
     minimum_foot_clearance_metres: f32,
 }
 
@@ -1624,7 +1632,10 @@ fn raised_guard_stationary_turn_scenario() -> Vec<PlannedFrame> {
 
 fn raised_guard_scenario(name: &'static str, direction: Vec2) -> Vec<PlannedFrame> {
     let direction = direction.normalize_or_zero();
-    raised_guard_steady_scenario(name, 2.0, 1.0, direction)
+    // Leave enough post-startup time for both local support identities to
+    // complete. One semantic cycle could end before the client-owned first
+    // landing after asset/pose readiness and therefore never test alternation.
+    raised_guard_steady_scenario(name, 2.0, 2.0, direction)
 }
 
 fn raised_guard_steady_scenario(
@@ -2497,7 +2508,7 @@ fn capture_frame(
                 cadence_support
             };
         let (left_support_weight, right_support_weight) = raised_footwork
-            .filter(|state| state.initialized)
+            .filter(|state| state.initialized())
             .map(|state| (state.left_support_weight, state.right_support_weight))
             .unwrap_or(ik_support);
         sequence.samples.push(FrameSample {
@@ -2510,7 +2521,13 @@ fn capture_frame(
             body_acceleration: (subject_global.rotation().inverse() * skeleton.world_acceleration)
                 .to_array(),
             world_acceleration: skeleton.world_acceleration.to_array(),
-            contact_sequence: skeleton.contact_sequence,
+            // Raised guard owns its visual contacts locally. Segment its
+            // diagnostics by the sequence that actually changed the rendered
+            // support foot, not by the replicated locomotion cadence.
+            contact_sequence: raised_footwork.filter(|state| state.initialized()).map_or(
+                skeleton.contact_sequence,
+                RaisedFootworkState::step_sequence,
+            ),
             contact_foot: skeleton.contact_foot,
             landing_sequence: skeleton.landing_sequence,
             landing_impact_speed: skeleton.landing_impact_speed,
@@ -2902,6 +2919,11 @@ fn finish_capture(
             || pair[0].action == SkeletonAction::Attack
             || pair[1].action == SkeletonAction::Attack
             || pair[0].lead_foot == pair[1].lead_foot
+    });
+    let raised_guard_step_liveness_valid = scenarios.iter().all(|metrics| {
+        !metrics.guard_step_liveness_required
+            || (metrics.completed_guard_half_step_count > 0
+                && metrics.visible_guard_half_step_count == metrics.completed_guard_half_step_count)
     });
     let flat_controller_height_stable = scenarios.iter().all(|metrics| {
         scenario_uses_terrain_ik(&metrics.scenario)
@@ -3415,6 +3437,7 @@ fn finish_capture(
         biomechanics_within_review_bounds,
         no_ground_penetration,
         raised_guard_fixed_support,
+        raised_guard_step_liveness_valid,
         flat_controller_height_stable,
         phase_owned_height_valid,
         run_flight_valid,
@@ -3502,6 +3525,7 @@ fn validation_passed(validation: &CaptureValidation) -> bool {
         && validation.biomechanics_within_review_bounds
         && validation.no_ground_penetration
         && validation.raised_guard_fixed_support
+        && validation.raised_guard_step_liveness_valid
         && validation.flat_controller_height_stable
         && validation.phase_owned_height_valid
         && validation.run_flight_valid
@@ -3534,6 +3558,7 @@ fn quality_score(
     scenarios: &[ScenarioMetrics],
     validation: &CaptureValidation,
 ) -> QualityScore {
+    let catastrophic_foot_displacement_failed = catastrophic_foot_displacement(frames);
     let anatomical_invalid_joints_failed = scenarios.iter().any(|metrics| {
         procedural_leg_solver_gates_apply(&metrics.scenario)
             && (metrics.minimum_knee_flexion_degrees < 3.9
@@ -3548,6 +3573,7 @@ fn quality_score(
         || !validation.reported_support_contacts_valid
         || !validation.run_contact_acquisition_valid;
     let both_feet_behind_hips_failed = both_feet_behind_hips(frames);
+    let guard_step_liveness_failed = !validation.raised_guard_step_liveness_valid;
     let foot_dragging_failed = scenarios.iter().any(|metrics| {
         let supported_slip_limit = supported_foot_slip_limit(&metrics.scenario);
         metrics.maximum_supported_foot_slip_metres_per_frame > supported_slip_limit
@@ -3559,6 +3585,8 @@ fn quality_score(
             .unacceptable_final_incident_count
             > 0;
     let categories = QualityCategories {
+        catastrophic_foot_displacement_failed,
+        guard_step_liveness_failed,
         anatomical_invalid_joints_failed,
         contact_foot_airborne_failed,
         both_feet_behind_hips_failed,
@@ -3582,11 +3610,52 @@ fn quality_score(
 }
 
 fn weighted_defect_score(categories: &QualityCategories) -> u8 {
-    u8::from(categories.anatomical_invalid_joints_failed) * 16
-        + u8::from(categories.contact_foot_airborne_failed) * 8
-        + u8::from(categories.both_feet_behind_hips_failed) * 4
-        + u8::from(categories.foot_dragging_failed) * 2
-        + u8::from(categories.jitter_and_jerk_failed)
+    if categories.catastrophic_foot_displacement_failed || categories.guard_step_liveness_failed {
+        31
+    } else {
+        u8::from(categories.anatomical_invalid_joints_failed) * 16
+            + u8::from(categories.contact_foot_airborne_failed) * 8
+            + u8::from(categories.both_feet_behind_hips_failed) * 4
+            + u8::from(categories.foot_dragging_failed) * 2
+            + u8::from(categories.jitter_and_jerk_failed)
+    }
+}
+
+const CATASTROPHIC_FOOT_HORIZONTAL_HIP_OFFSET_METRES: f32 = 0.65;
+const CATASTROPHIC_FOOT_DISPLACEMENT_SECONDS: f32 = 0.1;
+
+fn catastrophic_horizontal_foot_offset(hip: Vec3, foot: Vec3) -> bool {
+    (foot - hip).xz().length() > CATASTROPHIC_FOOT_HORIZONTAL_HIP_OFFSET_METRES
+}
+
+fn catastrophic_foot_displacement(frames: &[FrameSample]) -> bool {
+    let mut duration = 0.0_f32;
+    for pair in frames.windows(2) {
+        let [before, after] = pair else {
+            continue;
+        };
+        if before.scenario != after.scenario || !procedural_leg_solver_gates_apply(&after.scenario)
+        {
+            duration = 0.0;
+            continue;
+        }
+        let displaced = [("left_hip", "left_foot"), ("right_hip", "right_foot")]
+            .into_iter()
+            .any(|(hip, foot)| {
+                body_local(after, hip)
+                    .zip(body_local(after, foot))
+                    .is_some_and(|(hip, foot)| catastrophic_horizontal_foot_offset(hip, foot))
+            });
+        if displaced {
+            duration += (after.time_seconds - before.time_seconds).max(0.0);
+            if duration >= CATASTROPHIC_FOOT_DISPLACEMENT_SECONDS {
+                return true;
+            }
+        } else {
+            duration = 0.0;
+        }
+    }
+    false
 }
 
 fn both_feet_behind_hips(frames: &[FrameSample]) -> bool {
@@ -3876,6 +3945,7 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
             };
             let (visual_height_peak_count, visual_height_peaks_in_passing_windows) =
                 visual_height_peaks(&metric_frames);
+            let guard_liveness = guard_step_liveness_metrics(&metric_frames);
             ScenarioMetrics {
                 scenario: scenario.to_owned(),
                 frame_count: frames.len(),
@@ -3933,6 +4003,12 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 ),
                 maximum_supported_foot_slip_metres_per_frame: maximum_slip,
                 maximum_planted_foot_drift_metres: maximum_plant_drift,
+                guard_step_liveness_required: guard_liveness.required,
+                completed_guard_half_step_count: guard_liveness.completed_half_steps,
+                visible_guard_half_step_count: guard_liveness.visible_half_steps,
+                minimum_guard_swing_travel_metres: guard_liveness.minimum_swing_travel_metres,
+                minimum_guard_swing_clearance_gain_metres: guard_liveness
+                    .minimum_swing_clearance_gain_metres,
                 minimum_foot_clearance_metres: minimum_foot_clearance(&metric_frames),
             }
         })
@@ -3986,6 +4062,135 @@ fn body_local(frame: &FrameSample, bone: &str) -> Option<Vec3> {
     let world = Vec3::from_array(frame.bones.get(bone)?.position)
         - Vec3::from_array(frame.root_position_metres);
     Some(Quat::from_array(frame.body_rotation_xyzw).inverse() * world)
+}
+
+const MINIMUM_GUARD_SWING_TRAVEL_METRES: f32 = 0.05;
+const MINIMUM_GUARD_SWING_CLEARANCE_GAIN_METRES: f32 = 0.03;
+
+#[derive(Debug, Default)]
+struct GuardStepLivenessMetrics {
+    required: bool,
+    completed_half_steps: usize,
+    visible_half_steps: usize,
+    minimum_swing_travel_metres: f32,
+    minimum_swing_clearance_gain_metres: f32,
+}
+
+fn guard_step_liveness_metrics(frames: &[&FrameSample]) -> GuardStepLivenessMetrics {
+    let required = frames.first().is_some_and(|frame| {
+        let metadata = scenario_metadata(&frame.scenario);
+        metadata.kind == ScenarioKind::RaisedGuard
+            && metadata.repeatable
+            && frames
+                .iter()
+                .all(|frame| frame.speed_metres_per_second > 0.05)
+    });
+    if !required {
+        return GuardStepLivenessMetrics::default();
+    }
+
+    let mut interval_start = 0;
+    let mut completed_half_steps = 0;
+    let mut visible_half_steps = 0;
+    let mut minimum_swing_travel = f32::INFINITY;
+    let mut minimum_swing_clearance_gain = f32::INFINITY;
+
+    for interval_end in 1..frames.len() {
+        if frames[interval_end].contact_sequence == frames[interval_end - 1].contact_sequence {
+            continue;
+        }
+
+        let start = frames[interval_start];
+        let end = frames[interval_end];
+        let left_gain = end.left_support_weight - start.left_support_weight;
+        let right_gain = end.right_support_weight - start.right_support_weight;
+        let (
+            swing_foot,
+            start_swing_support,
+            end_swing_support,
+            start_other_support,
+            end_other_support,
+        ) = if left_gain >= right_gain {
+            (
+                "left_foot",
+                start.left_support_weight,
+                end.left_support_weight,
+                start.right_support_weight,
+                end.right_support_weight,
+            )
+        } else {
+            (
+                "right_foot",
+                start.right_support_weight,
+                end.right_support_weight,
+                start.left_support_weight,
+                end.left_support_weight,
+            )
+        };
+
+        completed_half_steps += 1;
+        let support_swap_valid = start_swing_support <= 0.25
+            && end_swing_support >= 0.75
+            && start_other_support >= 0.75
+            && end_other_support <= 0.25;
+        let travel = start
+            .bones
+            .get(swing_foot)
+            .zip(end.bones.get(swing_foot))
+            .map_or(0.0, |(start, end)| {
+                (Vec3::from_array(end.position) - Vec3::from_array(start.position))
+                    .xz()
+                    .length()
+            });
+        let interval = &frames[interval_start..=interval_end];
+        let start_clearance = start
+            .bones
+            .get(swing_foot)
+            .and_then(|bone| bone.terrain_clearance_metres);
+        let end_clearance = end
+            .bones
+            .get(swing_foot)
+            .and_then(|bone| bone.terrain_clearance_metres);
+        let maximum_clearance = interval
+            .iter()
+            .filter_map(|frame| {
+                frame
+                    .bones
+                    .get(swing_foot)
+                    .and_then(|bone| bone.terrain_clearance_metres)
+            })
+            .fold(f32::NEG_INFINITY, f32::max);
+        let clearance_gain = start_clearance
+            .zip(end_clearance)
+            .filter(|_| maximum_clearance.is_finite())
+            .map_or(0.0, |(start, end)| maximum_clearance - start.max(end));
+
+        minimum_swing_travel = minimum_swing_travel.min(travel);
+        minimum_swing_clearance_gain = minimum_swing_clearance_gain.min(clearance_gain);
+        if support_swap_valid
+            && travel >= MINIMUM_GUARD_SWING_TRAVEL_METRES
+            && clearance_gain >= MINIMUM_GUARD_SWING_CLEARANCE_GAIN_METRES
+        {
+            visible_half_steps += 1;
+        }
+        interval_start = interval_end;
+    }
+
+    GuardStepLivenessMetrics {
+        required,
+        completed_half_steps,
+        visible_half_steps,
+        minimum_swing_travel_metres: if minimum_swing_travel.is_finite() {
+            minimum_swing_travel
+        } else {
+            0.0
+        },
+        minimum_swing_clearance_gain_metres: if minimum_swing_clearance_gain.is_finite() {
+            minimum_swing_clearance_gain
+        } else {
+            0.0
+        },
+    }
 }
 
 fn is_leg_bone(name: &str) -> bool {
@@ -4671,20 +4876,20 @@ fn reported_support_contacts_are_valid(frames: &[FrameSample]) -> bool {
         ]
         .into_iter()
         .all(|(foot, support)| {
-            let quickstep_toe_contact = (frame.scenario == "quickstep-right")
-                .then(|| {
-                    let toe = if foot == "left_foot" {
-                        "left_toe"
-                    } else {
-                        "right_toe"
-                    };
-                    frame
-                        .bones
-                        .get(toe)
-                        .and_then(|bone| bone.terrain_clearance_metres)
-                        .is_some_and(|clearance| clearance.abs() <= SOLE_CONTACT_TOLERANCE_METRES)
-                })
-                .unwrap_or(false);
+            let quickstep_toe_contact = if frame.scenario == "quickstep-right" {
+                let toe = if foot == "left_foot" {
+                    "left_toe"
+                } else {
+                    "right_toe"
+                };
+                frame
+                    .bones
+                    .get(toe)
+                    .and_then(|bone| bone.terrain_clearance_metres)
+                    .is_some_and(|clearance| clearance.abs() <= SOLE_CONTACT_TOLERANCE_METRES)
+            } else {
+                false
+            };
             support.is_finite()
                 && (support < 0.95
                     || quickstep_toe_contact
@@ -4880,7 +5085,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 })
             };
             format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{}</td><td>{}/{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
                 scenario.scenario,
                 scenario.frame_count,
                 describe(&scenario.worst_displacement, "m"),
@@ -4889,6 +5094,11 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 scenario.loop_seam_rotation_degrees.map_or("&mdash;".into(), |value| format!("{value:.2}")),
                 scenario.maximum_supported_foot_slip_metres_per_frame,
                 scenario.maximum_planted_foot_drift_metres,
+                scenario.guard_step_liveness_required,
+                scenario.visible_guard_half_step_count,
+                scenario.completed_guard_half_step_count,
+                scenario.minimum_guard_swing_travel_metres,
+                scenario.minimum_guard_swing_clearance_gain_metres,
                 scenario.minimum_signed_foot_track_metres,
                 scenario.minimum_inter_foot_separation_metres,
                 scenario.minimum_knee_flexion_degrees,
@@ -4912,7 +5122,7 @@ body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,s
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
-<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>knee-foot yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>dive axis/travel error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
+<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>guard liveness required</th><th>visible/completed half-steps</th><th>minimum swing travel m</th><th>minimum swing clearance gain m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>knee-foot yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>dive axis/travel error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
 function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | guard ${{f.weapon_guard}} lead ${{f.lead_foot}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | world plants L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
 function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
@@ -4927,6 +5137,8 @@ mod tests {
     #[test]
     fn quality_score_uses_the_documented_power_of_two_weights() {
         let categories = QualityCategories {
+            catastrophic_foot_displacement_failed: false,
+            guard_step_liveness_failed: false,
             anatomical_invalid_joints_failed: true,
             contact_foot_airborne_failed: true,
             both_feet_behind_hips_failed: true,
@@ -4936,6 +5148,8 @@ mod tests {
         assert_eq!(weighted_defect_score(&categories), 31);
 
         let categories = QualityCategories {
+            catastrophic_foot_displacement_failed: false,
+            guard_step_liveness_failed: false,
             anatomical_invalid_joints_failed: false,
             contact_foot_airborne_failed: false,
             both_feet_behind_hips_failed: false,
@@ -4943,6 +5157,41 @@ mod tests {
             jitter_and_jerk_failed: true,
         };
         assert_eq!(weighted_defect_score(&categories), 1);
+
+        let categories = QualityCategories {
+            catastrophic_foot_displacement_failed: true,
+            guard_step_liveness_failed: false,
+            anatomical_invalid_joints_failed: false,
+            contact_foot_airborne_failed: false,
+            both_feet_behind_hips_failed: false,
+            foot_dragging_failed: false,
+            jitter_and_jerk_failed: false,
+        };
+        assert_eq!(weighted_defect_score(&categories), 31);
+
+        let categories = QualityCategories {
+            catastrophic_foot_displacement_failed: false,
+            guard_step_liveness_failed: true,
+            anatomical_invalid_joints_failed: false,
+            contact_foot_airborne_failed: false,
+            both_feet_behind_hips_failed: false,
+            foot_dragging_failed: false,
+            jitter_and_jerk_failed: false,
+        };
+        assert_eq!(weighted_defect_score(&categories), 31);
+    }
+
+    #[test]
+    fn severe_sideways_foot_displacement_is_catastrophic() {
+        let hip = Vec3::new(0.2, 1.0, 0.0);
+        assert!(!catastrophic_horizontal_foot_offset(
+            hip,
+            Vec3::new(0.84, 0.1, 0.0)
+        ));
+        assert!(catastrophic_horizontal_foot_offset(
+            hip,
+            Vec3::new(0.851, 0.1, 0.0)
+        ));
     }
 
     #[test]
@@ -4955,6 +5204,7 @@ mod tests {
             biomechanics_within_review_bounds: true,
             no_ground_penetration: true,
             raised_guard_fixed_support: true,
+            raised_guard_step_liveness_valid: true,
             flat_controller_height_stable: true,
             phase_owned_height_valid: true,
             run_flight_valid: true,
@@ -5434,7 +5684,7 @@ mod tests {
     }
 
     #[test]
-    fn raised_guard_viewer_finishes_release_and_reverses_at_foot_handoff() {
+    fn raised_guard_viewer_finishes_release_and_updates_reversal_without_phase_reset() {
         let replay = |scenario: &str| {
             let mut skeleton = SkeletonState::default();
             set_weapon_guard(&mut skeleton, WeaponGuardState::Raised);
@@ -5484,9 +5734,15 @@ mod tests {
         let changed = reversal
             .iter()
             .find(|(_, _, intent)| intent.local_direction() == Vec2::X)
-            .expect("reversal is accepted at a foot handoff");
-        assert!(changed.0 >= 16);
-        assert!(changed.1 < 0.08 || (0.5..0.58).contains(&changed.1));
+            .expect("reversal observation is accepted immediately");
+        let previous_phase = reversal
+            .iter()
+            .find(|(frame, _, _)| *frame == 15)
+            .expect("pre-reversal sample")
+            .1;
+        assert_eq!(changed.0, 16);
+        let phase_delta = (changed.1 - previous_phase).rem_euclid(1.0);
+        assert!((0.0..0.1).contains(&phase_delta));
     }
 
     #[test]
@@ -5844,6 +6100,61 @@ mod tests {
         assert!(
             (maximum_planted_foot_drift("cross-slope-walk", &references) - 0.02).abs() < 0.0001
         );
+    }
+
+    #[test]
+    fn guard_step_liveness_rejects_advancing_contact_metadata_with_frozen_feet() {
+        let mut frames = [
+            foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0),
+            foot_metric_frame(1, 0.0, 0.0, 0.0, 0.0),
+            foot_metric_frame(2, 0.0, 1.0, 0.0, 0.0),
+        ];
+        for frame in &mut frames {
+            frame.scenario = "raised-guard-right".into();
+            frame.weapon_guard = WeaponGuardState::Raised;
+            frame.right_support_weight = if frame.scenario_frame < 2 { 1.0 } else { 0.0 };
+        }
+        frames[2].contact_sequence = 1;
+        frames[2].contact_foot = LeadFoot::Right;
+        let references = frames.iter().collect::<Vec<_>>();
+
+        let metrics = guard_step_liveness_metrics(&references);
+
+        assert!(metrics.required);
+        assert_eq!(metrics.completed_half_steps, 1);
+        assert_eq!(metrics.visible_half_steps, 0);
+        assert_eq!(metrics.minimum_swing_travel_metres, 0.0);
+        assert_eq!(metrics.minimum_swing_clearance_gain_metres, 0.0);
+    }
+
+    #[test]
+    fn guard_step_liveness_requires_final_bone_travel_clearance_and_replanting() {
+        let mut frames = [
+            foot_metric_frame(0, 0.0, 0.0, 0.0, 0.0),
+            foot_metric_frame(1, 0.05, 0.0, 0.0, 0.0),
+            foot_metric_frame(2, 0.10, 1.0, 0.0, 0.0),
+        ];
+        for frame in &mut frames {
+            frame.scenario = "raised-guard-right".into();
+            frame.weapon_guard = WeaponGuardState::Raised;
+            frame.right_support_weight = if frame.scenario_frame < 2 { 1.0 } else { 0.0 };
+        }
+        frames[1]
+            .bones
+            .get_mut("left_foot")
+            .unwrap()
+            .terrain_clearance_metres = Some(0.05);
+        frames[2].contact_sequence = 1;
+        frames[2].contact_foot = LeadFoot::Right;
+        let references = frames.iter().collect::<Vec<_>>();
+
+        let metrics = guard_step_liveness_metrics(&references);
+
+        assert!(metrics.required);
+        assert_eq!(metrics.completed_half_steps, 1);
+        assert_eq!(metrics.visible_half_steps, 1);
+        assert!((metrics.minimum_swing_travel_metres - 0.10).abs() < 0.0001);
+        assert!((metrics.minimum_swing_clearance_gain_metres - 0.05).abs() < 0.0001);
     }
 
     #[test]

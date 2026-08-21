@@ -345,8 +345,13 @@ tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="miss
 # animation disables combat, diagnostic runs scripted real-client input and
 # records every animation frame, combat uses normal enemies, and networking
 # omits the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }}
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json" input_script="": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }}
+
+# Benchmark steady raised-guard locomotion in all four cardinal directions.
+# It records transforms only: OBS and PresentMon are deliberately disabled.
+animation-direction-benchmark base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} {{ quote(scene_input) }} scripts/animation_direction_benchmark.json
 
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
