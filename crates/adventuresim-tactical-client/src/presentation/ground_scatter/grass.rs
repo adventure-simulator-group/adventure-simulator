@@ -410,6 +410,18 @@ const LEGACY_GRASS_FAR_GRID_COORDINATES: [usize; 16] =
     [0, 4, 8, 13, 17, 21, 25, 29, 34, 38, 42, 46, 50, 55, 59, 63];
 const LEGACY_GRASS_VISTA_GRID_COORDINATES: [usize; 8] = [0, 9, 18, 27, 36, 45, 54, 63];
 pub(in crate::presentation) const VISTA_GRASS_PATCH_SPACING: f32 = 6.4;
+/// The terrain begins replacing the physical coverage removed by the Far LOD
+/// during the same dithered interval that exchanges Near blades for Far
+/// survivors. This is deliberately shared with [`grass_lod_visibility`] so
+/// neither representation can expose a bare circular band.
+pub(in crate::presentation) const NEAR_TO_FAR_SWARD_FADE_START_METRES: f32 = 8.0;
+pub(in crate::presentation) const NEAR_TO_FAR_SWARD_FADE_END_METRES: f32 = 10.0;
+/// Far retains an evenly spaced 8-by-8 subset of Near's 32-by-32 roots. The
+/// terrain replaces only this discarded projected coverage until the terminal
+/// Vista-to-terrain handoff takes over.
+pub(in crate::presentation) const FAR_LOD_GAP_FILL_FRACTION: f32 = 1.0
+    - (GRASS_FAR_GRID_COORDINATES.len() * GRASS_FAR_GRID_COORDINATES.len()) as f32
+        / (GRASS_PATCH_GRID_SIDE * GRASS_PATCH_GRID_SIDE) as f32;
 /// The final physical-grass fade overlaps the terrain's band-limited sward.
 /// Keeping these bounds here makes the playable and vista lattices share the
 /// same terminal representation contract.
@@ -437,9 +449,10 @@ pub(super) fn grass_material(
     material.shading.y = grass_dryness;
     material.shading.w = if lod == GrassMeshLod::Near { 1.0 } else { 0.0 };
     TacticalFoliageMaterial {
-        // The far mesh is a sparse clump tier; the terrain's terminal sward
-        // carries the continuous field before individual shoots become dense
-        // sub-pixel overdraw.
+        // Near and Far use the same density-aware multiplier. A Far survivor
+        // therefore keeps its projected blade width across the LOD handoff;
+        // Near spends the same width budget on its full root set, forming the
+        // closed sward that carries the close camera view.
         shape: Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(grass_density)),
         ground_mask_transform: Vec4::new(1.0 / ground.width(), 1.0 / ground.depth(), 0.5, 0.5),
         ground_mask: Some(ground_mask),
@@ -625,20 +638,21 @@ impl GrassMeshLod {
 
     fn width_compensation(self, grass_density: f32) -> f32 {
         match self {
-            Self::Near => return 1.0,
             // The 4 x 4 vista mesh reads as broad clump silhouettes rather
             // than pretending that its 16 survivors are close-range blades.
             // This bounded multiplier restores much of the lost projected
             // coverage without turning the horizon into solid ribbons.
             Self::Vista => return 3.2,
-            Self::Far => {}
+            // Near and Far deliberately share this multiplier. Far simplifies
+            // geometry and population, not the width of a surviving blade.
+            Self::Near | Self::Far => {}
         }
         // Compensate only for blades discarded by the Far LOD. The square-root
         // response retains clumped negative space while keeping projected
         // cover close to Near through the crossfade.
         let near_count =
             (GRASS_PATCH_GRID_SIDE * GRASS_PATCH_GRID_SIDE) as f32 * grass_density.clamp(0.0, 1.0);
-        let lod_count = self.blade_count(grass_density).max(1) as f32;
+        let lod_count = Self::Far.blade_count(grass_density).max(1) as f32;
         (near_count.max(1.0) / lod_count).sqrt().min(4.0)
     }
 }
@@ -647,11 +661,11 @@ pub(in crate::presentation) fn grass_lod_visibility(lod: GrassMeshLod) -> Visibi
     match lod {
         GrassMeshLod::Near => VisibilityRange {
             start_margin: 0.0..0.0,
-            end_margin: 8.0..10.0,
+            end_margin: NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES,
             use_aabb: false,
         },
         GrassMeshLod::Far => VisibilityRange {
-            start_margin: 8.0..10.0,
+            start_margin: NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES,
             end_margin: 30.0..35.0,
             use_aabb: false,
         },
@@ -1546,6 +1560,7 @@ mod tests {
         assert_eq!(GrassMeshLod::Near.blade_count(1.0), 1_024);
         assert_eq!(GrassMeshLod::Far.blade_count(1.0), 64);
         assert_eq!(GrassMeshLod::Vista.blade_count(1.0), 16);
+        assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 15.0 / 16.0);
         assert_eq!(near_positions.len(), 75_308);
         let near_blade_positions = &near_positions[..1_024 * 11];
         assert_eq!(far_positions.len(), 256 * 7);
@@ -1689,6 +1704,41 @@ mod tests {
         assert_eq!(vista_roots.len(), vista.count_vertices());
         assert!(vista_roots.iter().any(|root| root[0] < -1.7));
         assert!(vista_roots.iter().any(|root| root[0] > 1.7));
+    }
+
+    #[test]
+    fn near_and_far_share_density_aware_survivor_widths() {
+        for density in [0.25, 0.5, 0.75, 1.0] {
+            let near_width = GrassMeshLod::Near.width_compensation(density);
+            let far_width = GrassMeshLod::Far.width_compensation(density);
+            assert_eq!(near_width, far_width);
+            assert!(near_width >= 1.0);
+        }
+        assert_eq!(GrassMeshLod::Near.width_compensation(1.0), 4.0);
+
+        let ground = SceneGround::from_samples(2, 2, 1.0, vec![GroundSurface::default(); 4])
+            .expect("a flat ground mask is valid");
+        for density in [0.25, 0.5, 0.75, 1.0] {
+            let near = grass_material(
+                0.3,
+                GrassMeshLod::Near,
+                density,
+                0.2,
+                Handle::default(),
+                &ground,
+                GrassGroundMaskMode::Interior,
+            );
+            let far = grass_material(
+                0.3,
+                GrassMeshLod::Far,
+                density,
+                0.2,
+                Handle::default(),
+                &ground,
+                GrassGroundMaskMode::Interior,
+            );
+            assert_eq!(near.shape.w, far.shape.w);
+        }
     }
 
     #[test]
@@ -1868,8 +1918,14 @@ mod tests {
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
 
         assert_eq!(near.start_margin, 0.0..0.0);
-        assert_eq!(near.end_margin, 8.0..10.0);
-        assert_eq!(far.start_margin, 8.0..10.0);
+        assert_eq!(
+            near.end_margin,
+            NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES
+        );
+        assert_eq!(
+            far.start_margin,
+            NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES
+        );
         assert_eq!(far.end_margin, 30.0..35.0);
         assert_eq!(vista.start_margin, 28.0..32.0);
         assert_eq!(vista.end_margin, 35.0..40.0);
@@ -2085,10 +2141,10 @@ mod tests {
         assert_eq!(grass.shading.w, 1.0);
         assert_eq!(crown.shading.w, 0.0);
         assert_eq!(grass.shape, Vec4::ZERO);
-        assert_eq!(GrassMeshLod::Near.width_compensation(1.0), 1.0);
+        assert_eq!(GrassMeshLod::Near.width_compensation(1.0), 4.0);
         assert_eq!(
             Vec4::new(1.0, 0.88, 0.09, GrassMeshLod::Near.width_compensation(1.0)),
-            Vec4::new(1.0, 0.88, 0.09, 1.0)
+            Vec4::new(1.0, 0.88, 0.09, 4.0)
         );
         assert_eq!(
             Vec4::new(1.0, 0.88, 0.09, GrassMeshLod::Far.width_compensation(1.0)),

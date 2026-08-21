@@ -36,9 +36,11 @@ mod loose_stone;
 mod understory;
 
 pub(in crate::presentation) use grass::{
-    GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod, GrassTopology,
-    TERMINAL_SWARD_FADE_END_METRES, TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING,
-    grass_community_at, grass_lod_visibility, grass_patch_mesh, vista_grass_material,
+    FAR_LOD_GAP_FILL_FRACTION, GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile,
+    GrassMeshLod, GrassTopology, NEAR_TO_FAR_SWARD_FADE_END_METRES,
+    NEAR_TO_FAR_SWARD_FADE_START_METRES, TERMINAL_SWARD_FADE_END_METRES,
+    TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING, grass_community_at,
+    grass_lod_visibility, grass_patch_mesh, vista_grass_material,
 };
 use grass::{GrassGroundMaskMode, GrassMaterialHandles, grass_material};
 use litter::{
