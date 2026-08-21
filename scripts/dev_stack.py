@@ -1626,6 +1626,7 @@ def launch_recorded_tactical_client(
         client_config["animation_log"] = str(animation_log)
         config["animation_log"] = str(animation_log)
         input_script = run_dir / f"animation-input-script-{suffix}.json"
+        attack_screenshot = run_dir / f"animation-attack-{suffix}.png"
         commands: list[dict[str, object]] = []
         if config.get("window_capture") != "off":
             capture_ready = run_dir / f"capture-ready-{suffix}.json"
@@ -1638,6 +1639,10 @@ def launch_recorded_tactical_client(
                 "input_speed": 0.5, "duration_seconds": 2.0,
             },
             {"type": "guard", "raised": True},
+            {"type": "wait", "duration_seconds": 0.5},
+            {"type": "attack", "duration_seconds": 0.25},
+            {"type": "screenshot", "path": str(attack_screenshot)},
+            {"type": "wait", "duration_seconds": 0.75},
             {
                 "type": "move", "direction": "forward",
                 "input_speed": 1.0, "duration_seconds": 2.0,
@@ -1673,6 +1678,8 @@ def launch_recorded_tactical_client(
         ])
         client_config["input_script"] = str(input_script)
         config["input_script"] = str(input_script)
+        client_config["animation_attack_screenshot"] = str(attack_screenshot)
+        config["animation_attack_screenshot"] = str(attack_screenshot)
     environment = os.environ.copy()
     if config.get("render_backend", "auto") == "auto":
         environment.pop("WGPU_BACKEND", None)

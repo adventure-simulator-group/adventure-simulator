@@ -1621,11 +1621,11 @@ mod legacy_tests {
             .with_local_velocity(Vec3::NEG_Z * 5.5)
             .with_gait_phase(0.0);
         let locomotion = locomotion_support_weights(&attack);
-        attack.begin_attack(AttackSpec::default(), 0, 1);
+        attack.begin_attack(AttackSpec::default(), 0, 1).unwrap();
         assert_eq!(locomotion_support_weights(&attack), locomotion);
 
         let mut dodge = SkeletonState::default();
-        dodge.begin_dodge(DodgeSpec::default(), 0, 1);
+        dodge.begin_dodge(DodgeSpec::default(), 0, 1).unwrap();
         assert_eq!(locomotion_support_weights(&dodge), (0.0, 0.0));
         assert!(!terrain_leg_has_support(0.0));
         assert!(!terrain_leg_has_support(0.01));

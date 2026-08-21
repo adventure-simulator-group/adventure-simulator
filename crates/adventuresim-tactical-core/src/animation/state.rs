@@ -502,7 +502,7 @@ impl ActionTimeline {
 enum ActionKind {
     Idle,
     Dodge {
-        direction: Vec2,
+        dodge: DodgeKind,
         timeline: ActionTimeline,
     },
     Attack {
@@ -530,15 +530,8 @@ impl<'de> Deserialize<'de> for ActionState {
         let kind = ActionKind::deserialize(deserializer)?;
         Ok(Self(match kind {
             ActionKind::Idle => ActionKind::Idle,
-            ActionKind::Dodge {
-                direction,
-                timeline,
-            } => ActionKind::Dodge {
-                direction: if direction.is_finite() {
-                    direction.normalize_or_zero()
-                } else {
-                    Vec2::ZERO
-                },
+            ActionKind::Dodge { dodge, timeline } => ActionKind::Dodge {
+                dodge,
                 timeline: timeline.normalized(),
             },
             ActionKind::Attack {
@@ -571,9 +564,62 @@ impl Default for ActionState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+enum DodgeKind {
+    Defensive,
+    Quickstep { direction: QuickstepDirection },
+}
+
+/// A finite, non-zero, normalized quickstep direction. Constructing this type
+/// at the input boundary makes a stationary defensive dodge structurally
+/// distinct from a locomotion quickstep.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct QuickstepDirection(Vec2);
+
+impl QuickstepDirection {
+    pub fn new(direction: Vec2) -> Option<Self> {
+        direction
+            .is_finite()
+            .then(|| direction.try_normalize())
+            .flatten()
+            .map(Self)
+    }
+
+    pub fn get(self) -> Vec2 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for QuickstepDirection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let direction = Vec2::deserialize(deserializer)?;
+        Self::new(direction).ok_or_else(|| {
+            serde::de::Error::custom("quickstep direction must be finite and non-zero")
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-pub struct DodgeSpec {
-    pub direction: Vec2,
+pub enum DodgeSpec {
+    #[default]
+    Defensive,
+    Quickstep(QuickstepDirection),
+}
+
+impl DodgeSpec {
+    pub fn quickstep(direction: Vec2) -> Option<Self> {
+        QuickstepDirection::new(direction).map(Self::Quickstep)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionTransitionError {
+    Downed,
+    PostureTransitionActive,
+    ActionBusy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1231,9 +1277,21 @@ impl SkeletonState {
     }
     pub fn action_direction(&self) -> Vec2 {
         match self.action {
-            ActionState(ActionKind::Dodge { direction, .. }) => direction,
+            ActionState(ActionKind::Dodge {
+                dodge: DodgeKind::Quickstep { direction },
+                ..
+            }) => direction.get(),
             _ => Vec2::ZERO,
         }
+    }
+    pub fn is_quickstep(&self) -> bool {
+        matches!(
+            self.action,
+            ActionState(ActionKind::Dodge {
+                dodge: DodgeKind::Quickstep { .. },
+                ..
+            })
+        )
     }
     pub fn attack_target_height(&self) -> f32 {
         match self.action {
@@ -1325,51 +1383,86 @@ impl SkeletonState {
     }
 
     pub fn quickstep_is_launched(&self) -> bool {
-        self.action_kind() == SkeletonAction::Dodge && self.action_phase() >= 0.125
+        self.is_quickstep() && self.action_phase() >= 0.125
     }
 
-    /// Replaces the current action. This deliberately preserves the existing
-    /// last-writer-wins compatibility policy until gameplay defines rejection
-    /// or cancellation rules between actions.
-    fn replace_action(&mut self, action: ActionState) {
-        self.action = if self.body.is_downed() || self.posture_transition.is_some() {
-            ActionState::default()
+    fn action_admission(&self) -> Result<(), ActionTransitionError> {
+        if self.body.is_downed() {
+            Err(ActionTransitionError::Downed)
+        } else if self.posture_transition.is_some() {
+            Err(ActionTransitionError::PostureTransitionActive)
         } else {
-            action
-        };
+            Ok(())
+        }
     }
 
-    pub fn begin_dodge(&mut self, spec: DodgeSpec, start_tick: u64, contact_tick: u64) {
+    /// Evasion explicitly preempts an attack or block. Repeated evasion input
+    /// is rejected so a held button cannot restart its timeline every tick.
+    pub fn begin_dodge(
+        &mut self,
+        spec: DodgeSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
+        self.action_admission()?;
+        if self.action_kind() == SkeletonAction::Dodge {
+            return Err(ActionTransitionError::ActionBusy);
+        }
         let timeline = ActionTimeline::new(start_tick, contact_tick);
-        let direction = if spec.direction.is_finite() {
-            spec.direction.normalize_or_zero()
-        } else {
-            Vec2::ZERO
+        let dodge = match spec {
+            DodgeSpec::Defensive => DodgeKind::Defensive,
+            DodgeSpec::Quickstep(direction) => DodgeKind::Quickstep { direction },
         };
-        self.replace_action(ActionState(ActionKind::Dodge {
-            direction,
-            timeline,
-        }));
+        self.action = ActionState(ActionKind::Dodge { dodge, timeline });
+        Ok(())
     }
 
-    pub fn begin_attack(&mut self, spec: AttackSpec, start_tick: u64, contact_tick: u64) {
+    pub fn begin_attack(
+        &mut self,
+        spec: AttackSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
+        self.action_admission()?;
+        let may_follow = matches!(
+            self.action,
+            ActionState(ActionKind::Attack {
+                animation: AttackAnimation::Swing,
+                timeline,
+                ..
+            }) if timeline.phase >= 0.5 && spec.animation == AttackAnimation::SwingFollow
+        );
+        if self.action_kind() != SkeletonAction::None && !may_follow {
+            return Err(ActionTransitionError::ActionBusy);
+        }
         let target_height = if spec.target_height.is_finite() {
             spec.target_height.clamp(0.0, 1.0)
         } else {
             AttackSpec::default().target_height
         };
-        self.replace_action(ActionState(ActionKind::Attack {
+        self.action = ActionState(ActionKind::Attack {
             target_height,
             animation: spec.animation,
             timeline: ActionTimeline::new(start_tick, contact_tick),
-        }));
+        });
+        Ok(())
     }
 
-    pub fn begin_block(&mut self, spec: BlockSpec, start_tick: u64, contact_tick: u64) {
-        self.replace_action(ActionState(ActionKind::Block {
+    pub fn begin_block(
+        &mut self,
+        spec: BlockSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
+        self.action_admission()?;
+        if self.action_kind() != SkeletonAction::None {
+            return Err(ActionTransitionError::ActionBusy);
+        }
+        self.action = ActionState(ActionKind::Block {
             incoming_line: spec.incoming_line,
             timeline: ActionTimeline::new(start_tick, contact_tick),
-        }));
+        });
+        Ok(())
     }
 
     /// Advances an action whose contact is the midpoint of its visual

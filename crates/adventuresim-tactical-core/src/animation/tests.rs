@@ -318,7 +318,9 @@ mod legacy_tests {
             .with_locomotion_sample_tick(10)
             .with_world_velocity(Vec3::new(3.0, -2.0, 0.0))
             .with_body_state(BodyState::Airborne);
-        state.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100);
+        state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
 
         project_skeleton_locomotion(
             &mut state,
@@ -952,7 +954,9 @@ mod legacy_tests {
     #[test]
     fn attack_blends_guard_contact_and_end_guard() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::new(AttackAnimation::Swing), 0, 100);
+        state
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 0, 100)
+            .unwrap();
         state.advance_action(100);
         let evaluation = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(
@@ -1003,7 +1007,9 @@ mod legacy_tests {
             swing_follow: true,
             thrust: true,
         };
-        state.begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20);
+        state
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
+            .unwrap();
         state.advance_action(19);
         assert_eq!(state.select_attack_animation(StrikeFamily::Swing), None);
         state.advance_action(20);
@@ -1011,7 +1017,9 @@ mod legacy_tests {
             state.select_attack_animation(StrikeFamily::Swing),
             Some(AttackAnimation::SwingFollow)
         );
-        state.begin_attack(AttackSpec::new(AttackAnimation::SwingFollow), 20, 30);
+        state
+            .begin_attack(AttackSpec::new(AttackAnimation::SwingFollow), 20, 30)
+            .unwrap();
         state.advance_action(30);
         assert_eq!(state.select_attack_animation(StrikeFamily::Swing), None);
     }
@@ -1020,7 +1028,9 @@ mod legacy_tests {
     fn attacking_and_ordinary_raised_guard_use_identical_locomotion() {
         let mut guard = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
         let mut attack = guard.clone();
-        attack.begin_attack(AttackSpec::new(AttackAnimation::Thrust), 10, 1000);
+        attack
+            .begin_attack(AttackSpec::new(AttackAnimation::Thrust), 10, 1000)
+            .unwrap();
 
         for tick in 11..80 {
             let input = SkeletonLocomotionInput {
@@ -1063,20 +1073,18 @@ mod legacy_tests {
     #[test]
     fn quickstep_holds_guard_while_block_returns_to_guard() {
         let mut dodge_state = SkeletonState::default();
-        dodge_state.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 100);
+        dodge_state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
         dodge_state.advance_action(150);
         let dodge = AnimationEvaluation::from_skeleton(&dodge_state);
         assert_eq!(dodge.base[0].pose, SemanticPose::Guard);
         assert!(dodge.action.is_empty());
 
         let mut right_lead_dodge_state = SkeletonState::default().with_lead_foot(LeadFoot::Right);
-        right_lead_dodge_state.begin_dodge(
-            DodgeSpec {
-                direction: Vec2::NEG_X,
-            },
-            0,
-            100,
-        );
+        right_lead_dodge_state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::NEG_X).unwrap(), 0, 100)
+            .unwrap();
         right_lead_dodge_state.advance_action(50);
         let right_lead_dodge = AnimationEvaluation::from_skeleton(&right_lead_dodge_state);
         assert_eq!(right_lead_dodge.base[0].pose, SemanticPose::Guard);
@@ -1089,7 +1097,9 @@ mod legacy_tests {
         );
 
         let mut block_state = SkeletonState::default().with_lead_foot(LeadFoot::Left);
-        block_state.begin_block(BlockSpec::default(), 0, 100);
+        block_state
+            .begin_block(BlockSpec::default(), 0, 100)
+            .unwrap();
         block_state.advance_action(150);
         let block = AnimationEvaluation::from_skeleton(&block_state);
         assert_eq!(block.action[0].pose, SemanticPose::BlockThrust);
@@ -1105,7 +1115,7 @@ mod legacy_tests {
     #[test]
     fn authoritative_action_clock_centers_contact_and_finishes_recovery() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         state.advance_action(15);
         assert_eq!(state.action_phase(), 0.25);
         state.advance_action(20);

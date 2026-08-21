@@ -471,6 +471,16 @@ class WorkflowTests(unittest.TestCase):
                 script["commands"][0]["path"], config["capture_ready_signal"]
             )
             self.assertEqual(script["commands"][1]["type"], "rotate")
+            command_types = [command["type"] for command in script["commands"]]
+            self.assertIn("attack", command_types)
+            self.assertIn("screenshot", command_types)
+            screenshot = next(
+                command for command in script["commands"]
+                if command["type"] == "screenshot"
+            )
+            self.assertEqual(
+                screenshot["path"], config["animation_attack_screenshot"]
+            )
             self.assertIn("animation_log", config)
 
     def test_presentmon_path_can_be_configured(self):

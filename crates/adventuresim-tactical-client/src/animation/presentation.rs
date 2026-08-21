@@ -269,7 +269,6 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::capture_humanoid_rig_axes,
                     semantic_route::evaluate_semantic_route_paths,
                     evaluate_skeletons,
-                    log_animation_diagnostics,
                     tick_impact_reactions,
                     pose_buffer::update_pose_buffers,
                     update_rig_visibility,
@@ -302,7 +301,13 @@ impl Plugin for TacticalAnimationPlugin {
             )
             .add_systems(
                 PostUpdate,
-                procedural::refresh_raised_support_after_propagation
+                (
+                    procedural::refresh_raised_support_after_propagation,
+                    // Diagnostics must observe the final global transforms
+                    // that the renderer receives, including procedural IK.
+                    log_animation_diagnostics,
+                )
+                    .chain()
                     .after(TransformSystems::Propagate),
             );
     }

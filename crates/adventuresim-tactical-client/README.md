@@ -188,12 +188,14 @@ just tactical-play diagnostic
 This launches the ordinary native client, server, transport, replicated
 physics controller, and rendering stack. Once the controlled character is
 available, the client turns 90 degrees right, holds forward at 0.5 analogue
-input for two seconds, holds forward at full input for two seconds, stops for
-half a second, and exits. The supervisor then stops its isolated server and
-database and returns successfully. The profile run directory contains the generated
+input for two seconds, raises its guard for half a second, starts a real
+preferred attack, captures a PNG during the attack, exercises full-speed
+movement and posture transitions, stops, and exits. The supervisor then stops
+its isolated server and database and returns successfully. The profile run
+directory contains the generated
 `animation-input-script.json`, the per-render-frame `animation-state.jsonl`,
-and the ordinary client/server logs. `just tactical-status` prints that run
-directory.
+the attack PNG, and the ordinary client/server logs. `just tactical-status`
+prints that run directory.
 
 The JSONL record includes the requested command and input, controller
 transform, replicated authoritative `SkeletonState`, client-predicted
@@ -202,9 +204,12 @@ and sample times, endpoint parity, whole-body mirror coordinates,
 phase prediction/correction deltas,
 authoritative phase measurements, pending drift correction, any presentation
 crossfade, wall-clock time, and the latest render-schedule completion counter.
-PresentMon remains the independent authority for actual swapchain presentation. This is
-the diagnostic boundary immediately after pose evaluation; it does not replace
-the real network or animation path.
+After final pose evaluation and transform propagation, each record also
+contains the global translation, rotation, and scale of every authored
+animation target. PresentMon remains the independent authority for actual
+swapchain presentation. This is the diagnostic boundary at the pose actually
+submitted for rendering; it does not replace the real network or animation
+path.
 
 Only the bounded `diagnostic` profile enables the per-frame JSONL log by
 default. Interactive `animation` and `combat` sessions avoid an unbounded log;
@@ -233,6 +238,10 @@ The native client also accepts custom files through `--input-script PATH` and
   "commands": [
     { "type": "rotate", "degrees_right": 90.0 },
     { "type": "move", "direction": "forward", "input_speed": 0.5, "duration_seconds": 2.0 },
+    { "type": "guard", "raised": true },
+    { "type": "wait", "duration_seconds": 0.5 },
+    { "type": "attack", "duration_seconds": 0.25 },
+    { "type": "screenshot", "path": "C:/capture/attack.png" },
     { "type": "wait_for_signal", "path": "C:/capture/ready.json" },
     { "type": "wait", "duration_seconds": 0.5 }
   ]
@@ -240,6 +249,10 @@ The native client also accepts custom files through `--input-script PATH` and
 ```
 
 Movement directions are `forward`, `backward`, `left`, and `right`.
+`guard` changes the persistent aiming state. `attack` presses the ordinary
+preferred-attack control once and then observes neutral input for
+`duration_seconds`; it requires raised guard under normal gameplay rules.
+`screenshot` captures the gameplay window directly through Bevy, without OBS.
 `wait_for_signal` holds neutral input until its file exists, which lets a
 capture supervisor release movement only after recording is ready. Add
 `--exit-after-script` for bounded unattended captures.
