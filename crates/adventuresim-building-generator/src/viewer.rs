@@ -2129,11 +2129,30 @@ struct EditorEnvironmentEntity;
 #[derive(Component)]
 struct PlayerBuildEntity;
 
-#[derive(Component)]
-struct PlayerBuildStorey(u16);
+/// Render metadata used by the build-mode visibility controls. It is kept on
+/// both generated programme geometry and freeform parts so the controls have
+/// one authoritative ECS path.
+#[derive(Clone, Copy, Component, Debug, Eq, PartialEq)]
+struct EditorVisibilityTarget {
+    storey: usize,
+    role: EditorVisibilityRole,
+}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EditorVisibilityRole {
+    Wall,
+    Roof,
+}
+
+/// The opaque material assigned at scene setup. Ghost and cutaway states
+/// replace the active handle transiently, then restore this exact handle.
 #[derive(Component)]
-struct PlayerBuildRole(PlayerBuildPartKind);
+struct EditorBaseMaterial(Handle<StandardMaterial>);
+
+/// Avoid allocating a fresh translucent material every UI frame while a
+/// visibility control remains selected.
+#[derive(Component)]
+struct EditorAppearanceIsTranslucent(bool);
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum SceneSetup {
@@ -3256,23 +3275,86 @@ fn editor_owner_targets(
 
 fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_camera: bool) {
     let (owner_targets, item_targets) = editor_owner_targets(plan);
+    let wall_storeys = plan
+        .wall_assemblies
+        .iter()
+        .map(|wall| (wall.owner.0, usize::from(wall.storey_level)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let roof_storeys = plan
+        .roof_assemblies
+        .iter()
+        .map(|roof| {
+            let base_elevation = roof
+                .faces
+                .iter()
+                .flat_map(|face| face.polygon.iter())
+                .map(|point| point.y)
+                .chain(
+                    roof.enclosure_faces
+                        .iter()
+                        .flat_map(|face| face.polygon.iter())
+                        .map(|point| point.y),
+                )
+                .fold(f32::INFINITY, f32::min);
+            let storey = if base_elevation.is_finite() {
+                (base_elevation / plan.storey_height_metres)
+                    .floor()
+                    .max(0.0) as usize
+            } else {
+                plan.storeys.len()
+            };
+            (roof.owner.0, storey)
+        })
+        .collect::<std::collections::HashMap<_, _>>();
 
     let mesh_entities = {
-        let mut query = world.query_filtered::<
-            (Entity, Option<&GeometryOwner>, Option<&ResolvedRenderItem>),
-            Without<EditorEnvironmentEntity>,
-        >();
+        let mut query = world.query_filtered::<(
+            Entity,
+            Option<&GeometryOwner>,
+            Option<&ResolvedRenderItem>,
+            Option<&RoofRenderItem>,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+        ), Without<EditorEnvironmentEntity>>();
         query
             .iter(world)
-            .filter(|(entity, _, _)| world.get::<Mesh3d>(*entity).is_some())
-            .map(|(entity, owner, item)| {
-                (entity, owner.map(|owner| owner.0), item.map(|item| item.id))
+            .filter(|(entity, ..)| world.get::<Mesh3d>(*entity).is_some())
+            .map(|(entity, owner, item, roof, material)| {
+                (
+                    entity,
+                    owner.map(|owner| owner.0),
+                    item.map(|item| item.id),
+                    roof.is_some(),
+                    material.map(|material| material.0.clone()),
+                )
             })
             .collect::<Vec<_>>()
     };
-    for (entity, owner, item) in mesh_entities {
+    for (entity, owner, item, is_roof, material) in mesh_entities {
         let mut entity_mut = world.entity_mut(entity);
         entity_mut.insert(EditorBuildingEntity);
+        let visibility_target = if is_roof {
+            owner
+                .and_then(|owner| roof_storeys.get(&owner).copied())
+                .map(|storey| EditorVisibilityTarget {
+                    storey,
+                    role: EditorVisibilityRole::Roof,
+                })
+        } else {
+            owner
+                .and_then(|owner| wall_storeys.get(&owner).copied())
+                .map(|storey| EditorVisibilityTarget {
+                    storey,
+                    role: EditorVisibilityRole::Wall,
+                })
+        };
+        if let (Some(target), Some(material)) = (visibility_target, material) {
+            entity_mut.insert((
+                target,
+                EditorBaseMaterial(material),
+                EditorAppearanceIsTranslucent(false),
+                Visibility::Visible,
+            ));
+        }
         let target = item
             .and_then(|item| item_targets.get(&item).copied())
             .or_else(|| owner.and_then(|owner| owner_targets.get(&owner).copied()));
@@ -3362,10 +3444,19 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
         world.spawn((
             Name::new(format!("player build {:?} {}", part.kind, part.id)),
             PlayerBuildEntity,
-            PlayerBuildStorey(part.storey),
-            PlayerBuildRole(part.kind),
+            EditorVisibilityTarget {
+                storey: usize::from(part.storey),
+                role: match part.kind {
+                    PlayerBuildPartKind::Wall => EditorVisibilityRole::Wall,
+                    PlayerBuildPartKind::Roof => EditorVisibilityRole::Roof,
+                    _ => EditorVisibilityRole::Wall,
+                },
+            },
+            EditorBaseMaterial(material.clone()),
+            EditorAppearanceIsTranslucent(false),
             Mesh3d(mesh),
             MeshMaterial3d(material),
+            Visibility::Visible,
             Transform::from_xyz(
                 part.x_metres,
                 part.elevation_metres + part.height_metres * 0.5,
@@ -3376,27 +3467,53 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
     }
 }
 
-fn update_player_build_visibility(
+fn update_editor_visibility(
     runtime: Res<EditorRuntime>,
-    mut parts: Query<
-        (&PlayerBuildStorey, &PlayerBuildRole, &mut Visibility),
-        With<PlayerBuildEntity>,
-    >,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut targets: Query<(
+        &EditorVisibilityTarget,
+        &EditorBaseMaterial,
+        &mut EditorAppearanceIsTranslucent,
+        &mut MeshMaterial3d<StandardMaterial>,
+        &mut Visibility,
+    )>,
 ) {
     if !runtime.is_changed() {
         return;
     }
-    for (storey, role, mut visibility) in &mut parts {
-        let above_active_storey = usize::from(storey.0) > runtime.active_storey;
-        let hidden_wall =
-            role.0 == PlayerBuildPartKind::Wall && runtime.wall_visibility == WallVisibility::Down;
-        let hidden_roof =
-            role.0 == PlayerBuildPartKind::Roof && runtime.roof_visibility == RoofVisibility::Hide;
+    for (target, base_material, mut appearance, mut material, mut visibility) in &mut targets {
+        let above_active_storey = target.storey > runtime.active_storey;
+        let hidden_wall = target.role == EditorVisibilityRole::Wall
+            && runtime.wall_visibility == WallVisibility::Down;
+        let hidden_roof = target.role == EditorVisibilityRole::Roof
+            && runtime.roof_visibility == RoofVisibility::Hide;
         *visibility = if above_active_storey || hidden_wall || hidden_roof {
             Visibility::Hidden
         } else {
             Visibility::Visible
         };
+        let translucent = match target.role {
+            EditorVisibilityRole::Wall if runtime.wall_visibility == WallVisibility::Cutaway => {
+                true
+            }
+            EditorVisibilityRole::Roof if runtime.roof_visibility == RoofVisibility::Ghost => true,
+            _ => false,
+        };
+        if appearance.0 != translucent {
+            material.0 = if translucent {
+                let mut ghost = materials
+                    .get(&base_material.0)
+                    .cloned()
+                    .unwrap_or_else(StandardMaterial::default);
+                let colour = ghost.base_color.to_srgba();
+                ghost.base_color = Color::srgba(colour.red, colour.green, colour.blue, 0.24);
+                ghost.alpha_mode = AlphaMode::Blend;
+                materials.add(ghost)
+            } else {
+                base_material.0.clone()
+            };
+            appearance.0 = translucent;
+        }
     }
 }
 
@@ -7250,7 +7367,7 @@ pub(crate) fn run(
                 update_editor_outlines,
                 frame_editor_selection,
                 editor_keyboard_shortcuts,
-                update_player_build_visibility,
+                update_editor_visibility,
             ),
         )
         .add_systems(PostUpdate, rebuild_editor_scene);
@@ -15301,11 +15418,11 @@ mod tests {
             runtime.roof_visibility = RoofVisibility::Hide;
             runtime.active_storey = 0;
         }
-        world
-            .run_system_once(update_player_build_visibility)
-            .unwrap();
-        let mut query = world.query::<(&PlayerBuildRole, &Visibility)>();
-        for (_, visibility) in query.iter(&world) {
+        world.run_system_once(update_editor_visibility).unwrap();
+        let mut query = world.query::<(&EditorVisibilityTarget, &Visibility)>();
+        let visibilities = query.iter(&world).collect::<Vec<_>>();
+        assert_eq!(visibilities.len(), 2);
+        for (_, visibility) in visibilities {
             assert_eq!(
                 *visibility,
                 Visibility::Hidden,
@@ -15319,17 +15436,90 @@ mod tests {
             runtime.roof_visibility = RoofVisibility::Ghost;
             runtime.active_storey = 1;
         }
-        world
-            .run_system_once(update_player_build_visibility)
-            .unwrap();
-        let mut query = world.query::<(&PlayerBuildRole, &Visibility)>();
-        for (_, visibility) in query.iter(&world) {
+        world.run_system_once(update_editor_visibility).unwrap();
+        let mut query = world.query::<(Entity, &EditorVisibilityTarget)>();
+        let entities = query
+            .iter(&world)
+            .map(|(entity, target)| (entity, target.role))
+            .collect::<Vec<_>>();
+        assert_eq!(entities.len(), 2);
+        for (entity, _) in &entities {
             assert_eq!(
-                *visibility,
+                *world.get::<Visibility>(*entity).unwrap(),
                 Visibility::Visible,
                 "Cutaway/Ghost leaves the wall and roof visible"
             );
         }
+        let material_assets = world.resource::<Assets<StandardMaterial>>();
+        for (entity, role) in entities {
+            let base = &world.get::<EditorBaseMaterial>(entity).unwrap().0;
+            let applied = &world
+                .get::<MeshMaterial3d<StandardMaterial>>(entity)
+                .unwrap()
+                .0;
+            assert_ne!(applied, base, "{role:?} should use a translucent material");
+            let material = material_assets.get(applied).unwrap();
+            assert_eq!(material.alpha_mode, AlphaMode::Blend);
+            assert_eq!(material.base_color.to_srgba().alpha, 0.24);
+        }
+    }
+
+    #[test]
+    fn generated_editor_geometry_receives_the_same_visibility_components() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let wall_owner = plan.wall_assemblies.first().unwrap().owner.0;
+        let roof_owner = plan.roof_assemblies.first().unwrap().owner.0;
+        let mut world = World::new();
+        world.init_resource::<Assets<StandardMaterial>>();
+        let material = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let wall = world
+            .spawn((
+                Mesh3d(Handle::default()),
+                MeshMaterial3d(material.clone()),
+                GeometryOwner(wall_owner),
+            ))
+            .id();
+        let roof = world
+            .spawn((
+                Mesh3d(Handle::default()),
+                MeshMaterial3d(material),
+                GeometryOwner(roof_owner),
+                RoofRenderItem {
+                    id: 1,
+                    fingerprint: 1,
+                    local_center: Vec3::ZERO,
+                    local_half_size: Vec3::ONE,
+                },
+            ))
+            .id();
+        configure_editor_scene(&mut world, &plan, false);
+        assert_eq!(
+            world.get::<EditorVisibilityTarget>(wall).unwrap().role,
+            EditorVisibilityRole::Wall
+        );
+        assert_eq!(
+            world.get::<EditorVisibilityTarget>(roof).unwrap().role,
+            EditorVisibilityRole::Roof
+        );
+        world.insert_resource(EditorRuntime::new(
+            document,
+            plan,
+            PathBuf::from("test-building-document.json"),
+            None,
+            None,
+        ));
+        {
+            let mut runtime = world.resource_mut::<EditorRuntime>();
+            runtime.wall_visibility = WallVisibility::Down;
+            runtime.roof_visibility = RoofVisibility::Hide;
+            runtime.active_storey = 0;
+        }
+        world.run_system_once(update_editor_visibility).unwrap();
+        assert_eq!(*world.get::<Visibility>(wall).unwrap(), Visibility::Hidden);
+        assert_eq!(*world.get::<Visibility>(roof).unwrap(), Visibility::Hidden);
     }
 
     #[test]
