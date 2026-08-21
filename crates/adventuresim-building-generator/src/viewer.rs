@@ -2277,6 +2277,8 @@ struct EditorRuntime {
     player_build: Option<PlayerBuildDocument>,
     player_build_path: Option<PathBuf>,
     selected_player_part: Option<u64>,
+    selected_player_roof: Option<usize>,
+    player_roof: RoofPiece,
     player_x_metres: f32,
     player_z_metres: f32,
     player_elevation_metres: f32,
@@ -2322,6 +2324,17 @@ impl EditorRuntime {
             player_build,
             player_build_path,
             selected_player_part: None,
+            selected_player_roof: None,
+            player_roof: RoofPiece {
+                kind: RoofKind::Gable,
+                centre: Vec2::ZERO,
+                size: Vec2::splat(3.0),
+                base_height_metres: 3.0,
+                pitch_degrees: 45.0,
+                ridge_axis: RidgeAxis::X,
+                eave_metres: 0.2,
+                gable_profile: GableProfile::Plain,
+            },
             player_x_metres: 0.0,
             player_z_metres: 0.0,
             player_elevation_metres: 0.0,
@@ -2574,6 +2587,7 @@ enum EditorUiAction {
     SetTimberStyle(TimberFrameStyle),
     NewPlayerBuild,
     DetachPlayerBuild,
+    UpdatePlayerRoof(usize),
     Undo,
     Redo,
     Save,
@@ -3116,6 +3130,49 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                     }
                 });
                 ui.small("Drag to place walls. Click the ground to place a floor tile.");
+                if runtime.mode == EditorMode::Roof {
+                    ui.separator();
+                    ui.strong("Roof pieces");
+                    let roofs = runtime
+                        .player_build
+                        .as_ref()
+                        .map(|document| document.assembly.roofs.clone())
+                        .unwrap_or_default();
+                    for (index, roof) in roofs.iter().copied().enumerate() {
+                        if ui
+                            .selectable_label(
+                                runtime.selected_player_roof == Some(index),
+                                format!("Roof {}: {:?}", index + 1, roof.kind),
+                            )
+                            .clicked()
+                        {
+                            runtime.selected_player_roof = Some(index);
+                            runtime.player_roof = roof;
+                        }
+                    }
+                    if let Some(index) = runtime.selected_player_roof {
+                        ui.horizontal(|ui| {
+                            ui.add(egui::DragValue::new(&mut runtime.player_roof.centre.x).prefix("x "));
+                            ui.add(egui::DragValue::new(&mut runtime.player_roof.centre.y).prefix("z "));
+                            ui.add(egui::DragValue::new(&mut runtime.player_roof.base_height_metres).prefix("base "));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add(egui::DragValue::new(&mut runtime.player_roof.size.x).prefix("width ").range(0.1..=100.0));
+                            ui.add(egui::DragValue::new(&mut runtime.player_roof.size.y).prefix("depth ").range(0.1..=100.0));
+                            ui.add(egui::DragValue::new(&mut runtime.player_roof.pitch_degrees).prefix("pitch ").range(0.0..=85.0).suffix("°"));
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            for (kind, label) in [(RoofKind::Gable, "Gable"), (RoofKind::Hip, "Hip"), (RoofKind::Shed, "Shed"), (RoofKind::Flat, "Flat")] {
+                                if ui.selectable_label(runtime.player_roof.kind == kind, label).clicked() {
+                                    runtime.player_roof.kind = kind;
+                                }
+                            }
+                        });
+                        if ui.button("Apply roof").clicked() {
+                            action = Some(EditorUiAction::UpdatePlayerRoof(index));
+                        }
+                    }
+                }
                 egui::ScrollArea::vertical().max_height(130.0).show(ui, |ui| {
                     for part in &player_parts {
                         if ui
@@ -3264,6 +3321,13 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
         EditorUiAction::SetTimberStyle(style) => {
             apply_editor_edit(runtime, BuildingEdit::SetTimberFrameStyle { style });
         }
+        EditorUiAction::UpdatePlayerRoof(index) => apply_player_build_edit(
+            runtime,
+            PlayerBuildEdit::UpdateRoof {
+                index,
+                roof: runtime.player_roof,
+            },
+        ),
         EditorUiAction::NewPlayerBuild => {
             let stem = runtime
                 .document_path

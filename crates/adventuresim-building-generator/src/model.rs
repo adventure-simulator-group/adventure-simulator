@@ -797,7 +797,7 @@ pub struct WallSelector {
     pub direction: Direction,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum BuildingEdit {
     AddOpening {
@@ -980,9 +980,13 @@ pub struct PlayerBuildPart {
     pub height_metres: f32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PlayerBuildEdit {
+    UpdateRoof {
+        index: usize,
+        roof: RoofPiece,
+    },
     PlaceFloorTile {
         cell: Cell,
         storey: u16,
@@ -1071,6 +1075,15 @@ impl PlayerBuildDocument {
         }
         let mut next = self.clone();
         match edit {
+            PlayerBuildEdit::UpdateRoof { index, roof } => {
+                if !roof_recipe_is_renderable(roof) {
+                    return Err("roof dimensions, elevation, pitch, and eaves must be finite and positive where required".to_owned());
+                }
+                let Some(existing) = next.assembly.roofs.get_mut(index) else {
+                    return Err(format!("roof piece {index} was not found"));
+                };
+                *existing = roof;
+            }
             PlayerBuildEdit::PlaceFloorTile { cell, storey } => {
                 let storey_plan = next.assembly.storey_mut(storey);
                 if storey_plan
@@ -1340,6 +1353,24 @@ fn part_dimensions_are_renderable(part: &PlayerBuildPart) -> bool {
         && part.width_metres > 0.0
         && part.depth_metres > 0.0
         && part.height_metres > 0.0
+}
+
+fn roof_recipe_is_renderable(roof: RoofPiece) -> bool {
+    [
+        roof.centre.x,
+        roof.centre.y,
+        roof.size.x,
+        roof.size.y,
+        roof.base_height_metres,
+        roof.pitch_degrees,
+        roof.eave_metres,
+    ]
+    .into_iter()
+    .all(f32::is_finite)
+        && roof.size.x > 0.0
+        && roof.size.y > 0.0
+        && roof.base_height_metres >= 0.0
+        && roof.eave_metres >= 0.0
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -3913,6 +3944,33 @@ mod tests {
                 })
                 .is_err()
         );
+    }
+
+    #[test]
+    fn player_build_roof_edits_replace_one_semantic_roof_recipe() {
+        let mut document = PlayerBuildDocument::empty();
+        document.assembly.roofs.push(RoofPiece {
+            kind: RoofKind::Gable,
+            centre: Vec2::ZERO,
+            size: Vec2::splat(3.0),
+            base_height_metres: 3.0,
+            pitch_degrees: 45.0,
+            ridge_axis: RidgeAxis::X,
+            eave_metres: 0.2,
+            gable_profile: GableProfile::Plain,
+        });
+        let edited = document
+            .apply(PlayerBuildEdit::UpdateRoof {
+                index: 0,
+                roof: RoofPiece {
+                    pitch_degrees: 30.0,
+                    kind: RoofKind::Hip,
+                    ..document.assembly.roofs[0]
+                },
+            })
+            .unwrap();
+        assert_eq!(edited.assembly.roofs[0].kind, RoofKind::Hip);
+        assert_eq!(edited.assembly.roofs[0].pitch_degrees, 30.0);
     }
 
     #[test]
