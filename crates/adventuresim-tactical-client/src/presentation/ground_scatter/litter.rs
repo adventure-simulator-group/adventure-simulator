@@ -29,6 +29,12 @@ const WOODLAND_FLOOR_TRANSITION_METRES: f32 = 3.2;
 const LITTER_BATCH_CELL_METRES: f32 = 24.0;
 const LITTER_BATCH_HALF_DIAGONAL_METRES: f32 =
     LITTER_BATCH_CELL_METRES * core::f32::consts::FRAC_1_SQRT_2;
+// Physical forest-floor detail is close-camera dressing. Beyond these local
+// ranges the terrain's existing canopy-floor/litter material carries the
+// forest-floor read; the batch visibility helper adds its AABB safety pad.
+const DRY_LEAF_LOCAL_END_METRES: f32 = 16.0;
+const TWIG_LOCAL_END_METRES: f32 = 12.0;
+const WOODLAND_PLANT_LOCAL_END_METRES: f32 = 14.0;
 const DRY_LEAVES_PER_PATCH: u64 = 56;
 const TWIGS_PER_PATCH: u64 = 8;
 
@@ -203,7 +209,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.dry_leaf_material.clone()),
-                batched_litter_visibility(26.0),
+                batched_litter_visibility(DRY_LEAF_LOCAL_END_METRES),
                 transform,
             ));
         }
@@ -214,7 +220,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.twig_material.clone()),
-                batched_litter_visibility(20.0),
+                batched_litter_visibility(TWIG_LOCAL_END_METRES),
                 transform,
             ));
         }
@@ -225,7 +231,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.woodland_plant_material.clone()),
-                batched_litter_visibility(28.0),
+                batched_litter_visibility(WOODLAND_PLANT_LOCAL_END_METRES),
                 transform,
             ));
         }
@@ -923,11 +929,27 @@ mod tests {
 
     #[test]
     fn batched_litter_visibility_cannot_cull_debris_inside_its_local_range() {
-        let local_end = 24.0;
+        let local_end = DRY_LEAF_LOCAL_END_METRES;
         let range = batched_litter_visibility(local_end);
         assert!(range.use_aabb);
         assert!(range.is_visible_at_all(LITTER_BATCH_HALF_DIAGONAL_METRES + local_end - 0.01));
         assert!(!range.is_visible_at_all(LITTER_BATCH_HALF_DIAGONAL_METRES + local_end + 0.01));
+    }
+
+    #[test]
+    fn forest_floor_litter_uses_close_local_ranges_with_batch_safety_padding() {
+        assert_eq!(DRY_LEAF_LOCAL_END_METRES, 16.0);
+        assert_eq!(TWIG_LOCAL_END_METRES, 12.0);
+        assert_eq!(WOODLAND_PLANT_LOCAL_END_METRES, 14.0);
+
+        for (local_end, expected_padded_end) in [
+            (DRY_LEAF_LOCAL_END_METRES, 32.970_562),
+            (TWIG_LOCAL_END_METRES, 28.970_562),
+            (WOODLAND_PLANT_LOCAL_END_METRES, 30.970_562),
+        ] {
+            let range = batched_litter_visibility(local_end);
+            assert!((range.end_margin.end - expected_padded_end).abs() < 0.000_1);
+        }
     }
 
     #[test]
