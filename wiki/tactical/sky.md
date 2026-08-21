@@ -43,7 +43,9 @@ Its shader draws the phase terminator across a constant-angular-size sphere,
 including a restrained earthshine floor, while a separate cool directional
 light reaches 0.25 lux at full moon. Sun and Moon shadows are mutually selected
 from their altitude and lunar illumination rather than paying for both shadow
-maps at once.
+maps at once. The active light uses one 1024-pixel cascade out to 28 m: enough
+for close tactical contact shadows, without spending shadow work on distant
+scenery.
 
 Stars come from the checked-in naked-eye Hipparcos subset in
 `assets/data/hipparcos-bright-stars.csv`. The renderer submits the catalog as

@@ -91,8 +91,8 @@ use bevy::{
     core_pipeline::tonemapping::Tonemapping,
     image::ImageSampler,
     light::{
-        Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster,
-        atmosphere::ScatteringMedium, light_consts::lux,
+        Atmosphere, AtmosphereEnvironmentMapLight, DirectionalLightShadowMap, EnvironmentMapLight,
+        NotShadowCaster, atmosphere::ScatteringMedium, light_consts::lux,
     },
     mesh::{Indices, MeshVertexAttribute, PrimitiveTopology},
     pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension},
@@ -146,6 +146,12 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalCloudMaterial>::default(),
             MaterialPlugin::<TacticalWeatherMaterial>::default(),
         ))
+        // Tactical play uses one compact close-range cascade for whichever
+        // celestial light is active. Keep the map allocation identical in the
+        // game and all tactical review viewers.
+        .insert_resource(DirectionalLightShadowMap {
+            size: sky::TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE,
+        })
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
             atmosphere_enabled: self.atmosphere_enabled,

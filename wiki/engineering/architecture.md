@@ -356,14 +356,14 @@ grace remains a sky-local presentation concern. Terrain materials, Ground
 scatter, weather, colliders, and recipes continue to read their own entity-local
 authoritative scene components.
 
-The production tactical preset uses directional shadow maps, bloom, four-sample
-MSAA, atmosphere IBL, material occlusion, baked tree-card depth, terrain
-normals, and direct celestial lighting for the scene's primary depth cues.
-Controlled benchmarks may explicitly disable shadows or post-processing to
-isolate their cost. Effects unsupported by WebGPU, including Bevy 0.19 SSAO, are
-excluded rather than retained as native-only paths. Review viewers can still
-enable compatible individual lighting costs explicitly for controlled
-diagnostics.
+The production tactical presentation uses one 1024-pixel directional-shadow
+cascade out to 28 m for the active Sun or Moon, bloom, four-sample MSAA,
+atmosphere IBL, material occlusion, baked tree-card depth, terrain normals, and
+direct celestial lighting for the scene's primary depth cues. Controlled
+benchmarks may explicitly disable shadows or post-processing to isolate their
+cost. Effects unsupported by WebGPU, including Bevy 0.19 SSAO, are excluded
+rather than retained as native-only paths. Review viewers use this same shadow
+configuration unless a benchmark explicitly disables shadows.
 
 The immutable world-data canopy coverage continuously controls tree architecture
 without inspecting neighboring entities: low coverage produces a short clear
