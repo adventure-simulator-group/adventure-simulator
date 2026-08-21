@@ -15,6 +15,7 @@ use adventuresim_building_generator::{
 use bevy::{
     app::AppExit,
     asset::RenderAssetUsages,
+    ecs::system::RunSystemOnce,
     mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
@@ -31,8 +32,6 @@ use crate::{ProjectedProofKind, RoofProofView, ViewerView};
 use adventuresim_building_generator::BuildingProgram;
 #[cfg(test)]
 use adventuresim_building_generator::PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION;
-#[cfg(test)]
-use bevy::ecs::system::RunSystemOnce;
 
 const VIEW_WIDTH: u32 = 1440;
 const VIEW_HEIGHT: u32 = 900;
@@ -3803,6 +3802,11 @@ fn rebuild_editor_scene(world: &mut World) {
             setup_player_build_scene(world, &document);
         }
         world.resource_mut::<EditorRuntime>().pending_player_rebuild = false;
+    }
+    if pending || player_rebuild {
+        world
+            .run_system_once(update_editor_visibility)
+            .expect("editor visibility system must run after rebuilding its scene");
     }
 }
 
@@ -7593,6 +7597,9 @@ pub(crate) fn run(
         if let Some(document) = &player_build_document {
             setup_player_build_scene(world, document);
         }
+        world
+            .run_system_once(update_editor_visibility)
+            .expect("editor visibility system must run after initial scene setup");
     })
     .add_systems(Last, capture_when_ready);
     let exit = app.run();
