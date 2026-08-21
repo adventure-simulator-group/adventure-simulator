@@ -2142,6 +2142,7 @@ struct EditorVisibilityTarget {
 enum EditorVisibilityRole {
     Wall,
     Floor,
+    Structure,
     Roof,
 }
 
@@ -3523,6 +3524,16 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
                             .floor()
                             .max(0.0) as usize,
                         role: EditorVisibilityRole::Floor,
+                    })
+                })
+                // Resolved timber, joists, braces, and other structural parts
+                // do not always carry a wall/roof owner. Their centre height
+                // still has a stable storey meaning in the editor, so never
+                // leave them outside the level-visibility contract.
+                .or_else(|| {
+                    elevation.map(|elevation| EditorVisibilityTarget {
+                        storey: (elevation / plan.storey_height_metres).floor().max(0.0) as usize,
+                        role: EditorVisibilityRole::Structure,
                     })
                 })
         };
@@ -15692,6 +15703,17 @@ mod tests {
                 Transform::from_xyz(0.0, plan.storey_height_metres + 0.06, 0.0),
             ))
             .id();
+        let frame_material = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let upper_frame = world
+            .spawn((
+                Name::new("resolved timber frame member"),
+                Mesh3d(Handle::default()),
+                MeshMaterial3d(frame_material),
+                Transform::from_xyz(0.0, plan.storey_height_metres * 1.5, 0.0),
+            ))
+            .id();
         configure_editor_scene(&mut world, &plan, false);
         assert_eq!(
             world.get::<EditorVisibilityTarget>(wall).unwrap().role,
@@ -15707,6 +15729,13 @@ mod tests {
                 .unwrap()
                 .role,
             EditorVisibilityRole::Floor
+        );
+        assert_eq!(
+            world
+                .get::<EditorVisibilityTarget>(upper_frame)
+                .unwrap()
+                .role,
+            EditorVisibilityRole::Structure
         );
         world.insert_resource(EditorRuntime::new(
             document,
@@ -15726,6 +15755,10 @@ mod tests {
         assert_eq!(*world.get::<Visibility>(roof).unwrap(), Visibility::Hidden);
         assert_eq!(
             *world.get::<Visibility>(upper_floor).unwrap(),
+            Visibility::Hidden
+        );
+        assert_eq!(
+            *world.get::<Visibility>(upper_frame).unwrap(),
             Visibility::Hidden
         );
     }
