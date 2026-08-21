@@ -2531,6 +2531,7 @@ enum EditorUiAction {
     RemoveOpening(WallSelector),
     SetWallStyle(WallSelector, WallStyle),
     SetTimberStyle(TimberFrameStyle),
+    NewPlayerBuild,
     Undo,
     Redo,
     Save,
@@ -2740,6 +2741,10 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
         .show(contexts.ctx_mut()?, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.menu_button("File", |ui| {
+                    if runtime.player_build.is_none() && ui.button("New freeform build").clicked() {
+                        action = Some(EditorUiAction::NewPlayerBuild);
+                        ui.close();
+                    }
                     if ui.button("Save document").clicked() {
                         action = Some(EditorUiAction::Save);
                         ui.close();
@@ -3040,6 +3045,13 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                         format!("Advice: {advice:?}"),
                     );
                 }
+            } else {
+                ui.separator();
+                ui.strong("Freeform build");
+                ui.label("Create a freeform build to use Construct tools such as drag-to-draw walls.");
+                if ui.button("New freeform build").clicked() {
+                    action = Some(EditorUiAction::NewPlayerBuild);
+                }
             }
 
             ui.separator();
@@ -3138,6 +3150,24 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
         }
         EditorUiAction::SetTimberStyle(style) => {
             apply_editor_edit(runtime, BuildingEdit::SetTimberFrameStyle { style });
+        }
+        EditorUiAction::NewPlayerBuild => {
+            let stem = runtime
+                .document_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("building-document");
+            runtime.player_build = Some(PlayerBuildDocument::empty());
+            runtime.player_build_path = Some(
+                runtime
+                    .document_path
+                    .with_file_name(format!("{stem}-player-build.json")),
+            );
+            runtime.selected_player_part = None;
+            runtime.mode = EditorMode::Construct;
+            runtime.pending_player_rebuild = true;
+            runtime.status = "New freeform build: drag in Construct mode to draw walls".to_owned();
+            runtime.error = None;
         }
         EditorUiAction::Undo => {
             if let Some(previous) = runtime.undo.pop() {
@@ -15779,6 +15809,27 @@ mod tests {
         assert_eq!(wall.width_metres, CELL_SIZE_METRES * 3.0);
         assert_eq!(wall.x_metres, CELL_SIZE_METRES * 1.5);
         assert_eq!(wall.z_metres, 0.0);
+    }
+
+    #[test]
+    fn new_freeform_build_action_enables_construct_mode_and_save_path() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let mut runtime =
+            EditorRuntime::new(document, plan, PathBuf::from("my-house.json"), None, None);
+        perform_editor_action(&mut runtime, EditorUiAction::NewPlayerBuild);
+        let player_build = runtime.player_build.as_ref().unwrap();
+        assert_eq!(
+            player_build.schema_version,
+            PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION
+        );
+        assert!(player_build.parts.is_empty());
+        assert_eq!(runtime.mode, EditorMode::Construct);
+        assert_eq!(
+            runtime.player_build_path,
+            Some(PathBuf::from("my-house-player-build.json"))
+        );
+        assert!(runtime.pending_player_rebuild);
     }
 
     #[test]
