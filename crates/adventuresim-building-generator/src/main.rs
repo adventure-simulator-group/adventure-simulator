@@ -285,6 +285,10 @@ struct Args {
     )]
     player_build_document: Option<PathBuf>,
 
+    /// Execute a JSON editor-command script and print deterministic snapshots.
+    #[arg(long, value_name = "PATH", conflicts_with = "editor")]
+    editor_script: Option<PathBuf>,
+
     /// Frames allowed for render pipelines to settle before capture.
     #[arg(long, default_value_t = 240)]
     settle_frames: u32,
@@ -297,6 +301,16 @@ struct Args {
 #[cfg(not(target_family = "wasm"))]
 fn main() {
     let args = Args::parse();
+    if let Some(script) = args.editor_script {
+        match viewer::run_editor_script(&script) {
+            Ok(snapshot) => println!("{snapshot}"),
+            Err(error) => {
+                eprintln!("editor script failed: {error}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
     if let Some(directory) = args.validate_crown_suite {
         if let Err(error) = viewer::validate_crown_suite(&directory) {
             eprintln!("crown proof suite invalid: {error}");
