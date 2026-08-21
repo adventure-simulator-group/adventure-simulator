@@ -12,6 +12,34 @@ use super::{
     GroundScatterLayer, TreeLeafRepresentation, WoodyUnderstoryPresentationCache, foliage_transform,
 };
 
+const SHRUB_WOOD_END: std::ops::Range<f32> = 48.0..56.0;
+const SHRUB_LEAF_CARD_START: std::ops::Range<f32> = 12.0..18.0;
+const SHRUB_LEAF_CARD_END: std::ops::Range<f32> = 55.0..65.0;
+
+fn shrub_wood_visibility() -> VisibilityRange {
+    VisibilityRange {
+        start_margin: 0.0..0.0,
+        end_margin: SHRUB_WOOD_END,
+        use_aabb: false,
+    }
+}
+
+fn shrub_cambered_leaf_visibility() -> VisibilityRange {
+    VisibilityRange {
+        start_margin: 0.0..0.0,
+        end_margin: SHRUB_LEAF_CARD_START,
+        use_aabb: true,
+    }
+}
+
+fn shrub_leaf_card_visibility() -> VisibilityRange {
+    VisibilityRange {
+        start_margin: SHRUB_LEAF_CARD_START,
+        end_margin: SHRUB_LEAF_CARD_END,
+        use_aabb: true,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum UnderstorySpecies {
     CommonHazel,
@@ -137,7 +165,7 @@ pub(super) fn spawn(
                 GroundScatterLayer::Understory,
                 Mesh3d(presentation.branches.as_ref().unwrap().clone()),
                 MeshMaterial3d(presentation.bark.as_ref().unwrap().clone()),
-                VisibilityRange::abrupt(0.0, 92.0),
+                shrub_wood_visibility(),
                 transform,
             ));
             commands.spawn((
@@ -146,11 +174,7 @@ pub(super) fn spawn(
                 TreeLeafRepresentation::TexturedMesh,
                 Mesh3d(presentation.cambered_leaves.as_ref().unwrap().clone()),
                 MeshMaterial3d(presentation.leaves.as_ref().unwrap().clone()),
-                VisibilityRange {
-                    start_margin: 0.0..0.0,
-                    end_margin: 26.0..34.0,
-                    use_aabb: true,
-                },
+                shrub_cambered_leaf_visibility(),
                 transform,
             ));
             commands.spawn((
@@ -159,11 +183,7 @@ pub(super) fn spawn(
                 TreeLeafRepresentation::AlphaCard,
                 Mesh3d(presentation.leaf_cards.as_ref().unwrap().clone()),
                 MeshMaterial3d(presentation.leaves.as_ref().unwrap().clone()),
-                VisibilityRange {
-                    start_margin: 26.0..34.0,
-                    end_margin: 84.0..96.0,
-                    use_aabb: true,
-                },
+                shrub_leaf_card_visibility(),
                 transform,
             ));
         }
@@ -274,5 +294,27 @@ mod tests {
             },
             UnderstorySpecies::CommonHazel
         ));
+    }
+
+    #[test]
+    fn shrub_lod_ranges_pin_the_earlier_handoffs_and_overlap_continuously() {
+        let wood = shrub_wood_visibility();
+        let cambered = shrub_cambered_leaf_visibility();
+        let cards = shrub_leaf_card_visibility();
+
+        assert_eq!(cambered.end_margin, 12.0..18.0);
+        assert_eq!(cards.start_margin, 12.0..18.0);
+        assert_eq!(cards.end_margin, 55.0..65.0);
+        assert_eq!(wood.end_margin, 48.0..56.0);
+
+        // The two leaf representations share one fade band, so the crown has
+        // no uncovered interval during the cambered-to-card handoff.
+        assert_eq!(cambered.end_margin, cards.start_margin);
+
+        // Wood fades while leaf cards are still present, with a deliberate
+        // overlap at the far end to avoid a branch/crown discontinuity.
+        assert!(wood.end_margin.start < cards.end_margin.start);
+        assert!(wood.end_margin.end < cards.end_margin.end);
+        assert!(wood.end_margin.end >= cards.end_margin.start);
     }
 }
