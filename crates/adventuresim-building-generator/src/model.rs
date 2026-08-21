@@ -839,6 +839,197 @@ impl BuildingDocument {
     }
 }
 
+/// A freeform player-build document is intentionally separate from the
+/// generated-programme document.  Parts may overlap, be unsupported, or fail
+/// to describe a recognisable historic programme; renderability and lossless
+/// saving are the only commit requirements.
+pub const PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayerBuildPartKind {
+    Wall,
+    Room,
+    Door,
+    Gate,
+    Window,
+    ArrowSlit,
+    Roof,
+    Stair,
+    SiteObject,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayerBuildMaterial {
+    Stone,
+    Brick,
+    Plaster,
+    TimberFrame,
+    Timber,
+    Tile,
+    Thatch,
+    Earth,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlayerBuildPart {
+    pub id: u64,
+    pub kind: PlayerBuildPartKind,
+    pub material: PlayerBuildMaterial,
+    pub storey: u16,
+    pub x_metres: f32,
+    pub z_metres: f32,
+    pub elevation_metres: f32,
+    pub rotation_degrees: f32,
+    pub width_metres: f32,
+    pub depth_metres: f32,
+    pub height_metres: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum PlayerBuildEdit {
+    Place {
+        part: PlayerBuildPart,
+    },
+    Move {
+        id: u64,
+        x_metres: f32,
+        z_metres: f32,
+    },
+    Resize {
+        id: u64,
+        width_metres: f32,
+        depth_metres: f32,
+        height_metres: f32,
+    },
+    Rotate {
+        id: u64,
+        rotation_degrees: f32,
+    },
+    Remove {
+        id: u64,
+    },
+    SetMaterial {
+        id: u64,
+        material: PlayerBuildMaterial,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlayerBuildDocument {
+    pub schema_version: u32,
+    #[serde(default)]
+    pub parts: Vec<PlayerBuildPart>,
+}
+
+impl PlayerBuildDocument {
+    pub fn empty() -> Self {
+        Self {
+            schema_version: PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
+            parts: Vec::new(),
+        }
+    }
+
+    /// Applies a freeform edit without consulting the strict programme audit.
+    /// This preserves deliberate player experiments while still rejecting data
+    /// that no renderer can safely represent.
+    pub fn apply(&self, edit: PlayerBuildEdit) -> Result<Self, String> {
+        if self.schema_version != PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION {
+            return Err(format!(
+                "player-build document schema {} is unsupported; expected {}",
+                self.schema_version, PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION
+            ));
+        }
+        let mut next = self.clone();
+        match edit {
+            PlayerBuildEdit::Place { part } => {
+                if !part_dimensions_are_renderable(&part) {
+                    return Err(
+                        "player-build part dimensions must be finite and positive".to_owned()
+                    );
+                }
+                if next.parts.iter().any(|existing| existing.id == part.id) {
+                    return Err(format!("player-build part {} already exists", part.id));
+                }
+                next.parts.push(part);
+                next.parts.sort_by_key(|part| part.id);
+            }
+            PlayerBuildEdit::Move {
+                id,
+                x_metres,
+                z_metres,
+            } => {
+                let part = next.part_mut(id)?;
+                if !x_metres.is_finite() || !z_metres.is_finite() {
+                    return Err("player-build position must be finite".to_owned());
+                }
+                part.x_metres = x_metres;
+                part.z_metres = z_metres;
+            }
+            PlayerBuildEdit::Resize {
+                id,
+                width_metres,
+                depth_metres,
+                height_metres,
+            } => {
+                let part = next.part_mut(id)?;
+                part.width_metres = width_metres;
+                part.depth_metres = depth_metres;
+                part.height_metres = height_metres;
+                if !part_dimensions_are_renderable(part) {
+                    return Err(
+                        "player-build part dimensions must be finite and positive".to_owned()
+                    );
+                }
+            }
+            PlayerBuildEdit::Rotate {
+                id,
+                rotation_degrees,
+            } => {
+                if !rotation_degrees.is_finite() {
+                    return Err("player-build rotation must be finite".to_owned());
+                }
+                next.part_mut(id)?.rotation_degrees = rotation_degrees.rem_euclid(360.0);
+            }
+            PlayerBuildEdit::Remove { id } => {
+                let count = next.parts.len();
+                next.parts.retain(|part| part.id != id);
+                if next.parts.len() == count {
+                    return Err(format!("player-build part {id} was not found"));
+                }
+            }
+            PlayerBuildEdit::SetMaterial { id, material } => next.part_mut(id)?.material = material,
+        }
+        Ok(next)
+    }
+
+    fn part_mut(&mut self, id: u64) -> Result<&mut PlayerBuildPart, String> {
+        self.parts
+            .iter_mut()
+            .find(|part| part.id == id)
+            .ok_or_else(|| format!("player-build part {id} was not found"))
+    }
+}
+
+fn part_dimensions_are_renderable(part: &PlayerBuildPart) -> bool {
+    [
+        part.x_metres,
+        part.z_metres,
+        part.elevation_metres,
+        part.rotation_degrees,
+        part.width_metres,
+        part.depth_metres,
+        part.height_metres,
+    ]
+    .into_iter()
+    .all(f32::is_finite)
+        && part.width_metres > 0.0
+        && part.depth_metres > 0.0
+        && part.height_metres > 0.0
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Room {
     pub id: u16,
@@ -3329,5 +3520,62 @@ impl BuildingPlan {
             f32::from(width) * CELL_SIZE_METRES,
             f32::from(depth) * CELL_SIZE_METRES,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wall(id: u64) -> PlayerBuildPart {
+        PlayerBuildPart {
+            id,
+            kind: PlayerBuildPartKind::Wall,
+            material: PlayerBuildMaterial::Stone,
+            storey: 0,
+            x_metres: 0.0,
+            z_metres: 0.0,
+            elevation_metres: 0.0,
+            rotation_degrees: 0.0,
+            width_metres: 3.0,
+            depth_metres: WALL_THICKNESS_METRES,
+            height_metres: 3.0,
+        }
+    }
+
+    #[test]
+    fn player_build_edits_preserve_non_programme_geometry() {
+        let placed = PlayerBuildDocument::empty()
+            .apply(PlayerBuildEdit::Place { part: wall(7) })
+            .unwrap()
+            .apply(PlayerBuildEdit::Move {
+                id: 7,
+                x_metres: 7.25,
+                z_metres: -1.5,
+            })
+            .unwrap()
+            .apply(PlayerBuildEdit::Rotate {
+                id: 7,
+                rotation_degrees: -90.0,
+            })
+            .unwrap();
+        assert_eq!(placed.parts[0].x_metres, 7.25);
+        assert_eq!(placed.parts[0].rotation_degrees, 270.0);
+        let decoded: PlayerBuildDocument = serde_json::from_slice(
+            &serde_json::to_vec(&placed).expect("player build should serialize"),
+        )
+        .expect("player build should deserialize");
+        assert_eq!(decoded.parts, placed.parts);
+    }
+
+    #[test]
+    fn player_build_rejects_only_unrenderable_part_data() {
+        let invalid = PlayerBuildDocument::empty().apply(PlayerBuildEdit::Place {
+            part: PlayerBuildPart {
+                width_metres: 0.0,
+                ..wall(1)
+            },
+        });
+        assert!(invalid.is_err());
     }
 }
