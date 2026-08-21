@@ -357,6 +357,11 @@ const GRASS_FAR_GRID_COORDINATES: [usize; 16] =
     [0, 4, 8, 13, 17, 21, 25, 29, 34, 38, 42, 46, 50, 55, 59, 63];
 const GRASS_VISTA_GRID_COORDINATES: [usize; 8] = [0, 9, 18, 27, 36, 45, 54, 63];
 pub(in crate::presentation) const VISTA_GRASS_PATCH_SPACING: f32 = 6.4;
+/// The final physical-grass fade overlaps the terrain's band-limited sward.
+/// Keeping these bounds here makes the playable and vista lattices share the
+/// same terminal representation contract.
+pub(in crate::presentation) const TERMINAL_SWARD_FADE_START_METRES: f32 = 55.0;
+pub(in crate::presentation) const TERMINAL_SWARD_FADE_END_METRES: f32 = 65.0;
 pub(super) fn grass_material(
     wind_scale: f32,
     lod: GrassMeshLod,
@@ -552,7 +557,7 @@ pub(in crate::presentation) fn grass_lod_visibility(lod: GrassMeshLod) -> Visibi
         },
         GrassMeshLod::Vista => VisibilityRange {
             start_margin: 50.0..54.0,
-            end_margin: 100.0..110.0,
+            end_margin: TERMINAL_SWARD_FADE_START_METRES..TERMINAL_SWARD_FADE_END_METRES,
             use_aabb: false,
         },
     }
@@ -1610,13 +1615,21 @@ mod tests {
         assert_eq!(far.start_margin, 16.0..20.0);
         assert_eq!(far.end_margin, 52.0..58.0);
         assert_eq!(vista.start_margin, 50.0..54.0);
-        assert_eq!(vista.end_margin, 100.0..110.0);
+        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(
+            vista.end_margin,
+            TERMINAL_SWARD_FADE_START_METRES..TERMINAL_SWARD_FADE_END_METRES
+        );
 
         // The next LOD begins fading before the previous one has finished,
         // so the range never exposes an uncovered distance interval.
         assert_eq!(near.end_margin, far.start_margin);
         assert!(far.end_margin.start >= vista.start_margin.start);
         assert!(far.end_margin.end >= vista.start_margin.end);
+        // The terrain sward begins while the final physical tier remains
+        // visible, and reaches full coverage exactly as that tier ends.
+        assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
+        assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
         assert!(!near.is_abrupt());
         assert!(!far.is_abrupt());
         assert!(!vista.is_abrupt());

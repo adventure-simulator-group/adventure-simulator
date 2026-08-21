@@ -38,8 +38,8 @@ mod understory;
 use grass::grass_material;
 pub(in crate::presentation) use grass::{
     GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod, GrassTopology,
-    VISTA_GRASS_PATCH_SPACING, grass_community_at, grass_lod_visibility, grass_patch_mesh,
-    vista_grass_material,
+    TERMINAL_SWARD_FADE_END_METRES, TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING,
+    grass_community_at, grass_lod_visibility, grass_patch_mesh, vista_grass_material,
 };
 use litter::{
     DRY_LEAF_MESH_VARIANTS, TWIG_MESH_VARIANTS, dry_leaf_patch_mesh, forest_floor_leaf_material,

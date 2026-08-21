@@ -1540,6 +1540,17 @@ mod tests {
     }
 
     #[test]
+    fn vista_grass_reuses_the_playable_terminal_sward_handoff() {
+        // `spawn_near_vista_scatter` uses this same range for its globally
+        // aligned lattice, so the playable-to-vista seam cannot extend the
+        // physical-grass budget beyond the terrain handoff.
+        let vista = grass_lod_visibility(GrassMeshLod::Vista);
+        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
+        assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
+    }
+
+    #[test]
     fn retained_near_vista_surface_continues_detail_patch_across_playable_bounds() {
         let terrain =
             SceneTerrain::from_heightmap(3, 3, 2.0, vec![10.0; 9]).expect("playable terrain");
