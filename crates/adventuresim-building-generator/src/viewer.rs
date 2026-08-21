@@ -29,6 +29,10 @@ use crate::{ProjectedProofKind, RoofProofView, ViewerView};
 
 #[cfg(test)]
 use adventuresim_building_generator::BuildingProgram;
+#[cfg(test)]
+use adventuresim_building_generator::PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION;
+#[cfg(test)]
+use bevy::ecs::system::RunSystemOnce;
 
 const VIEW_WIDTH: u32 = 1440;
 const VIEW_HEIGHT: u32 = 900;
@@ -15242,6 +15246,90 @@ mod tests {
         assert_eq!(snapshot.parts[0].id, 7);
         assert_eq!(snapshot.walls, WallVisibility::Cutaway);
         assert!(snapshot.error.is_none());
+    }
+
+    #[test]
+    fn player_build_visibility_changes_entity_components_for_hide_and_levels() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let player_build = PlayerBuildDocument {
+            schema_version: PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
+            parts: vec![
+                PlayerBuildPart {
+                    id: 1,
+                    kind: PlayerBuildPartKind::Wall,
+                    material: PlayerBuildMaterial::Stone,
+                    storey: 0,
+                    x_metres: 0.0,
+                    z_metres: 0.0,
+                    elevation_metres: 0.0,
+                    rotation_degrees: 0.0,
+                    width_metres: 3.0,
+                    depth_metres: WALL_THICKNESS_METRES,
+                    height_metres: 3.0,
+                },
+                PlayerBuildPart {
+                    id: 2,
+                    kind: PlayerBuildPartKind::Roof,
+                    material: PlayerBuildMaterial::Tile,
+                    storey: 1,
+                    x_metres: 0.0,
+                    z_metres: 0.0,
+                    elevation_metres: 3.0,
+                    rotation_degrees: 0.0,
+                    width_metres: 3.0,
+                    depth_metres: 3.0,
+                    height_metres: 1.0,
+                },
+            ],
+        };
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.init_resource::<Assets<StandardMaterial>>();
+        world.insert_resource(EditorRuntime::new(
+            document,
+            plan,
+            PathBuf::from("test-building-document.json"),
+            Some(player_build.clone()),
+            None,
+        ));
+        setup_player_build_scene(&mut world, &player_build);
+
+        {
+            let mut runtime = world.resource_mut::<EditorRuntime>();
+            runtime.wall_visibility = WallVisibility::Down;
+            runtime.roof_visibility = RoofVisibility::Hide;
+            runtime.active_storey = 0;
+        }
+        world
+            .run_system_once(update_player_build_visibility)
+            .unwrap();
+        let mut query = world.query::<(&PlayerBuildRole, &Visibility)>();
+        for (_, visibility) in query.iter(&world) {
+            assert_eq!(
+                *visibility,
+                Visibility::Hidden,
+                "the wall and roof should be hidden by their control state"
+            );
+        }
+
+        {
+            let mut runtime = world.resource_mut::<EditorRuntime>();
+            runtime.wall_visibility = WallVisibility::Cutaway;
+            runtime.roof_visibility = RoofVisibility::Ghost;
+            runtime.active_storey = 1;
+        }
+        world
+            .run_system_once(update_player_build_visibility)
+            .unwrap();
+        let mut query = world.query::<(&PlayerBuildRole, &Visibility)>();
+        for (_, visibility) in query.iter(&world) {
+            assert_eq!(
+                *visibility,
+                Visibility::Visible,
+                "Cutaway/Ghost leaves the wall and roof visible"
+            );
+        }
     }
 
     #[test]

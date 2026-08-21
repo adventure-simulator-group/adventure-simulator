@@ -196,7 +196,7 @@ struct Args {
     #[arg(
         long,
         value_enum,
-        required_unless_present_any = ["editor", "validate_crown_suite", "validate_projected_suite", "validate_openings_suite", "validate_roof_suite", "validate_church_suite", "validate_timber_suite", "validate_artillery_suite", "validate_final_building_suite"]
+      required_unless_present_any = ["editor", "editor_script", "validate_crown_suite", "validate_projected_suite", "validate_openings_suite", "validate_roof_suite", "validate_church_suite", "validate_timber_suite", "validate_artillery_suite", "validate_final_building_suite"]
     )]
     fixture: Option<BuildingArchetype>,
 
@@ -405,6 +405,18 @@ mod tests {
     fn editor_does_not_require_a_fixture_argument() {
         let args = Args::try_parse_from(["building-viewer", "--editor"]).unwrap();
         assert!(args.editor);
+        assert_eq!(args.fixture, None);
+    }
+
+    #[test]
+    fn editor_script_does_not_require_a_fixture_argument() {
+        let args =
+            Args::try_parse_from(["building-viewer", "--editor-script", "editor-actions.json"])
+                .unwrap();
+        assert_eq!(
+            args.editor_script,
+            Some(PathBuf::from("editor-actions.json"))
+        );
         assert_eq!(args.fixture, None);
     }
 }
