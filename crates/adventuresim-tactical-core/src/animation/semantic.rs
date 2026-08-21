@@ -110,12 +110,7 @@ mod contract_tests {
     fn lowered_stance_cannot_retain_raised_motion_and_inputs_are_normalized() {
         let raised = SkeletonState::default()
             .with_weapon_guard(WeaponGuardState::Raised)
-            .with_raised_locomotion(RaisedLocomotionIntent::moving(
-                Vec2::new(10.0, 0.0),
-                2.0,
-                LeadFoot::Left,
-                0,
-            ));
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::new(10.0, 0.0), 2.0));
         assert_eq!(raised.raised_locomotion().local_direction(), Vec2::X);
         let lowered = raised.with_weapon_guard(WeaponGuardState::Lowered);
         assert_eq!(lowered.stance(), StanceState::Lowered);
@@ -176,7 +171,7 @@ mod contract_tests {
 
     #[test]
     fn repeated_guard_writes_preserve_live_raised_footwork() {
-        let intent = RaisedLocomotionIntent::moving(Vec2::X, 2.0, LeadFoot::Right, 17);
+        let intent = RaisedLocomotionIntent::moving(Vec2::X, 2.0);
         let mut server_like = SkeletonState::default()
             .with_weapon_guard(WeaponGuardState::Raised)
             .with_raised_locomotion(intent);
@@ -522,18 +517,18 @@ mod contract_tests {
 
     #[test]
     fn raised_intent_round_trip_preserves_valid_variants_and_normalizes_wire_input() {
-        let moving = RaisedLocomotionIntent::moving(Vec2::new(3.0, 0.0), 2.0, LeadFoot::Right, 9);
+        let moving = RaisedLocomotionIntent::moving(Vec2::new(3.0, 0.0), 2.0);
         let json = serde_json::to_string(&moving).unwrap();
         assert_eq!(
             serde_json::from_str::<RaisedLocomotionIntent>(&json).unwrap(),
             moving
         );
 
-        let invalid = r#"{"moving":{"local_direction":[null,0.0],"speed":2.0,"swing_foot":"Left","step_sequence":9}}"#;
+        let invalid = r#"{"moving":{"local_direction":[null,0.0],"speed":2.0}}"#;
         assert!(serde_json::from_str::<RaisedLocomotionIntent>(invalid).is_err());
         assert_eq!(
-            RaisedLocomotionIntent::moving(Vec2::ZERO, f32::NAN, LeadFoot::Left, 9),
-            RaisedLocomotionIntent::planted(9)
+            RaisedLocomotionIntent::moving(Vec2::ZERO, f32::NAN),
+            RaisedLocomotionIntent::planted()
         );
 
         let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
@@ -554,8 +549,8 @@ mod contract_tests {
     #[test]
     fn raised_stance_round_trips_through_replication_codec() {
         for locomotion in [
-            RaisedLocomotionIntent::planted(7),
-            RaisedLocomotionIntent::moving(Vec2::Y, 2.0, LeadFoot::Right, 8),
+            RaisedLocomotionIntent::planted(),
+            RaisedLocomotionIntent::moving(Vec2::Y, 2.0),
         ] {
             let state = SkeletonState::default()
                 .with_weapon_guard(WeaponGuardState::Raised)

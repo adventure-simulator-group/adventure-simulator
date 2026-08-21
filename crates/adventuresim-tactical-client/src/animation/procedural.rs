@@ -11,8 +11,6 @@ pub(crate) use rig::*;
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct ProceduralLookState {
     base_rotation: Quat,
-    applied_rotation: Quat,
-    evaluation_tick: u64,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -61,30 +59,26 @@ pub(super) fn stabilize_repeated_fixed_tick_pose(
     }
 }
 
-fn additive_look_rotation(
-    current: Quat,
-    previous: Option<ProceduralLookState>,
-    evaluation_tick: u64,
-    offset: Quat,
-) -> (Quat, ProceduralLookState) {
-    let base_rotation = previous.map_or(current, |previous| {
-        if previous.evaluation_tick == evaluation_tick
-            || current.angle_between(previous.applied_rotation) <= 0.000_01
-        {
-            previous.base_rotation
-        } else {
-            current
-        }
-    });
-    let applied_rotation = (base_rotation * offset).normalize();
+fn additive_look_rotation(current: Quat, offset: Quat) -> (Quat, ProceduralLookState) {
+    let applied_rotation = (current * offset).normalize();
     (
         applied_rotation,
         ProceduralLookState {
-            base_rotation,
-            applied_rotation,
-            evaluation_tick,
+            base_rotation: current,
         },
     )
+}
+
+/// Remove last frame's procedural look before authored and other procedural
+/// layers evaluate. This makes the look pass an explicit base-plus-offset
+/// operation instead of inferring whether an incoming rotation already
+/// contains its own previous output.
+pub(super) fn restore_procedural_look_base(
+    mut bones: Query<(&mut Transform, &ProceduralLookState)>,
+) {
+    for (mut transform, state) in &mut bones {
+        transform.rotation = state.base_rotation;
+    }
 }
 
 /// Procedural facing is an additive post-FK layer. Sparse authored clips do not
@@ -120,13 +114,12 @@ pub(super) fn apply_head_and_torso_look(
                         skeleton.is_posture_transitioning(),
                     ),
                     skeleton.action_direction().x.clamp(-1.0, 1.0) * 0.35,
-                    skeleton.locomotion_sample_tick,
                 ),
             ))
         })
         .collect::<BTreeMap<_, _>>();
     for (entity, bone, mut transform, state) in &mut transforms.p1() {
-        let Some(&(aim, directional_yaw, evaluation_tick)) = owner_look.get(&bone.owner) else {
+        let Some(&(aim, directional_yaw)) = owner_look.get(&bone.owner) else {
             continue;
         };
         let weight = match bone.role {
@@ -152,9 +145,7 @@ pub(super) fn apply_head_and_torso_look(
             aim_offset.y,
             0.0,
         );
-        let previous = state.as_deref().copied();
-        let (rotation, next) =
-            additive_look_rotation(transform.rotation, previous, evaluation_tick, offset);
+        let (rotation, next) = additive_look_rotation(transform.rotation, offset);
         transform.rotation = rotation;
         if let Some(mut state) = state {
             *state = next;
@@ -179,7 +170,12 @@ fn constrained_camera_look(look: &CharacterLook, owner_rotation: Quat) -> Vec2 {
     const JOINT_COUNT: f32 = 3.0;
     let camera_forward = Quat::from_euler(EulerRot::YXZ, look.yaw, look.pitch, 0.0) * Vec3::NEG_Z;
     let local = owner_rotation.inverse() * camera_forward;
-    let yaw = local.x.atan2(local.z);
+    // Directly behind the body there is no anatomically preferable left/right
+    // twist. Using signed Z puts atan2's branch cut at exactly that ambiguous
+    // direction and can flip the neck chain between both joint limits. Fold
+    // the rear hemisphere onto neutral instead: side look remains signed and
+    // continuous, while a camera directly behind leaves the neck untwisted.
+    let yaw = local.x.atan2(local.z.abs());
     let pitch = local.y.atan2(local.xz().length().max(f32::EPSILON));
     Vec2::new(
         (yaw / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
@@ -953,12 +949,10 @@ pub(crate) use ik::{
 };
 #[cfg(test)]
 use ik::{
-    FOOT_TRACK_INNER, FOOT_TRACK_OUTER, GUARD_TARGET_INTER_FOOT_SEPARATION,
-    MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution,
+    FOOT_TRACK_INNER, MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution,
     advance_foot_target_at_speed, advance_pelvis_shift, authored_knee_pole_world,
     balance_recovery_direction, body_response_target, constrain_foot_to_track,
-    constrain_guard_swing_to_live_corridor, constrain_target_to_reach, guard_step_sequence_delta,
-    landing_maximum_reach, maximum_reach, plan_guard_step_endpoint, plan_settle_landing,
+    constrain_target_to_reach, landing_maximum_reach, maximum_reach, plan_settle_landing,
     plant_is_continuous, projected_capture_point, raised_footwork_posture_is_valid,
     retained_plant_requires_release, secondary_grip_world, settle_swing_side, settle_swing_target,
     slope_aligned_world_rotation, sole_is_at_contact, solve_two_bone,
@@ -1172,6 +1166,23 @@ mod legacy_tests {
     }
 
     #[test]
+    fn rear_camera_crossing_cannot_flip_between_neck_joint_limits() {
+        let left_of_rear = CharacterLook {
+            yaw: -0.001,
+            pitch: 0.0,
+        };
+        let right_of_rear = CharacterLook {
+            yaw: 0.001,
+            pitch: 0.0,
+        };
+        let left = constrained_camera_look(&left_of_rear, Quat::IDENTITY).x;
+        let right = constrained_camera_look(&right_of_rear, Quat::IDENTITY).x;
+        assert!(left.abs() < 0.001);
+        assert!(right.abs() < 0.001);
+        assert!((left - right).abs() < 0.001);
+    }
+
+    #[test]
     fn run_has_unconstrained_flight_but_walk_retains_support() {
         for phase in [0.25, 0.75] {
             let (run_left, run_right) = gait_support_weights(RUN_LOCOMOTION_PROFILE, phase);
@@ -1228,7 +1239,7 @@ mod legacy_tests {
                 })
                 .with_weapon_guard(guard)
                 .with_raised_locomotion(if guard == WeaponGuardState::Raised {
-                    RaisedLocomotionIntent::moving(Vec2::NEG_Y, speed, LeadFoot::Left, 0)
+                    RaisedLocomotionIntent::moving(Vec2::NEG_Y, speed)
                 } else {
                     RaisedLocomotionIntent::default()
                 })
@@ -1351,20 +1362,12 @@ mod legacy_tests {
     }
 
     #[test]
-    fn repeated_look_evaluation_reuses_the_pre_look_rotation() {
+    fn look_evaluation_is_a_strict_base_plus_offset() {
         let base = Quat::from_rotation_z(0.17);
         let offset = Quat::from_rotation_x(0.2 * 0.16);
-        let (first, state) = additive_look_rotation(base, None, 41, offset);
-        let (repeated, repeated_state) = additive_look_rotation(first, Some(state), 41, offset);
-        assert!(first.angle_between(repeated) <= 0.000_001);
-
-        // A sparse clip can also leave the bone untouched on the next tick.
-        let (next_tick, _) = additive_look_rotation(repeated, Some(repeated_state), 42, offset);
-        assert!(first.angle_between(next_tick) <= 0.000_001);
-
-        let authored_next = Quat::from_rotation_z(0.24);
-        let (updated, _) = additive_look_rotation(authored_next, Some(repeated_state), 42, offset);
-        assert!((authored_next * offset).angle_between(updated) <= 0.000_001);
+        let (applied, state) = additive_look_rotation(base, offset);
+        assert!((base * offset).angle_between(applied) <= 0.000_001);
+        assert!(state.base_rotation.angle_between(base) <= 0.000_001);
     }
 
     #[test]
@@ -1472,23 +1475,23 @@ mod legacy_tests {
 
     #[test]
     fn raised_guard_movement_reports_exactly_one_procedural_support_foot() {
-        for (lead, phase) in [
-            (LeadFoot::Left, 0.0),
-            (LeadFoot::Left, 0.5),
-            (LeadFoot::Right, 0.25),
-            (LeadFoot::Right, 0.75),
-        ] {
-            let skeleton = SkeletonState::default()
-                .with_lead_foot(lead)
-                .with_gait_phase(phase)
-                .with_local_velocity(Vec3::NEG_Z * 2.0)
-                .with_weapon_guard(WeaponGuardState::Raised)
-                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0, lead, 0));
-            let (left, right) = locomotion_support_weights(&skeleton);
+        for phase in [0.0, 0.25, 0.5, 0.75] {
+            let support_for = |lead| {
+                let skeleton = SkeletonState::default()
+                    .with_lead_foot(lead)
+                    .with_gait_phase(phase)
+                    .with_local_velocity(Vec3::NEG_Z * 2.0)
+                    .with_weapon_guard(WeaponGuardState::Raised)
+                    .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
+                locomotion_support_weights(&skeleton)
+            };
+            let (left, right) = support_for(LeadFoot::Left);
             assert_eq!(left + right, 1.0);
-            let expected_swing_left = lead == LeadFoot::Left;
-            assert_eq!(left, (!expected_swing_left) as u8 as f32);
-            assert_eq!(right, expected_swing_left as u8 as f32);
+            assert_eq!(
+                (left, right),
+                support_for(LeadFoot::Right),
+                "replicated attack lead cannot select visual support"
+            );
         }
         let idle = SkeletonState::default()
             .with_local_velocity(Vec3::ZERO)
@@ -1637,65 +1640,6 @@ mod legacy_tests {
         assert!(guard_step_length(1.0) < guard_step_length(2.0));
         assert_eq!(guard_step_length(0.0), 0.28);
         assert_eq!(guard_step_length(100.0), 0.42);
-    }
-
-    #[test]
-    fn guard_step_planner_preserves_tracks_and_separation_in_all_directions() {
-        let origin = Vec3::ZERO;
-        let rotation = Quat::IDENTITY;
-        let step = guard_step_length(2.0);
-        for direction in [
-            Vec2::X,
-            Vec2::NEG_X,
-            Vec2::Y,
-            Vec2::NEG_Y,
-            Vec2::ONE.normalize(),
-            Vec2::new(-1.0, -1.0).normalize(),
-        ] {
-            for left in [true, false] {
-                let side = if left { -1.0 } else { 1.0 };
-                let stance = Vec3::new(0.12 * side, -0.85, if left { -0.2 } else { 0.2 });
-                let opposite = Vec3::new(-0.12 * side, -0.85, -stance.z);
-                let target = plan_guard_step_endpoint(
-                    origin, rotation, stance, direction, step, left, opposite,
-                );
-                let future_origin = Vec3::new(direction.x, 0.0, direction.y) * step;
-                let local = rotation.inverse() * (target - future_origin);
-                assert!(local.x * side >= FOOT_TRACK_INNER - 0.0001);
-                assert!(local.x * side <= FOOT_TRACK_OUTER + 0.0001);
-                let separation = target.xz().distance(opposite.xz());
-                assert!(
-                    separation >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001,
-                    "direction={direction:?} left={left} target={target:?} opposite={opposite:?} separation={separation}"
-                );
-                assert!(
-                    (target.x - opposite.x).abs() >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn live_swing_corridor_preserves_separation_between_handoffs() {
-        let root = Vec3::new(-0.2, 2.8, 0.0);
-        let rotation = Quat::from_rotation_y(std::f32::consts::PI);
-        let support = Vec3::new(0.21, 1.95, 0.02);
-        let unconstrained = Vec3::new(0.18, 2.02, 0.02);
-        let constrained =
-            constrain_guard_swing_to_live_corridor(unconstrained, support, root, rotation, 1.0);
-        let local = rotation.inverse() * (constrained - root);
-        assert!(local.x >= FOOT_TRACK_INNER);
-        assert!(
-            constrained.xz().distance(support.xz()) >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001
-        );
-        assert!((constrained.x - support.x).abs() >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001);
-    }
-
-    #[test]
-    fn skipped_full_cycle_has_distinct_semantic_step_identity() {
-        assert_eq!(guard_step_sequence_delta(41, 42), 1);
-        assert_eq!(guard_step_sequence_delta(41, 43), 2);
-        assert_eq!(guard_step_sequence_delta(u32::MAX, 0), 1);
     }
 
     #[test]

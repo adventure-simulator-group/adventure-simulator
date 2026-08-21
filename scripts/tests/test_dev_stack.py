@@ -393,6 +393,9 @@ class WorkflowTests(unittest.TestCase):
             "--render-backend", "dx12",
         ])
         networking = parser.parse_args(["tactical-play", "networking", "25000"])
+        benchmark = parser.parse_args([
+            "tactical-play", "diagnostic", "--input-script", "benchmark.json"
+        ])
         self.assertEqual(animation.base_port, 24920)
         self.assertEqual(animation.presentation_trace, "auto")
         self.assertEqual(diagnostic.mode, "diagnostic")
@@ -406,6 +409,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(display_dx12.capture_source, "display")
         self.assertEqual(display_dx12.render_backend, "dx12")
         self.assertEqual(networking.base_port, 25000)
+        self.assertEqual(benchmark.input_script, "benchmark.json")
 
     def test_removed_high_environment_light_preset_is_rejected(self):
         parser = dev_stack.create_parser()
@@ -482,6 +486,39 @@ class WorkflowTests(unittest.TestCase):
                 screenshot["path"], config["animation_attack_screenshot"]
             )
             self.assertIn("animation_log", config)
+
+    def test_diagnostic_profile_copies_custom_input_script_after_capture_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            source = root / "benchmark.json"
+            source.write_text(
+                json.dumps({"commands": [{"type": "guard", "raised": True}]}),
+                encoding="utf-8",
+            )
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "diagnostic",
+                "window_capture": "required",
+                "input_script_source": str(source),
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ), mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ), mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+
+            copied = json.loads(Path(config["input_script"]).read_text())
+            self.assertEqual(copied["commands"][0]["type"], "wait_for_signal")
+            self.assertEqual(copied["commands"][1], {"type": "guard", "raised": True})
+            self.assertNotIn("animation_attack_screenshot", config)
 
     def test_presentmon_path_can_be_configured(self):
         with tempfile.TemporaryDirectory() as directory:

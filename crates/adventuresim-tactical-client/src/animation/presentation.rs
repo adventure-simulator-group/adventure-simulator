@@ -280,6 +280,7 @@ impl Plugin for TacticalAnimationPlugin {
             .add_systems(
                 PostUpdate,
                 (
+                    procedural::restore_procedural_look_base,
                     pose_buffer::apply_pose_buffers,
                     restore_authored_bind_pose,
                     procedural::apply_pose_mirroring,

@@ -158,12 +158,16 @@ pub(super) fn log_animation_diagnostics(
             .filter(|(_, bind, _, _)| bind.owner == player)
             .map(|(target, _, name, transform)| {
                 let (scale, rotation, translation) = transform.to_scale_rotation_translation();
+                let terrain_clearance_metres = terrain
+                    .and_then(|terrain| terrain.height_at(translation.xz()))
+                    .map(|height| translation.y - height);
                 serde_json::json!({
                     "name": name.map_or("<unnamed>", Name::as_str),
                     "target_id": format!("{target:?}"),
                     "translation": translation.to_array(),
                     "rotation_xyzw": rotation.to_array(),
                     "scale": scale.to_array(),
+                    "terrain_clearance_metres": terrain_clearance_metres,
                 })
             })
             .collect::<Vec<_>>();

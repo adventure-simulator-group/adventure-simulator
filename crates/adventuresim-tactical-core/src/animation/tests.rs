@@ -6,12 +6,7 @@ mod legacy_tests {
 
     fn raised_intent(local_velocity: Vec3) -> RaisedLocomotionIntent {
         let speed = local_velocity.xz().length();
-        RaisedLocomotionIntent::moving(
-            Vec2::new(local_velocity.x, local_velocity.z),
-            speed,
-            LeadFoot::Left,
-            0,
-        )
+        RaisedLocomotionIntent::moving(Vec2::new(local_velocity.x, local_velocity.z), speed)
     }
 
     fn pack(
@@ -76,27 +71,16 @@ mod legacy_tests {
         ] {
             let mut state = SkeletonState::default()
                 .with_weapon_guard(WeaponGuardState::Raised)
-                .with_raised_locomotion(RaisedLocomotionIntent::moving(
-                    Vec2::NEG_Y,
-                    2.0,
-                    LeadFoot::Right,
-                    17,
-                ));
+                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
 
             state.transition_body(body);
 
             assert_eq!(state.body(), body);
             assert_eq!(state.weapon_guard(), WeaponGuardState::Raised);
             assert!(!state.raised_locomotion().is_moving());
-            assert_eq!(state.raised_locomotion().step_sequence(), 17);
-            let rebuilt = state.with_raised_locomotion(RaisedLocomotionIntent::moving(
-                Vec2::X,
-                3.0,
-                LeadFoot::Left,
-                18,
-            ));
+            let rebuilt = state
+                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 3.0));
             assert!(!rebuilt.raised_locomotion().is_moving());
-            assert_eq!(rebuilt.raised_locomotion().step_sequence(), 18);
         }
     }
 
@@ -104,12 +88,7 @@ mod legacy_tests {
     fn deserialization_plants_invalid_raised_movement_body_combinations() {
         let moving = SkeletonState::default()
             .with_weapon_guard(WeaponGuardState::Raised)
-            .with_raised_locomotion(RaisedLocomotionIntent::moving(
-                Vec2::NEG_Y,
-                2.0,
-                LeadFoot::Right,
-                23,
-            ));
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
 
         for body in [
             BodyState::Grounded(GroundedPosture::Crouched),
@@ -122,7 +101,6 @@ mod legacy_tests {
             assert_eq!(state.body(), body);
             assert_eq!(state.weapon_guard(), WeaponGuardState::Raised);
             assert!(!state.raised_locomotion().is_moving());
-            assert_eq!(state.raised_locomotion().step_sequence(), 23);
         }
     }
 
@@ -712,7 +690,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn raised_guard_direction_change_waits_only_for_foot_handoff() {
+    fn raised_guard_direction_change_updates_observation_without_phase_reset() {
         let mut state = SkeletonState::default();
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         let input = |velocity, delta_seconds| SkeletonLocomotionInput {
@@ -725,16 +703,18 @@ mod legacy_tests {
         };
         project_skeleton_locomotion(&mut state, input(Vec3::NEG_X * 2.0, 0.05));
         project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.05));
-        assert_eq!(state.raised_locomotion().local_direction(), Vec2::NEG_X);
+        assert_eq!(state.raised_locomotion().local_direction(), Vec2::NEG_Y);
+        let phase_after_turn = state.gait_phase;
 
         project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.15));
         assert_eq!(state.raised_locomotion().local_direction(), Vec2::NEG_Y);
+        assert!(state.gait_phase > phase_after_turn);
         assert!(state.gait_phase > 0.5);
         assert_eq!(state.lead_foot, LeadFoot::Left);
     }
 
     #[test]
-    fn raised_guard_reversal_hands_support_off_immediately() {
+    fn raised_guard_reversal_updates_motion_without_snapping_visual_phase() {
         let mut state = SkeletonState::default();
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         let input = |velocity| SkeletonLocomotionInput {
@@ -746,13 +726,10 @@ mod legacy_tests {
             tick: 1,
         };
         project_skeleton_locomotion(&mut state, input(Vec3::NEG_X * 2.0));
-        let sequence = state.raised_locomotion().step_sequence();
-        let swing = state.raised_locomotion().swing_foot();
+        let phase = state.gait_phase;
         project_skeleton_locomotion(&mut state, input(Vec3::X * 2.0));
         assert_eq!(state.raised_locomotion().local_direction(), Vec2::X);
-        assert_eq!(state.raised_locomotion().step_sequence(), sequence + 1);
-        assert_ne!(state.raised_locomotion().swing_foot(), swing);
-        assert!(state.gait_phase == 0.0 || state.gait_phase == 0.5);
+        assert!(state.gait_phase > phase);
     }
 
     #[test]
@@ -776,7 +753,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn raised_guard_sequence_counts_coalesced_handoffs_beyond_phase_parity() {
+    fn raised_guard_contacts_count_coalesced_handoffs_beyond_phase_parity() {
         let mut state = SkeletonState::default();
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         project_skeleton_locomotion(
@@ -791,26 +768,8 @@ mod legacy_tests {
                 tick: 1,
             },
         );
-        assert_eq!(state.raised_locomotion().step_sequence(), 2);
-        assert_eq!(
-            state.raised_locomotion().swing_foot(),
-            Some(LeadFoot::Right)
-        );
+        assert_eq!(state.contact_sequence, 2);
         assert!(state.gait_phase < 0.0001);
-    }
-
-    #[test]
-    fn diagonal_guard_steps_begin_with_the_outward_lateral_foot() {
-        for lead in [LeadFoot::Left, LeadFoot::Right] {
-            assert_eq!(
-                initial_guard_swing_foot(Vec2::new(-1.0, -1.0).normalize(), lead),
-                LeadFoot::Left
-            );
-            assert_eq!(
-                initial_guard_swing_foot(Vec2::new(1.0, 1.0).normalize(), lead),
-                LeadFoot::Right
-            );
-        }
     }
 
     #[test]
