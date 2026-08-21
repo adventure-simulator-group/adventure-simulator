@@ -626,4 +626,40 @@ mod tests {
         assert!(shader.contains("var fine_marching = false"));
         assert!(!shader.contains("(cloud_layer.x - ray_origin.y) / ray_direction.y"));
     }
+
+    #[test]
+    fn cloud_shader_uses_coarse_occupancy_before_detailed_integration() {
+        let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
+        let coarse_fbm = shader
+            .split_once("fn fbm_coarse")
+            .expect("cloud shader must define a coarse noise path")
+            .1
+            .split_once("fn cloud_profile")
+            .expect("coarse noise path must precede cloud profiles")
+            .0;
+        let coarse_density = shader
+            .split_once("fn sample_density_coarse")
+            .expect("cloud shader must define coarse occupancy sampling")
+            .1
+            .split_once("fn sunlight_transmittance")
+            .expect("coarse sampling must precede lighting")
+            .0;
+        let fragment = shader
+            .split_once("@fragment")
+            .expect("cloud shader must have a fragment entry point")
+            .1;
+
+        assert_eq!(coarse_fbm.matches("value_noise_3d").count(), 2);
+        assert!(!coarse_density.contains("let warp"));
+        assert!(!coarse_density.contains("let detail"));
+        assert!(coarse_density.contains("threshold - 0.22"));
+        assert!(fragment.contains("density = sample_density_coarse(position)"));
+        assert!(
+            fragment.contains("if fine_marching {\n            density = sample_density(position)")
+        );
+        assert!(
+            fragment.contains("} else {\n            density = sample_density_coarse(position)")
+        );
+        assert!(shader.contains("optical_depth += sample_density(sample_position)"));
+    }
 }

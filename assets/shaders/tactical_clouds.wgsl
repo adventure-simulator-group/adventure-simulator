@@ -51,6 +51,15 @@ fn fbm(position: vec3<f32>) -> f32 {
     return first * 0.52 + second * 0.27 + third * 0.14 + fourth * 0.07;
 }
 
+/// The coarse ray march only needs to decide whether a large interval could
+/// contain cloud. Two broad octaves preserve the major coverage cells while
+/// avoiding the detailed density path's warp and secondary erosion noise.
+fn fbm_coarse(position: vec3<f32>) -> f32 {
+    let first = value_noise_3d(position);
+    let second = value_noise_3d(position * 2.03 + vec3<f32>(17.1, 3.7, 11.9));
+    return first * 0.66 + second * 0.34;
+}
+
 fn cloud_profile(height: f32, family: f32, noise_value: f32) -> f32 {
     let kind = u32(family + 0.5);
     if kind == 0u {
@@ -186,6 +195,59 @@ fn sample_density(world_position: vec3<f32>) -> f32 {
     return clamp(body * profile * cloud_shape.y, 0.0, 1.35);
 }
 
+/// A deliberately conservative occupancy estimate for the empty-space search.
+/// It can enter fine marching early, but must not reject small cellular cloud
+/// features solely because detail erosion or domain warping changes their edge.
+fn sample_density_coarse(world_position: vec3<f32>) -> f32 {
+    let height = (altitude_in_shell(world_position) - cloud_layer.x) / cloud_layer.y;
+    if height <= 0.0 || height >= 1.0 {
+        return 0.0;
+    }
+    let wind_position = world_position.xz + cloud_motion.xy;
+    let seed = cloud_shape.w;
+    var coordinate = vec3<f32>(
+        wind_position.x * cloud_layer.z + seed * 0.013,
+        height * 1.8 + seed * 0.007,
+        wind_position.y * cloud_layer.z - seed * 0.011,
+    );
+    let kind = u32(cloud_shape.z + 0.5);
+    if kind == 2u {
+        coordinate.x *= 0.32;
+        coordinate.z *= 1.8;
+    } else if kind == 5u || kind == 8u {
+        coordinate.x *= 1.75;
+        coordinate.z *= 1.75;
+    } else if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
+        coordinate.x *= 0.58;
+        coordinate.z *= 0.58;
+    }
+
+    let broad = fbm_coarse(coordinate * vec3<f32>(0.82, 0.62, 0.82));
+    let profile = cloud_profile(height, cloud_shape.z, broad);
+    var threshold = 0.78 - cloud_shape.x * 0.34;
+    if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
+        threshold -= 0.08;
+    }
+    if kind == 0u {
+        threshold += height * 0.07;
+    } else if kind == 3u {
+        threshold += height * 0.24 - smoothstep(0.68, 0.82, height) * 0.11;
+    } else if kind == 10u {
+        threshold += height * 0.14;
+    }
+
+    // The relaxed threshold covers the detailed path's erosion and warp. A
+    // false positive merely costs a few fine steps; a false negative would
+    // systematically erase thin cirrus and small cumulus fragments.
+    let conservative_threshold = threshold - 0.22;
+    let body = smoothstep(
+        conservative_threshold - 0.08,
+        conservative_threshold + 0.12,
+        broad,
+    );
+    return clamp(body * profile * cloud_shape.y, 0.0, 1.35);
+}
+
 fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 {
     var optical_depth = 0.0;
     var distance = 420.0;
@@ -289,8 +351,17 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         }
         let position = ray_origin + ray_direction * distance;
         let distance_fade = 1.0 - smoothstep(cloud_layer.w * 0.68, cloud_layer.w, distance);
-        let density = sample_density(position) * distance_fade;
-        if density > 0.002 {
+        var density: f32;
+        var density_threshold: f32;
+        if fine_marching {
+            density = sample_density(position);
+            density_threshold = 0.002;
+        } else {
+            density = sample_density_coarse(position);
+            density_threshold = 0.0004;
+        }
+        density *= distance_fade;
+        if density > density_threshold {
             if !fine_marching {
                 fine_marching = true;
                 fine_empty_steps = 0u;
