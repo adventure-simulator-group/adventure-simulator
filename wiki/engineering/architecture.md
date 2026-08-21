@@ -554,7 +554,8 @@ adds no entity, material slot, draw call, gameplay collider, or placement rule.
 The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or tactical
 authority. The immutable environment and weather snapshots control the
-procedural ground material, diagnosed low/middle/high cloud decks, directional
+procedural ground material, diagnosed low/middle/high cloud decks folded into
+one texture-backed analytic tactical cloud shell, directional
 precipitation particles, fog distance, wind drift, and cloud-attenuated
 sunlight. Falling precipitation is one camera-local indexed quad batch rather
 than one entity per drop or flake. Its WebGPU vertex shader derives

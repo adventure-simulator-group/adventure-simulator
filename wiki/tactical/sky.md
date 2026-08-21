@@ -63,28 +63,25 @@ python scripts/import_hipparcos_stars.py
 
 ## Procedural clouds
 
-The default tactical presentation renders up to three bounded atmospheric
-decks. Camera-centred hemispheres supply rasterization geometry, but the
-fragment shader intersects each view ray with scene-anchored concentric
-spherical shells. Their deliberately exaggerated local curvature is negligible
-across the playable area but bends distant clouds into the tactical horizon.
-The shells remain stationary; wind and vertical shear advect each procedural
-density field through its layer instead of moving a finite volume past the
-camera.
+The default tactical presentation renders one bounded atmospheric shell.
+Camera-centred hemisphere geometry supplies rasterization directions while the
+fragment shader intersects each view ray with a scene-anchored curved surface.
+The deliberately exaggerated curvature is negligible across the playable area
+but bends distant clouds into the tactical horizon. A filtered, deterministic
+2D texture supplies broad coverage, edges, underside variation, and wind-driven
+motion in one sample. There is no volumetric march, empty-space search, or
+internal shadow ray.
 
-The ray marcher searches empty air in coarse steps, backtracks and switches to
-quarter-sized steps after finding density, and returns to coarse search after
-leaving a cloud. A deterministic per-pixel starting offset prevents coherent
-sampling bands along the curved shell. Short sun-facing shadow probes provide
-internal self-shadowing, while multi-scale edge erosion, bounded trace distance,
-and stronger grazing-angle aerial extinction keep distant layers from forming
-a hard horizon cutoff. Solar chroma follows Sun altitude rather than applying a
-permanent gold cast; dense storm cores converge toward neutral gray-blue
-multiple scattering while low-Sun cloud edges can remain warm. Distinct
-profiles cover cirrus, cirrocumulus, cirrostratus, altocumulus, altostratus,
-nimbostratus, stratocumulus, stratus, cumulus, cumulus congestus, and
-cumulonimbus. The decks can coexist, so high ice cloud need not disappear when
-lower cloud develops.
+The tactical client folds the authoritative low/middle/high diagnosis into the
+single shell: the optically dominant deck selects the visible cloud family and
+surface altitude, while all deck coverages combine. This retains broad weather
+and rain/storm identity at a substantially lower transparent-rendering cost.
+Distinct analytic treatments still cover cirrus, cirrocumulus, cirrostratus,
+altocumulus, altostratus, nimbostratus, stratocumulus, stratus, cumulus,
+cumulus congestus, and cumulonimbus. Solar chroma follows Sun altitude rather
+than applying a permanent gold cast; storm profiles remain neutral gray-blue
+and direct light is reduced. A grazing-angle horizon fade prevents the global
+surface from forming a hard cutoff.
 
 The strategic weather snapshot authoritatively supplies each deck's form,
 coverage, optical density, base, and top. Those layers are diagnosed from
@@ -99,11 +96,11 @@ and the tactical client does not mutate them.
 
 Cloud lighting reuses the production Sun direction, exposure, and weather
 transmission. Cloud amount and optical density attenuate direct sunlight and
-star visibility even when no precipitation reaches the ground. The shader uses
-bounded optical depth, an inexpensive forward-scattering approximation, and
-denser undersides instead of secondary shadow rays. Clouds remain separate from
-the atmosphere-generated environment map; they neither trigger environment-map
-regeneration nor bake their moving shape into image-based lighting.
+star visibility even when no precipitation reaches the ground. The analytic
+surface uses a single forward highlight and texture-shaped underside variation.
+Clouds remain separate from the atmosphere-generated environment map; they
+neither trigger environment-map regeneration nor bake their moving shape into
+image-based lighting.
 
 ## Verification
 
