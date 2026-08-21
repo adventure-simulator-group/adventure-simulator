@@ -59,9 +59,10 @@ pub(crate) use obstacles::tree::TreeImpostorProvenance;
 pub(crate) use obstacles::tree::{
     PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
     PlayableTreeDetailedLeaves, PlayableTreeDetailedWood, PlayableTreeTrunk, PresentedTree,
-    TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation, TacticalTreeLeafCardMaterial,
-    TreeAssetResidencyDiagnostics, TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
+    TacticalTreeAggregateBarkMaterial, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
+    TacticalTreeLeafCardMaterial, TreeAssetResidencyDiagnostics, TreeLeafRepresentation,
+    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    oak_aggregate_bark_material, oak_bark_material, oak_leaf_material,
 };
 pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
@@ -136,6 +137,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
             MaterialPlugin::<TacticalPebbleBillboardMaterial>::default(),
             MaterialPlugin::<TacticalTreeBarkMaterial>::default(),
+            MaterialPlugin::<TacticalTreeAggregateBarkMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),

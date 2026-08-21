@@ -8,9 +8,10 @@ use super::{
     COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
     OakGnarlingParameters, PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
     PlayableTreeDetailedLeaves, PlayableTreeDetailedWood, PlayableTreeTrunk,
-    TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    beech_bark_material, beech_leaf_material, oak_bark_material, oak_leaf_material,
+    TacticalTreeAggregateBarkMaterial, TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial,
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    TreeLodRenderOverride, TreeTrunkLod, beech_aggregate_bark_material, beech_bark_material,
+    beech_leaf_material, oak_aggregate_bark_material, oak_bark_material, oak_leaf_material,
     procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
     procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
@@ -46,6 +47,8 @@ pub(in crate::presentation) struct TreePresentationCache {
     variants: std::collections::HashMap<u64, CachedTreePresentation>,
     oak_bark_material: Option<Handle<TacticalTreeBarkMaterial>>,
     beech_bark_material: Option<Handle<TacticalTreeBarkMaterial>>,
+    oak_aggregate_bark_material: Option<Handle<TacticalTreeAggregateBarkMaterial>>,
+    beech_aggregate_bark_material: Option<Handle<TacticalTreeAggregateBarkMaterial>>,
     terrain_scene_digest: Option<String>,
     terrain_heightmap: Option<Handle<Image>>,
     terrain_height_range: Vec2,
@@ -117,6 +120,7 @@ struct CachedTreePresentation {
     aggregate_branch_meshes: [Option<Handle<Mesh>>; 2],
     lod_cards: [Option<CachedTreeCardPresentation>; 4],
     bark_material: Handle<TacticalTreeBarkMaterial>,
+    aggregate_bark_material: Handle<TacticalTreeAggregateBarkMaterial>,
     leaf_material: Handle<TacticalTreeLeafCardMaterial>,
     bud_material: Handle<StandardMaterial>,
 }
@@ -424,7 +428,7 @@ fn spawn_streamed_tree_children(
                             .clone()
                             .expect("requested aggregate branch mesh is resident"),
                     ),
-                    MeshMaterial3d(cached.bark_material.clone()),
+                    aggregate_tree_wood_material(cached.aggregate_bark_material.clone()),
                     tree_lod_visibility(lod),
                 ));
             }
@@ -447,6 +451,12 @@ fn spawn_streamed_tree_children(
             ));
         }
     });
+}
+
+fn aggregate_tree_wood_material(
+    material: Handle<TacticalTreeAggregateBarkMaterial>,
+) -> MeshMaterial3d<TacticalTreeAggregateBarkMaterial> {
+    MeshMaterial3d(material)
 }
 
 fn bake_tree_card_for_cached(cached: &CachedTreePresentation, lod: u8) -> TreeLodBake {
@@ -800,6 +810,7 @@ pub(in crate::presentation) fn present_pending_trees(
     vista: Res<ActiveVistaSurface>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
+    mut aggregate_bark_materials: ResMut<Assets<TacticalTreeAggregateBarkMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
@@ -820,6 +831,8 @@ pub(in crate::presentation) fn present_pending_trees(
         tree_cache.variants.clear();
         tree_cache.oak_bark_material = None;
         tree_cache.beech_bark_material = None;
+        tree_cache.oak_aggregate_bark_material = None;
+        tree_cache.beech_aggregate_bark_material = None;
         let (heightmap, height_range) =
             crate::presentation::terrain::terrain_contact_heightmap_image(
                 terrain,
@@ -910,6 +923,25 @@ pub(in crate::presentation) fn present_pending_trees(
                     })
                 }
             };
+            let aggregate_bark_material = match species {
+                TreePresentationSpecies::EnglishOak => tree_cache
+                    .oak_aggregate_bark_material
+                    .clone()
+                    .unwrap_or_else(|| {
+                        let material = aggregate_bark_materials.add(oak_aggregate_bark_material());
+                        tree_cache.oak_aggregate_bark_material = Some(material.clone());
+                        material
+                    }),
+                TreePresentationSpecies::CommonBeech => tree_cache
+                    .beech_aggregate_bark_material
+                    .clone()
+                    .unwrap_or_else(|| {
+                        let material =
+                            aggregate_bark_materials.add(beech_aggregate_bark_material());
+                        tree_cache.beech_aggregate_bark_material = Some(material.clone());
+                        material
+                    }),
+            };
             let leaf_material = leaf_card_materials.add(match species {
                 TreePresentationSpecies::EnglishOak => oak_leaf_material(&procedural_assets),
                 TreePresentationSpecies::CommonBeech => beech_leaf_material(&procedural_assets),
@@ -934,6 +966,7 @@ pub(in crate::presentation) fn present_pending_trees(
                 aggregate_branch_meshes: [None, None],
                 lod_cards: [None, None, None, None],
                 bark_material,
+                aggregate_bark_material,
                 leaf_material,
                 bud_material,
             };
@@ -1125,6 +1158,20 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_tree_children_use_the_cheap_bark_material_tier() {
+        let mut world = World::new();
+        let entity = world
+            .spawn((
+                PlayableTreeAggregateWood,
+                aggregate_tree_wood_material(Handle::default()),
+            ))
+            .id();
+        let entity = world.entity(entity);
+        assert!(entity.contains::<MeshMaterial3d<TacticalTreeAggregateBarkMaterial>>());
+        assert!(!entity.contains::<MeshMaterial3d<TacticalTreeBarkMaterial>>());
+    }
+
+    #[test]
     fn distant_request_does_not_generate_near_tree_geometry() {
         let variant_seed = 42;
         let branches = procedural_tree_skeleton(variant_seed, 0.0);
@@ -1141,6 +1188,7 @@ mod tests {
             aggregate_branch_meshes: [None, None],
             lod_cards: [None, None, None, None],
             bark_material: Handle::default(),
+            aggregate_bark_material: Handle::default(),
             leaf_material: Handle::default(),
             bud_material: Handle::default(),
         };

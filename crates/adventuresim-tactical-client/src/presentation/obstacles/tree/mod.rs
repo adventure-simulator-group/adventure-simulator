@@ -26,12 +26,13 @@ pub(crate) use lod::{
     TreeLodRenderOverride, TreeTrunkLod,
 };
 pub(crate) use materials::{
-    TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial, oak_bark_material, oak_leaf_material,
+    TacticalTreeAggregateBarkMaterial, TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial,
+    oak_aggregate_bark_material, oak_bark_material, oak_leaf_material,
 };
 pub(in crate::presentation) use materials::{
-    TacticalTreeImpostorMaterial, beech_bark_material, beech_leaf_material,
-    blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material, leaf_material,
-    update_tree_leaf_wind,
+    TacticalTreeImpostorMaterial, beech_aggregate_bark_material, beech_bark_material,
+    beech_leaf_material, blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
+    leaf_material, update_tree_leaf_wind,
 };
 pub(in crate::presentation) use presentation::canopy_competition;
 pub(in crate::presentation) use presentation::{
