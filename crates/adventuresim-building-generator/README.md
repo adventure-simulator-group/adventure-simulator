@@ -85,10 +85,11 @@ Openings, Roof, Site, and Finish, while a storey rail presents the current
 storey and the planned wall/roof visibility states. `1`–`6`, `Esc`, `Page Up`,
 `Page Down`, `Home`, `R`, `Ctrl+Z`, and `Ctrl+Y` mirror those visible controls.
 The current `BuildingDocument` remains the strict procedural-programme path:
-only Select, Openings, and Finish activate an audited edit today. Construct,
-Roof, and Site intentionally explain that they need the future freeform
-player-build document instead of accepting an edit that cannot be saved or
-rendered.
+only Select, Openings, and Finish activate an audited edit today. With a
+freeform player-build document loaded, Construct adds a wall tool: drag across
+the scene to snap its endpoints to the build grid and place one wall spanning
+the crossed cells. Roof and Site intentionally explain that they need further
+freeform tools instead of accepting an edit that cannot be saved or rendered.
 
 ## Headless editor test ABI
 
@@ -104,6 +105,8 @@ The command writes one JSON snapshot per action to standard output. Each
 snapshot contains the active storey, visibility state, freeform parts,
 selection, advisory findings, status, and any error. UI freeform mutations and
 the script runner share the same player-build edit reducer.
+`draw_wall` accepts start/end metres, material, and storey; it uses the same
+grid snapping and cardinal-axis rule as the Construct-mode drag tool.
 
 `BuildingDocument` is versioned JSON containing a `BuildingProgram` plus an
 ordered edit log. Each UI command regenerates the complete plan and runs the

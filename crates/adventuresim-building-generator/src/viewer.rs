@@ -2203,7 +2203,10 @@ impl EditorMode {
     }
 
     fn is_available(self) -> bool {
-        matches!(self, Self::Select | Self::Openings | Self::Finish)
+        matches!(
+            self,
+            Self::Select | Self::Construct | Self::Openings | Self::Finish
+        )
     }
 }
 
@@ -2274,6 +2277,7 @@ struct EditorRuntime {
     player_rotation_degrees: f32,
     player_kind: PlayerBuildPartKind,
     player_material: PlayerBuildMaterial,
+    wall_drag: Option<WallDrag>,
     pending_player_rebuild: bool,
     undo: Vec<BuildingDocument>,
     redo: Vec<BuildingDocument>,
@@ -2316,6 +2320,7 @@ impl EditorRuntime {
             player_rotation_degrees: 0.0,
             player_kind: PlayerBuildPartKind::Wall,
             player_material: PlayerBuildMaterial::Stone,
+            wall_drag: None,
             pending_player_rebuild: false,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -2336,12 +2341,26 @@ impl EditorRuntime {
     }
 }
 
+#[derive(Clone, Copy)]
+struct WallDrag {
+    start: Vec2,
+    camera: Entity,
+}
+
 /// Stable, UI-independent command ABI for editor tests, automation, and
 /// future remote tooling.  UI interactions translate to these commands rather
 /// than retaining a separate test-only behavior path.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "action")]
 pub(crate) enum EditorCommand {
+    DrawWall {
+        start_x_metres: f32,
+        start_z_metres: f32,
+        end_x_metres: f32,
+        end_z_metres: f32,
+        material: PlayerBuildMaterial,
+        storey: u16,
+    },
     PlacePart {
         part: PlayerBuildPart,
     },
@@ -2411,6 +2430,20 @@ fn editor_snapshot(runtime: &EditorRuntime) -> EditorSnapshot {
 
 fn perform_editor_command(runtime: &mut EditorRuntime, command: EditorCommand) {
     match command {
+        EditorCommand::DrawWall {
+            start_x_metres,
+            start_z_metres,
+            end_x_metres,
+            end_z_metres,
+            material,
+            storey,
+        } => place_dragged_wall(
+            runtime,
+            Vec2::new(start_x_metres, start_z_metres),
+            Vec2::new(end_x_metres, end_z_metres),
+            material,
+            storey,
+        ),
         EditorCommand::PlacePart { part } => {
             apply_player_build_edit(runtime, PlayerBuildEdit::Place { part })
         }
@@ -2562,6 +2595,120 @@ fn editor_pointer_click(
         runtime.status = editor_target_label(selectable.0);
         runtime.error = None;
     }
+}
+
+fn snap_wall_grid(point: Vec2) -> Vec2 {
+    (point / CELL_SIZE_METRES).round() * CELL_SIZE_METRES
+}
+
+fn place_dragged_wall(
+    runtime: &mut EditorRuntime,
+    start: Vec2,
+    end: Vec2,
+    material: PlayerBuildMaterial,
+    storey: u16,
+) {
+    let start = snap_wall_grid(start);
+    let end = snap_wall_grid(end);
+    let delta = end - start;
+    let (end, rotation_degrees, length) = if delta.x.abs() >= delta.y.abs() {
+        (
+            Vec2::new(end.x, start.y),
+            0.0,
+            delta.x.abs().max(CELL_SIZE_METRES),
+        )
+    } else {
+        (
+            Vec2::new(start.x, end.y),
+            90.0,
+            delta.y.abs().max(CELL_SIZE_METRES),
+        )
+    };
+    let id = runtime
+        .player_build
+        .as_ref()
+        .and_then(|document| document.parts.iter().map(|part| part.id).max())
+        .unwrap_or(0)
+        + 1;
+    apply_player_build_edit(
+        runtime,
+        PlayerBuildEdit::Place {
+            part: PlayerBuildPart {
+                id,
+                kind: PlayerBuildPartKind::Wall,
+                material,
+                storey,
+                x_metres: (start.x + end.x) * 0.5,
+                z_metres: (start.y + end.y) * 0.5,
+                elevation_metres: f32::from(storey) * runtime.plan.storey_height_metres,
+                rotation_degrees,
+                width_metres: length,
+                depth_metres: WALL_THICKNESS_METRES,
+                height_metres: runtime.player_height_metres,
+            },
+        },
+    );
+}
+
+fn editor_wall_drag_start(event: On<Pointer<DragStart>>, mut runtime: ResMut<EditorRuntime>) {
+    if event.button != PointerButton::Primary
+        || runtime.mode != EditorMode::Construct
+        || runtime.player_build.is_none()
+    {
+        return;
+    }
+    let Some(position) = event.hit.position else {
+        runtime.error = Some("Wall tool needs a world-space pick hit".to_owned());
+        return;
+    };
+    runtime.wall_drag = Some(WallDrag {
+        start: Vec2::new(position.x, position.z),
+        camera: event.hit.camera,
+    });
+    runtime.status = "Drag to draw wall".to_owned();
+}
+
+fn editor_wall_drag_end(
+    event: On<Pointer<DragEnd>>,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    mut runtime: ResMut<EditorRuntime>,
+) {
+    let Some(drag) = runtime.wall_drag.take() else {
+        return;
+    };
+    if event.button != PointerButton::Primary {
+        return;
+    }
+    let Ok((camera, transform)) = cameras.get(drag.camera) else {
+        runtime.error = Some("Wall tool lost its picking camera".to_owned());
+        return;
+    };
+    let Ok(ray) = camera.viewport_to_world(transform, event.pointer_location.position) else {
+        runtime.error =
+            Some("Wall tool could not project the pointer onto the build plane".to_owned());
+        return;
+    };
+    let plane_y = runtime.active_storey as f32 * runtime.plan.storey_height_metres;
+    let direction_y = ray.direction.y;
+    if direction_y.abs() < 0.0001 {
+        runtime.error = Some("Wall tool view is parallel to the build plane".to_owned());
+        return;
+    }
+    let distance = (plane_y - ray.origin.y) / direction_y;
+    if distance < 0.0 {
+        runtime.error = Some("Wall tool build plane is behind the camera".to_owned());
+        return;
+    }
+    let end = ray.get_point(distance);
+    let material = runtime.player_material;
+    let storey = runtime.active_storey as u16;
+    place_dragged_wall(
+        &mut runtime,
+        drag.start,
+        Vec2::new(end.x, end.z),
+        material,
+        storey,
+    );
 }
 
 fn update_editor_outlines(
@@ -7586,6 +7733,8 @@ pub(crate) fn run(
         .add_observer(editor_pointer_over)
         .add_observer(editor_pointer_out)
         .add_observer(editor_pointer_click)
+        .add_observer(editor_wall_drag_start)
+        .add_observer(editor_wall_drag_end)
         .add_systems(EguiPrimaryContextPass, editor_ui)
         .add_systems(
             Update,
@@ -15593,6 +15742,43 @@ mod tests {
         assert_eq!(snapshot.parts[0].id, 7);
         assert_eq!(snapshot.walls, WallVisibility::Cutaway);
         assert!(snapshot.error.is_none());
+    }
+
+    #[test]
+    fn wall_draw_command_snaps_to_grid_and_spans_dragged_cells() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let mut runtime = EditorRuntime::new(
+            document,
+            plan,
+            PathBuf::from("test-building-document.json"),
+            Some(PlayerBuildDocument::empty()),
+            None,
+        );
+        perform_editor_command(
+            &mut runtime,
+            EditorCommand::DrawWall {
+                start_x_metres: 0.1,
+                start_z_metres: 0.2,
+                end_x_metres: 4.6,
+                end_z_metres: 0.3,
+                material: PlayerBuildMaterial::Brick,
+                storey: 0,
+            },
+        );
+        let wall = runtime
+            .player_build
+            .as_ref()
+            .unwrap()
+            .parts
+            .first()
+            .unwrap();
+        assert_eq!(wall.kind, PlayerBuildPartKind::Wall);
+        assert_eq!(wall.material, PlayerBuildMaterial::Brick);
+        assert_eq!(wall.rotation_degrees, 0.0);
+        assert_eq!(wall.width_metres, CELL_SIZE_METRES * 3.0);
+        assert_eq!(wall.x_metres, CELL_SIZE_METRES * 1.5);
+        assert_eq!(wall.z_metres, 0.0);
     }
 
     #[test]
