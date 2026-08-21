@@ -451,9 +451,11 @@ pub(in crate::presentation) enum GrassMeshLod {
 impl GrassMeshLod {
     fn row_heights(self) -> &'static [f32] {
         match self {
-            // Seven paired rows plus a shared tip: the same fifteen-vertex
-            // near ribbon used by Ghost of Tsushima's published grass design.
-            Self::Near => &[0.0, 0.14, 0.29, 0.45, 0.61, 0.76, 0.9],
+            // Five paired rows plus a shared tip: eleven vertices preserve the
+            // original base, shoulder, tip, and monotonic UV progression while
+            // removing two intermediate ribbon segments from ordinary Near
+            // grass.
+            Self::Near => &[0.0, 0.22, 0.45, 0.68, 0.9],
             // Three paired rows plus a shared tip: seven vertices at distance.
             Self::Far => &[0.0, 0.45, 0.82],
             Self::Vista => &[0.0, 0.62],
@@ -1139,7 +1141,7 @@ mod tests {
                         species: GrassSpecies::Cocksfoot,
                     }],
                 );
-                (mesh.count_vertices() > 15).then_some(mesh)
+                (mesh.count_vertices() > 11).then_some(mesh)
             })
             .expect("the bounded seed search should find a flowering cocksfoot shoot");
 
@@ -1151,8 +1153,8 @@ mod tests {
         else {
             panic!("seed heads should carry attachment metadata");
         };
-        let seed_head_positions = &positions[15..];
-        let seed_head_uvs = &uvs[15..];
+        let seed_head_positions = &positions[11..];
+        let seed_head_uvs = &uvs[11..];
 
         assert!(seed_head_positions.len() >= 92);
         assert!(seed_head_uvs.iter().all(|uv| uv[0] > 0.0 && uv[1] < 0.0));
@@ -1163,6 +1165,60 @@ mod tests {
             "the nearest seed head must contain authored lateral branches"
         );
         assert_eq!(seed_head_positions.len() % 4, 0);
+    }
+
+    #[test]
+    fn grass_ribbon_lods_have_exact_per_blade_geometry_and_valid_meshes() {
+        let expected = [
+            (GrassMeshLod::Near, 11, 27),
+            (GrassMeshLod::Far, 7, 15),
+            (GrassMeshLod::Vista, 5, 9),
+        ];
+
+        for (lod, vertices_per_blade, indices_per_blade) in expected {
+            let mesh = grass_ribbon_patch_mesh(
+                0.026,
+                0.82,
+                Color::WHITE,
+                lod,
+                &[GrassBlade {
+                    offset_x: 0.0,
+                    offset_z: 0.0,
+                    height_scale: 1.0,
+                    width_scale: 1.0,
+                    seed: 0,
+                    species: GrassSpecies::RedFescue,
+                }],
+            );
+            assert_eq!(mesh.count_vertices(), vertices_per_blade);
+            let indices = mesh.indices().unwrap().iter().collect::<Vec<_>>();
+            assert_eq!(indices.len(), indices_per_blade);
+
+            for attribute in [
+                Mesh::ATTRIBUTE_POSITION,
+                Mesh::ATTRIBUTE_NORMAL,
+                Mesh::ATTRIBUTE_UV_0,
+                Mesh::ATTRIBUTE_UV_1,
+                Mesh::ATTRIBUTE_COLOR,
+            ] {
+                assert_eq!(mesh.attribute(attribute).unwrap().len(), vertices_per_blade);
+            }
+            assert!(
+                indices
+                    .iter()
+                    .all(|index| { usize::try_from(*index).unwrap() < vertices_per_blade })
+            );
+            assert_eq!(indices.len() % 3, 0);
+            let expected_indices = match lod {
+                GrassMeshLod::Near => vec![
+                    0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 4, 5, 7, 4, 7, 6, 6, 7, 9, 6, 9, 8, 8, 9,
+                    10,
+                ],
+                GrassMeshLod::Far => vec![0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 4, 5, 6],
+                GrassMeshLod::Vista => vec![0, 1, 3, 0, 3, 2, 2, 3, 4],
+            };
+            assert_eq!(indices, expected_indices);
+        }
     }
 
     #[test]
@@ -1199,8 +1255,8 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
-        assert!(near_positions.len() > 9_216 * 15);
-        let near_blade_positions = &near_positions[..9_216 * 15];
+        assert_eq!(near_positions.len(), 165_636);
+        let near_blade_positions = &near_positions[..9_216 * 11];
         assert_eq!(far_positions.len(), 784 * 7);
         assert_eq!(vista.count_vertices(), 256 * 5);
         assert!(256.0 / VISTA_GRASS_PATCH_SPACING.powi(2) >= 6.0);
@@ -1222,7 +1278,7 @@ mod tests {
             panic!("far grass mesh must carry stable blade roots");
         };
         assert_eq!(near_roots.len(), near_positions.len());
-        let near_blade_roots = &near_roots[..9_216 * 15];
+        let near_blade_roots = &near_roots[..9_216 * 11];
         assert_eq!(far_roots.len(), far_positions.len());
         assert!(far_roots.iter().all(|root| near_blade_roots.contains(root)));
         let Some(VertexAttributeValues::Float32x4(colors)) = near.attribute(Mesh::ATTRIBUTE_COLOR)
@@ -1239,28 +1295,28 @@ mod tests {
         assert!(colors.iter().any(|color| color[3] > 0.75));
         for (far_root, far_color) in far_roots.chunks_exact(7).zip(far_colors.chunks_exact(7)) {
             let matching_near_blade = near_blade_roots
-                .chunks_exact(15)
+                .chunks_exact(11)
                 .position(|near_root| near_root[0] == far_root[0])
                 .expect("every far blade must retain its exact near-LOD root");
             assert_eq!(
-                colors[matching_near_blade * 15][3],
+                colors[matching_near_blade * 11][3],
                 far_color[0][3],
                 "near and far LODs must apply the same ground-mask threshold"
             );
             assert_eq!(
-                colors[matching_near_blade * 15],
+                colors[matching_near_blade * 11],
                 far_color[0],
                 "near and far LOD roots must retain the same base pigment and age"
             );
             assert_eq!(
-                colors[matching_near_blade * 15 + 14],
+                colors[matching_near_blade * 11 + 10],
                 far_color[6],
                 "near and far LOD tips must retain the same senescent pigment"
             );
         }
 
         let blade_heights = near_blade_positions
-            .chunks_exact(15)
+            .chunks_exact(11)
             .map(|blade| {
                 blade
                     .iter()
@@ -1284,7 +1340,7 @@ mod tests {
         assert!(maximum_height - minimum_height > 0.45);
 
         let blade_widths = near_blade_positions
-            .chunks_exact(15)
+            .chunks_exact(11)
             .map(|blade| Vec3::from_array(blade[0]).distance(Vec3::from_array(blade[1])))
             .collect::<Vec<_>>();
         let minimum_width = blade_widths.iter().copied().fold(f32::INFINITY, f32::min);
@@ -1557,7 +1613,7 @@ mod tests {
             1.0,
             GrassCommunity::MesicMeadow,
         );
-        assert!(near.count_vertices() > 9_216 * 15);
+        assert_eq!(near.count_vertices(), 165_636);
         assert_eq!(far.count_vertices(), 784 * 7);
     }
 
