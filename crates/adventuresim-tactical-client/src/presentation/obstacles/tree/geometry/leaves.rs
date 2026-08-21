@@ -322,6 +322,19 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]
 }
 
 pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    procedural_woody_leaf_card_mesh_scaled(leaves, 1.0)
+}
+
+/// Builds the terminal shrub representation from one deterministic ordinal
+/// lane per shoot. The cards grow into overlapping leaf clusters, so this is
+/// substantially cheaper than retaining a card for every source leaf while
+/// keeping the outline of each shrub species recognisable at distance.
+pub(in crate::presentation) fn procedural_woody_sparse_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    let sparse_leaves = sparse_woody_far_card_leaves(leaves);
+    procedural_woody_leaf_card_mesh_scaled(&sparse_leaves, 1.9)
+}
+
+fn procedural_woody_leaf_card_mesh_scaled(leaves: &[TreeLeaf], coverage_scale: f32) -> Mesh {
     let mut positions = Vec::with_capacity(leaves.len() * 4);
     let mut normals = Vec::with_capacity(leaves.len() * 4);
     let mut uvs = Vec::with_capacity(leaves.len() * 4);
@@ -333,9 +346,9 @@ pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLea
         // obliquely. Enlarge about the fixed petiole (not the card centre) so
         // the intermediate LOD preserves crown coverage without swimming at
         // its biological attachment.
-        const COVERAGE_SCALE: f32 = 1.24;
-        let scaled_width = width * COVERAGE_SCALE;
-        let scaled_height = height * COVERAGE_SCALE;
+        const CARD_COVERAGE_SCALE: f32 = 1.24;
+        let scaled_width = width * CARD_COVERAGE_SCALE * coverage_scale;
+        let scaled_height = height * CARD_COVERAGE_SCALE * coverage_scale;
         center += leaf.up * (scaled_height - height) * 0.5;
         let right = leaf.right * scaled_width * 0.5;
         let up = leaf.up * scaled_height * 0.5;
@@ -367,6 +380,34 @@ pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLea
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.insert_indices(Indices::U32(indices));
     mesh
+}
+
+/// Selects one stable ordinal lane from every source shoot. Sorting the
+/// retained leaves makes the resulting mesh byte-for-byte deterministic even
+/// if the source generator changes its iteration order.
+fn sparse_woody_far_card_leaves(leaves: &[TreeLeaf]) -> Vec<TreeLeaf> {
+    let mut retained = leaves
+        .iter()
+        .filter(|leaf| sparse_woody_far_card_retained(**leaf))
+        .copied()
+        .collect::<Vec<_>>();
+    retained.sort_unstable_by_key(|leaf| {
+        (
+            leaf.primary_group,
+            leaf.secondary_group,
+            leaf.shoot_id,
+            leaf.leaf_ordinal,
+        )
+    });
+    retained
+}
+
+fn sparse_woody_far_card_retained(leaf: TreeLeaf) -> bool {
+    let shoot_key = u64::from(leaf.primary_group)
+        | (u64::from(leaf.secondary_group) << 8)
+        | (u64::from(leaf.shoot_id) << 24);
+    let retained_ordinal_lane = splitmix64(shoot_key ^ 0x74a3_2f9b_d817_c56e) as u8 & 3;
+    leaf.leaf_ordinal & 3 == retained_ordinal_lane
 }
 
 /// The near leaf is a small cambered grid: the geometry retains fold, cupping,

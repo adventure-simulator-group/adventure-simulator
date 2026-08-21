@@ -296,7 +296,7 @@ pub(in crate::presentation) use leaves::{
     procedural_oak_leaf_card_group_mesh, procedural_oak_leaf_card_mesh, procedural_oak_leaves,
     procedural_oak_textured_leaf_group_mesh, procedural_oak_textured_leaf_mesh,
     procedural_woody_cambered_leaf_mesh, procedural_woody_leaf_card_mesh,
-    procedural_woody_plant_leaves,
+    procedural_woody_plant_leaves, procedural_woody_sparse_leaf_card_mesh,
 };
 pub(in crate::presentation) use skeleton::{
     procedural_oak_skeleton_with_gnarling, procedural_tree_skeleton,

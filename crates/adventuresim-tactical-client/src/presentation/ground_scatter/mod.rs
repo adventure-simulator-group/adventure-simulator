@@ -21,7 +21,7 @@ use super::obstacles::tree::{
     blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
     procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
     procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
-    procedural_woody_plant_skeleton,
+    procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
 use super::{
     PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
@@ -72,6 +72,7 @@ pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,
     cambered_leaves: Option<Handle<Mesh>>,
     leaf_cards: Option<Handle<Mesh>>,
+    sparse_leaf_cards: Option<Handle<Mesh>>,
     bark: Option<Handle<StandardMaterial>>,
     leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
 }
@@ -558,6 +559,7 @@ fn ensure_understory_presentations(
         cache.branches = Some(meshes.add(procedural_woody_branch_mesh(&branches, 3, bark)));
         cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
         cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
+        cache.sparse_leaf_cards = Some(meshes.add(procedural_woody_sparse_leaf_card_mesh(&leaves)));
         cache.bark = Some(materials.add(StandardMaterial {
             base_color: bark_color,
             perceptual_roughness: 0.96,

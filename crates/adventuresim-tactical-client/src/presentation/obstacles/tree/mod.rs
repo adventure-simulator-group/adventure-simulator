@@ -16,6 +16,7 @@ pub(in crate::presentation) use geometry::{
     procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh, procedural_woody_crown_mesh,
     procedural_woody_leaf_card_mesh, procedural_woody_mid_trunk_mesh,
     procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    procedural_woody_sparse_leaf_card_mesh,
 };
 pub(crate) use impostor::TreeImpostorProvenance;
 pub(in crate::presentation) use lod::update_tree_projected_lod_ranges;
