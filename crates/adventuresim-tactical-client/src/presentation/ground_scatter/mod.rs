@@ -61,6 +61,12 @@ pub(crate) struct GroundLitterCaptureAnchors {
     pub(crate) pairs: Vec<GroundLitterCapturePair>,
 }
 
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct GroundLitterDiagnostics {
+    pub(crate) dry_leaf_patch_instances: usize,
+    pub(crate) physical_dry_leaf_count: usize,
+}
+
 #[derive(Default)]
 pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,

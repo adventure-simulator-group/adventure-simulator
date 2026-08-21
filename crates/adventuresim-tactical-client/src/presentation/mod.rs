@@ -46,8 +46,8 @@ pub(crate) use environment::{
 };
 #[allow(unused_imports)]
 pub(crate) use ground_scatter::{
-    GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundScatterLayer,
-    LooseStonePebblePatch,
+    GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundLitterDiagnostics,
+    GroundScatterLayer, LooseStonePebblePatch,
 };
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;

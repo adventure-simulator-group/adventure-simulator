@@ -19,14 +19,14 @@ use super::{
     TacticalFoliageMaterial, TacticalTreeLeafCardMaterial, foliage_transform,
 };
 
-const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 12;
+const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 8;
 const TWIG_PASSES_PER_SAMPLE: u64 = 4;
 const WOODLAND_PLANT_PASSES_PER_SAMPLE: u64 = 1;
 const WOODLAND_FLOOR_TRANSITION_METRES: f32 = 3.2;
 const LITTER_BATCH_CELL_METRES: f32 = 24.0;
 const LITTER_BATCH_HALF_DIAGONAL_METRES: f32 =
     LITTER_BATCH_CELL_METRES * core::f32::consts::FRAC_1_SQRT_2;
-const DRY_LEAVES_PER_PATCH: u64 = 84;
+const DRY_LEAVES_PER_PATCH: u64 = 56;
 const TWIGS_PER_PATCH: u64 = 8;
 
 pub(super) struct Assets {
@@ -63,6 +63,7 @@ pub(super) fn spawn(
     let mut batches = BTreeMap::<(i32, i32), LitterBatch>::new();
     let mut leaf_anchors = Vec::new();
     let mut twig_anchors = Vec::new();
+    let mut dry_leaf_patch_instances = 0;
     for (index, sample) in ground.samples().iter().enumerate() {
         let grid_x = index % ground.grid_width();
         let grid_z = index / ground.grid_width();
@@ -97,6 +98,7 @@ pub(super) fn spawn(
             if sample.cover == GroundCover::LeafLitter {
                 leaf_anchors.push(transform.translation);
             }
+            dry_leaf_patch_instances += 1;
             append_litter_batch(
                 meshes,
                 &assets.dry_leaf_meshes[(hash % assets.dry_leaf_meshes.len() as u64) as usize],
@@ -163,6 +165,13 @@ pub(super) fn spawn(
             GroundLitterCaptureAnchors { pairs },
         ));
     }
+    commands.spawn((
+        Name::new("Tactical litter diagnostics"),
+        super::GroundLitterDiagnostics {
+            dry_leaf_patch_instances,
+            physical_dry_leaf_count: dry_leaf_patch_instances * DRY_LEAVES_PER_PATCH as usize,
+        },
+    ));
     for ((cell_x, cell_z), batch) in batches {
         let transform = Transform::from_xyz(
             cell_x as f32 * LITTER_BATCH_CELL_METRES,
@@ -392,7 +401,9 @@ pub(super) fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
         Color::srgb_u8(95, 83, 67),
         Color::srgb_u8(104, 91, 72),
     ];
-    const STRATIFIED_LEAVES: u64 = 56;
+    // Keep a clustered tail even after reducing the patch population so
+    // variants retain their loose-pile silhouette differences.
+    const STRATIFIED_LEAVES: u64 = 40;
     const STRATIFIED_COLUMNS: u64 = 8;
     const CLUSTER_COUNT: u64 = 7;
     let clusters = (0..CLUSTER_COUNT)
@@ -845,6 +856,17 @@ mod tests {
         let outside = leaf_litter_proximity(&ground, 8, 4);
         assert!(1.0 > edge && edge > middle && middle > outside);
         assert_eq!(outside, 0.0);
+    }
+
+    #[test]
+    fn dry_leaf_density_uses_the_reduced_physical_geometry_budget() {
+        assert_eq!(DRY_LEAF_PASSES_PER_SAMPLE, 8);
+        assert_eq!(DRY_LEAVES_PER_PATCH, 56);
+
+        let old_leaf_budget = 12_u64 * 84;
+        let new_leaf_budget = DRY_LEAF_PASSES_PER_SAMPLE * DRY_LEAVES_PER_PATCH;
+        assert_eq!(new_leaf_budget, 448);
+        assert_eq!(new_leaf_budget * 9, old_leaf_budget * 4);
     }
 
     #[test]

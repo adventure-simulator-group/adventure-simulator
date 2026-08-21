@@ -49,8 +49,8 @@ use view_specs::{
 use crate::camera::CameraRigConfig;
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
-    GroundScatterLayer, LooseStonePebblePatch, PlayableTreeAggregateWood, PlayableTreeBuds,
-    PlayableTreeCanopyCard, PlayableTreeDetailedLeaves, PlayableTreeDetailedWood,
+    GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch, PlayableTreeAggregateWood,
+    PlayableTreeBuds, PlayableTreeCanopyCard, PlayableTreeDetailedLeaves, PlayableTreeDetailedWood,
     PlayableTreeTrunk, PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual,
     TacticalCloudBenchmarkIsolation, TacticalCloudLayer, TacticalGraphicsSettings,
     TacticalPresentationPlugin, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
@@ -2139,6 +2139,7 @@ fn benchmark_scene_performance(
             Without<GroundScatterLayer>,
         ),
     >,
+    litter_diagnostics: Query<&GroundLitterDiagnostics>,
     loose_stone_pebble_patches: Query<&LooseStonePebblePatch>,
     visible_tree_lods: Query<(&TreeLod, &ViewVisibility, Option<&TreeLeafRepresentation>)>,
     mut exit: MessageWriter<AppExit>,
@@ -2249,6 +2250,19 @@ fn benchmark_scene_performance(
             };
             *counts.entry(name.to_owned()).or_default() += 1;
         }
+        let litter_diagnostics = litter_diagnostics
+            .iter()
+            .next()
+            .copied()
+            .unwrap_or_default();
+        counts.insert(
+            "dry_leaf_patch_instances".to_owned(),
+            litter_diagnostics.dry_leaf_patch_instances,
+        );
+        counts.insert(
+            "physical_dry_leaves".to_owned(),
+            litter_diagnostics.physical_dry_leaf_count,
+        );
         counts.insert(
             "procedural_rocks".to_owned(),
             visibility_layers.p3().iter().count(),
