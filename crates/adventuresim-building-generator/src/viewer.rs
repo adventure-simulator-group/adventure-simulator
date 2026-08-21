@@ -9,8 +9,8 @@ use adventuresim_building_generator::{
     ProjectedDefenseTarget, RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace,
     RoofKind, RoofMaterial, RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle,
     TowerPortal, TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId,
-    WallStyle, WallWalk, audit_plan, audit_triangle_mesh, edit_document, generate,
-    generate_document,
+    WallStyle, WallWalk, analyse_player_build, audit_plan, audit_triangle_mesh, edit_document,
+    generate, generate_document,
 };
 use bevy::{
     app::AppExit,
@@ -2125,6 +2125,12 @@ struct EditorEnvironmentEntity;
 #[derive(Component)]
 struct PlayerBuildEntity;
 
+#[derive(Component)]
+struct PlayerBuildStorey(u16);
+
+#[derive(Component)]
+struct PlayerBuildRole(PlayerBuildPartKind);
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum SceneSetup {
     Full,
@@ -2635,6 +2641,24 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                         }
                     }
                 });
+                ui.horizontal_wrapped(|ui| {
+                    for (material, label) in [
+                        (PlayerBuildMaterial::Stone, "Stone"),
+                        (PlayerBuildMaterial::Brick, "Brick"),
+                        (PlayerBuildMaterial::TimberFrame, "Frame"),
+                        (PlayerBuildMaterial::Timber, "Timber"),
+                        (PlayerBuildMaterial::Tile, "Tile"),
+                        (PlayerBuildMaterial::Thatch, "Thatch"),
+                        (PlayerBuildMaterial::Earth, "Earth"),
+                    ] {
+                        if ui
+                            .selectable_label(runtime.player_material == material, label)
+                            .clicked()
+                        {
+                            runtime.player_material = material;
+                        }
+                    }
+                });
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut runtime.player_x_metres).prefix("x "));
                     ui.add(egui::DragValue::new(&mut runtime.player_z_metres).prefix("z "));
@@ -2676,6 +2700,16 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                         if ui.button("Rotate").clicked() { action = Some(EditorUiAction::RotatePlayerPart(id)); }
                         if ui.button("Remove").clicked() { action = Some(EditorUiAction::RemovePlayerPart(id)); }
                     });
+                }
+                let advice_document = PlayerBuildDocument {
+                    schema_version: adventuresim_building_generator::PLAYER_BUILD_DOCUMENT_SCHEMA_VERSION,
+                    parts: player_parts,
+                };
+                for advice in analyse_player_build(&advice_document) {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(210, 150, 70),
+                        format!("Advice: {advice:?}"),
+                    );
                 }
             }
 
@@ -3169,6 +3203,8 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
         world.spawn((
             Name::new(format!("player build {:?} {}", part.kind, part.id)),
             PlayerBuildEntity,
+            PlayerBuildStorey(part.storey),
+            PlayerBuildRole(part.kind),
             Mesh3d(mesh),
             MeshMaterial3d(material),
             Transform::from_xyz(
@@ -3178,6 +3214,30 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
             )
             .with_rotation(Quat::from_rotation_y(part.rotation_degrees.to_radians())),
         ));
+    }
+}
+
+fn update_player_build_visibility(
+    runtime: Res<EditorRuntime>,
+    mut parts: Query<
+        (&PlayerBuildStorey, &PlayerBuildRole, &mut Visibility),
+        With<PlayerBuildEntity>,
+    >,
+) {
+    if !runtime.is_changed() {
+        return;
+    }
+    for (storey, role, mut visibility) in &mut parts {
+        let above_active_storey = usize::from(storey.0) > runtime.active_storey;
+        let hidden_wall =
+            role.0 == PlayerBuildPartKind::Wall && runtime.wall_visibility == WallVisibility::Down;
+        let hidden_roof =
+            role.0 == PlayerBuildPartKind::Roof && runtime.roof_visibility == RoofVisibility::Hide;
+        *visibility = if above_active_storey || hidden_wall || hidden_roof {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
     }
 }
 
@@ -7031,6 +7091,7 @@ pub(crate) fn run(
                 update_editor_outlines,
                 frame_editor_selection,
                 editor_keyboard_shortcuts,
+                update_player_build_visibility,
             ),
         )
         .add_systems(PostUpdate, rebuild_editor_scene);
