@@ -4,11 +4,13 @@ use adventuresim_building_generator::{
     BattlementKind, BattlementRun, BuildingArchetype, BuildingDocument, BuildingEdit, BuildingPlan,
     CELL_SIZE_METRES, CrownPath, CurtainWallRun, Direction, DormerKind, FiringPosition,
     GableProfile, GateClosure, GateClosureKind, GateDefense, GatehouseLoadPath, GuardOpeningKind,
-    Opening, OpeningKind, ProjectedDefenseDeployment, ProjectedDefensePath, ProjectedDefenseTarget,
-    RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace, RoofKind, RoofMaterial,
-    RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle, TowerPortal,
-    TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId, WallStyle,
-    WallWalk, audit_plan, audit_triangle_mesh, edit_document, generate, generate_document,
+    Opening, OpeningKind, PlayerBuildDocument, PlayerBuildEdit, PlayerBuildMaterial,
+    PlayerBuildPart, PlayerBuildPartKind, ProjectedDefenseDeployment, ProjectedDefensePath,
+    ProjectedDefenseTarget, RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace,
+    RoofKind, RoofMaterial, RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle,
+    TowerPortal, TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId,
+    WallStyle, WallWalk, audit_plan, audit_triangle_mesh, edit_document, generate,
+    generate_document,
 };
 use bevy::{
     app::AppExit,
@@ -2120,6 +2122,9 @@ struct EditorBuildingEntity;
 #[derive(Component)]
 struct EditorEnvironmentEntity;
 
+#[derive(Component)]
+struct PlayerBuildEntity;
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum SceneSetup {
     Full,
@@ -2224,6 +2229,19 @@ struct EditorRuntime {
     document: BuildingDocument,
     plan: BuildingPlan,
     document_path: PathBuf,
+    player_build: Option<PlayerBuildDocument>,
+    player_build_path: Option<PathBuf>,
+    selected_player_part: Option<u64>,
+    player_x_metres: f32,
+    player_z_metres: f32,
+    player_elevation_metres: f32,
+    player_width_metres: f32,
+    player_depth_metres: f32,
+    player_height_metres: f32,
+    player_rotation_degrees: f32,
+    player_kind: PlayerBuildPartKind,
+    player_material: PlayerBuildMaterial,
+    pending_player_rebuild: bool,
     undo: Vec<BuildingDocument>,
     redo: Vec<BuildingDocument>,
     selected: Option<EditorTarget>,
@@ -2242,11 +2260,30 @@ struct EditorRuntime {
 }
 
 impl EditorRuntime {
-    fn new(document: BuildingDocument, plan: BuildingPlan, document_path: PathBuf) -> Self {
+    fn new(
+        document: BuildingDocument,
+        plan: BuildingPlan,
+        document_path: PathBuf,
+        player_build: Option<PlayerBuildDocument>,
+        player_build_path: Option<PathBuf>,
+    ) -> Self {
         Self {
             document,
             plan,
             document_path,
+            player_build,
+            player_build_path,
+            selected_player_part: None,
+            player_x_metres: 0.0,
+            player_z_metres: 0.0,
+            player_elevation_metres: 0.0,
+            player_width_metres: 3.0,
+            player_depth_metres: WALL_THICKNESS_METRES,
+            player_height_metres: 3.0,
+            player_rotation_degrees: 0.0,
+            player_kind: PlayerBuildPartKind::Wall,
+            player_material: PlayerBuildMaterial::Stone,
+            pending_player_rebuild: false,
             undo: Vec::new(),
             redo: Vec::new(),
             selected: None,
@@ -2282,6 +2319,11 @@ enum EditorUiAction {
     CycleRoofs,
     PreviousStorey,
     NextStorey,
+    PlacePlayerPart,
+    MovePlayerPart(u64),
+    ResizePlayerPart(u64),
+    RotatePlayerPart(u64),
+    RemovePlayerPart(u64),
 }
 
 fn editor_target_label(target: EditorTarget) -> String {
@@ -2570,6 +2612,73 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                 ui.label("Hover a feature, then click to inspect it.");
             }
 
+            if runtime.player_build.is_some() {
+                let player_parts = runtime
+                    .player_build
+                    .as_ref()
+                    .map(|document| document.parts.clone())
+                    .unwrap_or_default();
+                ui.separator();
+                ui.strong("Freeform player build");
+                ui.small("Parts commit when renderable; advice never blocks placement.");
+                ui.horizontal_wrapped(|ui| {
+                    for (kind, label) in [
+                        (PlayerBuildPartKind::Wall, "Wall"),
+                        (PlayerBuildPartKind::Room, "Room"),
+                        (PlayerBuildPartKind::Door, "Door"),
+                        (PlayerBuildPartKind::Roof, "Roof"),
+                        (PlayerBuildPartKind::Stair, "Stair"),
+                        (PlayerBuildPartKind::SiteObject, "Site"),
+                    ] {
+                        if ui.selectable_label(runtime.player_kind == kind, label).clicked() {
+                            runtime.player_kind = kind;
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut runtime.player_x_metres).prefix("x "));
+                    ui.add(egui::DragValue::new(&mut runtime.player_z_metres).prefix("z "));
+                    ui.add(egui::DragValue::new(&mut runtime.player_elevation_metres).prefix("y "));
+                });
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut runtime.player_width_metres).prefix("w ").range(0.05..=50.0));
+                    ui.add(egui::DragValue::new(&mut runtime.player_depth_metres).prefix("d ").range(0.05..=50.0));
+                    ui.add(egui::DragValue::new(&mut runtime.player_height_metres).prefix("h ").range(0.05..=50.0));
+                });
+                ui.add(egui::DragValue::new(&mut runtime.player_rotation_degrees).prefix("rotate ").suffix("°"));
+                if ui.button("Place part").clicked() {
+                    action = Some(EditorUiAction::PlacePlayerPart);
+                }
+                egui::ScrollArea::vertical().max_height(130.0).show(ui, |ui| {
+                    for part in &player_parts {
+                        if ui
+                            .selectable_label(
+                                runtime.selected_player_part == Some(part.id),
+                                format!("#{} {:?} L{}", part.id, part.kind, part.storey),
+                            )
+                            .clicked()
+                        {
+                            runtime.selected_player_part = Some(part.id);
+                            runtime.player_x_metres = part.x_metres;
+                            runtime.player_z_metres = part.z_metres;
+                            runtime.player_elevation_metres = part.elevation_metres;
+                            runtime.player_width_metres = part.width_metres;
+                            runtime.player_depth_metres = part.depth_metres;
+                            runtime.player_height_metres = part.height_metres;
+                            runtime.player_rotation_degrees = part.rotation_degrees;
+                        }
+                    }
+                });
+                if let Some(id) = runtime.selected_player_part {
+                    ui.horizontal(|ui| {
+                        if ui.button("Move").clicked() { action = Some(EditorUiAction::MovePlayerPart(id)); }
+                        if ui.button("Resize").clicked() { action = Some(EditorUiAction::ResizePlayerPart(id)); }
+                        if ui.button("Rotate").clicked() { action = Some(EditorUiAction::RotatePlayerPart(id)); }
+                        if ui.button("Remove").clicked() { action = Some(EditorUiAction::RemovePlayerPart(id)); }
+                    });
+                }
+            }
+
             ui.separator();
             ui.label("Wall finish (building scope)");
             let current_wall = runtime.document.program.wall_style;
@@ -2680,17 +2789,32 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
                 }
             }
         }
-        EditorUiAction::Save => match serde_json::to_vec_pretty(&runtime.document)
-            .map_err(|error| error.to_string())
-            .and_then(|bytes| {
-                fs::write(&runtime.document_path, bytes).map_err(|error| error.to_string())
+        EditorUiAction::Save => {
+            let saved_player_build = runtime
+                .player_build
+                .as_ref()
+                .zip(runtime.player_build_path.as_ref())
+                .map(|(document, path)| {
+                    serde_json::to_vec_pretty(document)
+                        .map_err(|error| error.to_string())
+                        .and_then(|bytes| fs::write(path, bytes).map_err(|error| error.to_string()))
+                        .map(|()| path.clone())
+                });
+            match saved_player_build.unwrap_or_else(|| {
+                serde_json::to_vec_pretty(&runtime.document)
+                    .map_err(|error| error.to_string())
+                    .and_then(|bytes| {
+                        fs::write(&runtime.document_path, bytes).map_err(|error| error.to_string())
+                    })
+                    .map(|()| runtime.document_path.clone())
             }) {
-            Ok(()) => {
-                runtime.status = format!("Saved {}", runtime.document_path.display());
-                runtime.error = None;
+                Ok(path) => {
+                    runtime.status = format!("Saved {}", path.display());
+                    runtime.error = None;
+                }
+                Err(error) => runtime.error = Some(error),
             }
-            Err(error) => runtime.error = Some(error),
-        },
+        }
         EditorUiAction::Load => match fs::read(&runtime.document_path)
             .map_err(|error| error.to_string())
             .and_then(|bytes| {
@@ -2736,6 +2860,76 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
                 (runtime.active_storey + 1).min(runtime.plan.storeys.len().saturating_sub(1));
             runtime.status = format!("Active storey: {}", runtime.active_storey);
         }
+        EditorUiAction::PlacePlayerPart => {
+            let id = runtime
+                .player_build
+                .as_ref()
+                .and_then(|document| document.parts.iter().map(|part| part.id).max())
+                .unwrap_or(0)
+                + 1;
+            apply_player_build_edit(
+                runtime,
+                PlayerBuildEdit::Place {
+                    part: PlayerBuildPart {
+                        id,
+                        kind: runtime.player_kind,
+                        material: runtime.player_material,
+                        storey: runtime.active_storey as u16,
+                        x_metres: runtime.player_x_metres,
+                        z_metres: runtime.player_z_metres,
+                        elevation_metres: runtime.player_elevation_metres,
+                        rotation_degrees: runtime.player_rotation_degrees,
+                        width_metres: runtime.player_width_metres,
+                        depth_metres: runtime.player_depth_metres,
+                        height_metres: runtime.player_height_metres,
+                    },
+                },
+            );
+        }
+        EditorUiAction::MovePlayerPart(id) => apply_player_build_edit(
+            runtime,
+            PlayerBuildEdit::Move {
+                id,
+                x_metres: runtime.player_x_metres,
+                z_metres: runtime.player_z_metres,
+            },
+        ),
+        EditorUiAction::ResizePlayerPart(id) => apply_player_build_edit(
+            runtime,
+            PlayerBuildEdit::Resize {
+                id,
+                width_metres: runtime.player_width_metres,
+                depth_metres: runtime.player_depth_metres,
+                height_metres: runtime.player_height_metres,
+            },
+        ),
+        EditorUiAction::RotatePlayerPart(id) => apply_player_build_edit(
+            runtime,
+            PlayerBuildEdit::Rotate {
+                id,
+                rotation_degrees: runtime.player_rotation_degrees,
+            },
+        ),
+        EditorUiAction::RemovePlayerPart(id) => {
+            apply_player_build_edit(runtime, PlayerBuildEdit::Remove { id })
+        }
+    }
+}
+
+fn apply_player_build_edit(runtime: &mut EditorRuntime, edit: PlayerBuildEdit) {
+    let Some(document) = &runtime.player_build else {
+        runtime.error =
+            Some("launch with --player-build-document to edit a freeform build".to_owned());
+        return;
+    };
+    match document.apply(edit) {
+        Ok(next) => {
+            runtime.player_build = Some(next);
+            runtime.pending_player_rebuild = true;
+            runtime.error = None;
+            runtime.status = "Freeform edit applied".to_owned();
+        }
+        Err(error) => runtime.error = Some(error),
     }
 }
 
@@ -2936,6 +3130,57 @@ fn configure_editor_scene(world: &mut World, plan: &BuildingPlan, initialize_cam
     }
 }
 
+fn player_build_colour(material: PlayerBuildMaterial) -> Color {
+    match material {
+        PlayerBuildMaterial::Stone => Color::srgb(0.42, 0.40, 0.36),
+        PlayerBuildMaterial::Brick => Color::srgb(0.48, 0.23, 0.16),
+        PlayerBuildMaterial::Plaster => Color::srgb(0.72, 0.66, 0.53),
+        PlayerBuildMaterial::TimberFrame | PlayerBuildMaterial::Timber => {
+            Color::srgb(0.28, 0.16, 0.08)
+        }
+        PlayerBuildMaterial::Tile => Color::srgb(0.36, 0.12, 0.08),
+        PlayerBuildMaterial::Thatch => Color::srgb(0.55, 0.43, 0.18),
+        PlayerBuildMaterial::Earth => Color::srgb(0.30, 0.22, 0.12),
+    }
+}
+
+/// Player-build parts are rendered directly from their own document.  They do
+/// not enter the generated-plan mesh or audit pipeline: the programme remains
+/// a separate optional source of architecture and analysis.
+fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
+    for part in &document.parts {
+        let thickness = if matches!(part.kind, PlayerBuildPartKind::Wall) {
+            part.depth_metres.min(WALL_THICKNESS_METRES).max(0.05)
+        } else {
+            part.depth_metres
+        };
+        let mesh = world.resource_mut::<Assets<Mesh>>().add(Cuboid::new(
+            part.width_metres,
+            part.height_metres,
+            thickness,
+        ));
+        let material = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial {
+                base_color: player_build_colour(part.material),
+                perceptual_roughness: 0.82,
+                ..default()
+            });
+        world.spawn((
+            Name::new(format!("player build {:?} {}", part.kind, part.id)),
+            PlayerBuildEntity,
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::from_xyz(
+                part.x_metres,
+                part.elevation_metres + part.height_metres * 0.5,
+                part.z_metres,
+            )
+            .with_rotation(Quat::from_rotation_y(part.rotation_degrees.to_radians())),
+        ));
+    }
+}
+
 fn frame_editor_selection(
     keys: Res<ButtonInput<KeyCode>>,
     runtime: Res<EditorRuntime>,
@@ -2985,27 +3230,43 @@ fn rebuild_editor_scene(world: &mut World) {
     let pending = world
         .get_resource::<EditorRuntime>()
         .is_some_and(|runtime| runtime.pending_rebuild);
-    if !pending {
-        return;
+    if pending {
+        let old_entities = {
+            let mut query = world.query_filtered::<Entity, With<EditorBuildingEntity>>();
+            query.iter(world).collect::<Vec<_>>()
+        };
+        for entity in old_entities {
+            let _ = world.despawn(entity);
+        }
+        let plan = world.resource::<EditorRuntime>().plan.clone();
+        setup(
+            world,
+            &plan,
+            ViewerView::Exterior,
+            ProjectedProofKind::Machicolation,
+            None,
+            SceneSetup::EditorBuilding,
+        );
+        configure_editor_scene(world, &plan, false);
+        world.resource_mut::<EditorRuntime>().pending_rebuild = false;
     }
-    let old_entities = {
-        let mut query = world.query_filtered::<Entity, With<EditorBuildingEntity>>();
-        query.iter(world).collect::<Vec<_>>()
-    };
-    for entity in old_entities {
-        let _ = world.despawn(entity);
+
+    let player_rebuild = world
+        .get_resource::<EditorRuntime>()
+        .is_some_and(|runtime| runtime.pending_player_rebuild);
+    if player_rebuild {
+        let old_entities = {
+            let mut query = world.query_filtered::<Entity, With<PlayerBuildEntity>>();
+            query.iter(world).collect::<Vec<_>>()
+        };
+        for entity in old_entities {
+            let _ = world.despawn(entity);
+        }
+        if let Some(document) = world.resource::<EditorRuntime>().player_build.clone() {
+            setup_player_build_scene(world, &document);
+        }
+        world.resource_mut::<EditorRuntime>().pending_player_rebuild = false;
     }
-    let plan = world.resource::<EditorRuntime>().plan.clone();
-    setup(
-        world,
-        &plan,
-        ViewerView::Exterior,
-        ProjectedProofKind::Machicolation,
-        None,
-        SceneSetup::EditorBuilding,
-    );
-    configure_editor_scene(world, &plan, false);
-    world.resource_mut::<EditorRuntime>().pending_rebuild = false;
 }
 
 fn stable_evidence_hash(bytes: &[u8]) -> String {
@@ -5438,6 +5699,7 @@ pub(crate) fn run(
     roof_proof: Option<RoofProofView>,
     editor: bool,
     document_path: Option<PathBuf>,
+    player_build_document_path: Option<PathBuf>,
 ) {
     let seed = if view == ViewerView::ArtilleryBridgeDenied {
         702
@@ -5454,6 +5716,20 @@ pub(crate) fn run(
     };
     let editor_document_path =
         document_path.unwrap_or_else(|| PathBuf::from("building-document.json"));
+    let player_build_document = player_build_document_path.as_ref().map(|path| {
+        let bytes = fs::read(&path).unwrap_or_else(|error| {
+            panic!(
+                "failed to read player-build document {}: {error}",
+                path.display()
+            )
+        });
+        serde_json::from_slice::<PlayerBuildDocument>(&bytes).unwrap_or_else(|error| {
+            panic!(
+                "failed to decode player-build document {}: {error}",
+                path.display()
+            )
+        })
+    });
     let mut document = if editor && editor_document_path.exists() {
         let bytes = fs::read(&editor_document_path).unwrap_or_else(|error| {
             panic!(
@@ -6742,6 +7018,8 @@ pub(crate) fn run(
             document,
             plan.clone(),
             editor_document_path,
+            player_build_document.clone(),
+            player_build_document_path,
         ))
         .add_observer(editor_pointer_over)
         .add_observer(editor_pointer_out)
@@ -6773,6 +7051,9 @@ pub(crate) fn run(
         );
         if editor {
             configure_editor_scene(world, &startup_plan, true);
+        }
+        if let Some(document) = &player_build_document {
+            setup_player_build_scene(world, document);
         }
     })
     .add_systems(Last, capture_when_ready);

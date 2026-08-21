@@ -276,6 +276,15 @@ struct Args {
     #[arg(long, value_name = "PATH", requires = "editor")]
     document: Option<PathBuf>,
 
+    /// Freeform player-build document rendered over the editor fixture.
+    #[arg(
+        long,
+        value_name = "PATH",
+        requires = "editor",
+        conflicts_with = "document"
+    )]
+    player_build_document: Option<PathBuf>,
+
     /// Frames allowed for render pipelines to settle before capture.
     #[arg(long, default_value_t = 240)]
     settle_frames: u32,
@@ -365,6 +374,7 @@ fn main() {
         args.roof_proof,
         args.editor,
         args.document,
+        args.player_build_document,
     );
 }
 
