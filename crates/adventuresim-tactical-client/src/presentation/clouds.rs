@@ -8,6 +8,12 @@ const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
 /// tactical horizon within the renderer's bounded trace distance.
 const CLOUD_CURVATURE_RADIUS_METRES: f32 = 180_000.0;
 const CLOUD_AERIAL_EXTINCTION_PER_METRE: f32 = 0.000_025;
+/// A small, filterable volume is enough because the cloud shader combines
+/// separate broad and detail coordinates. Keeping this below WebGPU's lowest
+/// practical 3D texture limit also makes the resource safe for browsers.
+const CLOUD_NOISE_VOLUME_EDGE: u32 = 32;
+const CLOUD_NOISE_VOLUME_CHANNELS: usize = 4;
+const CLOUD_NOISE_VOLUME_SEED: u64 = 0x4f7a_95c3_1bd2_e608;
 
 #[derive(Component)]
 pub(crate) struct TacticalCloudLayer {
@@ -64,6 +70,10 @@ pub(in crate::presentation) struct TacticalCloudMaterial {
     /// Fixed scene anchor X/Z, curvature radius, aerial extinction.
     #[uniform(5)]
     geometry: Vec4,
+    /// Shared deterministic broad/detail/warp noise volume.
+    #[texture(6, dimension = "3d")]
+    #[sampler(7)]
+    noise_volume: Handle<Image>,
 }
 
 impl Material for TacticalCloudMaterial {
@@ -207,9 +217,13 @@ impl CloudLayerParameters {
 pub(in crate::presentation) fn setup_tactical_clouds(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
 ) {
     let mesh = meshes.add(cloud_hemisphere_mesh());
+    // All decks share this fixed volume. Per-deck deterministic seeds remain
+    // offsets in world-space sampling coordinates, not texture allocations.
+    let noise_volume = images.add(cloud_noise_volume_image());
     for slot in 0..3 {
         commands.spawn((
             Name::new(format!("Procedural tactical cloud deck {slot}")),
@@ -228,10 +242,65 @@ pub(in crate::presentation) fn setup_tactical_clouds(
                 motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
                 spectral: Vec4::ONE,
                 geometry: cloud_shell_geometry(),
+                noise_volume: noise_volume.clone(),
             })),
             Transform::default(),
         ));
     }
+}
+
+/// Generates one fixed RGBA volume for every cloud layer.
+///
+/// R is broad coverage, G is fine erosion, and B/A are independent X/Z
+/// domain-warp offsets.  The shader samples this volume twice for detailed
+/// density (rather than evaluating ten eight-corner value-noise calls) and
+/// once for coarse occupancy (rather than two such calls).
+fn cloud_noise_volume_image() -> Image {
+    let edge = CLOUD_NOISE_VOLUME_EDGE as usize;
+    let mut pixels = Vec::with_capacity(edge * edge * edge * CLOUD_NOISE_VOLUME_CHANNELS);
+    for z in 0..CLOUD_NOISE_VOLUME_EDGE {
+        for y in 0..CLOUD_NOISE_VOLUME_EDGE {
+            for x in 0..CLOUD_NOISE_VOLUME_EDGE {
+                let cell = u64::from(x) | (u64::from(y) << 8) | (u64::from(z) << 16);
+                for channel in 0..CLOUD_NOISE_VOLUME_CHANNELS {
+                    let value = cloud_noise_hash(
+                        CLOUD_NOISE_VOLUME_SEED
+                            ^ cell.rotate_left((channel as u32 + 1) * 11)
+                            ^ (channel as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+                    );
+                    pixels.push((value >> 56) as u8);
+                }
+            }
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width: CLOUD_NOISE_VOLUME_EDGE,
+            height: CLOUD_NOISE_VOLUME_EDGE,
+            depth_or_array_layers: CLOUD_NOISE_VOLUME_EDGE,
+        },
+        TextureDimension::D3,
+        pixels,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    use bevy::image::{ImageAddressMode, ImageSamplerDescriptor};
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::Repeat,
+        address_mode_w: ImageAddressMode::Repeat,
+        ..ImageSamplerDescriptor::linear()
+    });
+    image
+}
+
+/// Fixed integer mixing makes the generated volume bit-for-bit repeatable on
+/// every native and browser target; no platform random source is involved.
+fn cloud_noise_hash(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 fn cloud_hemisphere_mesh() -> Mesh {
@@ -605,6 +674,39 @@ mod tests {
     }
 
     #[test]
+    fn cloud_noise_volume_is_small_repeatable_and_filterable() {
+        use bevy::{image::ImageAddressMode, render::render_resource::FilterMode};
+
+        let first = cloud_noise_volume_image();
+        let second = cloud_noise_volume_image();
+        let data = first.data.as_ref().expect("generated noise has pixels");
+        let extent = first.texture_descriptor.size;
+        assert_eq!(extent.width, 32);
+        assert_eq!(extent.height, 32);
+        assert_eq!(extent.depth_or_array_layers, 32);
+        assert_eq!(first.texture_descriptor.dimension, TextureDimension::D3);
+        assert_eq!(first.texture_descriptor.format, TextureFormat::Rgba8Unorm);
+        assert_eq!(data.len(), 32 * 32 * 32 * 4);
+        assert_eq!(first.data, second.data);
+        assert_eq!(cloud_noise_checksum(data), 0x2400_0361_e7a5_5835);
+        let ImageSampler::Descriptor(sampler) = &first.sampler else {
+            panic!("cloud noise must use an explicit repeat sampler");
+        };
+        assert_eq!(sampler.address_mode_u, ImageAddressMode::Repeat);
+        assert_eq!(sampler.address_mode_v, ImageAddressMode::Repeat);
+        assert_eq!(sampler.address_mode_w, ImageAddressMode::Repeat);
+        assert_eq!(sampler.mag_filter, FilterMode::Linear.into());
+        assert_eq!(sampler.min_filter, FilterMode::Linear.into());
+        assert_eq!(sampler.mipmap_filter, FilterMode::Linear.into());
+    }
+
+    fn cloud_noise_checksum(data: &[u8]) -> u64 {
+        data.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+    }
+
+    #[test]
     fn cloud_shell_is_locally_flat_but_bends_into_the_horizon() {
         let base_metres = 1_250.0;
         let nearby = cloud_shell_altitude_at_distance(base_metres, 1_000.0);
@@ -630,13 +732,6 @@ mod tests {
     #[test]
     fn cloud_shader_uses_coarse_occupancy_before_detailed_integration() {
         let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
-        let coarse_fbm = shader
-            .split_once("fn fbm_coarse")
-            .expect("cloud shader must define a coarse noise path")
-            .1
-            .split_once("fn cloud_profile")
-            .expect("coarse noise path must precede cloud profiles")
-            .0;
         let coarse_density = shader
             .split_once("fn sample_density_coarse")
             .expect("cloud shader must define coarse occupancy sampling")
@@ -649,7 +744,23 @@ mod tests {
             .expect("cloud shader must have a fragment entry point")
             .1;
 
-        assert_eq!(coarse_fbm.matches("value_noise_3d").count(), 2);
+        assert!(shader.contains("var cloud_noise_volume: texture_3d<f32>;"));
+        assert!(shader.contains("var cloud_noise_sampler: sampler;"));
+        assert!(shader.contains("fn sample_cloud_noise"));
+        assert!(!shader.contains("fn value_noise_3d"));
+        assert!(!shader.contains("fn fbm("));
+        assert!(!shader.contains("fn fbm_coarse"));
+        let detailed_density = shader
+            .split_once("fn sample_density(")
+            .expect("cloud shader must define detailed density")
+            .1
+            .split_once("fn sample_density_coarse")
+            .expect("detailed density must precede coarse sampling")
+            .0;
+        assert_eq!(detailed_density.matches("sample_cloud_noise").count(), 2);
+        assert_eq!(coarse_density.matches("sample_cloud_noise").count(), 1);
+        assert!(!detailed_density.contains("hash13("));
+        assert!(!coarse_density.contains("hash13("));
         assert!(!coarse_density.contains("let warp"));
         assert!(!coarse_density.contains("let detail"));
         assert!(coarse_density.contains("threshold - 0.22"));

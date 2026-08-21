@@ -20,44 +20,29 @@ var<uniform> cloud_spectral: vec4<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(5)
 var<uniform> cloud_geometry: vec4<f32>;
 
+/// RGBA channels are broad coverage, fine erosion, and X/Z warp. The volume
+/// uses repeat + linear filtering, so every sampled location replaces an
+/// eight-corner procedural value-noise interpolation.
+@group(#{MATERIAL_BIND_GROUP}) @binding(6)
+var cloud_noise_volume: texture_3d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(7)
+var cloud_noise_sampler: sampler;
+
 fn hash13(position: vec3<f32>) -> f32 {
     var p = fract(position * 0.1031);
     p += dot(p, p.yzx + vec3<f32>(33.33));
     return fract((p.x + p.y) * p.z);
 }
 
-fn value_noise_3d(position: vec3<f32>) -> f32 {
-    let cell = floor(position);
-    let local = fract(position);
-    let blend = local * local * (vec3<f32>(3.0) - 2.0 * local);
-    let n000 = hash13(cell + vec3<f32>(0.0, 0.0, 0.0));
-    let n100 = hash13(cell + vec3<f32>(1.0, 0.0, 0.0));
-    let n010 = hash13(cell + vec3<f32>(0.0, 1.0, 0.0));
-    let n110 = hash13(cell + vec3<f32>(1.0, 1.0, 0.0));
-    let n001 = hash13(cell + vec3<f32>(0.0, 0.0, 1.0));
-    let n101 = hash13(cell + vec3<f32>(1.0, 0.0, 1.0));
-    let n011 = hash13(cell + vec3<f32>(0.0, 1.0, 1.0));
-    let n111 = hash13(cell + vec3<f32>(1.0, 1.0, 1.0));
-    let z0 = mix(mix(n000, n100, blend.x), mix(n010, n110, blend.x), blend.y);
-    let z1 = mix(mix(n001, n101, blend.x), mix(n011, n111, blend.x), blend.y);
-    return mix(z0, z1, blend.z);
-}
-
-fn fbm(position: vec3<f32>) -> f32 {
-    let first = value_noise_3d(position);
-    let second = value_noise_3d(position * 2.03 + vec3<f32>(17.1, 3.7, 11.9));
-    let third = value_noise_3d(position * 4.01 + vec3<f32>(7.3, 19.1, 2.9));
-    let fourth = value_noise_3d(position * 8.07 + vec3<f32>(13.7, 5.3, 23.9));
-    return first * 0.52 + second * 0.27 + third * 0.14 + fourth * 0.07;
-}
-
-/// The coarse ray march only needs to decide whether a large interval could
-/// contain cloud. Two broad octaves preserve the major coverage cells while
-/// avoiding the detailed density path's warp and secondary erosion noise.
-fn fbm_coarse(position: vec3<f32>) -> f32 {
-    let first = value_noise_3d(position);
-    let second = value_noise_3d(position * 2.03 + vec3<f32>(17.1, 3.7, 11.9));
-    return first * 0.66 + second * 0.34;
+/// One period contains 32 independently generated texels on every axis. The
+/// profile's world-space seed shifts coordinates, so decks remain stable while
+/// preserving deterministic per-scene variation and wind animation.
+fn sample_cloud_noise(coordinate: vec3<f32>) -> vec4<f32> {
+    return textureSample(
+        cloud_noise_volume,
+        cloud_noise_sampler,
+        fract(coordinate * (1.0 / 32.0)),
+    );
 }
 
 fn cloud_profile(height: f32, family: f32, noise_value: f32) -> f32 {
@@ -156,14 +141,13 @@ fn sample_density(world_position: vec3<f32>) -> f32 {
         coordinate.x *= 0.58;
         coordinate.z *= 0.58;
     }
-    let warp = vec3<f32>(
-        value_noise_3d(coordinate * 0.37 + vec3<f32>(2.1, 7.3, 11.7)) - 0.5,
-        0.0,
-        value_noise_3d(coordinate * 0.37 + vec3<f32>(17.9, 3.1, 5.7)) - 0.5,
-    );
+    // Two filtered samples replace ten eight-corner value-noise evaluations:
+    // one supplies broad coverage and X/Z warp, the other fine erosion.
+    let broad_and_warp = sample_cloud_noise(coordinate * vec3<f32>(0.82, 0.62, 0.82));
+    let warp = vec3<f32>(broad_and_warp.b - 0.5, 0.0, broad_and_warp.a - 0.5);
     coordinate += warp * 0.85;
-    let broad = fbm(coordinate * vec3<f32>(0.82, 0.62, 0.82));
-    let detail = fbm(coordinate * 3.35 + vec3<f32>(9.7, 1.3, 4.1));
+    let broad = broad_and_warp.r;
+    let detail = sample_cloud_noise(coordinate * 3.35 + vec3<f32>(9.7, 1.3, 4.1)).g;
     let profile = cloud_profile(height, cloud_shape.z, broad);
     var threshold = 0.78 - cloud_shape.x * 0.34;
     if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
@@ -222,7 +206,9 @@ fn sample_density_coarse(world_position: vec3<f32>) -> f32 {
         coordinate.z *= 0.58;
     }
 
-    let broad = fbm_coarse(coordinate * vec3<f32>(0.82, 0.62, 0.82));
+    // One filtered broad-channel sample replaces the prior two-octave,
+    // sixteen-corner hash/value-noise occupancy estimate.
+    let broad = sample_cloud_noise(coordinate * vec3<f32>(0.82, 0.62, 0.82)).r;
     let profile = cloud_profile(height, cloud_shape.z, broad);
     var threshold = 0.78 - cloud_shape.x * 0.34;
     if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
@@ -418,11 +404,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 * mix(0.52, 1.0, sqrt(sun_visibility))
                 * (1.0 - density * (0.12 + storminess * 0.16));
             let sheet_cloud = kind == 4u || kind == 6u || kind == 7u || kind == 9u;
-            let underside_variation = value_noise_3d(vec3<f32>(
+            let underside_variation = sample_cloud_noise(vec3<f32>(
                 position.x * 0.00034 + cloud_shape.w * 0.017,
                 cloud_shape.w * 0.009,
                 position.z * 0.00034 - cloud_shape.w * 0.013,
-            ));
+            )).a;
             let ambient_variation = select(1.0, mix(0.46, 1.04, underside_variation), sheet_cloud);
             let phase_light = 0.14 + 0.12 * forward_phase;
             let storm_direct = select(1.0, 0.08 + sun_visibility * 0.22, storminess > 0.5);
