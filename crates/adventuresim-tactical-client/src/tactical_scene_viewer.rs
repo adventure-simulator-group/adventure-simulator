@@ -17,7 +17,6 @@ use bevy::{
     core_pipeline::tonemapping::Tonemapping,
     ecs::system::SystemParam,
     light::{AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster},
-    post_process::bloom::Bloom,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::{ExitCondition, PresentMode},
@@ -855,9 +854,6 @@ fn capture_presentation_plugin() -> TacticalPresentationPlugin {
     if std::env::var_os("TACTICAL_BENCH_DISABLE_SHADOWS").is_some() {
         plugin.shadows_enabled = false;
     }
-    if std::env::var_os("TACTICAL_BENCH_DISABLE_POST_PROCESSING").is_some() {
-        plugin.bloom_enabled = false;
-    }
     plugin
 }
 
@@ -868,7 +864,6 @@ fn feature_state(settings: &TacticalGraphicsSettings) -> PresentationFeatureStat
         celestial: settings.celestial_enabled,
         environment_light: settings.environment_light_enabled,
         environment_map_size: settings.environment_map_size,
-        bloom: settings.bloom_enabled,
         max_vista_lods: settings.max_vista_lods,
     }
 }
@@ -881,7 +876,6 @@ fn requested_feature_state() -> PresentationFeatureState {
         celestial: requested.celestial_enabled,
         environment_light: requested.environment_light_enabled,
         environment_map_size: requested.environment_map_size,
-        bloom: requested.bloom_enabled,
         max_vista_lods: requested.max_vista_lods,
     }
 }
@@ -890,7 +884,6 @@ fn observed_presentation_features(
     settings: &TacticalGraphicsSettings,
     environment_map: Option<&AtmosphereEnvironmentMapLight>,
     filtered_environment_map: Option<&EnvironmentMapLight>,
-    bloom: Option<&Bloom>,
     exposure: &Exposure,
     tonemapping: &Tonemapping,
     ambient: &GlobalAmbientLight,
@@ -906,7 +899,6 @@ fn observed_presentation_features(
         camera_environment_map_size: environment_map_size,
         camera_environment_map_allocated: filtered_environment_map.is_some(),
         camera_environment_map_intensity: filtered_environment_map.map(|light| light.intensity),
-        camera_bloom: bloom.is_some(),
         camera_exposure_ev100: exposure.ev100,
         camera_tonemapping: format!("{tonemapping:?}"),
         ambient_color: ambient.color.to_linear().to_f32_array(),
@@ -941,7 +933,6 @@ fn observed_presentation_features(
         && observed.camera_environment_map_allocated == requested.environment_light
         && observed.camera_environment_map_intensity
             == requested.environment_light.then_some(1.0)
-        && observed.camera_bloom == requested.bloom
         // Production exposure is driven by the scene's solar/lunar state and
         // may be between authored targets while the ECS observer settles.
         && observed.camera_exposure_ev100.is_finite()
@@ -1313,7 +1304,6 @@ mod capture_lighting_tests {
         assert!(requested.celestial);
         assert!(requested.environment_light);
         assert_eq!(requested.environment_map_size, 64);
-        assert!(requested.bloom);
         assert_eq!(requested.max_vista_lods, 3);
     }
 
@@ -2863,7 +2853,6 @@ fn capture_views(
             &mut Projection,
             Option<&AtmosphereEnvironmentMapLight>,
             Option<&EnvironmentMapLight>,
-            Option<&Bloom>,
             &Exposure,
             &Tonemapping,
         ),
@@ -3414,7 +3403,6 @@ fn capture_views(
         camera.5,
         camera.6,
         camera.7,
-        camera.8,
         &lighting.ambient,
         &lighting.ambient_handoff,
         &celestial,

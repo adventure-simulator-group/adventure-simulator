@@ -469,7 +469,6 @@ mod ambient_handoff_tests {
                 celestial_enabled: true,
                 environment_light_enabled: true,
                 environment_map_size: 64,
-                bloom_enabled: true,
                 max_vista_lods: 3,
             })
             .insert_resource(GlobalAmbientLight {

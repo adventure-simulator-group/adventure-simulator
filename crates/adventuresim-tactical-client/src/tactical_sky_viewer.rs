@@ -173,7 +173,6 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
         celestial_enabled: true,
         environment_light_enabled: true,
         environment_map_size: 64,
-        bloom_enabled: true,
         max_vista_lods: 0,
     })
     .insert_resource(TacticalCloudCaptureOverride(Some(cloud_capture_profile(

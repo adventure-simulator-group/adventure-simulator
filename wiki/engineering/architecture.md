@@ -357,11 +357,12 @@ scatter, weather, colliders, and recipes continue to read their own entity-local
 authoritative scene components.
 
 The production tactical presentation uses one 1024-pixel directional-shadow
-cascade out to 28 m for the active Sun or Moon, bloom, four-sample MSAA,
-atmosphere IBL, material occlusion, baked tree-card depth, terrain normals, and
-direct celestial lighting for the scene's primary depth cues. Controlled
-benchmarks may explicitly disable shadows or post-processing to isolate their
-cost. Effects unsupported by WebGPU, including Bevy 0.19 SSAO, are excluded
+cascade out to 28 m for the active Sun or Moon, four-sample MSAA, atmosphere
+IBL, material occlusion, baked tree-card depth, terrain normals, and direct
+celestial lighting for the scene's primary depth cues. Bloom is not part of the
+production tactical presentation. Controlled benchmarks may explicitly disable
+shadows to isolate their cost. Effects unsupported by WebGPU, including Bevy
+0.19 SSAO, are excluded
 rather than retained as native-only paths. Review viewers use this same shadow
 configuration unless a benchmark explicitly disables shadows.
 
@@ -581,7 +582,7 @@ scattering. The no-atmosphere fallback retains an explicit zero-below-horizon
 direct-light curve because it has no planetary occlusion. Exposure transitions
 continuously from nautical twilight to the moon-conditioned night target between
 -12 and -18 degrees solar altitude; the physical 0.533-degree solar disc, ACES
-tonemapping, natural bloom, and bounded lookup-table atmosphere stay unchanged.
+tonemapping, and bounded lookup-table atmosphere stay unchanged.
 The filtered 64-pixel atmosphere environment map is the full preset's canonical
 indirect PBR source. `GlobalAmbientLight` provides the complete altitude-aware
 fallback until that map is allocated and a bounded four-frame handoff grace

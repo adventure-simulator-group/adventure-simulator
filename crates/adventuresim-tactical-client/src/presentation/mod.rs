@@ -96,7 +96,6 @@ use bevy::{
     },
     mesh::{Indices, MeshVertexAttribute, PrimitiveTopology},
     pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension},
-    post_process::bloom::Bloom,
     prelude::*,
     render::render_resource::{
         AsBindGroup, Extent3d, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -111,7 +110,6 @@ pub struct TacticalPresentationPlugin {
     pub celestial_enabled: bool,
     pub environment_light_enabled: bool,
     pub environment_map_size: u32,
-    pub bloom_enabled: bool,
     pub max_vista_lods: usize,
 }
 
@@ -123,7 +121,6 @@ impl Default for TacticalPresentationPlugin {
             celestial_enabled: true,
             environment_light_enabled: true,
             environment_map_size: 64,
-            bloom_enabled: true,
             max_vista_lods: 3,
         }
     }
@@ -158,7 +155,6 @@ impl Plugin for TacticalPresentationPlugin {
             celestial_enabled: self.celestial_enabled,
             environment_light_enabled: self.environment_light_enabled,
             environment_map_size: self.environment_map_size,
-            bloom_enabled: self.bloom_enabled,
             max_vista_lods: self.max_vista_lods,
         })
         .init_resource::<TacticalCameraSetup>()
@@ -248,6 +244,5 @@ pub(crate) struct TacticalGraphicsSettings {
     pub(crate) celestial_enabled: bool,
     pub(crate) environment_light_enabled: bool,
     pub(crate) environment_map_size: u32,
-    pub(crate) bloom_enabled: bool,
     pub(crate) max_vista_lods: usize,
 }

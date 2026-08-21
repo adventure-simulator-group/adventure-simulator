@@ -112,7 +112,7 @@ Use `just tactical-sky-capture` with `sun`, `sun-detail`, `twilight`, `moon`,
 `cloud-overcast`, or `cloud-storm`. Cloud captures use a diagnostics-only
 profile override and a longer warm-up so shader and atmosphere pipelines have
 settled before validation. `sun-detail` remains a clearly labeled 20-degree-FOV
-diagnostic of the unchanged production `SunDisk::EARTH` and natural bloom at
+diagnostic of the unchanged production `SunDisk::EARTH` without bloom at
 low solar altitude;
 it must not be interpreted as gameplay-scale disc size.
 These deterministic native views run the production presentation plugin. The
@@ -122,6 +122,6 @@ Together the views cover horizon colour, exposure, lunar phase, and
 resolution-independent star rendering. Native scene captures disable the
 atmosphere environment map only when the selected graphics preset requests
 that fallback. The production-parity environment review records the observed
-environment map, exposure, and post-processing state, and its twilight gate
+environment map, exposure, and tonemapping state, and its twilight gate
 requires a non-black, chromatically warm sky gradient rather than accepting a
 dark sky over a brighter verification plane.

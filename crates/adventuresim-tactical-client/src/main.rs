@@ -111,7 +111,6 @@ enum GraphicsPreset {
     #[default]
     Default,
     NoShadows,
-    NoBloom,
     NoAtmosphere,
     NoEnvironmentLight,
     Minimal,
@@ -128,7 +127,6 @@ impl GraphicsPreset {
                 Self::NoAtmosphere | Self::NoEnvironmentLight | Self::Minimal
             ),
             environment_map_size: 64,
-            bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
             max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
         }
     }
@@ -495,7 +493,6 @@ mod graphics_preset_tests {
         assert!(no_atmosphere.shadows_enabled);
         assert!(!no_atmosphere.atmosphere_enabled);
         assert!(!no_atmosphere.environment_light_enabled);
-        assert!(no_atmosphere.bloom_enabled);
     }
 
     #[test]
@@ -504,7 +501,6 @@ mod graphics_preset_tests {
         assert!(!minimal.shadows_enabled);
         assert!(!minimal.atmosphere_enabled);
         assert!(!minimal.environment_light_enabled);
-        assert!(!minimal.bloom_enabled);
     }
 
     #[test]
