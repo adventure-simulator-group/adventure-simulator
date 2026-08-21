@@ -79,6 +79,12 @@ pub(crate) struct TreeAssetResidencyDiagnostics {
     pub(crate) trunk_vertices: usize,
     pub(crate) detailed_branch_vertices: usize,
     pub(crate) cambered_leaf_vertices: usize,
+    /// Source detailed leaves considered when building streamed flat-card
+    /// clusters. This makes deterministic card thinning auditable.
+    pub(crate) leaf_card_source_leaves: usize,
+    /// Flat cards retained from `leaf_card_source_leaves` after deterministic
+    /// per-shoot thinning.
+    pub(crate) leaf_card_retained_leaves: usize,
     pub(crate) leaf_card_vertices: usize,
     pub(crate) bud_vertices: usize,
     pub(crate) aggregate_branch_vertices: usize,
@@ -593,6 +599,12 @@ fn ensure_detailed_tree_assets_resident(
             && cluster.leaf_card_mesh.is_none()
         {
             let mesh = procedural_oak_leaf_card_group_mesh(&cached.leaves, cluster.primary_group);
+            diagnostics.leaf_card_source_leaves += cached
+                .leaves
+                .iter()
+                .filter(|leaf| leaf.primary_group == cluster.primary_group)
+                .count();
+            diagnostics.leaf_card_retained_leaves += mesh.count_vertices() / 4;
             diagnostics.leaf_card_vertices += mesh.count_vertices();
             cluster.leaf_card_mesh = Some(meshes.add(mesh));
         }

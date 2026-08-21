@@ -2769,13 +2769,15 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
     if let Some(natural) = report.results.first() {
         let assets = &natural.tree_asset_residency;
         markdown.push_str(&format!(
-            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices (LOD1/2: {} / {} vertices, {} / {} triangles); {} LOD1 impostor cards / {} vertices; {} impostor vertices; {:.2} / {:.2} / {:.2} / {:.2} MiB for LOD1/2/3/4 impostor pixels ({:.2} MiB total); {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
+            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} / {} detailed flat-card leaves retained/source; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices (LOD1/2: {} / {} vertices, {} / {} triangles); {} LOD1 impostor cards / {} vertices; {} impostor vertices; {:.2} / {:.2} / {:.2} / {:.2} MiB for LOD1/2/3/4 impostor pixels ({:.2} MiB total); {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
             assets.variants,
             assets.source_branches,
             assets.source_leaves,
             assets.trunk_vertices,
             assets.detailed_branch_vertices,
             assets.cambered_leaf_vertices,
+            assets.leaf_card_retained_leaves,
+            assets.leaf_card_source_leaves,
             assets.leaf_card_vertices,
             assets.bud_vertices,
             assets.aggregate_branch_vertices,

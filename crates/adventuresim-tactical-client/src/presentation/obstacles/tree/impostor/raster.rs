@@ -707,6 +707,7 @@ mod tests {
                     primary_group: 0,
                     secondary_group: 0,
                     shoot_id,
+                    leaf_ordinal: ordinal as u8,
                     shade: 1.0,
                     torsion: 0.0,
                 })
