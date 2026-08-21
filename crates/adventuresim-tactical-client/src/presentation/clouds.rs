@@ -790,20 +790,58 @@ mod tests {
             .1;
 
         assert!(shadow.contains("optical_depth += sample_density(sample_position)"));
-        assert!(shadow.contains("step < 2u"));
-        assert!(shader.contains("const CLOUD_COARSE_INTERVALS = 24.0;"));
+        assert!(shadow.contains("step < CLOUD_MAX_SUNLIGHT_PROBES"));
+        assert!(shader.contains("const CLOUD_CONVECTIVE_COARSE_INTERVALS = 24.0;"));
         assert!(shader.contains("const CLOUD_FINE_STEP_SCALE = 0.5;"));
-        assert!(shader.contains("const CLOUD_MAX_MARCH_STEPS = 48u;"));
-        assert!(shader.contains("const SUNLIGHT_TRANSMITTANCE_INTERVAL = 4u;"));
-        assert!(fragment.contains("/ CLOUD_COARSE_INTERVALS"));
+        assert!(shader.contains("const CLOUD_CONVECTIVE_MAX_MARCH_STEPS = 48u;"));
+        assert!(shader.contains("const CLOUD_MAX_MARCH_STEPS = CLOUD_CONVECTIVE_MAX_MARCH_STEPS;"));
+        assert!(fragment.contains("/ budget.coarse_intervals"));
         assert!(fragment.contains("coarse_step * CLOUD_FINE_STEP_SCALE"));
         assert!(fragment.contains("step < CLOUD_MAX_MARCH_STEPS"));
+        assert!(fragment.contains("if step >= budget.max_march_steps"));
         assert!(fragment.contains("var occupied_fine_steps = 0u;"));
         assert!(fragment.contains("var sun_visibility = 1.0;"));
         assert!(fragment.contains(
-            "if occupied_fine_steps % SUNLIGHT_TRANSMITTANCE_INTERVAL == 0u {\n                sun_visibility = sunlight_transmittance(position, sun_direction);\n            }\n            occupied_fine_steps += 1u;"
+            "if occupied_fine_steps % budget.sunlight_refresh_interval == 0u {\n                sun_visibility = sunlight_transmittance(\n                    position,\n                    sun_direction,\n                    budget.sunlight_probe_count,\n                );\n            }\n            occupied_fine_steps += 1u;"
         ));
         assert!(fragment.contains("occupied_fine_steps = 0u;"));
         assert!(!fragment.contains("let sun_visibility = sunlight_transmittance"));
+    }
+
+    #[test]
+    fn cloud_shader_pins_profile_specific_march_and_lighting_budgets() {
+        let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
+
+        assert!(shader.contains("fn cloud_render_budget(family: f32) -> CloudRenderBudget"));
+        assert!(
+            shader
+                .contains("if kind == 4u {\n        return CloudRenderBudget(10.0, 16u, 1u, 8u);")
+        );
+        assert!(
+            shader
+                .contains("if kind == 6u {\n        return CloudRenderBudget(12.0, 20u, 1u, 10u);")
+        );
+        assert!(
+            shader
+                .contains("if kind == 7u {\n        return CloudRenderBudget(14.0, 24u, 1u, 8u);")
+        );
+        assert!(
+            shader
+                .contains("if kind == 9u {\n        return CloudRenderBudget(8.0, 12u, 1u, 12u);")
+        );
+        assert!(
+            shader
+                .contains("if kind == 2u {\n        return CloudRenderBudget(10.0, 16u, 1u, 12u);")
+        );
+        assert!(shader.contains(
+            "if kind == 5u || kind == 8u {\n        return CloudRenderBudget(16.0, 32u, 1u, 8u);"
+        ));
+        assert!(
+            shader
+                .contains("if kind == 1u {\n        return CloudRenderBudget(18.0, 36u, 2u, 6u);")
+        );
+        assert!(shader.contains(
+            "CLOUD_CONVECTIVE_COARSE_INTERVALS,\n        CLOUD_CONVECTIVE_MAX_MARCH_STEPS,\n        2u,\n        4u,"
+        ));
     }
 }

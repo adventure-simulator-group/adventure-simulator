@@ -234,12 +234,20 @@ fn sample_density_coarse(world_position: vec3<f32>) -> f32 {
     return clamp(body * profile * cloud_shape.y, 0.0, 1.35);
 }
 
-fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 {
+fn sunlight_transmittance(
+    position: vec3<f32>,
+    sun_direction: vec3<f32>,
+    probe_count: u32,
+) -> f32 {
     var optical_depth = 0.0;
     var distance = 420.0;
-    // Two exponentially-spaced probes retain the broad self-shadow gradient
-    // while avoiding a third detailed density evaluation for every refresh.
-    for (var step = 0u; step < 2u; step += 1u) {
+    // The compile-time cap retains WebGPU's predictable fixed-loop path. Thin
+    // and sheet profiles opt into one probe because their direct light is too
+    // broad for a second detailed density sample to be perceptible.
+    for (var step = 0u; step < CLOUD_MAX_SUNLIGHT_PROBES; step += 1u) {
+        if step >= probe_count {
+            break;
+        }
         let sample_position = position + sun_direction * distance;
         optical_depth += sample_density(sample_position) * distance * 0.00052;
         distance *= 1.72;
@@ -248,12 +256,59 @@ fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 
 }
 
 // Keep all march budgets explicit and low enough to stay within WebGPU's
-// predictable fixed-loop path. Fine steps are half a coarse interval, so the
-// 48-step cap can still traverse a complete 24-interval shell once occupied.
-const CLOUD_COARSE_INTERVALS = 24.0;
+// predictable fixed-loop path. The convective path preserves the 24 coarse
+// intervals / 48 fine-step cap; layered and thin decks trade sub-cell detail
+// for substantially less sampling and lower-frequency direct lighting.
+const CLOUD_CONVECTIVE_COARSE_INTERVALS = 24.0;
 const CLOUD_FINE_STEP_SCALE = 0.5;
-const CLOUD_MAX_MARCH_STEPS = 48u;
-const SUNLIGHT_TRANSMITTANCE_INTERVAL = 4u;
+const CLOUD_CONVECTIVE_MAX_MARCH_STEPS = 48u;
+const CLOUD_MAX_MARCH_STEPS = CLOUD_CONVECTIVE_MAX_MARCH_STEPS;
+const CLOUD_MAX_SUNLIGHT_PROBES = 2u;
+
+struct CloudRenderBudget {
+    coarse_intervals: f32,
+    max_march_steps: u32,
+    sunlight_probe_count: u32,
+    sunlight_refresh_interval: u32,
+}
+
+fn cloud_render_budget(family: f32) -> CloudRenderBudget {
+    let kind = u32(family + 0.5);
+    // Low, near-continuous sheet: 10 / 16, one probe refreshed every 8 fine samples.
+    if kind == 4u {
+        return CloudRenderBudget(10.0, 16u, 1u, 8u);
+    }
+    // Middle layered deck: retain a little more depth for broad tonal variation.
+    if kind == 6u {
+        return CloudRenderBudget(12.0, 20u, 1u, 10u);
+    }
+    // Dense rain sheet needs enough samples to retain its darker body.
+    if kind == 7u {
+        return CloudRenderBudget(14.0, 24u, 1u, 8u);
+    }
+    // High, optically thin sheets and ribbons have the cheapest paths.
+    if kind == 9u {
+        return CloudRenderBudget(8.0, 12u, 1u, 12u);
+    }
+    if kind == 2u {
+        return CloudRenderBudget(10.0, 16u, 1u, 12u);
+    }
+    // Small high-level cells can use the same cheaper light path while keeping
+    // enough spatial detail to avoid dissolving into an alpha sheet.
+    if kind == 5u || kind == 8u {
+        return CloudRenderBudget(16.0, 32u, 1u, 8u);
+    }
+    if kind == 1u {
+        return CloudRenderBudget(18.0, 36u, 2u, 6u);
+    }
+    // Cumulus, cumulonimbus, and congestus retain the full convective path.
+    return CloudRenderBudget(
+        CLOUD_CONVECTIVE_COARSE_INTERVALS,
+        CLOUD_CONVECTIVE_MAX_MARCH_STEPS,
+        2u,
+        4u,
+    );
+}
 
 fn henyey_greenstein(cosine: f32, eccentricity: f32) -> f32 {
     let g2 = eccentricity * eccentricity;
@@ -318,12 +373,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if trace_end <= trace_start {
         discard;
     }
+    let budget = cloud_render_budget(cloud_shape.z);
 
     // Empty air is searched in large steps. Once density is found, backtrack
     // and integrate in half-sized steps until the ray is clear again.
     // Pixel-stable jitter prevents the curved shell from resolving into
     // coherent marching bands without requiring more samples everywhere.
-    let coarse_step = (trace_end - trace_start) / CLOUD_COARSE_INTERVALS;
+    let coarse_step = (trace_end - trace_start) / budget.coarse_intervals;
     let fine_step = coarse_step * CLOUD_FINE_STEP_SCALE;
     let ray_jitter = hash13(vec3<f32>(floor(in.position.xy), cloud_shape.w));
     var step_length = coarse_step;
@@ -347,6 +403,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let aerial_extinction = cloud_geometry.w * mix(0.65, 4.5, horizon_haze);
 
     for (var step = 0u; step < CLOUD_MAX_MARCH_STEPS; step += 1u) {
+        if step >= budget.max_march_steps {
+            break;
+        }
         if distance >= trace_end {
             break;
         }
@@ -382,8 +441,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 0.0,
                 1.0,
             );
-            if occupied_fine_steps % SUNLIGHT_TRANSMITTANCE_INTERVAL == 0u {
-                sun_visibility = sunlight_transmittance(position, sun_direction);
+            if occupied_fine_steps % budget.sunlight_refresh_interval == 0u {
+                sun_visibility = sunlight_transmittance(
+                    position,
+                    sun_direction,
+                    budget.sunlight_probe_count,
+                );
             }
             occupied_fine_steps += 1u;
             let powder = 1.0 - exp(-density * 2.4);
