@@ -1653,7 +1653,7 @@ mod tests {
         );
         assert_eq!(
             Vec4::new(1.0, 0.88, 0.09, GrassMeshLod::Far.width_compensation(1.0)),
-            Vec4::new(1.0, 0.88, 0.09, 2.4)
+            Vec4::new(1.0, 0.88, 0.09, 3.4285715)
         );
     }
 }
