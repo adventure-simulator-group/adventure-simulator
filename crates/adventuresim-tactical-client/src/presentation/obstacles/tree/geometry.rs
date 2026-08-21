@@ -296,15 +296,16 @@ pub(in crate::presentation) use leaves::{
     procedural_oak_leaf_card_group_mesh, procedural_oak_leaf_card_mesh, procedural_oak_leaves,
     procedural_oak_textured_leaf_group_mesh, procedural_oak_textured_leaf_mesh,
     procedural_woody_cambered_leaf_mesh, procedural_woody_leaf_card_mesh,
-    procedural_woody_plant_leaves,
+    procedural_woody_plant_leaves, procedural_woody_sparse_leaf_card_mesh,
 };
 pub(in crate::presentation) use skeleton::{
     procedural_oak_skeleton_with_gnarling, procedural_tree_skeleton,
     procedural_woody_plant_skeleton,
 };
 pub(in crate::presentation) use wood_mesh::{
-    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh,
+    WoodyBranchMeshQuality, procedural_tree_branch_group_mesh, procedural_tree_branch_mesh,
     procedural_woody_branch_bake_mesh, procedural_woody_branch_mesh, procedural_woody_crown_mesh,
+    procedural_woody_mid_trunk_mesh,
 };
 
 fn branch_frame(direction: Vec3) -> (Vec3, Vec3) {

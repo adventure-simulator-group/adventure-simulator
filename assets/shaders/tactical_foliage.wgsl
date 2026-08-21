@@ -21,6 +21,9 @@ struct TacticalFoliageMaterial {
     interaction_motion: vec4<f32>,
     shading: vec4<f32>,
     shape: vec4<f32>,
+    quality: vec4<f32>,
+    lighting: vec4<f32>,
+    ambient: vec4<f32>,
     ground_mask_transform: vec4<f32>,
 }
 
@@ -58,29 +61,96 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         world_from_local,
         vec4<f32>(root_local, 1.0),
     ).xyz;
+    // Far and vista grass share the mesh/material with close grass, but a
+    // uniform branch selects this deliberately small path before the costly
+    // interactive curved-ribbon reconstruction below. Every draw has one
+    // value, so this does not diverge grass instances within a draw.
+    if foliage.quality.x > 0.5 {
+        var position = vertex.position;
+        var blade_visibility = 1.0;
+        // `quality.y` is uniform per material/draw. Interior patches have a
+        // conservatively verified authoritative TallGrass footprint, so they
+        // skip both the mask read and boundary-only blade collapse.
+        if foliage.quality.y < 0.5 {
+            let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
+                + foliage.ground_mask_transform.zw;
+            let ground_coverage = textureSampleLevel(
+                ground_mask_texture,
+                ground_mask_sampler,
+                mask_uv,
+                0.0,
+            ).r;
+            if blade_threshold > ground_coverage {
+                blade_visibility = 0.0;
+            }
+        }
+        let width_compensation = max(foliage.shape.w, 1.0);
+        let adjusted_xz = root_local.xz
+            + (position.xz - root_local.xz) * width_compensation;
+        position = vec3<f32>(adjusted_xz.x, position.y, adjusted_xz.y);
+        var world_position = mesh_functions::mesh_position_local_to_world(
+            world_from_local,
+            vec4<f32>(position, 1.0),
+        );
+        let height_fraction = clamp(vertex.uv.y, 0.0, 1.0);
+        let wind_direction = normalize(foliage.wind.xy);
+        let wind_phase = globals.time * foliage.wind.w
+            + dot(root_world.xz, wind_direction) * 0.16;
+        let broad_wind = sin(wind_phase) * foliage.wind.z * height_fraction * height_fraction;
+        let wind_offset = wind_direction * broad_wind * blade_visibility;
+        world_position = vec4<f32>(
+            world_position.x + wind_offset.x,
+            world_position.y,
+            world_position.z + wind_offset.y,
+            world_position.w,
+        );
+
+        out.world_position = world_position;
+        out.position = position_world_to_clip(world_position.xyz);
+        out.world_normal = normalize(mesh_functions::mesh_normal_local_to_world(
+            vertex.normal,
+            vertex.instance_index,
+        ));
+        out.uv = vertex.uv;
+#ifdef VERTEX_UVS_B
+        out.uv_b = vertex.uv_b;
+#endif
+        out.color = vertex.color;
+#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+        out.instance_index = vertex.instance_index;
+#endif
+#ifdef VISIBILITY_RANGE_DITHER
+        out.visibility_range_dither = mesh_functions::get_visibility_range_dither_level(
+            vertex.instance_index,
+            vec4<f32>(root_world, 1.0),
+        );
+#endif
+        return out;
+    }
     let spatial_noise = sin(root_world.x * 0.071 + root_world.z * 0.113)
         * sin(root_world.x * 0.037 - root_world.z * 0.053);
     var ground_coverage = 1.0;
     if foliage.shape.x > 0.5 {
-        let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
-            + foliage.ground_mask_transform.zw;
-        ground_coverage = textureSampleLevel(
-            ground_mask_texture,
-            ground_mask_sampler,
-            mask_uv,
-            0.0,
-        ).r;
-        // Preserve the four-times-density close field, then open it into
-        // irregular meadow clumps as it approaches the original-density LOD.
-        // This uses the existing world-space wave and mask fetch, so topology,
-        // draw count, and texture-sample count stay unchanged.
-        let meadow_zone = smoothstep(-0.36, 0.52, spatial_noise);
-        let camera_distance = distance(root_world.xyz, view.lod_view_world_position.xyz);
-        let distance_opening = smoothstep(7.0, 24.0, camera_distance);
-        let clump_coverage = mix(1.0, mix(0.54, 1.0, meadow_zone), distance_opening);
-        let effective_coverage = ground_coverage * clump_coverage;
-        if blade_threshold > effective_coverage {
-            blade_visibility = 0.0;
+        if foliage.quality.y < 0.5 {
+            let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
+                + foliage.ground_mask_transform.zw;
+            ground_coverage = textureSampleLevel(
+                ground_mask_texture,
+                ground_mask_sampler,
+                mask_uv,
+                0.0,
+            ).r;
+            // Preserve the four-times-density close field, then open it into
+            // irregular meadow clumps as it approaches the original-density LOD.
+            // Boundary patches retain the authored mask's exact collapse.
+            let meadow_zone = smoothstep(-0.36, 0.52, spatial_noise);
+            let camera_distance = distance(root_world.xyz, view.lod_view_world_position.xyz);
+            let distance_opening = smoothstep(7.0, 24.0, camera_distance);
+            let clump_coverage = mix(1.0, mix(0.54, 1.0, meadow_zone), distance_opening);
+            let effective_coverage = ground_coverage * clump_coverage;
+            if blade_threshold > effective_coverage {
+                blade_visibility = 0.0;
+            }
         }
         position = root_local + (position - root_local) * blade_visibility;
     }
@@ -331,6 +401,26 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         discard;
     }
 #endif
+    if foliage.quality.x > 0.5 {
+        // A two-sided Lambert response is adequate once individual blades are
+        // below close-reading distance. It replaces diffuse transmission,
+        // specular BRDF evaluation, and the full clustered PBR lighting path.
+        var normal = select(-in.world_normal, in.world_normal, is_front);
+        normal.y = abs(normal.y) + 0.22;
+        normal = normalize(normal);
+        let direct = (0.34 + 0.66 * max(dot(normal, normalize(foliage.lighting.xyz)), 0.0))
+            * foliage.lighting.w
+            * (1.0 - foliage.ambient.w);
+        let irradiance = foliage.ambient.rgb * foliage.ambient.w + vec3<f32>(direct);
+        var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
+        pbr_input.material.flags = STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
+        var out: FragmentOutput;
+        out.color = main_pass_post_lighting_processing(
+            pbr_input,
+            vec4<f32>(in.color.rgb * irradiance, lod_coverage),
+        );
+        return out;
+    }
     let height_fraction = clamp(in.uv.y, 0.0, 1.0);
     let root_self_shadow = mix(
         foliage.shading.x,

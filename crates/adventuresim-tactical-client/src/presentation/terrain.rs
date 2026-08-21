@@ -4,8 +4,6 @@ use super::procedural_assets::{
 };
 use super::*;
 
-const TERMINAL_SWARD_FADE_START_METRES: f32 = 124.0;
-const TERMINAL_SWARD_FADE_END_METRES: f32 = 140.0;
 const DETAIL_PATCH_RADIUS_METRES: f32 = 20.0;
 const DETAIL_PATCH_MORPH_START_METRES: f32 = 15.5;
 const DETAIL_PATCH_SPACING_METRES: f32 = 0.25;
@@ -1306,6 +1304,7 @@ mod tests {
     #[test]
     fn terminal_terrain_sward_starts_when_the_final_grass_lod_fades() {
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
+        assert_eq!(vista.end_margin, 55.0..65.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }

@@ -532,14 +532,14 @@ standard mesh path supplies WebGPU-compatible GPU preprocessing, culling, and
 indirect batches when the adapter supports them, with its normal fallback on
 more limited browser devices. Forest-floor scatter retains its authoritative
 leaf-litter placement and patch composition. Nearby patches are merged
-deterministically into 64-metre render batches, collapsing tens of thousands of
-dry-leaf and twig entities while preserving the four leaf variants, three twig
-variants, two materials, and authored transforms. Detailed leaves now end at 35
+deterministically into 24-metre render batches, collapsing many dry-leaf and
+twig entities while preserving the four leaf variants, three twig variants,
+two materials, and authored transforms. Detailed leaves now end at 35
 metres, while subpixel twigs end at 24 metres: the current visibility
 architecture cannot substitute a cheaper mesh without an extra entity/draw, and
 rendering alpha-tested cambered plates to 72 metres was not worth that overdraw.
-Each 24-leaf shared patch uses deterministic nine-vertex cambered, gently
-tilted, curled oak plates arranged into four loose, shallow layers plus
+Each 56-leaf shared patch uses deterministic nine-vertex cambered, gently
+tilted, curled oak plates arranged into several loose, shallow layers plus
 scattered singles;
   every plate is seated by its lowest vertex slightly below the local patch
   plane and has a bounded lift so it cannot become an upright card. A dry-oak
@@ -548,7 +548,7 @@ scattered singles;
 leaf plates with the production oak morphology, front/back albedo, normal and AO
 maps, and a dedicated dry PBR response with zero canopy AO, low transmission,
 higher roughness, and lower thickness; fallen-leaf wind is disabled. Each
-nine-twig shared patch uses bowed four-ring, five-to-six-sided segments with
+eight-twig shared patch uses bowed four-ring, five-to-six-sided segments with
 buried contact points, near-zero tapered tips, and at most two deterministic
 short forks. Litter entities remain `NotShadowCaster`, and the geometry change
 adds no entity, material slot, draw call, gameplay collider, or placement rule.

@@ -49,13 +49,17 @@ use view_specs::{
 use crate::camera::CameraRigConfig;
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
-    GroundScatterLayer, LooseStonePebblePatch, PresentedTree, ProceduralEnvironmentAssets,
-    ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
-    TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial, TerrainDetailPatch,
-    TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
-    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
-    TreeTrunkLod, VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material,
-    oak_leaf_material, oak_review_terminal_specimen, terrain_heightmap_image,
+    GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch, PlayableTreeAggregateWood,
+    PlayableTreeBuds, PlayableTreeCanopyCard, PlayableTreeDetailedLeaves,
+    PlayableTreeDetailedTrunk, PlayableTreeDetailedWood, PlayableTreeMidTrunk, PlayableTreeTrunk,
+    PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual,
+    TacticalCloudBenchmarkIsolation, TacticalCloudLayer, TacticalGraphicsSettings,
+    TacticalPresentationPlugin, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
+    TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
+    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
+    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
+    oak_review_terminal_specimen, terrain_heightmap_image,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -276,9 +280,16 @@ const HIDE_LOOSE_STONE: u16 = 1 << 3;
 const HIDE_ROCKS: u16 = 1 << 4;
 const HIDE_PLAYABLE_TERRAIN: u16 = 1 << 5;
 const HIDE_VISTA_TERRAIN: u16 = 1 << 6;
+const HIDE_CLOUDS: u16 = 1 << 7;
+const HIDE_WEATHER: u16 = 1 << 8;
+const HIDE_TREE_LEAVES: u16 = 1 << 9;
+const HIDE_TREE_TRUNKS: u16 = 1 << 10;
+const HIDE_TREE_BRANCHES: u16 = 1 << 11;
+const HIDE_TREE_CANOPY_CARDS: u16 = 1 << 12;
+const HIDE_TREE_BUDS: u16 = 1 << 13;
 const HIDE_ALL_SCATTER: u16 = HIDE_LITTER | HIDE_GRASS | HIDE_UNDERSTORY | HIDE_LOOSE_STONE;
 
-const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 20] = [
+const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 27] = [
     ScenePerformanceMode {
         name: "Natural production LODs",
         forced_lod: None,
@@ -314,6 +325,51 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 20] = [
         hide_playable_trees: true,
         hide_vista_trees: true,
         hidden_scene_layers: 0,
+    },
+    ScenePerformanceMode {
+        name: "No leaves",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: true,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_TREE_LEAVES | HIDE_TREE_CANOPY_CARDS,
+    },
+    ScenePerformanceMode {
+        name: "No tree trunks",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_TREE_TRUNKS,
+    },
+    ScenePerformanceMode {
+        name: "No tree branches",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_TREE_BRANCHES,
+    },
+    ScenePerformanceMode {
+        name: "No tree canopy cards",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_TREE_CANOPY_CARDS,
+    },
+    ScenePerformanceMode {
+        name: "No tree buds",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_TREE_BUDS,
     },
     ScenePerformanceMode {
         name: "No forest-floor litter",
@@ -359,6 +415,24 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 20] = [
         hide_playable_trees: false,
         hide_vista_trees: false,
         hidden_scene_layers: HIDE_LOOSE_STONE,
+    },
+    ScenePerformanceMode {
+        name: "No clouds",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_CLOUDS,
+    },
+    ScenePerformanceMode {
+        name: "No weather",
+        forced_lod: None,
+        forced_leaf: None,
+        hide_playable_leaves: false,
+        hide_playable_trees: false,
+        hide_vista_trees: false,
+        hidden_scene_layers: HIDE_WEATHER,
     },
     ScenePerformanceMode {
         name: "No ground scatter",
@@ -450,16 +524,16 @@ const SCENE_PERFORMANCE_MODES: [ScenePerformanceMode; 20] = [
         hide_vista_trees: false,
         hidden_scene_layers: 0,
     },
-    // Destructive isolation goes last so every earlier mode sees the exact
-    // production entity set.
+    // The detailed-leaf mode is separate from aggregate No leaves so every
+    // foliage representation can be attributed without destructive mutation.
     ScenePerformanceMode {
-        name: "No playable leaves",
+        name: "No detailed tree leaves",
         forced_lod: None,
         forced_leaf: None,
         hide_playable_leaves: true,
         hide_playable_trees: false,
         hide_vista_trees: false,
-        hidden_scene_layers: 0,
+        hidden_scene_layers: HIDE_TREE_LEAVES,
     },
 ];
 
@@ -526,17 +600,28 @@ struct ScenePerformanceBenchmarkResult {
     headroom_ms: f64,
     budget_utilization_percent: f64,
     measured_60_fps_passes: Option<bool>,
+    active_cloud_layers: usize,
+    visible_cloud_layers: usize,
     visible_tree_entities: BTreeMap<String, usize>,
     tree_asset_residency: TreeAssetResidencyDiagnostics,
     render_diagnostics: BTreeMap<String, BenchmarkMetricSummary>,
+    /// Positive values estimate the isolated entity family's GPU cost versus
+    /// natural mode, keyed by the exact render diagnostic path.
+    gpu_cost_attribution_vs_natural_ms: BTreeMap<String, BenchmarkMetricDelta>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct BenchmarkMetricSummary {
     mean: f64,
     median: f64,
     p95: f64,
     p99: f64,
+}
+
+#[derive(Serialize)]
+struct BenchmarkMetricDelta {
+    median_ms: f64,
+    p95_ms: f64,
 }
 
 #[derive(Serialize)]
@@ -1988,8 +2073,9 @@ fn benchmark_scene_performance(
     time: Res<Time<Real>>,
     diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
     tree_asset_residency: Res<TreeAssetResidencyDiagnostics>,
-    mut commands: Commands,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
+    mut tree_isolation: ResMut<TacticalTreeBenchmarkIsolation>,
+    mut cloud_isolation: ResMut<TacticalCloudBenchmarkIsolation>,
     mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
     mut visibility_layers: ParamSet<(
         Query<
@@ -2014,6 +2100,39 @@ fn benchmark_scene_performance(
         Query<&mut Visibility, With<ProceduralRockVisual>>,
         Query<&mut Visibility, Or<(With<TerrainMaterialPresentation>, With<TerrainDetailPatch>)>>,
         Query<&mut Visibility, With<VistaTerrain>>,
+        Query<
+            (
+                &mut Visibility,
+                Option<&TacticalCloudLayer>,
+                Option<&WeatherParticle>,
+            ),
+            Or<(With<TacticalCloudLayer>, With<WeatherParticle>)>,
+        >,
+        Query<
+            (
+                Has<PlayableTreeDetailedLeaves>,
+                Has<PlayableTreeTrunk>,
+                Has<PlayableTreeDetailedTrunk>,
+                Has<PlayableTreeMidTrunk>,
+                Has<PlayableTreeDetailedWood>,
+                Has<PlayableTreeAggregateWood>,
+                Has<PlayableTreeBuds>,
+                Has<PlayableTreeCanopyCard>,
+            ),
+            (
+                Without<TreeReviewSpecimen>,
+                Or<(
+                    With<PlayableTreeDetailedLeaves>,
+                    With<PlayableTreeTrunk>,
+                    With<PlayableTreeDetailedTrunk>,
+                    With<PlayableTreeMidTrunk>,
+                    With<PlayableTreeDetailedWood>,
+                    With<PlayableTreeAggregateWood>,
+                    With<PlayableTreeBuds>,
+                    With<PlayableTreeCanopyCard>,
+                )>,
+            ),
+        >,
     )>,
     playable_leaves: Query<
         Entity,
@@ -2025,8 +2144,13 @@ fn benchmark_scene_performance(
             Without<GroundScatterLayer>,
         ),
     >,
+    litter_diagnostics: Query<&GroundLitterDiagnostics>,
     loose_stone_pebble_patches: Query<&LooseStonePebblePatch>,
     visible_tree_lods: Query<(&TreeLod, &ViewVisibility, Option<&TreeLeafRepresentation>)>,
+    aggregate_wood_shadow_casters: Query<
+        (&TreeLod, Has<NotShadowCaster>),
+        With<PlayableTreeAggregateWood>,
+    >,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(state), Some(capture)) = (state.as_deref_mut(), capture.as_deref()) else {
@@ -2040,6 +2164,13 @@ fn benchmark_scene_performance(
         tree_lod_override.lod = mode.forced_lod;
         tree_lod_override.leaf = mode.forced_leaf;
         tree_lod_override.projected_scale = None;
+        tree_isolation.hide_detailed_leaves =
+            mode.hide_playable_leaves || mode.hidden_scene_layers & HIDE_TREE_LEAVES != 0;
+        tree_isolation.hide_canopy_cards = mode.hidden_scene_layers & HIDE_TREE_CANOPY_CARDS != 0;
+        tree_isolation.hide_buds = mode.hidden_scene_layers & HIDE_TREE_BUDS != 0;
+        tree_isolation.hide_trunks = mode.hidden_scene_layers & HIDE_TREE_TRUNKS != 0;
+        tree_isolation.hide_branches = mode.hidden_scene_layers & HIDE_TREE_BRANCHES != 0;
+        cloud_isolation.hide_clouds = mode.hidden_scene_layers & HIDE_CLOUDS != 0;
         let transform = Transform::from_translation(capture.ground_eye_position)
             .looking_at(capture.ground_eye_target, Vec3::Y);
         *camera.0 = transform;
@@ -2095,6 +2226,16 @@ fn benchmark_scene_performance(
                 Visibility::Inherited
             };
         }
+        for (mut visibility, cloud, weather) in &mut visibility_layers.p6() {
+            if weather.is_some() {
+                *visibility = if mode.hidden_scene_layers & HIDE_WEATHER != 0 {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Inherited
+                };
+            }
+            debug_assert!(cloud.is_none() || weather.is_none());
+        }
         state.configured_mode = Some(state.mode);
     }
     state
@@ -2118,6 +2259,19 @@ fn benchmark_scene_performance(
             };
             *counts.entry(name.to_owned()).or_default() += 1;
         }
+        let litter_diagnostics = litter_diagnostics
+            .iter()
+            .next()
+            .copied()
+            .unwrap_or_default();
+        counts.insert(
+            "dry_leaf_patch_instances".to_owned(),
+            litter_diagnostics.dry_leaf_patch_instances,
+        );
+        counts.insert(
+            "physical_dry_leaves".to_owned(),
+            litter_diagnostics.physical_dry_leaf_count,
+        );
         counts.insert(
             "procedural_rocks".to_owned(),
             visibility_layers.p3().iter().count(),
@@ -2129,15 +2283,98 @@ fn benchmark_scene_performance(
                 .map(|patch| patch.physical_pebbles)
                 .sum(),
         );
-        state.scene_entity_counts = Some(counts);
-    }
-    // Leaf removal is intentionally destructive and therefore last in the
-    // matrix. This is the only reliable way to prevent the production LOD
-    // system from restoring leaf visibility in the same frame.
-    if mode.hide_playable_leaves {
-        for entity in &playable_leaves {
-            commands.entity(entity).despawn();
+        counts.insert(
+            "active_cloud_layers".to_owned(),
+            visibility_layers
+                .p6()
+                .iter()
+                .filter(|(_, cloud, _)| cloud.is_some_and(TacticalCloudLayer::is_active))
+                .count(),
+        );
+        counts.insert(
+            "weather_particles".to_owned(),
+            visibility_layers
+                .p6()
+                .iter()
+                .filter(|(_, _, weather)| weather.is_some())
+                .count(),
+        );
+        counts.insert(
+            "tree_detailed_leaf_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(leaves, _, _, _, _, _, _, _)| *leaves)
+                .count(),
+        );
+        counts.insert(
+            "tree_trunk_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, trunks, _, _, _, _, _, _)| *trunks)
+                .count(),
+        );
+        counts.insert(
+            "tree_detailed_trunk_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, detailed, _, _, _, _, _)| *detailed)
+                .count(),
+        );
+        counts.insert(
+            "tree_mid_trunk_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, _, mid, _, _, _, _)| *mid)
+                .count(),
+        );
+        counts.insert(
+            "tree_detailed_wood_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, _, _, wood, _, _, _)| *wood)
+                .count(),
+        );
+        counts.insert(
+            "tree_aggregate_wood_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, _, _, _, wood, _, _)| *wood)
+                .count(),
+        );
+        for lod in [1_u8, 2] {
+            counts.insert(
+                format!("tree_lod{lod}_aggregate_wood_shadow_caster_entities"),
+                aggregate_wood_shadow_casters
+                    .iter()
+                    .filter(|(tree_lod, not_shadow_caster)| {
+                        tree_lod.0 == lod && !*not_shadow_caster
+                    })
+                    .count(),
+            );
         }
+        counts.insert(
+            "tree_bud_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, _, _, _, _, buds, _)| *buds)
+                .count(),
+        );
+        counts.insert(
+            "tree_canopy_card_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, _, _, _, _, _, cards)| *cards)
+                .count(),
+        );
+        state.scene_entity_counts = Some(counts);
     }
 
     if state.warmup_remaining > 0 {
@@ -2202,6 +2439,19 @@ fn benchmark_scene_performance(
         frames_over_budget as f64 * 100.0 / state.samples_ms.len() as f64;
     let limiting_p95_ms = gpu_elapsed_p95_ms.map_or(p95_ms, |gpu_ms| p95_ms.max(gpu_ms));
     let mut visible_tree_entities = BTreeMap::new();
+    let active_cloud_layers = visibility_layers
+        .p6()
+        .iter()
+        .filter(|(_, cloud, _)| cloud.is_some_and(TacticalCloudLayer::is_active))
+        .count();
+    let visible_cloud_layers = visibility_layers
+        .p6()
+        .iter()
+        .filter(|(visibility, cloud, _)| {
+            cloud.is_some_and(TacticalCloudLayer::is_active)
+                && !matches!(**visibility, Visibility::Hidden)
+        })
+        .count();
     for (lod, view_visibility, leaf_representation) in &visible_tree_lods {
         if !view_visibility.get() {
             continue;
@@ -2233,9 +2483,12 @@ fn benchmark_scene_performance(
         budget_utilization_percent: limiting_p95_ms / PERFORMANCE_FRAME_BUDGET_MS * 100.0,
         measured_60_fps_passes: gpu_elapsed_p95_ms
             .map(|gpu_ms| p95_ms.max(gpu_ms) <= PERFORMANCE_FRAME_BUDGET_MS),
+        active_cloud_layers,
+        visible_cloud_layers,
         visible_tree_entities,
         tree_asset_residency: tree_asset_residency.clone(),
         render_diagnostics,
+        gpu_cost_attribution_vs_natural_ms: BTreeMap::new(),
     });
     println!(
         "SCENE_PERFORMANCE_BENCHMARK mode={:?} mean_ms={mean_ms:.3} median_ms={median_ms:.3} p95_ms={p95_ms:.3}",
@@ -2247,6 +2500,35 @@ fn benchmark_scene_performance(
     state.warmup_remaining = SCENE_PERFORMANCE_WARMUP_FRAMES;
     if state.mode <= state.stop_after_mode {
         return;
+    }
+
+    let natural_diagnostics = state
+        .results
+        .first()
+        .map(|result| result.render_diagnostics.clone());
+    if let Some(natural_diagnostics) = natural_diagnostics.as_ref() {
+        for result in &mut state.results {
+            if result.mode == "Natural production LODs" {
+                continue;
+            }
+            result.gpu_cost_attribution_vs_natural_ms = result
+                .render_diagnostics
+                .iter()
+                .filter_map(|(path, metric)| {
+                    if !path.ends_with("elapsed_gpu") {
+                        return None;
+                    }
+                    let natural = natural_diagnostics.get(path)?;
+                    Some((
+                        path.clone(),
+                        BenchmarkMetricDelta {
+                            median_ms: natural.median - metric.median,
+                            p95_ms: natural.p95 - metric.p95,
+                        },
+                    ))
+                })
+                .collect();
+        }
     }
 
     let render_diagnostics_enabled = state
@@ -2508,23 +2790,62 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
     if let Some(natural) = report.results.first() {
         let assets = &natural.tree_asset_residency;
         markdown.push_str(&format!(
-            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices; {} impostor vertices; {:.2} MiB of impostor pixels; {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
+            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} / {} detailed/mid trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} / {} detailed flat-card leaves retained/source; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices (LOD1/2: {} / {} vertices, {} / {} triangles); {} LOD1 impostor cards / {} vertices; {} impostor vertices; {:.2} / {:.2} / {:.2} / {:.2} MiB for LOD1/2/3/4 impostor pixels ({:.2} MiB total); {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
             assets.variants,
             assets.source_branches,
             assets.source_leaves,
-            assets.trunk_vertices,
+            assets.detailed_trunk_vertices,
+            assets.mid_trunk_vertices,
             assets.detailed_branch_vertices,
             assets.cambered_leaf_vertices,
+            assets.leaf_card_retained_leaves,
+            assets.leaf_card_source_leaves,
             assets.leaf_card_vertices,
             assets.bud_vertices,
             assets.aggregate_branch_vertices,
+            assets.aggregate_branch_vertices_by_lod[0],
+            assets.aggregate_branch_vertices_by_lod[1],
+            assets.aggregate_branch_triangles_by_lod[0],
+            assets.aggregate_branch_triangles_by_lod[1],
+            assets.lod1_impostor_cards,
+            assets.lod1_impostor_vertices,
             assets.impostor_vertices,
+            assets.impostor_texture_bytes_by_lod[0] as f64 / (1024.0 * 1024.0),
+            assets.impostor_texture_bytes_by_lod[1] as f64 / (1024.0 * 1024.0),
+            assets.impostor_texture_bytes_by_lod[2] as f64 / (1024.0 * 1024.0),
+            assets.impostor_texture_bytes_by_lod[3] as f64 / (1024.0 * 1024.0),
             assets.impostor_texture_bytes as f64 / (1024.0 * 1024.0),
             assets.generation_milliseconds,
             assets.generated_lod_mask,
         ));
     }
-    markdown.push_str("\n_An `n/a` gate means GPU timestamps were unavailable, so wall timing alone cannot certify the target. Render diagnostics and pipeline statistics are retained in the JSON report. Isolation modes hide only the named production entity family; camera, terrain, lighting, grass, weather, and all other work are held constant._\n");
+    markdown.push_str("\n## GPU isolation attribution\n\nPositive values estimate the hidden family\'s contribution to each GPU pass versus natural mode. Negative values indicate measurement noise or cross-pass effects.\n\n| Isolated family | Opaque 3D median ms | Opaque 3D P95 ms | Transparent 3D median ms | Transparent 3D P95 ms |\n|---|---:|---:|---:|---:|\n");
+    for result in &report.results {
+        if result.gpu_cost_attribution_vs_natural_ms.is_empty() {
+            continue;
+        }
+        let opaque = result
+            .gpu_cost_attribution_vs_natural_ms
+            .get("render/main_opaque_pass_3d/elapsed_gpu");
+        let transparent = result
+            .gpu_cost_attribution_vs_natural_ms
+            .get("render/main_transparent_pass_3d/elapsed_gpu");
+        markdown.push_str(&format!(
+            "| {} | {} | {} | {} | {} |\n",
+            result.mode,
+            opaque.map_or_else(
+                || "n/a".to_owned(),
+                |value| format!("{:+.3}", value.median_ms)
+            ),
+            opaque.map_or_else(|| "n/a".to_owned(), |value| format!("{:+.3}", value.p95_ms)),
+            transparent.map_or_else(
+                || "n/a".to_owned(),
+                |value| format!("{:+.3}", value.median_ms)
+            ),
+            transparent.map_or_else(|| "n/a".to_owned(), |value| format!("{:+.3}", value.p95_ms)),
+        ));
+    }
+    markdown.push_str("\n_An `n/a` gate means GPU timestamps were unavailable, so wall timing alone cannot certify the target. Raw render diagnostics and per-pass isolation deltas are retained in the JSON report. Isolation modes hide one named production entity family while holding camera, terrain, lighting, and other scene work constant._\n");
     fs::write(output.join("scene-performance-comparison.md"), markdown)
         .expect("scene performance benchmark table writes");
 }

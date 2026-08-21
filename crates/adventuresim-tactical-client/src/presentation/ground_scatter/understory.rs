@@ -12,6 +12,43 @@ use super::{
     GroundScatterLayer, TreeLeafRepresentation, WoodyUnderstoryPresentationCache, foliage_transform,
 };
 
+const SHRUB_WOOD_END: std::ops::Range<f32> = 24.0..30.0;
+const SHRUB_LEAF_CARD_START: std::ops::Range<f32> = 12.0..18.0;
+const SHRUB_LEAF_CARD_END: std::ops::Range<f32> = 24.0..30.0;
+const SHRUB_SPARSE_LEAF_CARD_END: std::ops::Range<f32> = 38.0..45.0;
+
+fn shrub_wood_visibility() -> VisibilityRange {
+    VisibilityRange {
+        start_margin: 0.0..0.0,
+        end_margin: SHRUB_WOOD_END,
+        use_aabb: false,
+    }
+}
+
+fn shrub_cambered_leaf_visibility() -> VisibilityRange {
+    VisibilityRange {
+        start_margin: 0.0..0.0,
+        end_margin: SHRUB_LEAF_CARD_START,
+        use_aabb: true,
+    }
+}
+
+fn shrub_leaf_card_visibility() -> VisibilityRange {
+    VisibilityRange {
+        start_margin: SHRUB_LEAF_CARD_START,
+        end_margin: SHRUB_LEAF_CARD_END,
+        use_aabb: true,
+    }
+}
+
+fn shrub_sparse_leaf_card_visibility() -> VisibilityRange {
+    VisibilityRange {
+        start_margin: SHRUB_LEAF_CARD_END,
+        end_margin: SHRUB_SPARSE_LEAF_CARD_END,
+        use_aabb: true,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum UnderstorySpecies {
     CommonHazel,
@@ -137,7 +174,7 @@ pub(super) fn spawn(
                 GroundScatterLayer::Understory,
                 Mesh3d(presentation.branches.as_ref().unwrap().clone()),
                 MeshMaterial3d(presentation.bark.as_ref().unwrap().clone()),
-                VisibilityRange::abrupt(0.0, 92.0),
+                shrub_wood_visibility(),
                 transform,
             ));
             commands.spawn((
@@ -146,11 +183,7 @@ pub(super) fn spawn(
                 TreeLeafRepresentation::TexturedMesh,
                 Mesh3d(presentation.cambered_leaves.as_ref().unwrap().clone()),
                 MeshMaterial3d(presentation.leaves.as_ref().unwrap().clone()),
-                VisibilityRange {
-                    start_margin: 0.0..0.0,
-                    end_margin: 26.0..34.0,
-                    use_aabb: true,
-                },
+                shrub_cambered_leaf_visibility(),
                 transform,
             ));
             commands.spawn((
@@ -159,11 +192,16 @@ pub(super) fn spawn(
                 TreeLeafRepresentation::AlphaCard,
                 Mesh3d(presentation.leaf_cards.as_ref().unwrap().clone()),
                 MeshMaterial3d(presentation.leaves.as_ref().unwrap().clone()),
-                VisibilityRange {
-                    start_margin: 26.0..34.0,
-                    end_margin: 84.0..96.0,
-                    use_aabb: true,
-                },
+                shrub_leaf_card_visibility(),
+                transform,
+            ));
+            commands.spawn((
+                Name::new(format!("Shared {common_name} sparse far alpha-card leaves")),
+                GroundScatterLayer::Understory,
+                TreeLeafRepresentation::AlphaCard,
+                Mesh3d(presentation.sparse_leaf_cards.as_ref().unwrap().clone()),
+                MeshMaterial3d(presentation.leaves.as_ref().unwrap().clone()),
+                shrub_sparse_leaf_card_visibility(),
                 transform,
             ));
         }
@@ -173,6 +211,12 @@ pub(super) fn spawn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presentation::obstacles::tree::{
+        BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_PARAMETERS,
+        procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
+        procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
+    };
+    use bevy::prelude::Mesh;
 
     #[test]
     fn understory_species_form_coherent_four_by_four_communities() {
@@ -274,5 +318,86 @@ mod tests {
             },
             UnderstorySpecies::CommonHazel
         ));
+    }
+
+    #[test]
+    fn shrub_lod_ranges_pin_the_sparse_far_handoff_and_overlap_continuously() {
+        let wood = shrub_wood_visibility();
+        let cambered = shrub_cambered_leaf_visibility();
+        let cards = shrub_leaf_card_visibility();
+        let sparse_cards = shrub_sparse_leaf_card_visibility();
+
+        assert_eq!(cambered.end_margin, 12.0..18.0);
+        assert_eq!(cards.start_margin, 12.0..18.0);
+        assert_eq!(cards.end_margin, 24.0..30.0);
+        assert_eq!(sparse_cards.start_margin, 24.0..30.0);
+        assert_eq!(sparse_cards.end_margin, 38.0..45.0);
+        assert_eq!(wood.end_margin, 24.0..30.0);
+
+        // The two leaf representations share one fade band, so the crown has
+        // no uncovered interval during the cambered-to-card handoff.
+        assert_eq!(cambered.end_margin, cards.start_margin);
+
+        // Full cards and the sparse terminal tier share one fade band, so the
+        // shrub never reveals a distance gap as its detailed geometry ends.
+        assert_eq!(cards.end_margin, sparse_cards.start_margin);
+        // Wood fades entirely beneath full cards; the new sparse tier remains
+        // after wood is gone, which intentionally gives the far shrub a
+        // foliage-only silhouette.
+        assert_eq!(wood.end_margin, cards.end_margin);
+        assert!(sparse_cards.end_margin.end > wood.end_margin.end);
+    }
+
+    #[test]
+    fn sparse_far_shrub_cards_pin_the_per_species_geometry_budget() {
+        let mut budgets = Vec::new();
+        for parameters in [
+            COMMON_HAZEL_PARAMETERS,
+            BLACKTHORN_PARAMETERS,
+            COMMON_HAWTHORN_PARAMETERS,
+        ] {
+            let branches = procedural_woody_plant_skeleton(42, 0.0, parameters);
+            let leaves = procedural_woody_plant_leaves(42, &branches, 0.0, parameters);
+            let full = procedural_woody_leaf_card_mesh(&leaves);
+            let sparse = procedural_woody_sparse_leaf_card_mesh(&leaves);
+            budgets.push((
+                full.count_vertices(),
+                full.indices().unwrap().len() / 3,
+                sparse.count_vertices(),
+                sparse.indices().unwrap().len() / 3,
+            ));
+            assert!(sparse.count_vertices() * 3 <= full.count_vertices());
+        }
+
+        assert_eq!(
+            budgets,
+            vec![
+                // full vertices, full triangles, sparse vertices, sparse triangles
+                (19_800, 9_900, 4_960, 2_480),
+                (21_780, 10_890, 5_400, 2_700),
+                (11_880, 5_940, 2_944, 1_472),
+            ]
+        );
+    }
+
+    #[test]
+    fn sparse_far_shrub_cards_are_deterministic_when_source_order_changes() {
+        let branches = procedural_woody_plant_skeleton(42, 0.0, COMMON_HAZEL_PARAMETERS);
+        let leaves = procedural_woody_plant_leaves(42, &branches, 0.0, COMMON_HAZEL_PARAMETERS);
+        let first = procedural_woody_sparse_leaf_card_mesh(&leaves);
+        let mut reordered = leaves;
+        reordered.reverse();
+        let repeated = procedural_woody_sparse_leaf_card_mesh(&reordered);
+
+        assert_eq!(first.count_vertices(), repeated.count_vertices());
+        assert_eq!(first.indices(), repeated.indices());
+        assert_eq!(
+            first.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        assert_eq!(
+            first.attribute(Mesh::ATTRIBUTE_COLOR),
+            repeated.attribute(Mesh::ATTRIBUTE_COLOR)
+        );
     }
 }

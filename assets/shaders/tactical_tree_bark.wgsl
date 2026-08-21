@@ -402,30 +402,45 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     var soil_sample = vec2<f32>(0.5, 1.0);
     var soil_normal = macro_normal;
 #ifdef VERTEX_COLORS
-    let terrain_height = terrain_height_at(in.world_position.xz);
-    let terrain_clearance = in.world_position.y - terrain_height;
-    let signed_distance = root_soil_signed_distance(
-        in.world_position.xyz,
-        macro_normal,
-        terrain_clearance,
-    );
-    // This is material selection, not translucent blending. Only the analytic
-    // coverage required to antialias the binary boundary occupies the narrow
-    // interval between zero and one.
-    let edge_width = max(fwidth(signed_distance), 0.0002);
-    soil_coverage = smoothstep(-edge_width, edge_width, signed_distance);
-    // Terrain material maps only bridge the physical contact seam. Above two
-    // inches, deposited dirt remains an albedo-only treatment over bark.
-    let contact_response = 1.0 - smoothstep(0.0381, 0.0508, max(terrain_clearance, 0.0));
-    soil_response_coverage = soil_coverage * contact_response;
-    soil_sample = soil_surface_sample(in.world_position.xyz);
-    let soil_height_metres = (soil_sample.r - 0.5) * bark.soil_response.y;
-    soil_normal = height_perturbed_normal(
-        in.world_position.xyz,
-        macro_normal,
-        soil_height_metres,
-        bark.soil_response.z,
-    );
+    // Trunk meshes store final metric height above their root plane in vertex
+    // colour R. This includes the root flare's radial displacement because the
+    // value is generated from the final surface position. Recovering the root
+    // plane lets upper-trunk fragments skip terrain lookup altogether.
+    let root_plane_height = in.world_position.y - in.color.r;
+    // Use the maximum encoded terrain height instead of assuming a locally
+    // level root plane. The root-contact field can only reach deposition.y +
+    // one cell above the sampled terrain, so this is conservative even when a
+    // root spans the steepest supported terrain displacement.
+    let root_contact_ceiling = max(
+        bark.terrain_surface.w - root_plane_height,
+        0.0,
+    ) + bark.deposition.y + bark.deposition.z;
+    if in.color.r <= root_contact_ceiling {
+        let terrain_height = terrain_height_at(in.world_position.xz);
+        let terrain_clearance = in.world_position.y - terrain_height;
+        let signed_distance = root_soil_signed_distance(
+            in.world_position.xyz,
+            macro_normal,
+            terrain_clearance,
+        );
+        // This is material selection, not translucent blending. Only the analytic
+        // coverage required to antialias the binary boundary occupies the narrow
+        // interval between zero and one.
+        let edge_width = max(fwidth(signed_distance), 0.0002);
+        soil_coverage = smoothstep(-edge_width, edge_width, signed_distance);
+        // Terrain material maps only bridge the physical contact seam. Above two
+        // inches, deposited dirt remains an albedo-only treatment over bark.
+        let contact_response = 1.0 - smoothstep(0.0381, 0.0508, max(terrain_clearance, 0.0));
+        soil_response_coverage = soil_coverage * contact_response;
+        soil_sample = soil_surface_sample(in.world_position.xyz);
+        let soil_height_metres = (soil_sample.r - 0.5) * bark.soil_response.y;
+        soil_normal = height_perturbed_normal(
+            in.world_position.xyz,
+            macro_normal,
+            soil_height_metres,
+            bark.soil_response.z,
+        );
+    }
 #endif
 
     pbr_input.world_normal = macro_normal;

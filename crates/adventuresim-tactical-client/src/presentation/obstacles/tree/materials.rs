@@ -24,6 +24,7 @@ use crate::presentation::{
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
 const TREE_BARK_SHADER: &str = "shaders/tactical_tree_bark.wgsl";
+const TREE_AGGREGATE_BARK_SHADER: &str = "shaders/tactical_tree_aggregate_bark.wgsl";
 const CANOPY_SHADED_SOIL_LINEAR_SCALE: Vec3 = Vec3::new(0.38, 0.40, 0.37);
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
@@ -135,6 +136,44 @@ impl MaterialExtension for TacticalTreeBarkExtension {
 pub(crate) type TacticalTreeBarkMaterial =
     ExtendedMaterial<StandardMaterial, TacticalTreeBarkExtension>;
 
+/// The deliberately small aggregate-wood extension is a separate material
+/// type, rather than a quality uniform on [`TacticalTreeBarkExtension`]. That
+/// keeps LOD1/LOD2 branch wood out of the full bark pipeline and its height,
+/// terrain-contact, and relief-texture bind group.
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(crate) struct TacticalTreeAggregateBarkExtension {
+    /// Linear species pigment and perceptual roughness. These are retained as
+    /// an extension uniform so the cheap shader has a fixed, minimal layout
+    /// while preserving the full material's deterministic surface response.
+    #[uniform(100)]
+    surface: Vec4,
+}
+
+impl MaterialExtension for TacticalTreeAggregateBarkExtension {
+    fn fragment_shader() -> ShaderRef {
+        TREE_AGGREGATE_BARK_SHADER.into()
+    }
+
+    fn deferred_fragment_shader() -> ShaderRef {
+        TREE_AGGREGATE_BARK_SHADER.into()
+    }
+
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // The full bark path is double sided; aggregate branch tubes retain
+        // that behavior so a cheap tier cannot expose one-sided holes.
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
+pub(crate) type TacticalTreeAggregateBarkMaterial =
+    ExtendedMaterial<StandardMaterial, TacticalTreeAggregateBarkExtension>;
+
 pub(crate) fn oak_bark_material(
     assets: &ProceduralEnvironmentAssets,
     terrain_heightmap: Handle<Image>,
@@ -169,6 +208,33 @@ pub(in crate::presentation) fn beech_bark_material(
         0.9,
         Vec4::new(2.0, 0.0, 0.0, 0.0),
     )
+}
+
+pub(crate) fn oak_aggregate_bark_material() -> TacticalTreeAggregateBarkMaterial {
+    aggregate_bark_material(Color::srgb_u8(96, 68, 43), 180.0 / 255.0)
+}
+
+pub(in crate::presentation) fn beech_aggregate_bark_material() -> TacticalTreeAggregateBarkMaterial
+{
+    aggregate_bark_material(Color::srgb_u8(145, 145, 135), 0.9)
+}
+
+fn aggregate_bark_material(
+    base_color: Color,
+    perceptual_roughness: f32,
+) -> TacticalTreeAggregateBarkMaterial {
+    TacticalTreeAggregateBarkMaterial {
+        base: StandardMaterial {
+            base_color,
+            perceptual_roughness,
+            metallic: 0.0,
+            cull_mode: None,
+            ..default()
+        },
+        extension: TacticalTreeAggregateBarkExtension {
+            surface: color_vec4(base_color).xyz().extend(perceptual_roughness),
+        },
+    }
 }
 
 fn bark_material(
@@ -502,6 +568,59 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_bark_material_preserves_species_surface_with_a_minimal_layout() {
+        let bark = oak_aggregate_bark_material();
+
+        assert_eq!(bark.base.base_color, Color::srgb_u8(96, 68, 43));
+        assert_eq!(bark.base.perceptual_roughness, 180.0 / 255.0);
+        assert_eq!(bark.base.metallic, 0.0);
+        assert_eq!(bark.base.cull_mode, None);
+        assert_eq!(
+            bark.extension.surface,
+            color_vec4(Color::srgb_u8(96, 68, 43))
+                .xyz()
+                .extend(180.0 / 255.0)
+        );
+    }
+
+    #[test]
+    fn aggregate_bark_shader_is_a_separate_relief_free_specialization() {
+        let aggregate_shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_tree_aggregate_bark.wgsl"
+        ));
+        let full_shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_tree_bark.wgsl"
+        ));
+
+        assert!(aggregate_shader.contains("TacticalTreeAggregateBarkExtension"));
+        assert!(aggregate_shader.contains("pbr_input_from_standard_material"));
+        assert!(aggregate_shader.contains("main_pass_post_lighting_processing"));
+        assert!(aggregate_shader.contains("select(-in.world_normal"));
+        for expensive_symbol in [
+            "parallax_branch_coordinates",
+            "directional_horizon_visibility",
+            "triplanar_height_ao",
+            "terrain_height_at",
+            "root_soil_signed_distance",
+            "height_perturbed_normal",
+            "texture_2d",
+            "dpdx(",
+            "dpdy(",
+        ] {
+            assert!(
+                !aggregate_shader.contains(expensive_symbol),
+                "aggregate bark must not compile {expensive_symbol}"
+            );
+            assert!(
+                full_shader.contains(expensive_symbol),
+                "full bark must retain {expensive_symbol}"
+            );
+        }
+    }
+
+    #[test]
     fn bark_shader_blends_shared_soil_response_at_the_sampled_terrain_contact() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -530,6 +649,10 @@ mod tests {
         assert!(shader.contains("let fine_specks = soil_speck_distance"));
         assert!(shader.contains("let coarse_specks = soil_speck_distance"));
         assert!(shader.contains("if root_height > bark.deposition.y + cell_size"));
+        assert!(shader.contains("let root_plane_height = in.world_position.y - in.color.r"));
+        assert!(shader.contains("let root_contact_ceiling = max("));
+        assert!(shader.contains("bark.terrain_surface.w - root_plane_height"));
+        assert!(shader.contains("if in.color.r <= root_contact_ceiling {"));
         assert!(shader.contains("let edge_width = max(fwidth(signed_distance)"));
         assert!(shader.contains("mix(bark.surface.rgb, bark.soil_surface.rgb, soil_coverage)"));
         assert!(shader.contains("let terrain_height = terrain_height_at(in.world_position.xz)"));
@@ -547,6 +670,31 @@ mod tests {
         assert!(shader.contains("#ifdef VERTEX_COLORS"));
         assert_eq!(shader.matches("textureSample(soil_height_ao,").count(), 1);
         assert!(!shader.contains("normal_map"));
+    }
+
+    #[test]
+    fn bark_shader_limits_terrain_and_soil_sampling_to_the_conservative_root_band() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_tree_bark.wgsl"
+        ))
+        .replace("\r\n", "\n");
+        let root_band_start = shader
+            .find("if in.color.r <= root_contact_ceiling {")
+            .expect("root-band guard");
+        let root_band_end = shader[root_band_start..]
+            .find("\n    }\n#endif")
+            .map(|offset| root_band_start + offset)
+            .expect("root-band guard closes before the vertex-colour block ends");
+        let root_band = &shader[root_band_start..root_band_end];
+        let upper_trunk = &shader[..root_band_start];
+
+        assert!(root_band.contains("terrain_height_at(in.world_position.xz)"));
+        assert!(root_band.contains("root_soil_signed_distance("));
+        assert!(root_band.contains("soil_surface_sample(in.world_position.xyz)"));
+        assert!(!upper_trunk.contains("terrain_height_at(in.world_position.xz)"));
+        assert!(!upper_trunk.contains("root_soil_signed_distance(\n        in.world_position"));
+        assert!(!upper_trunk.contains("soil_surface_sample(in.world_position.xyz)"));
     }
 
     #[test]

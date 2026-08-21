@@ -20,35 +20,29 @@ var<uniform> cloud_spectral: vec4<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(5)
 var<uniform> cloud_geometry: vec4<f32>;
 
+/// RGBA channels are broad coverage, fine erosion, and X/Z warp. The volume
+/// uses repeat + linear filtering, so every sampled location replaces an
+/// eight-corner procedural value-noise interpolation.
+@group(#{MATERIAL_BIND_GROUP}) @binding(6)
+var cloud_noise_volume: texture_3d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(7)
+var cloud_noise_sampler: sampler;
+
 fn hash13(position: vec3<f32>) -> f32 {
     var p = fract(position * 0.1031);
     p += dot(p, p.yzx + vec3<f32>(33.33));
     return fract((p.x + p.y) * p.z);
 }
 
-fn value_noise_3d(position: vec3<f32>) -> f32 {
-    let cell = floor(position);
-    let local = fract(position);
-    let blend = local * local * (vec3<f32>(3.0) - 2.0 * local);
-    let n000 = hash13(cell + vec3<f32>(0.0, 0.0, 0.0));
-    let n100 = hash13(cell + vec3<f32>(1.0, 0.0, 0.0));
-    let n010 = hash13(cell + vec3<f32>(0.0, 1.0, 0.0));
-    let n110 = hash13(cell + vec3<f32>(1.0, 1.0, 0.0));
-    let n001 = hash13(cell + vec3<f32>(0.0, 0.0, 1.0));
-    let n101 = hash13(cell + vec3<f32>(1.0, 0.0, 1.0));
-    let n011 = hash13(cell + vec3<f32>(0.0, 1.0, 1.0));
-    let n111 = hash13(cell + vec3<f32>(1.0, 1.0, 1.0));
-    let z0 = mix(mix(n000, n100, blend.x), mix(n010, n110, blend.x), blend.y);
-    let z1 = mix(mix(n001, n101, blend.x), mix(n011, n111, blend.x), blend.y);
-    return mix(z0, z1, blend.z);
-}
-
-fn fbm(position: vec3<f32>) -> f32 {
-    let first = value_noise_3d(position);
-    let second = value_noise_3d(position * 2.03 + vec3<f32>(17.1, 3.7, 11.9));
-    let third = value_noise_3d(position * 4.01 + vec3<f32>(7.3, 19.1, 2.9));
-    let fourth = value_noise_3d(position * 8.07 + vec3<f32>(13.7, 5.3, 23.9));
-    return first * 0.52 + second * 0.27 + third * 0.14 + fourth * 0.07;
+/// One period contains 32 independently generated texels on every axis. The
+/// profile's world-space seed shifts coordinates, so decks remain stable while
+/// preserving deterministic per-scene variation and wind animation.
+fn sample_cloud_noise(coordinate: vec3<f32>) -> vec4<f32> {
+    return textureSample(
+        cloud_noise_volume,
+        cloud_noise_sampler,
+        fract(coordinate * (1.0 / 32.0)),
+    );
 }
 
 fn cloud_profile(height: f32, family: f32, noise_value: f32) -> f32 {
@@ -147,14 +141,13 @@ fn sample_density(world_position: vec3<f32>) -> f32 {
         coordinate.x *= 0.58;
         coordinate.z *= 0.58;
     }
-    let warp = vec3<f32>(
-        value_noise_3d(coordinate * 0.37 + vec3<f32>(2.1, 7.3, 11.7)) - 0.5,
-        0.0,
-        value_noise_3d(coordinate * 0.37 + vec3<f32>(17.9, 3.1, 5.7)) - 0.5,
-    );
+    // Two filtered samples replace ten eight-corner value-noise evaluations:
+    // one supplies broad coverage and X/Z warp, the other fine erosion.
+    let broad_and_warp = sample_cloud_noise(coordinate * vec3<f32>(0.82, 0.62, 0.82));
+    let warp = vec3<f32>(broad_and_warp.b - 0.5, 0.0, broad_and_warp.a - 0.5);
     coordinate += warp * 0.85;
-    let broad = fbm(coordinate * vec3<f32>(0.82, 0.62, 0.82));
-    let detail = fbm(coordinate * 3.35 + vec3<f32>(9.7, 1.3, 4.1));
+    let broad = broad_and_warp.r;
+    let detail = sample_cloud_noise(coordinate * 3.35 + vec3<f32>(9.7, 1.3, 4.1)).g;
     let profile = cloud_profile(height, cloud_shape.z, broad);
     var threshold = 0.78 - cloud_shape.x * 0.34;
     if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
@@ -186,15 +179,135 @@ fn sample_density(world_position: vec3<f32>) -> f32 {
     return clamp(body * profile * cloud_shape.y, 0.0, 1.35);
 }
 
-fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 {
+/// A deliberately conservative occupancy estimate for the empty-space search.
+/// It can enter fine marching early, but must not reject small cellular cloud
+/// features solely because detail erosion or domain warping changes their edge.
+fn sample_density_coarse(world_position: vec3<f32>) -> f32 {
+    let height = (altitude_in_shell(world_position) - cloud_layer.x) / cloud_layer.y;
+    if height <= 0.0 || height >= 1.0 {
+        return 0.0;
+    }
+    let wind_position = world_position.xz + cloud_motion.xy;
+    let seed = cloud_shape.w;
+    var coordinate = vec3<f32>(
+        wind_position.x * cloud_layer.z + seed * 0.013,
+        height * 1.8 + seed * 0.007,
+        wind_position.y * cloud_layer.z - seed * 0.011,
+    );
+    let kind = u32(cloud_shape.z + 0.5);
+    if kind == 2u {
+        coordinate.x *= 0.32;
+        coordinate.z *= 1.8;
+    } else if kind == 5u || kind == 8u {
+        coordinate.x *= 1.75;
+        coordinate.z *= 1.75;
+    } else if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
+        coordinate.x *= 0.58;
+        coordinate.z *= 0.58;
+    }
+
+    // One filtered broad-channel sample replaces the prior two-octave,
+    // sixteen-corner hash/value-noise occupancy estimate.
+    let broad = sample_cloud_noise(coordinate * vec3<f32>(0.82, 0.62, 0.82)).r;
+    let profile = cloud_profile(height, cloud_shape.z, broad);
+    var threshold = 0.78 - cloud_shape.x * 0.34;
+    if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
+        threshold -= 0.08;
+    }
+    if kind == 0u {
+        threshold += height * 0.07;
+    } else if kind == 3u {
+        threshold += height * 0.24 - smoothstep(0.68, 0.82, height) * 0.11;
+    } else if kind == 10u {
+        threshold += height * 0.14;
+    }
+
+    // The relaxed threshold covers the detailed path's erosion and warp. A
+    // false positive merely costs a few fine steps; a false negative would
+    // systematically erase thin cirrus and small cumulus fragments.
+    let conservative_threshold = threshold - 0.22;
+    let body = smoothstep(
+        conservative_threshold - 0.08,
+        conservative_threshold + 0.12,
+        broad,
+    );
+    return clamp(body * profile * cloud_shape.y, 0.0, 1.35);
+}
+
+fn sunlight_transmittance(
+    position: vec3<f32>,
+    sun_direction: vec3<f32>,
+    probe_count: u32,
+) -> f32 {
     var optical_depth = 0.0;
     var distance = 420.0;
-    for (var step = 0u; step < 3u; step += 1u) {
+    // The compile-time cap retains WebGPU's predictable fixed-loop path. Thin
+    // and sheet profiles opt into one probe because their direct light is too
+    // broad for a second detailed density sample to be perceptible.
+    for (var step = 0u; step < CLOUD_MAX_SUNLIGHT_PROBES; step += 1u) {
+        if step >= probe_count {
+            break;
+        }
         let sample_position = position + sun_direction * distance;
         optical_depth += sample_density(sample_position) * distance * 0.00052;
         distance *= 1.72;
     }
     return exp(-min(optical_depth, 6.0));
+}
+
+// Keep all march budgets explicit and low enough to stay within WebGPU's
+// predictable fixed-loop path. The convective path preserves the 24 coarse
+// intervals / 48 fine-step cap; layered and thin decks trade sub-cell detail
+// for substantially less sampling and lower-frequency direct lighting.
+const CLOUD_CONVECTIVE_COARSE_INTERVALS = 24.0;
+const CLOUD_FINE_STEP_SCALE = 0.5;
+const CLOUD_CONVECTIVE_MAX_MARCH_STEPS = 48u;
+const CLOUD_MAX_MARCH_STEPS = CLOUD_CONVECTIVE_MAX_MARCH_STEPS;
+const CLOUD_MAX_SUNLIGHT_PROBES = 2u;
+
+struct CloudRenderBudget {
+    coarse_intervals: f32,
+    max_march_steps: u32,
+    sunlight_probe_count: u32,
+    sunlight_refresh_interval: u32,
+}
+
+fn cloud_render_budget(family: f32) -> CloudRenderBudget {
+    let kind = u32(family + 0.5);
+    // Low, near-continuous sheet: 10 / 16, one probe refreshed every 8 fine samples.
+    if kind == 4u {
+        return CloudRenderBudget(10.0, 16u, 1u, 8u);
+    }
+    // Middle layered deck: retain a little more depth for broad tonal variation.
+    if kind == 6u {
+        return CloudRenderBudget(12.0, 20u, 1u, 10u);
+    }
+    // Dense rain sheet needs enough samples to retain its darker body.
+    if kind == 7u {
+        return CloudRenderBudget(14.0, 24u, 1u, 8u);
+    }
+    // High, optically thin sheets and ribbons have the cheapest paths.
+    if kind == 9u {
+        return CloudRenderBudget(8.0, 12u, 1u, 12u);
+    }
+    if kind == 2u {
+        return CloudRenderBudget(10.0, 16u, 1u, 12u);
+    }
+    // Small high-level cells can use the same cheaper light path while keeping
+    // enough spatial detail to avoid dissolving into an alpha sheet.
+    if kind == 5u || kind == 8u {
+        return CloudRenderBudget(16.0, 32u, 1u, 8u);
+    }
+    if kind == 1u {
+        return CloudRenderBudget(18.0, 36u, 2u, 6u);
+    }
+    // Cumulus, cumulonimbus, and congestus retain the full convective path.
+    return CloudRenderBudget(
+        CLOUD_CONVECTIVE_COARSE_INTERVALS,
+        CLOUD_CONVECTIVE_MAX_MARCH_STEPS,
+        2u,
+        4u,
+    );
 }
 
 fn henyey_greenstein(cosine: f32, eccentricity: f32) -> f32 {
@@ -260,18 +373,24 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if trace_end <= trace_start {
         discard;
     }
+    let budget = cloud_render_budget(cloud_shape.z);
 
     // Empty air is searched in large steps. Once density is found, backtrack
-    // and integrate in quarter-sized steps until the ray is clear again.
+    // and integrate in half-sized steps until the ray is clear again.
     // Pixel-stable jitter prevents the curved shell from resolving into
     // coherent marching bands without requiring more samples everywhere.
-    let coarse_step = (trace_end - trace_start) / 40.0;
-    let fine_step = coarse_step * 0.25;
+    let coarse_step = (trace_end - trace_start) / budget.coarse_intervals;
+    let fine_step = coarse_step * CLOUD_FINE_STEP_SCALE;
     let ray_jitter = hash13(vec3<f32>(floor(in.position.xy), cloud_shape.w));
     var step_length = coarse_step;
     var distance = trace_start + coarse_step * ray_jitter;
     var fine_marching = false;
     var fine_empty_steps = 0u;
+    // Detailed self-shadowing is materially lower frequency than the fine
+    // integration samples. Start each occupied segment with a fresh result,
+    // then reuse it for three immediately following occupied samples.
+    var occupied_fine_steps = 0u;
+    var sun_visibility = 1.0;
     var transmittance = 1.0;
     var visible_opacity = 0.0;
     var radiance = vec3<f32>(0.0);
@@ -283,14 +402,26 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let horizon_haze = 1.0 - smoothstep(0.02, 0.22, ray_direction.y);
     let aerial_extinction = cloud_geometry.w * mix(0.65, 4.5, horizon_haze);
 
-    for (var step = 0u; step < 80u; step += 1u) {
+    for (var step = 0u; step < CLOUD_MAX_MARCH_STEPS; step += 1u) {
+        if step >= budget.max_march_steps {
+            break;
+        }
         if distance >= trace_end {
             break;
         }
         let position = ray_origin + ray_direction * distance;
         let distance_fade = 1.0 - smoothstep(cloud_layer.w * 0.68, cloud_layer.w, distance);
-        let density = sample_density(position) * distance_fade;
-        if density > 0.002 {
+        var density: f32;
+        var density_threshold: f32;
+        if fine_marching {
+            density = sample_density(position);
+            density_threshold = 0.002;
+        } else {
+            density = sample_density_coarse(position);
+            density_threshold = 0.0004;
+        }
+        density *= distance_fade;
+        if density > density_threshold {
             if !fine_marching {
                 fine_marching = true;
                 fine_empty_steps = 0u;
@@ -310,7 +441,14 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 0.0,
                 1.0,
             );
-            let sun_visibility = sunlight_transmittance(position, sun_direction);
+            if occupied_fine_steps % budget.sunlight_refresh_interval == 0u {
+                sun_visibility = sunlight_transmittance(
+                    position,
+                    sun_direction,
+                    budget.sunlight_probe_count,
+                );
+            }
+            occupied_fine_steps += 1u;
             let powder = 1.0 - exp(-density * 2.4);
             let clear_ambient = mix(
                 vec3<f32>(0.30, 0.36, 0.43),
@@ -329,11 +467,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 * mix(0.52, 1.0, sqrt(sun_visibility))
                 * (1.0 - density * (0.12 + storminess * 0.16));
             let sheet_cloud = kind == 4u || kind == 6u || kind == 7u || kind == 9u;
-            let underside_variation = value_noise_3d(vec3<f32>(
+            let underside_variation = sample_cloud_noise(vec3<f32>(
                 position.x * 0.00034 + cloud_shape.w * 0.017,
                 cloud_shape.w * 0.009,
                 position.z * 0.00034 - cloud_shape.w * 0.013,
-            ));
+            )).a;
             let ambient_variation = select(1.0, mix(0.46, 1.04, underside_variation), sheet_cloud);
             let phase_light = 0.14 + 0.12 * forward_phase;
             let storm_direct = select(1.0, 0.08 + sun_visibility * 0.22, storminess > 0.5);
@@ -359,6 +497,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             if fine_empty_steps >= 3u {
                 fine_marching = false;
                 fine_empty_steps = 0u;
+                occupied_fine_steps = 0u;
                 step_length = coarse_step;
             }
         }

@@ -35,15 +35,19 @@ use weather::*;
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
-pub(crate) use clouds::{TacticalCloudCaptureOverride, TacticalCloudCaptureProfile};
+pub(crate) use clouds::TacticalCloudLayer;
+#[allow(unused_imports)]
+pub(crate) use clouds::{
+    TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride, TacticalCloudCaptureProfile,
+};
 #[allow(unused_imports)]
 pub(crate) use environment::{
     TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
 };
 #[allow(unused_imports)]
 pub(crate) use ground_scatter::{
-    GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundScatterLayer,
-    LooseStonePebblePatch,
+    GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundLitterDiagnostics,
+    GroundScatterLayer, LooseStonePebblePatch,
 };
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
@@ -53,9 +57,13 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
-    PresentedTree, TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial,
+    PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
+    PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
+    PlayableTreeMidTrunk, PlayableTreeTrunk, PresentedTree, TacticalTreeAggregateBarkMaterial,
+    TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation, TacticalTreeLeafCardMaterial,
     TreeAssetResidencyDiagnostics, TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
+    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_aggregate_bark_material,
+    oak_bark_material, oak_leaf_material,
 };
 pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
@@ -130,6 +138,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
             MaterialPlugin::<TacticalPebbleBillboardMaterial>::default(),
             MaterialPlugin::<TacticalTreeBarkMaterial>::default(),
+            MaterialPlugin::<TacticalTreeAggregateBarkMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
@@ -172,10 +181,12 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<VistaTreePresentationCache>()
         .init_resource::<ActiveVistaSurface>()
         .init_resource::<TreeLodRenderOverride>()
+        .init_resource::<TacticalTreeBenchmarkIsolation>()
         .init_resource::<ActiveTacticalScene>()
         .init_resource::<PresentedCelestialLighting>()
         .init_resource::<AtmosphereIblAmbientHandoff>()
         .init_resource::<TacticalCloudCaptureOverride>()
+        .init_resource::<TacticalCloudBenchmarkIsolation>()
         .init_resource::<WeatherOcclusionState>()
         .add_systems(
             Update,
