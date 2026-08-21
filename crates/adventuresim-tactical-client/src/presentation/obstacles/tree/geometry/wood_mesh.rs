@@ -14,12 +14,14 @@ use super::{
 
 /// Geometry budgets for live woody branch sweeps.
 ///
-/// `FullDetail` is the authored trunk and LOD0 branch mesh. Aggregate crown
-/// tiers deliberately opt into their own budgets so reducing distant geometry
-/// cannot silently change close tree silhouettes or root contact.
+/// `FullDetail` is the authored trunk/root and LOD0 branch mesh. The mid
+/// trunk and aggregate crown tiers deliberately opt into their own budgets so
+/// reducing distant geometry cannot silently change close tree silhouettes or
+/// root contact.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::presentation) enum WoodyBranchMeshQuality {
     FullDetail,
+    MidDistanceTrunk,
     AggregateLod1,
     AggregateLod2,
 }
@@ -32,6 +34,16 @@ impl WoodyBranchMeshQuality {
                     16
                 } else {
                     (8_u32.saturating_sub(u32::from(depth))).max(4)
+                }
+            }
+            // The middle tier carries only the upright bole. Its faceting is
+            // hidden by distance while retaining enough sides for stable bark
+            // highlights through the LOD3 handoff.
+            Self::MidDistanceTrunk => {
+                if depth == 0 {
+                    9
+                } else {
+                    4
                 }
             }
             // LOD1 keeps a little more roundness on scaffold branches, while
@@ -56,6 +68,7 @@ impl WoodyBranchMeshQuality {
     fn axial_spacing_metres(self) -> f32 {
         match self {
             Self::FullDetail => 0.45,
+            Self::MidDistanceTrunk => 0.9,
             Self::AggregateLod1 => 0.75,
             Self::AggregateLod2 => 1.1,
         }
@@ -83,6 +96,36 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
         maximum_depth,
         bark,
         WoodyBranchMeshQuality::FullDetail,
+    )
+}
+
+/// Mid-distance playable-tree trunk mesh.
+///
+/// This deliberately retains only the upright depth-zero bole. The authored
+/// full-detail mesh keeps the root flare and contact geometry near the
+/// camera; reproducing those roots in this tier would spend geometry on
+/// detail that is no longer readable and would make the near/mid overlap
+/// visually muddy.
+pub(in crate::presentation) fn procedural_woody_mid_trunk_mesh(
+    branches: &[TreeBranchSegment],
+    bark: BarkRecipe,
+) -> Mesh {
+    let upright_bole = branches
+        .iter()
+        .filter(|branch| {
+            if branch.depth != 0 {
+                return false;
+            }
+            let axis = branch.end - branch.start;
+            axis.length_squared() > 0.000_001 && axis.y.abs() >= axis.xz().length() * 0.7
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_woody_branch_mesh_with_quality(
+        &upright_bole,
+        0,
+        bark,
+        WoodyBranchMeshQuality::MidDistanceTrunk,
     )
 }
 
@@ -1240,6 +1283,80 @@ mod tests {
             assert!((root[0] - (position[1] - ground_y)).abs() < 1.0e-5);
             assert_eq!(root[1..], [1.0, 1.0, 1.0]);
         }
+    }
+
+    #[test]
+    fn mid_distance_trunk_reduces_the_upright_bole_with_valid_deterministic_geometry() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let full = procedural_tree_branch_mesh(&branches, 0);
+        let mid = procedural_woody_mid_trunk_mesh(&branches, ENGLISH_OAK_BARK);
+        let repeated = procedural_woody_mid_trunk_mesh(&branches, ENGLISH_OAK_BARK);
+        let positions = mid
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .expect("mid trunk has positions");
+        let normals = mid
+            .attribute(Mesh::ATTRIBUTE_NORMAL)
+            .and_then(VertexAttributeValues::as_float3)
+            .expect("mid trunk has normals");
+        let Some(VertexAttributeValues::Float32x2(uvs)) = mid.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("mid trunk has UVs");
+        };
+        let Some(VertexAttributeValues::Float32x4(root_data)) =
+            mid.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("mid trunk carries metric root height");
+        };
+        let indices = mid.indices().expect("mid trunk is indexed");
+
+        assert_eq!(positions.len(), normals.len());
+        assert_eq!(positions.len(), uvs.len());
+        assert_eq!(positions.len(), root_data.len());
+        assert_eq!(indices.len() % 3, 0);
+        assert!(indices.iter().all(|index| index < positions.len()));
+        assert!(positions.iter().flatten().all(|value| value.is_finite()));
+        assert!(uvs.iter().flatten().all(|value| value.is_finite()));
+        assert!(normals.iter().all(|normal| {
+            let normal = Vec3::from_array(*normal);
+            normal.is_finite() && (normal.length() - 1.0).abs() < 1.0e-3
+        }));
+        let ground_y = -TREE_TRUNK_HEIGHT_METRES * 0.5;
+        for (position, root) in positions.iter().zip(root_data) {
+            assert!((root[0] - (position[1] - ground_y)).abs() < 1.0e-5);
+            assert_eq!(root[1..], [1.0, 1.0, 1.0]);
+        }
+
+        // Seed 42 is the representative oak fixture used by the tree suite.
+        // Exact counts lock the nine-sided, 0.9-metre, one-cap budget and
+        // verify that the root-only close mesh remains substantially denser.
+        assert_eq!(full.count_vertices(), 771);
+        assert_eq!(
+            full.indices().expect("full trunk is indexed").len() / 3,
+            1_344
+        );
+        assert_eq!(mid.count_vertices(), 173);
+        assert_eq!(indices.len() / 3, 279);
+        assert!(mid.count_vertices() * 2 < full.count_vertices());
+        assert!(indices.len() / 3 * 2 < full.indices().unwrap().len() / 3);
+
+        assert_eq!(
+            mid.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        assert_eq!(
+            mid.attribute(Mesh::ATTRIBUTE_NORMAL),
+            repeated.attribute(Mesh::ATTRIBUTE_NORMAL)
+        );
+        assert_eq!(
+            mid.attribute(Mesh::ATTRIBUTE_UV_0),
+            repeated.attribute(Mesh::ATTRIBUTE_UV_0)
+        );
+        assert_eq!(
+            mid.attribute(Mesh::ATTRIBUTE_COLOR),
+            repeated.attribute(Mesh::ATTRIBUTE_COLOR)
+        );
+        assert_eq!(mid.indices(), repeated.indices());
     }
 
     #[test]

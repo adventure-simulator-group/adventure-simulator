@@ -50,8 +50,9 @@ use crate::camera::CameraRigConfig;
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
     GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch, PlayableTreeAggregateWood,
-    PlayableTreeBuds, PlayableTreeCanopyCard, PlayableTreeDetailedLeaves, PlayableTreeDetailedWood,
-    PlayableTreeTrunk, PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual,
+    PlayableTreeBuds, PlayableTreeCanopyCard, PlayableTreeDetailedLeaves,
+    PlayableTreeDetailedTrunk, PlayableTreeDetailedWood, PlayableTreeMidTrunk, PlayableTreeTrunk,
+    PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual,
     TacticalCloudBenchmarkIsolation, TacticalCloudLayer, TacticalGraphicsSettings,
     TacticalPresentationPlugin, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
     TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
@@ -2111,6 +2112,8 @@ fn benchmark_scene_performance(
             (
                 Has<PlayableTreeDetailedLeaves>,
                 Has<PlayableTreeTrunk>,
+                Has<PlayableTreeDetailedTrunk>,
+                Has<PlayableTreeMidTrunk>,
                 Has<PlayableTreeDetailedWood>,
                 Has<PlayableTreeAggregateWood>,
                 Has<PlayableTreeBuds>,
@@ -2121,6 +2124,8 @@ fn benchmark_scene_performance(
                 Or<(
                     With<PlayableTreeDetailedLeaves>,
                     With<PlayableTreeTrunk>,
+                    With<PlayableTreeDetailedTrunk>,
+                    With<PlayableTreeMidTrunk>,
                     With<PlayableTreeDetailedWood>,
                     With<PlayableTreeAggregateWood>,
                     With<PlayableTreeBuds>,
@@ -2299,7 +2304,7 @@ fn benchmark_scene_performance(
             visibility_layers
                 .p7()
                 .iter()
-                .filter(|(leaves, _, _, _, _, _)| *leaves)
+                .filter(|(leaves, _, _, _, _, _, _, _)| *leaves)
                 .count(),
         );
         counts.insert(
@@ -2307,7 +2312,23 @@ fn benchmark_scene_performance(
             visibility_layers
                 .p7()
                 .iter()
-                .filter(|(_, trunks, _, _, _, _)| *trunks)
+                .filter(|(_, trunks, _, _, _, _, _, _)| *trunks)
+                .count(),
+        );
+        counts.insert(
+            "tree_detailed_trunk_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, detailed, _, _, _, _, _)| *detailed)
+                .count(),
+        );
+        counts.insert(
+            "tree_mid_trunk_entities".to_owned(),
+            visibility_layers
+                .p7()
+                .iter()
+                .filter(|(_, _, _, mid, _, _, _, _)| *mid)
                 .count(),
         );
         counts.insert(
@@ -2315,7 +2336,7 @@ fn benchmark_scene_performance(
             visibility_layers
                 .p7()
                 .iter()
-                .filter(|(_, _, wood, _, _, _)| *wood)
+                .filter(|(_, _, _, _, wood, _, _, _)| *wood)
                 .count(),
         );
         counts.insert(
@@ -2323,7 +2344,7 @@ fn benchmark_scene_performance(
             visibility_layers
                 .p7()
                 .iter()
-                .filter(|(_, _, _, wood, _, _)| *wood)
+                .filter(|(_, _, _, _, _, wood, _, _)| *wood)
                 .count(),
         );
         for lod in [1_u8, 2] {
@@ -2342,7 +2363,7 @@ fn benchmark_scene_performance(
             visibility_layers
                 .p7()
                 .iter()
-                .filter(|(_, _, _, _, buds, _)| *buds)
+                .filter(|(_, _, _, _, _, _, buds, _)| *buds)
                 .count(),
         );
         counts.insert(
@@ -2350,7 +2371,7 @@ fn benchmark_scene_performance(
             visibility_layers
                 .p7()
                 .iter()
-                .filter(|(_, _, _, _, _, cards)| *cards)
+                .filter(|(_, _, _, _, _, _, _, cards)| *cards)
                 .count(),
         );
         state.scene_entity_counts = Some(counts);
@@ -2769,11 +2790,12 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
     if let Some(natural) = report.results.first() {
         let assets = &natural.tree_asset_residency;
         markdown.push_str(&format!(
-            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} / {} detailed flat-card leaves retained/source; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices (LOD1/2: {} / {} vertices, {} / {} triangles); {} LOD1 impostor cards / {} vertices; {} impostor vertices; {:.2} / {:.2} / {:.2} / {:.2} MiB for LOD1/2/3/4 impostor pixels ({:.2} MiB total); {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
+            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} / {} detailed/mid trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} / {} detailed flat-card leaves retained/source; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices (LOD1/2: {} / {} vertices, {} / {} triangles); {} LOD1 impostor cards / {} vertices; {} impostor vertices; {:.2} / {:.2} / {:.2} / {:.2} MiB for LOD1/2/3/4 impostor pixels ({:.2} MiB total); {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
             assets.variants,
             assets.source_branches,
             assets.source_leaves,
-            assets.trunk_vertices,
+            assets.detailed_trunk_vertices,
+            assets.mid_trunk_vertices,
             assets.detailed_branch_vertices,
             assets.cambered_leaf_vertices,
             assets.leaf_card_retained_leaves,

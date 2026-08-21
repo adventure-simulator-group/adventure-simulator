@@ -857,10 +857,38 @@ pub(in crate::presentation) fn tree_leaf_visibility(
     }
 }
 
+pub(in crate::presentation) const TREE_TRUNK_HANDOFF_START: f32 = 12.0;
+pub(in crate::presentation) const TREE_TRUNK_HANDOFF_END: f32 = 16.0;
+
+/// Default close trunk/root range before projected-size adjustment.
 pub(in crate::presentation) fn tree_trunk_visibility() -> VisibilityRange {
+    tree_projected_trunk_visibility(false, 1.0)
+}
+
+/// Default low-poly mid-trunk range before projected-size adjustment.
+pub(in crate::presentation) fn tree_mid_trunk_visibility() -> VisibilityRange {
+    tree_projected_trunk_visibility(true, 1.0)
+}
+
+/// Keeps the two live trunk representations on the same obstacle-origin
+/// distance metric. The detailed root mesh hands off over 12..16 metres, and
+/// the mid trunk then persists through the existing LOD3-to-billboard tail.
+pub(in crate::presentation) fn tree_projected_trunk_visibility(
+    mid_distance: bool,
+    focal_scale: f32,
+) -> VisibilityRange {
+    let handoff = (TREE_TRUNK_HANDOFF_START * focal_scale)..(TREE_TRUNK_HANDOFF_END * focal_scale);
     VisibilityRange {
-        start_margin: 0.0..0.0,
-        end_margin: 50.0..60.0,
+        start_margin: if mid_distance {
+            handoff.clone()
+        } else {
+            0.0..0.0
+        },
+        end_margin: if mid_distance {
+            tree_projected_lod_visibility(3, focal_scale, 3.5).end_margin
+        } else {
+            handoff
+        },
         use_aabb: false,
     }
 }
@@ -1118,7 +1146,24 @@ mod tests {
             tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5).end_margin,
             1.5..2.5
         );
-        assert_eq!(tree_trunk_visibility().end_margin, 50.0..60.0);
+        assert_eq!(tree_trunk_visibility().end_margin, 12.0..16.0);
+        assert_eq!(tree_mid_trunk_visibility().start_margin, 12.0..16.0);
+        assert_eq!(tree_mid_trunk_visibility().end_margin, 60.0..70.0);
+    }
+
+    #[test]
+    fn trunk_tiers_overlap_without_a_gap_at_every_projected_scale() {
+        for focal_scale in [0.55, 1.0, 2.4] {
+            let detailed = tree_projected_trunk_visibility(false, focal_scale);
+            let mid = tree_projected_trunk_visibility(true, focal_scale);
+            assert_eq!(detailed.start_margin, 0.0..0.0);
+            assert_eq!(detailed.end_margin, mid.start_margin);
+            assert_eq!(
+                mid.end_margin,
+                tree_projected_lod_visibility(3, focal_scale, 3.5).end_margin
+            );
+            assert!(!detailed.use_aabb && !mid.use_aabb);
+        }
     }
 
     #[test]

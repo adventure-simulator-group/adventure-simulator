@@ -30,6 +30,14 @@ pub(crate) struct PlayableTreeDetailedLeaves;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub(crate) struct PlayableTreeTrunk;
 
+/// Full-detail trunk and root mesh, retained only around the close camera.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub(crate) struct PlayableTreeDetailedTrunk;
+
+/// Low-poly upright-bole mesh that bridges the close trunk to the LOD4 card.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub(crate) struct PlayableTreeMidTrunk;
+
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub(crate) struct PlayableTreeDetailedWood;
 
@@ -76,7 +84,11 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
         &mut Visibility,
     )>,
     mut trunks: Query<
-        (&mut VisibilityRange, &mut Visibility),
+        (
+            Has<PlayableTreeMidTrunk>,
+            &mut VisibilityRange,
+            &mut Visibility,
+        ),
         (
             With<TreeTrunkLod>,
             With<PlayableTreeTrunk>,
@@ -168,7 +180,7 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
             *visibility = next_visibility;
         }
     }
-    for (mut range, mut visibility) in &mut trunks {
+    for (mid_trunk, mut range, mut visibility) in &mut trunks {
         let (next_range, next_visibility) = if let Some(forced_lod) = lod_override.lod {
             (
                 VisibilityRange::abrupt(0.0, f32::MAX),
@@ -179,13 +191,8 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
                 },
             )
         } else {
-            let end = tree_projected_lod_visibility(3, focal_scale, 3.5).end_margin;
             (
-                VisibilityRange {
-                    start_margin: 0.0..0.0,
-                    end_margin: end,
-                    use_aabb: true,
-                },
+                super::impostor::tree_projected_trunk_visibility(mid_trunk, focal_scale),
                 Visibility::Inherited,
             )
         };
@@ -320,11 +327,22 @@ mod tests {
                 Visibility::Inherited,
             ))
             .id();
-        let trunk = app
+        let detailed_trunk = app
             .world_mut()
             .spawn((
                 TreeTrunkLod,
                 PlayableTreeTrunk,
+                PlayableTreeDetailedTrunk,
+                VisibilityRange::abrupt(0.0, f32::MAX),
+                Visibility::Inherited,
+            ))
+            .id();
+        let mid_trunk = app
+            .world_mut()
+            .spawn((
+                TreeTrunkLod,
+                PlayableTreeTrunk,
+                PlayableTreeMidTrunk,
                 VisibilityRange::abrupt(0.0, f32::MAX),
                 Visibility::Inherited,
             ))
@@ -338,7 +356,7 @@ mod tests {
                 Visibility::Hidden
             );
         }
-        for entity in [leaves, buds, canopy_card, trunk] {
+        for entity in [leaves, buds, canopy_card, detailed_trunk, mid_trunk] {
             assert_eq!(
                 *app.world().entity(entity).get::<Visibility>().unwrap(),
                 Visibility::Inherited
@@ -361,7 +379,8 @@ mod tests {
             aggregate_wood,
             buds,
             canopy_card,
-            trunk,
+            detailed_trunk,
+            mid_trunk,
         ] {
             assert_eq!(
                 *app.world().entity(entity).get::<Visibility>().unwrap(),

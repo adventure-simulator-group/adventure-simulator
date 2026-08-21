@@ -3,21 +3,22 @@ use super::impostor::{
     BEECH_TREE_BAKE_STYLE, OAK_TREE_BAKE_STYLE, TREE_LEAF_HANDOFF_END, TREE_LEAF_HANDOFF_START,
     TreeBakeStyle, TreeImpostorProvenance, TreeLodBake, bake_tree_lod, bake_tree_lod_with_style,
     tree_impostor_material, tree_leaf_visibility, tree_lod_name, tree_lod_visibility,
-    tree_trunk_visibility, validate_tree_bake_provenance,
+    tree_mid_trunk_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
     COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
     OakGnarlingParameters, PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
-    PlayableTreeDetailedLeaves, PlayableTreeDetailedWood, PlayableTreeTrunk,
-    TacticalTreeAggregateBarkMaterial, TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial,
-    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
-    TreeLodRenderOverride, TreeTrunkLod, WoodyBranchMeshQuality, beech_aggregate_bark_material,
-    beech_bark_material, beech_leaf_material, oak_aggregate_bark_material, oak_bark_material,
-    oak_leaf_material, procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh,
-    procedural_oak_leaves, procedural_oak_skeleton_with_gnarling,
-    procedural_oak_textured_leaf_group_mesh, procedural_tree_branch_group_mesh,
-    procedural_tree_branch_mesh, procedural_tree_skeleton, procedural_woody_branch_mesh,
-    procedural_woody_crown_mesh, procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
+    PlayableTreeMidTrunk, PlayableTreeTrunk, TacticalTreeAggregateBarkMaterial,
+    TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
+    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    WoodyBranchMeshQuality, beech_aggregate_bark_material, beech_bark_material,
+    beech_leaf_material, oak_aggregate_bark_material, oak_bark_material, oak_leaf_material,
+    procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
+    procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
+    procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
+    procedural_woody_branch_mesh, procedural_woody_crown_mesh, procedural_woody_mid_trunk_mesh,
+    procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
 };
 use crate::presentation::{
     ActiveTacticalScene, ActiveVistaSurface, ProceduralEnvironmentAssets, SceneEnvironment,
@@ -76,7 +77,10 @@ pub(crate) struct TreeAssetResidencyDiagnostics {
     pub(crate) variants: usize,
     pub(crate) source_branches: usize,
     pub(crate) source_leaves: usize,
-    pub(crate) trunk_vertices: usize,
+    /// Full-detail trunk and root vertices retained for near views.
+    pub(crate) detailed_trunk_vertices: usize,
+    /// Low-poly upright-bole vertices retained for the mid-distance handoff.
+    pub(crate) mid_trunk_vertices: usize,
     pub(crate) detailed_branch_vertices: usize,
     pub(crate) cambered_leaf_vertices: usize,
     /// Source detailed leaves considered when building streamed flat-card
@@ -126,6 +130,7 @@ struct CachedTreePresentation {
     branches: Vec<super::TreeBranchSegment>,
     leaves: Vec<super::TreeLeaf>,
     trunk_mesh: Option<Handle<Mesh>>,
+    mid_trunk_mesh: Option<Handle<Mesh>>,
     cluster_layout: Option<Vec<(u8, Vec3, f32)>>,
     clusters: Option<Vec<CachedTreeClusterPresentation>>,
     aggregate_branch_meshes: [Option<Handle<Mesh>>; 2],
@@ -284,10 +289,11 @@ fn spawn_streamed_tree_children(
         // through inherited parent visibility.
         if new_mask & 1 != 0 {
             parent.spawn((
-                Name::new(format!("{} trunk", cached.species_name)),
+                Name::new(format!("{} detailed trunk and roots", cached.species_name)),
                 StreamedTreeChild,
                 TreeTrunkLod,
                 PlayableTreeTrunk,
+                PlayableTreeDetailedTrunk,
                 Mesh3d(
                     cached
                         .trunk_mesh
@@ -296,6 +302,21 @@ fn spawn_streamed_tree_children(
                 ),
                 MeshMaterial3d(cached.bark_material.clone()),
                 tree_trunk_visibility(),
+            ));
+            parent.spawn((
+                Name::new(format!("{} mid-distance trunk", cached.species_name)),
+                StreamedTreeChild,
+                TreeTrunkLod,
+                PlayableTreeTrunk,
+                PlayableTreeMidTrunk,
+                Mesh3d(
+                    cached
+                        .mid_trunk_mesh
+                        .clone()
+                        .expect("requested mid trunk mesh is resident"),
+                ),
+                MeshMaterial3d(cached.bark_material.clone()),
+                tree_mid_trunk_visibility(),
             ));
         }
         if new_mask & (1 << 1) != 0 || new_leaf_mask != 0 {
@@ -630,8 +651,22 @@ fn ensure_tree_assets_resident(
                 procedural_woody_branch_mesh(&cached.branches, 0, COMMON_BEECH_BARK)
             }
         };
-        diagnostics.trunk_vertices += mesh.count_vertices();
+        diagnostics.detailed_trunk_vertices += mesh.count_vertices();
         cached.trunk_mesh = Some(meshes.add(mesh));
+    }
+    if mask & 1 != 0 && cached.mid_trunk_mesh.is_none() {
+        let mesh = match cached.species {
+            TreePresentationSpecies::EnglishOak => {
+                procedural_woody_mid_trunk_mesh(&cached.branches, ENGLISH_OAK_BARK)
+            }
+            TreePresentationSpecies::CommonBeech => {
+                procedural_woody_mid_trunk_mesh(&cached.branches, COMMON_BEECH_BARK)
+            }
+        };
+        diagnostics.mid_trunk_vertices += mesh.count_vertices();
+        cached.mid_trunk_mesh = Some(meshes.add(mesh));
+    }
+    if mask & 1 != 0 {
         diagnostics.generated_lod_mask |= 1;
     }
     if mask & (1 << 1) != 0 {
@@ -999,6 +1034,7 @@ pub(in crate::presentation) fn present_pending_trees(
                 branches,
                 leaves,
                 trunk_mesh: None,
+                mid_trunk_mesh: None,
                 cluster_layout: None,
                 clusters: None,
                 aggregate_branch_meshes: [None, None],
@@ -1247,6 +1283,7 @@ mod tests {
             branches,
             leaves,
             trunk_mesh: None,
+            mid_trunk_mesh: None,
             cluster_layout: None,
             clusters: None,
             aggregate_branch_meshes: [None, None],
@@ -1272,8 +1309,10 @@ mod tests {
         assert!(cached.lod_cards[3].is_some());
         assert!(cached.lod_cards[..3].iter().all(Option::is_none));
         assert!(cached.trunk_mesh.is_none());
+        assert!(cached.mid_trunk_mesh.is_none());
         assert!(cached.clusters.is_none());
-        assert_eq!(diagnostics.trunk_vertices, 0);
+        assert_eq!(diagnostics.detailed_trunk_vertices, 0);
+        assert_eq!(diagnostics.mid_trunk_vertices, 0);
         assert_eq!(diagnostics.cambered_leaf_vertices, 0);
         assert_eq!(diagnostics.leaf_card_vertices, 0);
         assert!(diagnostics.impostor_vertices > 0);
@@ -1296,6 +1335,7 @@ mod tests {
             branches,
             leaves,
             trunk_mesh: None,
+            mid_trunk_mesh: None,
             cluster_layout: None,
             clusters: None,
             aggregate_branch_meshes: [None, None],
@@ -1331,6 +1371,8 @@ mod tests {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
         let mut vertex_count = procedural_tree_branch_mesh(&branches, 0).count_vertices();
+        vertex_count +=
+            procedural_woody_mid_trunk_mesh(&branches, ENGLISH_OAK_BARK).count_vertices();
         for primary_group in 0..TREE_PRIMARY_GROUP_COUNT {
             vertex_count +=
                 procedural_tree_branch_group_mesh(&branches, 3, primary_group).count_vertices();
