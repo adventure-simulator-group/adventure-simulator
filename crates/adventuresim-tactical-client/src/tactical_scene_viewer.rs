@@ -2754,7 +2754,7 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
     if let Some(natural) = report.results.first() {
         let assets = &natural.tree_asset_residency;
         markdown.push_str(&format!(
-            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices; {} LOD1 impostor cards / {} vertices; {} impostor vertices; {:.2} MiB of impostor pixels; {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
+            "\nNatural-view tree residency: {} variants; {} source branches; {} source leaves; {} trunk vertices; {} detailed-branch vertices; {} cambered-leaf vertices; {} leaf-card vertices; {} bud vertices; {} aggregate-branch vertices; {} LOD1 impostor cards / {} vertices; {} impostor vertices; {:.2} / {:.2} / {:.2} / {:.2} MiB for LOD1/2/3/4 impostor pixels ({:.2} MiB total); {} ms cumulative demand-generation time. Resident LOD mask: `{:#08b}`.\n",
             assets.variants,
             assets.source_branches,
             assets.source_leaves,
@@ -2767,6 +2767,10 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
             assets.lod1_impostor_cards,
             assets.lod1_impostor_vertices,
             assets.impostor_vertices,
+            assets.impostor_texture_bytes_by_lod[0] as f64 / (1024.0 * 1024.0),
+            assets.impostor_texture_bytes_by_lod[1] as f64 / (1024.0 * 1024.0),
+            assets.impostor_texture_bytes_by_lod[2] as f64 / (1024.0 * 1024.0),
+            assets.impostor_texture_bytes_by_lod[3] as f64 / (1024.0 * 1024.0),
             assets.impostor_texture_bytes as f64 / (1024.0 * 1024.0),
             assets.generation_milliseconds,
             assets.generated_lod_mask,

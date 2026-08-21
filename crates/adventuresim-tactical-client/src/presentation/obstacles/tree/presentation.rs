@@ -84,6 +84,10 @@ pub(crate) struct TreeAssetResidencyDiagnostics {
     pub(crate) lod1_impostor_cards: usize,
     pub(crate) lod1_impostor_vertices: usize,
     pub(crate) impostor_vertices: usize,
+    /// Uncompressed RGBA8 atlas bytes by aggregate LOD, in LOD1..LOD4 order.
+    /// The total remains for existing report consumers, while this split makes
+    /// tile-resolution regressions attributable to an individual LOD.
+    pub(crate) impostor_texture_bytes_by_lod: [usize; 4],
     pub(crate) impostor_texture_bytes: usize,
     pub(crate) generated_lod_mask: u8,
     pub(crate) generation_milliseconds: u128,
@@ -487,7 +491,9 @@ fn ensure_tree_card_resident(
         diagnostics.lod1_impostor_vertices += vertex_count;
     }
     diagnostics.impostor_vertices += vertex_count;
-    diagnostics.impostor_texture_bytes += bake.image.data.as_ref().map_or(0, |pixels| pixels.len());
+    let texture_bytes = bake.image.data.as_ref().map_or(0, |pixels| pixels.len());
+    diagnostics.impostor_texture_bytes_by_lod[index] += texture_bytes;
+    diagnostics.impostor_texture_bytes += texture_bytes;
     diagnostics.generated_lod_mask |= 1 << (lod + 1);
     let texture = images.add(bake.image);
     cached.lod_cards[index] = Some(CachedTreeCardPresentation {
@@ -1159,7 +1165,11 @@ mod tests {
         assert_eq!(diagnostics.cambered_leaf_vertices, 0);
         assert_eq!(diagnostics.leaf_card_vertices, 0);
         assert!(diagnostics.impostor_vertices > 0);
-        assert!(diagnostics.impostor_texture_bytes > 0);
+        assert_eq!(
+            diagnostics.impostor_texture_bytes_by_lod,
+            [0, 0, 0, 2_359_296]
+        );
+        assert_eq!(diagnostics.impostor_texture_bytes, 2_359_296);
     }
 
     #[test]

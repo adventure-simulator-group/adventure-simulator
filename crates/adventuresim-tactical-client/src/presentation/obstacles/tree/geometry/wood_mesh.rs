@@ -85,7 +85,7 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
 ///
 /// The production mesh's implicit root flare, bark displacement, tangents, and
 /// high radial tessellation are valuable when viewed directly but invisible
-/// after projection into a 96-320 px atlas. Rebuilding that mesh for every
+/// after projection into a 64-256 px atlas. Rebuilding that mesh for every
 /// card dominated cold startup, so bake cards use independent low-sided tubes
 /// while the live near tree keeps the exact production geometry.
 pub(in crate::presentation) fn procedural_woody_branch_bake_mesh(

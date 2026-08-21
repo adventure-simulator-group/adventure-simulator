@@ -7,9 +7,13 @@ use raster::*;
 use super::super::super::*;
 use super::geometry::*;
 
-pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 15;
+pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 16;
 pub(in crate::presentation) const TREE_IMPOSTOR_RENDER_METHOD: &str =
     "deterministic software triangle render with species-calibrated crown coverage";
+/// Per-LOD atlas tiles, from near aggregate cards through the whole-tree
+/// billboard. Keeping these in one table makes the residency budget explicit
+/// and avoids changing card topology or raster coverage to save texture memory.
+const TREE_IMPOSTOR_TILE_SIZES: [u32; 4] = [64, 112, 160, 256];
 const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 1.0;
 const WHOLE_TREE_BAKE_EXPOSURE: f32 = 0.91;
 
@@ -191,13 +195,13 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
 ) -> TreeLodBake {
     let started = web_time::Instant::now();
     let cards = tree_bake_cards_with_style(seed, branches, leaves, lod, style);
-    let tile_size = match lod {
-        1 => 96,
-        2 => 144,
-        3 => 192,
-        4 => 320,
-        _ => unreachable!("only aggregate tree LODs are baked"),
-    };
+    let tile_size = TREE_IMPOSTOR_TILE_SIZES
+        .get(
+            lod.checked_sub(1)
+                .expect("only aggregate tree LODs are baked") as usize,
+        )
+        .copied()
+        .expect("only aggregate tree LODs are baked");
     let columns = (cards.len() as f32).sqrt().ceil() as u32;
     let rows = (cards.len() as u32).div_ceil(columns);
     let atlas_width = columns * tile_size;
@@ -951,6 +955,35 @@ mod tests {
         assert_eq!(bakes.len(), 4);
         assert!(bakes.iter().all(|bake| !bake.provenance.records.is_empty()));
         assert!(bakes.windows(2).all(|pair| pair[0].lod < pair[1].lod));
+    }
+
+    #[test]
+    fn reduced_impostor_tiles_pin_dimensions_and_residency_budget() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let bakes = (1..=4)
+            .map(|lod| bake_tree_lod(42, &branches, &leaves, lod))
+            .collect::<Vec<_>>();
+
+        assert_eq!(TREE_IMPOSTOR_TILE_SIZES, [64, 112, 160, 256]);
+        assert_eq!(
+            bakes
+                .iter()
+                .map(|bake| (bake.provenance.atlas_width, bake.provenance.atlas_height))
+                .collect::<Vec<_>>(),
+            [(384, 320), (448, 448), (640, 640), (768, 768)]
+        );
+        let atlas_bytes = bakes
+            .iter()
+            .map(|bake| bake.image.data.as_ref().expect("rgba8 atlas").len())
+            .collect::<Vec<_>>();
+        assert_eq!(atlas_bytes, [491_520, 802_816, 1_638_400, 2_359_296]);
+        assert_eq!(atlas_bytes.iter().sum::<usize>(), 5_292_032);
+
+        // The prior 96/144/192/320 px tile budget for this unchanged card
+        // layout was 8,478,720 bytes. This preserves the raster/card inputs
+        // while cutting representative full-suite residency by 37.6%.
+        assert_eq!(8_478_720 - atlas_bytes.iter().sum::<usize>(), 3_186_688);
     }
 
     #[test]
