@@ -88,7 +88,9 @@ The current `BuildingDocument` remains the strict procedural-programme path:
 only Select, Openings, and Finish activate an audited edit today. With a
 freeform player-build document loaded, Construct adds a wall tool: drag across
 the scene to snap its endpoints to the build grid and place the corresponding
-per-cell semantic wall segments. A freeform save contains the same pre-mesh
+per-cell semantic wall segments. The **Floor tile** tool places semantic room
+cells; adjacent cells classify a wall as interior, while a freestanding wall
+has two exterior faces. A freeform save contains the same pre-mesh
 assembly as the generated plan—storeys, walls, openings, roof recipes, and
 per-wall finishes—not render cuboids. **Detach generated building** copies
 that assembly into a freeform document; the detached build no longer has a

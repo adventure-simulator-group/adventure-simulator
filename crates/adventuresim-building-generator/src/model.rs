@@ -983,6 +983,14 @@ pub struct PlayerBuildPart {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PlayerBuildEdit {
+    PlaceFloorTile {
+        cell: Cell,
+        storey: u16,
+    },
+    RemoveFloorTile {
+        cell: Cell,
+        storey: u16,
+    },
     DrawWall {
         start: GridPoint,
         end: GridPoint,
@@ -1063,6 +1071,47 @@ impl PlayerBuildDocument {
         }
         let mut next = self.clone();
         match edit {
+            PlayerBuildEdit::PlaceFloorTile { cell, storey } => {
+                let storey_plan = next.assembly.storey_mut(storey);
+                if storey_plan
+                    .rooms
+                    .iter()
+                    .any(|room| room.cells.contains(&cell))
+                {
+                    return Err("that floor tile already exists".to_owned());
+                }
+                let room = storey_plan.rooms.iter_mut().find(|room| room.id == 0);
+                if let Some(room) = room {
+                    room.cells.push(cell);
+                    room.cells.sort();
+                } else {
+                    storey_plan.rooms.push(Room {
+                        id: 0,
+                        kind: RoomKind::CommonRoom,
+                        cells: vec![cell],
+                    });
+                }
+            }
+            PlayerBuildEdit::RemoveFloorTile { cell, storey } => {
+                let Some(storey_plan) = next
+                    .assembly
+                    .storeys
+                    .iter_mut()
+                    .find(|candidate| candidate.level == storey)
+                else {
+                    return Err("floor tile was not found".to_owned());
+                };
+                let mut removed = false;
+                for room in &mut storey_plan.rooms {
+                    let count = room.cells.len();
+                    room.cells.retain(|candidate| *candidate != cell);
+                    removed |= room.cells.len() != count;
+                }
+                storey_plan.rooms.retain(|room| !room.cells.is_empty());
+                if !removed {
+                    return Err("floor tile was not found".to_owned());
+                }
+            }
             PlayerBuildEdit::DrawWall {
                 start,
                 end,
@@ -3842,6 +3891,28 @@ mod tests {
             style: WallStyle::Stone,
         });
         assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn player_build_floor_tiles_are_semantic_room_cells() {
+        let document = PlayerBuildDocument::empty()
+            .apply(PlayerBuildEdit::PlaceFloorTile {
+                cell: Cell::new(2, 3),
+                storey: 0,
+            })
+            .unwrap();
+        assert_eq!(
+            document.assembly.storeys[0].rooms[0].cells,
+            vec![Cell::new(2, 3)]
+        );
+        assert!(
+            document
+                .apply(PlayerBuildEdit::PlaceFloorTile {
+                    cell: Cell::new(2, 3),
+                    storey: 0,
+                })
+                .is_err()
+        );
     }
 
     #[test]

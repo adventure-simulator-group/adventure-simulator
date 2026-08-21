@@ -2,15 +2,15 @@ use std::{fs, path::PathBuf};
 
 use adventuresim_building_generator::{
     BattlementKind, BattlementRun, BuildingArchetype, BuildingDocument, BuildingEdit, BuildingPlan,
-    CELL_SIZE_METRES, CrownPath, CurtainWallRun, Direction, DormerKind, FiringPosition,
+    CELL_SIZE_METRES, Cell, CrownPath, CurtainWallRun, Direction, DormerKind, FiringPosition,
     GableProfile, GateClosure, GateClosureKind, GateDefense, GatehouseLoadPath, GuardOpeningKind,
     Opening, OpeningKind, PlayerBuildDocument, PlayerBuildEdit, PlayerBuildMaterial,
-    PlayerBuildPart, PlayerBuildPartKind, ProjectedDefenseDeployment, ProjectedDefensePath,
-    ProjectedDefenseTarget, RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace,
-    RoofKind, RoofMaterial, RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle,
-    TowerPortal, TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId,
-    WallStyle, WallWalk, analyse_player_build, audit_plan, audit_triangle_mesh, edit_document,
-    generate, generate_document,
+    PlayerBuildPart, ProjectedDefenseDeployment, ProjectedDefensePath, ProjectedDefenseTarget,
+    RidgeAxis, RoofAssembly, RoofDormer, RoofEnclosureFace, RoofFace, RoofKind, RoofMaterial,
+    RoofPiece, RoundTower, SolidRole, SquareTower, Stair, TimberFrameStyle, TowerPortal,
+    TowerPortalKind, WALL_THICKNESS_METRES, WallSegment, WallSelector, WallSourceId, WallStyle,
+    WallWalk, analyse_player_build, audit_plan, audit_triangle_mesh, edit_document, generate,
+    generate_document,
 };
 use bevy::{
     app::AppExit,
@@ -2134,6 +2134,7 @@ struct PlayerBuildEntity;
 #[derive(Clone, Copy, Resource)]
 struct PlayerBuildSpawnContext {
     storey: usize,
+    role: EditorVisibilityRole,
 }
 
 /// Render metadata used by the build-mode visibility controls. It is kept on
@@ -2283,7 +2284,7 @@ struct EditorRuntime {
     player_depth_metres: f32,
     player_height_metres: f32,
     player_rotation_degrees: f32,
-    player_kind: PlayerBuildPartKind,
+    player_tool: PlayerBuildTool,
     player_material: PlayerBuildMaterial,
     wall_drag: Option<WallDrag>,
     wall_preview: Option<WallPreview>,
@@ -2302,6 +2303,7 @@ struct EditorRuntime {
     active_storey: usize,
     wall_visibility: WallVisibility,
     roof_visibility: RoofVisibility,
+    show_generated_building: bool,
     pending_rebuild: bool,
 }
 
@@ -2327,7 +2329,7 @@ impl EditorRuntime {
             player_depth_metres: WALL_THICKNESS_METRES,
             player_height_metres: 3.0,
             player_rotation_degrees: 0.0,
-            player_kind: PlayerBuildPartKind::Wall,
+            player_tool: PlayerBuildTool::Wall,
             player_material: PlayerBuildMaterial::Stone,
             wall_drag: None,
             wall_preview: None,
@@ -2346,9 +2348,16 @@ impl EditorRuntime {
             active_storey: 0,
             wall_visibility: WallVisibility::Up,
             roof_visibility: RoofVisibility::Show,
+            show_generated_building: true,
             pending_rebuild: false,
         }
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum PlayerBuildTool {
+    Wall,
+    FloorTile,
 }
 
 #[derive(Clone, Copy)]
@@ -2369,6 +2378,11 @@ struct WallPreview {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "action")]
 pub(crate) enum EditorCommand {
+    PlaceFloorTile {
+        x_metres: f32,
+        z_metres: f32,
+        storey: u16,
+    },
     DrawWall {
         start_x_metres: f32,
         start_z_metres: f32,
@@ -2446,6 +2460,17 @@ fn editor_snapshot(runtime: &EditorRuntime) -> EditorSnapshot {
 
 fn perform_editor_command(runtime: &mut EditorRuntime, command: EditorCommand) {
     match command {
+        EditorCommand::PlaceFloorTile {
+            x_metres,
+            z_metres,
+            storey,
+        } => apply_player_build_edit(
+            runtime,
+            PlayerBuildEdit::PlaceFloorTile {
+                cell: floor_cell_from_point(Vec2::new(x_metres, z_metres)),
+                storey,
+            },
+        ),
         EditorCommand::DrawWall {
             start_x_metres,
             start_z_metres,
@@ -2558,7 +2583,6 @@ enum EditorUiAction {
     CycleRoofs,
     PreviousStorey,
     NextStorey,
-    PlacePlayerPart,
     MovePlayerPart(u64),
     ResizePlayerPart(u64),
     RotatePlayerPart(u64),
@@ -2607,6 +2631,20 @@ fn editor_pointer_click(
     mut runtime: ResMut<EditorRuntime>,
 ) {
     if event.button == PointerButton::Primary
+        && runtime.mode == EditorMode::Construct
+        && runtime.player_build.is_some()
+        && runtime.player_tool == PlayerBuildTool::FloorTile
+        && let Some(position) = event.hit.position
+    {
+        let storey = runtime.active_storey as u16;
+        let cell = floor_cell_from_point(Vec2::new(position.x, position.z));
+        apply_player_build_edit(
+            &mut runtime,
+            PlayerBuildEdit::PlaceFloorTile { cell, storey },
+        );
+        return;
+    }
+    if event.button == PointerButton::Primary
         && let Ok(selectable) = selectables.get(event.entity)
     {
         runtime.selected = Some(selectable.0);
@@ -2617,6 +2655,13 @@ fn editor_pointer_click(
 
 fn snap_wall_grid(point: Vec2) -> Vec2 {
     (point / CELL_SIZE_METRES).round() * CELL_SIZE_METRES
+}
+
+fn floor_cell_from_point(point: Vec2) -> Cell {
+    Cell::new(
+        (point.x / CELL_SIZE_METRES).floor() as i16,
+        (point.y / CELL_SIZE_METRES).floor() as i16,
+    )
 }
 
 fn place_dragged_wall(
@@ -2672,6 +2717,7 @@ fn editor_wall_drag_start(event: On<Pointer<DragStart>>, mut runtime: ResMut<Edi
     if event.button != PointerButton::Primary
         || runtime.mode != EditorMode::Construct
         || runtime.player_build.is_none()
+        || runtime.player_tool != PlayerBuildTool::Wall
     {
         return;
     }
@@ -3043,18 +3089,14 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                     .unwrap_or_default();
                 ui.separator();
                 ui.strong("Freeform player build");
-                ui.small("Parts commit when renderable; advice never blocks placement.");
+                ui.small("Walls and floors are semantic building assembly, not render parts.");
                 ui.horizontal_wrapped(|ui| {
-                    for (kind, label) in [
-                        (PlayerBuildPartKind::Wall, "Wall"),
-                        (PlayerBuildPartKind::Room, "Room"),
-                        (PlayerBuildPartKind::Door, "Door"),
-                        (PlayerBuildPartKind::Roof, "Roof"),
-                        (PlayerBuildPartKind::Stair, "Stair"),
-                        (PlayerBuildPartKind::SiteObject, "Site"),
+                    for (tool, label) in [
+                        (PlayerBuildTool::Wall, "Wall"),
+                        (PlayerBuildTool::FloorTile, "Floor tile"),
                     ] {
-                        if ui.selectable_label(runtime.player_kind == kind, label).clicked() {
-                            runtime.player_kind = kind;
+                        if ui.selectable_label(runtime.player_tool == tool, label).clicked() {
+                            runtime.player_tool = tool;
                         }
                     }
                 });
@@ -3064,10 +3106,6 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                         (PlayerBuildMaterial::Brick, "Brick"),
                         (PlayerBuildMaterial::Plaster, "Plaster"),
                         (PlayerBuildMaterial::TimberFrame, "Frame"),
-                        (PlayerBuildMaterial::Timber, "Timber"),
-                        (PlayerBuildMaterial::Tile, "Tile"),
-                        (PlayerBuildMaterial::Thatch, "Thatch"),
-                        (PlayerBuildMaterial::Earth, "Earth"),
                     ] {
                         if ui
                             .selectable_label(runtime.player_material == material, label)
@@ -3077,20 +3115,7 @@ fn editor_ui(mut contexts: EguiContexts, mut runtime: ResMut<EditorRuntime>) -> 
                         }
                     }
                 });
-                ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut runtime.player_x_metres).prefix("x "));
-                    ui.add(egui::DragValue::new(&mut runtime.player_z_metres).prefix("z "));
-                    ui.add(egui::DragValue::new(&mut runtime.player_elevation_metres).prefix("y "));
-                });
-                ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut runtime.player_width_metres).prefix("w ").range(0.05..=50.0));
-                    ui.add(egui::DragValue::new(&mut runtime.player_depth_metres).prefix("d ").range(0.05..=50.0));
-                    ui.add(egui::DragValue::new(&mut runtime.player_height_metres).prefix("h ").range(0.05..=50.0));
-                });
-                ui.add(egui::DragValue::new(&mut runtime.player_rotation_degrees).prefix("rotate ").suffix("°"));
-                if ui.button("Place part").clicked() {
-                    action = Some(EditorUiAction::PlacePlayerPart);
-                }
+                ui.small("Drag to place walls. Click the ground to place a floor tile.");
                 egui::ScrollArea::vertical().max_height(130.0).show(ui, |ui| {
                     for part in &player_parts {
                         if ui
@@ -3253,6 +3278,8 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
             );
             runtime.selected_player_part = None;
             runtime.mode = EditorMode::Construct;
+            runtime.show_generated_building = false;
+            runtime.pending_rebuild = true;
             runtime.pending_player_rebuild = true;
             runtime.status = "New freeform build: drag in Construct mode to draw walls".to_owned();
             runtime.error = None;
@@ -3271,6 +3298,8 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
             );
             runtime.selected_player_part = None;
             runtime.mode = EditorMode::Construct;
+            runtime.show_generated_building = false;
+            runtime.pending_rebuild = true;
             runtime.pending_player_rebuild = true;
             runtime.status = "Detached generated building into freeform assembly".to_owned();
             runtime.error = None;
@@ -3375,32 +3404,6 @@ fn perform_editor_action(runtime: &mut EditorRuntime, action: EditorUiAction) {
             runtime.active_storey =
                 (runtime.active_storey + 1).min(runtime.plan.storeys.len().saturating_sub(1));
             runtime.status = format!("Active storey: {}", runtime.active_storey);
-        }
-        EditorUiAction::PlacePlayerPart => {
-            let id = runtime
-                .player_build
-                .as_ref()
-                .and_then(|document| document.parts.iter().map(|part| part.id).max())
-                .unwrap_or(0)
-                + 1;
-            apply_player_build_edit(
-                runtime,
-                PlayerBuildEdit::Place {
-                    part: PlayerBuildPart {
-                        id,
-                        kind: runtime.player_kind,
-                        material: runtime.player_material,
-                        storey: runtime.active_storey as u16,
-                        x_metres: runtime.player_x_metres,
-                        z_metres: runtime.player_z_metres,
-                        elevation_metres: runtime.player_elevation_metres,
-                        rotation_degrees: runtime.player_rotation_degrees,
-                        width_metres: runtime.player_width_metres,
-                        depth_metres: runtime.player_depth_metres,
-                        height_metres: runtime.player_height_metres,
-                    },
-                },
-            );
         }
         EditorUiAction::MovePlayerPart(id) => apply_player_build_edit(
             runtime,
@@ -3920,10 +3923,36 @@ fn player_build_wall_style(material: PlayerBuildMaterial) -> Option<WallStyle> {
 /// fachwerk members together, rather than a brown placeholder cuboid.
 fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
     let palette = create_palette(world);
+    let (width, depth) = document.assembly.footprint.dimensions();
+    let origin = Vec2::new(
+        -f32::from(width) * CELL_SIZE_METRES * 0.5,
+        -f32::from(depth) * CELL_SIZE_METRES * 0.5,
+    );
     for storey in &document.assembly.storeys {
         let base_y = f32::from(storey.level) * document.assembly.storey_height_metres;
         world.insert_resource(PlayerBuildSpawnContext {
             storey: usize::from(storey.level),
+            role: EditorVisibilityRole::Floor,
+        });
+        for room in &storey.rooms {
+            for cell in &room.cells {
+                spawn_box(
+                    world,
+                    &palette.floor,
+                    Vec3::new(CELL_SIZE_METRES - 0.04, 0.12, CELL_SIZE_METRES - 0.04),
+                    Vec3::new(
+                        cell.centre().x + origin.x,
+                        base_y + 0.06,
+                        cell.centre().y + origin.y,
+                    ),
+                    Quat::IDENTITY,
+                    "player build floor tile",
+                );
+            }
+        }
+        world.insert_resource(PlayerBuildSpawnContext {
+            storey: usize::from(storey.level),
+            role: EditorVisibilityRole::Wall,
         });
         for (wall_index, wall) in storey.walls.iter().copied().enumerate() {
             let selector = WallSelector {
@@ -3935,20 +3964,56 @@ fn setup_player_build_scene(world: &mut World, document: &PlayerBuildDocument) {
                 .openings
                 .iter()
                 .find(|opening| opening.wall == wall_index);
-            spawn_wall(
-                world,
-                &palette,
-                wall,
-                opening,
-                Vec2::ZERO,
-                base_y,
-                document.assembly.storey_height_metres,
-                document.assembly.wall_style_for(selector),
-                document.assembly.timber_frame_style,
-                document.assembly.upper_storey_projection_metres * f32::from(storey.level),
-            );
+            for (face_index, face) in freeform_wall_faces(storey, wall).into_iter().enumerate() {
+                spawn_wall(
+                    world,
+                    &palette,
+                    face,
+                    if face_index == 0 { opening } else { None },
+                    origin,
+                    base_y,
+                    document.assembly.storey_height_metres,
+                    document.assembly.wall_style_for(selector),
+                    document.assembly.timber_frame_style,
+                    document.assembly.upper_storey_projection_metres * f32::from(storey.level),
+                );
+            }
         }
         world.remove_resource::<PlayerBuildSpawnContext>();
+    }
+}
+
+fn freeform_wall_faces(
+    storey: &adventuresim_building_generator::StoreyPlan,
+    wall: WallSegment,
+) -> Vec<WallSegment> {
+    let has_floor = |cell| storey.rooms.iter().any(|room| room.cells.contains(&cell));
+    let inside = has_floor(wall.cell);
+    let outside_cell = wall.cell.neighbour(wall.direction);
+    let outside = has_floor(outside_cell);
+    let reverse = WallSegment {
+        cell: outside_cell,
+        direction: wall.direction.opposite(),
+        inside_room: wall.outside_room.unwrap_or(0),
+        outside_room: None,
+    };
+    match (inside, outside) {
+        (true, true) => vec![WallSegment {
+            outside_room: Some(0),
+            ..wall
+        }],
+        (true, false) => vec![WallSegment {
+            outside_room: None,
+            ..wall
+        }],
+        (false, true) => vec![reverse],
+        (false, false) => vec![
+            WallSegment {
+                outside_room: None,
+                ..wall
+            },
+            reverse,
+        ],
     }
 }
 
@@ -4068,15 +4133,17 @@ fn rebuild_editor_scene(world: &mut World) {
             let _ = world.despawn(entity);
         }
         let plan = world.resource::<EditorRuntime>().plan.clone();
-        setup(
-            world,
-            &plan,
-            ViewerView::Exterior,
-            ProjectedProofKind::Machicolation,
-            None,
-            SceneSetup::EditorBuilding,
-        );
-        configure_editor_scene(world, &plan, false);
+        if world.resource::<EditorRuntime>().show_generated_building {
+            setup(
+                world,
+                &plan,
+                ViewerView::Exterior,
+                ProjectedProofKind::Machicolation,
+                None,
+                SceneSetup::EditorBuilding,
+            );
+            configure_editor_scene(world, &plan, false);
+        }
         world.resource_mut::<EditorRuntime>().pending_rebuild = false;
     }
 
@@ -14819,7 +14886,7 @@ fn spawn_box(
             PlayerBuildEntity,
             EditorVisibilityTarget {
                 storey: context.storey,
-                role: EditorVisibilityRole::Wall,
+                role: context.role,
             },
             EditorBaseMaterial(material.clone()),
             EditorAppearanceIsTranslucent(false),
@@ -15922,6 +15989,35 @@ mod tests {
     }
 
     #[test]
+    fn floor_tiles_classify_freeform_wall_faces() {
+        let wall = WallSegment {
+            cell: Cell::new(0, 0),
+            direction: Direction::North,
+            inside_room: 0,
+            outside_room: None,
+        };
+        let mut storey = adventuresim_building_generator::StoreyPlan {
+            level: 0,
+            rooms: Vec::new(),
+            walls: vec![wall],
+            openings: Vec::new(),
+        };
+        assert_eq!(freeform_wall_faces(&storey, wall).len(), 2);
+        storey.rooms.push(adventuresim_building_generator::Room {
+            id: 0,
+            kind: adventuresim_building_generator::RoomKind::CommonRoom,
+            cells: vec![Cell::new(0, 0)],
+        });
+        let exterior = freeform_wall_faces(&storey, wall);
+        assert_eq!(exterior.len(), 1);
+        assert!(exterior[0].exterior());
+        storey.rooms[0].cells.push(Cell::new(0, 1));
+        let interior = freeform_wall_faces(&storey, wall);
+        assert_eq!(interior.len(), 1);
+        assert!(!interior[0].exterior());
+    }
+
+    #[test]
     fn new_freeform_build_action_enables_construct_mode_and_save_path() {
         let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
         let plan = generate_document(&document).unwrap();
@@ -15940,6 +16036,36 @@ mod tests {
             Some(PathBuf::from("my-house-player-build.json"))
         );
         assert!(runtime.pending_player_rebuild);
+        assert!(!runtime.show_generated_building);
+        assert!(runtime.pending_rebuild);
+    }
+
+    #[test]
+    fn detaching_replaces_the_generated_scene_at_its_shared_origin() {
+        let document = BuildingDocument::fixture(BuildingArchetype::TownHouse, 42);
+        let plan = generate_document(&document).unwrap();
+        let expected_wall_count = plan
+            .storeys
+            .iter()
+            .map(|storey| storey.walls.len())
+            .sum::<usize>();
+        let mut runtime =
+            EditorRuntime::new(document, plan, PathBuf::from("my-house.json"), None, None);
+        perform_editor_action(&mut runtime, EditorUiAction::DetachPlayerBuild);
+        assert!(!runtime.show_generated_building);
+        assert!(runtime.pending_rebuild);
+        assert_eq!(
+            runtime
+                .player_build
+                .as_ref()
+                .unwrap()
+                .assembly
+                .storeys
+                .iter()
+                .map(|storey| storey.walls.len())
+                .sum::<usize>(),
+            expected_wall_count
+        );
     }
 
     #[test]
