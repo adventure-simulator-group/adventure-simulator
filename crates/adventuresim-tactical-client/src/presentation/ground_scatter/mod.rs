@@ -99,7 +99,7 @@ pub(in crate::presentation) struct GroundFoliagePresentationCache {
     dry_leaf_meshes: Option<Vec<Handle<Mesh>>>,
     twig_meshes: Option<Vec<Handle<Mesh>>>,
     woodland_plant_meshes: Option<Vec<Handle<Mesh>>>,
-    twig_material: Option<Handle<TacticalFoliageMaterial>>,
+    twig_material: Option<Handle<StandardMaterial>>,
     woodland_plant_material: Option<Handle<TacticalFoliageMaterial>>,
 }
 
@@ -309,7 +309,7 @@ pub(super) fn spawn_ground_foliage(
         .clone();
     let twig_material = ground_foliage_cache
         .twig_material
-        .get_or_insert_with(|| materials.add(foliage_material(0.0, false)))
+        .get_or_insert_with(|| standard_materials.add(litter::static_twig_material()))
         .clone();
     let woodland_plant_material = ground_foliage_cache
         .woodland_plant_material

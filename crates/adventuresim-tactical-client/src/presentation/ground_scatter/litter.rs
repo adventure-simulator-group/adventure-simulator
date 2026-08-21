@@ -6,7 +6,10 @@ use bevy::{
     light::NotShadowCaster,
     math::FloatExt,
     mesh::{Indices, PrimitiveTopology},
-    prelude::{Color, Commands, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, Transform, Vec2, Vec3},
+    prelude::{
+        Color, Commands, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, StandardMaterial, Transform,
+        Vec2, Vec3, default,
+    },
 };
 use std::collections::BTreeMap;
 
@@ -33,9 +36,24 @@ pub(super) struct Assets {
     pub dry_leaf_meshes: Vec<Handle<Mesh>>,
     pub twig_meshes: Vec<Handle<Mesh>>,
     pub dry_leaf_material: Handle<TacticalTreeLeafCardMaterial>,
-    pub twig_material: Handle<TacticalFoliageMaterial>,
+    pub twig_material: Handle<StandardMaterial>,
     pub woodland_plant_meshes: Vec<Handle<Mesh>>,
     pub woodland_plant_material: Handle<TacticalFoliageMaterial>,
+}
+
+/// Static, vertex-colored wood for batched forest-floor twigs.
+///
+/// Twigs are fully modeled opaque geometry, so the stock PBR path preserves
+/// their per-vertex bark pigment, fog, and lighting without foliage wind,
+/// interaction, coverage-mask, or transmission work.
+pub(super) fn static_twig_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 0.96,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    }
 }
 
 #[derive(Default)]
@@ -813,8 +831,95 @@ mod tests {
     use bevy::{
         asset::{AssetApp, AssetPlugin},
         mesh::VertexAttributeValues,
-        prelude::{App, Image, TaskPoolPlugin, default},
+        prelude::{App, Assets as BevyAssets, Image, TaskPoolPlugin, World, default},
     };
+
+    #[test]
+    fn litter_batches_use_static_twigs_and_tactical_foliage_for_plants() {
+        let terrain = SceneTerrain::from_heightmap(3, 3, 1.0, vec![0.0; 9]).unwrap();
+        let ground = SceneGround::from_samples(
+            3,
+            3,
+            1.0,
+            vec![
+                GroundSurface {
+                    cover: GroundCover::LeafLitter,
+                    cover_density_bps: 10_000,
+                    ..default()
+                };
+                9
+            ],
+        )
+        .unwrap();
+        let mut meshes = BevyAssets::<Mesh>::default();
+        let assets = Assets {
+            dry_leaf_meshes: vec![meshes.add(dry_leaf_patch_mesh(0))],
+            twig_meshes: vec![meshes.add(twig_patch_mesh(0))],
+            dry_leaf_material: Handle::default(),
+            twig_material: Handle::default(),
+            woodland_plant_meshes: vec![meshes.add(woodland_plant_patch_mesh(0))],
+            woodland_plant_material: Handle::default(),
+        };
+        let base_seed = (0..100)
+            .find(|base_seed| {
+                (0..9).any(|index| {
+                    unit_hash(splitmix64(*base_seed ^ index ^ 0x7b31_eaf4_2c5d_9081)) < 0.055
+                })
+            })
+            .expect("a deterministic seed with a woodland-floor plant");
+        let mut world = World::new();
+        {
+            let mut commands = world.commands();
+            spawn(
+                &mut commands,
+                &mut meshes,
+                &terrain,
+                &ground,
+                base_seed,
+                &assets,
+            );
+        }
+        world.flush();
+
+        let mut batches = world.query::<(
+            &GroundScatterLayer,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+            Option<&MeshMaterial3d<TacticalFoliageMaterial>>,
+            Option<&NotShadowCaster>,
+        )>();
+        let mut twig_batches = 0;
+        let mut plant_batches = 0;
+        for (layer, standard, foliage, not_shadow_caster) in batches.iter(&world) {
+            match layer {
+                GroundScatterLayer::Twigs => {
+                    twig_batches += 1;
+                    assert!(standard.is_some());
+                    assert!(foliage.is_none());
+                    assert!(not_shadow_caster.is_some());
+                }
+                GroundScatterLayer::Understory => {
+                    plant_batches += 1;
+                    assert!(standard.is_none());
+                    assert!(foliage.is_some());
+                    assert!(not_shadow_caster.is_some());
+                }
+                _ => {}
+            }
+        }
+        assert!(twig_batches > 0);
+        assert!(plant_batches > 0);
+    }
+
+    #[test]
+    fn static_twig_material_is_rough_double_sided_and_fog_lit() {
+        let material = static_twig_material();
+        assert_eq!(material.base_color, Color::WHITE);
+        assert_eq!(material.perceptual_roughness, 0.96);
+        assert!(material.double_sided);
+        assert_eq!(material.cull_mode, None);
+        assert!(material.fog_enabled);
+        assert!(!material.unlit);
+    }
 
     #[test]
     fn batched_litter_visibility_cannot_cull_debris_inside_its_local_range() {
