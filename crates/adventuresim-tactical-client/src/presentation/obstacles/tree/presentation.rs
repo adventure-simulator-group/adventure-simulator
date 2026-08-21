@@ -78,6 +78,11 @@ pub(crate) struct TreeAssetResidencyDiagnostics {
     pub(crate) leaf_card_vertices: usize,
     pub(crate) bud_vertices: usize,
     pub(crate) aggregate_branch_vertices: usize,
+    /// LOD1 is the near aggregate canopy. Tracking it separately makes the
+    /// macro-cluster card reduction visible in the scene benchmark rather than
+    /// burying it in the combined impostor total.
+    pub(crate) lod1_impostor_cards: usize,
+    pub(crate) lod1_impostor_vertices: usize,
     pub(crate) impostor_vertices: usize,
     pub(crate) impostor_texture_bytes: usize,
     pub(crate) generated_lod_mask: u8,
@@ -476,7 +481,12 @@ fn ensure_tree_card_resident(
                 .collect(),
         );
     }
-    diagnostics.impostor_vertices += bake.mesh.count_vertices();
+    let vertex_count = bake.mesh.count_vertices();
+    if lod == 1 {
+        diagnostics.lod1_impostor_cards += bake.provenance.records.len();
+        diagnostics.lod1_impostor_vertices += vertex_count;
+    }
+    diagnostics.impostor_vertices += vertex_count;
     diagnostics.impostor_texture_bytes += bake.image.data.as_ref().map_or(0, |pixels| pixels.len());
     diagnostics.generated_lod_mask |= 1 << (lod + 1);
     let texture = images.add(bake.image);

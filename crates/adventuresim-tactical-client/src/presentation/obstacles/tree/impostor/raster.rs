@@ -691,7 +691,7 @@ mod tests {
             width: 20.0,
             height: 20.0,
             primary_mask: 0,
-            secondary_group: None,
+            secondary_group_range: None,
             source_group: 3,
             minimum_branch_depth: 0,
         };
