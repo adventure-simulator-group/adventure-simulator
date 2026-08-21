@@ -828,9 +828,10 @@ just tactical-scene-performance-benchmark <input.json> <fresh-output> 120
 ```
 
 The release-mode timing pass compares the natural scene against hidden
-playable/vista trees, playable leaves, grass, understory, litter, loose stones,
-procedural rocks, playable terrain, vista terrain, and forced tree LOD0 through
-LOD4 at one locked camera. It writes `scene-performance-benchmark.json` and
+playable/vista trees, leaves, tree trunks, tree branches, grass, understory,
+litter, loose stones, clouds, weather, procedural rocks, playable terrain,
+vista terrain, and forced tree LOD0 through LOD4 at one locked camera. It writes
+`scene-performance-benchmark.json` and
 `scene-performance-comparison.md`. Performance runs use an unpaced headless
 schedule and render to an offscreen 2560x1440 texture so desktop-compositor
 presentation cannot pin fast scenes to the monitor refresh interval. The
@@ -845,7 +846,11 @@ pass. Each mode also records playable-tree source counts and resident vertex,
 impostor-pixel, LOD-mask, and cumulative demand-generation counters. The
 Markdown summary prints the natural-view snapshot; the JSON retains every
 mode's snapshot so forced-LOD tests expose the assets they caused to become
-resident. Run the opt-in `tactical-scene-render-diagnostics` recipe when Metal,
+resident. Render-diagnostic reports also include signed GPU deltas versus
+natural mode for every elapsed-GPU pass, including separate opaque-3D and
+transparent-3D attribution. A positive delta estimates the hidden family\'s
+measured contribution without requiring per-draw GPU instrumentation. Run the
+opt-in `tactical-scene-render-diagnostics` recipe when Metal,
 DX12, or Vulkan GPU-pass timestamps and shader invocation counters are needed;
 those queries add enough
 observer/synchronization overhead that their frame times must not be compared

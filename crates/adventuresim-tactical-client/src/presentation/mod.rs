@@ -35,6 +35,8 @@ use weather::*;
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
+pub(crate) use clouds::TacticalCloudLayer;
+#[allow(unused_imports)]
 pub(crate) use clouds::{TacticalCloudCaptureOverride, TacticalCloudCaptureProfile};
 #[allow(unused_imports)]
 pub(crate) use environment::{
