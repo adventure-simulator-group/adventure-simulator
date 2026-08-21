@@ -55,5 +55,6 @@ pub(crate) struct RangedAttackIntent {
 pub(crate) struct RangedAttackStartedIntent {
     pub(crate) attacker: Entity,
     pub(crate) target: Option<Entity>,
-    pub(crate) windup: CombatDuration,
+    pub(crate) animation_windup: CombatDuration,
+    pub(crate) minimum_windup: CombatDuration,
 }

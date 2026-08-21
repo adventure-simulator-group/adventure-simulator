@@ -115,8 +115,12 @@ screen rather than either original endpoint.
 
 The server owns movement, body mode, authoritative action timing, gameplay
 position, attack timing, hits, damage, and other outcomes. Typed action starts
-currently preserve the established last-writer-wins replacement behavior; there
-is no invented action-vs-action rejection table. Entering a downed body mode
+return an explicit admission result. Attacks and blocks require idle, a valid
+swing follow may replace a contacted swing, and defensive dodge or quickstep
+explicitly preempts an attack or block. Repeated evasion cannot restart its own
+timeline. Defensive dodge and quickstep are separate variants; only a quickstep
+can contain a finite, non-zero normalized travel direction. Downed bodies and
+active posture transitions reject action starts. Entering a downed body mode
 atomically lowers guard and cancels the presentation action. A client may begin
 an animation immediately in response to local input, then reconcile it with the
 server's accepted skeleton state. Bone transforms, terrain-adjusted foot
@@ -150,6 +154,14 @@ pure `AnimationEvaluation`: speed, local direction, gait/action phase,
 crouch/airborne state, attack height, lead and support feet, contact sequence,
 effective pack, and the selected attack contact. Movement remains live input;
 the action contains no captured movement or foot-step plan.
+
+Attack clips are deliberately sampled as whole-body rotation sources: twisting
+the pelvis may yaw the thighs, shins, ankles, and feet. Their authoring contract
+does not translate either foot. The procedural raised-footwork pass remains the
+sole owner of rendered foot positions and terrain contact, including when an
+attack begins midway through a step. Authored attack yaw and procedural foot
+translation therefore compose without capturing, replacing, or restarting the
+step.
 
 The pose buffer flattens the resolved clips onto a 30 Hz grid keyed by skeleton
 family. Each tactical presentation tick interpolates baked keyframes at the
@@ -655,10 +667,27 @@ between normal and quarter-speed game time. Both client presentation and the
 authoritative server clock change together, so movement, physics, combat, and
 animation remain synchronized during slow-motion inspection.
 
-The native `animation-viewer` is a deterministic gameplay-presentation fixture
+The preferred end-to-end animation diagnostic is `just tactical-play diagnostic`.
+It executes a structured JSON input script through the ordinary native client,
+network transport, authoritative server, prediction, reconciliation, semantic
+evaluation, and final procedural pose. Its default scenario walks, aims,
+attacks, captures the gameplay view directly to PNG, and then exercises posture
+transitions. Every `animation-state.jsonl` record includes the final propagated
+global transform of every authored animation target. The standalone
+`scripts/analyze_animation_bone_trace.py` parser accepts this rich trace and
+checks attack hand excursion without loading the trace into an interactive
+review.
+
+The native `animation-viewer` remains a deterministic gameplay-presentation fixture
 for regression and visual review. It uses the gameplay player-spawn observer,
 character mesh, camera, terrain presentation, authored animation evaluator, and
 procedural passes rather than maintaining parallel fixture implementations.
+Every capture also writes `global-bone-transforms.jsonl`. Each line contains
+the global translation, rotation, and scale of every animation target for one
+logical frame, together with the character-root transform. Run
+`python scripts/analyze_animation_bone_trace.py <trace>` to remove root travel
+and rotation and enforce the five-centimetre minimum forward hand excursion for
+an attack without loading the raw trace into an interactive review.
 Locomotion is projected and integrated continuously at the authoritative 64Hz
 fixed tick. Non-terrain scenarios can still exercise authored leg motion with
 fixed controller Y. The terrain suite enables seeded uneven-ground IK for
@@ -791,8 +820,12 @@ deadline. Unusually long recovery steps remain bounded and converge over
 subsequent procedural steps instead of snapping in one frame.
 
 Cadence follows current authoritative speed throughout the first step, so a
-small acceleration sample cannot slow a complete cycle. Ordinary turns are
-accepted at the next foot handoff. A material opposite-direction reversal
+small acceleration sample cannot slow a complete cycle. The replicated raised
+intent continues to own semantic step direction, cadence, swing side, and
+handoff identity;
+deriving a second direction from smoothed client velocity would mix controller
+and authored-rig frames and can invalidate a reversal. A material
+opposite-direction reversal
 performs an immediate safe semantic handoff; releasing movement finishes only
 the active half-step rather than freezing a foot in the air or completing an
 entire two-step pulse. Support-foot identity is procedural cadence state, not a
@@ -925,6 +958,14 @@ not request, capture, replace, or recover any foot target. The ordinary
 raised-guard locomotion and terrain-IK planner continues exactly as though the
 character had not attacked. Authored root motion never moves the gameplay
 controller or changes reach.
+
+An attack start is transactional: the client creates its hit-timing state and
+sends the network request only after the typed animation transition accepts the
+action. An input received while another admissible melee action is recovering
+is buffered instead of creating a gameplay attack with no visual action. The
+server uses the weapon's complete authored windup for the visual preparation
+and equal-length recovery. Its packet-jitter tolerance applies only to the
+minimum gameplay authorization time and never shortens animation playback.
 
 At contact, align the striking structure from the feet through the hips and
 torso to the fist, claw, point, or edge without locking a knee or elbow. A

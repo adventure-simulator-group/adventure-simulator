@@ -343,7 +343,9 @@ pub(crate) fn validate_editor_asset_root(
         .with_local_velocity(Vec3::NEG_Z * 2.0)
         .with_world_velocity(Vec3::NEG_Z * 2.0);
     let mut raised_attack = SkeletonState::default();
-    raised_attack.begin_attack(AttackSpec::default(), 10, 20);
+    raised_attack
+        .begin_attack(AttackSpec::default(), 10, 20)
+        .expect("catalog fixture starts from idle");
     raised_attack.advance_action(20);
 
     let mut route_resolutions = Vec::new();

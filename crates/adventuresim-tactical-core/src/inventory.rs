@@ -501,7 +501,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.windup_secs)
-            .unwrap_or_default()
+            .unwrap_or(crate::combat::HANDS_WINDUP_SECS)
     }
 
     fn weapon_is_precise(&self) -> bool {
@@ -639,6 +639,20 @@ fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::SystemState;
+
+    #[test]
+    fn unarmed_combat_has_authored_windup_timing() {
+        let mut world = World::new();
+        let owner = world.spawn(InventoryItems::default()).id();
+        let mut viewer = SystemState::<InventoryViewer>::new(&mut world);
+        let inventory = viewer.get(&world).unwrap();
+
+        assert_eq!(
+            inventory.get(owner).weapon_windup_secs(),
+            crate::combat::HANDS_WINDUP_SECS
+        );
+    }
 
     #[test]
     fn rebuilding_holding_cache_preserves_weapon_and_shield_after_owner_rebind() {

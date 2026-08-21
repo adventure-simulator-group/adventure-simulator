@@ -3,12 +3,20 @@ use super::*;
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(in crate::animation) struct QuickstepIkState {
     action_start_tick: Option<u64>,
-    left_takeoff_world: Option<Vec3>,
-    right_takeoff_world: Option<Vec3>,
-    left_takeoff_rotation_world: Option<Quat>,
-    right_takeoff_rotation_world: Option<Quat>,
-    left_release_phase: Option<f32>,
-    right_release_phase: Option<f32>,
+    feet: Option<QuickstepFeetState>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QuickstepFeetState {
+    left: QuickstepFootState,
+    right: QuickstepFootState,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QuickstepFootState {
+    takeoff_world: Vec3,
+    takeoff_rotation_world: Quat,
+    release_phase: Option<f32>,
 }
 
 /// Retains each takeoff ankle as a world plant while the leg can still reach
@@ -31,8 +39,8 @@ pub(in crate::animation) fn apply(
             .get_mut(owner)
             .map(|state| *state)
             .unwrap_or_default();
-        if skeleton.action_kind() != SkeletonAction::Dodge {
-            if state.left_takeoff_world.is_some() || state.right_takeoff_world.is_some() {
+        if !skeleton.is_quickstep() {
+            if state.feet.is_some() {
                 state = QuickstepIkState::default();
                 store_state(owner, state, &mut states, &mut commands);
             }
@@ -67,23 +75,23 @@ pub(in crate::animation) fn apply(
                 false,
             ),
         ];
-        if skeleton.is_grounded()
-            && (state.left_takeoff_world.is_none() || state.right_takeoff_world.is_none())
-        {
-            for (_, _, foot_role, left) in legs {
-                let takeoff = rig
-                    .get(&foot_role)
+        if skeleton.is_grounded() && state.feet.is_none() {
+            let mut capture = |role: BoneRole| {
+                rig.get(&role)
                     .and_then(|foot| transforms.p0().compute_global_transform(*foot).ok())
                     .filter(|global| {
                         global.translation().is_finite() && global.rotation().is_finite()
-                    });
-                if left {
-                    state.left_takeoff_world = takeoff.map(|global| global.translation());
-                    state.left_takeoff_rotation_world = takeoff.map(|global| global.rotation());
-                } else {
-                    state.right_takeoff_world = takeoff.map(|global| global.translation());
-                    state.right_takeoff_rotation_world = takeoff.map(|global| global.rotation());
-                }
+                    })
+                    .map(|global| QuickstepFootState {
+                        takeoff_world: global.translation(),
+                        takeoff_rotation_world: global.rotation(),
+                        release_phase: None,
+                    })
+            };
+            if let (Some(left), Some(right)) =
+                (capture(BoneRole::FootLeft), capture(BoneRole::FootRight))
+            {
+                state.feet = Some(QuickstepFeetState { left, right });
             }
         }
 
@@ -103,12 +111,6 @@ pub(in crate::animation) fn apply(
             else {
                 continue;
             };
-            let takeoff = if left {
-                state.left_takeoff_world
-            } else {
-                state.right_takeoff_world
-            }
-            .unwrap_or_else(|| foot_snapshot.global.translation());
             let authored = foot_snapshot.global.translation();
             let upper_length = upper_snapshot
                 .global
@@ -116,22 +118,31 @@ pub(in crate::animation) fn apply(
                 .distance(lower_snapshot.global.translation());
             let lower_length = lower_snapshot.global.translation().distance(authored);
             let reach = maximum_reach(upper_length, lower_length);
-            let release_phase = if left {
-                &mut state.left_release_phase
-            } else {
-                &mut state.right_release_phase
-            };
-            if release_phase.is_none()
-                && quickstep_foot_must_release(
-                    skeleton.is_grounded(),
-                    action_phase,
-                    upper_snapshot.global.translation(),
-                    takeoff,
-                    reach,
+            let (takeoff, takeoff_rotation, release_phase) = if let Some(feet) = &mut state.feet {
+                let foot = if left {
+                    &mut feet.left
+                } else {
+                    &mut feet.right
+                };
+                if foot.release_phase.is_none()
+                    && quickstep_foot_must_release(
+                        skeleton.is_grounded(),
+                        action_phase,
+                        upper_snapshot.global.translation(),
+                        foot.takeoff_world,
+                        reach,
+                    )
+                {
+                    foot.release_phase = Some(action_phase);
+                }
+                (
+                    foot.takeoff_world,
+                    Some(foot.takeoff_rotation_world),
+                    foot.release_phase,
                 )
-            {
-                *release_phase = Some(action_phase);
-            }
+            } else {
+                (authored, None, None)
+            };
             let progress = release_phase.map_or(0.0, |release| {
                 if skeleton.is_grounded() && action_phase > 0.125 {
                     1.0
@@ -176,11 +187,6 @@ pub(in crate::animation) fn apply(
             ) {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
             }
-            let takeoff_rotation = if left {
-                state.left_takeoff_rotation_world
-            } else {
-                state.right_takeoff_rotation_world
-            };
             if let Some(takeoff_rotation) = takeoff_rotation {
                 let desired_rotation = takeoff_rotation
                     .slerp(foot_snapshot.global.rotation(), progress)
@@ -195,16 +201,19 @@ pub(in crate::animation) fn apply(
                 }
             }
         }
+        let left_landing_local =
+            targets[0].map(|target| rig_rotation.inverse() * (target - rig_origin));
+        let right_landing_local =
+            targets[1].map(|target| rig_rotation.inverse() * (target - rig_origin));
         let mut memory = LegIkMemory {
             left_authored_world_target: targets[0],
             right_authored_world_target: targets[1],
             left_foot_world_target: targets[0],
             right_foot_world_target: targets[1],
-            quickstep_handoff_pending: true,
-            quickstep_left_landing_local: targets[0]
-                .map(|target| rig_rotation.inverse() * (target - rig_origin)),
-            quickstep_right_landing_local: targets[1]
-                .map(|target| rig_rotation.inverse() * (target - rig_origin)),
+            quickstep_handoff: match (left_landing_local, right_landing_local) {
+                (Some(left), Some(right)) => QuickstepContactHandoff::Converging { left, right },
+                _ => QuickstepContactHandoff::None,
+            },
             left_support_weight: Some(supports[0]),
             right_support_weight: Some(supports[1]),
             ..default()
@@ -286,11 +295,18 @@ mod tests {
     fn a_new_quickstep_sequence_discards_previous_takeoff_targets() {
         let mut state = QuickstepIkState {
             action_start_tick: Some(10),
-            left_takeoff_world: Some(Vec3::X),
-            right_takeoff_world: Some(Vec3::NEG_X),
-            left_release_phase: Some(0.4),
-            right_release_phase: Some(0.5),
-            ..default()
+            feet: Some(QuickstepFeetState {
+                left: QuickstepFootState {
+                    takeoff_world: Vec3::X,
+                    takeoff_rotation_world: Quat::IDENTITY,
+                    release_phase: Some(0.4),
+                },
+                right: QuickstepFootState {
+                    takeoff_world: Vec3::NEG_X,
+                    takeoff_rotation_world: Quat::IDENTITY,
+                    release_phase: Some(0.5),
+                },
+            }),
         };
         let next_action_start_tick = Some(40);
 
@@ -302,9 +318,6 @@ mod tests {
         }
 
         assert_eq!(state.action_start_tick, next_action_start_tick);
-        assert!(state.left_takeoff_world.is_none());
-        assert!(state.right_takeoff_world.is_none());
-        assert!(state.left_release_phase.is_none());
-        assert!(state.right_release_phase.is_none());
+        assert!(state.feet.is_none());
     }
 }

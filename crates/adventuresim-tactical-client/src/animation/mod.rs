@@ -178,8 +178,8 @@ struct AnimationRigAttached;
 struct RigAnimationTargetsBound;
 
 #[derive(Component, Debug, Clone, Copy)]
-struct AuthoredBindTransform {
-    pub(super) owner: Entity,
+pub(crate) struct AuthoredBindTransform {
+    pub(crate) owner: Entity,
     pub(super) local: Transform,
 }
 

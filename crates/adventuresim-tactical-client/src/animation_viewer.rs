@@ -2,7 +2,8 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
+    fs::{self, File},
+    io::{BufWriter, Write},
     path::PathBuf,
 };
 
@@ -14,6 +15,7 @@ use adventuresim_tactical_core::physics::{
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::client::WeaponGuardInputState;
 use bevy::{
+    animation::AnimationTargetId,
     app::AppExit,
     asset::io::AssetSourceBuilder,
     prelude::*,
@@ -25,11 +27,12 @@ use serde::Serialize;
 use crate::animation::jitter::{self, JitterBone, JitterFrame, JitterValidationSummary};
 use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
-    AnimationPlayback, AnimationRuntime, ArmIkState, BoneRole, HumanoidBone, LegIkDiagnostics,
-    LegIkState, LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
-    LocomotionPresentationEventKind, MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton,
-    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
-    TacticalAnimationPlugin, TerrainIkEnabled, locomotion_support_weights,
+    AnimationPlayback, AnimationRuntime, ArmIkState, AuthoredBindTransform, BoneRole, HumanoidBone,
+    LegIkDiagnostics, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
+    LocomotionPresentationEvent, LocomotionPresentationEventKind,
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
+    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
+    locomotion_support_weights,
     semantic_route::{SemanticRoutePath, SemanticRouteTrace},
 };
 use crate::{
@@ -309,6 +312,7 @@ struct CaptureSequence {
     view_fingerprints: Vec<u64>,
     duplicate_view_frames: Vec<String>,
     samples: Vec<FrameSample>,
+    global_bone_frames: Vec<GlobalBoneFrame>,
     presentation_events: Vec<PresentationEventSample>,
     repeated_evaluation_baseline: Option<RepeatedEvaluationSnapshot>,
     repeated_evaluation_valid: bool,
@@ -347,6 +351,7 @@ impl CaptureSequence {
             view_fingerprints: Vec::with_capacity(VIEWS.len()),
             duplicate_view_frames: Vec::new(),
             samples: Vec::new(),
+            global_bone_frames: Vec::new(),
             presentation_events: Vec::new(),
             repeated_evaluation_baseline: None,
             repeated_evaluation_valid: true,
@@ -427,6 +432,7 @@ fn repeated_bone_mismatch(
 struct CaptureManifest {
     sample_hz: f32,
     playback_backend: &'static str,
+    global_bone_trace: &'static str,
     pose_buffer: PoseBufferMetrics,
     pipeline: &'static str,
     views: [CaptureView; 3],
@@ -502,7 +508,12 @@ struct CaptureValidation {
 }
 
 fn invalidate_previous_report(output: &std::path::Path) {
-    for name in ["manifest.json", "index.html", "failure.txt"] {
+    for name in [
+        "manifest.json",
+        "index.html",
+        "failure.txt",
+        "global-bone-transforms.jsonl",
+    ] {
         let path = output.join(name);
         if let Err(error) = fs::remove_file(&path)
             && error.kind() != std::io::ErrorKind::NotFound
@@ -639,6 +650,27 @@ struct BoneSample {
     position: [f32; 3],
     rotation_xyzw: [f32; 4],
     terrain_clearance_metres: Option<f32>,
+}
+
+#[derive(Debug, Serialize)]
+struct GlobalBoneFrame {
+    scenario: String,
+    scenario_frame: usize,
+    time_seconds: f32,
+    action: SkeletonAction,
+    action_phase: f32,
+    subject_translation: [f32; 3],
+    subject_rotation_xyzw: [f32; 4],
+    bones: Vec<GlobalBoneTransformSample>,
+}
+
+#[derive(Debug, Serialize)]
+struct GlobalBoneTransformSample {
+    name: String,
+    target_id: String,
+    translation: [f32; 3],
+    rotation_xyzw: [f32; 4],
+    scale: [f32; 3],
 }
 
 fn steady_scenario(name: &'static str, speed: f32, cycles: f32) -> Vec<PlannedFrame> {
@@ -2002,11 +2034,13 @@ fn drive_sequence(
             transform.translation.y
         };
         transform.translation = Vec3::new(horizontal.x, vertical, horizontal.y);
-        if frame.action != SkeletonAction::None
-            && (frame.action != SkeletonAction::Attack
-                || attack_start_frame == Some(frame.scenario_frame))
-            && (!quickstep || frame.scenario_frame == 0)
-        {
+        let action_starts_now = match frame.action {
+            SkeletonAction::Attack => attack_start_frame == Some(frame.scenario_frame),
+            SkeletonAction::Dodge if quickstep => frame.scenario_frame == 0,
+            SkeletonAction::Dodge | SkeletonAction::Block => skeleton.action_kind() != frame.action,
+            SkeletonAction::None => false,
+        };
+        if action_starts_now {
             let start = sequence.simulation_tick;
             let contact = start
                 + if frame.action == SkeletonAction::Attack {
@@ -2021,16 +2055,26 @@ fn drive_sequence(
                     } else {
                         AttackSpec::new(AttackAnimation::Thrust)
                     };
-                    skeleton.begin_attack(attack, start, contact)
+                    skeleton
+                        .begin_attack(attack, start, contact)
+                        .expect("viewer attack transition must be admitted");
                 }
-                SkeletonAction::Dodge => skeleton.begin_dodge(
-                    DodgeSpec {
-                        direction: frame.local_direction,
-                    },
-                    start,
-                    if quickstep { start + 20 } else { contact },
-                ),
-                SkeletonAction::Block => skeleton.begin_block(BlockSpec::default(), start, contact),
+                SkeletonAction::Dodge => {
+                    let spec = if quickstep {
+                        DodgeSpec::quickstep(frame.local_direction)
+                            .expect("quickstep scenario direction must be non-zero")
+                    } else {
+                        DodgeSpec::default()
+                    };
+                    skeleton
+                        .begin_dodge(spec, start, if quickstep { start + 20 } else { contact })
+                        .expect("viewer dodge transition must be admitted");
+                }
+                SkeletonAction::Block => {
+                    skeleton
+                        .begin_block(BlockSpec::default(), start, contact)
+                        .expect("viewer block transition must be admitted");
+                }
                 SkeletonAction::None => {}
             }
         }
@@ -2298,6 +2342,12 @@ fn capture_frame(
         With<CaptureSubject>,
     >,
     bones: Query<(&HumanoidBone, &GlobalTransform)>,
+    animation_bones: Query<(
+        &AnimationTargetId,
+        &AuthoredBindTransform,
+        Option<&Name>,
+        &GlobalTransform,
+    )>,
     terrain: Single<&SceneTerrain>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -2424,6 +2474,16 @@ fn capture_frame(
         sequence.repeated_evaluation_valid &= repeated_evaluation_matches;
     }
     if sequence.view_index == 0 {
+        sequence.global_bone_frames.push(GlobalBoneFrame {
+            scenario: frame.scenario.to_owned(),
+            scenario_frame: frame.scenario_frame,
+            time_seconds: frame.time_seconds,
+            action: skeleton.action_kind(),
+            action_phase: skeleton.action_phase(),
+            subject_translation: subject_global.translation().to_array(),
+            subject_rotation_xyzw: subject_global.rotation().to_array(),
+            bones: collect_global_bone_transforms(subject, &animation_bones),
+        });
         let cadence_support = locomotion_support_weights(skeleton);
         let root_distance_metres = sequence.scenario_distance;
         let (desired_left_foot_target, desired_right_foot_target) = raised_footwork
@@ -2619,6 +2679,34 @@ fn collect_bones(
         .collect()
 }
 
+fn collect_global_bone_transforms(
+    subject: Entity,
+    bones: &Query<(
+        &AnimationTargetId,
+        &AuthoredBindTransform,
+        Option<&Name>,
+        &GlobalTransform,
+    )>,
+) -> Vec<GlobalBoneTransformSample> {
+    let mut samples = bones
+        .iter()
+        .filter(|(_, bind, _, _)| bind.owner == subject)
+        .map(|(target, _, name, transform)| {
+            let (scale, rotation, translation) = transform.to_scale_rotation_translation();
+            GlobalBoneTransformSample {
+                name: name.map_or_else(|| "<unnamed>".to_owned(), |name| name.as_str().to_owned()),
+                target_id: format!("{target:?}"),
+                translation: translation.to_array(),
+                rotation_xyzw: rotation.to_array(),
+                scale: scale.to_array(),
+            }
+        })
+        .collect::<Vec<_>>();
+    samples
+        .sort_by(|left, right| (&left.name, &left.target_id).cmp(&(&right.name, &right.target_id)));
+    samples
+}
+
 fn tracked_bone(role: BoneRole) -> Option<&'static str> {
     Some(match role {
         BoneRole::Pelvis => "pelvis",
@@ -2726,6 +2814,7 @@ fn finish_capture(
     exit: &mut MessageWriter<AppExit>,
 ) {
     let frames = std::mem::take(&mut sequence.samples);
+    let global_bone_frames = std::mem::take(&mut sequence.global_bone_frames);
     let presentation_events = std::mem::take(&mut sequence.presentation_events);
     let scenarios = scenario_metrics(&frames);
     let jitter_validation = jitter::validate(&jitter_frames(&frames), Default::default());
@@ -3356,6 +3445,7 @@ fn finish_capture(
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
         playback_backend,
+        global_bone_trace: "global-bone-transforms.jsonl",
         pose_buffer: pose_buffer_metrics,
         pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, direct semantic routing, fixed-rate pose-buffer FK with per-joint inertialization, and final procedural passes",
         views: VIEWS,
@@ -3366,6 +3456,21 @@ fn finish_capture(
         presentation_events,
         semantic_route_path_counts,
     };
+    let global_bone_trace_path = sequence.output.join("global-bone-transforms.jsonl");
+    let trace_file = File::create(&global_bone_trace_path)
+        .unwrap_or_else(|error| panic!("failed to create {global_bone_trace_path:?}: {error}"));
+    let mut trace_writer = BufWriter::new(trace_file);
+    for frame in &global_bone_frames {
+        serde_json::to_writer(&mut trace_writer, frame).unwrap_or_else(|error| {
+            panic!("failed to serialize {global_bone_trace_path:?}: {error}")
+        });
+        trace_writer
+            .write_all(b"\n")
+            .unwrap_or_else(|error| panic!("failed to write {global_bone_trace_path:?}: {error}"));
+    }
+    trace_writer
+        .flush()
+        .unwrap_or_else(|error| panic!("failed to flush {global_bone_trace_path:?}: {error}"));
     let manifest_path = sequence.output.join("manifest.json");
     fs::write(
         &manifest_path,
@@ -4979,13 +5084,20 @@ mod tests {
     fn report_invalidation_preserves_unrelated_files() {
         let output = unique_test_output("invalidate");
         fs::create_dir_all(&output).unwrap();
-        for name in ["manifest.json", "index.html", "failure.txt", "notes.txt"] {
+        for name in [
+            "manifest.json",
+            "index.html",
+            "failure.txt",
+            "global-bone-transforms.jsonl",
+            "notes.txt",
+        ] {
             fs::write(output.join(name), b"old").unwrap();
         }
         invalidate_previous_report(&output);
         assert!(!output.join("manifest.json").exists());
         assert!(!output.join("index.html").exists());
         assert!(!output.join("failure.txt").exists());
+        assert!(!output.join("global-bone-transforms.jsonl").exists());
         assert!(output.join("notes.txt").exists());
         fs::remove_dir_all(output).unwrap();
     }

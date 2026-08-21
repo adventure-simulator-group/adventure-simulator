@@ -1,6 +1,7 @@
 use std::{fs::File, path::Path};
 
 use adventuresim_tactical_core::prelude::*;
+use adventuresim_tactical_netcode::client::DebugForceAttackTrigger;
 use adventuresim_tactical_netcode::prelude::*;
 use bevy::{
     app::AppExit,
@@ -9,6 +10,7 @@ use bevy::{
         mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
     },
     prelude::*,
+    render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     render::{Render, RenderApp, RenderSystems},
 };
 use serde::Deserialize;
@@ -49,9 +51,20 @@ enum ScriptCommand {
     Guard {
         raised: bool,
     },
+    Attack {
+        #[serde(default = "default_attack_observation_seconds")]
+        duration_seconds: f32,
+    },
+    Screenshot {
+        path: String,
+    },
     WaitForSignal {
         path: String,
     },
+}
+
+fn default_attack_observation_seconds() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -96,6 +109,9 @@ struct ScriptedInput {
     exit_after_script: bool,
     finished_elapsed: Option<f32>,
 }
+
+#[derive(Resource, Debug, Default)]
+struct PendingDiagnosticCaptures(usize);
 
 pub(crate) struct DiagnosticPlugin {
     script: Option<InputScript>,
@@ -170,6 +186,7 @@ impl Plugin for DiagnosticPlugin {
                 finished_elapsed: None,
             })
             .init_resource::<DiagnosticInputStatus>()
+            .init_resource::<PendingDiagnosticCaptures>()
             .add_systems(
                 PreUpdate,
                 (
@@ -254,6 +271,14 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
             {
                 return Err("wait duration_seconds must be positive".to_owned());
             }
+            ScriptCommand::Attack { duration_seconds }
+                if !duration_seconds.is_finite() || *duration_seconds <= 0.0 =>
+            {
+                return Err("attack duration_seconds must be positive".to_owned());
+            }
+            ScriptCommand::Screenshot { path } if path.trim().is_empty() => {
+                return Err("screenshot path must not be empty".to_owned());
+            }
             ScriptCommand::WaitForSignal { path } if path.trim().is_empty() => {
                 return Err("wait_for_signal path must not be empty".to_owned());
             }
@@ -264,10 +289,13 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
 }
 
 fn drive_scripted_input(
+    mut commands: Commands,
     time: Res<Time>,
     player: Query<(), With<ClientPlayer>>,
     mut script: ResMut<ScriptedInput>,
     mut input_override: ResMut<PlayerInputOverride>,
+    mut force_attack: ResMut<DebugForceAttackTrigger>,
+    mut pending_captures: ResMut<PendingDiagnosticCaptures>,
     mut status: ResMut<DiagnosticInputStatus>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -293,7 +321,7 @@ fn drive_scripted_input(
             let exit_after_script = script.exit_after_script;
             let elapsed = script.finished_elapsed.get_or_insert(0.0);
             *elapsed += delta;
-            if exit_after_script && *elapsed >= 0.25 {
+            if exit_after_script && *elapsed >= 0.25 && pending_captures.0 == 0 {
                 info!("Scripted real-client input completed");
                 exit.write(AppExit::Success);
             }
@@ -320,6 +348,29 @@ fn drive_scripted_input(
             continue;
         }
 
+        if let ScriptCommand::Screenshot { path } = &command {
+            let path = Path::new(path).to_path_buf();
+            if let Some(parent) = path.parent()
+                && let Err(error) = std::fs::create_dir_all(parent)
+            {
+                error!(path = %path.display(), ?error, "Failed to create diagnostic screenshot directory");
+            } else {
+                pending_captures.0 += 1;
+                let capture_path = path.clone();
+                commands.spawn(Screenshot::primary_window()).observe(
+                    move |captured: On<ScreenshotCaptured>,
+                          mut pending: ResMut<PendingDiagnosticCaptures>| {
+                        save_to_disk(&capture_path)(captured);
+                        pending.0 = pending.0.saturating_sub(1);
+                    },
+                );
+                info!(path = %path.display(), "Requested a scripted diagnostic screenshot");
+            }
+            script.command_index += 1;
+            script.command_elapsed = 0.0;
+            continue;
+        }
+
         if let ScriptCommand::WaitForSignal { path } = &command {
             let request = PlayerInputRequest {
                 look: script.look,
@@ -341,13 +392,17 @@ fn drive_scripted_input(
             return;
         }
 
-        if script.command_elapsed == 0.0
+        let command_start = script.command_elapsed == 0.0;
+        if command_start
             && matches!(
                 &command,
                 ScriptCommand::Dive { .. } | ScriptCommand::TogglePosture { .. }
             )
         {
             script.posture_sequence = script.posture_sequence.wrapping_add(1);
+        }
+        if command_start && matches!(&command, ScriptCommand::Attack { .. }) {
+            force_attack.0 = true;
         }
         script.command_elapsed += delta;
         let (kind, duration, movement, posture) = match command {
@@ -388,8 +443,12 @@ fn drive_scripted_input(
             ScriptCommand::Wait { duration_seconds } => {
                 ("wait", duration_seconds, None, PostureCommand::default())
             }
+            ScriptCommand::Attack { duration_seconds } => {
+                ("attack", duration_seconds, None, PostureCommand::default())
+            }
             ScriptCommand::Rotate { .. }
             | ScriptCommand::Guard { .. }
+            | ScriptCommand::Screenshot { .. }
             | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
         let request = PlayerInputRequest {
@@ -426,10 +485,16 @@ mod tests {
     #[test]
     fn example_script_parses_and_validates() {
         let script: InputScript = serde_json::from_str(
-            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"dive","direction":"left","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"guard","raised":false},{"type":"wait","duration_seconds":0.5}]}"#,
+            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"attack"},{"type":"screenshot","path":"captures/attack.png"},{"type":"dive","direction":"left","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"guard","raised":false},{"type":"wait","duration_seconds":0.5}]}"#,
         )
         .unwrap();
         assert!(validate_script(&script).is_ok());
+        assert!(matches!(
+            script.commands[3],
+            ScriptCommand::Attack {
+                duration_seconds: 1.0
+            }
+        ));
     }
 
     #[test]
@@ -445,6 +510,14 @@ mod tests {
     fn signal_wait_requires_a_path() {
         let script: InputScript =
             serde_json::from_str(r#"{"commands":[{"type":"wait_for_signal","path":""}]}"#).unwrap();
+        assert!(validate_script(&script).is_err());
+    }
+
+    #[test]
+    fn attack_observation_duration_must_be_positive() {
+        let script: InputScript =
+            serde_json::from_str(r#"{"commands":[{"type":"attack","duration_seconds":0.0}]}"#)
+                .unwrap();
         assert!(validate_script(&script).is_err());
     }
 

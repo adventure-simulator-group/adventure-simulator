@@ -535,9 +535,14 @@ fn try_start_attack(
         if attacking {
             return;
         }
+        if skeleton
+            .begin_attack(AttackSpec::default(), start, start + 19)
+            .is_err()
+        {
+            return;
+        }
         cmd.entity(entity)
             .insert(AttackState::new(windup_secs, reach, true));
-        skeleton.begin_attack(AttackSpec::default(), start, start + 19);
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
         let preferred_family = StrikeFamily::from_melee_style(preferred_style);
@@ -557,10 +562,20 @@ fn try_start_attack(
                 .insert(BufferedMeleeAttack(strike_family));
             return;
         };
+        match skeleton.begin_attack(AttackSpec::new(animation), start, start + 19) {
+            Ok(()) => {}
+            Err(ActionTransitionError::ActionBusy) => {
+                cmd.entity(entity)
+                    .insert(BufferedMeleeAttack(strike_family));
+                return;
+            }
+            Err(ActionTransitionError::Downed | ActionTransitionError::PostureTransitionActive) => {
+                return;
+            }
+        }
         cmd.entity(entity)
             .insert(AttackState::new(windup_secs, reach, false))
             .remove::<BufferedMeleeAttack>();
-        skeleton.begin_attack(AttackSpec::new(animation), start, start + 19);
         cmd.client_trigger(MeleeActionRequest::Start { strike_family });
     }
 }
@@ -593,7 +608,12 @@ fn flush_buffered_melee_attacks(
             continue;
         };
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        skeleton.begin_attack(AttackSpec::new(animation), start, start + 19);
+        if skeleton
+            .begin_attack(AttackSpec::new(animation), start, start + 19)
+            .is_err()
+        {
+            continue;
+        }
         cmd.entity(entity)
             .insert(AttackState::new(windup_secs, reach, false))
             .remove::<BufferedMeleeAttack>();
@@ -625,13 +645,9 @@ fn apply_direct_combat_controls(
         if controls.dodge_just_pressed {
             if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
                 let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-                skeleton.begin_dodge(
-                    DodgeSpec {
-                        direction: controls.quickstep_direction,
-                    },
-                    start,
-                    start + 20,
-                );
+                if let Some(spec) = DodgeSpec::quickstep(controls.quickstep_direction) {
+                    let _ = skeleton.begin_dodge(spec, start, start + 20);
+                }
             }
             cmd.client_trigger(DefendRequest::Dodge);
         }
@@ -649,7 +665,7 @@ fn on_dodge_fired(
 ) {
     if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
+        let _ = skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Dodge);
 }
@@ -662,7 +678,7 @@ fn on_parry_fired(
 ) {
     if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        skeleton.begin_block(BlockSpec::default(), start, start + 8);
+        let _ = skeleton.begin_block(BlockSpec::default(), start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Parry);
 }

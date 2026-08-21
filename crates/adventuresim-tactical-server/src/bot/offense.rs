@@ -168,12 +168,13 @@ pub(super) fn drive_offensive_combat_ai(
                     input.last_movement = Some(-Vec2::Y);
                 } else {
                     input.last_movement = None;
+                    let windup =
+                        CombatDuration::from_duration(std::time::Duration::from_millis(500));
                     cmd.trigger(RangedAttackStartedIntent {
                         attacker: entity,
                         target: Some(target),
-                        windup: CombatDuration::from_duration(std::time::Duration::from_millis(
-                            500,
-                        )),
+                        animation_windup: windup,
+                        minimum_windup: windup,
                     });
                     controller.phase = OffensiveCombatPhase::RangedWindup(Timer::from_seconds(
                         AI_WINDUP_SECS,

@@ -99,10 +99,11 @@ mod contract_tests {
         assert!(state.is_grounded());
         assert_eq!(state.action(), ActionState::default());
 
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Attack);
-        state.begin_dodge(DodgeSpec::default(), 12, 13);
+        state.begin_dodge(DodgeSpec::default(), 12, 13).unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Dodge);
+        assert!(!state.is_quickstep());
     }
 
     #[test]
@@ -127,7 +128,9 @@ mod contract_tests {
     #[test]
     fn action_timeline_uses_saturating_arithmetic_at_u64_max() {
         let mut state = SkeletonState::default();
-        state.begin_block(BlockSpec::default(), u64::MAX, u64::MAX);
+        state
+            .begin_block(BlockSpec::default(), u64::MAX, u64::MAX)
+            .unwrap();
         state.advance_action(u64::MAX);
         assert_eq!(state.action(), ActionState::default());
         assert_eq!(state.action_phase(), 0.0);
@@ -155,7 +158,7 @@ mod contract_tests {
     #[test]
     fn sparse_attack_evaluation_uses_guard_contact_guard() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 0, 10);
+        state.begin_attack(AttackSpec::default(), 0, 10).unwrap();
         state.advance_action(5);
         let early = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(early.action[0].pose, SemanticPose::Guard);
@@ -204,13 +207,16 @@ mod contract_tests {
     #[test]
     fn downed_body_transition_clears_action_and_raised_stance() {
         let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        state.begin_attack(AttackSpec::default(), 1, 2);
+        state.begin_attack(AttackSpec::default(), 1, 2).unwrap();
         state.transition_body(BodyState::Prone);
         assert_eq!(state.stance(), StanceState::Lowered);
         assert_eq!(state.action(), ActionState::default());
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         assert_eq!(state.stance(), StanceState::Lowered);
-        state.begin_attack(AttackSpec::default(), 3, 4);
+        assert_eq!(
+            state.begin_attack(AttackSpec::default(), 3, 4),
+            Err(ActionTransitionError::Downed)
+        );
         assert_eq!(state.action(), ActionState::default());
     }
 
@@ -471,12 +477,47 @@ mod contract_tests {
     }
 
     #[test]
-    fn action_replacement_is_explicitly_last_writer_wins() {
+    fn evasion_explicitly_preempts_attack_while_other_actions_are_rejected() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 10, 20);
-        state.begin_dodge(DodgeSpec { direction: Vec2::X }, 11, 12);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
+        assert_eq!(
+            state.begin_block(BlockSpec::default(), 11, 12),
+            Err(ActionTransitionError::ActionBusy)
+        );
+        state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 11, 12)
+            .unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Dodge);
+        assert!(state.is_quickstep());
         assert_eq!(state.action_direction(), Vec2::X);
+        assert_eq!(
+            state.begin_dodge(DodgeSpec::default(), 12, 13),
+            Err(ActionTransitionError::ActionBusy)
+        );
+        assert!(DodgeSpec::quickstep(Vec2::ZERO).is_none());
+    }
+
+    #[test]
+    fn dive_transition_cancels_actions_and_rejects_new_action_payloads() {
+        let mut state = SkeletonState::default();
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
+
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Forward,
+            },
+            11,
+            20,
+        ));
+        assert_eq!(state.action_kind(), SkeletonAction::None);
+        assert_eq!(
+            state.begin_dodge(DodgeSpec::default(), 12, 13),
+            Err(ActionTransitionError::PostureTransitionActive)
+        );
+        assert_eq!(
+            state.begin_attack(AttackSpec::default(), 12, 13),
+            Err(ActionTransitionError::PostureTransitionActive)
+        );
     }
 
     #[test]
@@ -496,7 +537,7 @@ mod contract_tests {
         );
 
         let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         let mut wire = serde_json::to_value(&state).unwrap();
         wire["body"] = serde_json::json!("Prone");
         wire["action"]["Attack"]["timeline"]["preparation_ticks"] = serde_json::json!(0);

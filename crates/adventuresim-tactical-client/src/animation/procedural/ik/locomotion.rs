@@ -312,7 +312,7 @@ mod tests {
         assert!(owns(&guarded_sprint));
 
         let mut attacking = ordinary.clone();
-        attacking.begin_attack(AttackSpec::default(), 0, 1);
+        attacking.begin_attack(AttackSpec::default(), 0, 1).unwrap();
         assert!(!owns(&attacking));
     }
 

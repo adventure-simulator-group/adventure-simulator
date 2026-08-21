@@ -934,12 +934,14 @@ pub(crate) fn on_player_input(
                     && skeleton.body() == BodyState::Grounded(GroundedPosture::Upright) =>
             {
                 let start = skeleton.locomotion_sample_tick;
-                skeleton.begin_dodge(
-                    DodgeSpec { direction },
-                    start,
-                    start + QUICKSTEP_CONTACT_TICKS,
-                );
-                posture_intent.quickstep_launch_tick = Some(start + QUICKSTEP_PREPARATION_TICKS);
+                if let Some(spec) = DodgeSpec::quickstep(direction)
+                    && skeleton
+                        .begin_dodge(spec, start, start + QUICKSTEP_CONTACT_TICKS)
+                        .is_ok()
+                {
+                    posture_intent.quickstep_launch_tick =
+                        Some(start + QUICKSTEP_PREPARATION_TICKS);
+                }
                 false
             }
             Some(_) => false,
@@ -2467,7 +2469,9 @@ mod tests {
     #[test]
     fn pending_quickstep_launches_only_after_the_procedural_load() {
         let mut skeleton = SkeletonState::default();
-        skeleton.begin_dodge(DodgeSpec { direction: Vec2::Y }, 0, 20);
+        skeleton
+            .begin_dodge(DodgeSpec::quickstep(Vec2::Y).unwrap(), 0, 20)
+            .unwrap();
         skeleton.advance_action(4);
         skeleton.locomotion_sample_tick = 4;
         let mut world = World::new();
@@ -2524,7 +2528,9 @@ mod tests {
     #[test]
     fn quickstep_brakes_horizontal_velocity_over_multiple_grounded_ticks() {
         let mut skeleton = SkeletonState::default();
-        skeleton.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 20);
+        skeleton
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 20)
+            .unwrap();
         skeleton.advance_action(10);
         skeleton.transition_body(BodyState::Airborne);
         let mut velocity = LinearVelocity(Vec3::new(5.0, -1.0, 0.0));

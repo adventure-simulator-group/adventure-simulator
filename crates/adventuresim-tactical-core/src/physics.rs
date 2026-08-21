@@ -505,7 +505,13 @@ mod tests {
     #[test]
     fn launched_quickstep_uses_the_short_hop_and_dodge_speed() {
         let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        skeleton.begin_dodge(crate::animation::DodgeSpec { direction: Vec2::Y }, 0, 20);
+        skeleton
+            .begin_dodge(
+                crate::animation::DodgeSpec::quickstep(Vec2::Y).unwrap(),
+                0,
+                20,
+            )
+            .unwrap();
         skeleton.advance_action(5);
         skeleton.transition_body(crate::animation::BodyState::Airborne);
         assert!(skeleton.quickstep_is_launched());
