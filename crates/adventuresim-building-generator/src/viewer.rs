@@ -2278,6 +2278,7 @@ struct EditorRuntime {
     player_kind: PlayerBuildPartKind,
     player_material: PlayerBuildMaterial,
     wall_drag: Option<WallDrag>,
+    wall_preview: Option<WallPreview>,
     pending_player_rebuild: bool,
     undo: Vec<BuildingDocument>,
     redo: Vec<BuildingDocument>,
@@ -2321,6 +2322,7 @@ impl EditorRuntime {
             player_kind: PlayerBuildPartKind::Wall,
             player_material: PlayerBuildMaterial::Stone,
             wall_drag: None,
+            wall_preview: None,
             pending_player_rebuild: false,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -2345,6 +2347,12 @@ impl EditorRuntime {
 struct WallDrag {
     start: Vec2,
     camera: Entity,
+}
+
+#[derive(Clone, Copy)]
+struct WallPreview {
+    start: Vec2,
+    end: Vec2,
 }
 
 /// Stable, UI-independent command ABI for editor tests, automation, and
@@ -2609,22 +2617,7 @@ fn place_dragged_wall(
     material: PlayerBuildMaterial,
     storey: u16,
 ) {
-    let start = snap_wall_grid(start);
-    let end = snap_wall_grid(end);
-    let delta = end - start;
-    let (end, rotation_degrees, length) = if delta.x.abs() >= delta.y.abs() {
-        (
-            Vec2::new(end.x, start.y),
-            0.0,
-            delta.x.abs().max(CELL_SIZE_METRES),
-        )
-    } else {
-        (
-            Vec2::new(start.x, end.y),
-            90.0,
-            delta.y.abs().max(CELL_SIZE_METRES),
-        )
-    };
+    let (start, end, rotation_degrees, length) = wall_drag_spec(start, end);
     let id = runtime
         .player_build
         .as_ref()
@@ -2651,6 +2644,26 @@ fn place_dragged_wall(
     );
 }
 
+fn wall_drag_spec(start: Vec2, end: Vec2) -> (Vec2, Vec2, f32, f32) {
+    let start = snap_wall_grid(start);
+    let end = snap_wall_grid(end);
+    let delta = end - start;
+    let (end, rotation_degrees, length) = if delta.x.abs() >= delta.y.abs() {
+        (
+            Vec2::new(end.x, start.y),
+            0.0,
+            delta.x.abs().max(CELL_SIZE_METRES),
+        )
+    } else {
+        (
+            Vec2::new(start.x, end.y),
+            90.0,
+            delta.y.abs().max(CELL_SIZE_METRES),
+        )
+    };
+    (start, end, rotation_degrees, length)
+}
+
 fn editor_wall_drag_start(event: On<Pointer<DragStart>>, mut runtime: ResMut<EditorRuntime>) {
     if event.button != PointerButton::Primary
         || runtime.mode != EditorMode::Construct
@@ -2666,7 +2679,23 @@ fn editor_wall_drag_start(event: On<Pointer<DragStart>>, mut runtime: ResMut<Edi
         start: Vec2::new(position.x, position.z),
         camera: event.hit.camera,
     });
+    runtime.wall_preview = Some(WallPreview {
+        start: Vec2::new(position.x, position.z),
+        end: Vec2::new(position.x, position.z),
+    });
     runtime.status = "Drag to draw wall".to_owned();
+}
+
+fn editor_wall_drag_move(event: On<Pointer<Move>>, mut runtime: ResMut<EditorRuntime>) {
+    let Some(drag) = runtime.wall_drag else {
+        return;
+    };
+    if let Some(position) = event.hit.position {
+        runtime.wall_preview = Some(WallPreview {
+            start: drag.start,
+            end: Vec2::new(position.x, position.z),
+        });
+    }
 }
 
 fn editor_wall_drag_end(
@@ -2677,6 +2706,7 @@ fn editor_wall_drag_end(
     let Some(drag) = runtime.wall_drag.take() else {
         return;
     };
+    runtime.wall_preview = None;
     if event.button != PointerButton::Primary {
         return;
     }
@@ -2710,6 +2740,49 @@ fn editor_wall_drag_end(
         material,
         storey,
     );
+}
+
+fn draw_wall_preview(mut gizmos: Gizmos, runtime: Res<EditorRuntime>) {
+    let Some(preview) = runtime.wall_preview else {
+        return;
+    };
+    let (start, end, rotation, length) = wall_drag_spec(preview.start, preview.end);
+    let centre = Vec2::new((start.x + end.x) * 0.5, (start.y + end.y) * 0.5);
+    let half_length = length * 0.5;
+    let half_depth = WALL_THICKNESS_METRES * 0.5;
+    let (half_x, half_z) = if rotation == 0.0 {
+        (half_length, half_depth)
+    } else {
+        (half_depth, half_length)
+    };
+    let base = runtime.active_storey as f32 * runtime.plan.storey_height_metres;
+    let top = base + runtime.player_height_metres;
+    let corners = [
+        Vec3::new(centre.x - half_x, base, centre.y - half_z),
+        Vec3::new(centre.x + half_x, base, centre.y - half_z),
+        Vec3::new(centre.x + half_x, base, centre.y + half_z),
+        Vec3::new(centre.x - half_x, base, centre.y + half_z),
+        Vec3::new(centre.x - half_x, top, centre.y - half_z),
+        Vec3::new(centre.x + half_x, top, centre.y - half_z),
+        Vec3::new(centre.x + half_x, top, centre.y + half_z),
+        Vec3::new(centre.x - half_x, top, centre.y + half_z),
+    ];
+    for (from, to) in [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ] {
+        gizmos.line(corners[from], corners[to], Color::WHITE);
+    }
 }
 
 fn update_editor_outlines(
@@ -7764,6 +7837,7 @@ pub(crate) fn run(
         .add_observer(editor_pointer_out)
         .add_observer(editor_pointer_click)
         .add_observer(editor_wall_drag_start)
+        .add_observer(editor_wall_drag_move)
         .add_observer(editor_wall_drag_end)
         .add_systems(EguiPrimaryContextPass, editor_ui)
         .add_systems(
@@ -7773,6 +7847,7 @@ pub(crate) fn run(
                 frame_editor_selection,
                 editor_keyboard_shortcuts,
                 update_editor_visibility,
+                draw_wall_preview,
             ),
         )
         .add_systems(PostUpdate, rebuild_editor_scene);
