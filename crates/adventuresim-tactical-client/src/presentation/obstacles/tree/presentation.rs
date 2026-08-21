@@ -6,11 +6,12 @@ use super::impostor::{
 };
 use super::{
     COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
-    OakGnarlingParameters, TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial,
-    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
-    TreeLodRenderOverride, TreeTrunkLod, beech_bark_material, beech_leaf_material,
-    oak_bark_material, oak_leaf_material, procedural_oak_bud_group_mesh,
-    procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
+    OakGnarlingParameters, PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
+    PlayableTreeDetailedLeaves, PlayableTreeDetailedWood, PlayableTreeTrunk,
+    TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
+    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    beech_bark_material, beech_leaf_material, oak_bark_material, oak_leaf_material,
+    procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
     procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
     procedural_woody_branch_mesh, procedural_woody_crown_mesh, procedural_woody_plant_leaves,
@@ -262,6 +263,7 @@ fn spawn_streamed_tree_children(
                 Name::new(format!("{} trunk", cached.species_name)),
                 StreamedTreeChild,
                 TreeTrunkLod,
+                PlayableTreeTrunk,
                 Mesh3d(
                     cached
                         .trunk_mesh
@@ -300,6 +302,7 @@ fn spawn_streamed_tree_children(
                         cluster_marker,
                         cluster_aabb,
                         TreeLeafRepresentation::TexturedMesh,
+                        PlayableTreeDetailedLeaves,
                         TreeLeafTriangleCount(cluster_leaf_count * 8),
                         Mesh3d(
                             cluster
@@ -326,6 +329,7 @@ fn spawn_streamed_tree_children(
                         cluster_marker,
                         cluster_aabb,
                         TreeLeafRepresentation::AlphaCard,
+                        PlayableTreeDetailedLeaves,
                         TreeLeafTriangleCount(cluster_leaf_count * 2),
                         Mesh3d(
                             cluster
@@ -349,6 +353,7 @@ fn spawn_streamed_tree_children(
                         )),
                         StreamedTreeChild,
                         TreeLod(0),
+                        PlayableTreeBuds,
                         cluster_marker,
                         cluster_aabb,
                         Mesh3d(
@@ -367,6 +372,7 @@ fn spawn_streamed_tree_children(
                         )),
                         StreamedTreeChild,
                         TreeLod(0),
+                        PlayableTreeDetailedWood,
                         cluster_marker,
                         cluster_aabb,
                         Mesh3d(
@@ -392,6 +398,7 @@ fn spawn_streamed_tree_children(
                 Name::new(tree_lod_name(lod, true)),
                 StreamedTreeChild,
                 TreeLod(lod),
+                PlayableTreeCanopyCard,
                 NotShadowCaster,
                 Mesh3d(card.mesh.clone()),
                 MeshMaterial3d(card.material.clone()),
@@ -402,6 +409,7 @@ fn spawn_streamed_tree_children(
                     Name::new(tree_lod_name(lod, false)),
                     StreamedTreeChild,
                     TreeLod(lod),
+                    PlayableTreeAggregateWood,
                     Mesh3d(
                         cached.aggregate_branch_meshes[lod as usize - 1]
                             .clone()
@@ -420,6 +428,7 @@ fn spawn_streamed_tree_children(
                 Name::new(tree_lod_name(4, true)),
                 StreamedTreeChild,
                 TreeLod(4),
+                PlayableTreeCanopyCard,
                 NoFrustumCulling,
                 NotShadowCaster,
                 Mesh3d(card.mesh.clone()),

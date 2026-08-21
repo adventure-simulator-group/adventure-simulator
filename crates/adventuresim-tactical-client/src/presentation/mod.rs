@@ -37,7 +37,9 @@ use weather::*;
 #[allow(unused_imports)]
 pub(crate) use clouds::TacticalCloudLayer;
 #[allow(unused_imports)]
-pub(crate) use clouds::{TacticalCloudCaptureOverride, TacticalCloudCaptureProfile};
+pub(crate) use clouds::{
+    TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride, TacticalCloudCaptureProfile,
+};
 #[allow(unused_imports)]
 pub(crate) use environment::{
     TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
@@ -55,7 +57,9 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
-    PresentedTree, TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial,
+    PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
+    PlayableTreeDetailedLeaves, PlayableTreeDetailedWood, PlayableTreeTrunk, PresentedTree,
+    TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation, TacticalTreeLeafCardMaterial,
     TreeAssetResidencyDiagnostics, TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod,
     TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
 };
@@ -174,10 +178,12 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<VistaTreePresentationCache>()
         .init_resource::<ActiveVistaSurface>()
         .init_resource::<TreeLodRenderOverride>()
+        .init_resource::<TacticalTreeBenchmarkIsolation>()
         .init_resource::<ActiveTacticalScene>()
         .init_resource::<PresentedCelestialLighting>()
         .init_resource::<AtmosphereIblAmbientHandoff>()
         .init_resource::<TacticalCloudCaptureOverride>()
+        .init_resource::<TacticalCloudBenchmarkIsolation>()
         .init_resource::<WeatherOcclusionState>()
         .add_systems(
             Update,

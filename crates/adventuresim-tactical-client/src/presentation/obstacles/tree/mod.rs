@@ -20,7 +20,10 @@ pub(in crate::presentation) use geometry::{
 pub(crate) use impostor::TreeImpostorProvenance;
 pub(in crate::presentation) use lod::update_tree_projected_lod_ranges;
 pub(crate) use lod::{
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
+    PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
+    PlayableTreeDetailedLeaves, PlayableTreeDetailedWood, PlayableTreeTrunk,
+    TacticalTreeBenchmarkIsolation, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    TreeLodRenderOverride, TreeTrunkLod,
 };
 pub(crate) use materials::{
     TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial, oak_bark_material, oak_leaf_material,

@@ -849,7 +849,15 @@ mode's snapshot so forced-LOD tests expose the assets they caused to become
 resident. Render-diagnostic reports also include signed GPU deltas versus
 natural mode for every elapsed-GPU pass, including separate opaque-3D and
 transparent-3D attribution. A positive delta estimates the hidden family\'s
-measured contribution without requiring per-draw GPU instrumentation. Run the
+measured contribution without requiring per-draw GPU instrumentation.
+Tree isolation applies only to explicitly marked playable-tree representations.
+`No leaves` hides both detailed leaf meshes and baked canopy/impostor cards;
+the narrower `No detailed tree leaves` and `No tree canopy cards` modes isolate
+those families independently. `No tree branches` hides only detailed or
+aggregate live wood, while buds have their own `No tree buds` mode and trunks
+remain separate. Each result separately reports configured active cloud layers
+and visible cloud layers, so the three persistent cloud-shell entities are not
+mistaken for rendered decks. Run the
 opt-in `tactical-scene-render-diagnostics` recipe when Metal,
 DX12, or Vulkan GPU-pass timestamps and shader invocation counters are needed;
 those queries add enough

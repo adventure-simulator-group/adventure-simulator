@@ -12,6 +12,13 @@ const CLOUD_AERIAL_EXTINCTION_PER_METRE: f32 = 0.000_025;
 #[derive(Component)]
 pub(crate) struct TacticalCloudLayer {
     slot: usize,
+    active: bool,
+}
+
+impl TacticalCloudLayer {
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -28,6 +35,13 @@ pub(crate) enum TacticalCloudCaptureProfile {
 
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub(crate) struct TacticalCloudCaptureOverride(pub(crate) Option<TacticalCloudCaptureProfile>);
+
+/// Benchmark-only rendering isolation that remains effective while cloud
+/// parameters continue updating every frame.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub(crate) struct TacticalCloudBenchmarkIsolation {
+    pub(crate) hide_clouds: bool,
+}
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalCloudMaterial {
@@ -199,7 +213,10 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     for slot in 0..3 {
         commands.spawn((
             Name::new(format!("Procedural tactical cloud deck {slot}")),
-            TacticalCloudLayer { slot },
+            TacticalCloudLayer {
+                slot,
+                active: false,
+            },
             NoFrustumCulling,
             NotShadowCaster,
             Mesh3d(mesh.clone()),
@@ -286,9 +303,10 @@ pub(in crate::presentation) fn update_tactical_clouds(
     environments: Query<&SceneEnvironment>,
     celestial: Res<PresentedCelestialLighting>,
     capture: Res<TacticalCloudCaptureOverride>,
+    isolation: Res<TacticalCloudBenchmarkIsolation>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
     mut clouds: Query<(
-        &TacticalCloudLayer,
+        &mut TacticalCloudLayer,
         &MeshMaterial3d<TacticalCloudMaterial>,
         &mut Transform,
         &mut Visibility,
@@ -299,14 +317,16 @@ pub(in crate::presentation) fn update_tactical_clouds(
         .entity
         .and_then(|entity| environments.get(entity).ok())
     else {
-        for (_, _, _, mut visibility) in &mut clouds {
-            *visibility = Visibility::Hidden;
+        for (mut cloud, _, _, mut visibility) in &mut clouds {
+            cloud.active = false;
+            *visibility = cloud_visibility(false, *isolation);
         }
         return;
     };
     let Some(celestial) = celestial.snapshot.as_ref() else {
-        for (_, _, _, mut visibility) in &mut clouds {
-            *visibility = Visibility::Hidden;
+        for (mut cloud, _, _, mut visibility) in &mut clouds {
+            cloud.active = false;
+            *visibility = cloud_visibility(false, *isolation);
         }
         return;
     };
@@ -322,16 +342,19 @@ pub(in crate::presentation) fn update_tactical_clouds(
     let solar_color = cloud_solar_color(celestial.sun_altitude_degrees);
     let shear = f32::from(environment.weather.atmosphere.wind_shear_bps) / 10_000.0;
 
-    for (cloud, handle, mut transform, mut visibility) in &mut clouds {
+    for (mut cloud, handle, mut transform, mut visibility) in &mut clouds {
         transform.translation = camera.translation();
         let Some(mut parameters) = layers[cloud.slot] else {
-            *visibility = Visibility::Hidden;
+            cloud.active = false;
+            *visibility = cloud_visibility(false, *isolation);
             continue;
         };
         if parameters.coverage <= 0.001 || parameters.density <= 0.001 {
-            *visibility = Visibility::Hidden;
+            cloud.active = false;
+            *visibility = cloud_visibility(false, *isolation);
             continue;
         }
+        cloud.active = true;
         let Some(mut material) = materials.get_mut(&handle.0) else {
             continue;
         };
@@ -362,7 +385,15 @@ pub(in crate::presentation) fn update_tactical_clouds(
         );
         material.spectral = solar_color.extend(1.0);
         material.geometry = cloud_shell_geometry();
-        *visibility = Visibility::Inherited;
+        *visibility = cloud_visibility(true, *isolation);
+    }
+}
+
+fn cloud_visibility(active: bool, isolation: TacticalCloudBenchmarkIsolation) -> Visibility {
+    if active && !isolation.hide_clouds {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
     }
 }
 
@@ -493,6 +524,18 @@ mod tests {
         assert!(cirrus.density < cumulus.density);
         assert!(storm.density > cumulus.density);
         assert!(storm.coverage > cumulus.coverage);
+    }
+
+    #[test]
+    fn benchmark_isolation_hides_an_active_cloud_layer() {
+        assert_eq!(
+            cloud_visibility(true, TacticalCloudBenchmarkIsolation::default()),
+            Visibility::Inherited
+        );
+        assert_eq!(
+            cloud_visibility(true, TacticalCloudBenchmarkIsolation { hide_clouds: true },),
+            Visibility::Hidden
+        );
     }
 
     #[test]
