@@ -679,7 +679,14 @@ mod tests {
             .1;
 
         assert!(shadow.contains("optical_depth += sample_density(sample_position)"));
-        assert!(shader.contains("const SUNLIGHT_TRANSMITTANCE_INTERVAL = 2u;"));
+        assert!(shadow.contains("step < 2u"));
+        assert!(shader.contains("const CLOUD_COARSE_INTERVALS = 24.0;"));
+        assert!(shader.contains("const CLOUD_FINE_STEP_SCALE = 0.5;"));
+        assert!(shader.contains("const CLOUD_MAX_MARCH_STEPS = 48u;"));
+        assert!(shader.contains("const SUNLIGHT_TRANSMITTANCE_INTERVAL = 4u;"));
+        assert!(fragment.contains("/ CLOUD_COARSE_INTERVALS"));
+        assert!(fragment.contains("coarse_step * CLOUD_FINE_STEP_SCALE"));
+        assert!(fragment.contains("step < CLOUD_MAX_MARCH_STEPS"));
         assert!(fragment.contains("var occupied_fine_steps = 0u;"));
         assert!(fragment.contains("var sun_visibility = 1.0;"));
         assert!(fragment.contains(

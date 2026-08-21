@@ -251,7 +251,9 @@ fn sample_density_coarse(world_position: vec3<f32>) -> f32 {
 fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 {
     var optical_depth = 0.0;
     var distance = 420.0;
-    for (var step = 0u; step < 3u; step += 1u) {
+    // Two exponentially-spaced probes retain the broad self-shadow gradient
+    // while avoiding a third detailed density evaluation for every refresh.
+    for (var step = 0u; step < 2u; step += 1u) {
         let sample_position = position + sun_direction * distance;
         optical_depth += sample_density(sample_position) * distance * 0.00052;
         distance *= 1.72;
@@ -259,7 +261,13 @@ fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 
     return exp(-min(optical_depth, 6.0));
 }
 
-const SUNLIGHT_TRANSMITTANCE_INTERVAL = 2u;
+// Keep all march budgets explicit and low enough to stay within WebGPU's
+// predictable fixed-loop path. Fine steps are half a coarse interval, so the
+// 48-step cap can still traverse a complete 24-interval shell once occupied.
+const CLOUD_COARSE_INTERVALS = 24.0;
+const CLOUD_FINE_STEP_SCALE = 0.5;
+const CLOUD_MAX_MARCH_STEPS = 48u;
+const SUNLIGHT_TRANSMITTANCE_INTERVAL = 4u;
 
 fn henyey_greenstein(cosine: f32, eccentricity: f32) -> f32 {
     let g2 = eccentricity * eccentricity;
@@ -326,11 +334,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Empty air is searched in large steps. Once density is found, backtrack
-    // and integrate in quarter-sized steps until the ray is clear again.
+    // and integrate in half-sized steps until the ray is clear again.
     // Pixel-stable jitter prevents the curved shell from resolving into
     // coherent marching bands without requiring more samples everywhere.
-    let coarse_step = (trace_end - trace_start) / 40.0;
-    let fine_step = coarse_step * 0.25;
+    let coarse_step = (trace_end - trace_start) / CLOUD_COARSE_INTERVALS;
+    let fine_step = coarse_step * CLOUD_FINE_STEP_SCALE;
     let ray_jitter = hash13(vec3<f32>(floor(in.position.xy), cloud_shape.w));
     var step_length = coarse_step;
     var distance = trace_start + coarse_step * ray_jitter;
@@ -338,7 +346,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var fine_empty_steps = 0u;
     // Detailed self-shadowing is materially lower frequency than the fine
     // integration samples. Start each occupied segment with a fresh result,
-    // then reuse it for the immediately following occupied sample.
+    // then reuse it for three immediately following occupied samples.
     var occupied_fine_steps = 0u;
     var sun_visibility = 1.0;
     var transmittance = 1.0;
@@ -352,7 +360,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let horizon_haze = 1.0 - smoothstep(0.02, 0.22, ray_direction.y);
     let aerial_extinction = cloud_geometry.w * mix(0.65, 4.5, horizon_haze);
 
-    for (var step = 0u; step < 80u; step += 1u) {
+    for (var step = 0u; step < CLOUD_MAX_MARCH_STEPS; step += 1u) {
         if distance >= trace_end {
             break;
         }
