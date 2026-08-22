@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use adventuresim_character_creator::{CharacterRecipe, IdentityGroup};
+use adventuresim_character_creator::{
+    CharacterRecipe, IdentityGroup,
+    export::{RiggedMesh, export_rigged_glb},
+};
 use anyhow::{Context, Result};
 use bevy::{
     asset::RenderAssetUsages,
@@ -18,14 +21,23 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 #[derive(Parser, Resource, Clone)]
 #[command(about = "Fabelgeist's MHR character design studio")]
 struct Args {
-    #[arg(long, env = "MHR_ASSETS", default_value = "D:/AI/Models/mhr")]
+    #[arg(
+        long,
+        env = "MHR_ASSETS",
+        default_value = "target/mhr-assets/v1.0.1/assets"
+    )]
     assets: PathBuf,
     // LOD 1 retains enough facial, ear, and finger topology for close creator
     // views while remaining inexpensive with pose correctives disabled.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(0..=6))]
     lod: u8,
-    #[arg(long, default_value = "character.json")]
+    #[arg(long, default_value = "assets_src/characters/john_fabelgeist.json")]
     recipe: PathBuf,
+    #[arg(long, default_value = "assets_src/biped/unarmed/base.glb")]
+    glb: PathBuf,
+    /// Export the selected recipe without opening the studio window.
+    #[arg(long)]
+    export_only: bool,
 }
 
 #[derive(Resource)]
@@ -43,6 +55,7 @@ struct Studio {
     dirty: bool,
     status: String,
     recipe_path: String,
+    glb_path: String,
     seed: u64,
     selected_lod: u8,
     selected_correctives: bool,
@@ -50,6 +63,12 @@ struct Studio {
 
 #[derive(Component)]
 struct CharacterMesh;
+
+struct GeneratedCharacter {
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    global_joint_states: Vec<[f32; 8]>,
+}
 
 #[derive(Component)]
 struct OrbitCamera {
@@ -70,8 +89,17 @@ fn main() -> Result<()> {
         parsed.validate().map_err(anyhow::Error::msg)?;
         parsed
     } else {
-        CharacterRecipe::default()
+        CharacterRecipe {
+            name: "John Fabelgeist".into(),
+            ..CharacterRecipe::default()
+        }
     };
+
+    if args.export_only {
+        export_character(&args.glb, &model, &recipe)?;
+        println!("Exported {}", args.glb.display());
+        return Ok(());
+    }
 
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.035, 0.045, 0.055)))
@@ -84,6 +112,7 @@ fn main() -> Result<()> {
             dirty: true,
             status: format!("MHR LOD {} ready", args.lod),
             recipe_path: args.recipe.display().to_string(),
+            glb_path: args.glb.display().to_string(),
             seed: 1544,
             selected_lod: args.lod,
             selected_correctives: false,
@@ -165,7 +194,7 @@ fn setup(
 }
 
 #[allow(deprecated)] // egui 0.34's replacement requires a parent Ui; this is a top-level panel.
-fn studio_ui(mut contexts: EguiContexts, mut studio: ResMut<Studio>) {
+fn studio_ui(mut contexts: EguiContexts, model: Res<BodyModel>, mut studio: ResMut<Studio>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::SidePanel::left("creator")
         .exact_width(360.0)
@@ -285,6 +314,19 @@ fn studio_ui(mut contexts: EguiContexts, mut studio: ResMut<Studio>) {
                     }
                 }
             });
+            ui.add(
+                egui::TextEdit::singleline(&mut studio.glb_path)
+                    .hint_text("assets_src/biped/unarmed/base.glb"),
+            );
+            if ui.button("Export rigged GLB").clicked() {
+                studio.status = export_character(
+                    std::path::Path::new(&studio.glb_path),
+                    &model,
+                    &studio.recipe,
+                )
+                .map(|()| format!("Exported {}", studio.glb_path))
+                .unwrap_or_else(|error| format!("Export failed: {error:#}"));
+            }
             ui.add_space(6.0);
             ui.small(&studio.status);
             ui.small("Drag to orbit · wheel to zoom");
@@ -293,10 +335,14 @@ fn studio_ui(mut contexts: EguiContexts, mut studio: ResMut<Studio>) {
 
 fn save_recipe(studio: &Studio) -> Result<String> {
     studio.recipe.validate().map_err(anyhow::Error::msg)?;
-    std::fs::write(
-        &studio.recipe_path,
-        serde_json::to_vec_pretty(&studio.recipe)?,
-    )?;
+    let path = std::path::Path::new(&studio.recipe_path);
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, serde_json::to_vec_pretty(&studio.recipe)?)?;
     Ok(format!("Saved {}", studio.recipe_path))
 }
 
@@ -366,50 +412,16 @@ fn regenerate_mesh(
         return;
     }
     studio.dirty = false;
-    let device = Device::default();
-    let identity = Tensor::from_data(
-        TensorData::new(studio.recipe.identity.clone(), [1, 45]),
-        &device,
-    );
-    let expression = Tensor::from_data(
-        TensorData::new(
-            studio.recipe.expression.clone(),
-            [1, NUM_FACE_EXPRESSION_BLEND_SHAPES],
-        ),
-        &device,
-    );
-    let pose = model.mhr.zero_parameters(1);
-    let output = match model.mhr.forward(identity, pose, Some(expression)) {
-        Ok(output) => output,
+    let generated = match generate_character(&model, &studio.recipe) {
+        Ok(generated) => generated,
         Err(error) => {
             studio.status = format!("Generation failed: {error:#}");
             return;
         }
     };
-    let vertex_values = match output.vertices.into_data().into_vec::<f32>() {
-        Ok(values) => values,
-        Err(error) => {
-            studio.status = format!("GPU vertex readback failed: {error:?}");
-            return;
-        }
-    };
-    let positions: Vec<[f32; 3]> = vertex_values
-        .chunks_exact(3)
-        .map(|v| [v[0] / 100.0, v[1] / 100.0, v[2] / 100.0])
-        .collect();
-
-    let normal_values = match output.normals.into_data().into_vec::<f32>() {
-        Ok(values) => values,
-        Err(error) => {
-            studio.status = format!("GPU normal readback failed: {error:?}");
-            return;
-        }
-    };
-    let normals: Vec<[f32; 3]> = normal_values
-        .chunks_exact(3)
-        .map(|n| [n[0], n[1], n[2]])
-        .collect();
-
+    let GeneratedCharacter {
+        positions, normals, ..
+    } = generated;
     let faces = &model.mhr.character.mesh.faces;
     let indices = faces
         .iter()
@@ -445,6 +457,86 @@ fn regenerate_mesh(
         })),
     ));
     studio.status = format!("Generated {} vertices", model.mhr.num_vertices());
+}
+
+fn generate_character(model: &BodyModel, recipe: &CharacterRecipe) -> Result<GeneratedCharacter> {
+    recipe.validate().map_err(anyhow::Error::msg)?;
+    let device = Device::default();
+    let identity = Tensor::from_data(TensorData::new(recipe.identity.clone(), [1, 45]), &device);
+    let expression = Tensor::from_data(
+        TensorData::new(
+            recipe.expression.clone(),
+            [1, NUM_FACE_EXPRESSION_BLEND_SHAPES],
+        ),
+        &device,
+    );
+    let pose = model.mhr.zero_parameters(1);
+    let output = model.mhr.forward(identity, pose, Some(expression))?;
+    let vertex_values = output
+        .vertices
+        .into_data()
+        .into_vec::<f32>()
+        .map_err(|error| anyhow::anyhow!("GPU vertex readback failed: {error:?}"))?;
+    let positions: Vec<[f32; 3]> = vertex_values
+        .chunks_exact(3)
+        .map(|v| [v[0] / 100.0, v[1] / 100.0, v[2] / 100.0])
+        .collect();
+
+    let normal_values = output
+        .normals
+        .into_data()
+        .into_vec::<f32>()
+        .map_err(|error| anyhow::anyhow!("GPU normal readback failed: {error:?}"))?;
+    let normals: Vec<[f32; 3]> = normal_values
+        .chunks_exact(3)
+        .map(|n| [n[0], n[1], n[2]])
+        .collect();
+
+    let skeleton_values = output
+        .skeleton_state
+        .into_data()
+        .into_vec::<f32>()
+        .map_err(|error| anyhow::anyhow!("GPU skeleton readback failed: {error:?}"))?;
+    let global_joint_states = skeleton_values
+        .chunks_exact(8)
+        .map(|joint| {
+            let mut state: [f32; 8] = joint.try_into().expect("chunks_exact yields eight values");
+            state[0] /= 100.0;
+            state[1] /= 100.0;
+            state[2] /= 100.0;
+            state
+        })
+        .collect();
+    Ok(GeneratedCharacter {
+        positions,
+        normals,
+        global_joint_states,
+    })
+}
+
+fn export_character(
+    path: &std::path::Path,
+    model: &BodyModel,
+    recipe: &CharacterRecipe,
+) -> Result<()> {
+    let generated = generate_character(model, recipe)?;
+    let character = &model.mhr.character;
+    export_rigged_glb(
+        path,
+        &recipe.name,
+        recipe.version,
+        model.lod,
+        &RiggedMesh {
+            positions: &generated.positions,
+            normals: &generated.normals,
+            faces: &character.mesh.faces,
+            joint_indices: &character.skin_weights.index,
+            joint_weights: &character.skin_weights.weight,
+            joint_names: &character.skeleton.names,
+            joint_parents: &character.skeleton.parents,
+            global_joint_states: &generated.global_joint_states,
+        },
+    )
 }
 
 fn orbit_camera(

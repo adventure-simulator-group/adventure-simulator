@@ -282,15 +282,20 @@ not runtime clips.
 Editable unarmed motion sources live under `assets_src/biped/unarmed/`; runtime
 exports live under `assets/animations/biped/unarmed/`. The semantic pack ID is
 still `humanoid_unarmed`; `unarmed` is its ergonomic on-disk directory. The
-existing `assets_src/base.*` files remain the special-case rig source until the
-new `assets_src/biped/unarmed/base.casc` has a matching GLB. Prepare its
-runtime-only scene deterministically with:
+character creator generates `assets_src/biped/unarmed/base.glb` from the
+canonical John Fabelgeist recipe using the MHR v1.0.1 hierarchy. The animation
+contract contains MHR's 127 joints plus `l_weapon` under `l_wrist`, `r_weapon`
+under `r_wrist`, and the first-person reference `c_camera` under `c_head`.
+These three zero-weight joints are part of the exported animation skeleton and
+must remain present in every Cascadeur motion export.
+The legacy top-level `assets_src/base.*` files describe only the replaced
+placeholder rig. Prepare the MHR runtime scene deterministically with:
 
 ```powershell
-python scripts/prepare_rig_base.py assets_src/base.glb assets/animations/biped/unarmed/base.glb
+python scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
 ```
 
-`base.glb` supplies only the spawnable skinned scene and may contain zero
+`base.glb` supplies only the spawnable skinned scene and contains zero
 animations. Every other `.glb` is a non-spawnable motion source and must contain
 exactly one animation, named or unnamed. The 30fps catalog, not the animation's
 glTF name, assigns semantic anchors to file/frame pairs. A missing, malformed,

@@ -223,6 +223,21 @@ init-world-runtime:
     @{{ python_bin }} scripts/init_world_runtime.py --repository .
 replace-world-runtime:
     @{{ python_bin }} scripts/init_world_runtime.py --repository . --replace
+
+# Download and verify Meta MHR v1.0.1 into the ignored authoring cache.
+init-mhr-assets:
+    @{{ python_bin }} scripts/init_mhr_assets.py
+init-mhr-lod1-correctives:
+    @{{ python_bin }} scripts/init_mhr_assets.py --lod1-correctives
+verify-mhr-assets:
+    @{{ python_bin }} scripts/init_mhr_assets.py --verify-only
+# Edit the canonical John Fabelgeist MHR recipe and source rig.
+character-creator:
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml
+# Re-export the saved John recipe and prepare its spawnable runtime base.
+prepare-john-rig:
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --export-only
+    @{{ python_bin }} scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
 verify-world-data-bundle archive descriptor descriptor_sha256:
     @{{ python_bin }} scripts/world_data_bundle.py verify {{ quote(archive) }} --descriptor {{ quote(descriptor) }} --descriptor-sha256 {{ quote(descriptor_sha256) }}
 install-world-data archive descriptor descriptor_sha256:

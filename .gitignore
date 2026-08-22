@@ -2,6 +2,8 @@
 # will have compiled files and executables
 debug
 target
+# Pinned Meta MHR authoring assets installed by `just init-mhr-assets` live
+# below target/mhr-assets/. Track only deliberately exported runtime artifacts.
 /.codex-target-*/
 .workbench
 

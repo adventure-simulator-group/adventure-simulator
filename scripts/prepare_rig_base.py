@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Prepare and validate the authored humanoid base rig for runtime use.
 
-The operation is intentionally dependency-free and deterministic: it preserves
-the source binary chunk, canonicalizes the JSON chunk, and removes authoring-only
-scene roots without attempting to rewrite mesh or skin indices.
+The operation is intentionally dependency-free and deterministic: it validates
+the complete MHR hierarchy and skin contract, preserves the source binary
+chunk, and canonicalizes the JSON chunk without rewriting mesh or skin indices.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import struct
@@ -17,26 +18,27 @@ import sys
 
 JSON_CHUNK = 0x4E4F534A
 BIN_CHUNK = 0x004E4942
-EXPECTED_JOINT_COUNT = 74
+EXPECTED_JOINT_COUNT = 130
+EXPECTED_RIG_SIGNATURE = "1488314aceabd8ec688dedb0a283a4cd3b03be840bc402238851e679fb8bd0d4"
 REQUIRED_JOINTS = {
-    "root", "pelvis", "stomach_01", "stomach_02", "chest",
-    "neck_01", "neck_02", "head", "clavicle.L", "clavicle.R",
-    "upper_arm.L", "upper_arm.R", "upper_arm_twist.L", "upper_arm_twist.R",
-    "forearm.L", "forearm.R", "forearm_twist.L", "forearm_twist.R",
-    "hand.L", "hand.R", "weapon.L", "weapon.R", "thigh.L", "thigh.R",
-    "thigh_twist.L", "thigh_twist.R", "shin.L", "shin.R",
-    "shin_twist.L", "shin_twist.R", "foot.L", "foot.R", "toe.L", "toe.R",
+    "body_world", "root", "c_spine0", "c_spine1", "c_spine2", "c_spine3",
+    "c_neck", "c_head", "l_clavicle", "r_clavicle", "l_uparm", "r_uparm",
+    "l_lowarm", "r_lowarm", "l_wrist", "r_wrist", "l_upleg", "r_upleg",
+    "l_lowleg", "r_lowleg", "l_foot", "r_foot", "l_ball", "r_ball",
+    "l_eye", "r_eye", "c_jaw", "l_weapon", "r_weapon", "c_camera",
 }
-AUTHORING_ROOTS = {"weapon", "Cylinder"}
 EXPECTED_PARENTS = {
-    "pelvis": "root", "stomach_01": "pelvis", "stomach_02": "stomach_01",
-    "chest": "stomach_02", "neck_01": "chest", "neck_02": "neck_01", "head": "neck_02",
-    "clavicle.L": "chest", "upper_arm.L": "clavicle.L", "upper_arm_twist.L": "upper_arm.L",
-    "forearm.L": "upper_arm_twist.L", "forearm_twist.L": "forearm.L", "hand.L": "forearm_twist.L", "weapon.L": "hand.L",
-    "clavicle.R": "chest", "upper_arm.R": "clavicle.R", "upper_arm_twist.R": "upper_arm.R",
-    "forearm.R": "upper_arm_twist.R", "forearm_twist.R": "forearm.R", "hand.R": "forearm_twist.R", "weapon.R": "hand.R",
-    "thigh.L": "pelvis", "thigh_twist.L": "thigh.L", "shin.L": "thigh_twist.L", "shin_twist.L": "shin.L", "foot.L": "shin_twist.L", "toe.L": "foot.L",
-    "thigh.R": "pelvis", "thigh_twist.R": "thigh.R", "shin.R": "thigh_twist.R", "shin_twist.R": "shin.R", "foot.R": "shin_twist.R", "toe.R": "foot.R",
+    "root": "body_world", "c_spine0": "root", "c_spine1": "c_spine0",
+    "c_spine2": "c_spine1", "c_spine3": "c_spine2", "c_neck": "c_spine3",
+    "c_head": "c_neck", "l_clavicle": "c_spine3", "r_clavicle": "c_spine3",
+    "l_uparm": "l_clavicle", "r_uparm": "r_clavicle",
+    "l_lowarm": "l_uparm", "r_lowarm": "r_uparm",
+    "l_wrist": "l_wrist_twist", "r_wrist": "r_wrist_twist",
+    "l_upleg": "root", "r_upleg": "root",
+    "l_lowleg": "l_upleg", "r_lowleg": "r_upleg",
+    "l_foot": "l_lowleg", "r_foot": "r_lowleg",
+    "l_ball": "l_transversetarsal", "r_ball": "r_transversetarsal",
+    "l_weapon": "l_wrist", "r_weapon": "r_wrist", "c_camera": "c_head",
 }
 
 
@@ -123,10 +125,40 @@ def validate_and_prepare(document: dict) -> dict:
         if actual_parent != expected_parent:
             actual_name = nodes[actual_parent].get("name") if actual_parent is not None else None
             raise GlbError(f"expected {child_name} parent {parent_name}, found {actual_name}")
+    signature_lines = []
+    for joint in joints:
+        parent = parent_indices.get(joint)
+        parent_name = nodes[parent].get("name", "") if parent in joints else ""
+        signature_lines.append(f"{nodes[joint]['name']}\0{parent_name}")
+    signature = hashlib.sha256("\n".join(signature_lines).encode()).hexdigest()
+    if signature != EXPECTED_RIG_SIGNATURE:
+        raise GlbError(f"MHR joint order or hierarchy has changed ({signature})")
     if document.get("animations", []) not in ([], None):
-        # Clips are allowed as poses arrive; this guard is deliberately only a type check.
-        if not isinstance(document["animations"], list):
-            raise GlbError("animations must be an array")
+        raise GlbError("the spawnable base rig must contain zero animations")
+
+    extras = document.get("extras", {})
+    rig = extras.get("adventuresim_rig")
+    if not isinstance(rig, dict) or rig.get("family") != "mhr":
+        raise GlbError("base rig must declare the MHR rig family")
+    expected_attachments = [
+        {"name": "l_weapon", "parent": "l_wrist", "role": "left_weapon_grip"},
+        {"name": "r_weapon", "parent": "r_wrist", "role": "right_weapon_grip"},
+        {"name": "c_camera", "parent": "c_head", "role": "first_person_camera"},
+    ]
+    if rig.get("attachments") != expected_attachments:
+        raise GlbError("base rig does not declare the canonical MHR attachments")
+    meshes = document.get("meshes")
+    if not isinstance(meshes, list) or len(meshes) != 1:
+        raise GlbError("expected exactly one MHR character mesh")
+    primitives = meshes[0].get("primitives") if isinstance(meshes[0], dict) else None
+    if not isinstance(primitives, list) or len(primitives) != 1:
+        raise GlbError("expected exactly one MHR mesh primitive")
+    attributes = primitives[0].get("attributes") if isinstance(primitives[0], dict) else None
+    required_attributes = {"POSITION", "NORMAL", "JOINTS_0", "WEIGHTS_0", "JOINTS_1", "WEIGHTS_1"}
+    if not isinstance(attributes, dict) or not required_attributes.issubset(attributes):
+        raise GlbError("MHR mesh is missing required geometry or skinning attributes")
+    if not isinstance(skins[0].get("inverseBindMatrices"), int):
+        raise GlbError("MHR skin is missing inverse bind matrices")
 
     default_scene = document.get("scene", 0)
     if not isinstance(default_scene, int) or not 0 <= default_scene < len(scenes):
@@ -136,16 +168,13 @@ def validate_and_prepare(document: dict) -> dict:
         raise GlbError("default scene must contain root nodes")
     if any(not isinstance(i, int) or i < 0 or i >= len(nodes) for i in roots):
         raise GlbError("default scene roots must be valid node indices")
-    kept = [i for i in roots if nodes[i].get("name") not in AUTHORING_ROOTS]
-    removed = [nodes[i].get("name") for i in roots if i not in kept]
-    if not removed:
-        raise GlbError("expected an authoring-only weapon/Cylinder scene root")
-    if not any(nodes[i].get("skin") == 0 for i in kept):
-        raise GlbError("runtime scene would not contain the skinned human mesh")
-    scenes[default_scene]["nodes"] = kept
+    if sum(nodes[i].get("name") == "Skeleton" for i in roots) != 1:
+        raise GlbError("default scene must contain one Skeleton hierarchy root")
+    if not any(nodes[i].get("skin") == 0 for i in roots):
+        raise GlbError("default scene must contain the skinned MHR mesh")
     document.setdefault("extras", {})["adventuresim_runtime_rig"] = {
-        "source": "assets_src/base.glb",
-        "excluded_scene_roots": removed,
+        "source": "assets_src/biped/unarmed/base.glb",
+        "rig_signature": EXPECTED_RIG_SIGNATURE,
     }
     return document
 
