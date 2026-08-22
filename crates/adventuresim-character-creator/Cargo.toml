@@ -13,8 +13,7 @@ burn = { git = "https://github.com/tracel-ai/burn", rev = "b1502de8b396e7c575981
     "std",
     "wgpu",
 ] }
-adventuresim-mhr = { path = "../adventuresim-mhr", default-features = false }
-adventuresim-fbx = { path = "../adventuresim-fbx" }
+fabelgeist-mhr = { path = "../fabelgeist-mhr" }
 clap = { version = "4.5", features = ["derive", "env"] }
 rand = "0.9"
 serde = { version = "1", features = ["derive"] }

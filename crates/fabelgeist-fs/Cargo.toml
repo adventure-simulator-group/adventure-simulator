@@ -1,0 +1,50 @@
+[package]
+name = "fabelgeist-fs"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/adventure-simulator-group/fabelgeist"
+license = "GPL-3.0"
+
+[dependencies]
+anyhow = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22"
+percent-encoding = "2.3"
+futures-util = "0.3"
+futures-channel = "0.3"
+async-trait = "0.1"
+once_cell = "1.19"
+directories = "6"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["fs"] }
+rfd = "0.15"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+indexed_db_futures = "0.6.4"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "Element",
+    "HtmlInputElement",
+    "FileList",
+    "Event",
+    "Response",
+    "ReadableStream",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Headers",
+    "Url",
+    "Blob",
+    "File",
+    "FileSystemHandle",
+    "FileSystemFileHandle",
+    "FileSystemDirectoryHandle",
+    "FileSystemWritableFileStream",
+    "Navigator",
+    "StorageManager",
+] }

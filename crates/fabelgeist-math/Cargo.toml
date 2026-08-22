@@ -1,0 +1,16 @@
+[package]
+name = "fabelgeist-math"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/adventure-simulator-group/fabelgeist"
+license = "GPL-3.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+bytemuck = { version = "1.16", features = ["derive"] }
+
+# `From<Vec4> for wgpu::Color` cannot live in fabelgeist-gpu -- both types
+# would be foreign there, and the orphan rule forbids it. It stays here,
+# behind a feature, so that nothing that only wants the maths pulls in a GPU
+# stack.
+wgpu = { version = "30.0", default-features = false, optional = true }
