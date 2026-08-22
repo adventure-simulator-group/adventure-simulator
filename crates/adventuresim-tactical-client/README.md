@@ -73,17 +73,25 @@ files belong under `assets_src/biped/unarmed/`; `assets_src/base.*` remains the
 rig-source special case until `assets_src/biped/unarmed/base.casc` has a matching
 base GLB export.
 
-Prepare and verify runtime files without changing source exports:
+Publish and verify every currently available runtime animation without changing
+source exports:
 
 ```powershell
-python scripts/prepare_rig_base.py assets_src/base.glb assets/animations/biped/unarmed/base.glb
-python scripts/prepare_animation_motion.py assets_src/biped/unarmed/walk.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/walk.glb --last-frame 32
-python scripts/prepare_animation_motion.py assets_src/biped/unarmed/walk.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/walk.glb --last-frame 32 --check
+python scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
+python scripts/prepare_animation_assets.py
+python scripts/prepare_animation_assets.py --check
 ```
 
-Motion preparation validates the one-animation, duration, and canonical
-bone-path contracts, then copies the GLB byte-for-byte. Scenes and meshes in a
-motion export are harmless because the client loads only its animation asset.
+Motion publication validates the one-animation, duration, and canonical
+bone-path contracts. Runtime motion GLBs preserve only the canonical hierarchy,
+bind transforms, and animation data; mesh, skin, material, texture, and image
+payloads remain solely in the spawnable runtime `base.glb`. The publisher keeps
+only catalog-addressable frames for ordinary motions, removes tracks that equal
+the bind transform, and collapses other constant tracks to one key. Walk and run
+store five cubic anchor keys rather than Cascadeur's exported in-betweens.
+The `.casc` projects are tracked authoring sources. Their reproducible
+`assets_src/**/*.glb` exports are ignored; export them locally before publishing
+the tracked runtime GLBs.
 
 Use these conventions:
 
@@ -124,9 +132,9 @@ compensation.
 
 ## Deterministic animation capture
 
-Regenerate the mirrored endpoint clips after changing `walk.glb` or `run.glb`
-with `python scripts/mirror_gait_assets.py`; CI-style verification uses the
-same command with `--check`. The generator requires Python 3 and NumPy.
+Republish after changing any motion with
+`python scripts/prepare_animation_assets.py`; CI-style verification uses the
+same command with `--check`. The publisher requires Python 3 and NumPy.
 
 The native `animation-viewer` binary is a deterministic gameplay-presentation
 fixture rather than a separate pose renderer. It installs the gameplay player,
@@ -327,27 +335,29 @@ clock toggle therefore cannot directly change walk/run selection.
 The procedural humanoid pass recognizes these case-sensitive bone names:
 
 ```text
-root                 pelvis               stomach_01 / stomach_02
-chest                neck_01 / neck_02    head
-clavicle.L / .R      upper_arm.L / .R     upper_arm_twist.L / .R
-forearm.L / .R       forearm_twist.L / .R hand.L / .R
-weapon.L / .R        thigh.L / .R         thigh_twist.L / .R
-shin.L / .R          shin_twist.L / .R    foot.L / .R, toe.L / .R
+body_world           root                 c_spine0 / c_spine1
+c_spine2 / c_spine3  c_neck               c_head / c_camera
+l_clavicle / r_clavicle                   l_uparm / r_uparm
+l_lowarm / r_lowarm  l_wrist / r_wrist    l_weapon / r_weapon
+l_upleg / r_upleg    l_lowleg / r_lowleg  l_foot / r_foot
+l_ball / r_ball
 ```
 
-Finger and breast bones remain under authored FK. Twist, toe, and weapon socket
-bones are canonical parts of the base hierarchy and are available to later
-procedural constraints.
+Finger, face, foot-articulation, and distributed twist bones retain authored FK.
+They still participate in full-pose mirroring. `l_weapon`, `r_weapon`, and
+`c_camera` are export-added attachment joints on the canonical MHR hierarchy.
+Equipment removes each target's rolled authored bind frame before following its
+live deformation; worn placeholders derive their +Y axis from semantic joint
+pairs, while held weapons retain the character-space +Y tip convention.
 
 The final client-only pose pass distributes bounded look across the actual
 spine/neck chain, converts bounded pelvis compensation through its real parent,
-and solves legs and optional hand targets through the twist-intermediate
-hierarchy without overwriting authored twist locals. Foot slope alignment uses
-the authored bind transform to derive its sole-up axis; local +Y is
-ankle-to-toe on this rig and is not a sole normal. A primary hand socket drives
-a held weapon, then an optional weapon-local secondary grip drives the off hand.
-These targets and constraints are client-only and never extend replicated
-`SkeletonState`.
+and solves legs and optional hand targets across the MHR hierarchy without
+overwriting authored twist locals. Foot slope alignment uses the authored bind
+transform to derive its sole-up axis rather than assuming an MHR joint-local
+cardinal axis. A primary hand socket drives a held weapon, then an optional
+weapon-local secondary grip drives the off hand. These targets and constraints
+are client-only and never extend replicated `SkeletonState`.
 
 ## Missing assets
 

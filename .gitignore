@@ -7,6 +7,10 @@ target
 /.codex-target-*/
 .workbench
 
+# Cascadeur/character-creator GLBs are reproducible authoring exports. Runtime
+# animation GLBs remain tracked under assets/animations/.
+/assets_src/**/*.glb
+
 # Root JavaScript tooling dependencies
 /node_modules/
 

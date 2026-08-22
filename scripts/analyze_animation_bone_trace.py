@@ -39,8 +39,7 @@ def distance(left: tuple[float, float, float], right: tuple[float, float, float]
 
 
 def is_hand_bone(name: str) -> bool:
-    normalized = name.casefold().replace("_", ".")
-    return normalized in {"hand.l", "hand.r", "left.hand", "right.hand"}
+    return name.casefold() in {"l_wrist", "r_wrist"}
 
 
 def analyze_trace(path: Path, scenario: str | None = None) -> dict[str, object]:
@@ -81,7 +80,7 @@ def analyze_trace(path: Path, scenario: str | None = None) -> dict[str, object]:
     if active_frames == 0:
         raise ValueError("trace contains no matching active attack frames")
     if not samples:
-        raise ValueError("trace contains no hand.L or hand.R animation targets")
+        raise ValueError("trace contains no l_wrist or r_wrist animation targets")
 
     hands: dict[str, object] = {}
     for name, positions in sorted(samples.items()):

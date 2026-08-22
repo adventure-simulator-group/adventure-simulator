@@ -75,7 +75,9 @@ pub(in crate::animation) fn apply_arm_and_weapon_constraints(
         };
         set_world_transform(
             weapon,
-            socket_global.compute_transform(),
+            socket_global
+                .mul_transform(constraint.socket_bind_correction)
+                .compute_transform(),
             &parents,
             &mut transforms,
         );

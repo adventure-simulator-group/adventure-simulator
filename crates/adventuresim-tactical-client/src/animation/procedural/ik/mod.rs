@@ -939,6 +939,9 @@ pub(crate) struct HeldWeaponConstraint {
     pub owner: Entity,
     pub primary_hand: HandSide,
     pub secondary_grip_local: Option<Vec3>,
+    /// Converts the MHR socket's rolled authored bind frame into the
+    /// character-space +Y weapon convention before live deformation.
+    pub socket_bind_correction: Transform,
 }
 
 /// Places the planted foot on the terrain with an analytic two-bone solve,
@@ -2202,10 +2205,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             memory.pelvis_shift
         };
         if hip_shift < -0.001 {
-            // The thighs are siblings of the visual pelvis under the rig root.
-            // Correct that shared owner so every cached knee pole and local
-            // chain sees one coherent parent transform. Translating the three
-            // sibling locals independently inverted the knee hemisphere.
+            // MHR's anatomical `root` owns the spine and both thigh chains.
+            // Correct its `body_world` parent so every cached knee pole and
+            // local chain sees one coherent transform. Translating the pelvis
+            // and two thigh locals independently inverted the knee hemisphere.
             if let Some(&bone) = rig.get(&BoneRole::Root) {
                 let local_delta = parents
                     .get(bone)

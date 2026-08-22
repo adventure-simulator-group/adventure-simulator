@@ -175,9 +175,10 @@ box in local X/Y/Z. `anchor_offset_m` gives the attachment anchor relative to
 the ordinary box-centre origin, and `grip_to_tip_m` records gameplay reach from
 a weapon's hand anchor without stretching the box. Weapon tips point along
 local +Y. The tactical client constrains a held weapon's authored anchor root
-to `weapon.L` or `weapon.R`; inspection of the current rig shows those sockets
-already use the required direction, so the documented socket correction is
-the identity transform.
+to `l_weapon` or `r_weapon`. MHR's sockets inherit rolled wrist bind frames, so
+the client removes that bind rotation before applying the socket's live
+animation. Item recipes remain in the +Y convention and must not compensate
+for a particular exported character's wrist orientation.
 
 The same dimensions produce the visible placeholder mesh and dropped-item
 collider. Do not infer them from `exterior_volume_ml`, which is container

@@ -21,7 +21,10 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiTextureHandle, egui};
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
 
 use crate::{
-    animation::{BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig},
+    animation::{
+        AuthoredBindTransform, BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig,
+        authored_bind_global,
+    },
     player::ClientPlayer,
 };
 
@@ -1337,6 +1340,81 @@ fn spawn_item_placeholders(
     }
 }
 
+fn semantic_attachment_axis(role: BoneRole) -> Option<(BoneRole, BoneRole)> {
+    Some(match role {
+        BoneRole::Pelvis => (BoneRole::Pelvis, BoneRole::StomachOne),
+        BoneRole::StomachOne => (BoneRole::StomachOne, BoneRole::StomachTwo),
+        BoneRole::StomachTwo => (BoneRole::StomachTwo, BoneRole::StomachThree),
+        BoneRole::StomachThree => (BoneRole::StomachThree, BoneRole::Chest),
+        BoneRole::Chest => (BoneRole::Chest, BoneRole::NeckOne),
+        BoneRole::NeckOne => (BoneRole::NeckOne, BoneRole::Head),
+        BoneRole::Head => (BoneRole::NeckOne, BoneRole::Head),
+        BoneRole::ClavicleLeft => (BoneRole::ClavicleLeft, BoneRole::UpperArmLeft),
+        BoneRole::ClavicleRight => (BoneRole::ClavicleRight, BoneRole::UpperArmRight),
+        BoneRole::UpperArmLeft => (BoneRole::UpperArmLeft, BoneRole::ForearmLeft),
+        BoneRole::UpperArmRight => (BoneRole::UpperArmRight, BoneRole::ForearmRight),
+        BoneRole::ForearmLeft | BoneRole::HandLeft => (BoneRole::ForearmLeft, BoneRole::HandLeft),
+        BoneRole::ForearmRight | BoneRole::HandRight => {
+            (BoneRole::ForearmRight, BoneRole::HandRight)
+        }
+        BoneRole::ThighLeft => (BoneRole::ThighLeft, BoneRole::ShinLeft),
+        BoneRole::ThighRight => (BoneRole::ThighRight, BoneRole::ShinRight),
+        BoneRole::ShinLeft => (BoneRole::ShinLeft, BoneRole::FootLeft),
+        BoneRole::ShinRight => (BoneRole::ShinRight, BoneRole::FootRight),
+        BoneRole::FootLeft | BoneRole::ToeLeft => (BoneRole::FootLeft, BoneRole::ToeLeft),
+        BoneRole::FootRight | BoneRole::ToeRight => (BoneRole::FootRight, BoneRole::ToeRight),
+        BoneRole::Root | BoneRole::Camera | BoneRole::WeaponLeft | BoneRole::WeaponRight => {
+            return None;
+        }
+    })
+}
+
+fn bind_space_attachment_correction(
+    bind: GlobalTransform,
+    desired_bind_rotation: Quat,
+) -> Transform {
+    GlobalTransform::from(Transform {
+        translation: bind.translation(),
+        rotation: desired_bind_rotation,
+        scale: Vec3::ONE,
+    })
+    .reparented_to(&bind)
+}
+
+fn equipment_bind_correction(
+    role: BoneRole,
+    rig: &HumanoidRig,
+    bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
+) -> Option<Transform> {
+    let &bone = rig.get(&role)?;
+    let bind = authored_bind_global(bone, bind_nodes.get(bone).ok()?.0.owner, bind_nodes)?;
+    let desired_rotation = semantic_attachment_axis(role)
+        .and_then(|(from_role, to_role)| {
+            let &from = rig.get(&from_role)?;
+            let &to = rig.get(&to_role)?;
+            let owner = bind_nodes.get(from).ok()?.0.owner;
+            let from = authored_bind_global(from, owner, bind_nodes)?.translation();
+            let to = authored_bind_global(to, owner, bind_nodes)?.translation();
+            Some(Quat::from_rotation_arc(
+                Vec3::Y,
+                (to - from).try_normalize()?,
+            ))
+        })
+        .unwrap_or(Quat::IDENTITY);
+    Some(bind_space_attachment_correction(bind, desired_rotation))
+}
+
+fn weapon_bind_correction(
+    role: BoneRole,
+    rig: &HumanoidRig,
+    bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
+) -> Option<Transform> {
+    let &socket = rig.get(&role)?;
+    let owner = bind_nodes.get(socket).ok()?.0.owner;
+    let bind = authored_bind_global(socket, owner, bind_nodes)?;
+    Some(bind_space_attachment_correction(bind, Quat::IDENTITY))
+}
+
 fn update_item_placeholders(
     mut commands: Commands,
     items: Query<
@@ -1351,6 +1429,7 @@ fn update_item_placeholders(
     >,
     topologies: Query<&EquipmentTopology, Without<ItemPlaceholder>>,
     rigs: Query<&HumanoidRig, With<Player>>,
+    bind_nodes: Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
     mut placeholders: Query<(
         Entity,
         &ItemPlaceholder,
@@ -1375,21 +1454,35 @@ fn update_item_placeholders(
             if parent.is_some() {
                 commands.entity(entity).remove::<ChildOf>();
             }
-            *visibility = Visibility::Inherited;
-            commands.entity(entity).insert(HeldWeaponConstraint {
-                owner: owner.0,
-                primary_hand,
-                secondary_grip_local: None,
+            let constraint = rigs.get(owner.0).ok().and_then(|rig| {
+                let role = match primary_hand {
+                    HandSide::Left => BoneRole::WeaponLeft,
+                    HandSide::Right => BoneRole::WeaponRight,
+                };
+                Some(HeldWeaponConstraint {
+                    owner: owner.0,
+                    primary_hand,
+                    secondary_grip_local: None,
+                    socket_bind_correction: weapon_bind_correction(role, rig, &bind_nodes)?,
+                })
             });
-        } else if let Some(bone) = owner.and_then(|owner| {
+            if let Some(constraint) = constraint {
+                *visibility = Visibility::Inherited;
+                commands.entity(entity).insert(constraint);
+            } else {
+                *visibility = Visibility::Hidden;
+                commands.entity(entity).remove::<HeldWeaponConstraint>();
+            }
+        } else if let Some((bone, correction)) = owner.and_then(|owner| {
             let rig = rigs.get(owner.0).ok()?;
             let role = equipment_location_bone(resolve_character_location(topology, &topologies)?);
-            rig.get(&role).copied()
+            let bone = rig.get(&role).copied()?;
+            Some((bone, equipment_bind_correction(role, rig, &bind_nodes)?))
         }) {
             if parent.is_none_or(|parent| parent.parent() != bone) {
                 commands.entity(entity).insert(ChildOf(bone));
             }
-            *transform = Transform::IDENTITY;
+            *transform = correction;
             *visibility = Visibility::Inherited;
             commands.entity(entity).remove::<HeldWeaponConstraint>();
         } else {
@@ -1435,7 +1528,7 @@ fn resolve_character_location(
 fn equipment_location_bone(location: EquipmentLocation) -> BoneRole {
     match location {
         EquipmentLocation::Head | EquipmentLocation::Face => BoneRole::Head,
-        EquipmentLocation::Neck => BoneRole::NeckTwo,
+        EquipmentLocation::Neck => BoneRole::NeckOne,
         EquipmentLocation::Chest | EquipmentLocation::Back => BoneRole::Chest,
         EquipmentLocation::Stomach => BoneRole::StomachTwo,
         EquipmentLocation::LeftShoulder => BoneRole::ClavicleLeft,
@@ -1976,7 +2069,7 @@ mod tests {
         for (location, expected) in [
             (EquipmentLocation::Head, BoneRole::Head),
             (EquipmentLocation::Face, BoneRole::Head),
-            (EquipmentLocation::Neck, BoneRole::NeckTwo),
+            (EquipmentLocation::Neck, BoneRole::NeckOne),
             (EquipmentLocation::Chest, BoneRole::Chest),
             (EquipmentLocation::Stomach, BoneRole::StomachTwo),
             (EquipmentLocation::Back, BoneRole::Chest),
@@ -2001,6 +2094,43 @@ mod tests {
         ] {
             assert_eq!(equipment_location_bone(location), expected, "{location:?}");
         }
+    }
+
+    #[test]
+    fn attachment_correction_cancels_mhr_bind_roll_but_keeps_position() {
+        let bind = GlobalTransform::from(Transform {
+            translation: Vec3::new(0.4, 1.2, -0.3),
+            rotation: Quat::from_euler(EulerRot::XYZ, 0.7, -0.4, 1.1),
+            scale: Vec3::splat(1.25),
+        });
+        let desired = Quat::from_rotation_arc(Vec3::Y, Vec3::X);
+        let correction = bind_space_attachment_correction(bind, desired);
+        let resolved = bind.mul_transform(correction);
+
+        assert!(resolved.translation().abs_diff_eq(bind.translation(), 1e-5));
+        assert!(resolved.rotation().dot(desired).abs() > 1.0 - 1e-5);
+        assert!(
+            resolved
+                .to_scale_rotation_translation()
+                .0
+                .abs_diff_eq(Vec3::ONE, 1e-5)
+        );
+    }
+
+    #[test]
+    fn limb_placeholders_use_semantic_joint_axes_not_local_mhr_y() {
+        assert_eq!(
+            semantic_attachment_axis(BoneRole::UpperArmLeft),
+            Some((BoneRole::UpperArmLeft, BoneRole::ForearmLeft))
+        );
+        assert_eq!(
+            semantic_attachment_axis(BoneRole::ThighRight),
+            Some((BoneRole::ThighRight, BoneRole::ShinRight))
+        );
+        assert_eq!(
+            semantic_attachment_axis(BoneRole::FootLeft),
+            Some((BoneRole::FootLeft, BoneRole::ToeLeft))
+        );
     }
 
     #[test]

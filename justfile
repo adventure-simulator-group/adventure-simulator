@@ -238,6 +238,11 @@ character-creator:
 prepare-john-rig:
     @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --export-only
     @{{ python_bin }} scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
+# Publish every currently authored motion as a mesh-free runtime animation.
+prepare-animation-assets:
+    @{{ python_bin }} scripts/prepare_animation_assets.py
+check-animation-assets:
+    @{{ python_bin }} scripts/prepare_animation_assets.py --check
 verify-world-data-bundle archive descriptor descriptor_sha256:
     @{{ python_bin }} scripts/world_data_bundle.py verify {{ quote(archive) }} --descriptor {{ quote(descriptor) }} --descriptor-sha256 {{ quote(descriptor_sha256) }}
 install-world-data archive descriptor descriptor_sha256:

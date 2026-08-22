@@ -46,47 +46,47 @@ def frame(index, direction, elapsed, angle):
         },
         "bones": [
             {
-                "name": "pelvis",
+                "name": "root",
                 "translation": [root_x, 1.0, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
-                "name": "chest",
+                "name": "c_spine3",
                 "translation": [root_x, 1.5, 0.0],
                 "rotation_xyzw": [math.sin(half), 0.0, 0.0, math.cos(half)],
             },
             {
-                "name": "head",
+                "name": "c_head",
                 "translation": [root_x, 2.0, 0.0],
                 "rotation_xyzw": [math.sin(half), 0.0, 0.0, math.cos(half)],
             },
             {
-                "name": "thigh.L",
+                "name": "l_upleg",
                 "translation": [root_x - 0.2, 1.0, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
-                "name": "shin.L",
+                "name": "l_lowleg",
                 "translation": [root_x - 0.2, 0.5, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
-                "name": "foot.L",
+                "name": "l_foot",
                 "translation": [root_x - 0.2, swing_height if left_swing else 0.0, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
-                "name": "thigh.R",
+                "name": "r_upleg",
                 "translation": [root_x + 0.2, 1.0, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
-                "name": "shin.R",
+                "name": "r_lowleg",
                 "translation": [root_x + 0.2, 0.5, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
-                "name": "foot.R",
+                "name": "r_foot",
                 "translation": [root_x + 0.2, 0.0 if left_swing else swing_height, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
@@ -160,17 +160,17 @@ class AnalyzeAnimationDirectionTraceTests(unittest.TestCase):
                 item["bones"].extend(
                     [
                         {
-                            "name": "thigh.L",
+                            "name": "l_upleg",
                             "translation": [root_x - 0.2, 1.0, 0.0],
                             "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
                         },
                         {
-                            "name": "shin.L",
+                            "name": "l_lowleg",
                             "translation": [(root_x + foot_x) / 2.0, 0.5, 0.0],
                             "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
                         },
                         {
-                            "name": "foot.L",
+                            "name": "l_foot",
                             "translation": [foot_x, 0.0, 0.0],
                             "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
                         },
@@ -200,7 +200,7 @@ class AnalyzeAnimationDirectionTraceTests(unittest.TestCase):
                 item = frame(index, direction, sample / 32.0, 0.002 * sample)
                 if direction == "forward":
                     for bone in item["bones"]:
-                        if bone["name"] in {"foot.L", "foot.R"}:
+                        if bone["name"] in {"l_foot", "r_foot"}:
                             bone["translation"][1] = 0.0
                 frames.append(item)
                 index += 1

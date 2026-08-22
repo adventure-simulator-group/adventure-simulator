@@ -300,11 +300,17 @@ pub(super) fn bind_animation_target_paths(
 pub(super) fn is_lower_body_animation_target(name: &str) -> bool {
     let bone_name = name.to_ascii_lowercase();
     bone_name == "skeleton"
+        || bone_name == "body_world"
         || bone_name == "root"
-        || bone_name == "pelvis"
-        || bone_name.contains("hips")
-        || bone_name.contains("thigh")
-        || bone_name.contains("shin")
-        || bone_name.contains("foot")
-        || bone_name.contains("toe")
+        || [
+            "_upleg",
+            "_lowleg",
+            "_foot",
+            "_talocrural",
+            "_subtalar",
+            "_transversetarsal",
+            "_ball",
+        ]
+        .iter()
+        .any(|part| bone_name.contains(part))
 }
