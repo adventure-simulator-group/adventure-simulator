@@ -1618,8 +1618,8 @@ fn advance_posture_transition_facing(
     previous_transition: Option<PostureTransitionState>,
     current_transition: Option<PostureTransitionState>,
 ) {
-    // Directional dives transfer their authored yaw to the root during
-    // landing. Supine get-up applies an inverse half-turn that cancels the
+    // Directional dives transfer the downed contact pose's yaw to the root
+    // during landing. Supine get-up applies an inverse half-turn that cancels the
     // authored pose's implicit convention change in world space. Prone get-up
     // receives neither correction.
     let rotation = (transform.rotation

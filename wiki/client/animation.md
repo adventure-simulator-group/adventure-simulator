@@ -169,11 +169,12 @@ current shared semantic phase and retains previous/current per-character poses
 for velocity and interruption capture. Quaternion interpolation and angular
 velocity differences select the nearest quaternion hemisphere. Missing tracks
 and non-finite samples fall back to the canonical bind transform, while imported
-root-bone translation is replaced by bind translation so authored root motion
-cannot move the gameplay entity. State and clip-set changes use
-interruption-safe per-joint inertial offsets. Characters beyond 100 metres or
-outside the camera frustum freeze their buffered pose and discard sampling debt
-when they return.
+`body_world` translation is replaced by bind translation so authored root motion
+cannot move the gameplay entity. The anatomical `root` joint is the pelvis, so
+its authored translation remains part of the pose. State and clip-set changes
+use interruption-safe per-joint inertial offsets. Characters beyond 100 metres
+or outside the camera frustum freeze their buffered pose and discard sampling
+debt when they return.
 
 Authored FK remains ordered before bind restoration, whole-body mirroring, body
 response, terrain IK or raised-guard foot planning, and weapon constraints. The
@@ -415,42 +416,44 @@ Directional ducks are independent of stance lead:
 | `duck_backward` | 0 `duck_backward` |
 | `duck_left` | 0 `duck_left` |
 | `duck_right` | 0 `duck_right` |
-Directional dive poses are independent of the guard lead that preceded them:
+Every direction shares one stance-independent upper-body dive pose:
 
 | File basename | Frame assignment |
 |---|---|
-| `dive_forward` | Frame 0 `dive_forward`, both feet unsupported |
-| `dive_backward` | Frame 0 `dive_backward`, both feet unsupported |
-| `dive_left` | Frame 0 `dive_left`, both feet unsupported |
-| `dive_right` (optional counterpart) | Frame 0 `dive_right`, both feet unsupported |
+| `dive` | Frame 0 supplies `dive_forward`, `dive_backward`, `dive_left`, and `dive_right` above the pelvis |
 
-The runtime interpolates from the selected guard-specific duck pose to the
-direction-only frame-0 dive pose, freezes that pose for terrain-dependent
-airtime, and begins the contact-pose interpolation only after authoritative
-contact. A forward dive recovers to `prone_idle`, a backward dive recovers to
+The runtime samples the direction-neutral frame-0 dive pose above the pelvis. It
+ignores that file's pelvis and leg tracks, even when an older asset still
+contains them. A missing `dive` uses `guard` for the upper-body layer. The
+lower body holds the selected directional duck/load through takeoff, while a
+procedural pelvis override removes the load or guard's hip yaw, faces the hips
+forward, and supplies the dive direction with a 40-degree tilt. The override
+remains fixed for terrain-dependent airtime, then unwinds as the load blends
+into the ground-contact pose after authoritative contact. A forward dive
+recovers to `prone_idle`, a backward dive recovers to
 `supine_idle`, and lateral dives recover directly to their matching
 `prone_supine_roll_<left|right>` side-supported midpoint. The latter seeds the
 continuous downed-roll coordinate at that midpoint, so held camera-following
 continues without passing through prone idle; without held aim it settles back
 to prone normally. The transition root remains fixed through takeoff and flight
-while the authored pose owns direction. During terrain-contact recovery, the
-server progressively transfers the dive's directional yaw from the authored pose
-to the character root at the same rate that the pose returns to canonical
-contact coordinates. This equal-and-opposite handoff preserves one world-space
-landing heading instead of visibly turning toward camera-forward and snapping
-back at the endpoint. Backward recovery chooses the negative-pi root branch
-against the authored pose's positive-pi half turn, avoiding an otherwise
-equivalent endpoint reached through a visible full flip. Forward and lateral
+while the procedural pelvis tilt owns direction. During terrain-contact
+recovery, the server progressively transfers the contact pose's directional
+yaw to the character root at the same rate that the pelvis returns to its
+canonical contact coordinates. This handoff preserves one world-space landing
+heading instead of visibly turning toward camera-forward and snapping back at
+the endpoint. Backward recovery chooses the positive-pi root branch against the
+contact pose's negative-pi half turn, avoiding an otherwise equivalent endpoint
+reached through a visible full flip. Forward and lateral
 airborne-to-contact recoveries own the rendered skeleton for 20 fixed ticks
 (0.3125 seconds at 64 Hz); the 180-degree backward-to-supine recovery uses 32
 ticks (0.5 seconds) to retain the same continuity bound. During either span,
 ordinary-locomotion IK, terrain IK, landing leg compression, locomotion body
 response, and upright height normalization must remain disabled until that
-transition completes. The dive files contain neither an impact pose nor arrival
+transition completes. The dive file contains neither an impact pose nor arrival
 at prone or supine idle. These are standalone single-pose files; the older
 frame-5 convention belonged to the discarded combined duck/dive layout and is
-not part of the runtime contract. When `dive_right` is absent, the runtime
-mirrors `dive_left` in character space.
+not part of the runtime contract. A missing `dive.glb` uses `guard` above the
+pelvis.
 
 The shared supine contact convention keeps the head toward local +Z so rolls
 remain coherent with prone and both side-supported poses. Relative to canonical
@@ -484,8 +487,8 @@ momentum while authoritative horizontal drag slows it. This separation allows
 raised guard locomotion to present externally imparted motion without requiring
 a dodge action, which is also the intended seam for later knockback. Guard
 pelvis correction is otherwise limited to the minimum required to keep a
-retained foot target within leg reach. The four dive poses remain the explicit
-authored directional-airborne exception described above.
+retained foot target within leg reach. The shared dive pose remains the
+upper-body airborne exception described above.
 
 Attacks use the optional `swing`, `swing_follow`, and `thrust` frame-0 contact
 poses. Runtime timing supplies the guard-to-contact and contact-to-guard spans.
@@ -512,10 +515,11 @@ between their separately authored contact endpoints:
 
 The catalog entries above designate exactly one authoritative file and frame
 for every required semantic pose; endpoint interpolation is runtime-owned.
-The publication mirror step also emits exact `prone_supine_roll_right` and
-`dive_right` runtime clips from their leftward sources. This keeps interpolation
-between a mirrored midpoint and an unmirrored contact pose from becoming a
-fractional post-blend reflection.
+The publication mirror step also emits an exact `prone_supine_roll_right`
+runtime clip from its leftward source. This keeps interpolation between a
+mirrored midpoint and an unmirrored contact pose from becoming a fractional
+post-blend reflection. Dive files aren't mirrored; each missing direction uses
+`guard` above the pelvis.
 
 The canonical procedural rig is the Meta MHR hierarchy. Its central semantic
 chain is `body_world`, anatomical `root`, `c_spine0` through `c_spine3`,
@@ -913,9 +917,9 @@ or head displacement, not a stance lead or the attacker's bearing.
 | `duck_left` | Shift the pelvis, ribcage, and head toward anatomical left without crossing the legs or moving the feet. |
 | `duck_right` | Make the corresponding anatomical-right displacement while retaining the same foot contacts. |
 
-The four standalone `dive_<direction>` files remain stance-independent airborne
-poses at frame 0. They contain no impact or arrival pose; contact timing and the
-subsequent prone, supine, or side-roll blend are runtime-owned.
+The standalone `dive` file is a stance-independent upper-body airborne pose at
+frame 0. It contains no impact or arrival pose; direction, contact timing, and
+the subsequent prone, supine, or side-roll blend are runtime-owned.
 ### Jumping and dodging
 
 Jumping and dodging share two sustainable airborne poses. Charge changes
@@ -1062,20 +1066,21 @@ residual velocity.
 
 ## Initial complete-pack size
 
-The humanoid unarmed root has 28 required non-attack semantics. Three mirrored
-pairs let it satisfy those with 25 authored poses. Attack poses are optional
-capabilities and therefore do not participate in complete-pack validation.
+The humanoid unarmed root has 28 required non-attack semantics. Two mirrored
+pairs and one dive file shared by four directional semantics let it satisfy
+those with 23 authored poses. Attack poses are optional capabilities and
+therefore do not participate in complete-pack validation.
 The current authored size is:
 
 | Family | Authored poses |
 |---|---:|
 | Standing and locomotion | 6 |
 | Directional ducking | 3 |
-| Jumping, dodging, and diving | 5 |
+| Jumping, dodging, and diving | 3 |
 | Prone and supine | 7 |
 | Combat guard | 1 |
 | Blocks | 3 |
-| **Required unarmed root** | **25** |
+| **Required unarmed root** | **23** |
 | Optional attacks | **0-3** |
 
 A specialized pack may inherit all ordinary poses. If it supplies no attacks,

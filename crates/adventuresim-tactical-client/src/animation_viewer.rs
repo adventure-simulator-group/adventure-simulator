@@ -1481,17 +1481,8 @@ fn downed_body_for_scenario(scenario: &str) -> Option<BodyState> {
 }
 
 fn required_motion_for_scenario(scenario: &str) -> Option<&'static str> {
-    if scenario.starts_with("dive-forward") {
-        return Some("dive_forward");
-    }
-    if scenario.starts_with("dive-backward") {
-        return Some("dive_backward");
-    }
-    if scenario.starts_with("dive-left") {
-        return Some("dive_left");
-    }
-    if scenario.starts_with("dive-right") {
-        return Some("dive_right");
+    if scenario.starts_with("dive-") {
+        return Some("dive");
     }
     match scenario {
         "downed-prone-crawl" => Some("prone_crawl"),
@@ -5133,6 +5124,18 @@ document.querySelectorAll('button').forEach(b=>b.onclick=()=>{{scenario=b.datase
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_directional_dive_scenario_requires_the_shared_motion() {
+        for scenario in [
+            "dive-forward",
+            "dive-backward-impact",
+            "dive-left-aimed-impact",
+            "dive-right",
+        ] {
+            assert_eq!(required_motion_for_scenario(scenario), Some("dive"));
+        }
+    }
 
     #[test]
     fn quality_score_uses_the_documented_power_of_two_weights() {
