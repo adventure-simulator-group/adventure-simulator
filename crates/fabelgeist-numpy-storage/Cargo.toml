@@ -1,0 +1,18 @@
+[package]
+name = "fabelgeist-numpy-storage"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/adventure-simulator-group/fabelgeist"
+license = "GPL-3.0"
+
+[dependencies]
+anyhow = "1"
+burn = { git = "https://github.com/tracel-ai/burn", rev = "b1502de8b396e7c575981d8df9fc84099619f458", default-features = false, features = [
+    "std",
+    "wgpu",
+] }
+memmap2 = "0.9"
+# Pure-Rust inflate (miniz_oxide) for deflated archive members; no C toolchain.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[workspace]
