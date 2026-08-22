@@ -79,16 +79,11 @@ impl Skeleton {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShapeType {
     Sphere,
+    #[default]
     Capsule,
-}
-
-impl Default for ShapeType {
-    fn default() -> Self {
-        ShapeType::Capsule
-    }
 }
 
 fn default_radius() -> f32 {

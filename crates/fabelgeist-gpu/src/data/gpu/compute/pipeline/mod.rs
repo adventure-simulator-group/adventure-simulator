@@ -94,10 +94,10 @@ impl ComputePipeline {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
-            if let Some(e) = pollster::block_on(error_scope.pop()) {
-                if let Ok(mut guard) = self.validation_error.lock() {
-                    *guard = Some(e.to_string());
-                }
+            if let Some(e) = pollster::block_on(error_scope.pop())
+                && let Ok(mut guard) = self.validation_error.lock()
+            {
+                *guard = Some(e.to_string());
             }
         }
 
@@ -181,7 +181,7 @@ impl ComputePipeline {
                                 }
 
                                 layout_entries.push(wgpu::BindGroupLayoutEntry {
-                                    binding: binding,
+                                    binding,
                                     visibility: wgpu::ShaderStages::COMPUTE,
                                     ty: wgpu::BindingType::Buffer {
                                         ty: wgpu::BufferBindingType::Uniform,
@@ -197,7 +197,7 @@ impl ComputePipeline {
                                 group_reflection.uniform_binding = Some(binding);
 
                                 layout_entries.push(wgpu::BindGroupLayoutEntry {
-                                    binding: binding,
+                                    binding,
                                     visibility: wgpu::ShaderStages::COMPUTE,
                                     ty: wgpu::BindingType::Buffer {
                                         ty: wgpu::BufferBindingType::Uniform,
@@ -219,7 +219,7 @@ impl ComputePipeline {
                             );
 
                             layout_entries.push(wgpu::BindGroupLayoutEntry {
-                                binding: binding,
+                                binding,
                                 visibility: wgpu::ShaderStages::COMPUTE,
                                 ty: wgpu::BindingType::Buffer {
                                     ty: wgpu::BufferBindingType::Storage { read_only },
@@ -269,7 +269,7 @@ impl ComputePipeline {
                                         wgpu_format = Some(fmt);
 
                                         layout_entries.push(wgpu::BindGroupLayoutEntry {
-                                            binding: binding,
+                                            binding,
                                             visibility: wgpu::ShaderStages::COMPUTE,
                                             ty: wgpu::BindingType::StorageTexture {
                                                 access,
@@ -307,7 +307,7 @@ impl ComputePipeline {
                                         };
 
                                         layout_entries.push(wgpu::BindGroupLayoutEntry {
-                                            binding: binding,
+                                            binding,
                                             visibility: wgpu::ShaderStages::COMPUTE,
                                             ty: wgpu::BindingType::Texture {
                                                 multisampled: false,
@@ -332,7 +332,7 @@ impl ComputePipeline {
                                         .sampler_bindings
                                         .push((name.clone(), binding));
                                     layout_entries.push(wgpu::BindGroupLayoutEntry {
-                                        binding: binding,
+                                        binding,
                                         visibility: wgpu::ShaderStages::COMPUTE,
                                         ty: wgpu::BindingType::Sampler(
                                             wgpu::SamplerBindingType::Filtering,
@@ -397,10 +397,10 @@ impl ComputePipeline {
             pipeline.pipeline = Some(p_wgpu);
         }
 
-        if let Ok(guard) = pipeline.validation_error.lock() {
-            if let Some(err) = guard.as_ref() {
-                return Err(anyhow!("ComputePipeline Creation Error: {}", err));
-            }
+        if let Ok(guard) = pipeline.validation_error.lock()
+            && let Some(err) = guard.as_ref()
+        {
+            return Err(anyhow!("ComputePipeline Creation Error: {}", err));
         }
 
         Ok(pipeline)

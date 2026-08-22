@@ -19,7 +19,7 @@ impl Joint {
         Self { name, joints }
     }
 
-    pub fn add(mut self, joint: Self) -> Self {
+    pub fn with_joint(mut self, joint: Self) -> Self {
         self.joints.push(joint);
         self
     }
@@ -62,7 +62,7 @@ macro_rules! joint {
     };
     ($name:expr, ($($child:tt),* $(,)?)) => {
         Joint::new($name)
-            $(.add(joint! $child))*
+            $(.with_joint(joint! $child))*
     };
     (($name:expr, $children:tt)) => {
         joint!($name, $children)

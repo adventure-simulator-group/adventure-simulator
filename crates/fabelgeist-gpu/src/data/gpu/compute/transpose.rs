@@ -68,7 +68,7 @@ impl Transpose {
         }
 
         let wg_x = match output {
-            GpuResource::Buffer(b) => ((b.size / 4) as u32 + 63) / 64,
+            GpuResource::Buffer(b) => ((b.size / 4) as u32).div_ceil(64),
             _ => 1,
         };
 

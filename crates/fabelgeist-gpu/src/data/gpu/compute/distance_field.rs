@@ -178,7 +178,7 @@ impl DistanceField {
         let input_res = GpuResource::Texture3d(temp_tex);
         let io_res = GpuResource::Texture3d(io.clone());
 
-        let mut final_params = parameters.unwrap_or_else(PassParameters::new);
+        let mut final_params = parameters.unwrap_or_default();
         final_params.insert("smin_k", k);
 
         Map::execute_with_parameters(

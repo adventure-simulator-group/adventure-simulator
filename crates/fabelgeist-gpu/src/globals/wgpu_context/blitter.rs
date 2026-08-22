@@ -25,7 +25,7 @@ impl Blitter {
                     let x = f32(i32(in_vertex_index) & 1) * 2.0 - 1.0;
                     let y = f32(i32(in_vertex_index & 2u) >> 1u) * 2.0 - 1.0;
                     out.position = vec4<f32>(x, y, 0.0, 1.0);
-                    out.uv = vec2<f32>((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5); 
+                    out.uv = vec2<f32>((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5);
                     return out;
                 }
 
@@ -55,7 +55,7 @@ impl Blitter {
                     let x = f32(i32(in_vertex_index) & 1) * 2.0 - 1.0;
                     let y = f32(i32(in_vertex_index & 2u) >> 1u) * 2.0 - 1.0;
                     out.position = vec4<f32>(x, y, 0.0, 1.0);
-                    out.uv = vec2<f32>((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5); 
+                    out.uv = vec2<f32>((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5);
                     return out;
                 }
 

@@ -317,27 +317,27 @@ impl TextureFormat {
     }
 
     pub fn supports_storage(&self) -> bool {
-        match self {
+        matches!(
+            self,
             TextureFormat::R32Float
-            | TextureFormat::Rg32Float
-            | TextureFormat::Rgba32Float
-            | TextureFormat::Rgba16Float
-            | TextureFormat::R8Uint
-            | TextureFormat::R8Sint
-            | TextureFormat::Rg8Uint
-            | TextureFormat::Rg8Sint
-            | TextureFormat::Rgba8Uint
-            | TextureFormat::Rgba8Sint
-            | TextureFormat::Rgba8Snorm
-            | TextureFormat::Rgba8Unorm
-            | TextureFormat::R32Sint
-            | TextureFormat::Rg32Sint
-            | TextureFormat::Rgba32Sint
-            | TextureFormat::R32Uint
-            | TextureFormat::Rg32Uint
-            | TextureFormat::Rgba32Uint => true,
-            _ => false,
-        }
+                | TextureFormat::Rg32Float
+                | TextureFormat::Rgba32Float
+                | TextureFormat::Rgba16Float
+                | TextureFormat::R8Uint
+                | TextureFormat::R8Sint
+                | TextureFormat::Rg8Uint
+                | TextureFormat::Rg8Sint
+                | TextureFormat::Rgba8Uint
+                | TextureFormat::Rgba8Sint
+                | TextureFormat::Rgba8Snorm
+                | TextureFormat::Rgba8Unorm
+                | TextureFormat::R32Sint
+                | TextureFormat::Rg32Sint
+                | TextureFormat::Rgba32Sint
+                | TextureFormat::R32Uint
+                | TextureFormat::Rg32Uint
+                | TextureFormat::Rgba32Uint
+        )
     }
 
     pub fn supports_render_attachment(&self) -> bool {

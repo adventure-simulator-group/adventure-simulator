@@ -23,6 +23,12 @@ impl PassParameters {
     }
 }
 
+impl Default for PassParameters {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl From<IndexMap<String, PassParameter>> for PassParameters {
     fn from(value: IndexMap<String, PassParameter>) -> Self {
         Self { parameters: value }

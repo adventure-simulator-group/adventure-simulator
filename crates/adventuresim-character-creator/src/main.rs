@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use adventuresim_character_creator::{CharacterRecipe, IdentityGroup};
-use fabelgeist_mhr::{Mhr, MhrConfig, NUM_FACE_EXPRESSION_BLEND_SHAPES};
 use anyhow::{Context, Result};
 use bevy::{
     asset::RenderAssetUsages,
@@ -10,10 +9,11 @@ use bevy::{
     prelude::*,
     render::render_resource::PrimitiveTopology,
 };
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use burn::tensor::{Device, Tensor, TensorData};
 use clap::Parser;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use fabelgeist_mhr::{Mhr, MhrConfig, NUM_FACE_EXPRESSION_BLEND_SHAPES};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[derive(Parser, Resource, Clone)]
 #[command(about = "Fabelgeist's MHR character design studio")]

@@ -482,12 +482,12 @@ pub async fn restore_project_root() -> Result<Option<Arc<dyn DirectoryEntry>>> {
     use directories::ProjectDirs;
     if let Some(proj_dirs) = ProjectDirs::from("com", "adventure-simulator-group", "fabelgeist") {
         let path_file = proj_dirs.config_dir().join("workspace.txt");
-        if path_file.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path_file) {
-                let path = std::path::PathBuf::from(content.trim());
-                if path.exists() && path.is_dir() {
-                    return Ok(Some(Arc::new(NativeDirectory { path })));
-                }
+        if path_file.exists()
+            && let Ok(content) = std::fs::read_to_string(&path_file)
+        {
+            let path = std::path::PathBuf::from(content.trim());
+            if path.exists() && path.is_dir() {
+                return Ok(Some(Arc::new(NativeDirectory { path })));
             }
         }
     }
@@ -641,15 +641,13 @@ pub async fn read_bytes(uri: &str) -> Result<Vec<u8>> {
     }
 
     let mut is_project_relative = false;
-    let clean_uri = if uri.starts_with("prism://project/") {
+    let clean_uri = if let Some(path) = uri.strip_prefix("prism://project/") {
         is_project_relative = true;
-        &uri[16..]
-    } else if uri.starts_with("file://") {
-        if uri.starts_with("file:///") {
-            &uri[8..]
-        } else {
-            &uri[7..]
-        }
+        path
+    } else if let Some(path) = uri.strip_prefix("file:///") {
+        path
+    } else if let Some(path) = uri.strip_prefix("file://") {
+        path
     } else {
         uri
     };
@@ -661,11 +659,7 @@ pub async fn read_bytes(uri: &str) -> Result<Vec<u8>> {
             Some(clean_uri.to_string())
         } else if clean_uri.starts_with(&root_path) {
             let relative = &clean_uri[root_path.len()..];
-            Some(
-                relative
-                    .trim_start_matches(|c| c == '/' || c == '\\')
-                    .to_string(),
-            )
+            Some(relative.trim_start_matches(['/', '\\']).to_string())
         } else {
             None
         };
@@ -673,22 +667,22 @@ pub async fn read_bytes(uri: &str) -> Result<Vec<u8>> {
         if let Some(relative_path) = resolve_path {
             if !relative_path.is_empty() {
                 let mut current = root.clone();
-                let parts: Vec<&str> = relative_path.split(|c| c == '/' || c == '\\').collect();
+                let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
 
                 if parts.len() > 1 {
-                    for i in 0..parts.len() - 1 {
-                        if parts[i].is_empty() {
+                    for part in parts.iter().take(parts.len() - 1) {
+                        if part.is_empty() {
                             continue;
                         }
-                        current = Arc::from(current.get_directory(parts[i], false).await?);
+                        current = Arc::from(current.get_directory(part, false).await?);
                     }
                 }
 
-                if let Some(last) = parts.last() {
-                    if !last.is_empty() {
-                        let file_entry = current.get_file(last, false).await?;
-                        return file_entry.read().await;
-                    }
+                if let Some(last) = parts.last()
+                    && !last.is_empty()
+                {
+                    let file_entry = current.get_file(last, false).await?;
+                    return file_entry.read().await;
                 }
             } else {
                 return Err(anyhow!("Cannot read a directory as bytes: {}", uri));
@@ -715,15 +709,13 @@ pub async fn write_bytes(uri: &str, data: &[u8]) -> Result<()> {
     }
 
     let mut is_project_relative = false;
-    let clean_uri = if uri.starts_with("prism://project/") {
+    let clean_uri = if let Some(path) = uri.strip_prefix("prism://project/") {
         is_project_relative = true;
-        &uri[16..]
-    } else if uri.starts_with("file://") {
-        if uri.starts_with("file:///") {
-            &uri[8..]
-        } else {
-            &uri[7..]
-        }
+        path
+    } else if let Some(path) = uri.strip_prefix("file:///") {
+        path
+    } else if let Some(path) = uri.strip_prefix("file://") {
+        path
     } else {
         uri
     };
@@ -735,43 +727,39 @@ pub async fn write_bytes(uri: &str, data: &[u8]) -> Result<()> {
             Some(clean_uri.to_string())
         } else if clean_uri.starts_with(&root_path) {
             let relative = &clean_uri[root_path.len()..];
-            Some(
-                relative
-                    .trim_start_matches(|c| c == '/' || c == '\\')
-                    .to_string(),
-            )
+            Some(relative.trim_start_matches(['/', '\\']).to_string())
         } else {
             None
         };
 
-        if let Some(relative_path) = resolve_path {
-            if !relative_path.is_empty() {
-                let mut current = root.clone();
-                let parts: Vec<&str> = relative_path.split(|c| c == '/' || c == '\\').collect();
+        if let Some(relative_path) = resolve_path
+            && !relative_path.is_empty()
+        {
+            let mut current = root.clone();
+            let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
 
-                if parts.len() > 1 {
-                    for i in 0..parts.len() - 1 {
-                        if parts[i].is_empty() {
-                            continue;
-                        }
-                        current = Arc::from(current.get_directory(parts[i], true).await?);
+            if parts.len() > 1 {
+                for part in parts.iter().take(parts.len() - 1) {
+                    if part.is_empty() {
+                        continue;
                     }
+                    current = Arc::from(current.get_directory(part, true).await?);
                 }
+            }
 
-                if let Some(last) = parts.last() {
-                    if !last.is_empty() {
-                        let file_entry = current.get_file(last, true).await?;
-                        return file_entry.write(data).await;
-                    }
-                }
+            if let Some(last) = parts.last()
+                && !last.is_empty()
+            {
+                let file_entry = current.get_file(last, true).await?;
+                return file_entry.write(data).await;
             }
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let path = if uri.starts_with("prism://project/") {
-            &uri[16..]
+        let path = if let Some(path) = uri.strip_prefix("prism://project/") {
+            path
         } else {
             uri.strip_prefix("file://").unwrap_or(uri)
         };
@@ -868,8 +856,8 @@ async fn load_http(uri: &str) -> Result<Vec<u8>> {
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn load_file(_uri: &str) -> Result<Vec<u8>> {
-    let path = if _uri.starts_with("prism://project/") {
-        &_uri[16..]
+    let path = if let Some(path) = _uri.strip_prefix("prism://project/") {
+        path
     } else {
         _uri.strip_prefix("file://").unwrap_or(_uri)
     };
@@ -940,12 +928,11 @@ pub async fn get_app_directory(
             }
         }
 
-        if path.is_none() {
-            if let Some(proj_dirs) =
+        if path.is_none()
+            && let Some(proj_dirs) =
                 directories::ProjectDirs::from(qualifier, organization, application)
-            {
-                path = Some(proj_dirs.data_dir().to_path_buf());
-            }
+        {
+            path = Some(proj_dirs.data_dir().to_path_buf());
         }
 
         let final_path = path.unwrap_or_else(|| std::path::PathBuf::from("./data"));

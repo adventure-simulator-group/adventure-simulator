@@ -108,20 +108,15 @@ impl ChainBinding {
 }
 
 /// Where a rig keeps locomotion.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum RootSource {
     /// The rig has no separate locomotion joint; the pelvis carries it.
+    #[default]
     Pelvis,
     /// A dedicated joint above the pelvis (`Root`, `Armature`, `Reference`…).
     Joint(String),
     /// The rig is authored in place and has no locomotion at all.
     None,
-}
-
-impl Default for RootSource {
-    fn default() -> Self {
-        RootSource::Pelvis
-    }
 }
 
 /// The posture a rig's motion is measured against.
@@ -132,9 +127,10 @@ impl Default for RootSource {
 /// A-pose with the elbow already bent 35 degrees. Measuring both against their
 /// own bind poses asks the target's elbow to bend sideways by the difference,
 /// which a hinge cannot do.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum ReferencePose {
     /// The rig's bind pose, as authored. Right when both rigs bind alike.
+    #[default]
     Bind,
     /// Straighten the rig into the canonical T-pose first, from its own
     /// geometry. Costs no authoring and is a no-op on a rig already T-posed,
@@ -143,12 +139,6 @@ pub enum ReferencePose {
     /// Explicit local rotations from bind, per role, for a rig whose posture
     /// cannot be worked out from bone directions alone.
     Pose(IndexMap<HumanoidJoint, Vec4>),
-}
-
-impl Default for ReferencePose {
-    fn default() -> Self {
-        ReferencePose::Bind
-    }
 }
 
 /// How one rig names the humanoid body.
@@ -232,7 +222,7 @@ impl RigProfile {
 /// Rotations transfer between bodies of any proportion; translations do not.
 /// Copying every translation track is how retargeted animation ends up with
 /// dislocated limbs, so translation is opt-in per joint or per class.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TranslationPolicy {
     /// Keep the target's rest translation. The default for limbs.
     Ignore,
@@ -243,30 +233,20 @@ pub enum TranslationPolicy {
     /// Scaled translation on the locomotion joint only.
     RootOnly,
     /// Scaled translation on the pelvis only. The usual choice.
+    #[default]
     PelvisOnly,
 }
 
-impl Default for TranslationPolicy {
-    fn default() -> Self {
-        TranslationPolicy::PelvisOnly
-    }
-}
-
 /// The body measurement used to compare two rigs' sizes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScaleMeasure {
     /// Rest distance from pelvis to head. Robust and available on any humanoid.
+    #[default]
     PelvisToHead,
     /// Rest distance from pelvis down to the foot.
     LegLength,
     /// Vertical extent of the whole rest skeleton, the last resort.
     SkeletonHeight,
-}
-
-impl Default for ScaleMeasure {
-    fn default() -> Self {
-        ScaleMeasure::PelvisToHead
-    }
 }
 
 /// How to reconcile two rigs' unit scales and sizes.
@@ -344,17 +324,12 @@ impl RootMotionPolicy {
 }
 
 /// A world axis.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Axis {
     X,
+    #[default]
     Y,
     Z,
-}
-
-impl Default for Axis {
-    fn default() -> Self {
-        Axis::Y
-    }
 }
 
 impl Axis {

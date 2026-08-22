@@ -44,26 +44,6 @@ impl Vec2 {
             self
         }
     }
-
-    /// Add two Vec2 values.
-    pub fn add(a: Self, b: Self) -> Self {
-        Self::new(a.x + b.x, a.y + b.y)
-    }
-
-    /// Subtract two Vec2 values.
-    pub fn sub(a: Self, b: Self) -> Self {
-        Self::new(a.x - b.x, a.y - b.y)
-    }
-
-    /// Multiply a Vec2 by a scalar.
-    pub fn mul(value: Self, scalar: f32) -> Self {
-        Self::new(value.x * scalar, value.y * scalar)
-    }
-
-    /// Negate a Vec2.
-    pub fn neg(value: Self) -> Self {
-        Self::new(-value.x, -value.y)
-    }
 }
 
 impl std::ops::Add for Vec2 {
@@ -83,6 +63,22 @@ impl std::ops::Sub for Vec2 {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
         }
+    }
+}
+
+impl std::ops::Mul<f32> for Vec2 {
+    type Output = Self;
+
+    fn mul(self, rhs: f32) -> Self {
+        Self::new(self.x * rhs, self.y * rhs)
+    }
+}
+
+impl std::ops::Neg for Vec2 {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self::new(-self.x, -self.y)
     }
 }
 

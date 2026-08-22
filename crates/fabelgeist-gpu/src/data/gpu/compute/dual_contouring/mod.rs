@@ -103,7 +103,7 @@ fn gather(index: u32) -> u32 {{
     let s6 = v6 < params.threshold;
     let s7 = v7 < params.threshold;
 
-    let active_edges = 
+    let active_edges =
         (s0 != s1) || (s1 != s2) || (s2 != s3) || (s3 != s0) ||
         (s4 != s5) || (s5 != s6) || (s6 != s7) || (s7 != s4) ||
         (s0 != s4) || (s1 != s5) || (s2 != s6) || (s3 != s7);
@@ -199,10 +199,10 @@ fn interpolate_sdf(d: vec3<f32>, v0: f32, v1: f32, v2: f32, v3: f32, v4: f32, v5
     let c32 = mix(v3, v2, d.x);
     let c45 = mix(v4, v5, d.x);
     let c76 = mix(v7, v6, d.x);
-    
+
     let c0132 = mix(c01, c32, d.y);
     let c4576 = mix(c45, c76, d.y);
-    
+
     return mix(c0132, c4576, d.z);
 }}
 
@@ -526,7 +526,7 @@ fn map(val: u32) -> u32 {
                 out_positions[pos_idx] = v.position.x;
                 out_positions[pos_idx + 1u] = v.position.y;
                 out_positions[pos_idx + 2u] = v.position.z;
-                
+
                 out_normals[pos_idx] = v.normal.x;
                 out_normals[pos_idx + 1u] = v.normal.y;
                 out_normals[pos_idx + 2u] = v.normal.z;
@@ -785,7 +785,7 @@ impl DualContouring {
         deinterleave_params.insert("out_positions", PassParameter::from(out_positions.clone()));
         deinterleave_params.insert("out_normals", PassParameter::from(out_normals.clone()));
 
-        let workgroups_x = (max_vertices + 63) / 64;
+        let workgroups_x = max_vertices.div_ceil(64);
         crate::data::gpu::compute::ComputePass::new(
             context,
             definition.deinterleave_pipeline.clone(),

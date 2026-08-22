@@ -11,11 +11,11 @@ impl AutoRigger {
         let skeleton_root = skeleton.transform.to_mat4();
         let inverse_skeleton_root = skeleton_root.inverse().unwrap_or(Mat4::identity());
         let mut world_positions = vec![Vec3::new(0.0, 0.0, 0.0); skeleton.joints.len()];
-        for i in 0..skeleton.joints.len() {
-            let inv_bind = skeleton.joints[i].inverse_bind_matrix;
+        for (world_position, joint) in world_positions.iter_mut().zip(&skeleton.joints) {
+            let inv_bind = joint.inverse_bind_matrix;
             let model_world = inv_bind.inverse().unwrap_or(Mat4::identity());
             let world = inverse_skeleton_root * model_world;
-            world_positions[i] = Vec3::new(
+            *world_position = Vec3::new(
                 world.columns[3][0],
                 world.columns[3][1],
                 world.columns[3][2],
@@ -36,7 +36,7 @@ impl AutoRigger {
                     min_dist = (current_pos - world_positions[parent_idx]).length() * 0.5;
                 }
 
-                let radius = min_dist.max(0.05).min(0.2);
+                let radius = min_dist.clamp(0.05, 0.2);
                 let radius_sq = radius * radius;
 
                 let mut centroid = Vec3::new(0.0, 0.0, 0.0);
@@ -83,11 +83,11 @@ impl AutoRigger {
 
         // Precompute children for each joint to avoid nested loops inside vertex iteration
         let mut children = vec![Vec::new(); skeleton.joints.len()];
-        for idx in 0..skeleton.joints.len() {
-            if let Some(p_idx) = skeleton.joints[idx].parent_index {
-                if p_idx < children.len() {
-                    children[p_idx].push(idx);
-                }
+        for (idx, joint) in skeleton.joints.iter().enumerate() {
+            if let Some(p_idx) = joint.parent_index
+                && p_idx < children.len()
+            {
+                children[p_idx].push(idx);
             }
         }
 
@@ -132,21 +132,20 @@ impl AutoRigger {
             joint_distances[best_idx].push(min_dist);
         }
 
-        for i in 0..skeleton.joints.len() {
-            let dists = &joint_distances[i];
+        for (joint, dists) in skeleton.joints.iter_mut().zip(&joint_distances) {
             if !dists.is_empty() {
                 let sum: f32 = dists.iter().sum();
                 let avg = sum / dists.len() as f32;
                 // Clamp between a thin finger (0.015) and a thick torso (0.25)
                 let r = avg.clamp(0.015, 0.25);
-                skeleton.joints[i].radius = r;
-                skeleton.joints[i].smoothstep_start = 0.0;
-                skeleton.joints[i].smoothstep_end = r * 1.5;
+                joint.radius = r;
+                joint.smoothstep_start = 0.0;
+                joint.smoothstep_end = r * 1.5;
             } else {
                 let r = 0.08f32;
-                skeleton.joints[i].radius = r;
-                skeleton.joints[i].smoothstep_start = 0.0;
-                skeleton.joints[i].smoothstep_end = r * 1.5;
+                joint.radius = r;
+                joint.smoothstep_start = 0.0;
+                joint.smoothstep_end = r * 1.5;
             }
         }
     }
@@ -198,11 +197,11 @@ impl AutoRigger {
 
         // Precompute children for each joint to avoid nested loops inside vertex iteration
         let mut children = vec![Vec::new(); skeleton.joints.len()];
-        for idx in 0..skeleton.joints.len() {
-            if let Some(p_idx) = skeleton.joints[idx].parent_index {
-                if p_idx < children.len() {
-                    children[p_idx].push(idx);
-                }
+        for (idx, joint) in skeleton.joints.iter().enumerate() {
+            if let Some(p_idx) = joint.parent_index
+                && p_idx < children.len()
+            {
+                children[p_idx].push(idx);
             }
         }
 
@@ -345,7 +344,7 @@ mod tests {
 
         for w in weights {
             let sum: f32 = w.iter().sum();
-            assert!(sum >= 0.0 && sum <= 1.0 + 1e-4);
+            assert!((0.0..=1.0 + 1e-4).contains(&sum));
         }
     }
 

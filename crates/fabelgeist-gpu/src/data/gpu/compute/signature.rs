@@ -49,10 +49,7 @@ impl ResourceBaseType {
     }
 
     pub fn is_scalar(&self) -> bool {
-        match self {
-            Self::F32 | Self::U32 | Self::I32 => true,
-            _ => false,
-        }
+        matches!(self, Self::F32 | Self::U32 | Self::I32)
     }
 
     pub fn component_count(&self) -> usize {
@@ -98,32 +95,34 @@ pub fn clean_type_name(ty: &str) -> String {
             return clean_type_name(&parts[1]);
         }
     }
-    if (ty.starts_with("array<") || ty.starts_with("Resource<")) && ty.ends_with('>') {
-        if let Some(pos) = ty.find('<') {
-            let inner = &ty[pos + 1..ty.len() - 1];
-            let parts = split_wgsl_template_args(inner);
-            if !parts.is_empty() {
-                return clean_type_name(&parts[0]);
-            }
+    if (ty.starts_with("array<") || ty.starts_with("Resource<"))
+        && ty.ends_with('>')
+        && let Some(pos) = ty.find('<')
+    {
+        let inner = &ty[pos + 1..ty.len() - 1];
+        let parts = split_wgsl_template_args(inner);
+        if !parts.is_empty() {
+            return clean_type_name(&parts[0]);
         }
     }
-    if ty.contains('<') && ty.ends_with('>') {
-        if let Some(pos) = ty.find('<') {
-            let prefix = ty[..pos].trim();
-            if prefix == "vec2"
-                || prefix == "vec3"
-                || prefix == "vec4"
-                || prefix == "texture_2d"
-                || prefix == "texture_3d"
-            {
-                return ty.to_string();
-            }
+    if ty.contains('<')
+        && ty.ends_with('>')
+        && let Some(pos) = ty.find('<')
+    {
+        let prefix = ty[..pos].trim();
+        if prefix == "vec2"
+            || prefix == "vec3"
+            || prefix == "vec4"
+            || prefix == "texture_2d"
+            || prefix == "texture_3d"
+        {
+            return ty.to_string();
+        }
 
-            let inner = &ty[pos + 1..ty.len() - 1];
-            let parts = split_wgsl_template_args(inner);
-            if !parts.is_empty() {
-                return clean_type_name(&parts[0]);
-            }
+        let inner = &ty[pos + 1..ty.len() - 1];
+        let parts = split_wgsl_template_args(inner);
+        if !parts.is_empty() {
+            return clean_type_name(&parts[0]);
         }
     }
     ty.to_string()

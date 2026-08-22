@@ -50,13 +50,13 @@ impl ComputePass {
             .ok_or_else(|| anyhow!("ComputePass: ComputePipeline missing actual WGPU pipeline."))?;
 
         // Check for validation errors in the pipeline itself
-        if let Ok(guard) = pipeline_def.validation_error.lock() {
-            if let Some(err) = guard.as_ref() {
-                return Err(anyhow!(
-                    "ComputePass: Cannot use invalid ComputePipeline: {}",
-                    err
-                ));
-            }
+        if let Ok(guard) = pipeline_def.validation_error.lock()
+            && let Some(err) = guard.as_ref()
+        {
+            return Err(anyhow!(
+                "ComputePass: Cannot use invalid ComputePipeline: {}",
+                err
+            ));
         }
 
         let pipeline = pipeline_val;
@@ -156,8 +156,7 @@ impl ComputePass {
                                     let col_stride = member.size / 3;
                                     for i in 0..3 {
                                         for j in 0..3 {
-                                            let offset =
-                                                start + i as usize * col_stride as usize + j * 4;
+                                            let offset = start + i * col_stride as usize + j * 4;
                                             buffer_data[offset..offset + 4]
                                                 .copy_from_slice(&v.columns[i][j].to_le_bytes());
                                         }
@@ -207,13 +206,13 @@ impl ComputePass {
                 uniform_buffer = Some(buffer);
             }
 
-            if let Some(buffer) = &uniform_buffer {
-                if let Some(uniform_binding_idx) = bg_reflection.uniform_binding {
-                    bind_group_entries.push(wgpu::BindGroupEntry {
-                        binding: uniform_binding_idx,
-                        resource: buffer.as_entire_binding(),
-                    });
-                }
+            if let Some(buffer) = &uniform_buffer
+                && let Some(uniform_binding_idx) = bg_reflection.uniform_binding
+            {
+                bind_group_entries.push(wgpu::BindGroupEntry {
+                    binding: uniform_binding_idx,
+                    resource: buffer.as_entire_binding(),
+                });
             }
 
             // 2. Buffers (Storage / Uniform from Buffer)
@@ -326,34 +325,32 @@ impl ComputePass {
                         }
                     };
 
-                if let Some(expected_format) = binding_info.format {
-                    if let Some(actual_fmt) = actual_format {
-                        if actual_fmt != expected_format {
-                            // Allow sRGB counterparts
-                            let mut allowed = false;
-                            if let PassParameter::Texture2d(tex) = val {
-                                if wgpu::TextureFormat::from(tex.format.srgb_counterpart())
-                                    == expected_format
-                                {
-                                    allowed = true;
-                                }
-                            } else if let PassParameter::Texture3d(tex) = val {
-                                if wgpu::TextureFormat::from(tex.format.srgb_counterpart())
-                                    == expected_format
-                                {
-                                    allowed = true;
-                                }
-                            }
-
-                            if !allowed {
-                                return Err(anyhow!(
-                                    "ComputePass: Texture '{}' format mismatch. Expected {:?}, got {:?}",
-                                    name,
-                                    expected_format,
-                                    actual_fmt
-                                ));
-                            }
+                if let Some(expected_format) = binding_info.format
+                    && let Some(actual_fmt) = actual_format
+                    && actual_fmt != expected_format
+                {
+                    // Allow sRGB counterparts
+                    let mut allowed = false;
+                    if let PassParameter::Texture2d(tex) = val {
+                        if wgpu::TextureFormat::from(tex.format.srgb_counterpart())
+                            == expected_format
+                        {
+                            allowed = true;
                         }
+                    } else if let PassParameter::Texture3d(tex) = val
+                        && wgpu::TextureFormat::from(tex.format.srgb_counterpart())
+                            == expected_format
+                    {
+                        allowed = true;
+                    }
+
+                    if !allowed {
+                        return Err(anyhow!(
+                            "ComputePass: Texture '{}' format mismatch. Expected {:?}, got {:?}",
+                            name,
+                            expected_format,
+                            actual_fmt
+                        ));
                     }
                 }
 

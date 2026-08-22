@@ -71,10 +71,10 @@ impl RenderSimplex {
                 let x3 = x0 - D.yyy;
 
                 // Permutations
-                i = mod289_3(i); 
-                var p = permute( permute( permute( 
+                i = mod289_3(i);
+                var p = permute( permute( permute(
                             i.z + vec4<f32>(0.0, i1.z, i2.z, 1.0 ))
-                          + i.y + vec4<f32>(0.0, i1.y, i2.y, 1.0 )) 
+                          + i.y + vec4<f32>(0.0, i1.y, i2.y, 1.0 ))
                           + i.x + vec4<f32>(0.0, i1.x, i2.x, 1.0 ));
 
                 // Gradients
@@ -115,7 +115,7 @@ impl RenderSimplex {
                 // Mix final noise value
                 var m = max(0.5 - vec4<f32>(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), vec4<f32>(0.0));
                 m = m * m;
-                return 105.0 * dot( m*m, vec4<f32>( dot(p0,x0), dot(p1,x1), 
+                return 105.0 * dot( m*m, vec4<f32>( dot(p0,x0), dot(p1,x1),
                                                     dot(p2,x2), dot(p3,x3) ) );
             }}
 
@@ -124,7 +124,7 @@ impl RenderSimplex {
                 var amplitude = 1.0;
                 var frequency = 1.0;
                 var max_amplitude = 0.0;
-                
+
                 var pos = p;
                 for (var i = 0u; i < octaves; i = i + 1u) {{
                     total = total + simplex_noise(pos * frequency) * amplitude;
@@ -132,7 +132,7 @@ impl RenderSimplex {
                     amplitude = amplitude * gain;
                     frequency = frequency * lacunarity;
                 }}
-                
+
                 if (max_amplitude > 0.0) {{
                     return (total / max_amplitude) * 0.5 + 0.5;
                 }} else {{
@@ -141,11 +141,11 @@ impl RenderSimplex {
             }}
 
             fn map(
-                index: {0}, 
-                scale: vec3<f32>, 
-                offset: vec3<f32>, 
-                octaves: u32, 
-                lacunarity: f32, 
+                index: {0},
+                scale: vec3<f32>,
+                offset: vec3<f32>,
+                octaves: u32,
+                lacunarity: f32,
                 gain: f32
             ) -> {1} {{
                 let p = {2} * scale + offset;

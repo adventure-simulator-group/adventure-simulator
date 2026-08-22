@@ -172,7 +172,7 @@ impl Transform {
 
     pub fn inverse(&self) -> Self {
         let mat = self.to_mat4();
-        let inv_mat = mat.inverse().unwrap_or(Mat4::identity());
+        let inv_mat = mat.inverse().unwrap_or_default();
         Self::from_mat4(inv_mat)
     }
 

@@ -233,10 +233,12 @@ impl Gradient {
         parameters.insert("half_inverse_cell_size", half_inverse_cell_size);
 
         let (wg_x, wg_y, wg_z) = match output {
-            GpuResource::Texture2d(t) => ((t.size.0 + 15) / 16, (t.size.1 + 15) / 16, 1),
-            GpuResource::Texture3d(t) => {
-                ((t.size.0 + 7) / 8, (t.size.1 + 7) / 8, (t.size.2 + 3) / 4)
-            }
+            GpuResource::Texture2d(t) => (t.size.0.div_ceil(16), t.size.1.div_ceil(16), 1),
+            GpuResource::Texture3d(t) => (
+                t.size.0.div_ceil(8),
+                t.size.1.div_ceil(8),
+                t.size.2.div_ceil(4),
+            ),
             _ => unreachable!(),
         };
 

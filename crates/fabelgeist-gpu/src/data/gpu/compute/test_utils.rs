@@ -45,9 +45,7 @@ pub fn deflate_flat<S: Copy>(
     }
     let mut deflated = Vec::new();
     for chunk in data.chunks(texture_components) {
-        for i in 0..element_components {
-            deflated.push(chunk[i]);
-        }
+        deflated.extend(chunk.iter().take(element_components).copied());
     }
     deflated
 }

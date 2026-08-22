@@ -1,6 +1,5 @@
 use super::*;
 use crate::data::gpu::compute::test_utils::*;
-use crate::prelude::*;
 
 pub async fn test_generalized_gather<IN, OUT, S>(
     definition_code: &str,

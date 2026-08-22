@@ -45,9 +45,9 @@ impl RenderPerlin {
             fn perlin_noise(p: vec3<f32>) -> f32 {{
                 let pi = floor(p);
                 let pf = fract(p);
-                
+
                 let w = pf * pf * pf * (pf * (pf * 6.0 - 15.0) + 10.0);
-                
+
                 let g000 = hash3(pi + vec3<f32>(0.0, 0.0, 0.0));
                 let g100 = hash3(pi + vec3<f32>(1.0, 0.0, 0.0));
                 let g010 = hash3(pi + vec3<f32>(0.0, 1.0, 0.0));
@@ -56,7 +56,7 @@ impl RenderPerlin {
                 let g101 = hash3(pi + vec3<f32>(1.0, 0.0, 1.0));
                 let g011 = hash3(pi + vec3<f32>(0.0, 1.0, 1.0));
                 let g111 = hash3(pi + vec3<f32>(1.0, 1.0, 1.0));
-                
+
                 let v000 = dot(g000, pf - vec3<f32>(0.0, 0.0, 0.0));
                 let v100 = dot(g100, pf - vec3<f32>(1.0, 0.0, 0.0));
                 let v010 = dot(g010, pf - vec3<f32>(0.0, 1.0, 0.0));
@@ -65,15 +65,15 @@ impl RenderPerlin {
                 let v101 = dot(g101, pf - vec3<f32>(1.0, 0.0, 1.0));
                 let v011 = dot(g011, pf - vec3<f32>(0.0, 1.0, 1.0));
                 let v111 = dot(g111, pf - vec3<f32>(1.0, 1.0, 1.0));
-                
+
                 let a = mix(v000, v100, w.x);
                 let b = mix(v010, v110, w.x);
                 let c = mix(v001, v101, w.x);
                 let d = mix(v011, v111, w.x);
-                
+
                 let e = mix(a, b, w.y);
                 let f = mix(c, d, w.y);
-                
+
                 return mix(e, f, w.z);
             }}
 
@@ -82,7 +82,7 @@ impl RenderPerlin {
                 var amplitude = 1.0;
                 var frequency = 1.0;
                 var max_amplitude = 0.0;
-                
+
                 var pos = p;
                 for (var i = 0u; i < octaves; i = i + 1u) {{
                     total = total + perlin_noise(pos * frequency) * amplitude;
@@ -90,7 +90,7 @@ impl RenderPerlin {
                     amplitude = amplitude * gain;
                     frequency = frequency * lacunarity;
                 }}
-                
+
                 if (max_amplitude > 0.0) {{
                     return (total / max_amplitude) * 0.5 + 0.5;
                 }} else {{
@@ -99,11 +99,11 @@ impl RenderPerlin {
             }}
 
             fn map(
-                index: {0}, 
-                scale: vec3<f32>, 
-                offset: vec3<f32>, 
-                octaves: u32, 
-                lacunarity: f32, 
+                index: {0},
+                scale: vec3<f32>,
+                offset: vec3<f32>,
+                octaves: u32,
+                lacunarity: f32,
                 gain: f32
             ) -> {1} {{
                 let p = {2} * scale + offset;

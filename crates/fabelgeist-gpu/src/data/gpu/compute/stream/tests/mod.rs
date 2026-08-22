@@ -1,7 +1,7 @@
 use super::*;
 use crate::prelude::*;
 
-pub async fn test_generalized_stream<IN, OUT, S>(
+pub async fn test_generalized_stream<IN, OUT>(
     definition_code: &str,
     input_data: &[IN],
     counts: &[u32],
@@ -12,7 +12,6 @@ where
     IN: bytemuck::NoUninit + bytemuck::AnyBitPattern + PartialEq + std::fmt::Debug + Default + Copy,
     OUT:
         bytemuck::NoUninit + bytemuck::AnyBitPattern + PartialEq + std::fmt::Debug + Default + Copy,
-    S: bytemuck::Pod + std::fmt::Debug + Default + Copy + PartialEq,
 {
     let context = WgpuContext::new().await.unwrap();
     let definition = StreamDefinition::new(&context, definition_code.to_string())?;
@@ -23,7 +22,7 @@ where
     let offsets_buf = Buffer::from_slice(&context, offsets, BufferDefinition::storage())?;
     let out_buf = Buffer::new(
         &context,
-        (expected_output.len() * std::mem::size_of::<OUT>()) as u64,
+        std::mem::size_of_val(expected_output) as u64,
         BufferDefinition::storage().with_copy_src(),
     )?;
 
@@ -46,7 +45,7 @@ where
 #[tokio::test]
 async fn simple_stream_f32() -> Result<()> {
     // Each input element produces 1 output element
-    test_generalized_stream::<f32, f32, f32>(
+    test_generalized_stream::<f32, f32>(
         "fn stream(in: f32, offset: u32) { output[offset] = in + 1.0; }",
         &[1.0, 2.0, 3.0],
         &[1, 1, 1],

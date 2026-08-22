@@ -87,7 +87,7 @@ fn gather(index: u32) -> u32 {{
     if (id0.x == 0u || id0.y == 0u || id0.z == 0u || id0.x >= params.grid_x - 2u || id0.y >= params.grid_y - 2u || id0.z >= params.grid_z - 2u) {{
         return 0u;
     }}
-    
+
     let v0 = textureLoad(input, id0, 0).x;
     let v1 = textureLoad(input, id0 + vec3<u32>(1u, 0u, 0u), 0).x;
     let v2 = textureLoad(input, id0 + vec3<u32>(1u, 1u, 0u), 0).x;
@@ -106,7 +106,7 @@ fn gather(index: u32) -> u32 {{
     if (v5 < params.threshold) {{ cubeIndex |= 32u; }}
     if (v6 < params.threshold) {{ cubeIndex |= 64u; }}
     if (v7 < params.threshold) {{ cubeIndex |= 128u; }}
-    
+
     return tri_count_table[cubeIndex];
 }}
 "#,
@@ -161,7 +161,7 @@ fn stream(index: vec3<u32>, offset: u32, _res: ptr<storage, array<Vertex>, read_
     if (index.x == 0u || index.y == 0u || index.z == 0u || index.x >= params.grid_x - 2u || index.y >= params.grid_y - 2u || index.z >= params.grid_z - 2u) {{
         return;
     }}
-    
+
     let id0 = index;
     let id1 = id0 + vec3<u32>(1u, 0u, 0u);
     let id2 = id0 + vec3<u32>(1u, 1u, 0u);
@@ -216,11 +216,11 @@ fn stream(index: vec3<u32>, offset: u32, _res: ptr<storage, array<Vertex>, read_
     for (var i = 0u; i < 16u; i += 3u) {{
         let tri0 = triTable[tableOffset + i];
         if (tri0 == -1) {{ break; }}
-        
+
         let t0 = u32(tri0);
         let t1 = u32(triTable[tableOffset + i + 1u]);
         let t2 = u32(triTable[tableOffset + i + 2u]);
-        
+
         if (offset + i + 3u <= params.max_vertices) {{
             output[offset + i] = vertList[t0];
             output[offset + i + 1u] = vertList[t1];
@@ -270,7 +270,7 @@ fn map(val: u32) -> u32 {
                 out_positions[pos_idx] = v.position.x;
                 out_positions[pos_idx + 1u] = v.position.y;
                 out_positions[pos_idx + 2u] = v.position.z;
-                
+
                 out_normals[pos_idx] = v.normal.x;
                 out_normals[pos_idx + 1u] = v.normal.y;
                 out_normals[pos_idx + 2u] = v.normal.z;
@@ -446,7 +446,7 @@ impl MarchingCubes {
         deinterleave_params.insert("out_positions", PassParameter::from(out_positions.clone()));
         deinterleave_params.insert("out_normals", PassParameter::from(out_normals.clone()));
 
-        let workgroups_x = (max_vertices + 63) / 64;
+        let workgroups_x = max_vertices.div_ceil(64);
         crate::data::gpu::compute::ComputePass::new(
             context,
             definition.deinterleave_pipeline.clone(),

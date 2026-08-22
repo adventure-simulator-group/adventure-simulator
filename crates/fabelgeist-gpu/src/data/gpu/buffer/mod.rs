@@ -286,10 +286,7 @@ impl Buffer {
         // This prevents WebAssembly memory growth from detaching/invalidating the mapped range buffer view.
         let t_size = std::mem::size_of::<T>();
         let len_t = (size as usize) / t_size;
-        let mut result = Vec::with_capacity(len_t);
-        unsafe {
-            result.set_len(len_t);
-        }
+        let mut result = vec![<T as bytemuck::Zeroable>::zeroed(); len_t];
 
         // 4. Get data and unmap
         let slice = target_buffer.slice(..);

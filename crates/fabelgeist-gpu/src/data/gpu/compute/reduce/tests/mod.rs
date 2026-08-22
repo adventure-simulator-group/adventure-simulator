@@ -1,15 +1,12 @@
 use super::*;
-use crate::data::gpu::compute::test_utils::*;
-use crate::prelude::*;
 
-pub async fn test_generalized_reduce<T, S>(
+pub async fn test_generalized_reduce<T>(
     definition_code: &str,
     input_data: &[T],
     expected_output: &[T],
 ) -> Result<()>
 where
     T: bytemuck::NoUninit + bytemuck::AnyBitPattern + PartialEq + std::fmt::Debug + Default + Copy,
-    S: bytemuck::Pod + std::fmt::Debug + Default + Copy + PartialEq,
 {
     let context = WgpuContext::new().await.unwrap();
     let definition = ReduceDefinition::new(&context, definition_code.to_string())?;
@@ -34,7 +31,7 @@ where
 
 #[tokio::test]
 async fn sum_f32() -> Result<()> {
-    test_generalized_reduce::<f32, f32>(
+    test_generalized_reduce::<f32>(
         "fn reduce(a: f32, b: f32) -> f32 { return a + b; }",
         &(0..128).map(|i| i as f32).collect::<Vec<_>>(),
         &[8128.0],
@@ -123,7 +120,7 @@ async fn min_custom_struct() -> Result<()> {
 }
 
 #[tokio::test]
-async fn min_Texture2d() -> Result<()> {
+async fn min_texture2d() -> Result<()> {
     let context = WgpuContext::new().await.unwrap();
     let mut scratchpad = crate::data::gpu::compute::reduce::ReduceScratchpad::default();
 

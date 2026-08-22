@@ -174,11 +174,13 @@ impl TextureCube {
             let raw_data = &image.data;
             let converted_data: Vec<u8> = match format {
                 TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm => raw_data
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .flat_map(|rgba| {
                         let mut out = [0u8; 4];
-                        for c in 0..3 {
-                            let f = rgba[c] as f32 / 255.0;
+                        for (c, channel) in rgba.iter().take(3).enumerate() {
+                            let f = *channel as f32 / 255.0;
                             let linear = if f <= 0.04045 {
                                 f / 12.92
                             } else {
@@ -196,7 +198,9 @@ impl TextureCube {
                 TextureFormat::Rgba8UnormSrgb | TextureFormat::Bgra8UnormSrgb => {
                     if matches!(format, TextureFormat::Bgra8UnormSrgb) {
                         raw_data
-                            .chunks_exact(4)
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
                             .flat_map(|rgba| [rgba[2], rgba[1], rgba[0], rgba[3]])
                             .collect()
                     } else {
@@ -205,9 +209,9 @@ impl TextureCube {
                 }
                 TextureFormat::Rgba32Float => {
                     let mut floats = Vec::with_capacity((size * size * 4) as usize);
-                    for rgba in raw_data.chunks_exact(4) {
-                        for c in 0..3 {
-                            let f = rgba[c] as f32 / 255.0;
+                    for rgba in raw_data.as_chunks::<4>().0 {
+                        for channel in rgba.iter().take(3) {
+                            let f = *channel as f32 / 255.0;
                             let linear = if f <= 0.04045 {
                                 f / 12.92
                             } else {
@@ -484,7 +488,7 @@ impl TextureCube {
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            let workgroup_count = (self.size + 7) / 8;
+            let workgroup_count = self.size.div_ceil(8);
             pass.dispatch_workgroups(workgroup_count, workgroup_count, 6);
         }
 

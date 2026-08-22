@@ -205,10 +205,10 @@ impl MapDefinition {
             ));
         }
 
-        full_code.push_str("\n");
+        full_code.push('\n');
         // No modification to user's code needed; paste it directly because it contains no banned types
         full_code.push_str(&self.code);
-        full_code.push_str("\n");
+        full_code.push('\n');
 
         // Main compute function
         match output_res {
@@ -382,25 +382,24 @@ impl MapDefinition {
                 .global_variables
                 .iter()
                 .find(|(_, v)| v.name.as_deref() == Some(var_name))
+                && let wgpu::naga::TypeInner::Array { base, .. } = module.types[var.ty].inner
             {
-                if let wgpu::naga::TypeInner::Array { base, .. } = module.types[var.ty].inner {
-                    let mut layouter = wgpu::naga::proc::Layouter::default();
-                    let _ = layouter.update(wgpu::naga::proc::GlobalCtx {
-                        types: &module.types,
-                        constants: &module.constants,
-                        overrides: &module.overrides,
-                        global_expressions: &module.global_expressions,
-                    });
-                    return layouter[base].size as u64;
-                }
+                let mut layouter = wgpu::naga::proc::Layouter::default();
+                let _ = layouter.update(wgpu::naga::proc::GlobalCtx {
+                    types: &module.types,
+                    constants: &module.constants,
+                    overrides: &module.overrides,
+                    global_expressions: &module.global_expressions,
+                });
+                return layouter[base].size as u64;
             }
             0
         };
 
-        if input_res.is_some() {
-            if let Some(ResourceDescriptor::Buffer(_)) = &input_res {
-                input_size = calculate_size("input", &module);
-            }
+        if input_res.is_some()
+            && let Some(ResourceDescriptor::Buffer(_)) = &input_res
+        {
+            input_size = calculate_size("input", &module);
         }
         if let ResourceDescriptor::Buffer(_) = output_res {
             output_size = calculate_size("output", &module);
@@ -515,8 +514,7 @@ impl Map {
         )?;
         let (pipeline, _input_size, output_size) = pipeline_info.as_ref();
 
-        let mut parameters =
-            extra_parameters.unwrap_or_else(crate::data::gpu::parameters::PassParameters::new);
+        let mut parameters = extra_parameters.unwrap_or_default();
 
         // Output resource determines grid size
         let output_num_elements: u64 = match output {
@@ -550,11 +548,13 @@ impl Map {
         }
 
         let (wg_x, wg_y, wg_z) = match output {
-            GpuResource::Buffer(_) => ((output_num_elements as u32 + 63) / 64, 1, 1),
-            GpuResource::Texture2d(t) => ((t.size.0 + 15) / 16, (t.size.1 + 15) / 16, 1),
-            GpuResource::Texture3d(t) => {
-                ((t.size.0 + 7) / 8, (t.size.1 + 7) / 8, (t.size.2 + 3) / 4)
-            }
+            GpuResource::Buffer(_) => ((output_num_elements as u32).div_ceil(64), 1, 1),
+            GpuResource::Texture2d(t) => (t.size.0.div_ceil(16), t.size.1.div_ceil(16), 1),
+            GpuResource::Texture3d(t) => (
+                t.size.0.div_ceil(8),
+                t.size.1.div_ceil(8),
+                t.size.2.div_ceil(4),
+            ),
         };
 
         crate::data::gpu::compute::ComputePass::new(

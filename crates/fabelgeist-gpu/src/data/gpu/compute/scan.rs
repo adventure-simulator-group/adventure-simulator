@@ -67,7 +67,7 @@ fn main(
 ) {{
     let input_len = arrayLength(&input);
     let index = global_id.x;
-    
+
     // Load into shared memory
     if (index < input_len) {{
         shared_data[local_id.x] = input[index];
@@ -94,7 +94,7 @@ fn main(
     if (local_id.x == {block_size}u - 1u && group_id.x < arrayLength(&aux)) {{
         aux[group_id.x] = shared_data[local_id.x];
     }}
-    
+
     // Handle the case where the last block is partially full
     if (index == input_len - 1u && local_id.x != {block_size}u - 1u && group_id.x < arrayLength(&aux)) {{
         aux[group_id.x] = shared_data[local_id.x];
@@ -160,7 +160,7 @@ impl Scan {
         }
 
         let block_size = 256;
-        let num_blocks = (num_elements + block_size - 1) / block_size;
+        let num_blocks = num_elements.div_ceil(block_size);
 
         // Output buffer
         let output = crate::data::gpu::Buffer::new(
@@ -225,7 +225,7 @@ impl Scan {
             let mut current_num_blocks = num_blocks;
 
             while current_num_blocks > 1 {
-                let next_num_blocks = (current_num_blocks + block_size - 1) / block_size;
+                let next_num_blocks = current_num_blocks.div_ceil(block_size);
                 let next_aux = crate::data::gpu::Buffer::new(
                     context,
                     (next_num_blocks as u64) * 4,

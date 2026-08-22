@@ -126,8 +126,8 @@ impl TextureSrgbConverter {
             cpass.set_bind_group(0, &bind_group, &[]);
 
             // 16x16 workgroup size
-            let workgroups_x = (src.size.0 + 15) / 16;
-            let workgroups_y = (src.size.1 + 15) / 16;
+            let workgroups_x = src.size.0.div_ceil(16);
+            let workgroups_y = src.size.1.div_ceil(16);
             cpass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
         }
 

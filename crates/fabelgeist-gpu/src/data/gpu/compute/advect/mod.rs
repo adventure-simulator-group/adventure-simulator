@@ -98,7 +98,7 @@ fn sample_bilinear(tex: texture_2d<f32>, pos: vec2<f32>) -> vec4<f32> {{
     let f_coords = wrapped_pos * t_size - 0.5;
     let i_coords = vec2<i32>(floor(f_coords));
     let frac = f_coords - vec2<f32>(i_coords);
-    
+
     let t_size_i = vec2<i32>(t_size);
     "#,
             wrap_logic
@@ -131,7 +131,7 @@ fn sample_bilinear(tex: texture_2d<f32>, pos: vec2<f32>) -> vec4<f32> {{
     let r0 = mix(c00, c10, frac.x);
     let r1 = mix(c01, c11, frac.x);
     let res = mix(r0, r1, frac.y);
-    
+
     // Manual sRGB to Linear conversion if needed
     // (textureLoad does not perform automatic conversion for sRGB formats)
     if IS_QUANTITY_SRGB {
@@ -303,10 +303,12 @@ impl Advect {
         parameters.insert("dt", dt);
 
         let (wg_x, wg_y, wg_z) = match output {
-            GpuResource::Texture2d(t) => ((t.size.0 + 15) / 16, (t.size.1 + 15) / 16, 1),
-            GpuResource::Texture3d(t) => {
-                ((t.size.0 + 7) / 8, (t.size.1 + 7) / 8, (t.size.2 + 3) / 4)
-            }
+            GpuResource::Texture2d(t) => (t.size.0.div_ceil(16), t.size.1.div_ceil(16), 1),
+            GpuResource::Texture3d(t) => (
+                t.size.0.div_ceil(8),
+                t.size.1.div_ceil(8),
+                t.size.2.div_ceil(4),
+            ),
             _ => unreachable!(),
         };
 

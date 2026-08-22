@@ -93,8 +93,7 @@ pub fn create_bind_groups(
                                 let col_stride = member.size / 3;
                                 for i in 0..3 {
                                     for j in 0..3 {
-                                        let offset =
-                                            start + i as usize * col_stride as usize + j * 4;
+                                        let offset = start + i * col_stride as usize + j * 4;
                                         buffer_data[offset..offset + 4]
                                             .copy_from_slice(&v.columns[i][j].to_le_bytes());
                                     }
@@ -144,13 +143,13 @@ pub fn create_bind_groups(
             uniform_buffer = Some(buffer);
         }
 
-        if let Some(buffer) = &uniform_buffer {
-            if let Some(uniform_binding_idx) = bg_reflection.uniform_binding {
-                bind_group_entries.push(wgpu::BindGroupEntry {
-                    binding: uniform_binding_idx,
-                    resource: buffer.as_entire_binding(),
-                });
-            }
+        if let Some(buffer) = &uniform_buffer
+            && let Some(uniform_binding_idx) = bg_reflection.uniform_binding
+        {
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding: uniform_binding_idx,
+                resource: buffer.as_entire_binding(),
+            });
         }
 
         // 2. Buffers (Storage / Uniform from Buffer)
@@ -217,18 +216,17 @@ pub fn create_bind_groups(
                     ));
                 }
             };
-            if let Some(expected_format) = binding_info.format {
-                if let Some(actual_fmt) = actual_format {
-                    if actual_fmt != expected_format {
-                        return Err(anyhow!(
-                            "{}: Texture '{}' format mismatch. Expected {:?}, got {:?}",
-                            pass_name,
-                            name,
-                            expected_format,
-                            actual_fmt
-                        ));
-                    }
-                }
+            if let Some(expected_format) = binding_info.format
+                && let Some(actual_fmt) = actual_format
+                && actual_fmt != expected_format
+            {
+                return Err(anyhow!(
+                    "{}: Texture '{}' format mismatch. Expected {:?}, got {:?}",
+                    pass_name,
+                    name,
+                    expected_format,
+                    actual_fmt
+                ));
             }
 
             if dim != binding_info.dimension {
@@ -243,7 +241,7 @@ pub fn create_bind_groups(
 
             if let Some(view) = view {
                 bind_group_entries.push(wgpu::BindGroupEntry {
-                    binding: binding,
+                    binding,
                     resource: wgpu::BindingResource::TextureView(view),
                 });
             } else {

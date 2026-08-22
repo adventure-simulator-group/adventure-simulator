@@ -9,15 +9,9 @@ use crate::globals::WgpuContext;
 use anyhow::Result;
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Sampler {
     pub sampler: Option<Arc<wgpu::Sampler>>,
-}
-
-impl Default for Sampler {
-    fn default() -> Self {
-        Self { sampler: None }
-    }
 }
 
 impl Sampler {

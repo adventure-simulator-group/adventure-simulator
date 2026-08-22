@@ -266,10 +266,10 @@ mod tests {
         // Orthogonal neighbors are 1.0
         assert!((result[2 * 5 + 1] - 1.0).abs() < 1e-4);
         assert!((result[2 * 5 + 3] - 1.0).abs() < 1e-4);
-        assert!((result[1 * 5 + 2] - 1.0).abs() < 1e-4);
+        assert!((result[5 + 2] - 1.0).abs() < 1e-4);
         assert!((result[3 * 5 + 2] - 1.0).abs() < 1e-4);
         // Diagonal neighbors are sqrt(2) ~ 1.4142
-        assert!((result[1 * 5 + 1] - 1.4142).abs() < 1e-3);
+        assert!((result[5 + 1] - std::f32::consts::SQRT_2).abs() < 1e-3);
 
         Ok(())
     }
@@ -285,7 +285,7 @@ mod tests {
 
         // Center voxel (1, 1, 1) is solid (1.0)
         let mut input_data = vec![0.0f32; 27];
-        input_data[1 * 9 + 1 * 3 + 1] = 1.0;
+        input_data[9 + 3 + 1] = 1.0;
         input_tex.write(&context, &input_data)?;
 
         DistanceFieldJfa::distance_field_3d(&context, &input_tex, &output_tex)?;
@@ -293,10 +293,10 @@ mod tests {
         let result = output_tex.read::<f32>(&context).await?;
 
         // Center is 0.0
-        assert!((result[1 * 9 + 1 * 3 + 1] - 0.0).abs() < 1e-4);
+        assert!((result[9 + 3 + 1] - 0.0).abs() < 1e-4);
         // Orthogonal neighbors are 1.0
-        assert!((result[1 * 9 + 1 * 3 + 0] - 1.0).abs() < 1e-4);
-        assert!((result[1 * 9 + 1 * 3 + 2] - 1.0).abs() < 1e-4);
+        assert!((result[9 + 3] - 1.0).abs() < 1e-4);
+        assert!((result[9 + 3 + 2] - 1.0).abs() < 1e-4);
 
         Ok(())
     }

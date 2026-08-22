@@ -189,9 +189,9 @@ impl StreamDefinition {
             sig.output_element_type.as_str()
         ));
 
-        full_code.push_str("\n");
+        full_code.push('\n');
         full_code.push_str(&transformed_code);
-        full_code.push_str("\n");
+        full_code.push('\n');
 
         match input_res {
             ResourceDescriptor::Buffer(_) => full_code.push_str("@compute @workgroup_size(64)\n"),
@@ -318,8 +318,7 @@ impl Stream {
             ResourceDescriptor::from_resource(input, sig.input_element_type),
         )?;
 
-        let mut parameters =
-            extra_parameters.unwrap_or_else(crate::data::gpu::parameters::PassParameters::new);
+        let mut parameters = extra_parameters.unwrap_or_default();
 
         match input {
             GpuResource::Buffer(b) => parameters.insert("input", b.clone()),
@@ -332,11 +331,13 @@ impl Stream {
         parameters.insert("output", output.clone());
 
         let (workgroups_x, workgroups_y, workgroups_z) = match input {
-            GpuResource::Buffer(_b) => (((inclusive_offsets.size / 4) as u32 + 63) / 64, 1, 1),
-            GpuResource::Texture2d(t) => ((t.size.0 + 15) / 16, (t.size.1 + 15) / 16, 1),
-            GpuResource::Texture3d(t) => {
-                ((t.size.0 + 3) / 4, (t.size.1 + 3) / 4, (t.size.2 + 3) / 4)
-            }
+            GpuResource::Buffer(_b) => (((inclusive_offsets.size / 4) as u32).div_ceil(64), 1, 1),
+            GpuResource::Texture2d(t) => (t.size.0.div_ceil(16), t.size.1.div_ceil(16), 1),
+            GpuResource::Texture3d(t) => (
+                t.size.0.div_ceil(4),
+                t.size.1.div_ceil(4),
+                t.size.2.div_ceil(4),
+            ),
         };
 
         crate::data::gpu::compute::ComputePass::new(
