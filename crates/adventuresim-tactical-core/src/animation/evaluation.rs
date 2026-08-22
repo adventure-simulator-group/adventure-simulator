@@ -73,7 +73,11 @@ impl AnimationEvaluation {
                 }
             },
         };
-        let lower_body = if state.guarded_sprint_locomotion()
+        let lower_body = if let Some(transition) = state.posture_transition()
+            && let PostureTransitionKind::DiveToDowned { direction } = transition.kind()
+        {
+            dive_lower_body_samples(state.lead_foot, direction, transition.phase())
+        } else if state.guarded_sprint_locomotion()
             && state.raised_locomotion().is_moving()
             && speed > 0.05
         {
@@ -224,6 +228,38 @@ fn dive_transition_samples(
             end: contact,
             progress: recovery,
         },
+        weight: 1.0,
+        mirror_lower_body: false,
+    }]
+}
+
+/// The dive clip contributes only above the pelvis. The lower body holds the
+/// directional load through takeoff, then procedurally blends that existing
+/// stance into the appropriate authored ground contact after impact.
+fn dive_lower_body_samples(
+    lead: LeadFoot,
+    direction: DiveDirection,
+    phase: f32,
+) -> Vec<PoseSample> {
+    let duck = duck_direction_pose(lead, direction);
+    let phase = phase.clamp(0.0, 1.0);
+    let sampling = if phase <= 0.5 {
+        PoseSampling::Anchor
+    } else {
+        let contact = match direction {
+            DiveDirection::Forward => SemanticPose::ProneIdle,
+            DiveDirection::Backward => SemanticPose::SupineIdle,
+            DiveDirection::Left => SemanticPose::ProneSupineRollLeft,
+            DiveDirection::Right => SemanticPose::ProneSupineRollRight,
+        };
+        PoseSampling::Span {
+            end: contact,
+            progress: (phase - 0.5) * 2.0,
+        }
+    };
+    vec![PoseSample {
+        pose: duck,
+        sampling,
         weight: 1.0,
         mirror_lower_body: false,
     }]
@@ -550,6 +586,23 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn dive_lower_body_never_samples_the_dive_asset() {
+        let airborne = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Backward, 0.5);
+        assert_eq!(airborne[0].pose, SemanticPose::DuckBackward);
+        assert_eq!(airborne[0].sampling, PoseSampling::Anchor);
+
+        let recovery = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Backward, 0.75);
+        assert_eq!(recovery[0].pose, SemanticPose::DuckBackward);
+        assert_eq!(
+            recovery[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::SupineIdle,
+                progress: 0.5,
+            }
+        );
     }
 
     #[test]

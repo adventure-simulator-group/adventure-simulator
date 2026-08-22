@@ -45,7 +45,7 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_twenty_five_authored_poses() {
+    fn humanoid_contract_resolves_from_twenty_six_semantic_variants() {
         assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 28);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
@@ -54,7 +54,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 25);
+        assert_eq!(authored.len(), 26);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -676,8 +676,6 @@ impl SemanticPose {
         Some(match self {
             DuckLeft => DuckRight,
             DuckRight => DuckLeft,
-            DiveLeft => DiveRight,
-            DiveRight => DiveLeft,
             ProneSupineRollLeft => ProneSupineRollRight,
             ProneSupineRollRight => ProneSupineRollLeft,
             _ => return None,
@@ -696,7 +694,7 @@ impl SemanticPose {
             RunFlight => WalkPassing,
             CrouchIdle => IdleRelaxed,
             DuckForward | DuckBackward | DuckLeft | DuckRight => Guard,
-            DiveForward | DiveBackward | DiveLeft | DiveRight => AirborneTravel,
+            DiveForward | DiveBackward | DiveLeft | DiveRight => Guard,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,
             ProneIdle | SupineIdle => CrouchIdle,

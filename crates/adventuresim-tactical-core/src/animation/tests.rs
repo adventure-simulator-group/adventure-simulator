@@ -162,6 +162,22 @@ mod legacy_tests {
     }
 
     #[test]
+    fn missing_dive_pose_falls_back_to_guard() {
+        let mut library = AnimationPackLibrary::default();
+        library
+            .insert(pack("unarmed", None, [SemanticPose::Guard]))
+            .unwrap();
+        assert!(matches!(
+            library.resolve("unarmed", SemanticPose::DiveLeft),
+            ResolvedPose::Clip {
+                semantic: SemanticPose::Guard,
+                pose: SemanticPose::Guard,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn invalid_fallback_graph_is_rejected() {
         let mut library = AnimationPackLibrary::default();
         library.insert(pack("a", Some("b"), [])).unwrap();
@@ -425,7 +441,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn dive_launch_root_maps_every_authored_axis_to_camera_relative_travel() {
+    fn dive_launch_root_maps_every_procedural_axis_to_camera_relative_travel() {
         let orientation = Quat::from_euler(EulerRot::YXZ, 0.83, -0.4, 0.2);
         let root = dive_launch_root_rotation(orientation);
         let camera = controller_yaw(orientation);
@@ -485,6 +501,27 @@ mod legacy_tests {
             let evaluation = AnimationEvaluation::from_skeleton(&state);
             assert_eq!(evaluation.action[0].pose, expected_pose);
         }
+    }
+
+    #[test]
+    fn backward_dive_landing_uses_positive_root_counter_yaw() {
+        let mut state = SkeletonState::default();
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+            },
+            0,
+            8,
+        ));
+        state.transition_body(BodyState::Airborne);
+        state.advance_posture_transition(1);
+        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.advance_posture_transition(2);
+        let previous = state.posture_transition();
+        state.advance_posture_transition(6);
+
+        let delta = dive_landing_facing_delta(previous, state.posture_transition());
+        assert!((delta * Vec3::Z).abs_diff_eq(Vec3::X, 0.0001));
     }
 
     #[test]

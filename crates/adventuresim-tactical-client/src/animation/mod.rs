@@ -217,7 +217,7 @@ fn evaluate_skeletons(
             &evaluation.action
         };
         let mut weighted = Vec::<WeightedClip>::new();
-        let base_layer = if evaluation.action.is_empty() && !evaluation.lower_body.is_empty() {
+        let base_layer = if !evaluation.lower_body.is_empty() {
             ClipLayer::Upper
         } else {
             ClipLayer::Whole
@@ -232,17 +232,15 @@ fn evaluate_skeletons(
                 base_layer,
             );
         }
-        if evaluation.action.is_empty() {
-            for sample in &evaluation.lower_body {
-                append_resolved_sample_layer(
-                    &mut weighted,
-                    &runtime,
-                    &catalog,
-                    &skeleton.animation_pack,
-                    *sample,
-                    ClipLayer::Lower,
-                );
-            }
+        for sample in &evaluation.lower_body {
+            append_resolved_sample_layer(
+                &mut weighted,
+                &runtime,
+                &catalog,
+                &skeleton.animation_pack,
+                *sample,
+                ClipLayer::Lower,
+            );
         }
         let target = PlaybackPose {
             use_authored_bind_pose: weighted.is_empty(),

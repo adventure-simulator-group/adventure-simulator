@@ -369,7 +369,7 @@ impl PostureTransitionState {
         self.phase
     }
 
-    /// Returns the authored dive recovery progress after terrain contact.
+    /// Returns the dive recovery progress after terrain contact.
     /// The first half of a dive is duck-to-airborne and remains fixed at its
     /// airborne endpoint until impact; only the second half transfers the
     /// directional pose into its canonical downed contact pose.
@@ -381,10 +381,10 @@ impl PostureTransitionState {
     }
 }
 
-/// Incremental root-yaw handoff that cancels the authored dive pose's return
-/// to canonical forward during landing recovery. Applying this after each
-/// posture-transition advance keeps the character's world-space head-to-feet
-/// direction fixed from contact through the final downed pose.
+/// Incremental root-yaw handoff for the directional downed contact pose.
+/// Applying this after each posture-transition advance keeps the character's
+/// world-space head-to-feet direction fixed from contact through the final
+/// downed pose.
 pub fn dive_landing_facing_delta(
     previous: Option<PostureTransitionState>,
     current: Option<PostureTransitionState>,
@@ -400,11 +400,11 @@ pub fn dive_landing_facing_delta(
         .map_or(1.0, |(_, progress)| progress);
     let total_yaw = match direction {
         DiveDirection::Forward => 0.0,
-        // The authored backward-dive-to-supine span resolves its ambiguous
-        // half turn through positive yaw. Transfer the root through the
-        // equivalent negative branch so the two rotations cancel instead of
-        // composing into a visible full flip.
-        DiveDirection::Backward => -std::f32::consts::PI,
+        // The canonical backward dive-to-supine contact span resolves its
+        // ambiguous half turn through negative yaw. Transfer the root through
+        // the equivalent positive branch so the two rotations cancel instead
+        // of composing into a visible full flip.
+        DiveDirection::Backward => std::f32::consts::PI,
         DiveDirection::Left => std::f32::consts::FRAC_PI_2,
         DiveDirection::Right => -std::f32::consts::FRAC_PI_2,
     };
@@ -1490,9 +1490,9 @@ pub fn controller_yaw(orientation: Quat) -> Quat {
     Quat::from_rotation_y((-flat_forward.x).atan2(-flat_forward.y))
 }
 
-/// Root orientation committed when an authored directional dive launches.
-/// Dive travel and pose selection are both camera-relative, so they must
-/// capture the same controller frame before posture-transition facing locks.
+/// Root orientation committed when a procedural directional dive launches.
+/// Dive travel and pelvis tilt are both camera-relative, so they must capture
+/// the same controller frame before posture-transition facing locks.
 pub fn dive_launch_root_rotation(controller_orientation: Quat) -> Quat {
     let forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
     Quat::from_rotation_y(forward.x.atan2(forward.z))

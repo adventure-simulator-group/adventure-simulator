@@ -284,6 +284,7 @@ impl Plugin for TacticalAnimationPlugin {
                     pose_buffer::apply_pose_buffers,
                     restore_authored_bind_pose,
                     procedural::apply_pose_mirroring,
+                    procedural::apply_procedural_dive_lower_body,
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_landing_leg_compression,
                     procedural::apply_locomotion_body_response,

@@ -29,7 +29,6 @@ MIRRORED_MOTIONS = {
     "run": "run_mirrored",
     "prone_crawl": "prone_crawl_mirrored",
     "supine_scamper": "supine_scamper_mirrored",
-    "dive_left": "dive_right",
     "prone_supine_roll_left": "prone_supine_roll_right",
 }
 REFLECTION = np.diag((-1.0, 1.0, 1.0, 1.0))

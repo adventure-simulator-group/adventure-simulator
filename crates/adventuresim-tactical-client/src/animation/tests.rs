@@ -320,8 +320,8 @@ mod legacy_tests {
                 "required pose {required:?} did not resolve"
             );
         }
-        // The 28 required semantics collapse to 25 authored variants when
-        // each supported whole-body mirror pair is represented once.
+        // The 28 required semantics collapse to 26 independently resolvable
+        // variants when each supported whole-body mirror pair appears once.
         let authored_variants = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -329,7 +329,7 @@ mod legacy_tests {
                     .is_none_or(|counterpart| pose.as_str() < counterpart.as_str())
             })
             .count();
-        assert_eq!(authored_variants, 25);
+        assert_eq!(authored_variants, 26);
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -366,14 +366,18 @@ mod legacy_tests {
         assert_eq!(
             root.poses[&SemanticPose::DiveForward],
             PoseAnchor {
-                motion: "dive_forward".to_owned(),
+                motion: "dive".to_owned(),
                 frame: 0,
             }
         );
-        assert_eq!(
-            SemanticPose::DiveRight.mirrored_counterpart(),
-            Some(SemanticPose::DiveLeft)
-        );
+        for pose in [
+            SemanticPose::DiveBackward,
+            SemanticPose::DiveLeft,
+            SemanticPose::DiveRight,
+        ] {
+            assert_eq!(root.poses[&pose].motion, "dive");
+        }
+        assert_eq!(SemanticPose::DiveRight.mirrored_counterpart(), None);
         for pose in [
             SemanticPose::Guard,
             SemanticPose::Guard,

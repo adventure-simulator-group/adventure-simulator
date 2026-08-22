@@ -49,6 +49,13 @@ struct RigJoint {
     strips_root_translation: bool,
 }
 
+fn strips_gameplay_root_translation(name: &str) -> bool {
+    // MetaHuman rigs name the skeleton-space root `body_world`; the joint
+    // named `root` is the anatomical pelvis. Pelvis translation is authored
+    // pose data (not gameplay root motion) and must survive clip baking.
+    name.eq_ignore_ascii_case("body_world")
+}
+
 #[derive(Clone)]
 struct BakedClip {
     duration: f32,
@@ -306,7 +313,7 @@ pub(super) fn update_pose_buffers(
                                     .is_some_and(is_lower_body_animation_target),
                                 strips_root_translation: name
                                     .as_deref()
-                                    .is_some_and(|name| name.eq_ignore_ascii_case("root")),
+                                    .is_some_and(strips_gameplay_root_translation),
                             })
                             .collect(),
                     })
@@ -727,6 +734,14 @@ mod tests {
         let bind = pose(Vec3::Y, Quat::IDENTITY);
         let invalid = pose(Vec3::splat(f32::NAN), Quat::IDENTITY);
         assert_eq!(sanitize_pose(invalid, bind), bind);
+    }
+
+    #[test]
+    fn only_the_true_skeleton_root_strips_authored_translation() {
+        assert!(strips_gameplay_root_translation("body_world"));
+        assert!(strips_gameplay_root_translation("BODY_WORLD"));
+        assert!(!strips_gameplay_root_translation("root"));
+        assert!(!strips_gameplay_root_translation("c_spine0"));
     }
 
     #[test]

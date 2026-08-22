@@ -206,14 +206,14 @@ impl AnimationPackCatalog {
                 SemanticPose::from_str(pose).expect("typed catalog pose"),
             )?;
         }
-        for (motion, pose) in [
-            ("dive_forward", SemanticPose::DiveForward),
-            ("dive_backward", SemanticPose::DiveBackward),
-            ("dive_left", SemanticPose::DiveLeft),
-            ("dive_right", SemanticPose::DiveRight),
+        builder.motion("dive", 0);
+        for pose in [
+            SemanticPose::DiveForward,
+            SemanticPose::DiveBackward,
+            SemanticPose::DiveLeft,
+            SemanticPose::DiveRight,
         ] {
-            builder.motion(motion, 0);
-            builder.pose(motion, 0, pose)?;
+            builder.pose("dive", 0, pose)?;
         }
         for (motion, pose) in [
             ("airborne_center", SemanticPose::AirborneCenter),
