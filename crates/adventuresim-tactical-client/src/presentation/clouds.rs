@@ -1,4 +1,4 @@
-//! A single analytic cloud shell for the grounded tactical camera.
+//! A single, baked optical cloud shell for the grounded tactical camera.
 
 use super::*;
 
@@ -7,11 +7,17 @@ const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
 /// Deliberately smaller than Earth's radius so the global cloud surface bends
 /// into the tactical horizon while staying visually flat around the player.
 const CLOUD_CURVATURE_RADIUS_METRES: f32 = 180_000.0;
-/// A fixed 2D texture supplies broad coverage, edge variation, underside
-/// shade, and a domain offset in one filtered sample.
-const CLOUD_NOISE_TEXTURE_EDGE: u32 = 128;
-const CLOUD_NOISE_TEXTURE_CHANNELS: usize = 4;
-const CLOUD_NOISE_TEXTURE_SEED: u64 = 0x4f7a_95c3_1bd2_e608;
+/// The sky map is camera-locked around the playable-area reference point.
+/// Its native dome parameterization gives low elevations their own rows rather
+/// than compressing them into an orthographic texture's outer ring. The
+/// duplicated azimuth seam is 1025 x 257 RGBA8, or about 1 MiB.
+const CLOUD_BAKE_AZIMUTH_SEGMENTS: u32 = 1_024;
+const CLOUD_BAKE_ELEVATION_SEGMENTS: u32 = 256;
+const CLOUD_BAKE_TEXTURE_WIDTH: u32 = CLOUD_BAKE_AZIMUTH_SEGMENTS + 1;
+const CLOUD_BAKE_TEXTURE_HEIGHT: u32 = CLOUD_BAKE_ELEVATION_SEGMENTS + 1;
+const CLOUD_BAKE_CHANNELS: usize = 4;
+const CLOUD_BAKE_VERTICAL_SAMPLES: u32 = 48;
+const CLOUD_BAKE_REFERENCE_EYE_METRES: f32 = 1.7;
 
 #[derive(Component)]
 pub(crate) struct TacticalCloudLayer {
@@ -66,10 +72,10 @@ pub(in crate::presentation) struct TacticalCloudMaterial {
     /// Fixed scene anchor X/Z and curvature radius.
     #[uniform(5)]
     geometry: Vec4,
-    /// Shared deterministic coverage/variation texture.
+    /// A finite, camera-locked directional optical-property bake.
     #[texture(6, dimension = "2d")]
     #[sampler(7)]
-    noise_texture: Handle<Image>,
+    baked_texture: Handle<Image>,
 }
 
 impl Material for TacticalCloudMaterial {
@@ -104,53 +110,26 @@ struct CloudLayerParameters {
     density: f32,
     profile: f32,
     seed: f32,
-    surface_metres: f32,
+    bottom_metres: f32,
+    thickness_metres: f32,
     horizontal_scale: f32,
 }
 
 impl CloudLayerParameters {
-    /// The global representation has one shell. Select the weather deck with
-    /// the greatest optical presence, then fold every diagnosed deck into its
-    /// coverage. This preserves storm/rain identity without transparent
-    /// overdraw from three independent shells.
-    fn from_environment(
+    fn layers_from_environment(
         environment: &SceneEnvironment,
         capture: Option<TacticalCloudCaptureProfile>,
-    ) -> Option<Self> {
+    ) -> [Option<Self>; 3] {
         if let Some(profile) = capture {
-            return Self::capture(profile);
+            return [Self::capture(profile), None, None];
         }
-
         let atmosphere = environment.weather.atmosphere;
-        let layers = [
+        [
             atmosphere.low_cloud,
             atmosphere.middle_cloud,
             atmosphere.high_cloud,
         ]
-        .into_iter()
-        .flatten()
-        .map(Self::from_layer)
-        .collect::<Vec<_>>();
-        let mut primary = *layers
-            .iter()
-            .max_by(|left, right| left.optical_presence().total_cmp(&right.optical_presence()))?;
-        primary.coverage = 1.0
-            - layers
-                .iter()
-                .fold(1.0, |clear, layer| clear * (1.0 - layer.coverage));
-        primary.density = layers
-            .iter()
-            .fold(primary.density, |density, layer| density.max(layer.density));
-        Some(primary)
-    }
-
-    fn optical_presence(self) -> f32 {
-        let storm_bias = if matches!(self.profile as u8, 3 | 7) {
-            0.25
-        } else {
-            0.0
-        };
-        self.coverage * self.density + storm_bias
+        .map(|layer| layer.map(Self::from_layer))
     }
 
     fn capture(profile: TacticalCloudCaptureProfile) -> Option<Self> {
@@ -226,10 +205,22 @@ impl CloudLayerParameters {
             density: 0.4 + f32::from(layer.optical_density_bps) / 10_000.0,
             profile,
             seed: 0.0,
-            surface_metres: f32::from(layer.base_metres) + thickness_metres * 0.42,
+            bottom_metres: f32::from(layer.base_metres),
+            thickness_metres,
             horizontal_scale,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct CloudBakeKey {
+    layers: [Option<CloudLayerParameters>; 3],
+    seed: u64,
+}
+
+#[derive(Resource, Default)]
+pub(in crate::presentation) struct CloudBakeState {
+    key: Option<CloudBakeKey>,
 }
 
 pub(in crate::presentation) fn setup_tactical_clouds(
@@ -239,50 +230,97 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
 ) {
     let mesh = meshes.add(cloud_hemisphere_mesh());
-    let noise_texture = images.add(cloud_noise_texture_image());
+    let baked_texture = images.add(cloud_bake_image(&CloudBakeKey {
+        layers: [None, None, None],
+        seed: 0,
+    }));
+    commands.insert_resource(CloudBakeState::default());
     commands.spawn((
-        Name::new("Analytic tactical cloud shell"),
+        Name::new("Baked tactical cloud shell"),
         TacticalCloudLayer { active: false },
         NoFrustumCulling,
         NotShadowCaster,
         Mesh3d(mesh),
         MeshMaterial3d(materials.add(TacticalCloudMaterial {
             lighting: Vec4::new(0.0, 1.0, 0.0, 1.43),
-            shape: Vec4::new(0.45, 0.9, 0.0, 0.0),
-            layer: cloud_surface_uniform(2_000.0, 0.000_34),
+            shape: Vec4::ZERO,
+            layer: Vec4::new(2_000.0, 1.0, 0.0, 0.0),
             motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
             spectral: Vec4::ONE,
             geometry: cloud_shell_geometry(),
-            noise_texture,
+            baked_texture,
         })),
         Transform::default(),
     ));
 }
 
-/// Generates one fixed, filterable RGBA texture for all weather states.
-///
-/// Each channel is periodic value noise assembled from a few low-frequency
-/// octaves. Generating the coherence here leaves the shader with one ordinary
-/// filtered lookup instead of trying to reconstruct broad cloud masses from
-/// independent texels.
-fn cloud_noise_texture_image() -> Image {
-    let edge = CLOUD_NOISE_TEXTURE_EDGE as usize;
-    let mut pixels = Vec::with_capacity(edge * edge * CLOUD_NOISE_TEXTURE_CHANNELS);
-    for y in 0..CLOUD_NOISE_TEXTURE_EDGE {
-        for x in 0..CLOUD_NOISE_TEXTURE_EDGE {
-            let channels = [
-                coherent_cloud_noise(x, y, 0, &[(3, 0.58), (6, 0.30), (12, 0.12)]),
-                coherent_cloud_noise(x, y, 1, &[(5, 0.56), (10, 0.30), (20, 0.14)]),
-                coherent_cloud_noise(x, y, 2, &[(2, 0.60), (4, 0.28), (8, 0.12)]),
-                coherent_cloud_noise(x, y, 3, &[(4, 0.68), (8, 0.32)]),
-            ];
-            pixels.extend(channels.map(|value| (value * 255.0).round() as u8));
+/// Bakes the former volume once from a stable tactical eye point into the
+/// upper dome's angular coordinates.  Runtime consequently sees the same
+/// coherent clouds as a ray march without repeating that integration.
+fn cloud_bake_image(key: &CloudBakeKey) -> Image {
+    let mut pixels = Vec::with_capacity(
+        CLOUD_BAKE_TEXTURE_WIDTH as usize
+            * CLOUD_BAKE_TEXTURE_HEIGHT as usize
+            * CLOUD_BAKE_CHANNELS,
+    );
+    let reference_eye = Vec3::new(0.0, CLOUD_BAKE_REFERENCE_EYE_METRES, 0.0);
+    for y in 0..CLOUD_BAKE_TEXTURE_HEIGHT {
+        for x in 0..CLOUD_BAKE_TEXTURE_WIDTH {
+            let direction = cloud_bake_direction(x, y);
+            let mut optical_depth = 0.0;
+            let mut lighting = 0.0;
+            let mut variation = 0.0;
+            for (slot, layer) in key.layers.iter().flatten().enumerate() {
+                let Some((start, end)) = cloud_ray_layer_interval(reference_eye, direction, *layer)
+                else {
+                    continue;
+                };
+                let step = (end - start) / CLOUD_BAKE_VERTICAL_SAMPLES as f32;
+                for sample in 0..CLOUD_BAKE_VERTICAL_SAMPLES {
+                    let distance = start + (sample as f32 + 0.5) * step;
+                    let position = reference_eye + direction * distance;
+                    let height = ((cloud_shell_altitude(position) - layer.bottom_metres)
+                        / layer.thickness_metres)
+                        .clamp(0.0, 1.0);
+                    let density =
+                        baked_cloud_density(position.xz(), height, *layer, key.seed, slot as u64);
+                    let contribution = density * step * 0.001_45;
+                    optical_depth += contribution;
+                    let detail = cloud_bake_lighting_variation(
+                        position.xz(),
+                        height,
+                        *layer,
+                        key.seed,
+                        slot as u64,
+                    );
+                    lighting += contribution * (0.18 + height * 0.76) * (0.18 + detail * 0.82);
+                    variation += contribution * detail;
+                }
+            }
+            let alpha = 1.0 - (-optical_depth).exp();
+            let lighting = if optical_depth > 0.0001 {
+                lighting / optical_depth
+            } else {
+                0.0
+            };
+            let variation = if optical_depth > 0.0001 {
+                variation / optical_depth
+            } else {
+                0.0
+            };
+            let sun_transmission = (-optical_depth * (0.45 + variation * 0.55)).exp();
+            pixels.extend([
+                (alpha * 255.0).round() as u8,
+                (lighting.clamp(0.0, 1.0) * 255.0).round() as u8,
+                (sun_transmission * 255.0).round() as u8,
+                (variation.clamp(0.0, 1.0) * 255.0).round() as u8,
+            ]);
         }
     }
     let mut image = Image::new(
         Extent3d {
-            width: CLOUD_NOISE_TEXTURE_EDGE,
-            height: CLOUD_NOISE_TEXTURE_EDGE,
+            width: CLOUD_BAKE_TEXTURE_WIDTH,
+            height: CLOUD_BAKE_TEXTURE_HEIGHT,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -292,53 +330,198 @@ fn cloud_noise_texture_image() -> Image {
     );
     use bevy::image::{ImageAddressMode, ImageSamplerDescriptor};
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        address_mode_u: ImageAddressMode::Repeat,
-        address_mode_v: ImageAddressMode::Repeat,
+        address_mode_u: ImageAddressMode::ClampToEdge,
+        address_mode_v: ImageAddressMode::ClampToEdge,
         ..ImageSamplerDescriptor::linear()
     });
     image
 }
 
-fn coherent_cloud_noise(x: u32, y: u32, channel: u64, octaves: &[(u32, f32)]) -> f32 {
-    octaves
-        .iter()
-        .map(|&(frequency, weight)| periodic_value_noise(x, y, frequency, channel) * weight)
-        .sum()
+/// Maps the same equirectangular UV as the dome mesh: U is azimuth and V is
+/// elevation. The first and final columns intentionally evaluate the exact
+/// same ray, allowing clamp sampling to cross the visible seam continuously.
+fn cloud_bake_direction(x: u32, y: u32) -> Vec3 {
+    let azimuth_index = if x == CLOUD_BAKE_AZIMUTH_SEGMENTS {
+        0
+    } else {
+        x
+    };
+    let azimuth =
+        (azimuth_index as f32 / CLOUD_BAKE_AZIMUTH_SEGMENTS as f32 - 0.5) * core::f32::consts::TAU;
+    let elevation = y as f32 / CLOUD_BAKE_ELEVATION_SEGMENTS as f32 * core::f32::consts::FRAC_PI_2;
+    let horizontal = elevation.cos();
+    Vec3::new(
+        horizontal * azimuth.cos(),
+        elevation.sin(),
+        horizontal * azimuth.sin(),
+    )
 }
 
-/// Bilinearly interpolated lattice noise with a wrapped lattice. Sampling the
-/// generated texture with a repeat sampler is therefore continuous at both
-/// texture seams as well as spatially coherent within every broad cloud body.
-fn periodic_value_noise(x: u32, y: u32, frequency: u32, channel: u64) -> f32 {
-    debug_assert!(frequency > 0);
-    let scaled_x = x * frequency;
-    let scaled_y = y * frequency;
-    let x0 = scaled_x / CLOUD_NOISE_TEXTURE_EDGE;
-    let y0 = scaled_y / CLOUD_NOISE_TEXTURE_EDGE;
-    let x1 = (x0 + 1) % frequency;
-    let y1 = (y0 + 1) % frequency;
-    let tx = smooth_noise_fraction(scaled_x % CLOUD_NOISE_TEXTURE_EDGE);
-    let ty = smooth_noise_fraction(scaled_y % CLOUD_NOISE_TEXTURE_EDGE);
-    let lower = cloud_lattice_value(x0, y0, frequency, channel)
-        .lerp(cloud_lattice_value(x1, y0, frequency, channel), tx);
-    let upper = cloud_lattice_value(x0, y1, frequency, channel)
-        .lerp(cloud_lattice_value(x1, y1, frequency, channel), tx);
-    lower.lerp(upper, ty)
+fn cloud_shell_altitude(position: Vec3) -> f32 {
+    (position - Vec3::new(0.0, -CLOUD_CURVATURE_RADIUS_METRES, 0.0)).length()
+        - CLOUD_CURVATURE_RADIUS_METRES
 }
 
-fn smooth_noise_fraction(remainder: u32) -> f32 {
-    let fraction = remainder as f32 / CLOUD_NOISE_TEXTURE_EDGE as f32;
-    fraction * fraction * (3.0 - 2.0 * fraction)
+fn cloud_ray_layer_interval(
+    origin: Vec3,
+    direction: Vec3,
+    layer: CloudLayerParameters,
+) -> Option<(f32, f32)> {
+    let center = Vec3::new(0.0, -CLOUD_CURVATURE_RADIUS_METRES, 0.0);
+    let roots = |radius: f32| {
+        let relative = origin - center;
+        let projected = relative.dot(direction);
+        let discriminant = projected * projected - (relative.length_squared() - radius * radius);
+        (discriminant >= 0.0).then(|| {
+            Vec2::new(
+                -projected - discriminant.sqrt(),
+                -projected + discriminant.sqrt(),
+            )
+        })
+    };
+    let inner = roots(CLOUD_CURVATURE_RADIUS_METRES + layer.bottom_metres)?;
+    let outer =
+        roots(CLOUD_CURVATURE_RADIUS_METRES + layer.bottom_metres + layer.thickness_metres)?;
+    let start = inner.y.max(0.0);
+    // Match the former ray marcher: distant grazing intersections beyond the
+    // tactical cloud horizon are not part of the rendered volume.
+    let end = outer.y.min(CLOUD_DOME_DISTANCE_METRES);
+    (end > start).then_some((start, end))
 }
 
-fn cloud_lattice_value(x: u32, y: u32, frequency: u32, channel: u64) -> f32 {
-    let cell = u64::from(x) | (u64::from(y) << 16) | (u64::from(frequency) << 32);
-    let value = cloud_noise_hash(
-        CLOUD_NOISE_TEXTURE_SEED
-            ^ cell.rotate_left((channel as u32 + 1) * 13)
-            ^ channel.wrapping_mul(0x9e37_79b9_7f4a_7c15),
+fn baked_cloud_density(
+    world: Vec2,
+    height: f32,
+    layer: CloudLayerParameters,
+    seed: u64,
+    slot: u64,
+) -> f32 {
+    let kind = layer.profile as u32;
+    let coordinate = cloud_density_coordinate(world, height, layer, seed);
+    // Broad coverage, domain warp, and fine erosion all sample a genuine
+    // finite 3-D lattice. Height is an independent coordinate, not a planar
+    // translation, so integrating a ray cannot turn a single 2-D field into
+    // radial wedges.
+    let warp = Vec3::new(
+        non_periodic_value_noise_3d(coordinate * 0.36, seed ^ slot.rotate_left(7)),
+        non_periodic_value_noise_3d(
+            coordinate * 0.36 + Vec3::splat(13.7),
+            seed ^ slot.rotate_left(13),
+        ),
+        non_periodic_value_noise_3d(
+            coordinate * 0.36 + Vec3::new(4.1, 9.7, 17.3),
+            seed ^ slot.rotate_left(19),
+        ),
+    ) - Vec3::splat(0.5);
+    let warped = coordinate + warp * Vec3::new(0.85, 0.42, 0.85);
+    // Three incommensurate, non-periodic frequencies form clustered lobes;
+    // no individual octave can reveal a repeated cell over the dome.
+    let broad = non_periodic_value_noise_3d(warped * 0.58, seed ^ slot.rotate_left(11)) * 0.29
+        + non_periodic_value_noise_3d(warped * 1.23, seed ^ slot.rotate_left(17)) * 0.44
+        + non_periodic_value_noise_3d(warped * 2.61, seed ^ slot.rotate_left(23)) * 0.27;
+    let detail = non_periodic_value_noise_3d(
+        warped * 5.9 + Vec3::new(9.7, 1.3, 4.1),
+        seed ^ slot.rotate_left(29),
     );
-    (value >> 40) as f32 / 16_777_215.0
+    let profile = cloud_vertical_profile(height, kind, broad);
+    let mut threshold = 0.78 - layer.coverage * 0.34;
+    if matches!(kind, 4 | 6 | 7 | 9) {
+        threshold -= 0.08;
+    }
+    if kind == 0 {
+        // Representative fair-weather coverage needs cores above the stable
+        // tactical reference point, not only at long grazing paths.
+        threshold += height * 0.07 - 0.24;
+    }
+    if kind == 3 {
+        threshold += height * 0.24 - smoothstep(0.68, 0.82, height) * 0.11;
+        threshold -= 0.10;
+    }
+    if kind == 10 {
+        threshold += height * 0.14;
+    }
+    let body = if matches!(kind, 4 | 6 | 7 | 9) {
+        smoothstep(threshold, threshold + 0.17, broad) * (0.58 + detail * 0.50)
+    } else {
+        smoothstep(threshold, threshold + 0.16, broad - (1.0 - detail) * 0.20)
+    };
+    (body * profile * layer.density).clamp(0.0, 1.35)
+}
+
+fn cloud_density_coordinate(
+    world: Vec2,
+    height: f32,
+    layer: CloudLayerParameters,
+    seed: u64,
+) -> Vec3 {
+    let family_scale = match layer.profile as u32 {
+        2 => Vec2::new(0.32, 1.8),
+        5 | 8 => Vec2::splat(1.75),
+        4 | 6 | 7 | 9 => Vec2::splat(0.58),
+        _ => Vec2::ONE,
+    };
+    let seed_offset = layer.seed + (seed & 0x0fff) as f32;
+    let mut coordinate = Vec3::new(
+        world.x * layer.horizontal_scale + seed_offset * 0.013,
+        height * 1.8 + seed_offset * 0.007,
+        world.y * layer.horizontal_scale - seed_offset * 0.011,
+    );
+    coordinate.x *= family_scale.x;
+    coordinate.z *= family_scale.y;
+    coordinate
+}
+
+fn cloud_bake_lighting_variation(
+    world: Vec2,
+    height: f32,
+    layer: CloudLayerParameters,
+    seed: u64,
+    slot: u64,
+) -> f32 {
+    non_periodic_value_noise_3d(
+        cloud_density_coordinate(world, height, layer, seed) * 3.17 + Vec3::new(2.1, 7.3, 11.9),
+        seed ^ slot.rotate_left(21),
+    )
+}
+
+fn cloud_vertical_profile(height: f32, kind: u32, noise: f32) -> f32 {
+    match kind {
+        0 => smoothstep(0.0, 0.08, height) * (1.0 - smoothstep(0.58 + noise * 0.2, 1.0, height)),
+        1 => smoothstep(0.0, 0.13, height) * (1.0 - smoothstep(0.72, 1.0, height)),
+        2 => (1.0 - smoothstep(0.08, 0.34, (height - 0.52).abs())) * (0.55 + noise * 0.45),
+        3 => (smoothstep(0.0, 0.035, height)
+            * (1.0 - smoothstep(0.78 + noise * 0.12, 1.0, height)))
+        .max(smoothstep(0.68, 0.78, height) * (1.0 - smoothstep(0.9, 1.0, height)) * 0.85),
+        4 | 6 | 7 => {
+            smoothstep(0.0, if kind == 4 { 0.06 } else { 0.12 }, height)
+                * (1.0 - smoothstep(if kind == 4 { 0.82 } else { 0.9 }, 1.0, height))
+        }
+        5 => (1.0 - smoothstep(0.18, 0.46, (height - 0.5).abs())) * (0.7 + noise * 0.3),
+        8 => (1.0 - smoothstep(0.12, 0.34, (height - 0.52).abs())) * (0.65 + noise * 0.35),
+        9 => 1.0 - smoothstep(0.24, 0.48, (height - 0.5).abs()),
+        _ => smoothstep(0.0, 0.05, height) * (1.0 - smoothstep(0.72 + noise * 0.18, 1.0, height)),
+    }
+}
+
+fn non_periodic_value_noise_3d(position: Vec3, seed: u64) -> f32 {
+    let cell = position.floor();
+    let fraction = position - cell;
+    let smooth = fraction * fraction * (Vec3::splat(3.0) - fraction * 2.0);
+    let value = |offset: Vec3| {
+        let lattice = cell + offset;
+        cloud_noise_hash(
+            seed ^ (lattice.x as i64 as u64).wrapping_mul(0x9e37_79b9)
+                ^ (lattice.y as i64 as u64).rotate_left(23)
+                ^ (lattice.z as i64 as u64).wrapping_mul(0xd1b5_4a32_d192_ed03),
+        ) as f32
+            / u64::MAX as f32
+    };
+    let x0 = value(Vec3::ZERO).lerp(value(Vec3::X), smooth.x);
+    let x1 = value(Vec3::Y).lerp(value(Vec3::ONE), smooth.x);
+    let y0 = x0.lerp(x1, smooth.y);
+    let x2 = value(Vec3::Z).lerp(value(Vec3::Z + Vec3::X), smooth.x);
+    let x3 = value(Vec3::Z + Vec3::Y).lerp(value(Vec3::ONE), smooth.x);
+    y0.lerp(x2.lerp(x3, smooth.y), smooth.z)
 }
 
 fn cloud_noise_hash(mut value: u64) -> u64 {
@@ -351,8 +534,8 @@ fn cloud_noise_hash(mut value: u64) -> u64 {
 fn cloud_hemisphere_mesh() -> Mesh {
     // The mesh supplies only view directions. This moderate tessellation keeps
     // a smooth horizon while eliminating the old ray-march proxy density.
-    const AZIMUTH_SEGMENTS: u32 = 64;
-    const ELEVATION_SEGMENTS: u32 = 24;
+    const AZIMUTH_SEGMENTS: u32 = 128;
+    const ELEVATION_SEGMENTS: u32 = 64;
     let mut positions =
         Vec::with_capacity(((AZIMUTH_SEGMENTS + 1) * (ELEVATION_SEGMENTS + 1)) as usize);
     let mut normals = Vec::with_capacity(positions.capacity());
@@ -403,7 +586,6 @@ fn cloud_hemisphere_mesh() -> Mesh {
 }
 
 pub(in crate::presentation) fn update_tactical_clouds(
-    time: Res<Time>,
     active: Res<ActiveTacticalScene>,
     environments: Query<&SceneEnvironment>,
     celestial: Res<PresentedCelestialLighting>,
@@ -417,13 +599,15 @@ pub(in crate::presentation) fn update_tactical_clouds(
         &mut Visibility,
     )>,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut bake_state: ResMut<CloudBakeState>,
 ) {
     let environment = active
         .entity
         .and_then(|entity| environments.get(entity).ok());
     let celestial = celestial.snapshot.as_ref();
-    let parameters = environment
-        .and_then(|environment| CloudLayerParameters::from_environment(environment, capture.0));
+    let layers = environment
+        .map(|environment| CloudLayerParameters::layers_from_environment(environment, capture.0));
 
     for (mut cloud, handle, mut transform, mut visibility) in &mut clouds {
         transform.translation = camera.translation();
@@ -437,48 +621,51 @@ pub(in crate::presentation) fn update_tactical_clouds(
             *visibility = cloud_visibility(false, *isolation);
             continue;
         };
-        let Some(mut parameters) = parameters else {
+        let Some(layers) = layers else {
             cloud.active = false;
             *visibility = cloud_visibility(false, *isolation);
             continue;
         };
-        if parameters.coverage <= 0.001 || parameters.density <= 0.001 {
+        if layers
+            .iter()
+            .flatten()
+            .all(|layer| layer.coverage <= 0.001 || layer.density <= 0.001)
+        {
             cloud.active = false;
             *visibility = cloud_visibility(false, *isolation);
             continue;
         }
-        cloud.active = true;
+        let seed = cloud_seed(environment);
+        let bake_key = CloudBakeKey { layers, seed };
         let Some(mut material) = materials.get_mut(&handle.0) else {
             continue;
         };
-        let seed = cloud_seed(environment);
-        parameters.seed = (seed % 4_096) as f32;
-        let bearing = f32::from(environment.weather.atmosphere.wind_direction_degrees).to_radians();
-        let base_wind_direction = Vec2::new(bearing.sin(), -bearing.cos());
-        let wind_speed = 2.0 + f32::from(environment.weather.wind_speed_bps) / 10_000.0 * 16.0;
-        let elapsed = time.elapsed_secs()
-            + (environment.absolute_minute % (7 * MINUTES_PER_DAY)) as f32 * 60.0;
+        if bake_state.key.as_ref() != Some(&bake_key) {
+            if let Some(mut image) = images.get_mut(&material.baked_texture) {
+                *image = cloud_bake_image(&bake_key);
+            }
+            bake_state.key = Some(bake_key);
+        }
+        let lowest = layers
+            .iter()
+            .flatten()
+            .map(|layer| layer.bottom_metres)
+            .fold(f32::INFINITY, f32::min);
+        let storminess = layers
+            .iter()
+            .flatten()
+            .any(|layer| matches!(layer.profile as u32, 3 | 7)) as u8
+            as f32;
+        cloud.active = true;
         let daylight = smoothstep(-8.0, 8.0, celestial.sun_altitude_degrees);
         let scene_luminance = 0.08 + daylight * 1.35;
         let solar_color = cloud_solar_color(celestial.sun_altitude_degrees);
-        let shear = f32::from(environment.weather.atmosphere.wind_shear_bps) / 10_000.0;
-        let wind_direction = Mat2::from_angle(shear * 0.35) * base_wind_direction;
-        let wind_offset = wind_direction * wind_speed * elapsed;
         material.lighting = celestial.sun_direction.extend(scene_luminance);
-        material.shape = Vec4::new(
-            parameters.coverage,
-            parameters.density,
-            parameters.profile,
-            parameters.seed,
-        );
-        material.layer =
-            cloud_surface_uniform(parameters.surface_metres, parameters.horizontal_scale);
-        material.motion = Vec4::new(
-            wind_offset.x,
-            wind_offset.y,
-            daylight,
-            celestial.weather_transmission,
-        );
+        material.shape = Vec4::new(storminess, 0.0, 0.0, 0.0);
+        material.layer = Vec4::new(lowest, 1.0, 0.0, 0.0);
+        // The field is world-aligned and finite. Weather changes re-bake it;
+        // unbounded scroll would eventually reveal a clamped guard or repeat.
+        material.motion = Vec4::new(0.0, 0.0, daylight, celestial.weather_transmission);
         material.spectral = solar_color.extend(1.0);
         material.geometry = cloud_shell_geometry();
         *visibility = cloud_visibility(true, *isolation);
@@ -498,10 +685,6 @@ fn cloud_shell_geometry() -> Vec4 {
     // below that origin keeps curvature stable as the camera crosses the
     // playable area; the camera-following mesh remains only a raster proxy.
     Vec4::new(0.0, 0.0, CLOUD_CURVATURE_RADIUS_METRES, 0.0)
-}
-
-fn cloud_surface_uniform(surface_metres: f32, horizontal_scale: f32) -> Vec4 {
-    Vec4::new(surface_metres, horizontal_scale, 0.0, 0.0)
 }
 
 #[cfg(test)]
@@ -594,12 +777,10 @@ mod tests {
     }
 
     #[test]
-    fn authoritative_weather_collapses_to_one_storm_shell_with_combined_coverage() {
-        let cloud = CloudLayerParameters::from_environment(&environment(), None).unwrap();
-        assert_eq!(cloud.profile, 3.0);
-        assert!((cloud.coverage - 0.964).abs() < 1e-6);
-        assert_eq!(cloud.density, 1.3);
-        assert_eq!(cloud.surface_metres, 4_816.0);
+    fn authoritative_weather_keeps_all_three_decks_for_the_bake() {
+        let layers = CloudLayerParameters::layers_from_environment(&environment(), None);
+        assert_eq!(layers.iter().flatten().count(), 3);
+        assert!(layers[0].unwrap().bottom_metres < layers[2].unwrap().bottom_metres);
     }
 
     #[test]
@@ -607,11 +788,48 @@ mod tests {
         let cumulus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cumulus).unwrap();
         let cirrus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cirrus).unwrap();
         let storm = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Storm).unwrap();
-        assert!(cirrus.surface_metres > cumulus.surface_metres);
+        assert!(cirrus.bottom_metres > cumulus.bottom_metres);
         assert!(cirrus.density < cumulus.density);
         assert!(storm.density > cumulus.density);
         assert!(storm.coverage > cumulus.coverage);
         assert!(CloudLayerParameters::capture(TacticalCloudCaptureProfile::Clear).is_none());
+    }
+
+    #[test]
+    fn cumulus_density_uses_seeded_offsets_and_populates_the_reference_overhead() {
+        let cumulus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cumulus).unwrap();
+        let mut unseeded = cumulus;
+        unseeded.seed = 0.0;
+        let sample_world = Vec2::new(640.0, -420.0);
+        assert!(
+            (baked_cloud_density(sample_world, 0.34, cumulus, 42, 0)
+                - baked_cloud_density(sample_world, 0.34, unseeded, 42, 0))
+            .abs()
+                > 0.001
+        );
+        let occupied = (-3..=3)
+            .flat_map(|z| (-3..=3).map(move |x| Vec2::new(x as f32 * 500.0, z as f32 * 500.0)))
+            .filter(|world| baked_cloud_density(*world, 0.34, cumulus, 42, 0) > 0.08)
+            .count();
+        assert!(
+            occupied >= 4,
+            "cumulus must occupy several nearby overhead samples; observed {occupied}"
+        );
+    }
+
+    #[test]
+    fn cloud_volume_noise_decorrelates_height_without_translating_the_world_field() {
+        let cumulus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cumulus).unwrap();
+        let world = Vec2::new(860.0, -510.0);
+        let low = cloud_density_coordinate(world, 0.22, cumulus, 42);
+        let high = cloud_density_coordinate(world, 0.66, cumulus, 42);
+        assert_eq!(low.xz(), high.xz());
+        let low_noise = non_periodic_value_noise_3d(low * 1.23, 42);
+        let high_noise = non_periodic_value_noise_3d(high * 1.23, 42);
+        assert!(
+            (low_noise - high_noise).abs() > 0.001,
+            "height must select an independent 3-D lattice slice"
+        );
     }
 
     #[test]
@@ -666,7 +884,7 @@ mod tests {
         else {
             panic!("cloud shell must contain float positions");
         };
-        assert_eq!(positions.len(), 65 * 25);
+        assert_eq!(positions.len(), 129 * 65);
         assert!(positions.iter().all(|position| position[1] >= -0.001));
         assert!(
             positions
@@ -686,67 +904,72 @@ mod tests {
     }
 
     #[test]
-    fn cloud_noise_texture_is_repeatable_and_filterable() {
+    fn cloud_bake_is_deterministic_finite_and_clamp_filtered() {
         use bevy::{image::ImageAddressMode, render::render_resource::FilterMode};
 
-        let first = cloud_noise_texture_image();
-        let second = cloud_noise_texture_image();
-        let data = first.data.as_ref().expect("generated noise has pixels");
+        let key = CloudBakeKey {
+            layers: CloudLayerParameters::layers_from_environment(&environment(), None),
+            seed: 42,
+        };
+        let first = cloud_bake_image(&key);
+        let second = cloud_bake_image(&key);
+        let data = first.data.as_ref().expect("generated bake has pixels");
         let extent = first.texture_descriptor.size;
-        assert_eq!(extent.width, CLOUD_NOISE_TEXTURE_EDGE);
-        assert_eq!(extent.height, CLOUD_NOISE_TEXTURE_EDGE);
+        assert_eq!(extent.width, CLOUD_BAKE_TEXTURE_WIDTH);
+        assert_eq!(extent.height, CLOUD_BAKE_TEXTURE_HEIGHT);
         assert_eq!(extent.depth_or_array_layers, 1);
         assert_eq!(first.texture_descriptor.dimension, TextureDimension::D2);
         assert_eq!(first.texture_descriptor.format, TextureFormat::Rgba8Unorm);
-        assert_eq!(data.len(), 128 * 128 * 4);
+        assert_eq!(
+            data.len(),
+            CLOUD_BAKE_TEXTURE_WIDTH as usize
+                * CLOUD_BAKE_TEXTURE_HEIGHT as usize
+                * CLOUD_BAKE_CHANNELS
+        );
         assert_eq!(first.data, second.data);
-        assert_eq!(cloud_noise_checksum(data), 0x1e7f_7871_c87e_3dca);
         let ImageSampler::Descriptor(sampler) = &first.sampler else {
-            panic!("cloud noise must use an explicit repeat sampler");
+            panic!("cloud bake must use an explicit clamp sampler");
         };
-        assert_eq!(sampler.address_mode_u, ImageAddressMode::Repeat);
-        assert_eq!(sampler.address_mode_v, ImageAddressMode::Repeat);
+        assert_eq!(sampler.address_mode_u, ImageAddressMode::ClampToEdge);
+        assert_eq!(sampler.address_mode_v, ImageAddressMode::ClampToEdge);
         assert_eq!(sampler.mag_filter, FilterMode::Linear.into());
         assert_eq!(sampler.min_filter, FilterMode::Linear.into());
         assert_eq!(sampler.mipmap_filter, FilterMode::Linear.into());
     }
 
     #[test]
-    fn cloud_noise_texture_pins_low_frequency_spatial_coherence() {
-        let image = cloud_noise_texture_image();
-        let data = image.data.as_ref().expect("generated noise has pixels");
-        let adjacent_difference = cloud_channel_difference(data, 1, 0);
-        let separated_difference = cloud_channel_difference(data, 17, 11);
-
+    fn directional_bake_maps_native_dome_rays_and_duplicates_the_azimuth_seam() {
+        assert!(cloud_bake_direction(0, 0).y < 0.001);
         assert!(
-            adjacent_difference < 0.035,
-            "adjacent cloud samples lost their low-frequency correlation: {adjacent_difference}"
+            cloud_bake_direction(
+                CLOUD_BAKE_AZIMUTH_SEGMENTS / 2,
+                CLOUD_BAKE_ELEVATION_SEGMENTS,
+            )
+            .y > 0.999
         );
         assert!(
-            separated_difference > adjacent_difference * 4.0,
-            "cloud texture no longer forms broad bodies: adjacent={adjacent_difference}, separated={separated_difference}"
+            cloud_bake_direction(0, CLOUD_BAKE_ELEVATION_SEGMENTS / 2).abs_diff_eq(
+                cloud_bake_direction(
+                    CLOUD_BAKE_AZIMUTH_SEGMENTS,
+                    CLOUD_BAKE_ELEVATION_SEGMENTS / 2,
+                ),
+                0.0,
+            )
         );
-    }
-
-    fn cloud_noise_checksum(data: &[u8]) -> u64 {
-        data.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
-            (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
-        })
-    }
-
-    fn cloud_channel_difference(data: &[u8], offset_x: usize, offset_y: usize) -> f32 {
-        let edge = CLOUD_NOISE_TEXTURE_EDGE as usize;
-        let mut total = 0.0;
-        for y in 0..edge {
-            for x in 0..edge {
-                let sample = data[(y * edge + x) * CLOUD_NOISE_TEXTURE_CHANNELS] as f32;
-                let other_x = (x + offset_x) % edge;
-                let other_y = (y + offset_y) % edge;
-                let other = data[(other_y * edge + other_x) * CLOUD_NOISE_TEXTURE_CHANNELS] as f32;
-                total += (sample - other).abs() / 255.0;
-            }
+        let image = cloud_bake_image(&CloudBakeKey {
+            layers: CloudLayerParameters::layers_from_environment(&environment(), None),
+            seed: 42,
+        });
+        let data = image.data.expect("generated bake has pixels");
+        for row in 0..CLOUD_BAKE_TEXTURE_HEIGHT as usize {
+            let first = row * CLOUD_BAKE_TEXTURE_WIDTH as usize * CLOUD_BAKE_CHANNELS;
+            let final_column =
+                first + (CLOUD_BAKE_TEXTURE_WIDTH as usize - 1) * CLOUD_BAKE_CHANNELS;
+            assert_eq!(
+                &data[first..first + CLOUD_BAKE_CHANNELS],
+                &data[final_column..final_column + CLOUD_BAKE_CHANNELS],
+            );
         }
-        total / (edge * edge) as f32
     }
 
     #[test]
@@ -758,21 +981,23 @@ mod tests {
         assert!(distant < surface_metres - 1_000.0);
         assert!(distant > 0.0);
         assert_eq!(cloud_shell_geometry().xy(), Vec2::ZERO);
-        assert_eq!(
-            cloud_surface_uniform(2_000.0, 0.000_34),
-            Vec4::new(2_000.0, 0.000_34, 0.0, 0.0)
-        );
     }
 
     #[test]
     fn cloud_shader_uses_one_2d_lookup_and_no_marching_or_shadow_loop() {
         let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
-        assert!(shader.contains("var cloud_noise_texture: texture_2d<f32>;"));
+        assert!(shader.contains("var cloud_baked_texture: texture_2d<f32>;"));
         assert!(shader.contains("fn sample_cloud_surface"));
         assert!(shader.contains("fn ray_sphere_roots"));
-        assert!(shader.contains("let surface_roots"));
+        assert!(shader.contains("atan2(ray_direction.z, ray_direction.x)"));
+        assert!(shader.contains("asin(clamp(ray_direction.y, 0.0, 1.0))"));
         assert!(shader.contains("let horizon_fade"));
         assert!(shader.contains("let storminess"));
+        assert!(shader.contains("let ray_opacity = baked.r"));
+        assert!(!shader.contains("vertical_depth"));
+        assert!(!shader.contains("max(ray_direction.y, 0.14)"));
+        assert!(!shader.contains("fract("));
+        assert!(!shader.contains("Repeat"));
         assert!(!shader.contains("texture_3d"));
         assert!(!shader.contains("sample_density"));
         assert!(!shader.contains("sunlight_transmittance"));

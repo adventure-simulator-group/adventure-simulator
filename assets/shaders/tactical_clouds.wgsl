@@ -19,7 +19,7 @@ var<uniform> cloud_spectral: vec4<f32>;
 var<uniform> cloud_geometry: vec4<f32>;
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(6)
-var cloud_noise_texture: texture_2d<f32>;
+var cloud_baked_texture: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(7)
 var cloud_noise_sampler: sampler;
 
@@ -43,48 +43,19 @@ fn ray_sphere_roots(
     return vec2<f32>(-projected - root, -projected + root);
 }
 
-fn cloud_coordinate(world_position: vec3<f32>) -> vec2<f32> {
-    let kind = u32(cloud_shape.z + 0.5);
-    var coordinate = (world_position.xz + cloud_motion.xy) * cloud_layer.y;
-    coordinate += vec2<f32>(cloud_shape.w * 0.013, -cloud_shape.w * 0.011);
-    if kind == 2u {
-        coordinate = coordinate * vec2<f32>(0.32, 1.8);
-    } else if kind == 5u || kind == 8u {
-        coordinate *= 1.75;
-    } else if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
-        coordinate *= 0.58;
-    }
-    return coordinate;
-}
-
-/// One filtered texture lookup supplies all cloud shape variation. The global
-/// shell intentionally has no depth integration, empty-space search, or
-/// self-shadow ray: broad weather identity matters more than local volume.
-fn sample_cloud_surface(world_position: vec3<f32>) -> vec4<f32> {
+/// One clamped lookup recovers the reference eye's native dome bake. U is
+/// azimuth and V is elevation, exactly matching the directional ray rather
+/// than collapsing low elevations into a texture edge. The CPU duplicates the
+/// two azimuth seam columns, so clamp addressing stays continuous.
+fn sample_cloud_surface(ray_direction: vec3<f32>) -> vec4<f32> {
+    let azimuth = atan2(ray_direction.z, ray_direction.x) / (2.0 * 3.14159265359) + 0.5;
+    let elevation = asin(clamp(ray_direction.y, 0.0, 1.0)) / (0.5 * 3.14159265359);
+    let coordinate = vec2<f32>(azimuth, elevation);
     return textureSample(
-        cloud_noise_texture,
+        cloud_baked_texture,
         cloud_noise_sampler,
-        fract(cloud_coordinate(world_position)),
+        coordinate,
     );
-}
-
-fn cloud_coverage(noise: vec4<f32>) -> f32 {
-    let kind = u32(cloud_shape.z + 0.5);
-    let broad = mix(noise.r, noise.g, select(0.28, 0.55, kind == 2u));
-    var threshold = 0.82 - cloud_shape.x * 0.42;
-    var softness = 0.15;
-    if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
-        threshold -= 0.13;
-        softness = 0.24;
-    }
-    if kind == 3u || kind == 10u {
-        threshold += 0.06;
-    }
-    var body = smoothstep(threshold, threshold + softness, broad);
-    if kind == 2u {
-        body *= 0.48 + noise.b * 0.52;
-    }
-    return body;
 }
 
 @vertex
@@ -114,40 +85,40 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if ray_direction.y <= 0.001 {
         discard;
     }
-    let surface_radius = cloud_geometry.z + cloud_layer.x;
-    let surface_roots = ray_sphere_roots(ray_origin, ray_direction, surface_radius);
-    if surface_roots.y <= 0.0 {
-        discard;
-    }
-    let surface_position = ray_origin + ray_direction * surface_roots.y;
-    let noise = sample_cloud_surface(surface_position);
-    let body = cloud_coverage(noise);
+    let baked = sample_cloud_surface(ray_direction);
+    // R is the complete transmittance result for this exact dome ray. The
+    // bake has already integrated its slanted path through every deck.
+    let ray_opacity = baked.r;
+    let storminess = cloud_shape.x;
     let horizon_fade = smoothstep(0.008, 0.12, ray_direction.y);
-    let opacity = body * (0.34 + cloud_shape.y * 0.42) * horizon_fade;
+    let opacity = ray_opacity * horizon_fade;
     if opacity <= 0.002 {
         discard;
     }
 
-    let kind = u32(cloud_shape.z + 0.5);
-    let storminess = select(0.0, 1.0, kind == 3u || kind == 7u);
     let sun_direction = normalize(cloud_lighting.xyz);
     let forward_highlight = pow(max(dot(ray_direction, sun_direction), 0.0), 12.0);
-    let underside = mix(0.52, 1.06, noise.a);
+    // The bake retains local underside density instead of averaging it away;
+    // exaggerating that retained range recovers cellular interior contrast.
+    let underside = mix(0.16, 1.18, baked.a);
     let clear_ambient = mix(
         vec3<f32>(0.36, 0.42, 0.49),
         vec3<f32>(0.70, 0.77, 0.85),
-        0.42 + noise.b * 0.34,
+        0.28 + baked.g * 0.54,
     );
     let storm_ambient = mix(
         vec3<f32>(0.23, 0.25, 0.29),
         vec3<f32>(0.46, 0.49, 0.54),
-        noise.b * 0.45,
+        baked.g * 0.62,
     );
-    let ambient = mix(clear_ambient, storm_ambient, storminess) * underside;
+    let ambient = mix(clear_ambient, storm_ambient, storminess)
+        * underside
+        * mix(1.0, 0.62 + baked.b * 0.38, storminess);
     let direct = cloud_spectral.xyz
         * cloud_lighting.w
         * cloud_motion.z
         * cloud_motion.w
+        * baked.b
         * (0.10 + forward_highlight * 0.26)
         * mix(1.0, 0.22, storminess);
     let color = ambient + direct;

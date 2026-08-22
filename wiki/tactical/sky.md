@@ -67,15 +67,29 @@ The default tactical presentation renders one bounded atmospheric shell.
 Camera-centred hemisphere geometry supplies rasterization directions while the
 fragment shader intersects each view ray with a scene-anchored curved surface.
 The deliberately exaggerated curvature is negligible across the playable area
-but bends distant clouds into the tactical horizon. A filtered, deterministic
-2D texture supplies broad coverage, edges, underside variation, and wind-driven
-motion in one sample. There is no volumetric march, empty-space search, or
+but bends distant clouds into the tactical horizon. A filtered, deterministic 2D
+texture supplies one precomputed optical field in one sample. At scene
+initialization, the client integrates the diagnosed cloud decks along every
+direction from a stable eye point at the playable-area centre. The resulting
+native azimuth/elevation dome map gives low elevations dedicated rows and stores
+each ray's final opacity, lighting, sunlight transmission, and local variation.
+Its duplicated 0/2π seam columns keep clamp sampling continuous without repeated
+addressing. The fragment shader samples that exact direction and uses its
+already integrated opacity directly; it must not apply a second grazing-angle
+path correction. There is no per-frame volumetric march, empty-space search, or
 internal shadow ray.
 
-The tactical client folds the authoritative low/middle/high diagnosis into the
-single shell: the optically dominant deck selects the visible cloud family and
-surface altitude, while all deck coverages combine. This retains broad weather
-and rain/storm identity at a substantially lower transparent-rendering cost.
+The initialization integration evaluates a finite, deterministic 3-D value
+field: broad coverage, domain warp, fine erosion, and underside variation all
+use independently hashed X/Y/Z lattice corners. Normalized deck height is its
+own coordinate, rather than an offset into a 2-D field, so optical depth
+accumulates coherent volume rather than radial extrusion. The field has no
+repeat addressing or periodic noise domain.
+
+The tactical client bakes all authoritative low/middle/high decks into the
+single shell rather than discarding secondary decks. The lowest active deck
+sets the shell surface, while directional integration retains broad weather and
+rain/storm identity at a substantially lower transparent-rendering cost.
 Distinct analytic treatments still cover cirrus, cirrocumulus, cirrostratus,
 altocumulus, altostratus, nimbostratus, stratocumulus, stratus, cumulus,
 cumulus congestus, and cumulonimbus. Solar chroma follows Sun altitude rather
@@ -88,11 +102,12 @@ coverage, optical density, base, and top. Those layers are diagnosed from
 spatially and temporally correlated humidity, dew point, pressure, wind,
 vertical wind shear, instability, and broad lift fields. Precipitation follows
 only from a sufficiently moist and ascending nimbostratus or cumulonimbus
-state. Wind advects each density field in the authoritative direction; higher
-decks move faster and turn with shear. This is a bounded procedural weather
-model rather than numerical fluid dynamics: the strategic authority evaluates
-the fields from time and location without storing continental atmospheric rows,
-and the tactical client does not mutate them.
+state. Wind changes are represented when the environment changes and causes a
+new deterministic bake. The shell does not scroll indefinitely: that would
+eventually expose an edge or recreate a periodic pattern. This is a bounded
+procedural weather model rather than numerical fluid dynamics: the strategic
+authority evaluates the fields from time and location without storing
+continental atmospheric rows, and the tactical client does not mutate them.
 
 Cloud lighting reuses the production Sun direction, exposure, and weather
 transmission. Cloud amount and optical density attenuate direct sunlight and
