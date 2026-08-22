@@ -27,7 +27,7 @@ class AnalyzeAnimationBoneTraceTests(unittest.TestCase):
                     "subject_rotation_xyzw": [0.0, quarter_turn, 0.0, quarter_turn],
                     "bones": [
                         {
-                            "name": "hand.R",
+                            "name": "r_wrist",
                             "translation": [10.0 + frame + local_forward, 2.0, -4.0],
                         }
                     ],
@@ -42,10 +42,10 @@ class AnalyzeAnimationBoneTraceTests(unittest.TestCase):
 
         self.assertEqual(result["active_attack_frames"], 2)
         self.assertAlmostEqual(
-            result["hands"]["hand.R"]["maximum_excursion_metres"], 0.08, places=6
+            result["hands"]["r_wrist"]["maximum_excursion_metres"], 0.08, places=6
         )
         self.assertAlmostEqual(
-            result["hands"]["hand.R"]["maximum_forward_excursion_metres"],
+            result["hands"]["r_wrist"]["maximum_forward_excursion_metres"],
             0.08,
             places=6,
         )

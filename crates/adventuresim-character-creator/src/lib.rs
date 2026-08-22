@@ -1,5 +1,7 @@
 //! Data model for the standalone MHR character creator.
 
+pub mod export;
+
 use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_COUNT: usize = 45;

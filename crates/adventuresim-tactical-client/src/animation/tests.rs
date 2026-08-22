@@ -586,8 +586,8 @@ mod legacy_tests {
         let owner = world.spawn_empty().id();
         let rig = world.spawn(AnimationRigScene(owner)).id();
         let skeleton = world.spawn(Name::new("Skeleton")).id();
-        let root = world.spawn(Name::new("root")).id();
-        let pelvis = world.spawn(Name::new("pelvis")).id();
+        let root = world.spawn(Name::new("body_world")).id();
+        let pelvis = world.spawn(Name::new("root")).id();
         world.entity_mut(rig).add_child(skeleton);
         world.entity_mut(skeleton).add_child(root);
         world.entity_mut(root).add_child(pelvis);
@@ -606,8 +606,8 @@ mod legacy_tests {
             Some(&AnimationTargetId::from_names(
                 [
                     Name::new("Skeleton"),
-                    Name::new("root"),
-                    Name::new("pelvis")
+                    Name::new("body_world"),
+                    Name::new("root")
                 ]
                 .iter()
             ))
@@ -619,26 +619,29 @@ mod legacy_tests {
     }
 
     #[test]
-    fn composite_mask_keeps_root_pelvis_and_legs_out_of_the_upper_body() {
+    fn composite_mask_keeps_mhr_world_pelvis_and_legs_out_of_the_upper_body() {
         for lower in [
             "Skeleton",
+            "body_world",
             "root",
-            "pelvis",
-            "thigh.L",
-            "thigh_twist.R",
-            "shin.L",
-            "foot.R",
-            "toe.L",
+            "l_upleg",
+            "r_upleg_twist3_proc",
+            "l_lowleg",
+            "r_foot",
+            "l_talocrural",
+            "r_subtalar",
+            "l_transversetarsal",
+            "l_ball",
         ] {
             assert!(is_lower_body_animation_target(lower), "{lower}");
         }
         for upper in [
-            "stomach_01",
-            "stomach_02",
-            "chest",
-            "clavicle.L",
-            "upper_arm.R",
-            "head",
+            "c_spine0",
+            "c_spine2",
+            "c_spine3",
+            "l_clavicle",
+            "r_uparm",
+            "c_head",
         ] {
             assert!(!is_lower_body_animation_target(upper), "{upper}");
         }
@@ -677,8 +680,8 @@ mod legacy_tests {
         let pelvis = AnimationTargetId::from_names(
             [
                 Name::new("Skeleton"),
+                Name::new("body_world"),
                 Name::new("root"),
-                Name::new("pelvis"),
             ]
             .iter(),
         );
@@ -779,6 +782,7 @@ mod legacy_tests {
             owner: Entity::PLACEHOLDER,
             primary_hand: HandSide::Right,
             secondary_grip_local: None,
+            socket_bind_correction: Transform::IDENTITY,
         };
         assert_eq!(constraint.primary_hand, HandSide::Right);
     }

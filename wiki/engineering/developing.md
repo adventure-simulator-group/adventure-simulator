@@ -584,19 +584,25 @@ timeout fails closed without presenting an uncommitted result.
 
 ## Testing a Single Server
 
-After changing the canonical unarmed `walk.glb` or `run.glb`, regenerate the
-closed runtime cycles and their mirrored comparison clips with:
+After changing any canonical unarmed motion, publish every currently available
+runtime animation with:
 
 ```powershell
-python scripts/build_locomotion_cycles.py
-python scripts/mirror_gait_assets.py
-python scripts/build_locomotion_cycles.py --check
-python scripts/mirror_gait_assets.py --check
+python scripts/prepare_animation_assets.py
+python scripts/prepare_animation_assets.py --check
 ```
 
-The generators require Python 3 and NumPy. Runtime locomotion samples the
-closed canonical cycle directly; mirrored files remain available for semantic
-fallback and comparison. It does not fractionally mirror an FK result.
+The publisher requires Python 3 and NumPy. It validates and strips ordinary
+motion meshes, retains only catalog frames, removes redundant transform tracks,
+builds five-key cubic locomotion cycles, and generates bind-relative mirrors.
+Cascadeur's exported interpolation frames are authoring data and are not copied
+to runtime assets. Runtime locomotion samples the closed canonical cycle
+directly; mirrored files remain available for semantic fallback and comparison.
+It does not fractionally mirror an FK result.
+
+The repository ignores reproducible GLB exports below `assets_src`; the tracked
+sources are the `.casc` projects. Export the motions needed for the current
+publication locally, then commit the compact outputs below `assets/animations`.
 
 For normal native tactical development, use the supervised launcher:
 

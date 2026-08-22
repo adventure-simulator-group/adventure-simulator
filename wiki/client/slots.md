@@ -1,5 +1,6 @@
 # Slots
-A **slot** is a physical location on your character's body which an item can be stored in, or attached to, for quick access via hotkey.
+A **slot** is a physical location on your character's body which an item can be
+stored in, or attached to, for quick access via hotkey.
 
 The persisted equipment model separates this fine-grained topology from the
 seven combat/health body parts. Equipment locations include head, face, neck,
@@ -12,9 +13,15 @@ For example, the right hip can be a slot:
 * If you have a belt on, you can place a sheath on your left hip with <kbd>Q</kbd>.
 * If you have a sheath on your left hip, you can put a sword in it.
 
-The goal is for slots to replace menus to access most of your inventory. Anything not inside a bag should be immediately accessible with a **slot button**. Slot buttons can overlap with other buttons because they only function as slot buttons when a [grab button](controls.md#direct-controls) is held.
+The goal is for slots to replace menus to access most of your inventory.
+Anything not inside a bag should be immediately accessible with a **slot
+button**. Slot buttons can overlap with other buttons because they only function
+as slot buttons when a [grab button](controls.md#direct-controls) is held.
 ## Keybindings
-Ideally, the location of each slot button should correspond roughly to the slot's physical location. A button on the left should be used for a slot on the left side of the body, and we should attempt to group the buttons so that adjacent slots have adjacent buttons.
+Ideally, the location of each slot button should correspond roughly to the
+slot's physical location. A button on the left should be used for a slot on the
+left side of the body, and we should attempt to group the buttons so that
+adjacent slots have adjacent buttons.
 
 | **M+KB** | **Controller** | **Slot** |
 |-|-|-|
@@ -42,15 +49,27 @@ Ideally, the location of each slot button should correspond roughly to the slot'
 | <kbd>Z</kbd> | ⇓⇓⇐ | Left foot.
 | <kbd>C</kbd> | ⇓⇓⇒ | Right foot.
 
-The body-slot map deliberately leaves <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
-unbound so tactical movement remains available while donning, doffing, or
-accessing equipment.
+The body-slot map deliberately leaves
+<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> unbound so tactical movement
+remains available while donning, doffing, or accessing equipment.
 
-The controller doesn't have quite enough buttons to give every slot its own button. To get around this, we can assign certain slots to *combinations* of buttons; because slot inputs require the grab button be held to initiate them, and we don't execute any action until the grab button is released, no ambiguity is possible. (For instance, while holding the grab button, the face slot can be ⇑ and glasses can be ⇑⇑; only when we release the grab button does it actually perform the action.) This is also helpful for controllers that only support four D-pad directions; the diagonals can just be pressing two directions in either order. (That is, "down-left" can be "down and then left.")
+The controller doesn't have quite enough buttons to give every slot its own
+button. To get around this, we can assign certain slots to *combinations* of
+buttons; because slot inputs require the grab button be held to initiate them,
+and we don't execute any action until the grab button is released, no ambiguity
+is possible. (For instance, while holding the grab button, the face slot can be
+⇑ and glasses can be ⇑⇑; only when we release the grab button does it actually
+perform the action.) This is also helpful for controllers that only support four
+D-pad directions; the diagonals can just be pressing two directions in either
+order. (That is, "down-left" can be "down and then left.")
 
-In the map proposed above, we rely on button combinations for directly adjacent slots, which we imagine as lying on a navigable grid navigated by the D-pad.
+In the map proposed above, we rely on button combinations for directly adjacent
+slots, which we imagine as lying on a navigable grid navigated by the D-pad.
 ## Layers
-Pressing a slot button once selects the outer layer of that slot. Pressing it again -- without releasing the grab button -- selects one layer deeper. For example, press <kbd>Q</kbd> once to draw your sword from your sheath, twice to remove the sheath itself, and three times to remove your belt.
+Pressing a slot button once selects the outer layer of that slot. Pressing it
+again -- without releasing the grab button -- selects one layer deeper. For
+example, press <kbd>Q</kbd> once to draw your sword from your sheath, twice to
+remove the sheath itself, and three times to remove your belt.
 
 Equipment uses explicit occupancy channels ordered from inside to outside:
 held, base clothing, padding/under-armor, flexible armor, rigid armor,
@@ -72,11 +91,17 @@ removal and reparenting reject items with children, preventing orphaned graph
 rows. Repeated slot input walks body channels outside-to-inside and then child
 attachment points in authored order.
 ## Multi-slot items
-Many items, generally clothing and armor, occupy multiple slots. A belt occupies all four belt slot buttons. It can be equipped and removed using any of these buttons.
+Many items, generally clothing and armor, occupy multiple slots. A belt occupies
+all four belt slot buttons. It can be equipped and removed using any of these
+buttons.
 ## Slot restrictions
-Many items may only occupy specific slots. When such an item is held in your hand and you hold the corresponding grab button, all buttons not corresponding to those slots are unavailable.
+Many items may only occupy specific slots. When such an item is held in your
+hand and you hold the corresponding grab button, all buttons not corresponding
+to those slots are unavailable.
 ## GUI
-The screen normally gives no indicator for what is in your slots or your hands. However, holding down any grab button brings up a "map" of your slots with a few properties:
+The screen normally gives no indicator for what is in your slots or your hands.
+However, holding down any grab button brings up a "map" of your slots with a few
+properties:
 * This map includes icons for each button and approximately corresponds to the keyboard/controller; the relative position of each slot should be based on the relative position of each button.
 * When holding an item, any slot it may be placed in is white, and all others are grayed out; if your hand is empty, slots with items in them are white, and empty ones are greyed out.
 * Only the outermost occupied item in a slot is visible. Items that occupy multiple slots contiguously span all relevant slots.
@@ -137,20 +162,27 @@ strategic equipment graph.
 
 Worn-item presentation follows the animated rig rather than fixed world-space
 offsets. Each character location resolves to a semantic bone: head and face to
-`head`, neck to `neck_02`, chest and back to `chest`, stomach to `stomach_02`,
-shoulders to their clavicles, arms to their upper-arm bones, hands to their hand
-bones, legs to their thigh bones, feet to their foot bones, belt and rear-pocket
-locations to `pelvis`, and side pockets to the corresponding thigh. The item
+`c_head`, neck to `c_neck`, chest and back to `c_spine3`, stomach to `c_spine1`,
+shoulders to `l_clavicle` or `r_clavicle`, arms to `*_uparm`, hands to
+`*_wrist`, legs to `*_upleg`, feet to `*_foot`, belt and rear-pocket locations
+to anatomical `root`, and side pockets to the corresponding `*_upleg`. The item
 placeholder root is a child of that bone. Items in an attachment chain, such as
 a sword in a sheath on a belt, resolve through their parents to the same body
 bone. A placeholder remains hidden until its owner's authored rig and target
 bone are available, preventing a flash at the world origin.
 
+MHR's local joint axes are deliberately rolled and don't define equipment
+orientation. The client derives a worn placeholder's bind direction from the
+relevant semantic joint pair, such as upper arm to forearm or thigh to shin,
+then follows only the bone's animated deformation away from that bind pose.
+Held weapons use the same bind-relative correction at `l_weapon` or `r_weapon`,
+with the item's local +Y axis pointing toward its tip in character space.
+
 Placeholder size and placement relative to that root are catalog data, not HUD
 or renderer constants. Every `content/items/*.yaml` equipment definition authors
-`physical.dimensions_m` and `physical.anchor_offset_m`; held weapons use the same
-anchor as their grip socket. Dropped-item colliders continue to use the identical
-authored box and anchor.
+`physical.dimensions_m` and `physical.anchor_offset_m`; held weapons use the
+same anchor as their grip socket. Dropped-item colliders continue to use the
+identical authored box and anchor.
 
 The HUD renders only the outermost occupied item reachable through each slot.
 For example, a sheathed weapon is shown by itself; after it is drawn, the
@@ -166,12 +198,34 @@ Contiguous mapped cells are connected into one visual span only when the
 currently visible item itself occupies multiple locations.
 
 ## Bags
-Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.
+Your entire inventory won't necessarily fit into the slot system, which is fine.
+The slot system is intended not to replace "standard inventory management"
+altogether but to make a *significant subset* of your inventory more manageable,
+that being the subset of items that you need readily accessible. If you don't
+need a given item readily accessible, you can put it in a bag.
 
-A bag still occupies a slot, but it can hold multiple items. For example, a backpack is a bag which is slung over your shoulder(s).[^1] To access a bag's internal contents, you must grab the bag into one of your hands; when you are holding the bag, the grab button for the hand opposite the hand holding the bag is used to grab/place into it, and the hand holding the bag functions normally: if you simply press the associated grab button, you will drop the bag, and if you hold it and press a slot, you will place the bag in that slot.
+A bag still occupies a slot, but it can hold multiple items. For example, a
+backpack is a bag which is slung over your shoulder(s).[^1] To access a bag's
+internal contents, you must grab the bag into one of your hands; when you are
+holding the bag, the grab button for the hand opposite the hand holding the bag
+is used to grab/place into it, and the hand holding the bag functions normally:
+if you simply press the associated grab button, you will drop the bag, and if
+you hold it and press a slot, you will place the bag in that slot.
 
 [^1]: In the real world, carrying a backpack on one shoulder can lead to strain, pain, and posture problems. It is always recommended to use both shoulder straps.
 ## Alternative controls
-The goal of the slot system is to obviate the need for menus in inventory management, for the most part, and thereby simplify most aspects of inventory management. Following the philosophy laid out in the [Controls](controls.md) page, it will likely be hard to learn but ultimately speed up gameplay for experienced users on account of its consistency and unambiguity.
+The goal of the slot system is to obviate the need for menus in inventory
+management, for the most part, and thereby simplify most aspects of inventory
+management. Following the philosophy laid out in the [Controls](controls.md)
+page, it will likely be hard to learn but ultimately speed up gameplay for
+experienced users on account of its consistency and unambiguity.
 
-If this is not the case, we can also try more of a middle ground with conventional systems. For instance, we could turn all slot buttons into hotkeys untethered to any physical locations on the body. Players would still place items onto these hotkeys to equip them, but it wouldn't matter which button they pressed. This would make layering and multi-slot buttons a mess, so clothing and armor would just have to be done through a normal inventory menu. Sheaths and holsters would be handled like clothing; players would have to equip them from a menu and be forbidden from hotkeying a weapon without having equipped a sheath to put it in.
+If this is not the case, we can also try more of a middle ground with
+conventional systems. For instance, we could turn all slot buttons into hotkeys
+untethered to any physical locations on the body. Players would still place
+items onto these hotkeys to equip them, but it wouldn't matter which button they
+pressed. This would make layering and multi-slot buttons a mess, so clothing and
+armor would just have to be done through a normal inventory menu. Sheaths and
+holsters would be handled like clothing; players would have to equip them from a
+menu and be forbidden from hotkeying a weapon without having equipped a sheath
+to put it in.

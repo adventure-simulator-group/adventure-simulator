@@ -282,35 +282,50 @@ not runtime clips.
 Editable unarmed motion sources live under `assets_src/biped/unarmed/`; runtime
 exports live under `assets/animations/biped/unarmed/`. The semantic pack ID is
 still `humanoid_unarmed`; `unarmed` is its ergonomic on-disk directory. The
-existing `assets_src/base.*` files remain the special-case rig source until the
-new `assets_src/biped/unarmed/base.casc` has a matching GLB. Prepare its
-runtime-only scene deterministically with:
+character creator generates `assets_src/biped/unarmed/base.glb` from the
+canonical John Fabelgeist recipe using the MHR v1.0.1 hierarchy. The animation
+contract contains MHR's 127 joints plus `l_weapon` under `l_wrist`, `r_weapon`
+under `r_wrist`, and the first-person reference `c_camera` under `c_head`.
+These three zero-weight joints are part of the exported animation skeleton and
+must remain present in every Cascadeur motion export.
+The legacy top-level `assets_src/base.*` files describe only the replaced
+placeholder rig. Prepare the MHR runtime scene deterministically with:
 
 ```powershell
-python scripts/prepare_rig_base.py assets_src/base.glb assets/animations/biped/unarmed/base.glb
+python scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
 ```
 
-`base.glb` supplies only the spawnable skinned scene and may contain zero
+`base.glb` supplies only the spawnable skinned scene and contains zero
 animations. Every other `.glb` is a non-spawnable motion source and must contain
 exactly one animation, named or unnamed. The 30fps catalog, not the animation's
 glTF name, assigns semantic anchors to file/frame pairs. A missing, malformed,
 or short motion invalidates only that motion so pack and similar-pose fallback
 can continue.
 
-Prepare non-locomotion motions by validating and copying their source export
-exactly:
+Publish every currently authored motion with one command:
 
 ```powershell
-python scripts/prepare_animation_motion.py assets_src/biped/unarmed/idle_relaxed.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/idle_relaxed.glb --last-frame 0
+python scripts/prepare_animation_assets.py
+python scripts/prepare_animation_assets.py --check
 ```
 
-Walk and run are the cycle-building exception. Their source exports contain
-the authored contact and passing/flight poses, while the committed runtime
-files are closed cycles baked from those poses and their character-space
-mirrors. The mirror command also pre-bakes runtime counterparts for the two
-downed gait contacts, `dive_left`, and `prone_supine_roll_left`, preventing a
-fractional post-blend reflection when those poses interpolate into an
-unmirrored endpoint:
+The publisher validates ordinary motions against the MHR runtime base, removes
+their meshes and skins, retains only catalog-addressable ordinary-motion frames,
+removes bind-default tracks, collapses constant tracks, builds closed walk/run
+cycles, and emits every available bind-relative mirrored counterpart. Each
+locomotion cycle stores five cubic anchor keys; Cascadeur's exported in-betweens
+are not copied into runtime assets. Missing source motions are reported and
+skipped so John can be republished incrementally while animation work continues.
+The runtime `base.glb` remains the sole spawnable skinned mesh.
+
+Git tracks the `.casc` authoring projects and ignores their reproducible
+`assets_src/**/*.glb` exports. Export the applicable motion GLBs locally before
+running the publisher; only the compact runtime GLBs under `assets/animations`
+belong in a commit.
+
+The equivalent Just recipes are `just prepare-animation-assets` and
+`just check-animation-assets`. The individual generators remain available for
+focused development:
 
 ```powershell
 python scripts/build_locomotion_cycles.py
@@ -319,9 +334,9 @@ python scripts/build_locomotion_cycles.py --check
 python scripts/mirror_gait_assets.py --check
 ```
 
-The same command with `--check` verifies committed output. Motion scenes and
-meshes need not be stripped because only the animation asset is loaded; keeping
-the raw bytes makes source-to-runtime generation deterministic and auditable.
+The same commands with `--check` verify committed output. Runtime motion GLBs
+retain the canonical `Skeleton` node hierarchy, bind transforms, and animation
+accessors, but contain no mesh, skin, material, texture, or image payload.
 
 At runtime, the zero-animation base is given one canonical animation player on
 its `Skeleton` scene root. Target IDs are rebuilt from the full stable bone-name
@@ -371,8 +386,8 @@ preview, but does not introduce additional semantic names:
 
 | File basename | Frame assignments |
 |---|---|
-| `walk` runtime | 0 `walk_contact`; 16 `walk_passing`; 32 opposite contact; 48 opposite passing; 64 loop closure. The source passing pose is frame 8. |
-| `run` runtime | 0 `run_contact`; 16 `run_flight`; 32 opposite contact; 48 opposite flight; 64 loop closure. The runtime flight key is the exact source frame-5 pose; moderate its silhouette in the authored asset rather than the cycle builder. |
+| `walk` runtime | 0 `walk_contact`; 16 `walk_passing`; 32 opposite contact; 48 opposite passing; 64 loop closure. The source file begins on contact and ends on the exact passing pose. |
+| `run` runtime | 0 `run_contact`; 16 `run_flight`; 32 opposite contact; 48 opposite flight; 64 loop closure. The source file begins on contact and ends on the exact flight pose; moderate its silhouette in the authored asset rather than the cycle builder. |
 | `prone_crawl` | 0 `prone_crawl_contact` |
 | `supine_scamper` | 0 `supine_scamper_contact` |
 
@@ -502,12 +517,18 @@ The publication mirror step also emits exact `prone_supine_roll_right` and
 between a mirrored midpoint and an unmirrored contact pose from becoming a
 fractional post-blend reflection.
 
-The canonical procedural rig uses `root`, `pelvis`, `stomach_01`,
-`stomach_02`, `chest`, `neck_01`, `neck_02`, and `head`; paired clavicle,
-major arm, arm-twist, hand, major leg, leg-twist, foot, and toe bones use the
-`.L`/`.R` suffix. `weapon.L` and `weapon.R` are hand attachment sockets. The
-scene-root animation cylinder is authoring-only. See the tactical-client README
-for the concise exporter checklist.
+The canonical procedural rig is the Meta MHR hierarchy. Its central semantic
+chain is `body_world`, anatomical `root`, `c_spine0` through `c_spine3`,
+`c_neck`, and `c_head`. Paired major joints use the `l_` and `r_` prefixes:
+`*_clavicle`, `*_uparm`, `*_lowarm`, `*_wrist`, `*_upleg`, `*_lowleg`,
+`*_foot`, and `*_ball`. Runtime-added `l_weapon` and `r_weapon` joints are
+parented to their respective wrists, while `c_camera` is parented to
+`c_head`. The full MHR set of distributed twist, hand, foot, face, and center
+joints participates in whole-pose mirroring. Offline mirror baking reflects
+each joint's deformation relative to its bind transform, preserving MHR's
+rolled local bind frames. Procedural IK directly solves only the semantic
+major-joint chains and preserves the intervening MHR locals. See the
+tactical-client README for the concise exporter checklist.
 
 Procedural IK rotates major thigh/shin and upper-arm/forearm joints through the
 real twist intermediates while preserving authored twist locals. Stable bend
@@ -834,9 +855,9 @@ second guard stance. The same `guard` pose is sampled for every direction.
 Raised sprint input is the sole exception. Its gameplay speed remains the
 character's endurance-neutral jog, but presentation layers the static guard on
 the upper body over the ordinary walk/run interpolation on the lower body. The
-clip resolver masks locomotion off `stomach_01` and every descendant upper-body
-target while masking guard off `root`, `pelvis`, and every leg target. Ordinary
-locomotion terrain IK owns this composite's legs;
+clip resolver masks locomotion off `c_spine0` and every descendant upper-body
+target while masking guard off `body_world`, anatomical `root`, and every MHR
+leg target. Ordinary locomotion terrain IK owns this composite's legs;
 procedural combat stepping owns every non-sprint raised movement.
 
 Semantic intent carries a wrapping step sequence and a swing side. The

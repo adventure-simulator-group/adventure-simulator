@@ -35,7 +35,7 @@ pub(super) struct FixedTickPoseCache {
 pub(super) fn stabilize_repeated_fixed_tick_pose(
     clock: Res<ProceduralAnimationClock>,
     mut cache: ResMut<FixedTickPoseCache>,
-    mut bones: Query<(Entity, &mut Transform), With<HumanoidBone>>,
+    mut bones: Query<(Entity, &mut Transform), With<MhrBone>>,
 ) {
     let Some((tick, _)) = clock.fixed_step() else {
         cache.tick = None;
@@ -125,14 +125,14 @@ pub(super) fn apply_head_and_torso_look(
         let weight = match bone.role {
             BoneRole::StomachOne => 0.08,
             BoneRole::StomachTwo => 0.12,
-            BoneRole::Chest => 0.16,
-            BoneRole::NeckOne => 0.18,
-            BoneRole::NeckTwo => 0.2,
+            BoneRole::StomachThree => 0.16,
+            BoneRole::Chest => 0.18,
+            BoneRole::NeckOne => 0.2,
             BoneRole::Head => 0.26,
             _ => continue,
         };
         let aim_offset = match (aim, bone.role) {
-            (Some(offset), BoneRole::NeckOne | BoneRole::NeckTwo | BoneRole::Head) => offset,
+            (Some(offset), BoneRole::NeckOne | BoneRole::Head) => offset,
             _ => Vec2::ZERO,
         };
         // Owner yaw is already on the character transform. Only the bounded
@@ -249,21 +249,29 @@ pub(super) fn apply_jump_charge_crouch(
                 BoneRole::Pelvis => applied.translation.y -= 0.12 * pelvis_amount,
                 BoneRole::StomachOne => {
                     applied.rotation =
-                        (applied.rotation * Quat::from_rotation_x(0.09 * amount)).normalize()
+                        (applied.rotation * Quat::from_rotation_x(0.075 * amount)).normalize()
                 }
                 BoneRole::StomachTwo => {
                     applied.rotation =
-                        (applied.rotation * Quat::from_rotation_x(0.075 * amount)).normalize()
+                        (applied.rotation * Quat::from_rotation_x(0.06 * amount)).normalize()
+                }
+                BoneRole::StomachThree => {
+                    applied.rotation =
+                        (applied.rotation * Quat::from_rotation_x(0.05 * amount)).normalize()
                 }
                 BoneRole::Chest => {
                     applied.rotation =
-                        (applied.rotation * Quat::from_rotation_x(0.06 * amount)).normalize()
+                        (applied.rotation * Quat::from_rotation_x(0.04 * amount)).normalize()
                 }
                 _ => continue,
             }
         } else if !matches!(
             bone.role,
-            BoneRole::Pelvis | BoneRole::StomachOne | BoneRole::StomachTwo | BoneRole::Chest
+            BoneRole::Pelvis
+                | BoneRole::StomachOne
+                | BoneRole::StomachTwo
+                | BoneRole::StomachThree
+                | BoneRole::Chest
         ) {
             continue;
         }
@@ -303,14 +311,22 @@ pub(super) fn apply_pose_mirroring(
         let Some(rig_scene) = topology.rig_scene() else {
             continue;
         };
+        let mirror_entities = topology
+            .mirror_centers()
+            .iter()
+            .copied()
+            .chain(
+                topology
+                    .mirror_pairs()
+                    .iter()
+                    .flat_map(|&(left, right)| [left, right]),
+            )
+            .collect::<Vec<_>>();
         let local_snapshots = {
             let locals = transforms.p0();
-            BoneRole::ALL
-                .into_iter()
-                .filter_map(|role| {
-                    let entity = *topology.get(&role)?;
-                    Some((role, entity, *locals.get(entity).ok()?))
-                })
+            mirror_entities
+                .iter()
+                .filter_map(|&entity| Some((entity, *locals.get(entity).ok()?)))
                 .collect::<Vec<_>>()
         };
         let (rig, rig_global) = {
@@ -318,8 +334,8 @@ pub(super) fn apply_pose_mirroring(
             let Ok(rig_global) = helper.compute_global_transform(rig_scene) else {
                 continue;
             };
-            let mut rig = [None; BoneRole::COUNT];
-            for (role, entity, local) in local_snapshots {
+            let mut rig = BTreeMap::new();
+            for (entity, local) in local_snapshots {
                 let Ok(global) = helper.compute_global_transform(entity) else {
                     continue;
                 };
@@ -327,56 +343,30 @@ pub(super) fn apply_pose_mirroring(
                 let parent_global = parent
                     .and_then(|parent| helper.compute_global_transform(parent).ok())
                     .unwrap_or(GlobalTransform::IDENTITY);
-                rig[role.index()] = Some(MirrorBone {
+                rig.insert(
                     entity,
-                    local,
-                    global,
-                    parent,
-                    parent_global,
-                });
+                    MirrorBone {
+                        entity,
+                        local,
+                        global,
+                        parent,
+                        parent_global,
+                    },
+                );
             }
             (rig, rig_global)
         };
         let mut desired_globals = BTreeMap::<Entity, Affine3A>::new();
         let mut mirror_weights = BTreeMap::<Entity, f32>::new();
-        if whole_body_weight > f32::EPSILON {
-            for role in [
-                BoneRole::Root,
-                BoneRole::Pelvis,
-                BoneRole::StomachOne,
-                BoneRole::StomachTwo,
-                BoneRole::Chest,
-                BoneRole::NeckOne,
-                BoneRole::NeckTwo,
-                BoneRole::Head,
-            ] {
-                let Some(bone) = rig[role.index()].as_ref() else {
-                    continue;
-                };
-                desired_globals
-                    .insert(bone.entity, mirrored_global_affine(bone.global, rig_global));
-                mirror_weights.insert(bone.entity, whole_body_weight);
-            }
+        for &entity in topology.mirror_centers() {
+            let Some(bone) = rig.get(&entity) else {
+                continue;
+            };
+            desired_globals.insert(bone.entity, mirrored_global_affine(bone.global, rig_global));
+            mirror_weights.insert(bone.entity, whole_body_weight);
         }
-        for (left_role, right_role) in [
-            (BoneRole::ClavicleLeft, BoneRole::ClavicleRight),
-            (BoneRole::UpperArmLeft, BoneRole::UpperArmRight),
-            (BoneRole::UpperArmTwistLeft, BoneRole::UpperArmTwistRight),
-            (BoneRole::ForearmLeft, BoneRole::ForearmRight),
-            (BoneRole::ForearmTwistLeft, BoneRole::ForearmTwistRight),
-            (BoneRole::HandLeft, BoneRole::HandRight),
-            (BoneRole::WeaponLeft, BoneRole::WeaponRight),
-            (BoneRole::ThighLeft, BoneRole::ThighRight),
-            (BoneRole::ThighTwistLeft, BoneRole::ThighTwistRight),
-            (BoneRole::ShinLeft, BoneRole::ShinRight),
-            (BoneRole::ShinTwistLeft, BoneRole::ShinTwistRight),
-            (BoneRole::FootLeft, BoneRole::FootRight),
-            (BoneRole::ToeLeft, BoneRole::ToeRight),
-        ] {
-            let (Some(left), Some(right)) = (
-                rig[left_role.index()].as_ref(),
-                rig[right_role.index()].as_ref(),
-            ) else {
+        for &(left_entity, right_entity) in topology.mirror_pairs() {
+            let (Some(left), Some(right)) = (rig.get(&left_entity), rig.get(&right_entity)) else {
                 continue;
             };
             desired_globals.insert(
@@ -391,11 +381,13 @@ pub(super) fn apply_pose_mirroring(
             mirror_weights.insert(right.entity, whole_body_weight);
         }
         let mut bones = transforms.p2();
-        for bone in rig.iter().flatten() {
+        for bone in rig.values() {
             let Some(&desired_global) = desired_globals.get(&bone.entity) else {
                 continue;
             };
-            let weight = mirror_weights[&bone.entity];
+            let Some(&weight) = mirror_weights.get(&bone.entity) else {
+                continue;
+            };
             if weight <= f32::EPSILON {
                 continue;
             }
@@ -683,8 +675,11 @@ pub(super) fn stabilize_locomotion_torso(
         let translation_limit = match bone.role {
             BoneRole::Root => Vec3::new(0.02, 0.02, 0.025),
             BoneRole::Pelvis => Vec3::new(0.035, 0.04, 0.045),
-            BoneRole::StomachOne | BoneRole::StomachTwo | BoneRole::Chest => Vec3::splat(0.012),
-            BoneRole::NeckOne | BoneRole::NeckTwo | BoneRole::Head => Vec3::splat(0.008),
+            BoneRole::StomachOne
+            | BoneRole::StomachTwo
+            | BoneRole::StomachThree
+            | BoneRole::Chest => Vec3::splat(0.012),
+            BoneRole::NeckOne | BoneRole::Head => Vec3::splat(0.008),
             _ => continue,
         };
         let authored_translation = transform.translation;
@@ -919,7 +914,7 @@ pub(super) fn apply_impact_reaction(
         };
         if !matches!(
             bone.role,
-            BoneRole::Chest | BoneRole::NeckTwo | BoneRole::Head
+            BoneRole::Chest | BoneRole::NeckOne | BoneRole::Head
         ) {
             continue;
         }
@@ -1098,20 +1093,26 @@ mod legacy_tests {
     }
 
     #[test]
-    fn actual_twist_hierarchy_names_are_recognized() {
+    fn canonical_mhr_role_names_are_recognized() {
         for name in [
-            "pelvis",
-            "stomach_01",
-            "neck_02",
-            "thigh_twist.L",
-            "shin_twist.R",
-            "forearm_twist.L",
-            "weapon.R",
-            "toe.L",
+            "body_world",
+            "root",
+            "c_spine0",
+            "c_spine1",
+            "c_spine2",
+            "c_spine3",
+            "c_neck",
+            "c_head",
+            "c_camera",
+            "l_upleg",
+            "r_lowleg",
+            "l_lowarm",
+            "r_weapon",
+            "l_ball",
         ] {
             assert!(BoneRole::from_name(name).is_some(), "missing {name}");
         }
-        assert_eq!(BoneRole::from_name("weapon"), None);
+        assert_eq!(BoneRole::from_name("l_upleg_twist2_proc"), None);
         assert_eq!(BoneRole::from_name("Cylinder"), None);
     }
 

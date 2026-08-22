@@ -18,7 +18,8 @@ pub(crate) use procedural::{
     ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
     HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
     LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
+    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, authored_bind_global,
+    locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -704,8 +705,8 @@ pub fn spawn_fallback_t_pose(
                 Transform::from_xyz(0.0, 1.02, 0.0),
             ));
             for (name, x) in [
-                ("upper_arm.L/forearm.L/hand.L", -0.56),
-                ("upper_arm.R/forearm.R/hand.R", 0.56),
+                ("l_uparm/l_lowarm/l_wrist", -0.56),
+                ("r_uparm/r_lowarm/r_wrist", 0.56),
             ] {
                 rig.spawn((
                     Name::new(name),
@@ -715,8 +716,8 @@ pub fn spawn_fallback_t_pose(
                 ));
             }
             for (name, x) in [
-                ("thigh.L/shin.L/foot.L", -0.16),
-                ("thigh.R/shin.R/foot.R", 0.16),
+                ("l_upleg/l_lowleg/l_foot", -0.16),
+                ("r_upleg/r_lowleg/r_foot", 0.16),
             ] {
                 rig.spawn((
                     Name::new(name),

@@ -2,8 +2,14 @@
 # will have compiled files and executables
 debug
 target
+# Pinned Meta MHR authoring assets installed by `just init-mhr-assets` live
+# below target/mhr-assets/. Track only deliberately exported runtime artifacts.
 /.codex-target-*/
 .workbench
+
+# Cascadeur/character-creator GLBs are reproducible authoring exports. Runtime
+# animation GLBs remain tracked under assets/animations/.
+/assets_src/**/*.glb
 
 # Root JavaScript tooling dependencies
 /node_modules/
