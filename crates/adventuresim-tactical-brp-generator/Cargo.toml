@@ -1,0 +1,17 @@
+[package]
+name = "adventuresim-tactical-brp-generator"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "adventuresim-tactical-brp-generator"
+path = "src/main.rs"
+
+[dependencies]
+bevy = { workspace = true }
+adventuresim-tactical-server = { path = "../adventuresim-tactical-server", default-features = false, features = [
+    "remote-types",
+] }
+adventuresim-tactical-client = { path = "../adventuresim-tactical-client", default-features = false, features = [
+    "remote-types",
+] }

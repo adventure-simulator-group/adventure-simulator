@@ -91,6 +91,19 @@ test("busy live region retries back off, cap, and can reset on idle", () => {
   assert.match(source, /document\.addEventListener\("focusout", reconcileDirtyWhenIdle\)/);
 });
 
+test("live reconciliation preserves keyed client-owned regions", () => {
+  const source = fs.readFileSync(path.join(root, "static", "live-regions.js"), "utf8");
+  assert.match(source, /comparableRegionHtml\(current\) === comparableRegionHtml\(next\)/);
+  assert.match(source, /preserveClientRegions\(current, next\)/);
+  assert.match(source, /replacement\.replaceWith\(region\)/);
+
+  const trade = fs.readFileSync(
+    path.join(root, "src", "templates", "settlement", "trade.rs"),
+    "utf8",
+  );
+  assert.match(trade, /data-live-preserve="forge-customization"/);
+});
+
 test("POST result pages provide a safe GET URL for live-region refreshes", () => {
   const source = fs.readFileSync(path.join(root, "static", "live-regions.js"), "utf8");
   const window = {};

@@ -16,7 +16,8 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table};
 use crate::{
     Character, InventoryObject, character::character as _,
     inventory_container::inventory_containment, inventory_container::inventory_object,
-    inventory_item, strategic::party_authority, strategic::party_inventory_item,
+    inventory_item, repair::repair_order, strategic::party_authority,
+    strategic::party_inventory_item,
 };
 
 /// Closed SpacetimeDB transport for the shared core custody vocabulary.
@@ -230,6 +231,35 @@ fn persisted_location_custody(
                 return Err("Inventory object fireplace custody names another fixture kind".into());
             }
             Ok(OperationalCustody::Fixture(fixture))
+        }
+        "repair" => {
+            let place = StrategicPlaceId::from_str(&object.location_owner)
+                .map_err(|_| "Inventory object repair place is not canonical")?;
+            let settlement_id = place
+                .settlement_id()
+                .ok_or("Inventory object repair custody is not at a settlement")?;
+            let row = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(object.inventory_row_id)
+                .ok_or("Inventory object repair row is missing")?;
+            require_unique_backing_object(ctx, object)?;
+            let order = ctx
+                .db
+                .repair_order()
+                .inventory_item_id()
+                .find(object.inventory_row_id)
+                .ok_or("Inventory object repair order is missing")?;
+            if row.character_id != 0
+                || row.item_id != object.item_id
+                || row.quantity != 1
+                || order.item_id != object.item_id
+                || order.settlement_id != settlement_id
+            {
+                return Err("Inventory object conflicts with its repair escrow custody".into());
+            }
+            Ok(OperationalCustody::Place(place))
         }
         _ => Err("Inventory object has an unknown custody location".into()),
     }

@@ -474,6 +474,12 @@ def worktree_fingerprint(root: Path = ROOT) -> str:
 
 
 def runtime_root() -> Path:
+    override = os.environ.get("ADVENTURESIM_RUNTIME_ROOT")
+    if override:
+        path = Path(override)
+        if not path.is_absolute():
+            raise ValueError("ADVENTURESIM_RUNTIME_ROOT must be absolute")
+        return path
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA")
         if not base:
@@ -611,6 +617,42 @@ def spacetime_auth_token() -> str:
             "SpacetimeDB CLI did not return exactly one authenticated gateway token"
         )
     return tokens[0]
+
+
+def dev_bootstrap_token(root: Path = ROOT, state_root: Path | None = None) -> str:
+    """Return a stable per-worktree ADVENTURESIM_DEV_BOOTSTRAP_TOKEN, generating
+    and persisting one on first use.
+
+    This token is baked into the SpacetimeDB module at compile time via
+    `option_env!`, gating the dev-only seed reducers. Generating a fresh one
+    on every isolated run forces `spacetime publish` to fully recompile the
+    module each time (cargo correctly treats the changed env var as a cache
+    miss) - a real ~90s tax even when nothing in the module source changed.
+    Reusing one token per worktree keeps the compiled bytes stable across
+    restarts so the build cache actually helps, while keeping the token
+    off git and local to this machine.
+    """
+    fingerprint = worktree_fingerprint(root)
+    state_root = state_root or runtime_root()
+    token_dir = ensure_secure_directory(state_root / fingerprint, state_root)
+    token_path = token_dir / "dev-bootstrap-token"
+    if not token_path.is_symlink() and token_path.is_file():
+        existing = token_path.read_text(encoding="utf-8").strip()
+        if len(existing) == 64 and all(c in "0123456789abcdef" for c in existing):
+            return existing
+    token = secrets.token_hex(32)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    temporary = token_path.with_name(f".{token_path.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    fd = os.open(temporary, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(token)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, token_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return token
 
 
 def binding_differences(expected: Path, actual: Path) -> list[str]:
@@ -803,6 +845,7 @@ def write_tactical_env_file(
     character_id: int,
     enemy_count: int,
     tactical_claim: str | None,
+    scene_input: str | None = None,
     profile: str | None = None,
     worktree_fingerprint_value: str | None = None,
     run_dir: Path | None = None,
@@ -823,6 +866,7 @@ def write_tactical_env_file(
         # launcher deliberately retains it only in memory.
         values.append(f"ADVENTURESIM_TACTICAL_CLAIM={tactical_claim}")
     optional = {
+        "TACTICAL_SCENE_INPUT": scene_input,
         "TACTICAL_PROFILE": profile,
         "TACTICAL_WORKTREE_FINGERPRINT": worktree_fingerprint_value,
         # python-dotenv treats backslashes as escapes even in unquoted values.
@@ -1163,9 +1207,10 @@ def run_profile(
     mode: ProfileMode = ProfileMode.STRATEGIC,
     verify_http: bool = False,
     mission_id: str = "mission:test-mission",
-    scene_key: str = "hills",
+    scene_key: str = "woodland",
     character_id: int = 0,
     enemy_count: int = 3,
+    scene_input: str | None = None,
 ) -> int:
     values = profile_values(name, base_port)
     state_root = runtime_root()
@@ -1207,7 +1252,7 @@ def run_profile(
                 lock=lifecycle,
                 listener=listener,
             )
-            bootstrap_token = secrets.token_hex(32)
+            bootstrap_token = dev_bootstrap_token()
             previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
             os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
             try:
@@ -1240,6 +1285,7 @@ def run_profile(
                     mission_id=mission_id, scene_key=scene_key,
                     character_id=character_id, enemy_count=enemy_count,
                     tactical_claim=tactical_claim,
+                    scene_input=scene_input,
                 )
                 wrote_tactical_env = True
                 print("")
@@ -1309,6 +1355,102 @@ def run_profile(
                     stop_recorded(run_dir / "spawner.identity.json", spawner_config)
             finally:
                 stop_spacetime(stdb_metadata, stdb_config)
+
+
+def live_spacetime_for_profile(name: str, base_port: int) -> dict[str, str] | None:
+    """Return {server, database} for an already-running, ownership-verified
+    isolated SpacetimeDB instance for this profile, or None if none is live.
+
+    Mirrors the config-match + identity_matches check `stop_spacetime` uses,
+    so this only ever "finds" an instance this same tooling started for this
+    exact profile - never an unrelated process that happens to hold the port.
+    """
+    values = profile_values(name, base_port)
+    run_dir = Path(str(values["profile_dir"])) / "run"
+    stdb_metadata = run_dir / "spacetime.identity.json"
+    if not stdb_metadata.exists():
+        return None
+    try:
+        metadata = json.loads(stdb_metadata.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    server = f"http://127.0.0.1:{values['spacetime_port']}"
+    database = str(values["database"])
+    expected_config = {
+        "role": "spacetimedb", "profile": name,
+        "worktree_fingerprint": values["worktree_fingerprint"], "server": server,
+        "database": database, "data_dir": str(values["data_dir"]),
+    }
+    if metadata.get("config") != expected_config or not identity_matches(metadata.get("process", {})):
+        return None
+    return {"server": server, "database": database}
+
+
+def reseed_tactical_mission(
+    profile: str,
+    base_port: int,
+    mission_id_prefix: str = "mission:test-mission",
+    scene_key: str = "hills",
+    character_id: int = 0,
+    enemy_count: int = 3,
+    if_live: bool = False,
+) -> int:
+    """Seed a fresh standalone tactical mission against an already-running
+    isolated SpacetimeDB instance, without rebuilding or republishing the
+    module.
+
+    `bootstrap_development_world` is idempotent (every fixture it seeds is
+    guarded by a find-before-insert check), so it's safe to call again on a
+    database that already has world data. `seed_standalone_tactical_mission`
+    is not safe to call twice with the same mission_id once a previous
+    mission has bound a tactical_server_authority row for it (it silently
+    no-ops rather than erroring, and a prior mission that never shut down
+    cleanly leaves that row orphaned forever) - so this always mints a fresh
+    randomized mission_id instead of reusing `mission_id_prefix` verbatim.
+
+    `if_live=True` (used when this is an automatic step ahead of `just
+    tactical`, not a standalone user-facing call) makes a missing live
+    instance a silent no-op (exit 0) instead of an error, so it doesn't
+    block plain `cargo run`-style usage against a non-isolated database.
+    """
+    live = live_spacetime_for_profile(profile, base_port)
+    if live is None:
+        if if_live:
+            return 0
+        print(
+            f"No live, verified SpacetimeDB instance found for profile {profile!r}.\n"
+            "Run `just tactical-isolated` first (once), then `just tactical-reseed` "
+            "to get a fresh mission against it without rebuilding/republishing the module.",
+            file=sys.stderr,
+        )
+        return 1
+    server, database = live["server"], live["database"]
+    bootstrap_token = dev_bootstrap_token()
+    code = seed(server, database, bootstrap_token)
+    if code:
+        return code
+    mission_id = f"{mission_id_prefix}-{secrets.token_hex(4)}"
+    tactical_claim = secrets.token_hex(32)
+    result = run_checked([
+        "spacetime", "call", "--server", server, database,
+        "seed_standalone_tactical_mission", bootstrap_token,
+        str(character_id), mission_id, scene_key, str(enemy_count), tactical_claim,
+    ])
+    write_console(result.stdout)
+    if result.returncode:
+        print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
+        return result.returncode
+    values = profile_values(profile, base_port)
+    write_tactical_env_file(
+        url=server, database=database, port=int(values["tactical_port"]),
+        mission_id=mission_id, scene_key=scene_key,
+        character_id=character_id, enemy_count=enemy_count,
+        tactical_claim=tactical_claim,
+    )
+    print("")
+    print(f"Reseeded tactical mission {mission_id!r} against the already-running isolated database.")
+    print("Run `just tactical` and `just client` in other terminals (no arguments needed).")
+    return 0
 
 
 def tactical_executable(package: str) -> Path:
@@ -1419,11 +1561,13 @@ def tactical_session_config(
     character_id: int,
     enemy_count: int,
     session_id: str,
+    scene_input: str | None = None,
     graphics_preset: str = "default",
     present_mode: str = "auto-vsync",
     window_capture: str = "auto",
     capture_source: str = "window",
     render_backend: str = "auto",
+    input_script: str | None = None,
 ) -> dict[str, object]:
     return {
         "repository": str(ROOT.resolve()),
@@ -1440,11 +1584,13 @@ def tactical_session_config(
         "native_client": mode is not TacticalPlayMode.NETWORKING,
         "browser_client": False,
         "session_id": session_id,
+        "scene_input": scene_input,
         "graphics_preset": graphics_preset,
         "present_mode": present_mode,
         "window_capture": window_capture,
         "capture_source": capture_source,
         "render_backend": render_backend,
+        "input_script_source": input_script,
     }
 
 
@@ -1482,25 +1628,74 @@ def launch_recorded_tactical_client(
         client_config["animation_log"] = str(animation_log)
         config["animation_log"] = str(animation_log)
         input_script = run_dir / f"animation-input-script-{suffix}.json"
+        attack_screenshot = run_dir / f"animation-attack-{suffix}.png"
         commands: list[dict[str, object]] = []
         if config.get("window_capture") != "off":
             capture_ready = run_dir / f"capture-ready-{suffix}.json"
             commands.append({"type": "wait_for_signal", "path": str(capture_ready)})
             config["capture_ready_signal"] = str(capture_ready)
-        commands.extend([
+        default_commands: list[dict[str, object]] = [
             {"type": "rotate", "degrees_right": 90.0},
             {
                 "type": "move", "direction": "forward",
                 "input_speed": 0.5, "duration_seconds": 2.0,
             },
             {"type": "guard", "raised": True},
+            {"type": "wait", "duration_seconds": 0.5},
+            {"type": "attack", "duration_seconds": 0.25},
+            {"type": "screenshot", "path": str(attack_screenshot)},
+            {"type": "wait", "duration_seconds": 0.75},
             {
                 "type": "move", "direction": "forward",
                 "input_speed": 1.0, "duration_seconds": 2.0,
             },
+            {
+                "type": "dive", "direction": "forward",
+                "duration_seconds": 1.5,
+            },
+            {"type": "toggle_posture", "duration_seconds": 1.2},
+            {
+                "type": "dive", "direction": "backward",
+                "duration_seconds": 1.5,
+            },
+            {"type": "toggle_posture", "duration_seconds": 1.2},
+            {
+                "type": "dive", "direction": "left",
+                "duration_seconds": 1.5,
+            },
+            {"type": "toggle_posture", "duration_seconds": 1.2},
+            {
+                "type": "dive", "direction": "right",
+                "duration_seconds": 1.5,
+            },
             {"type": "guard", "raised": False},
             {"type": "wait", "duration_seconds": 0.5},
-        ])
+        ]
+        input_script_source = config.get("input_script_source")
+        if input_script_source:
+            source_path = Path(str(input_script_source))
+            if not source_path.is_absolute():
+                source_path = ROOT / source_path
+            try:
+                source = json.loads(source_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ValueError(
+                    f"failed to read diagnostic input script {source_path}: {error}"
+                ) from error
+            source_commands = source.get("commands") if isinstance(source, dict) else None
+            if not isinstance(source_commands, list) or not source_commands:
+                raise ValueError(
+                    f"diagnostic input script must contain a non-empty commands list: {source_path}"
+                )
+            if not all(isinstance(command, dict) for command in source_commands):
+                raise ValueError(
+                    f"diagnostic input script commands must be objects: {source_path}"
+                )
+            commands.extend(source_commands)
+            client_config["input_script_source"] = str(source_path.resolve())
+            config["input_script_source"] = str(source_path.resolve())
+        else:
+            commands.extend(default_commands)
         atomic_write_json(input_script, {
             "commands": commands
         })
@@ -1510,6 +1705,9 @@ def launch_recorded_tactical_client(
         ])
         client_config["input_script"] = str(input_script)
         config["input_script"] = str(input_script)
+        if not input_script_source:
+            client_config["animation_attack_screenshot"] = str(attack_screenshot)
+            config["animation_attack_screenshot"] = str(attack_screenshot)
     environment = os.environ.copy()
     if config.get("render_backend", "auto") == "auto":
         environment.pop("WGPU_BACKEND", None)
@@ -1970,7 +2168,11 @@ def tactical_play(
     window_capture: str = "auto",
     capture_source: str = "window",
     render_backend: str = "auto",
+    scene_input: str | None = None,
+    input_script: str | None = None,
 ) -> int:
+    if input_script and mode is not TacticalPlayMode.DIAGNOSTIC:
+        raise ValueError("--input-script is only valid for tactical-play diagnostic")
     launch_client = mode is not TacticalPlayMode.NETWORKING
     code = build_tactical_play(launch_client)
     if code:
@@ -1984,11 +2186,14 @@ def tactical_play(
     data_dir = ensure_secure_directory(profile_dir / "spacetimedb-data", state_root)
     session_id = secrets.token_hex(16)
     mission_id = f"mission:{mode.value}-{session_id[:12]}"
-    character_id = 0
+    # Physical custody deliberately reserves zero as an invalid identity.
+    character_id = 1
     enemy_count = 1
     config = tactical_session_config(
-        values, mode, mission_id, character_id, enemy_count, session_id, graphics_preset,
+        values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
+        graphics_preset,
         present_mode, window_capture, capture_source, render_backend,
+        input_script,
     )
     session_file = run_dir / "tactical-session.json"
 
@@ -2025,7 +2230,7 @@ def tactical_play(
             capability = ResetCapability(
                 profile, base_port, server_url, database, lifecycle, listener
             )
-            bootstrap_token = secrets.token_hex(32)
+            bootstrap_token = dev_bootstrap_token()
             previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
             os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
             try:
@@ -2044,7 +2249,7 @@ def tactical_play(
             result = run_checked([
                 "spacetime", "call", "--server", server_url, database,
                 "seed_standalone_tactical_mission", bootstrap_token,
-                str(character_id), mission_id, "hills", str(enemy_count), tactical_claim,
+                str(character_id), mission_id, "woodland", str(enemy_count), tactical_claim,
             ])
             if result.returncode:
                 write_console(result.stdout)
@@ -2054,10 +2259,11 @@ def tactical_play(
                 database=database,
                 port=int(values["tactical_port"]),
                 mission_id=mission_id,
-                scene_key="hills",
+                scene_key="woodland",
                 character_id=character_id,
                 enemy_count=enemy_count,
                 tactical_claim=None,
+                scene_input=scene_input,
                 profile=profile,
                 worktree_fingerprint_value=str(values["worktree_fingerprint"]),
                 run_dir=run_dir,
@@ -2081,13 +2287,19 @@ def tactical_play(
             combat_scale = tactical_combat_scale(mode)
             server_log = run_dir / "server.log"
             server_metadata = run_dir / "server.identity.json"
-            server_process = spawn_recorded([
+            server_command = [
                 str(server_executable), "--addr", f"0.0.0.0:{values['tactical_port']}",
-                "--mission-id", mission_id, "--scene-key", "hills",
+                "--mission-id", mission_id, "--scene-key", "woodland",
                 "--spacetimedb-url", server_url, "--spacetimedb-module", database,
                 "--expected-party-members", "1", "--required-enemy-kills", str(enemy_count),
                 "--enemy-combat-scale-bps", str(combat_scale), "--no-timeout",
-            ], server_metadata, server_log, server_config, environment=environment)
+            ]
+            if scene_input:
+                server_command.extend(["--scene-input", scene_input])
+            server_process = spawn_recorded(
+                server_command, server_metadata, server_log, server_config,
+                environment=environment,
+            )
             wait_for_tactical_server(
                 server_process, server_metadata, server_log, server_url, database,
                 mission_id, int(values["tactical_port"]),
@@ -2341,8 +2553,9 @@ def create_parser() -> argparse.ArgumentParser:
     runner = sub.add_parser("run-profile")
     runner.add_argument("--mode", choices=[m.value for m in ProfileMode], default=ProfileMode.STRATEGIC.value)
     runner.add_argument("--mission-id", default="mission:test-mission")
-    runner.add_argument("--scene-key", default="hills")
-    runner.add_argument("--character-id", type=int, default=0)
+    runner.add_argument("--scene-key", default="woodland")
+    runner.add_argument("--scene-input", default="assets/tactical-scenes/dense-woodland.json")
+    runner.add_argument("--character-id", type=int, default=1)
     runner.add_argument("--enemy-count", type=int, default=3)
     runner.add_argument("name")
     runner.add_argument("base_port", type=int)
@@ -2364,7 +2577,7 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--graphics-preset",
         choices=(
-            "default", "no-shadows", "no-ssao", "no-bloom", "no-atmosphere",
+            "default", "no-shadows", "no-bloom", "no-atmosphere",
             "no-environment-light", "minimal"
         ),
         default="default",
@@ -2389,12 +2602,43 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--render-backend", choices=("auto", "vulkan", "dx12"), default="auto"
     )
+    tactical_play_parser.add_argument(
+        "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
+    )
+    tactical_play_parser.add_argument("--input-script")
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
+    reseeder = sub.add_parser("reseed-tactical-mission")
+    reseeder.add_argument("--mission-id-prefix", default="mission:test-mission")
+    reseeder.add_argument("--scene-key", default="hills")
+    reseeder.add_argument("--character-id", type=int, default=1)
+    reseeder.add_argument("--enemy-count", type=int, default=3)
+    reseeder.add_argument(
+        "--if-live", action="store_true",
+        help="Exit 0 without printing an error if no live instance is found, "
+             "instead of failing - for use as an automatic pre-step.",
+    )
+    reseeder.add_argument("name")
+    reseeder.add_argument("base_port", type=int)
     return parser
 
 
 def main() -> int:
+    if os.name != "nt":
+        # `run_profile`'s tactical branch and `tactical_play` both clean up
+        # (including `.env.tactical`, see `remove_tactical_env_file`) in a
+        # `finally` reached by letting `KeyboardInterrupt` propagate out of
+        # a blocking wait - which SIGINT already does by default. SIGTERM
+        # doesn't, so a `just`-recipe teardown (or any supervisor that sends
+        # SIGTERM instead of Ctrl+C) would otherwise skip that cleanup and
+        # leave a stale `.env.tactical` behind.
+        import signal
+
+        def _sigterm_as_keyboard_interrupt(signum: int, frame: object) -> None:
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGTERM, _sigterm_as_keyboard_interrupt)
+
     args = create_parser().parse_args()
     try:
         if args.command == "profile":
@@ -2411,6 +2655,7 @@ def main() -> int:
                 args.name, args.base_port, mode=ProfileMode(args.mode),
                 mission_id=args.mission_id, scene_key=args.scene_key,
                 character_id=args.character_id, enemy_count=args.enemy_count,
+                scene_input=args.scene_input,
             )
         if args.command == "verify-profile":
             return run_profile(
@@ -2425,12 +2670,19 @@ def main() -> int:
             return tactical_play(
                 TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
                 args.presentation_trace, args.present_mode, args.window_capture,
-                args.capture_source, args.render_backend,
+                args.capture_source, args.render_backend, args.scene_input,
+                args.input_script,
             )
         if args.command == "tactical-status":
             return tactical_status()
         if args.command == "tactical-client":
             return tactical_client_relaunch()
+        if args.command == "reseed-tactical-mission":
+            return reseed_tactical_mission(
+                args.name, args.base_port, mission_id_prefix=args.mission_id_prefix,
+                scene_key=args.scene_key, character_id=args.character_id,
+                enemy_count=args.enemy_count, if_live=args.if_live,
+            )
     except (ValueError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

@@ -5,9 +5,9 @@ use bevy_replicon::prelude::*;
 
 use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
-    DebugGameTimeScaleRequest, DefendRequest, EquipmentActionRequest, JoinRequest,
-    MeleeActionRequest, PlayerInputRequest, RangedActionRequest, ReconnectCapability,
-    SuccessfulAttackResponse, TacticalOutcomeResponse,
+    DebugDumpWorldRequest, DebugGameTimeScaleRequest, DefendRequest, EquipmentActionRequest,
+    JoinRequest, MeleeActionRequest, PlayerInputRequest, RangedActionRequest, ReconnectCapability,
+    SceneVistaBundle, SuccessfulAttackResponse, TacticalOutcomeResponse,
 };
 
 #[derive(Default)]
@@ -38,16 +38,23 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<ItemProperties>()
             .replicate::<EquipmentTopology>()
             .replicate::<EquipmentPhysical>()
+            .replicate_once::<WeaponAppearance>()
+            .replicate_once::<WeaponHolderAppearance>()
             .replicate::<EquipmentActionState>()
             .replicate::<TacticalSceneItem>()
             .replicate::<EquipSlot>()
             .replicate::<ItemOf>()
             .replicate::<SceneId>()
             .replicate::<SceneTerrain>()
+            .replicate::<SceneGround>()
+            .replicate::<SceneEnvironment>()
+            .replicate::<SceneObstacle>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_server_event::<ReconnectCapability>(Channel::Ordered)
+            .add_server_event::<SceneVistaBundle>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
             .add_client_event::<DebugGameTimeScaleRequest>(Channel::Ordered)
+            .add_client_event::<DebugDumpWorldRequest>(Channel::Ordered)
             .add_client_event::<DefendRequest>(Channel::Unreliable)
             .add_mapped_client_event::<EquipmentActionRequest>(Channel::Ordered)
             .add_mapped_client_event::<MeleeActionRequest>(Channel::Ordered)
@@ -60,9 +67,26 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
         // that's error prone because of how client/server is built independently.
         app.replicate_once_filtered::<
             Collider,
-            Or<(With<Player>, With<Sensor>, With<TacticalSceneItem>)>,
+            Or<(
+                With<Player>,
+                With<Sensor>,
+                With<TacticalSceneItem>,
+                With<SceneObstacle>,
+                With<SceneId>,
+            )>,
         >()
-        .replicate_once_filtered::<RigidBody, Or<(With<Player>, With<TacticalSceneItem>)>>()
-        .replicate_once_filtered::<CollisionLayers, With<TacticalSceneItem>>();
+        .replicate_once_filtered::<
+            RigidBody,
+            Or<(
+                With<Player>,
+                With<TacticalSceneItem>,
+                With<SceneObstacle>,
+                With<SceneId>,
+            )>,
+        >()
+        .replicate_once_filtered::<
+            CollisionLayers,
+            Or<(With<TacticalSceneItem>, With<SceneObstacle>, With<SceneId>)>,
+        >();
     }
 }

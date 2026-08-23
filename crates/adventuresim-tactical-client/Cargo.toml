@@ -8,31 +8,30 @@ license.workspace = true
 
 [features]
 default = ["debug"]
-debug = ["bevy/debug", "adventuresim-tactical-core/avian_debug"]
+debug = ["bevy/debug", "bevy/bevy_remote", "adventuresim-tactical-core/avian_debug"]
 tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
-animation-graph-editor = ["dep:bevy_animation_graph_editor"]
-animation-graph-physics = ["bevy_animation_graph/physics_avian", "dep:avian3d"]
+# See src/lib.rs - only used by crates/adventuresim-tactical-brp-generator.
+remote-types = ["debug"]
 
 [dependencies]
 bevy.workspace = true
 bevy_flair.workspace = true
 bevy_egui.workspace = true
 bevy_mod_outline.workspace = true
-bevy_animation_graph.workspace = true
-avian3d = { workspace = true, optional = true }
 adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
+adventuresim-weapon-model.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+web-time.workspace = true
 tracing-tracy = { version = "0.11", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
 tracy-client-sys = { version = "=0.28.0", optional = true }
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
-bevy = { workspace = true, default-features = true, features = ["file_watcher"] }
-bevy_animation_graph_editor = { workspace = true, optional = true }
+bevy = { workspace = true, default-features = true, features = ["file_watcher", "jpeg"] }
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 bevy = { workspace = true, default-features = false, features = [
@@ -47,6 +46,7 @@ bevy = { workspace = true, default-features = false, features = [
     "scene",
     "picking",
     "audio",
+    "jpeg",
     "png",
     "tonemapping_luts",
     "zstd_rust",
@@ -56,6 +56,10 @@ wasm-bindgen.workspace = true
 
 [lints]
 workspace = true
+
+[lib]
+name = "adventuresim_tactical_client"
+path = "src/lib.rs"
 
 [[bin]]
 name = "adventuresim-tactical-client"
@@ -68,13 +72,13 @@ doc = false
 required-features = ["debug"]
 
 [[bin]]
-name = "animation-graph-editor"
-path = "src/animation_graph_editor_main.rs"
+name = "tactical-scene-viewer"
+path = "src/tactical_scene_viewer_main.rs"
 doc = false
-required-features = ["animation-graph-editor"]
+required-features = ["debug"]
 
 [[bin]]
-name = "ragdoll-viewer"
-path = "src/ragdoll_viewer_main.rs"
+name = "tactical-sky-viewer"
+path = "src/tactical_sky_viewer_main.rs"
 doc = false
-required-features = ["debug", "animation-graph-physics"]
+required-features = ["debug"]

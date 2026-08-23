@@ -29,12 +29,12 @@ test("encounter counterparties use durable characters and ordinary actions", () 
   assert.match(worldActors, /row\.active = false/);
   assert.match(encounters, /context_character_ids/);
   assert.doesNotMatch(encounters, /u64::MAX\.saturating_sub\(index\)/);
-  assert.match(surgery, /treatment_is_authorized/);
+  assert.equal((surgery.match(/contextual_treatment_decision/g) || []).length >= 2, true);
   assert.match(travel, /aria-label="Counterparty"/);
   assert.match(travel, /presentation\.cast/);
   assert.match(travel, /aria-label="Roadside characters"/);
-  assert.match(travel, /\{ "Talk" \}/);
-  assert.match(travel, /\{ "Bandage" \}/);
+  assert.match(travel, /\{ "Request" \}/);
+  assert.match(travel, /"Emergency treatment"[\s\S]*"Request treatment"/);
   assert.doesNotMatch(travel, /challenge\.actor_character_id/);
 });
 
@@ -72,7 +72,8 @@ test("modal character actions retain the raised-button contract while social use
   assert.match(template, /data-social-conversation/);
   assert.doesNotMatch(socialTemplate, /aria-labelledby="social-dialog-title"/);
   assert.doesNotMatch(template, /cooking-dialog-title/);
-  assert.match(template, /aria-label="Cook at fireplace"/);
+  // Maud emits this attribute from the `aria_label` field on LocationFixture.
+  assert.match(template, /aria_label: "Cook at fireplace"/);
   assert.match(styles, /\.character-menu-button[\s\S]*background: var\(--tactile-background\)/);
   assert.match(styles, /\.character-menu-button[\s\S]*box-shadow: var\(--tactile-shadow\)/);
   assert.match(styles, /\.character-menu-button:focus-visible[\s\S]*outline: 2px solid var\(--accent-light\)/);

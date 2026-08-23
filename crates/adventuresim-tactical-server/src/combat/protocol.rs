@@ -1,4 +1,4 @@
-use adventuresim_tactical_core::prelude::{BodyPart, Footwork, StrikeFamily};
+use adventuresim_tactical_core::prelude::{AttackHand, BodyPart, StrikeFamily};
 use adventuresim_tactical_netcode::message::DefendRequest;
 use bevy::prelude::*;
 
@@ -13,7 +13,8 @@ pub(crate) struct PendingDefenderResponse {
 }
 
 /// Transient allegiance is independent from connectivity and bot control.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Reflect)]
+#[reflect(Component)]
 pub(crate) enum TacticalCombatSide {
     Party,
     Enemy,
@@ -31,6 +32,7 @@ pub(crate) struct MeleeAttackIntent {
     pub(crate) body_part: BodyPart,
     pub(crate) reported_precision: ReportedPrecision,
     pub(crate) strike_family: StrikeFamily,
+    pub(crate) hand: AttackHand,
 }
 
 #[derive(Event, Clone, Copy, Debug)]
@@ -39,7 +41,7 @@ pub(crate) struct MeleeAttackStartedIntent {
     pub(crate) target: Entity,
     pub(crate) windup: CombatDuration,
     pub(crate) strike_family: StrikeFamily,
-    pub(crate) footwork: Footwork,
+    pub(crate) hand: AttackHand,
 }
 
 /// `target == None` is an authoritative miss that still consumes a projectile.
@@ -55,5 +57,6 @@ pub(crate) struct RangedAttackIntent {
 pub(crate) struct RangedAttackStartedIntent {
     pub(crate) attacker: Entity,
     pub(crate) target: Option<Entity>,
-    pub(crate) windup: CombatDuration,
+    pub(crate) animation_windup: CombatDuration,
+    pub(crate) minimum_windup: CombatDuration,
 }

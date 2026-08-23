@@ -15,6 +15,9 @@ avian_debug = ["avian3d/debug-plugin"]
 adventuresim-core.workspace = true
 bevy = { workspace = true, features = ["bevy_color"] }
 serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
 bevy_enhanced_input.workspace = true
 avian3d.workspace = true
 bevy_ahoy.workspace = true
@@ -26,4 +29,3 @@ workspace = true
 
 [dev-dependencies]
 postcard.workspace = true
-serde_json.workspace = true

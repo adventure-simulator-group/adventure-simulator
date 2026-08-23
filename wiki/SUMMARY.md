@@ -13,9 +13,9 @@
 # Contributing
 
 - [Wiki writing](contributing/wiki-writing.md)
+- [Strategic interface style guide](contributing/strategic-interface-style.md)
 - [Development workflow](engineering/developing.md)
 - [Item definition authoring](contributing/item-authoring.md)
-- [Project map maintenance](engineering/project-map-maintenance.md)
 
 # Engineering
 
@@ -25,10 +25,8 @@
 - [Strategic read cache](engineering/strategic-read-cache.md)
 - [Strategic NPC simulation](engineering/strategic-simulation.md)
 - [Puzzle laboratory](engineering/puzzle-lab.md)
-
-# Generated reference
-
-- [Project map](generated/project-map.md)
+- [Tactical automated testing](engineering/tactical-testing.md)
+- [Animation testing](engineering/animation-testing.md)
 
 # Client
 
@@ -80,10 +78,12 @@
 
 - [Combat](tactical/combat.md)
 - [Stealth](tactical/stealth.md)
+- [Sky presentation](tactical/sky.md)
 
 # World data
 
 - [World-data input bundles](engineering/world-data/world-data-bundles.md)
+- [Tactical environment visual review](engineering/world-data/environment-visual-review.md)
 - [Source manifests](engineering/world-data/source-manifests.md)
 - [Canonical spatial grid](engineering/world-data/spatial-grid.md)
 - [Strategic place and fixture identities](engineering/world-data/strategic-places.md)

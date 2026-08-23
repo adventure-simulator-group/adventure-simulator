@@ -94,15 +94,23 @@ pub(super) fn log_animation_diagnostics(
     terrains: Query<&SceneTerrain>,
     players: Query<
         (
+            Entity,
             &Transform,
             &GlobalTransform,
+            Option<&Rotation>,
             &SkeletonState,
             &PresentedSkeleton,
             &AnimationPlayback,
-            Option<&semantic_graph::SemanticGraphTrace>,
+            Option<&semantic_route::SemanticRouteTrace>,
         ),
         (With<Player>, With<crate::player::ClientPlayer>),
     >,
+    bones: Query<(
+        &AnimationTargetId,
+        &AuthoredBindTransform,
+        Option<&Name>,
+        &GlobalTransform,
+    )>,
 ) {
     let Some(log) = log.as_mut() else {
         return;
@@ -119,19 +127,21 @@ pub(super) fn log_animation_diagnostics(
         .map(|duration| duration.as_micros().min(u64::MAX as u128) as u64)
         .unwrap_or_default();
     let terrain = terrains.iter().next();
-    for (transform, global_transform, authoritative, presented, playback, semantic_graph) in
-        &players
+    for (
+        player,
+        transform,
+        global_transform,
+        physics_rotation,
+        authoritative,
+        presented,
+        playback,
+        semantic_route,
+    ) in &players
     {
+        let diagnostic_frame = log.frame;
         let global_translation = global_transform.translation();
         let terrain_height = terrain.and_then(|terrain| terrain.height_at(global_translation.xz()));
         let evaluation = AnimationEvaluation::from_skeleton(presented);
-        let transition = playback.presentation_transition.as_ref().map(|transition| {
-            serde_json::json!({
-                "elapsed_seconds": transition.elapsed_seconds,
-                "progress": (transition.elapsed_seconds / transition.duration_seconds)
-                    .clamp(0.0, 1.0),
-            })
-        });
         let clips = playback
             .clips
             .iter()
@@ -143,7 +153,35 @@ pub(super) fn log_animation_diagnostics(
                 })
             })
             .collect::<Vec<_>>();
+        let mut bone_transforms = bones
+            .iter()
+            .filter(|(_, bind, _, _)| bind.owner == player)
+            .map(|(target, _, name, transform)| {
+                let (scale, rotation, translation) = transform.to_scale_rotation_translation();
+                let terrain_clearance_metres = terrain
+                    .and_then(|terrain| terrain.height_at(translation.xz()))
+                    .map(|height| translation.y - height);
+                serde_json::json!({
+                    "name": name.map_or("<unnamed>", Name::as_str),
+                    "target_id": format!("{target:?}"),
+                    "translation": translation.to_array(),
+                    "rotation_xyzw": rotation.to_array(),
+                    "scale": scale.to_array(),
+                    "terrain_clearance_metres": terrain_clearance_metres,
+                })
+            })
+            .collect::<Vec<_>>();
+        bone_transforms.sort_by(|left, right| {
+            let left_name = left["name"].as_str().unwrap_or_default();
+            let right_name = right["name"].as_str().unwrap_or_default();
+            let left_target = left["target_id"].as_str().unwrap_or_default();
+            let right_target = right["target_id"].as_str().unwrap_or_default();
+            (left_name, left_target).cmp(&(right_name, right_target))
+        });
         log.write(serde_json::json!({
+            "trace_format": "real-client-animation-v1",
+            "scenario": "real-client-script",
+            "scenario_frame": diagnostic_frame,
             "elapsed_seconds": time.elapsed_secs_f64(),
             "wall_clock_unix_micros": wall_clock_unix_micros,
             "render_delta_seconds": time.delta_secs(),
@@ -157,6 +195,13 @@ pub(super) fn log_animation_diagnostics(
                 "translation": global_translation.to_array(),
                 "rotation_xyzw": global_transform.compute_transform().rotation.to_array(),
             },
+            "controller_physics_rotation_xyzw": physics_rotation
+                .map(|rotation| rotation.0.to_array()),
+            "subject_translation": global_translation.to_array(),
+            "subject_rotation_xyzw": global_transform.compute_transform().rotation.to_array(),
+            "action": presented.state.action_kind(),
+            "action_phase": presented.state.action_phase(),
+            "bones": bone_transforms,
             "terrain_height": terrain_height,
             "controller_height_above_terrain": terrain_height
                 .map(|height| global_translation.y - height),
@@ -168,7 +213,7 @@ pub(super) fn log_animation_diagnostics(
             "presentation_phase_measurement_error": presented.last_phase_measurement_error,
             "presentation_phase_source_changed": presented.last_phase_source_changed,
             "evaluation": evaluation,
-            "semantic_graph": semantic_graph.map(|trace| serde_json::json!({
+            "semantic_route": semantic_route.map(|trace| serde_json::json!({
                 "requested_path": trace.requested_path,
                 "path": trace.path,
                 "inputs": &trace.inputs,
@@ -179,7 +224,6 @@ pub(super) fn log_animation_diagnostics(
                 "use_authored_bind_pose": playback.use_authored_bind_pose,
                 "whole_body_mirror": playback.whole_body_mirror,
                 "ordinary_locomotion_active": playback.ordinary_locomotion_active,
-                "transition": transition,
                 "clips": clips,
             },
         }));

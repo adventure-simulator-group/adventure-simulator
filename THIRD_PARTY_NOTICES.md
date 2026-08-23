@@ -1,5 +1,34 @@
 # Third-party notices
 
+## Meta Momentum Human Rig
+
+The character authoring pipeline uses Meta's Momentum Human Rig (MHR) v1.0.1.
+Its FBX rigs, model definition, and pose-corrective tensors are downloaded from
+the official release into an ignored local cache and are not included in this
+repository. Deliberately exported character meshes, skeleton data, and other
+artifacts derived from MHR remain subject to the upstream Apache License 2.0
+notice requirements.
+
+- Project and source: <https://github.com/facebookresearch/MHR>
+- Pinned release: <https://github.com/facebookresearch/MHR/releases/tag/v1.0.1>
+- License: <https://github.com/facebookresearch/MHR/blob/main/LICENSE>
+- Release archive SHA-256:
+  `e4f4f205cd87c0fa106577ba1de4fc763e4eb197c924461d2ef7e6944e9d6b94`
+
+## Hipparcos star catalogue
+
+The tactical sky includes a magnitude-limited derivative of the Hipparcos
+Main Catalogue produced by the European Space Agency Hipparcos mission. The
+source table is distributed by the Centre de Données astronomiques de
+Strasbourg as catalogue I/239. Fabelgeist retains only the HIP identifier,
+ICRS position, Johnson V magnitude, and B-V colour index for entries at or
+brighter than magnitude 6.5.
+
+- Source catalogue: <https://cdsarc.cds.unistra.fr/ftp/cats/I/239/>
+- Catalogue documentation: <https://cdsarc.cds.unistra.fr/ftp/cats/I/239/ReadMe>
+- Mission and catalogue overview: <https://www.cosmos.esa.int/web/hipparcos/catalogues>
+- Credit: ESA, 1997, *The Hipparcos and Tycho Catalogues*, ESA SP-1200
+
 ## Fantastic-disease folklore research
 
 The fantastic-disease content paraphrases historical dictionary, scholarly,
@@ -94,6 +123,27 @@ from Font Awesome Free 7.3.1 by Fonticons, Inc. They are licensed under
 
 - Sources: <https://fontawesome.com/icons/cross>, <https://fontawesome.com/icons/star-and-crescent>, and <https://fontawesome.com/icons/star-of-david>
 - License: <https://fontawesome.com/license/free>
+
+## NASA Scientific Visualization Studio CGI Moon Kit
+
+`assets/textures/moon/lroc_color_2k.jpg` is the unmodified 2048 x 1024 JPEG
+of the December 2025 equirectangular LROC colour mosaic from NASA's
+Scientific Visualization Studio CGI Moon Kit (item 4720), downloaded from:
+<https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg>.
+Its SHA-256 is
+`f7130a1822681fa7512d7dcfd40db8c10b9ba4f06777910348698260ed7a2170`.
+
+The map was assembled by Ernie Wright (USRA) from Lunar Reconnaissance
+Orbiter Camera WAC imagery and LOLA laser-altimeter albedo data. Credit:
+NASA's Scientific Visualization Studio; NASA/GSFC; Arizona State University.
+The source page describes it as a base-colour map centered on 0 degrees
+longitude: <https://svs.gsfc.nasa.gov/4720>.
+
+NASA states that its imagery and 3D-rendering media, including texture maps,
+generally are not subject to copyright in the United States. This use follows
+NASA's media guidelines, acknowledges NASA as the source, and does not imply
+NASA endorsement: <https://www.nasa.gov/nasa-brand-center/images-and-media/>.
+
 ### HYDE 3.5
 
 Generated strategic map tiles and terrain packs include a cultivated-land

@@ -1,21 +1,37 @@
 //! Tactical grab input, QWERTY slot HUD, and placeholder item presentation.
 
+use std::collections::HashMap;
+
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
     prelude::{EquipmentAction, EquipmentActionRequest, EquipmentHand},
 };
-use bevy::prelude::*;
+use adventuresim_weapon_model::{
+    ICON_RENDERER_VERSION, MaterialClass, WeaponIconSpec, decode, generate, generate_holder_icon,
+    generate_icon,
+};
+use bevy::{
+    asset::RenderAssetUsages,
+    mesh::{Indices, PrimitiveTopology},
+    prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiTextureHandle, egui};
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
 
 use crate::{
-    animation::{BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig},
+    animation::{
+        AuthoredBindTransform, BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig,
+        authored_bind_global,
+    },
     player::ClientPlayer,
 };
 
 const PICKUP_RANGE_M: f32 = 2.0;
 const INVALID_FLASH_SECS: f32 = 0.18;
+const TACTICAL_WEAPON_ICON_SIZE: u16 = 64;
+const TACTICAL_WEAPON_ICON_SUPERSAMPLING: u8 = 4;
 const EQUIPMENT_ICON_SLUGS: [&str; 56] = [
     "ancient-sword",
     "arm-bandage",
@@ -94,6 +110,8 @@ impl Plugin for TacticalEquipmentPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(OutlinePlugin::JUMP_FLOOD)
             .init_resource::<GrabSession>()
+            .init_resource::<WeaponMeshCache>()
+            .init_resource::<WeaponIconCache>()
             .add_systems(
                 PreUpdate,
                 update_grab_input.after(bevy::input::InputSystems),
@@ -127,6 +145,36 @@ struct GrabSession {
     repeated_input: Option<(&'static str, u16)>,
     invalid_flash_remaining: f32,
     next_sequence: u32,
+}
+
+#[derive(Clone)]
+struct CachedWeaponPart {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+}
+
+#[derive(Clone)]
+struct CachedWeapon {
+    parts: Vec<CachedWeaponPart>,
+    grip: Vec3,
+}
+
+#[derive(Resource, Default)]
+struct WeaponMeshCache {
+    weapons: HashMap<(u16, [u8; 32]), CachedWeapon>,
+    holders: HashMap<(u16, [u8; 32]), CachedWeapon>,
+    materials: HashMap<MaterialClass, Handle<StandardMaterial>>,
+}
+
+#[derive(Resource, Default)]
+struct WeaponIconCache {
+    icons: HashMap<(IconSource, u16, u16, [u8; 32], u16, u8), Handle<Image>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum IconSource {
+    Weapon,
+    Holder,
 }
 
 #[derive(Component)]
@@ -432,13 +480,14 @@ fn ordered_preview_at_location(
     let mut output = Vec::new();
     let mut visited = std::collections::HashSet::new();
     for (_, entity) in found {
-        append_preview(entity, topologies, &mut visited, &mut output);
+        append_preview(entity, location, topologies, &mut visited, &mut output);
     }
     output
 }
 
 fn append_preview(
     entity: Entity,
+    location: EquipmentLocation,
     items: &Query<(Entity, &ItemOf, &EquipmentTopology, &ItemProperties)>,
     visited: &mut std::collections::HashSet<Entity>,
     output: &mut Vec<PreviewTarget>,
@@ -466,7 +515,10 @@ fn append_preview(
     };
     let mut points: Vec<_> = equipment.attachment_points.iter().collect();
     points.sort_by_key(|point| (point.order, point.id.as_str()));
-    for point in points {
+    for point in points
+        .into_iter()
+        .filter(|point| point.locations.is_empty() || point.locations.contains(&location))
+    {
         for capacity_index in 0..point.capacity {
             let child =
                 items.iter().find_map(|(child, _, topology, _)| {
@@ -481,7 +533,7 @@ fn append_preview(
                 }).then_some(child)
                 });
             if let Some(child) = child {
-                append_preview(child, items, visited, output);
+                append_preview(child, location, items, visited, output);
             } else {
                 // Empty attachment points address their mapped parent. Depth
                 // disambiguates the exact authored point/capacity on server.
@@ -543,6 +595,7 @@ fn hud_layers(
     let mut visited = std::collections::HashSet::new();
     fn append(
         entity: Entity,
+        location: EquipmentLocation,
         items: &Query<(
             Entity,
             &ItemOf,
@@ -576,7 +629,10 @@ fn hud_layers(
         };
         let mut points: Vec<_> = equipment.attachment_points.iter().collect();
         points.sort_by_key(|point| (point.order, point.id.as_str()));
-        for point in points {
+        for point in points
+            .into_iter()
+            .filter(|point| point.locations.is_empty() || point.locations.contains(&location))
+        {
             for capacity_index in 0..point.capacity {
                 let child = items.iter().find_map(|(child, _, _, _, topology)| {
                     topology.occupancies.iter().any(|occupancy| {
@@ -590,7 +646,7 @@ fn hud_layers(
                     }).then_some(child)
                 });
                 if let Some(child) = child {
-                    append(child, items, visited, output);
+                    append(child, location, items, visited, output);
                 } else {
                     output.push(PreviewTarget {
                         entity,
@@ -614,15 +670,137 @@ fn hud_layers(
         });
     }
     for (_, root) in roots {
-        append(root, items, &mut visited, &mut output);
+        append(root, location, items, &mut visited, &mut output);
     }
     output
+}
+
+fn cached_weapon_icon(
+    appearance: &WeaponAppearance,
+    cache: &mut WeaponIconCache,
+    images: &mut Assets<Image>,
+) -> Option<Handle<Image>> {
+    if appearance.recipe.len() > 16 * 1024
+        || appearance.generator_version != adventuresim_weapon_model::GENERATOR_VERSION
+    {
+        return None;
+    }
+    let design = decode(&appearance.recipe).ok()?;
+    if adventuresim_weapon_model::design_hash(&design).0 != appearance.design_hash {
+        return None;
+    }
+    let key = (
+        IconSource::Weapon,
+        appearance.generator_version,
+        ICON_RENDERER_VERSION,
+        appearance.design_hash,
+        TACTICAL_WEAPON_ICON_SIZE,
+        TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+    );
+    if let Some(cached) = cache.icons.get(&key) {
+        return Some(cached.clone());
+    }
+    let icon = generate_icon(
+        &design,
+        WeaponIconSpec {
+            size: TACTICAL_WEAPON_ICON_SIZE,
+            supersampling: TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+        },
+    )
+    .ok()?;
+    let rgba = icon
+        .alpha
+        .into_iter()
+        .flat_map(|alpha| [255, 255, 255, alpha])
+        .collect();
+    let handle = images.add(Image::new(
+        Extent3d {
+            width: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+            height: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    ));
+    cache.icons.insert(key, handle.clone());
+    Some(handle)
+}
+
+fn cached_holder_icon(
+    appearance: &WeaponHolderAppearance,
+    cache: &mut WeaponIconCache,
+    images: &mut Assets<Image>,
+) -> Option<Handle<Image>> {
+    if appearance.recipe.len() > 16 * 1024
+        || appearance.generator_version != adventuresim_weapon_model::HOLDER_GENERATOR_VERSION
+    {
+        return None;
+    }
+    let design = adventuresim_weapon_model::decode_holder(&appearance.recipe).ok()?;
+    if adventuresim_weapon_model::holder_design_hash(&design).0 != appearance.design_hash {
+        return None;
+    }
+    let key = (
+        IconSource::Holder,
+        appearance.generator_version,
+        ICON_RENDERER_VERSION,
+        appearance.design_hash,
+        TACTICAL_WEAPON_ICON_SIZE,
+        TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+    );
+    if let Some(cached) = cache.icons.get(&key) {
+        return Some(cached.clone());
+    }
+    let icon = generate_holder_icon(
+        &design,
+        WeaponIconSpec {
+            size: TACTICAL_WEAPON_ICON_SIZE,
+            supersampling: TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+        },
+    )
+    .ok()?;
+    let rgba = icon
+        .alpha
+        .into_iter()
+        .flat_map(|alpha| [255, 255, 255, alpha])
+        .collect();
+    let handle = images.add(Image::new(
+        Extent3d {
+            width: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+            height: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    ));
+    cache.icons.insert(key, handle.clone());
+    Some(handle)
+}
+
+fn equipment_icon_image(
+    entity: Option<Entity>,
+    fallback_slug: &str,
+    size: egui::Vec2,
+    procedural: &HashMap<Entity, egui::TextureId>,
+    atlas: egui::TextureId,
+) -> egui::Image<'static> {
+    if let Some(texture) = entity.and_then(|entity| procedural.get(&entity)).copied() {
+        egui::Image::new((texture, size))
+    } else {
+        egui::Image::new((atlas, size)).uv(icon_uv(fallback_slug))
+    }
 }
 
 fn draw_slot_hud(
     mut contexts: EguiContexts,
     asset_server: Res<AssetServer>,
     mut icon_atlas: Local<Option<Handle<Image>>>,
+    mut weapon_icon_cache: ResMut<WeaponIconCache>,
+    mut images: ResMut<Assets<Image>>,
     player: Single<Entity, With<ClientPlayer>>,
     items: Query<(
         Entity,
@@ -632,6 +810,8 @@ fn draw_slot_hud(
         &EquipmentTopology,
     )>,
     scene_items: Query<(Entity, &ItemProperties), With<TacticalSceneItem>>,
+    weapon_appearances: Query<(Entity, &WeaponAppearance)>,
+    holder_appearances: Query<(Entity, &WeaponHolderAppearance)>,
     mut session: ResMut<GrabSession>,
 ) {
     let Some(hand) = session.active else { return };
@@ -641,6 +821,23 @@ fn draw_slot_hud(
     });
     let atlas = icon_atlas.get_or_insert_with(|| asset_server.load("tactical-equipment-icons.png"));
     let atlas_texture = contexts.add_image(EguiTextureHandle::Weak(atlas.id()));
+    let mut procedural_textures = weapon_appearances
+        .iter()
+        .filter_map(|(entity, appearance)| {
+            let handle = cached_weapon_icon(appearance, &mut weapon_icon_cache, &mut images)?;
+            let texture = contexts.add_image(EguiTextureHandle::Weak(handle.id()));
+            Some((entity, texture))
+        })
+        .collect::<HashMap<_, _>>();
+    procedural_textures.extend(
+        holder_appearances
+            .iter()
+            .filter_map(|(entity, appearance)| {
+                let handle = cached_holder_icon(appearance, &mut weapon_icon_cache, &mut images)?;
+                let texture = contexts.add_image(EguiTextureHandle::Weak(handle.id()));
+                Some((entity, texture))
+            }),
+    );
     let Ok(context) = contexts.ctx_mut() else {
         return;
     };
@@ -726,11 +923,13 @@ fn draw_slot_hud(
                                         .map(|definition| definition.presentation.icon.as_str())
                                         .unwrap_or("help");
                                     let response = ui.add(
-                                        egui::Image::new((
-                                            atlas_texture,
+                                        equipment_icon_image(
+                                            Some(layer.entity),
+                                            icon,
                                             egui::vec2(27.0, 27.0),
-                                        ))
-                                        .uv(icon_uv(icon))
+                                            &procedural_textures,
+                                            atlas_texture,
+                                        )
                                         .tint(if eligible {
                                             egui::Color32::WHITE
                                         } else {
@@ -822,14 +1021,20 @@ fn draw_slot_hud(
             }
         }
         ui.horizontal(|ui| {
+            let active_entity = held.map(|(entity, _, _, _, _)| entity);
             let active_icon = held
                 .and_then(|(_, _, _, item, _)| item_catalog::definition(&item.id))
                 .map_or("mailed-fist", |definition| {
                     definition.presentation.icon.as_str()
                 });
             ui.add(
-                egui::Image::new((atlas_texture, egui::vec2(28.0, 28.0)))
-                    .uv(icon_uv(active_icon)),
+                equipment_icon_image(
+                    active_entity,
+                    active_icon,
+                    egui::vec2(28.0, 28.0),
+                    &procedural_textures,
+                    atlas_texture,
+                ),
             )
             .on_hover_text(match hand {
                 EquipmentHand::Left => "Active left hand",
@@ -840,18 +1045,23 @@ fn draw_slot_hud(
                 EquipmentHand::Left => EquipmentHand::Right,
                 EquipmentHand::Right => EquipmentHand::Left,
             };
-            let other_icon = items
+            let other_item = items
                 .iter()
                 .find(|(_, owner, slot, _, _)| {
                     owner.0 == actor && slot.is_some_and(|slot| *slot == other.slot())
-                })
-                .and_then(|(_, _, _, item, _)| item_catalog::definition(&item.id))
-                .map_or("mailed-fist", |definition| {
-                    definition.presentation.icon.as_str()
                 });
+            let other_entity = other_item.map(|(entity, _, _, _, _)| entity);
+            let other_icon = other_item
+                .and_then(|(_, _, _, item, _)| item_catalog::definition(&item.id))
+                .map_or("mailed-fist", |definition| definition.presentation.icon.as_str());
             let other_button = egui::Button::image(
-                egui::Image::new((atlas_texture, egui::vec2(24.0, 24.0)))
-                    .uv(icon_uv(other_icon)),
+                equipment_icon_image(
+                    other_entity,
+                    other_icon,
+                    egui::vec2(24.0, 24.0),
+                    &procedural_textures,
+                    atlas_texture,
+                ),
             )
             .min_size(egui::vec2(32.0, 32.0))
             .fill(egui::Color32::TRANSPARENT);
@@ -870,25 +1080,186 @@ fn draw_slot_hud(
                 let icon = item_catalog::definition(&item.id)
                     .map(|definition| definition.presentation.icon.as_str())
                     .unwrap_or("help");
-                ui.add(
-                    egui::Image::new((atlas_texture, egui::vec2(24.0, 24.0)))
-                        .uv(icon_uv(icon)),
-                )
+                ui.add(equipment_icon_image(
+                    Some(entity),
+                    icon,
+                    egui::vec2(24.0, 24.0),
+                    &procedural_textures,
+                    atlas_texture,
+                ))
                 .on_hover_text(format!("Release to pick up {}", item.id));
             }
         });
     });
 }
 
+fn weapon_material(
+    class: MaterialClass,
+    cache: &mut WeaponMeshCache,
+    materials: &mut Assets<StandardMaterial>,
+) -> Handle<StandardMaterial> {
+    cache
+        .materials
+        .entry(class)
+        .or_insert_with(|| {
+            let base_color = match class {
+                MaterialClass::Wood => Color::srgb(0.30, 0.18, 0.09),
+                MaterialClass::Leather => Color::srgb(0.16, 0.09, 0.05),
+                MaterialClass::DarkLeather => Color::srgb(0.055, 0.045, 0.038),
+                MaterialClass::Brass => Color::srgb(0.58, 0.42, 0.13),
+                MaterialClass::Steel => Color::srgb(0.55, 0.58, 0.60),
+                MaterialClass::DarkSteel => Color::srgb(0.22, 0.24, 0.26),
+            };
+            materials.add(StandardMaterial {
+                base_color,
+                metallic: if matches!(
+                    class,
+                    MaterialClass::Brass | MaterialClass::Steel | MaterialClass::DarkSteel
+                ) {
+                    0.82
+                } else {
+                    0.0
+                },
+                perceptual_roughness: if matches!(
+                    class,
+                    MaterialClass::Brass | MaterialClass::Steel | MaterialClass::DarkSteel
+                ) {
+                    0.34
+                } else {
+                    0.76
+                },
+                ..default()
+            })
+        })
+        .clone()
+}
+
+fn cached_weapon(
+    appearance: &WeaponAppearance,
+    cache: &mut WeaponMeshCache,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) -> Option<CachedWeapon> {
+    if appearance.recipe.len() > 16 * 1024 {
+        return None;
+    }
+    if appearance.generator_version != adventuresim_weapon_model::GENERATOR_VERSION {
+        return None;
+    }
+    let design = decode(&appearance.recipe).ok()?;
+    if adventuresim_weapon_model::design_hash(&design).0 != appearance.design_hash {
+        return None;
+    }
+    let key = (appearance.generator_version, appearance.design_hash);
+    if let Some(cached) = cache.weapons.get(&key) {
+        return Some(cached.clone());
+    }
+    let generated = generate(&design).ok()?;
+    let grip = Vec3::from_array(
+        generated
+            .anchors
+            .iter()
+            .find(|anchor| anchor.name == "weapon.grip")?
+            .position,
+    );
+    let parts = generated
+        .parts
+        .into_iter()
+        .map(|part| {
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+            );
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, part.positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, part.normals);
+            mesh.insert_indices(Indices::U32(part.indices));
+            CachedWeaponPart {
+                mesh: meshes.add(mesh),
+                material: weapon_material(part.material, cache, materials),
+            }
+        })
+        .collect();
+    let cached = CachedWeapon { parts, grip };
+    cache.weapons.insert(key, cached.clone());
+    Some(cached)
+}
+
+fn cached_holder(
+    appearance: &WeaponHolderAppearance,
+    cache: &mut WeaponMeshCache,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) -> Option<CachedWeapon> {
+    if appearance.recipe.len() > 16 * 1024
+        || appearance.generator_version != adventuresim_weapon_model::HOLDER_GENERATOR_VERSION
+    {
+        return None;
+    }
+    let design = adventuresim_weapon_model::decode_holder(&appearance.recipe).ok()?;
+    if adventuresim_weapon_model::holder_design_hash(&design).0 != appearance.design_hash {
+        return None;
+    }
+    let key = (appearance.generator_version, appearance.design_hash);
+    if let Some(cached) = cache.holders.get(&key) {
+        return Some(cached.clone());
+    }
+    let generated = adventuresim_weapon_model::generate_holder(&design).ok()?;
+    let parts = generated
+        .parts
+        .into_iter()
+        .map(|part| {
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+            );
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, part.positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, part.normals);
+            mesh.insert_indices(Indices::U32(part.indices));
+            CachedWeaponPart {
+                mesh: meshes.add(mesh),
+                material: weapon_material(part.material, cache, materials),
+            }
+        })
+        .collect();
+    let cached = CachedWeapon {
+        parts,
+        grip: Vec3::from_array(generated.grip),
+    };
+    cache.holders.insert(key, cached.clone());
+    Some(cached)
+}
+
 fn spawn_item_placeholders(
     mut commands: Commands,
-    added: Query<(Entity, &EquipmentPhysical), Added<EquipmentPhysical>>,
+    added: Query<
+        (
+            Entity,
+            &EquipmentPhysical,
+            Option<&ItemProperties>,
+            Option<&WeaponAppearance>,
+            Option<&WeaponHolderAppearance>,
+        ),
+        Or<(
+            Added<EquipmentPhysical>,
+            Added<WeaponAppearance>,
+            Changed<WeaponAppearance>,
+            Added<WeaponHolderAppearance>,
+            Changed<WeaponHolderAppearance>,
+        )>,
+    >,
+    existing: Query<(Entity, &ItemPlaceholder)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut cache: ResMut<WeaponMeshCache>,
 ) {
-    for (item, physical) in &added {
+    for (item, physical, properties, appearance, holder_appearance) in &added {
         if !physical.is_valid() {
             continue;
+        }
+        for (root, placeholder) in &existing {
+            if placeholder.0 == item {
+                commands.entity(root).despawn();
+            }
         }
         let root = commands
             .spawn((
@@ -900,29 +1271,148 @@ fn spawn_item_placeholders(
                 Visibility::Hidden,
             ))
             .id();
-        commands.entity(root).with_child((
-            Mesh3d(meshes.add(Cuboid::new(
-                physical.dimensions_m.x,
-                physical.dimensions_m.y,
-                physical.dimensions_m.z,
-            ))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(0.48, 0.34, 0.18),
-                perceptual_roughness: 0.8,
-                ..default()
-            })),
-            // The root is the authored grip. Box centre is offset from it;
-            // local +Y remains the weapon-tip direction.
-            Transform::from_translation(-physical.anchor_offset_m),
-            PickupOutline(item),
-            OutlineVolume {
-                visible: false,
-                colour: Color::WHITE,
-                width: 4.0,
-            },
-            OutlineMode::FloodFlat,
-        ));
+        let (generated, part_name) = if let Some(holder) =
+            holder_appearance.and_then(|appearance| {
+                cached_holder(appearance, &mut cache, &mut meshes, &mut materials)
+            }) {
+            (Some(holder), "Procedural weapon holder part")
+        } else if properties.is_some_and(|properties| {
+            matches!(
+                properties.id.as_str(),
+                "scabbard" | "sword_sheath" | "boot_sheath" | "forearm_holster" | "weapon_loop"
+            )
+        }) {
+            // Holder catalog rows are semantic chassis, not renderable generic
+            // boxes. An absent, corrupt, or unsupported holder instance stays
+            // visually absent until a valid first-class recipe arrives.
+            continue;
+        } else {
+            (
+                appearance.and_then(|appearance| {
+                    cached_weapon(appearance, &mut cache, &mut meshes, &mut materials)
+                }),
+                "Procedural weapon part",
+            )
+        };
+        if let Some(generated) = generated {
+            commands.entity(root).with_children(|parent| {
+                for part in generated.parts {
+                    parent.spawn((
+                        Name::new(part_name),
+                        Mesh3d(part.mesh),
+                        MeshMaterial3d(part.material),
+                        Transform::from_translation(-generated.grip),
+                        PickupOutline(item),
+                        OutlineVolume {
+                            visible: false,
+                            colour: Color::WHITE,
+                            width: 4.0,
+                        },
+                        OutlineMode::FloodFlat,
+                    ));
+                }
+            });
+        } else {
+            commands.entity(root).with_child((
+                Name::new("Tactical item fallback"),
+                Mesh3d(meshes.add(Cuboid::new(
+                    physical.dimensions_m.x,
+                    physical.dimensions_m.y,
+                    physical.dimensions_m.z,
+                ))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.48, 0.34, 0.18),
+                    perceptual_roughness: 0.8,
+                    ..default()
+                })),
+                // The root is the authored grip. Box centre is offset from it;
+                // local +Y remains the weapon-tip direction.
+                Transform::from_translation(-physical.anchor_offset_m),
+                PickupOutline(item),
+                OutlineVolume {
+                    visible: false,
+                    colour: Color::WHITE,
+                    width: 4.0,
+                },
+                OutlineMode::FloodFlat,
+            ));
+        }
     }
+}
+
+fn semantic_attachment_axis(role: BoneRole) -> Option<(BoneRole, BoneRole)> {
+    Some(match role {
+        BoneRole::Pelvis => (BoneRole::Pelvis, BoneRole::StomachOne),
+        BoneRole::StomachOne => (BoneRole::StomachOne, BoneRole::StomachTwo),
+        BoneRole::StomachTwo => (BoneRole::StomachTwo, BoneRole::StomachThree),
+        BoneRole::StomachThree => (BoneRole::StomachThree, BoneRole::Chest),
+        BoneRole::Chest => (BoneRole::Chest, BoneRole::NeckOne),
+        BoneRole::NeckOne => (BoneRole::NeckOne, BoneRole::Head),
+        BoneRole::Head => (BoneRole::NeckOne, BoneRole::Head),
+        BoneRole::ClavicleLeft => (BoneRole::ClavicleLeft, BoneRole::UpperArmLeft),
+        BoneRole::ClavicleRight => (BoneRole::ClavicleRight, BoneRole::UpperArmRight),
+        BoneRole::UpperArmLeft => (BoneRole::UpperArmLeft, BoneRole::ForearmLeft),
+        BoneRole::UpperArmRight => (BoneRole::UpperArmRight, BoneRole::ForearmRight),
+        BoneRole::ForearmLeft | BoneRole::HandLeft => (BoneRole::ForearmLeft, BoneRole::HandLeft),
+        BoneRole::ForearmRight | BoneRole::HandRight => {
+            (BoneRole::ForearmRight, BoneRole::HandRight)
+        }
+        BoneRole::ThighLeft => (BoneRole::ThighLeft, BoneRole::ShinLeft),
+        BoneRole::ThighRight => (BoneRole::ThighRight, BoneRole::ShinRight),
+        BoneRole::ShinLeft => (BoneRole::ShinLeft, BoneRole::FootLeft),
+        BoneRole::ShinRight => (BoneRole::ShinRight, BoneRole::FootRight),
+        BoneRole::FootLeft | BoneRole::ToeLeft => (BoneRole::FootLeft, BoneRole::ToeLeft),
+        BoneRole::FootRight | BoneRole::ToeRight => (BoneRole::FootRight, BoneRole::ToeRight),
+        BoneRole::Root | BoneRole::Camera | BoneRole::WeaponLeft | BoneRole::WeaponRight => {
+            return None;
+        }
+    })
+}
+
+fn bind_space_attachment_correction(
+    bind: GlobalTransform,
+    desired_bind_rotation: Quat,
+) -> Transform {
+    GlobalTransform::from(Transform {
+        translation: bind.translation(),
+        rotation: desired_bind_rotation,
+        scale: Vec3::ONE,
+    })
+    .reparented_to(&bind)
+}
+
+fn equipment_bind_correction(
+    role: BoneRole,
+    rig: &HumanoidRig,
+    bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
+) -> Option<Transform> {
+    let &bone = rig.get(&role)?;
+    let bind = authored_bind_global(bone, bind_nodes.get(bone).ok()?.0.owner, bind_nodes)?;
+    let desired_rotation = semantic_attachment_axis(role)
+        .and_then(|(from_role, to_role)| {
+            let &from = rig.get(&from_role)?;
+            let &to = rig.get(&to_role)?;
+            let owner = bind_nodes.get(from).ok()?.0.owner;
+            let from = authored_bind_global(from, owner, bind_nodes)?.translation();
+            let to = authored_bind_global(to, owner, bind_nodes)?.translation();
+            Some(Quat::from_rotation_arc(
+                Vec3::Y,
+                (to - from).try_normalize()?,
+            ))
+        })
+        .unwrap_or(Quat::IDENTITY);
+    Some(bind_space_attachment_correction(bind, desired_rotation))
+}
+
+fn weapon_bind_correction(
+    role: BoneRole,
+    rig: &HumanoidRig,
+    bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
+) -> Option<Transform> {
+    let &socket = rig.get(&role)?;
+    let owner = bind_nodes.get(socket).ok()?.0.owner;
+    let bind = authored_bind_global(socket, owner, bind_nodes)?;
+    Some(bind_space_attachment_correction(bind, Quat::IDENTITY))
 }
 
 fn update_item_placeholders(
@@ -939,6 +1429,7 @@ fn update_item_placeholders(
     >,
     topologies: Query<&EquipmentTopology, Without<ItemPlaceholder>>,
     rigs: Query<&HumanoidRig, With<Player>>,
+    bind_nodes: Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
     mut placeholders: Query<(
         Entity,
         &ItemPlaceholder,
@@ -963,21 +1454,35 @@ fn update_item_placeholders(
             if parent.is_some() {
                 commands.entity(entity).remove::<ChildOf>();
             }
-            *visibility = Visibility::Inherited;
-            commands.entity(entity).insert(HeldWeaponConstraint {
-                owner: owner.0,
-                primary_hand,
-                secondary_grip_local: None,
+            let constraint = rigs.get(owner.0).ok().and_then(|rig| {
+                let role = match primary_hand {
+                    HandSide::Left => BoneRole::WeaponLeft,
+                    HandSide::Right => BoneRole::WeaponRight,
+                };
+                Some(HeldWeaponConstraint {
+                    owner: owner.0,
+                    primary_hand,
+                    secondary_grip_local: None,
+                    socket_bind_correction: weapon_bind_correction(role, rig, &bind_nodes)?,
+                })
             });
-        } else if let Some(bone) = owner.and_then(|owner| {
+            if let Some(constraint) = constraint {
+                *visibility = Visibility::Inherited;
+                commands.entity(entity).insert(constraint);
+            } else {
+                *visibility = Visibility::Hidden;
+                commands.entity(entity).remove::<HeldWeaponConstraint>();
+            }
+        } else if let Some((bone, correction)) = owner.and_then(|owner| {
             let rig = rigs.get(owner.0).ok()?;
             let role = equipment_location_bone(resolve_character_location(topology, &topologies)?);
-            rig.get(&role).copied()
+            let bone = rig.get(&role).copied()?;
+            Some((bone, equipment_bind_correction(role, rig, &bind_nodes)?))
         }) {
             if parent.is_none_or(|parent| parent.parent() != bone) {
                 commands.entity(entity).insert(ChildOf(bone));
             }
-            *transform = Transform::IDENTITY;
+            *transform = correction;
             *visibility = Visibility::Inherited;
             commands.entity(entity).remove::<HeldWeaponConstraint>();
         } else {
@@ -1023,7 +1528,7 @@ fn resolve_character_location(
 fn equipment_location_bone(location: EquipmentLocation) -> BoneRole {
     match location {
         EquipmentLocation::Head | EquipmentLocation::Face => BoneRole::Head,
-        EquipmentLocation::Neck => BoneRole::NeckTwo,
+        EquipmentLocation::Neck => BoneRole::NeckOne,
         EquipmentLocation::Chest | EquipmentLocation::Back => BoneRole::Chest,
         EquipmentLocation::Stomach => BoneRole::StomachTwo,
         EquipmentLocation::LeftShoulder => BoneRole::ClavicleLeft,
@@ -1059,6 +1564,266 @@ fn holding_side(slot: Option<&EquipSlot>) -> Option<HandSide> {
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+
+    #[test]
+    fn identical_weapon_recipes_share_cached_mesh_handles() {
+        let design = adventuresim_weapon_model::default_design("longsword").unwrap();
+        let appearance = WeaponAppearance {
+            generator_version: adventuresim_weapon_model::GENERATOR_VERSION,
+            design_hash: adventuresim_weapon_model::design_hash(&design).0,
+            recipe: adventuresim_weapon_model::encode(&design).unwrap(),
+        };
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        let first = cached_weapon(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        let second = cached_weapon(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        assert_eq!(first.parts.len(), second.parts.len());
+        assert!(
+            first
+                .parts
+                .iter()
+                .zip(&second.parts)
+                .all(|(left, right)| left.mesh == right.mesh)
+        );
+        assert_eq!(cache.weapons.len(), 1);
+    }
+
+    #[test]
+    fn corrupt_weapon_recipe_falls_back_instead_of_panicking() {
+        let appearance = WeaponAppearance {
+            generator_version: adventuresim_weapon_model::GENERATOR_VERSION,
+            design_hash: [7; 32],
+            recipe: vec![0xff, 0x00],
+        };
+        assert!(
+            cached_weapon(
+                &appearance,
+                &mut WeaponMeshCache::default(),
+                &mut Assets::<Mesh>::default(),
+                &mut Assets::<StandardMaterial>::default(),
+            )
+            .is_none()
+        );
+    }
+
+    fn longsword_appearance() -> WeaponAppearance {
+        let design = adventuresim_weapon_model::default_design("longsword").unwrap();
+        WeaponAppearance {
+            generator_version: adventuresim_weapon_model::GENERATOR_VERSION,
+            design_hash: adventuresim_weapon_model::design_hash(&design).0,
+            recipe: adventuresim_weapon_model::encode(&design).unwrap(),
+        }
+    }
+
+    #[test]
+    fn identical_weapon_recipes_share_cached_tactical_icon_handles() {
+        let appearance = longsword_appearance();
+        let mut cache = WeaponIconCache::default();
+        let mut images = Assets::<Image>::default();
+        let first = cached_weapon_icon(&appearance, &mut cache, &mut images).unwrap();
+        let second = cached_weapon_icon(&appearance, &mut cache, &mut images).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(cache.icons.len(), 1);
+        let image = images.get(&first).unwrap();
+        assert_eq!(
+            image.texture_descriptor.size,
+            Extent3d {
+                width: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+                height: u32::from(TACTICAL_WEAPON_ICON_SIZE),
+                depth_or_array_layers: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn tactical_icon_cache_reauthenticates_recipe_before_a_warm_hit() {
+        let valid = longsword_appearance();
+        let mut cache = WeaponIconCache::default();
+        let mut images = Assets::<Image>::default();
+        assert!(cached_weapon_icon(&valid, &mut cache, &mut images).is_some());
+
+        let mut borrowed_hash = valid;
+        let other = adventuresim_weapon_model::default_design("rondel_dagger").unwrap();
+        borrowed_hash.recipe = adventuresim_weapon_model::encode(&other).unwrap();
+        assert!(cached_weapon_icon(&borrowed_hash, &mut cache, &mut images).is_none());
+        assert_eq!(cache.icons.len(), 1);
+    }
+
+    #[test]
+    fn distinct_weapon_designs_get_distinct_tactical_icon_handles() {
+        let longsword = longsword_appearance();
+        let rondel = adventuresim_weapon_model::default_design("rondel_dagger").unwrap();
+        let rondel = WeaponAppearance {
+            generator_version: adventuresim_weapon_model::GENERATOR_VERSION,
+            design_hash: adventuresim_weapon_model::design_hash(&rondel).0,
+            recipe: adventuresim_weapon_model::encode(&rondel).unwrap(),
+        };
+        let mut cache = WeaponIconCache::default();
+        let mut images = Assets::<Image>::default();
+        let longsword = cached_weapon_icon(&longsword, &mut cache, &mut images).unwrap();
+        let rondel = cached_weapon_icon(&rondel, &mut cache, &mut images).unwrap();
+        assert_ne!(longsword, rondel);
+        assert_eq!(cache.icons.len(), 2);
+    }
+
+    fn longsword_holder_appearance() -> WeaponHolderAppearance {
+        let design = adventuresim_weapon_model::default_design("longsword").unwrap();
+        let holder = adventuresim_weapon_model::default_holder_design(&design).unwrap();
+        WeaponHolderAppearance {
+            generator_version: adventuresim_weapon_model::HOLDER_GENERATOR_VERSION,
+            design_hash: adventuresim_weapon_model::holder_design_hash(&holder).0,
+            recipe: adventuresim_weapon_model::encode_holder(&holder).unwrap(),
+        }
+    }
+
+    #[test]
+    fn identical_holder_recipes_share_cached_tactical_icon_handles() {
+        let appearance = longsword_holder_appearance();
+        let mut cache = WeaponIconCache::default();
+        let mut images = Assets::<Image>::default();
+        let first = cached_holder_icon(&appearance, &mut cache, &mut images).unwrap();
+        let second = cached_holder_icon(&appearance, &mut cache, &mut images).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(cache.icons.len(), 1);
+    }
+
+    #[test]
+    fn tactical_holder_icon_cache_reauthenticates_before_a_warm_hit() {
+        let valid = longsword_holder_appearance();
+        let mut cache = WeaponIconCache::default();
+        let mut images = Assets::<Image>::default();
+        assert!(cached_holder_icon(&valid, &mut cache, &mut images).is_some());
+        let mut tampered = valid;
+        tampered.recipe[5] ^= 0x3c;
+        assert!(cached_holder_icon(&tampered, &mut cache, &mut images).is_none());
+        assert_eq!(cache.icons.len(), 1);
+    }
+
+    #[test]
+    fn identical_holder_recipes_share_a_separate_cache() {
+        let appearance = longsword_holder_appearance();
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        let first = cached_holder(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        let second = cached_holder(&appearance, &mut cache, &mut meshes, &mut materials).unwrap();
+        assert!(
+            first
+                .parts
+                .iter()
+                .zip(&second.parts)
+                .all(|(left, right)| left.mesh == right.mesh)
+        );
+        assert_eq!(cache.holders.len(), 1);
+        assert!(cache.weapons.is_empty());
+    }
+
+    #[test]
+    fn warm_holder_cache_reauthenticates_recipe_and_hash() {
+        let valid = longsword_holder_appearance();
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        assert!(cached_holder(&valid, &mut cache, &mut meshes, &mut materials).is_some());
+        let mut tampered = valid;
+        tampered.recipe[5] ^= 0x3c;
+        assert!(cached_holder(&tampered, &mut cache, &mut meshes, &mut materials).is_none());
+    }
+
+    #[test]
+    fn holder_chassis_without_an_instance_never_renders_a_generic_box() {
+        let mut world = World::new();
+        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.init_resource::<WeaponMeshCache>();
+        world.spawn((
+            valid_physical(),
+            ItemProperties {
+                weight: 0.3,
+                id: "scabbard".into(),
+            },
+        ));
+        world.run_system_once(spawn_item_placeholders).unwrap();
+        assert_eq!(world.query::<&Mesh3d>().iter(&world).count(), 0);
+    }
+
+    #[test]
+    fn warm_cache_does_not_accept_a_recipe_with_a_borrowed_hash() {
+        let valid = longsword_appearance();
+        let mut cache = WeaponMeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        assert!(cached_weapon(&valid, &mut cache, &mut meshes, &mut materials).is_some());
+        let mut tampered = valid;
+        tampered.recipe[4] ^= 0x5a;
+        assert!(cached_weapon(&tampered, &mut cache, &mut meshes, &mut materials).is_none());
+    }
+
+    fn valid_physical() -> EquipmentPhysical {
+        EquipmentPhysical {
+            dimensions_m: Vec3::new(0.25, 1.4, 0.08),
+            grip_to_tip_m: 1.15,
+            anchor_offset_m: Vec3::new(0.0, -0.45, 0.0),
+        }
+    }
+
+    #[test]
+    fn either_replication_arrival_order_builds_one_weapon_presentation() {
+        for appearance_first in [false, true] {
+            let mut world = World::new();
+            world.insert_resource(Assets::<Mesh>::default());
+            world.insert_resource(Assets::<StandardMaterial>::default());
+            world.init_resource::<WeaponMeshCache>();
+            let item = if appearance_first {
+                world.spawn(longsword_appearance()).id()
+            } else {
+                world.spawn(valid_physical()).id()
+            };
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            if appearance_first {
+                world.entity_mut(item).insert(valid_physical());
+            } else {
+                world.entity_mut(item).insert(longsword_appearance());
+            }
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            let roots = world
+                .query::<&ItemPlaceholder>()
+                .iter(&world)
+                .filter(|placeholder| placeholder.0 == item)
+                .count();
+            assert_eq!(roots, 1, "appearance_first={appearance_first}");
+        }
+    }
+
+    #[test]
+    fn either_replication_arrival_order_builds_one_holder_presentation() {
+        for appearance_first in [false, true] {
+            let mut world = World::new();
+            world.insert_resource(Assets::<Mesh>::default());
+            world.insert_resource(Assets::<StandardMaterial>::default());
+            world.init_resource::<WeaponMeshCache>();
+            let item = if appearance_first {
+                world.spawn(longsword_holder_appearance()).id()
+            } else {
+                world.spawn(valid_physical()).id()
+            };
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            if appearance_first {
+                world.entity_mut(item).insert(valid_physical());
+            } else {
+                world.entity_mut(item).insert(longsword_holder_appearance());
+            }
+            world.run_system_once(spawn_item_placeholders).unwrap();
+            let roots = world
+                .query::<&ItemPlaceholder>()
+                .iter(&world)
+                .filter(|placeholder| placeholder.0 == item)
+                .count();
+            assert_eq!(roots, 1, "appearance_first={appearance_first}");
+            assert_eq!(world.resource::<WeaponMeshCache>().holders.len(), 1);
+        }
+    }
 
     #[test]
     fn pickup_outline_is_visible_only_for_the_selected_scene_item() {
@@ -1182,7 +1947,7 @@ mod tests {
     }
 
     #[test]
-    fn preview_traversal_addresses_deepest_attachment_before_parent() {
+    fn preview_traversal_keeps_belt_attachment_points_in_their_slots() {
         let mut world = World::new();
         let actor = world.spawn_empty().id();
         let belt = world
@@ -1194,13 +1959,43 @@ mod tests {
                 },
                 EquipmentTopology {
                     placement_id: Some("worn".into()),
-                    occupancies: vec![EquipmentTopologyOccupancy {
-                        occupancy_id: "belt".into(),
-                        anchor: TacticalEquipmentAnchor::CharacterLocation(
-                            EquipmentLocation::LeftBelt,
-                        ),
+                    occupancies: [
+                        EquipmentLocation::LeftBelt,
+                        EquipmentLocation::RightBelt,
+                        EquipmentLocation::FrontBelt,
+                        EquipmentLocation::BackBelt,
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, location)| EquipmentTopologyOccupancy {
+                        occupancy_id: format!("belt-{index}"),
+                        anchor: TacticalEquipmentAnchor::CharacterLocation(location),
                         channel: EquipmentChannel::Accessory,
                         order: 0,
+                        requirement_index: index as u16,
+                        capacity_index: 0,
+                    })
+                    .collect(),
+                },
+            ))
+            .id();
+        let right_sheath = world
+            .spawn((
+                ItemOf(actor),
+                ItemProperties {
+                    id: "scabbard".into(),
+                    weight: 0.3,
+                },
+                EquipmentTopology {
+                    placement_id: Some("right".into()),
+                    occupancies: vec![EquipmentTopologyOccupancy {
+                        occupancy_id: "right-sheath".into(),
+                        anchor: TacticalEquipmentAnchor::ItemAttachment {
+                            parent: belt,
+                            attachment_point_id: "right".into(),
+                        },
+                        channel: EquipmentChannel::Mount,
+                        order: 1,
                         requirement_index: 0,
                         capacity_index: 0,
                     }],
@@ -1243,6 +2038,21 @@ mod tests {
             "deepest empty blade is first"
         );
         assert_eq!(preview.last().map(|target| target.entity), Some(belt));
+        let right_preview = world
+            .run_system_once(
+                move |items: Query<(Entity, &ItemOf, &EquipmentTopology, &ItemProperties)>| {
+                    ordered_preview_at_location(actor, EquipmentLocation::RightBelt, &items)
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            right_preview.first().map(|target| target.entity),
+            Some(right_sheath)
+        );
+        assert!(
+            right_preview.iter().all(|target| target.entity != sheath),
+            "the left sheath must not appear in the right belt slot"
+        );
     }
 
     #[test]
@@ -1259,7 +2069,7 @@ mod tests {
         for (location, expected) in [
             (EquipmentLocation::Head, BoneRole::Head),
             (EquipmentLocation::Face, BoneRole::Head),
-            (EquipmentLocation::Neck, BoneRole::NeckTwo),
+            (EquipmentLocation::Neck, BoneRole::NeckOne),
             (EquipmentLocation::Chest, BoneRole::Chest),
             (EquipmentLocation::Stomach, BoneRole::StomachTwo),
             (EquipmentLocation::Back, BoneRole::Chest),
@@ -1284,6 +2094,43 @@ mod tests {
         ] {
             assert_eq!(equipment_location_bone(location), expected, "{location:?}");
         }
+    }
+
+    #[test]
+    fn attachment_correction_cancels_mhr_bind_roll_but_keeps_position() {
+        let bind = GlobalTransform::from(Transform {
+            translation: Vec3::new(0.4, 1.2, -0.3),
+            rotation: Quat::from_euler(EulerRot::XYZ, 0.7, -0.4, 1.1),
+            scale: Vec3::splat(1.25),
+        });
+        let desired = Quat::from_rotation_arc(Vec3::Y, Vec3::X);
+        let correction = bind_space_attachment_correction(bind, desired);
+        let resolved = bind.mul_transform(correction);
+
+        assert!(resolved.translation().abs_diff_eq(bind.translation(), 1e-5));
+        assert!(resolved.rotation().dot(desired).abs() > 1.0 - 1e-5);
+        assert!(
+            resolved
+                .to_scale_rotation_translation()
+                .0
+                .abs_diff_eq(Vec3::ONE, 1e-5)
+        );
+    }
+
+    #[test]
+    fn limb_placeholders_use_semantic_joint_axes_not_local_mhr_y() {
+        assert_eq!(
+            semantic_attachment_axis(BoneRole::UpperArmLeft),
+            Some((BoneRole::UpperArmLeft, BoneRole::ForearmLeft))
+        );
+        assert_eq!(
+            semantic_attachment_axis(BoneRole::ThighRight),
+            Some((BoneRole::ThighRight, BoneRole::ShinRight))
+        );
+        assert_eq!(
+            semantic_attachment_axis(BoneRole::FootLeft),
+            Some((BoneRole::FootLeft, BoneRole::ToeLeft))
+        );
     }
 
     #[test]

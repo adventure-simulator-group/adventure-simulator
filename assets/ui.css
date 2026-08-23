@@ -1,0 +1,237 @@
+@font-face {
+    font-family: "SN Pro";
+    src: url("SNPro-VariableFont_wght.ttf");
+}
+
+@keyframes show-in {
+  from {
+    scale: 0.95;
+  }
+  to {
+    scale: 1.0;
+  }
+}
+
+.success { color: var(--success); }
+.primary { color: var(--primary); }
+.error   { color: var(--error); }
+
+:root {
+  width: 100%;
+  height: 100%;
+  font-size: 16px;
+  color: #fffa;
+  font-family: "SN Pro";
+  --success: rgb(129, 199, 132);
+  --primary: rgb(144, 202, 249);
+  --error: rgb(229, 115, 115);
+
+  &>* {
+    margin: 20px;
+  }
+}
+
+text,span {
+  animation: 0.4s ease-out show-in;
+  scale: initial;
+  text-shadow: #0007 1px 1px;
+}
+
+#attack-info {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 500px;
+  margin-left: -250px;
+  flex-direction: column;
+  gap: 20px;
+
+  &>* {
+    min-height: 30px;
+  }
+  & * {
+    font-size: 20px;
+    text-align: center;
+    text-shadow: #000 2px 2px;
+
+    &.player-id {
+      color: var(--player-color);
+    }
+  }
+}
+
+#crosshair {
+  background-image: url("crosshair.png");
+  width: 72px;
+  height: 72px;
+  margin-left: -36px;
+  margin-top: -36px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -100;
+}
+
+#aim-blocked {
+  position: absolute;
+  top: 54px;
+  left: -54px;
+  width: 180px;
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  text-shadow: #000 2px 2px;
+}
+
+#terminal-outcome {
+  position: absolute;
+  top: 28%;
+  width: 100%;
+  font-size: 64px;
+  font-weight: 800;
+  text-align: center;
+  text-shadow: #000 3px 3px;
+}
+
+#stats {
+  flex-direction: column;
+  position: absolute;
+  top: 0px;
+
+  &>*>span {
+    color: #eee6;
+  }
+}
+
+#player {
+  top: 50px;
+  position: absolute;
+  flex-direction: column;
+  width: 330px;
+
+  gap: 15px;
+  background: #0009;
+  padding: 15px;
+  border-radius: 15px;
+
+  &>* {
+    flex-wrap: wrap;
+
+    &>:nth-child(1) {
+      width: 100%;
+      font-size: 18px;
+      padding-bottom: 8px;
+    }
+    &>* {
+      width: 50%;
+      padding-bottom: 2px;
+    }
+  }
+  &>#equipped-items>#equipped-list,
+  &>#inventory-items>#inventory-list {
+    flex-wrap: wrap;
+    width: 100%;
+
+    &>* {
+      width: 100%;
+      padding-bottom: 2px;
+    }
+  }
+
+  &>#skills>:nth-child(1) {
+    color: var(--primary);
+  }
+  &>#limbs>:nth-child(1) {
+    color: var(--success);
+  }
+  &>#incapacitation>:nth-child(1) {
+    color: rgb(240, 98, 146);
+  }
+  &>#incapacitation>#incap-meter {
+    width: 100%;
+    height: 14px;
+    background: #0006;
+    border-radius: 7px;
+  }
+  &>#equipped-items>:nth-child(1) {
+    color: rgb(200, 200, 50);
+  }
+  &>#inventory-items>:nth-child(1) {
+    color: rgb(130, 130, 120);
+  }
+}
+
+#incap-meter {
+  &>.incap-pain {
+    height: 100%;
+    background: rgb(240, 98, 146);
+  }
+  &>.incap-blood {
+    height: 100%;
+    background: var(--error);
+  }
+  &>.incap-imbalance {
+    height: 100%;
+    background: #fffc;
+  }
+}
+
+#controls {
+  position: absolute;
+  bottom: 0px;
+  width: 100%;
+  text-align: center;
+}
+
+#weapon-guard {
+  position: absolute;
+  bottom: 48px;
+  width: 100%;
+  text-align: center;
+}
+
+#info {
+  position: absolute;
+  top: 0px;
+  right: 0%;
+  gap: 10px;
+  flex-direction: column;
+
+  &>* {
+    background: #0009;
+    padding: 20px;
+    border-radius: 20px;
+  }
+}
+
+#connection, #players {
+  flex-direction: column;
+}
+
+#players>.player {
+  padding: 4px 10px;
+  color: var(--player-color);
+  gap: 10px;
+  align-items: center;
+
+  &.controlled {
+    background: #0006;
+    border: 1px #fff1;
+    border-radius: 15%;
+  }
+  &>.player-icon {
+    width: 8px;
+    height: 8px;
+    background: var(--player-color);
+    border-radius: 50%;
+  }
+  &>.player-name {
+    flex-grow: 1;
+    min-width: 180px;
+    max-width: 250px;
+  }
+  &>.player-id {
+    color: #fff3;
+  }
+}

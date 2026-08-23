@@ -346,13 +346,16 @@ fn native_cell_is_hilly(
     false
 }
 
+type RoadMask = HashSet<(u16, u16)>;
+type Mask = Vec<u8>;
+
 fn masks(
     features: &Features,
     south: i16,
     west: i16,
     width: u32,
     height: u32,
-) -> (HashSet<(u16, u16)>, Vec<u8>, Vec<u8>, Vec<u8>) {
+) -> (RoadMask, Mask, Mask, Mask) {
     let mut roads = HashSet::new();
     let to_pixel = |point: [f64; 2]| -> (i32, i32) {
         (

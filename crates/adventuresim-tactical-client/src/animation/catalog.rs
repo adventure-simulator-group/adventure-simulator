@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, str::FromStr};
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 use std::path::{Path, PathBuf};
 
 use adventuresim_tactical_core::prelude::*;
@@ -33,6 +33,7 @@ pub(super) struct PackCatalog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct MotionSource {
     pub(super) path: String,
+    pub(super) required_last_frame: u16,
     pub(super) last_frame: u16,
 }
 
@@ -82,10 +83,15 @@ impl PackBuilder {
     }
 
     pub(super) fn motion(&mut self, id: &str, last_frame: u16) {
+        self.variable_motion(id, last_frame, last_frame);
+    }
+
+    pub(super) fn variable_motion(&mut self, id: &str, required_last_frame: u16, last_frame: u16) {
         self.pack.motions.insert(
             id.to_owned(),
             MotionSource {
                 path: format!("{}/{id}.glb", self.path_prefix),
+                required_last_frame,
                 last_frame,
             },
         );
@@ -149,34 +155,12 @@ impl AnimationPackCatalog {
             None,
             "animations/biped/unarmed",
         );
-        for pose in [
-            "idle_relaxed",
-            "crouch_idle",
-            "guard_lead_left",
-            "guard_lead_right",
-            "prone_idle",
-            "supine_idle",
-        ] {
+        for pose in ["idle_relaxed", "prone_idle", "supine_idle"] {
             builder.motion(pose, 0);
             builder.pose(
                 pose,
                 0,
                 SemanticPose::from_str(pose).expect("typed catalog pose"),
-            )?;
-        }
-        for motion in [
-            "guard_walk_lead_left",
-            "guard_walk_lead_right",
-            "guard_strafe_lead_left_left",
-            "guard_strafe_lead_left_right",
-            "guard_strafe_lead_right_left",
-            "guard_strafe_lead_right_right",
-        ] {
-            builder.motion(motion, 0);
-            builder.pose(
-                motion,
-                0,
-                SemanticPose::from_str(motion).expect("typed catalog pose"),
             )?;
         }
         for (motion, last_frame, anchors) in [
@@ -209,27 +193,14 @@ impl AnimationPackCatalog {
         builder.motion("run_mirrored", 64);
         builder.motion("prone_crawl_mirrored", 0);
         builder.motion("supine_scamper_mirrored", 0);
-        for (motion, pose) in [
-            ("duck_lead_left_forward", "duck_lead_left_forward"),
-            ("duck_lead_left_backward", "duck_lead_left_backward"),
-            ("duck_lead_left_left", "duck_lead_left_left"),
-            ("duck_lead_left_right", "duck_lead_left_right"),
+        builder.motion("dive", 0);
+        for pose in [
+            SemanticPose::DiveForward,
+            SemanticPose::DiveBackward,
+            SemanticPose::DiveLeft,
+            SemanticPose::DiveRight,
         ] {
-            builder.motion(motion, 0);
-            builder.pose(
-                motion,
-                0,
-                SemanticPose::from_str(pose).expect("typed catalog pose"),
-            )?;
-        }
-        for (motion, pose) in [
-            ("dive_forward", SemanticPose::DiveForward),
-            ("dive_backward", SemanticPose::DiveBackward),
-            ("dive_left", SemanticPose::DiveLeft),
-            ("dive_right", SemanticPose::DiveRight),
-        ] {
-            builder.motion(motion, 0);
-            builder.pose(motion, 0, pose)?;
+            builder.pose("dive", 0, pose)?;
         }
         for (motion, pose) in [
             ("airborne_center", SemanticPose::AirborneCenter),
@@ -238,34 +209,28 @@ impl AnimationPackCatalog {
             builder.motion(motion, 0);
             builder.pose(motion, 0, pose)?;
         }
-        for family in ["thrust", "slash"] {
-            let contact_motion = format!("attack_{family}_lead_left_contact");
-            builder.motion(&contact_motion, 0);
-            let pose = SemanticPose::from_str(&contact_motion).expect("typed attack pose");
-            builder.pose(&contact_motion, 0, pose)?;
-        }
-        for motion in [
-            "block_cut_left_lead_left",
-            "block_cut_left_lead_right",
-            "block_cut_right_lead_left",
-            "block_cut_right_lead_right",
-            "block_thrust_lead_left",
-            "block_thrust_lead_right",
+        builder.variable_motion("swing", 4, 12);
+        for (frame, pose) in [
+            (0, SemanticPose::GuardSwing),
+            (4, SemanticPose::AttackSwing),
+            (8, SemanticPose::RecoverSwing),
+            (12, SemanticPose::ContinueSwing),
         ] {
-            builder.motion(motion, 14);
-            builder.pose(
-                motion,
-                6,
-                SemanticPose::from_str(motion).expect("typed block pose"),
-            )?;
-            let lead = if motion.ends_with("lead_left") {
-                "guard_lead_left"
-            } else {
-                "guard_lead_right"
-            };
-            builder.reference(motion, 0, lead)?;
-            builder.reference(motion, 14, lead)?;
+            builder.pose("swing", frame, pose)?;
         }
+        builder.variable_motion("thrust", 4, 12);
+        for (frame, pose) in [
+            (0, SemanticPose::GuardThrust),
+            (4, SemanticPose::AttackThrust),
+            (8, SemanticPose::RecoverThrust),
+            (12, SemanticPose::ContinueThrust),
+        ] {
+            builder.pose("thrust", frame, pose)?;
+        }
+        builder.variable_motion("offhand", 0, 4);
+        builder.pose("offhand", 0, SemanticPose::GuardOffhand)?;
+        builder.pose("offhand", 0, SemanticPose::AttackOffhand)?;
+        builder.pose("offhand", 4, SemanticPose::AttackOffhandPrepared)?;
         for (motion, pose) in [
             ("prone_transition", "prone_transition"),
             ("prone_supine_roll_left", "prone_supine_roll_left"),
@@ -298,7 +263,7 @@ impl AnimationPackCatalog {
     }
 }
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EditorRouteResolution {
     pub route: &'static str,
@@ -310,7 +275,7 @@ pub(crate) struct EditorRouteResolution {
     pub frame: u16,
 }
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct EditorValidationReport {
     pub pack_count: usize,
@@ -324,7 +289,7 @@ pub(crate) struct EditorValidationReport {
 /// resolve the same deterministic ordinary and raised/attack samples used by
 /// the capture viewer. Errors are returned together so the native tool can
 /// print a complete actionable preflight instead of failing at the first file.
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 pub(crate) fn validate_editor_asset_root(
     asset_root: &Path,
 ) -> Result<EditorValidationReport, Vec<String>> {
@@ -368,8 +333,10 @@ pub(crate) fn validate_editor_asset_root(
     let ordinary = SkeletonState::default()
         .with_local_velocity(Vec3::NEG_Z * 2.0)
         .with_world_velocity(Vec3::NEG_Z * 2.0);
-    let mut raised_attack = SkeletonState::default().with_lead_foot(LeadFoot::Right);
-    raised_attack.begin_attack(AttackSpec::default(), 10, 20);
+    let mut raised_attack = SkeletonState::default();
+    raised_attack
+        .begin_attack(AttackSpec::default(), 10, 20)
+        .expect("catalog fixture starts from idle");
     raised_attack.advance_action(20);
 
     let mut route_resolutions = Vec::new();
@@ -435,16 +402,6 @@ pub(crate) fn validate_editor_asset_root(
         }
     }
 
-    // The raised/right attack deliberately proves same-pack semantic mirroring
-    // because the root pack authors the left contact and resolves its right
-    // counterpart without introducing an independent authority path.
-    if !route_resolutions
-        .iter()
-        .any(|resolution| resolution.route == "raised_guard_attack" && resolution.mirrored)
-    {
-        errors.push("raised_guard_attack did not exercise mirrored fallback resolution".into());
-    }
-
     if errors.is_empty() {
         Ok(EditorValidationReport {
             pack_count: catalog.packs.len(),
@@ -458,7 +415,7 @@ pub(crate) fn validate_editor_asset_root(
     }
 }
 
-#[cfg(any(test, feature = "animation-graph-editor"))]
+#[cfg(test)]
 fn resolve_editor_pose(
     catalog: &AnimationPackCatalog,
     requested_pack: &str,

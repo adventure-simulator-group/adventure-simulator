@@ -7,7 +7,10 @@ use super::{
     trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
 use crate::spacetimedb::{Character, FoodLot, InventoryItem};
-use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, sidebar_section};
+use crate::templates::{
+    SceneInteractableKind, SceneInteractableLink, decorative_game_icon, item_display_name,
+    item_type_icon, scene_interactable_link, sidebar_section,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct SocialPresentation {
@@ -521,19 +524,65 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
     }
 }
 
+/// Presentation projection of the non-character interactables available at a
+/// settlement location. This is deliberately separate from the NPC loader so
+/// templates cannot accidentally infer fixtures from the people present.
+struct LocationFixture {
+    kind: SceneInteractableKind,
+    visual_modifier: &'static str,
+    label: &'static str,
+    aria_label: &'static str,
+    icon: &'static str,
+    action_label: &'static str,
+    href: String,
+}
+
+fn location_fixtures(
+    settlement_id: &str,
+    location_id: &str,
+    organization_service: Option<&str>,
+) -> Vec<LocationFixture> {
+    let mut fixtures = Vec::new();
+    if !matches!(location_id, "overview" | "public-square" | "map") {
+        fixtures.push(LocationFixture {
+            kind: SceneInteractableKind::Fixture,
+            visual_modifier: "fireplace-portrait",
+            label: "Fireplace",
+            aria_label: "Cook at fireplace",
+            icon: "campfire",
+            action_label: "Cook",
+            href: format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"),
+        });
+    }
+    if organization_service == Some("weapons") {
+        fixtures.push(LocationFixture {
+            // The forge currently has no independent physical state. It is an
+            // entry point into the weapons service, not a fake fixture record.
+            kind: SceneInteractableKind::Service,
+            visual_modifier: "forge-portrait",
+            label: "Forge",
+            aria_label: "Forge a weapon",
+            icon: "anvil",
+            action_label: "Forge",
+            href: format!("/settlements/{settlement_id}/weapons"),
+        });
+    }
+    fixtures
+}
+
 pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Markup {
+    let organization_service =
+        adventuresim_core::organization::organization_chapter_at(settlement_id, location_id)
+            .and_then(|(organization, _)| organization.service_id.as_deref());
     html! {
-        nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
+        nav class="scene-interactable-strip" aria-label="People and things here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
-            @if !matches!(location_id, "overview" | "public-square" | "map") {
-                a class="npc-portrait fireplace-portrait"
-                    href=(format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"))
-                    aria-label="Cook at fireplace" title="Cook at fireplace" {
-                    span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
-                        (decorative_game_icon("campfire"))
-                    }
-                    span class="npc-portrait-name" { "Fireplace" }
-                    span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
+            @for fixture in location_fixtures(settlement_id, location_id, organization_service) {
+                span data-location-fixture {
+                    (scene_interactable_link(SceneInteractableLink {
+                        kind: fixture.kind, visual_modifier: Some(fixture.visual_modifier), href: &fixture.href, label: fixture.label,
+                        aria_label: fixture.aria_label, icon: fixture.icon, action_label: Some(fixture.action_label),
+                    }))
                 }
             }
             span class="text-muted" data-npc-loading { "Finding the people here…" }
@@ -543,6 +592,14 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
 
 pub(super) fn npc_description_stage(name: &str, fallback: &str) -> Markup {
     html! { section class="visual-stage npc-description-stage" data-npc-description aria-live="polite" {
+        div class="visual-stage-placeholder npc-portrait-silhouette" aria-hidden="true" {}
+        h2 { (name) }
+        p { (fallback) }
+    } }
+}
+
+pub(super) fn forge_description_stage(name: &str, fallback: &str) -> Markup {
+    html! { section class="visual-stage npc-description-stage forge-description-stage" data-npc-description data-bevy-scene="forge" aria-live="polite" {
         div class="visual-stage-placeholder npc-portrait-silhouette" aria-hidden="true" {}
         h2 { (name) }
         p { (fallback) }
@@ -839,11 +896,11 @@ mod tests {
         assert!(markup.contains("Negative morale, -2.0"));
         assert!(markup.contains("--social-topic-color:color-mix"));
         assert!(!markup.contains("Local fame"));
-        assert!(markup.contains("How many years hast thou seen?"));
+        assert!(markup.contains("How many years have passed?"));
         assert!(markup.contains("I have seen 20 years."));
-        assert!(markup.contains("What faith dost thou profess?"));
+        assert!(markup.contains("What faith is professed?"));
         assert!(markup.contains("I am of the Lutheran confession."));
-        assert!(markup.contains("What report dost thou bear in these parts?"));
+        assert!(markup.contains("What report is borne in these parts?"));
         assert!(markup.contains("Folk here speak well of me"));
         assert!(markup.contains("data-local-chat-kind=\"player\" data-local-chat-subject=\"2\""));
         assert!(markup.contains("class=\"settlement-chat-messages\""));
@@ -1149,7 +1206,7 @@ mod tests {
     #[test]
     fn settlement_resident_strip_exposes_accessible_authoritative_context() {
         let strip = npc_portrait_strip("lubeck", "market").into_string();
-        assert!(strip.contains("aria-label=\"People here\""));
+        assert!(strip.contains("aria-label=\"People and things here\""));
         assert!(strip.contains("data-npc-settlement=\"lubeck\""));
         assert!(strip.contains("data-npc-location=\"market\""));
         assert!(strip.contains("aria-label=\"Cook at fireplace\""));
@@ -1169,6 +1226,37 @@ mod tests {
         assert!(!square.contains("Cook at fireplace"));
         assert!(church_strip.contains("Finding the people here…"));
         assert!(!church_strip.contains("â"));
+    }
+
+    #[test]
+    fn weapons_service_chapter_exposes_the_generic_forge_entry_point() {
+        let strip =
+            npc_portrait_strip("viabundus-0", "organization-weaponsmith-guild").into_string();
+        assert!(strip.contains("aria-label=\"Forge a weapon\""));
+        assert!(strip.contains("href=\"/settlements/viabundus-0/weapons\""));
+        assert_eq!(strip.matches("data-location-fixture").count(), 2);
+
+        let client = include_str!("../../../static/dialogue-client.js");
+        assert!(client.contains("querySelectorAll(\"[data-location-fixture]\")"));
+
+        let unrelated = npc_portrait_strip("viabundus-0", "residences").into_string();
+        assert!(!unrelated.contains("Forge a weapon"));
+    }
+
+    #[test]
+    fn location_fixture_projection_keeps_people_and_things_independent() {
+        let ordinary = location_fixtures("lubeck", "market", None);
+        assert_eq!(ordinary.len(), 1);
+        assert_eq!(ordinary[0].label, "Fireplace");
+        assert_eq!(ordinary[0].kind, SceneInteractableKind::Fixture);
+
+        let weapons =
+            location_fixtures("lubeck", "organization-weaponsmith-guild", Some("weapons"));
+        assert_eq!(weapons.len(), 2);
+        assert_eq!(weapons[1].label, "Forge");
+        assert_eq!(weapons[1].kind, SceneInteractableKind::Service);
+
+        assert!(location_fixtures("lubeck", "public-square", None).is_empty());
     }
 
     #[test]

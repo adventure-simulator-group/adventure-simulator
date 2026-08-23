@@ -105,22 +105,23 @@ stats in `equipment.protection`. For that shared projection, `coverage` is
 required; omitted `padding` and `resistance` default to zero, while omitted
 `flexibility` and `range_of_motion` default to one.
 
-Protection targets are an explicit many-to-many list on each placement using
-the stable seven-part body vocabulary. Never infer protection from physical
+Protection targets are an explicit many-to-many list on each placement using the
+stable seven-part body vocabulary. Never infer protection from physical
 equipment locations: a helmet may occupy head, face, and neck while protecting
 only `head`, and a boot sheath protects nothing. Items may expose ordered,
 capacity-limited `attachment_points` with optional accepted child tags.
 Sheathable weapons must expose the `sheathable_weapon` attachment tag and at
 least one placement with exactly one order-zero `containment` parent
 requirement; generated carry provisioning selects that compatible placement
-rather than an arbitrary parent alternative. Hand-only weapons must expose neither parent placements nor
-the sheathable tag, and every placement must be exactly one `held` occupancy at
-`left_hand` or `right_hand`. Polearms, zweihanders, bows, firearms, and every
-other authored hand-only weapon can only be held or dropped. Catalog validation
-rejects a contradictory carry contract, and strategic/tactical authority
-independently enforces the same held-root boundary.
-Repairable kinds require a `durability` capability with
-quality 1--5 and explicit physical/handling inputs.
+rather than an arbitrary parent alternative. Hand-only weapons must expose
+neither parent placements nor the sheathable tag, and every placement must be
+exactly one `held` occupancy at `left_hand` or `right_hand`. Polearms, bows,
+firearms, and every other authored hand-only weapon can only be held or dropped.
+Great swords and compact hafted weapons may instead use generated scabbards or
+haft loops. Catalog validation rejects a contradictory carry contract, and
+strategic/tactical authority independently enforces the same held-root boundary.
+Repairable kinds require a `durability` capability with quality 1--5 and
+explicit physical/handling inputs.
 
 For example, a sided sleeve authors two alternatives:
 
@@ -174,9 +175,10 @@ box in local X/Y/Z. `anchor_offset_m` gives the attachment anchor relative to
 the ordinary box-centre origin, and `grip_to_tip_m` records gameplay reach from
 a weapon's hand anchor without stretching the box. Weapon tips point along
 local +Y. The tactical client constrains a held weapon's authored anchor root
-to `weapon.L` or `weapon.R`; inspection of the current rig shows those sockets
-already use the required direction, so the documented socket correction is
-the identity transform.
+to `l_weapon` or `r_weapon`. MHR's sockets inherit rolled wrist bind frames, so
+the client removes that bind rotation before applying the socket's live
+animation. Item recipes remain in the +Y convention and must not compensate
+for a particular exported character's wrist orientation.
 
 The same dimensions produce the visible placeholder mesh and dropped-item
 collider. Do not infer them from `exterior_volume_ml`, which is container
@@ -202,9 +204,9 @@ organization, and dialogue content. The targeted `items` form runs the item
 checker (the core build still validates its other compiled catalogs).
 
 Both commands exercise the production build-time validator. Diagnostics
-aggregate independent semantic failures where possible and identify source
-file, line, column, item ID, and field path. JSON syntax and duplicate-key
-errors use parser coordinates. Validation rejects unsupported schemas, unknown fields,
-duplicate IDs, invalid stable IDs, non-finite/out-of-range values,
-incompatible slots/stats, malformed weapon skills, and invalid durability,
-quality, food, hydration, alcohol, medication, or container metadata.
+aggregate independent semantic failures where possible and identify source file,
+line, column, item ID, and field path. JSON syntax and duplicate-key errors use
+parser coordinates. Validation rejects unsupported schemas, unknown fields,
+duplicate IDs, invalid stable IDs, non-finite/out-of-range values, incompatible
+slots/stats, malformed weapon skills, and invalid durability, quality, food,
+hydration, alcohol, medication, or container metadata.

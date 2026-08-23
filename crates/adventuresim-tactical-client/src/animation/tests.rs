@@ -2,87 +2,62 @@ use super::*;
 
 #[cfg(test)]
 mod legacy_tests {
-    use std::path::Path;
-
     use super::*;
-    use bevy_animation_graph::core::animation_graph::{DEFAULT_OUTPUT_POSE, TargetPin};
-    use semantic_graph::{SemanticGraphPath, SemanticGraphTrace};
+    use semantic_route::{SemanticRoutePath, SemanticRouteTrace};
 
-    fn graph_test_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins)
-            .add_plugins(bevy::asset::AssetPlugin::default())
-            .add_plugins(bevy_animation_graph::AnimationGraphPlugin::default())
-            .init_resource::<semantic_graph::SemanticGraphLibrary>();
-        app
-    }
-
-    fn route(app: &mut App, skeleton: SkeletonState) -> SemanticGraphTrace {
-        app.world_mut()
-            .run_system_cached_with(
-                semantic_graph::route_semantic_graph_for_test,
-                (PresentedSkeleton::new(skeleton, None), Entity::PLACEHOLDER),
-            )
-            .unwrap()
+    fn route(skeleton: SkeletonState) -> SemanticRouteTrace {
+        semantic_route::route_semantic_pose_for_test(In(PresentedSkeleton::new(skeleton, None)))
     }
 
     #[test]
-    fn ordinary_semantic_graph_runtime_drives_legacy_equivalent_samples() {
-        let mut app = graph_test_app();
+    fn semantic_router_preserves_ordinary_locomotion_evaluation() {
         let skeleton = SkeletonState::default()
             .with_local_velocity(Vec3::NEG_Z * 2.0)
             .with_world_velocity(Vec3::NEG_Z * 2.0);
         let before = AnimationEvaluation::from_skeleton(&skeleton);
-        let after = route(&mut app, skeleton);
-        assert_eq!(after.path, SemanticGraphPath::OrdinaryLocomotion);
+        let after = route(skeleton);
+        assert_eq!(after.path, SemanticRoutePath::OrdinaryLocomotion);
         assert!(after.runtime_evaluated);
         assert_eq!(before, after.evaluation);
     }
 
     #[test]
-    fn semantic_graph_inputs_are_read_only_and_cover_attack_capture() {
+    fn semantic_router_inputs_are_read_only_and_keep_live_attack_movement() {
         let mut skeleton = SkeletonState::default()
             .with_weapon_guard(WeaponGuardState::Raised)
             .with_local_velocity(Vec3::NEG_Z * 3.0)
             .with_world_velocity(Vec3::NEG_Z * 3.0);
-        skeleton.begin_attack(
-            AttackSpec {
-                step: AttackStep::Forward,
-                step_speed: 3.0,
-                movement_direction: Vec2::Y,
-                movement_speed: 3.0,
-                ..default()
-            },
-            10,
-            20,
-        );
+        skeleton
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
+            .unwrap();
         skeleton.advance_action(15);
         let before = serde_json::to_vec(&skeleton).unwrap();
         let presented = PresentedSkeleton::new(skeleton, None);
         let evaluation = AnimationEvaluation::from_skeleton(&presented);
-        let inputs = semantic_graph::SemanticGraphInputs::from_presented(&presented, &evaluation);
+        let inputs = semantic_route::SemanticRouteInputs::from_presented(&presented, &evaluation);
 
         assert_eq!(inputs.action, SkeletonAction::Attack);
-        assert_eq!(inputs.captured_step, AttackStep::Forward);
-        assert_eq!(inputs.captured_step_direction, Vec2::Y);
-        assert_eq!(inputs.captured_step_speed, 3.0);
+        assert_eq!(inputs.direction, Vec2::NEG_Y);
+        assert_eq!(inputs.speed, 3.0);
+        assert_eq!(presented.attack_animation(), Some(AttackAnimation::Swing));
         assert_eq!(before, serde_json::to_vec(&presented.state).unwrap());
     }
 
     #[test]
-    fn semantic_graph_routes_raised_attack_without_retiming_contact() {
-        let mut app = graph_test_app();
+    fn semantic_router_preserves_raised_attack_contact_timing() {
         for (tick, expected_phase) in [(10, 0.0), (15, 0.25), (20, 0.5), (25, 0.75), (30, 1.0)] {
             let mut skeleton = SkeletonState::default()
                 .with_weapon_guard(WeaponGuardState::Raised)
                 .with_lead_foot(LeadFoot::Left);
-            skeleton.begin_attack(AttackSpec::default(), 10, 20);
+            skeleton
+                .begin_attack(AttackSpec::default(), 10, 20)
+                .unwrap();
             skeleton.advance_action(tick);
             let presented = PresentedSkeleton::new(skeleton.clone(), None);
             let legacy = AnimationEvaluation::from_skeleton(&skeleton);
-            let routed = route(&mut app, skeleton);
+            let routed = route(skeleton);
 
-            assert_eq!(routed.path, SemanticGraphPath::RaisedGuardAttack);
+            assert_eq!(routed.path, SemanticRoutePath::RaisedGuardAttack);
             assert!(routed.runtime_evaluated);
             assert_eq!(routed.evaluation, legacy);
             assert!((routed.inputs.gait_phase - presented.gait_phase).abs() < f32::EPSILON);
@@ -91,194 +66,8 @@ mod legacy_tests {
     }
 
     #[test]
-    fn missing_dependency_graph_output_falls_back_to_legacy() {
-        let mut app = graph_test_app();
-        let handle = app
-            .world()
-            .resource::<semantic_graph::SemanticGraphLibrary>()
-            .ordinary
-            .clone();
-        app.world_mut()
-            .resource_mut::<Assets<bevy_animation_graph::core::animation_graph::AnimationGraph>>()
-            .get_mut(&handle)
-            .unwrap()
-            .remove_edge_by_target(&TargetPin::OutputData(DEFAULT_OUTPUT_POSE.into()));
-
-        let skeleton = SkeletonState::default()
-            .with_local_velocity(Vec3::NEG_Z)
-            .with_world_velocity(Vec3::NEG_Z);
-        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
-        let routed = route(&mut app, skeleton);
-
-        assert_eq!(routed.path, SemanticGraphPath::LegacyFallback);
-        assert!(!routed.runtime_evaluated);
-        assert_eq!(routed.evaluation, legacy);
-    }
-
-    #[test]
-    fn dropped_dependency_graph_asset_falls_back_to_legacy() {
-        let mut app = graph_test_app();
-        let handle = app
-            .world()
-            .resource::<semantic_graph::SemanticGraphLibrary>()
-            .raised
-            .clone();
-        app.world_mut()
-            .resource_mut::<Assets<bevy_animation_graph::core::animation_graph::AnimationGraph>>()
-            .remove(&handle);
-
-        let skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
-        let routed = route(&mut app, skeleton);
-
-        assert_eq!(routed.path, SemanticGraphPath::LegacyFallback);
-        assert!(!routed.runtime_evaluated);
-        assert_eq!(routed.evaluation, legacy);
-    }
-
-    #[test]
-    fn malformed_late_graph_marker_discards_all_partial_decode_changes() {
-        let mut app = graph_test_app();
-        app.world_mut()
-            .resource_mut::<semantic_graph::SemanticGraphLibrary>()
-            .corrupt_last_marker = true;
-        let skeleton = SkeletonState::default()
-            .with_local_velocity(Vec3::NEG_Z * 2.0)
-            .with_world_velocity(Vec3::NEG_Z * 2.0);
-        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
-        let routed = route(&mut app, skeleton);
-
-        assert_eq!(routed.requested_path, SemanticGraphPath::OrdinaryLocomotion);
-        assert_eq!(routed.path, SemanticGraphPath::LegacyFallback);
-        assert!(!routed.runtime_evaluated);
-        assert_eq!(routed.evaluation, legacy);
-    }
-
-    #[test]
-    fn non_identity_graph_blend_changes_weighted_fk_playback_input() {
-        let mut skeleton = SkeletonState::default()
-            .with_local_velocity(Vec3::NEG_Z * 3.75)
-            .with_world_velocity(Vec3::NEG_Z * 3.75);
-        skeleton.gait_phase = 0.25;
-        assert!(AnimationEvaluation::from_skeleton(&skeleton).base.len() > 1);
-
-        let mut production_app = graph_test_app();
-        let production = route(&mut production_app, skeleton.clone());
-        let mut changed_app = graph_test_app();
-        let active_anchors = AnimationEvaluation::from_skeleton(&skeleton)
-            .base
-            .iter()
-            .map(|sample| match sample.sampling {
-                PoseSampling::Anchor | PoseSampling::Cycle { .. } => 1,
-                PoseSampling::Span { .. } => 2,
-            })
-            .sum::<usize>();
-        let mut factors = [0.0; semantic_graph::MAX_GRAPH_ANCHORS - 1];
-        factors[..active_anchors.saturating_sub(1)].fill(0.25);
-        changed_app
-            .world_mut()
-            .resource_mut::<semantic_graph::SemanticGraphLibrary>()
-            .factor_override = Some(factors);
-        let changed = route(&mut changed_app, skeleton);
-
-        assert!(production.runtime_evaluated);
-        assert!(changed.runtime_evaluated);
-        assert_ne!(production.evaluation, changed.evaluation);
-
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::WalkContact,
-            SemanticPose::WalkPassing,
-            SemanticPose::RunContact,
-            SemanticPose::RunFlight,
-        ]);
-        let resolve_playback = |evaluation: &AnimationEvaluation| {
-            let samples = if evaluation.action.is_empty() {
-                &evaluation.base
-            } else {
-                &evaluation.action
-            };
-            let mut clips = Vec::new();
-            for sample in samples {
-                append_resolved_sample(
-                    &mut clips,
-                    &runtime,
-                    &catalog,
-                    HUMANOID_UNARMED_PACK,
-                    *sample,
-                    None,
-                );
-            }
-            AnimationPlayback { clips, ..default() }
-        };
-        let production_playback = resolve_playback(&production.evaluation);
-        let changed_playback = resolve_playback(&changed.evaluation);
-        let production_weights = production_playback
-            .clips
-            .iter()
-            .map(|clip| (clip.clip.node, clip.weight))
-            .collect::<Vec<_>>();
-        let changed_weights = changed_playback
-            .clips
-            .iter()
-            .map(|clip| (clip.clip.node, clip.weight))
-            .collect::<Vec<_>>();
-        assert_ne!(production_weights, changed_weights);
-    }
-
-    #[test]
-    fn non_identity_attack_graph_blend_changes_span_fk_playback_input() {
-        let mut skeleton = SkeletonState::default().with_lead_foot(LeadFoot::Left);
-        skeleton.begin_attack(AttackSpec::default(), 10, 20);
-        skeleton.advance_action(15);
-        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
-        assert!(matches!(
-            legacy.action[0].sampling,
-            PoseSampling::Span { progress, .. } if progress > 0.0 && progress < 1.0
-        ));
-
-        let mut production_app = graph_test_app();
-        let production = route(&mut production_app, skeleton.clone());
-        let mut changed_app = graph_test_app();
-        changed_app
-            .world_mut()
-            .resource_mut::<semantic_graph::SemanticGraphLibrary>()
-            .factor_override = Some([0.0; semantic_graph::MAX_GRAPH_ANCHORS - 1]);
-        let changed = route(&mut changed_app, skeleton);
-
-        assert!(production.runtime_evaluated);
-        assert!(changed.runtime_evaluated);
-        assert_ne!(production.evaluation.action, changed.evaluation.action);
-
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::AttackThrustLeadLeftContact,
-        ]);
-        let resolve = |sample: PoseSample| {
-            let mut weighted = Vec::new();
-            append_resolved_sample(
-                &mut weighted,
-                &runtime,
-                &catalog,
-                HUMANOID_UNARMED_PACK,
-                sample,
-                None,
-            );
-            weighted
-                .into_iter()
-                .map(|clip| (clip.clip.node, clip.weight))
-                .collect::<Vec<_>>()
-        };
-        assert_ne!(
-            resolve(production.evaluation.action[0]),
-            resolve(changed.evaluation.action[0])
-        );
-    }
-
-    #[test]
-    fn editor_preflight_resolves_deterministic_routes_and_mirror_fallback() {
-        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+    fn asset_validation_resolves_deterministic_routes() {
+        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join("assets");
         let report = catalog::validate_editor_asset_root(&asset_root).unwrap();
@@ -291,26 +80,13 @@ mod legacy_tests {
                 .iter()
                 .any(|resolution| resolution.route == "ordinary_locomotion")
         );
-        assert!(report.route_resolutions.iter().any(|resolution| {
-            resolution.route == "raised_guard_attack" && resolution.mirrored
-        }));
-
-        let mut app = graph_test_app();
-        let graph_routes = app
-            .world_mut()
-            .run_system_cached(semantic_graph::editor_graph_preflight)
-            .unwrap()
-            .unwrap();
-        assert_eq!(graph_routes.len(), 2);
-        assert!(graph_routes.iter().all(|route| {
-            route.requested_path == route.selected_path && route.sample_count > 0
-        }));
-        assert!(graph_routes.iter().any(|route| {
-            route.label.contains("right-lead")
-                && route.selected_path == SemanticGraphPath::RaisedGuardAttack
-        }));
+        assert!(
+            report
+                .route_resolutions
+                .iter()
+                .any(|resolution| resolution.route == "raised_guard_attack")
+        );
     }
-
     #[test]
     fn runtime_catalog_registers_both_downed_gait_mirror_endpoints() {
         let catalog = catalog::AnimationPackCatalog::default();
@@ -342,7 +118,6 @@ mod legacy_tests {
                     orientation: Quat::IDENTITY,
                     linear_velocity: Vec3::NEG_Z * 5.5,
                     grounded: true,
-                    crouching: false,
                     delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                     tick,
                 },
@@ -362,6 +137,34 @@ mod legacy_tests {
         assert!(advanced_without_sample);
         assert!(largest_step < 0.06, "largest phase step was {largest_step}");
         assert!(circular_phase_delta(presented.gait_phase, authoritative.gait_phase).abs() < 0.08);
+    }
+
+    #[test]
+    fn prone_presentation_predicts_the_authoritative_crawl_cadence() {
+        let velocity = Vec3::NEG_Z * 2.0;
+        let mut authoritative = SkeletonState::default()
+            .with_body_state(BodyState::Prone)
+            .with_local_velocity(velocity)
+            .with_world_velocity(velocity);
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+
+        project_skeleton_locomotion(
+            &mut authoritative,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: velocity,
+                grounded: true,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 1,
+            },
+        );
+        advance_presented_skeleton(&mut presented, &authoritative, 1.0 / LOCOMOTION_SAMPLE_HZ);
+
+        assert!(
+            circular_phase_delta(presented.gait_phase, authoritative.gait_phase).abs() < 0.000_01
+        );
+        assert_eq!(presented.last_phase_correction_delta, 0.0);
+        assert_eq!(presented.phase_error_remaining, 0.0);
     }
 
     #[test]
@@ -515,8 +318,8 @@ mod legacy_tests {
                 "required pose {required:?} did not resolve"
             );
         }
-        // The 40 required semantics collapse to 31 authored variants when
-        // each supported whole-body mirror pair is represented once.
+        // The 19 required semantics collapse to 18 independently resolvable
+        // variants when the supported whole-body mirror pair appears once.
         let authored_variants = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -524,7 +327,7 @@ mod legacy_tests {
                     .is_none_or(|counterpart| pose.as_str() < counterpart.as_str())
             })
             .count();
-        assert_eq!(authored_variants, 31);
+        assert_eq!(authored_variants, 18);
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -537,50 +340,36 @@ mod legacy_tests {
             }
         );
         assert_eq!(
-            root.poses[&SemanticPose::AttackThrustLeadLeftContact],
+            root.poses[&SemanticPose::AttackThrust],
             PoseAnchor {
-                motion: "attack_thrust_lead_left_contact".to_owned(),
-                frame: 0,
+                motion: "thrust".to_owned(),
+                frame: 4,
             }
         );
-        assert_eq!(
-            root.poses[&SemanticPose::DuckLeadLeftBackward],
-            PoseAnchor {
-                motion: "duck_lead_left_backward".to_owned(),
-                frame: 0,
-            }
-        );
-        assert_eq!(
-            root.poses[&SemanticPose::DuckLeadLeftForward],
-            PoseAnchor {
-                motion: "duck_lead_left_forward".to_owned(),
-                frame: 0,
-            }
-        );
-        assert_eq!(root.motions["duck_lead_left_forward"].last_frame, 0);
         assert_eq!(
             root.poses[&SemanticPose::DiveForward],
             PoseAnchor {
-                motion: "dive_forward".to_owned(),
+                motion: "dive".to_owned(),
                 frame: 0,
             }
         );
-        assert_eq!(
-            SemanticPose::DiveRight.mirrored_counterpart(),
-            Some(SemanticPose::DiveLeft)
-        );
         for pose in [
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardWalkLeadRight,
-            SemanticPose::GuardStrafeLeadLeftLeft,
-            SemanticPose::GuardStrafeLeadLeftRight,
-            SemanticPose::GuardStrafeLeadRightLeft,
-            SemanticPose::GuardStrafeLeadRightRight,
+            SemanticPose::DiveBackward,
+            SemanticPose::DiveLeft,
+            SemanticPose::DiveRight,
         ] {
-            let anchor = &root.poses[&pose];
-            assert_eq!(anchor.frame, 0);
-            assert_eq!(root.motions[&anchor.motion].last_frame, 0);
+            assert_eq!(root.poses[&pose].motion, "dive");
         }
+        assert_eq!(SemanticPose::DiveRight.mirrored_counterpart(), None);
+        assert_eq!(root.poses[&SemanticPose::GuardSwing].frame, 0);
+        assert_eq!(root.poses[&SemanticPose::GuardThrust].frame, 0);
+        assert_eq!(root.poses[&SemanticPose::AttackOffhand].frame, 0);
+        assert_eq!(root.motions["swing"].last_frame, 12);
+        assert_eq!(root.motions["swing"].required_last_frame, 4);
+        assert_eq!(root.motions["thrust"].last_frame, 12);
+        assert_eq!(root.motions["thrust"].required_last_frame, 4);
+        assert_eq!(root.motions["offhand"].last_frame, 4);
+        assert_eq!(root.motions["offhand"].required_last_frame, 0);
     }
 
     #[test]
@@ -630,6 +419,7 @@ mod legacy_tests {
 
     fn runtime_with_available(poses: impl IntoIterator<Item = SemanticPose>) -> AnimationRuntime {
         let catalog = AnimationPackCatalog::default();
+        let mut assets = Assets::<AnimationClip>::default();
         let poses = poses.into_iter().collect::<BTreeSet<_>>();
         let mut library = AnimationPackLibrary::default();
         library
@@ -650,35 +440,12 @@ mod legacy_tests {
             if runtime.clips.contains_key(&key) {
                 continue;
             }
-            let node_base = runtime.clips.len() * 256;
-            let pack = &catalog.packs[HUMANOID_UNARMED_PACK];
-            let anchor_nodes: BTreeMap<u16, AnimationNodeIndex> = pack
-                .poses
-                .values()
-                .filter(|candidate| candidate.motion == anchor.motion)
-                .map(|candidate| candidate.frame)
-                .chain(
-                    pack.references
-                        .get(&anchor.motion)
-                        .into_iter()
-                        .flatten()
-                        .map(|reference| reference.frame),
-                )
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .enumerate()
-                .map(|(index, frame)| (frame, AnimationNodeIndex::new(node_base + index + 1)))
-                .collect();
             runtime.clips.insert(
                 key,
                 LoadedClip {
-                    node: AnimationNodeIndex::new(node_base),
+                    handle: assets.add(AnimationClip::default()),
                     duration_seconds: 64.0 / ANIMATION_FPS,
-                    anchor_nodes: anchor_nodes.clone(),
-                    upper_node: AnimationNodeIndex::new(node_base),
-                    upper_anchor_nodes: anchor_nodes.clone(),
-                    lower_node: AnimationNodeIndex::new(node_base),
-                    lower_anchor_nodes: anchor_nodes,
+                    layer: ClipLayer::Whole,
                 },
             );
         }
@@ -705,7 +472,6 @@ mod legacy_tests {
                 weight: 1.0,
                 mirror_lower_body: false,
             },
-            None,
         );
         assert_eq!(weighted.len(), 2);
         assert!(
@@ -720,12 +486,10 @@ mod legacy_tests {
     }
 
     #[test]
-    fn attack_entry_blends_guard_and_contact_motions() {
+    fn attack_entry_blends_frame_zero_guard_and_contact_in_one_motion() {
         let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::AttackThrustLeadLeftContact,
-        ]);
+        let runtime =
+            runtime_with_available([SemanticPose::GuardThrust, SemanticPose::AttackThrust]);
         let mut weighted = Vec::new();
         append_resolved_sample(
             &mut weighted,
@@ -733,36 +497,37 @@ mod legacy_tests {
             &catalog,
             HUMANOID_UNARMED_PACK,
             PoseSample {
-                pose: SemanticPose::GuardLeadLeft,
+                pose: SemanticPose::GuardThrust,
                 sampling: PoseSampling::Span {
-                    end: SemanticPose::AttackThrustLeadLeftContact,
+                    end: SemanticPose::AttackThrust,
                     progress: 0.5,
                 },
                 weight: 1.0,
                 mirror_lower_body: false,
             },
-            None,
         );
         assert_eq!(weighted.len(), 2);
+        let thrust = runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "thrust".to_owned())]
+            .handle
+            .id();
         assert!(
             weighted
                 .iter()
-                .all(|sample| sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001)
+                .all(|sample| sample.clip.handle.id() == thrust)
         );
-        let guard = runtime.clips[&(
-            HUMANOID_UNARMED_PACK.to_owned(),
-            "guard_lead_left".to_owned(),
-        )]
-            .at_anchor(0)
-            .node;
-        let contact = runtime.clips[&(
-            HUMANOID_UNARMED_PACK.to_owned(),
-            "attack_thrust_lead_left_contact".to_owned(),
-        )]
-            .at_anchor(0)
-            .node;
-        assert!(weighted.iter().any(|sample| sample.clip.node == guard));
-        assert!(weighted.iter().any(|sample| sample.clip.node == contact));
+        assert!(
+            weighted
+                .iter()
+                .any(|sample| sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001)
+        );
+        assert!(
+            weighted
+                .iter()
+                .any(
+                    |sample| (sample.time_seconds - 4.0 / ANIMATION_FPS).abs() < 0.0001
+                        && (sample.weight - 0.5).abs() < 0.0001
+                )
+        );
     }
 
     #[test]
@@ -770,17 +535,14 @@ mod legacy_tests {
         let catalog = AnimationPackCatalog::default();
         let mut runtime =
             runtime_with_available([SemanticPose::RunContact, SemanticPose::RunFlight]);
-        let mirrored_node = AnimationNodeIndex::new(9_001);
+        let mut assets = Assets::<AnimationClip>::default();
+        let mirrored_handle = assets.add(AnimationClip::default());
         runtime.clips.insert(
             (HUMANOID_UNARMED_PACK.to_owned(), "run_mirrored".to_owned()),
             LoadedClip {
-                node: AnimationNodeIndex::new(9_000),
+                handle: mirrored_handle.clone(),
                 duration_seconds: 64.0 / ANIMATION_FPS,
-                anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
-                upper_node: AnimationNodeIndex::new(9_000),
-                upper_anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
-                lower_node: AnimationNodeIndex::new(9_000),
-                lower_anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
+                layer: ClipLayer::Whole,
             },
         );
         let mut weighted = Vec::new();
@@ -795,23 +557,22 @@ mod legacy_tests {
                 weight: 0.5,
                 mirror_lower_body: true,
             },
-            None,
         );
 
         assert_eq!(weighted.len(), 1);
-        assert_eq!(weighted[0].clip.node, mirrored_node);
+        assert_eq!(weighted[0].clip.handle.id(), mirrored_handle.id());
         assert!((weighted[0].weight - 0.5).abs() < 0.0001);
     }
 
     #[test]
-    fn zero_clip_base_gets_one_canonical_player_and_stable_targets() {
+    fn zero_clip_base_gets_stable_animation_targets_without_a_player() {
         let mut world = World::new();
         world.init_resource::<AnimationRuntime>();
         let owner = world.spawn_empty().id();
         let rig = world.spawn(AnimationRigScene(owner)).id();
         let skeleton = world.spawn(Name::new("Skeleton")).id();
-        let root = world.spawn(Name::new("root")).id();
-        let pelvis = world.spawn(Name::new("pelvis")).id();
+        let root = world.spawn(Name::new("body_world")).id();
+        let pelvis = world.spawn(Name::new("root")).id();
         world.entity_mut(rig).add_child(skeleton);
         world.entity_mut(skeleton).add_child(root);
         world.entity_mut(root).add_child(pelvis);
@@ -825,18 +586,13 @@ mod legacy_tests {
             .unwrap();
         world.flush();
 
-        assert_eq!(world.query::<&AnimationPlayer>().iter(&world).count(), 1);
-        assert_eq!(
-            world.get::<AnimatedBy>(pelvis).map(|link| link.0),
-            Some(skeleton)
-        );
         assert_eq!(
             world.get::<AnimationTargetId>(pelvis),
             Some(&AnimationTargetId::from_names(
                 [
                     Name::new("Skeleton"),
-                    Name::new("root"),
-                    Name::new("pelvis")
+                    Name::new("body_world"),
+                    Name::new("root")
                 ]
                 .iter()
             ))
@@ -848,26 +604,29 @@ mod legacy_tests {
     }
 
     #[test]
-    fn composite_mask_keeps_root_pelvis_and_legs_out_of_the_upper_body() {
+    fn composite_mask_keeps_mhr_world_pelvis_and_legs_out_of_the_upper_body() {
         for lower in [
             "Skeleton",
+            "body_world",
             "root",
-            "pelvis",
-            "thigh.L",
-            "thigh_twist.R",
-            "shin.L",
-            "foot.R",
-            "toe.L",
+            "l_upleg",
+            "r_upleg_twist3_proc",
+            "l_lowleg",
+            "r_foot",
+            "l_talocrural",
+            "r_subtalar",
+            "l_transversetarsal",
+            "l_ball",
         ] {
             assert!(is_lower_body_animation_target(lower), "{lower}");
         }
         for upper in [
-            "stomach_01",
-            "stomach_02",
-            "chest",
-            "clavicle.L",
-            "upper_arm.R",
-            "head",
+            "c_spine0",
+            "c_spine2",
+            "c_spine3",
+            "l_clavicle",
+            "r_uparm",
+            "c_head",
         ] {
             assert!(!is_lower_body_animation_target(upper), "{upper}");
         }
@@ -906,8 +665,8 @@ mod legacy_tests {
         let pelvis = AnimationTargetId::from_names(
             [
                 Name::new("Skeleton"),
+                Name::new("body_world"),
                 Name::new("root"),
-                Name::new("pelvis"),
             ]
             .iter(),
         );
@@ -934,275 +693,9 @@ mod legacy_tests {
                 weight: 1.0,
                 mirror_lower_body: false,
             },
-            None,
         );
         assert_eq!(weighted.len(), 1);
         assert!(weighted[0].time_seconds.abs() < 0.0001);
-    }
-
-    #[test]
-    fn missing_opposite_guard_uses_mirrored_same_pack_anchor() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([SemanticPose::GuardLeadLeft]);
-        let resolved = resolve_anchor(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            SemanticPose::GuardLeadRight,
-        )
-        .expect("mirrored guard fallback");
-
-        assert!(resolved.mirrored);
-        assert_eq!(
-            resolved.anchor,
-            &catalog.packs[HUMANOID_UNARMED_PACK].poses[&SemanticPose::GuardLeadLeft]
-        );
-
-        let mut weighted = Vec::new();
-        append_resolved_sample(
-            &mut weighted,
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            PoseSample {
-                pose: SemanticPose::GuardLeadRight,
-                sampling: PoseSampling::Anchor,
-                weight: 0.75,
-                mirror_lower_body: false,
-            },
-            None,
-        );
-        assert_eq!(weighted.len(), 1);
-        assert!((weighted[0].mirrored_weight - 0.75).abs() < 0.0001);
-    }
-
-    #[test]
-    fn partial_guard_diagonal_assets_keep_one_coherent_exact_orientation() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardStrafeLeadRightRight,
-        ]);
-        let requested = [
-            (SemanticPose::GuardWalkLeadLeft, 0.25),
-            (SemanticPose::GuardStrafeLeadLeftLeft, 0.75),
-        ];
-        let samples = requested.map(|(pose, weight)| PoseSample {
-            pose: SemanticPose::GuardLeadLeft,
-            sampling: PoseSampling::Span {
-                end: pose,
-                progress: 0.5,
-            },
-            weight,
-            mirror_lower_body: false,
-        });
-        let movement = requested.map(|item| item.0);
-        let exact = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            false,
-        );
-        let mirrored = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            true,
-        );
-        let parity = mirrored > exact;
-        assert!(!parity);
-
-        let mut weighted = Vec::new();
-        for sample in samples {
-            append_resolved_sample(
-                &mut weighted,
-                &runtime,
-                &catalog,
-                HUMANOID_UNARMED_PACK,
-                sample,
-                Some(parity),
-            );
-        }
-        assert!(!weighted.is_empty());
-        assert!(weighted.iter().all(|clip| clip.mirrored_weight == 0.0));
-        assert!((weighted.iter().map(|clip| clip.weight).sum::<f32>() - 1.0).abs() < 0.0001);
-        let exact_nodes = [
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_lead_left".to_owned(),
-            )]
-                .anchor_nodes[&0],
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_walk_lead_left".to_owned(),
-            )]
-                .anchor_nodes[&0],
-        ];
-        assert!(
-            weighted
-                .iter()
-                .all(|clip| exact_nodes.contains(&clip.clip.node))
-        );
-    }
-
-    #[test]
-    fn coherent_opposite_parity_preserves_complete_diagonal_semantics() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::GuardLeadRight,
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardWalkLeadRight,
-            SemanticPose::GuardStrafeLeadRightRight,
-        ]);
-        let samples = [
-            PoseSample {
-                pose: SemanticPose::GuardLeadLeft,
-                sampling: PoseSampling::Span {
-                    end: SemanticPose::GuardWalkLeadLeft,
-                    progress: 0.5,
-                },
-                weight: 0.5,
-                mirror_lower_body: false,
-            },
-            PoseSample {
-                pose: SemanticPose::GuardLeadLeft,
-                sampling: PoseSampling::Span {
-                    end: SemanticPose::GuardStrafeLeadLeftLeft,
-                    progress: 0.5,
-                },
-                weight: 0.5,
-                mirror_lower_body: false,
-            },
-        ];
-        let movement = [
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardStrafeLeadLeftLeft,
-        ];
-        let exact = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            false,
-        );
-        let mirrored = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            true,
-        );
-        assert!(mirrored > exact);
-
-        let mut weighted = Vec::new();
-        for sample in samples {
-            append_resolved_sample(
-                &mut weighted,
-                &runtime,
-                &catalog,
-                HUMANOID_UNARMED_PACK,
-                sample,
-                Some(true),
-            );
-        }
-        let expected_nodes = [
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_lead_right".to_owned(),
-            )]
-                .anchor_nodes[&0],
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_walk_lead_right".to_owned(),
-            )]
-                .anchor_nodes[&0],
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_strafe_lead_right_right".to_owned(),
-            )]
-                .anchor_nodes[&0],
-        ];
-        assert!(
-            weighted
-                .iter()
-                .all(|clip| expected_nodes.contains(&clip.clip.node))
-        );
-        assert!(
-            weighted
-                .iter()
-                .all(|clip| (clip.mirrored_weight - clip.weight).abs() < 0.0001)
-        );
-    }
-
-    #[test]
-    fn exact_cardinal_guard_motion_wins_a_complete_parity_tie() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::GuardLeadRight,
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardWalkLeadRight,
-        ]);
-        let samples = [PoseSample {
-            pose: SemanticPose::GuardLeadLeft,
-            sampling: PoseSampling::Span {
-                end: SemanticPose::GuardWalkLeadLeft,
-                progress: 0.5,
-            },
-            weight: 1.0,
-            mirror_lower_body: false,
-        }];
-        let movement = [SemanticPose::GuardWalkLeadLeft];
-        let exact = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            false,
-        );
-        let mirrored = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            true,
-        );
-        assert_eq!(exact, mirrored);
-        assert!(!(mirrored > exact));
-    }
-
-    #[test]
-    fn absent_guard_locomotion_assets_degrade_without_a_partial_clip() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([]);
-        let mut weighted = Vec::new();
-        append_resolved_sample(
-            &mut weighted,
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            PoseSample {
-                pose: SemanticPose::GuardLeadLeft,
-                sampling: PoseSampling::Span {
-                    end: SemanticPose::GuardStrafeLeadLeftRight,
-                    progress: 0.5,
-                },
-                weight: 1.0,
-                mirror_lower_body: false,
-            },
-            Some(false),
-        );
-        assert!(weighted.is_empty());
     }
 
     #[test]
@@ -1266,188 +759,6 @@ mod legacy_tests {
     }
 
     #[test]
-    fn partial_motion_begins_from_bind_every_frame() {
-        let mut world = World::new();
-        let owner = world
-            .spawn(AnimationPlayback {
-                use_authored_bind_pose: false,
-                ..default()
-            })
-            .id();
-        let bind = Transform::from_xyz(0.0, 0.25, 0.0);
-        let node = world
-            .spawn((
-                AuthoredBindTransform { owner, local: bind },
-                Transform::from_xyz(3.0, 4.0, 5.0),
-            ))
-            .id();
-        world
-            .run_system_cached(reset_authored_bind_before_fk)
-            .unwrap();
-        assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
-        world.get_mut::<Transform>(node).unwrap().translation = Vec3::splat(9.0);
-        world
-            .run_system_cached(reset_authored_bind_before_fk)
-            .unwrap();
-        assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
-    }
-
-    fn mirror_test_pose(mirror: f32) -> PlaybackPose {
-        PlaybackPose {
-            clips: Vec::new(),
-            use_authored_bind_pose: true,
-            whole_body_mirror: mirror,
-            foot_ik_weights: Vec2::ZERO,
-        }
-    }
-
-    #[test]
-    fn guard_crossfade_activates_at_the_current_effective_pose() {
-        let mut playback = AnimationPlayback {
-            whole_body_mirror: 0.8,
-            ..default()
-        };
-        let mut clock = ProceduralAnimationClock::default();
-        clock.set_fixed_tick(10, 0.1);
-
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.2),
-            WeaponGuardState::Raised,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-
-        assert!(playback.presentation_transition.is_some());
-        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
-    }
-
-    #[test]
-    fn guard_crossfade_completes_at_the_latest_target_pose() {
-        let mut playback = AnimationPlayback {
-            whole_body_mirror: 0.8,
-            ..default()
-        };
-        let mut clock = ProceduralAnimationClock::default();
-        clock.set_fixed_tick(10, 0.1);
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.2),
-            WeaponGuardState::Raised,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-        clock.set_fixed_tick(11, PRESENTATION_CROSSFADE_SECONDS);
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.2),
-            WeaponGuardState::Raised,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-
-        assert!(playback.presentation_transition.is_none());
-        assert!((playback.whole_body_mirror - 0.2).abs() < 0.0001);
-    }
-
-    #[test]
-    fn hard_stop_retains_then_releases_the_effective_locomotion_pose() {
-        let mut playback = AnimationPlayback {
-            whole_body_mirror: 0.8,
-            ordinary_locomotion_active: true,
-            ..default()
-        };
-        let mut clock = ProceduralAnimationClock::default();
-        clock.set_fixed_tick(10, 1.0 / LOCOMOTION_SAMPLE_HZ);
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.0),
-            WeaponGuardState::Lowered,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-        assert!(playback.presentation_transition.is_some());
-        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
-
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.0),
-            WeaponGuardState::Lowered,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            1.0,
-        );
-        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
-
-        clock.set_fixed_tick(11, PRESENTATION_CROSSFADE_SECONDS);
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.0),
-            WeaponGuardState::Lowered,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-        assert!(playback.presentation_transition.is_none());
-        assert!(playback.whole_body_mirror.abs() < 0.0001);
-    }
-
-    #[test]
-    fn reversing_guard_mid_crossfade_has_no_presentation_jump() {
-        let mut playback = AnimationPlayback {
-            whole_body_mirror: 0.8,
-            ..default()
-        };
-        let mut clock = ProceduralAnimationClock::default();
-        clock.set_fixed_tick(10, 0.09);
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.2),
-            WeaponGuardState::Raised,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-        clock.set_fixed_tick(11, 0.09);
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.2),
-            WeaponGuardState::Raised,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-        let before_reversal = playback.whole_body_mirror;
-
-        clock.set_fixed_tick(12, 0.09);
-        update_presentation_crossfade(
-            &mut playback,
-            mirror_test_pose(0.8),
-            WeaponGuardState::Lowered,
-            false,
-            PRESENTATION_CROSSFADE_SECONDS,
-            &clock,
-            0.0,
-        );
-
-        let transition = playback.presentation_transition.as_ref().unwrap();
-        assert!((playback.whole_body_mirror - before_reversal).abs() < 0.0001);
-        assert!((transition.from.whole_body_mirror - before_reversal).abs() < 0.0001);
-    }
-
-    #[test]
     fn client_constraint_api_is_reexported() {
         let _: Option<HandIkTarget> = None;
         let _: HumanoidIkTargets = default();
@@ -1456,6 +767,7 @@ mod legacy_tests {
             owner: Entity::PLACEHOLDER,
             primary_hand: HandSide::Right,
             secondary_grip_local: None,
+            socket_bind_correction: Transform::IDENTITY,
         };
         assert_eq!(constraint.primary_hand, HandSide::Right);
     }

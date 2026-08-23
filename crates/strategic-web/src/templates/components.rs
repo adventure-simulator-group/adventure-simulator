@@ -71,6 +71,64 @@ pub fn decorative_game_icon(icon: &str) -> Markup {
     }
 }
 
+/// A compact, neutral scene card for a non-character subject with a single
+/// navigational action. Characters keep their own richer action overlays.
+pub struct SceneInteractableLink<'a> {
+    pub kind: SceneInteractableKind,
+    pub visual_modifier: Option<&'a str>,
+    pub href: &'a str,
+    pub label: &'a str,
+    pub aria_label: &'a str,
+    pub icon: &'a str,
+    pub action_label: Option<&'a str>,
+}
+
+#[allow(dead_code)] // Client-rendered evidence and server-rendered remains share this vocabulary next.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SceneInteractableKind {
+    Fixture,
+    Service,
+    Evidence,
+    Remains,
+}
+
+impl SceneInteractableKind {
+    const fn class(self) -> &'static str {
+        match self {
+            Self::Fixture => "fixture",
+            Self::Service => "service",
+            Self::Evidence => "evidence",
+            Self::Remains => "remains",
+        }
+    }
+}
+
+pub fn scene_interactable_link(view: SceneInteractableLink<'_>) -> Markup {
+    let action_label = view.action_label;
+    let class = match view.visual_modifier {
+        Some(modifier) => format!(
+            "scene-interactable scene-interactable--{} {modifier}",
+            view.kind.class()
+        ),
+        None => format!(
+            "scene-interactable scene-interactable--{}",
+            view.kind.class()
+        ),
+    };
+    html! {
+        a class=(class)
+            href=(view.href) aria-label=(view.aria_label) title=(view.aria_label) {
+            span class="scene-interactable-visual" aria-hidden="true" {
+                (decorative_game_icon(view.icon))
+            }
+            span class="scene-interactable-label" { (view.label) }
+            @if let Some(action_label) = action_label {
+                span class="btn btn-secondary btn-small" aria-hidden="true" { (action_label) }
+            }
+        }
+    }
+}
+
 /// Exact icon name for a seeded item. Unknown/modded items get a real fallback
 /// asset rather than a URL derived from untrusted data.
 pub fn item_icon_name(item_id: &str) -> &'static str {

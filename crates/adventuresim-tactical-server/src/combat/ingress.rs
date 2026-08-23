@@ -26,11 +26,19 @@ pub(super) fn on_defender_response(
         return;
     };
     let start = animation_tick(&time);
-    match **event {
-        DefendRequest::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, start + 8),
+    let accepted = match **event {
+        DefendRequest::Dodge if skeleton.action_kind() == SkeletonAction::Dodge => true,
+        DefendRequest::Dodge => skeleton
+            .begin_dodge(DodgeSpec::default(), start, start + 8)
+            .is_ok(),
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
-        DefendRequest::Roll => {}
-        DefendRequest::Parry => skeleton.begin_block(BlockSpec::default(), start, start + 8),
+        DefendRequest::Roll => true,
+        DefendRequest::Parry => skeleton
+            .begin_block(BlockSpec::default(), start, start + 8)
+            .is_ok(),
+    };
+    if !accepted {
+        return;
     }
 
     cmd.entity(entity).insert(PendingDefenderResponse {
@@ -45,24 +53,34 @@ pub(super) fn on_melee_attack_started(
     mut skeletons: Query<&mut SkeletonState>,
     time: Res<Time<()>>,
 ) {
+    let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
+        return;
+    };
+    let Some(strike_family) = skeleton.available_strike_family(event.strike_family) else {
+        return;
+    };
+    let Some(spec) = (match event.hand {
+        AttackHand::Main => skeleton.select_main_attack(strike_family),
+        AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
+    }) else {
+        return;
+    };
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
+    let start = animation_tick(&time);
+    if skeleton
+        .begin_attack(spec, start, start + duration_ticks(event.windup))
+        .is_err()
+    {
+        return;
+    }
     authority.observe(
         Some(event.target),
         CombatInstant::from_elapsed(&time),
         event.windup,
         MELEE_WINDUP_NETWORK_ALLOWANCE,
     );
-    if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
-        let start = animation_tick(&time);
-        let attack = AttackSpec::melee_from_local_velocity_and_style(
-            skeleton.local_velocity,
-            event.strike_family,
-            event.footwork,
-        );
-        skeleton.begin_attack(attack, start, start + duration_ticks(event.windup));
-    }
 }
 
 pub(super) fn resolve_defender_response(
@@ -129,12 +147,26 @@ mod roll_tests {
             &SkeletonState::default().with_body_state(BodyState::Supine)
         ));
     }
+
+    #[test]
+    fn packet_tolerance_does_not_shorten_attack_animation_timing() {
+        let authored = CombatDuration::from_duration(Duration::from_millis(300));
+        let (animation_windup, minimum_windup) = player_attack_windups(authored);
+
+        assert_eq!(duration_ticks(animation_windup), 19);
+        assert_eq!(duration_ticks(minimum_windup), 16);
+    }
+}
+
+fn player_attack_windups(authored: CombatDuration) -> (CombatDuration, CombatDuration) {
+    (authored, authored.saturating_sub(WINDUP_JITTER_TOLERANCE))
 }
 
 pub(super) fn on_melee_action_request(
     event: On<FromClient<MeleeActionRequest>>,
     mut cmd: Commands,
     time: Res<Time<()>>,
+    viewer: TacticalPlayerViewer,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
 ) {
@@ -148,26 +180,46 @@ pub(super) fn on_melee_action_request(
     match **event {
         MeleeActionRequest::Start {
             strike_family,
-            footwork,
+            hand,
         } => {
+            let Ok(mut skeleton) = skeletons.get_mut(attacker) else {
+                return;
+            };
+            let Some(strike_family) = skeleton.available_strike_family(strike_family) else {
+                return;
+            };
+            let Some(spec) = (match hand {
+                AttackHand::Main => skeleton.select_main_attack(strike_family),
+                AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
+            }) else {
+                return;
+            };
             let Ok(mut authority) = authorities.get_mut(attacker) else {
                 return;
             };
+            // The same authored per-weapon value the client paces its own
+            // swing by, minus a delivery-jitter tolerance - see
+            // `WINDUP_JITTER_TOLERANCE`. Unarmed attackers use the shared
+            // authored hands timing; a genuinely viewless attacker still
+            // falls back to zero and is rejected by later weapon checks.
+            let authored_windup = viewer
+                .get_for_attack(attacker, hand)
+                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .unwrap_or_default();
+            let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
+            let start = animation_tick(&time);
+            if skeleton
+                .begin_attack(spec, start, start + duration_ticks(animation_windup))
+                .is_err()
+            {
+                return;
+            }
             authority.observe(
                 None,
                 CombatInstant::from_elapsed(&time),
-                CLIENT_MELEE_WINDUP,
+                minimum_windup,
                 MELEE_WINDUP_NETWORK_ALLOWANCE,
             );
-            if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
-                let start = animation_tick(&time);
-                let attack = AttackSpec::melee_from_local_velocity_and_style(
-                    skeleton.local_velocity,
-                    strike_family,
-                    footwork,
-                );
-                skeleton.begin_attack(attack, start, start + duration_ticks(CLIENT_MELEE_WINDUP));
-            }
         }
         MeleeActionRequest::Complete {
             target,
@@ -180,16 +232,17 @@ pub(super) fn on_melee_action_request(
             };
             // Finite precision is intentionally accepted as reported. Full
             // animation and secondary physics remain client-owned.
-            let strike_family = skeletons
+            let (strike_family, hand) = skeletons
                 .get_mut(attacker)
-                .map(|skeleton| skeleton.strike_family())
-                .unwrap_or(StrikeFamily::Thrust);
+                .map(|skeleton| (skeleton.strike_family(), skeleton.attack_hand()))
+                .unwrap_or((StrikeFamily::Thrust, AttackHand::Main));
             cmd.trigger(MeleeAttackIntent {
                 attacker,
                 target,
                 body_part,
                 reported_precision,
                 strike_family,
+                hand,
             });
         }
     }
@@ -198,8 +251,7 @@ pub(super) fn on_melee_action_request(
 pub(super) fn on_ranged_action_request(
     event: On<FromClient<RangedActionRequest>>,
     mut cmd: Commands,
-    time: Res<Time<()>>,
-    mut skeletons: Query<&mut SkeletonState>,
+    viewer: TacticalPlayerViewer,
 ) {
     let Some(attacker) = event.client_id.entity() else {
         debug!(
@@ -210,18 +262,18 @@ pub(super) fn on_ranged_action_request(
     };
     match **event {
         RangedActionRequest::Start => {
-            if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
-                let start = animation_tick(&time);
-                skeleton.begin_attack(
-                    AttackSpec::default(),
-                    start,
-                    start + duration_ticks(CLIENT_RANGED_WINDUP),
-                );
-            }
+            // Same per-weapon windup + jitter-tolerance treatment as the
+            // melee path - see `on_melee_action_request`.
+            let authored_windup = viewer
+                .get(attacker)
+                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .unwrap_or_default();
+            let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
             cmd.trigger(RangedAttackStartedIntent {
                 attacker,
                 target: None,
-                windup: CLIENT_RANGED_WINDUP,
+                animation_windup,
+                minimum_windup,
             });
         }
         RangedActionRequest::CompleteMiss => {
@@ -262,19 +314,25 @@ pub(super) fn on_ranged_attack_started(
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
-    authority.observe(
-        CombatInstant::from_elapsed(&time),
-        event.windup,
-        RANGED_NETWORK_ALLOWANCE,
-    );
-    if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
-        let start = animation_tick(&time);
-        skeleton.begin_attack(
+    let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
+        return;
+    };
+    let start = animation_tick(&time);
+    if skeleton
+        .begin_attack(
             AttackSpec::default(),
             start,
-            start + duration_ticks(event.windup),
-        );
+            start + duration_ticks(event.animation_windup),
+        )
+        .is_err()
+    {
+        return;
     }
+    authority.observe(
+        CombatInstant::from_elapsed(&time),
+        event.minimum_windup,
+        RANGED_NETWORK_ALLOWANCE,
+    );
 }
 
 fn animation_tick(time: &Time<()>) -> u64 {

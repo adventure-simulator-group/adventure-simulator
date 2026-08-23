@@ -252,6 +252,13 @@
   let selectionGeneration = 0;
   let startInFlight = null;
   let contextualMutation = null;
+  let selectedNpc = null;
+
+  const syncConversationPanels = (npc) => {
+    document.querySelectorAll("[data-repair-custody-service]").forEach((panel) => {
+      panel.hidden = !npc || npc.service_id !== panel.dataset.repairCustodyService;
+    });
+  };
 
   const actionId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const request = async (path, payload) => {
@@ -602,7 +609,7 @@
           session_id: view.session_id,
           action_id: acceptanceActionId,
         })).then((result) => {
-          window.location.assign(result.redirect);
+          window.strategicNavigate(result.redirect);
         }).catch((error) => {
           button.disabled = false;
           window.reportStrategicError(error, "accept Order errantry");
@@ -727,6 +734,8 @@
   const selectNpc = (npc, button) => {
     selectionGeneration += 1;
     contextualMutation = null;
+    selectedNpc = npc;
+    syncConversationPanels(npc);
     chat.dataset.localChatSubject = npc.id;
     chat.dispatchEvent(new Event("local-chat-subject-changed"));
     currentView = null;
@@ -751,29 +760,32 @@
     }
     begin();
   };
+  document.addEventListener("strategic-live-regions-refreshed", () => {
+    syncConversationPanels(selectedNpc);
+  }, { signal });
   const loadPeople = async () => {
     if (!npcStrip) { begin(); return; }
     const path = `/api/settlements/${encodeURIComponent(npcStrip.dataset.npcSettlement)}/locations/${encodeURIComponent(npcStrip.dataset.npcLocation)}/npcs`;
     const response = await window.strategicFetch(path, { headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(`Could not load people here (${response.status})`);
     const people = await response.json();
-    const environmental = [...npcStrip.querySelectorAll(".fireplace-portrait")];
+    const locationFixtures = [...npcStrip.querySelectorAll("[data-location-fixture]")];
     if (!people.length) {
       npcStrip.querySelector("[data-npc-loading]")?.remove();
-      if (!environmental.length) npcStrip.textContent = "Nobody is available here just now.";
+      if (!locationFixtures.length) npcStrip.textContent = "Nobody is available here just now.";
       begin();
       return;
     }
     const buttons = people.map((npc) => {
-      const button = document.createElement("button"); button.type = "button"; button.className = "party-portrait settlement-npc-portrait"; button.dataset.npcId = npc.id; button.setAttribute("aria-label", `Talk to ${npc.name}`); button.setAttribute("aria-pressed", "false"); button.tabIndex = -1;
-      const portrait = document.createElement("span"); portrait.className = "party-portrait-initial settlement-npc-initials";
+      const button = document.createElement("button"); button.type = "button"; button.className = "scene-interactable scene-interactable--person party-portrait settlement-npc-portrait"; button.dataset.npcId = npc.id; button.setAttribute("aria-label", `Talk to ${npc.name}`); button.setAttribute("aria-pressed", "false"); button.tabIndex = -1;
+      const portrait = document.createElement("span"); portrait.className = "scene-interactable-visual party-portrait-initial settlement-npc-initials";
       const face = document.createElement("span"); face.className = npc.initials ? "party-portrait-face" : "party-portrait-face npc-portrait-silhouette"; face.setAttribute("aria-hidden", "true"); face.textContent = npc.initials || "";
-      const name = document.createElement("span"); name.className = "party-portrait-name settlement-npc-name"; name.textContent = npc.name;
+      const name = document.createElement("span"); name.className = "scene-interactable-label party-portrait-name settlement-npc-name"; name.textContent = npc.name;
       portrait.append(face, name); button.append(portrait); button.addEventListener("click", () => selectNpc(npc, button));
       button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });
       return button;
     });
-    npcStrip.replaceChildren(...buttons, ...environmental);
+    npcStrip.replaceChildren(...buttons, ...locationFixtures);
     const defaultIndex = Math.max(0, people.findIndex((npc) => npc.is_default));
     selectNpc(people[defaultIndex], buttons[defaultIndex]);
   };

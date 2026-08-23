@@ -12,8 +12,9 @@ use super::{
     context::LocationView,
     rest::{RestSummary, SoapRestPreview, rest_default_minutes, rest_service_menu},
     social::{
-        inventory_rail, merchant_offers_rail, npc_description_stage, npc_location_id,
-        npc_portrait_strip, player_chat_area, settlement_chat_area, settlement_resident_chat_area,
+        forge_description_stage, inventory_rail, merchant_offers_rail, npc_description_stage,
+        npc_location_id, npc_portrait_strip, player_chat_area, settlement_chat_area,
+        settlement_resident_chat_area,
     },
 };
 use crate::spacetimedb::{
@@ -60,7 +61,12 @@ impl MerchantShop {
         adventuresim_core::settlement_economy::storefront_available(
             &settlement.economy,
             self.storefront(),
-        )
+        ) || (matches!(self, Self::Weapons)
+            && adventuresim_core::organization::organization_service_chapter(
+                &settlement.id,
+                self.service_id(),
+            )
+            .is_some())
     }
 
     fn stocks_at(self, settlement: &Settlement, item: &crate::spacetimedb::ItemDefinition) -> bool {
@@ -341,6 +347,28 @@ pub fn fireplace_page(
             }
         }
     });
+    let cooking_progress = dish.map(|row| {
+        let target = u64::from(row.target_minutes).max(1);
+        (elapsed.min(target) * 100 / target) as u8
+    });
+    let cooking_state_icon = dish.map(|row| {
+        if elapsed < u64::from(row.target_minutes) {
+            "flame"
+        } else if elapsed == u64::from(row.target_minutes) {
+            "check-mark"
+        } else {
+            "flame"
+        }
+    });
+    let cooking_phase = dish.map(|row| {
+        if elapsed < u64::from(row.target_minutes) {
+            "cooking"
+        } else if elapsed == u64::from(row.target_minutes) {
+            "ready"
+        } else {
+            "overdue"
+        }
+    });
     let scope_href = |scope: &str| {
         format!(
             "{action_base}{}inventory_scope={scope}",
@@ -351,10 +379,21 @@ pub fn fireplace_page(
         div class="fireplace-layout" data-cooking-activity[dish.is_none()] data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
         aside class="left-sidebar fireplace-station-sidebar" {
             (sidebar_section("Fireplace", html! {
-                p { strong { "Loose cooking: " } (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
+                p class="fireplace-instrument" title="Loose food is always spit-roasted; pots, pans, and ovens cook their own contents." {
+                    (decorative_game_icon("campfire"))
+                    span { (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
+                }
                 @if let Some(row) = dish {
-                    p data-fireplace-status { strong { (status.unwrap_or("Cooking")) } " · " (elapsed) "/" (row.target_minutes) " min" }
-                    p class="small-copy text-muted" { "Added by " (&row.contributor_name) " at character minute " (row.started_at_minute) ". Hidden food-safety state is intentionally not shown." }
+                    div class="fireplace-cook-status" data-fireplace-status data-cooking-phase=(cooking_phase.unwrap_or("cooking")) role="group"
+                        aria-label=(format!("{}: {} of {} minutes", status.unwrap_or("Cooking"), elapsed, row.target_minutes)) {
+                        span class="fireplace-cook-status-icon" aria-hidden="true" { (decorative_game_icon(cooking_state_icon.unwrap_or("flame"))) }
+                        div class="fireplace-cook-progress" role="meter" aria-label="Cooking progress"
+                            aria-valuemin="0" aria-valuemax="100" aria-valuenow=(cooking_progress.unwrap_or(0)) {
+                            span style=(format!("--cooking-progress:{}%", cooking_progress.unwrap_or(0))) {}
+                        }
+                        strong { (status.unwrap_or("Cooking")) }
+                        time { (elapsed) "/" (row.target_minutes) "m" }
+                    }
                     form action=(format!("{action_base}/retrieve")) method="post" {
                         label { "Retrieve to "
                             select name="inventory_scope" {
@@ -377,11 +416,13 @@ pub fn fireplace_page(
                         @let vessel_item_id = vessel.instrument_item_id.as_deref().unwrap_or("container");
                         @let vessel_definition = definitions.iter().find(|item| item.id == vessel_item_id);
                         section class="fireplace-vessel" data-fireplace-container=(object_id) {
-                            p { strong { (item_name_with_display(vessel_item_id, &item_display_name(vessel_item_id), vessel_definition)) } }
+                            p class="fireplace-vessel-name" { (decorative_game_icon("meal")) strong { (item_name_with_display(vessel_item_id, &item_display_name(vessel_item_id), vessel_definition)) } }
                             button type="button" class="btn btn-secondary btn-small"
                                 data-container-open=(object_id) aria-label=(format!("Open {}", item_display_name(vessel_item_id))) { "Open" }
                             @if let Some(cooking) = vessel_dish {
-                                p class="small-copy" { (cooking.display_name.as_str()) " is cooking." }
+                                p class="fireplace-vessel-cooking" title=(format!("{} is cooking", cooking.display_name)) {
+                                    (decorative_game_icon("flame")) span { (cooking.display_name.as_str()) }
+                                }
                                 form action=(format!("{action_base}/retrieve")) method="post" {
                                     input type="hidden" name="inventory_scope" value=(format!("container:{object_id}"));
                                     button class="btn btn-primary btn-small" type="submit" { "Retrieve into vessel" }
@@ -404,9 +445,13 @@ pub fn fireplace_page(
             @if let Some(row) = dish {
                 section class="rest-service-menu fireplace-rest-menu" aria-label="Rest until food is ready" {
                     div class="rest-service-heading" { strong { "Rest while cooking" } }
-                    p class="small-copy" { "Target: " (row.target_minutes) " minutes · Remaining: " (u64::from(row.target_minutes).saturating_sub(elapsed)) " minutes" }
+                    p class="fireplace-rest-countdown" aria-label=(format!("{} minutes remaining", u64::from(row.target_minutes).saturating_sub(elapsed))) {
+                        (decorative_game_icon("flame"))
+                        span { (u64::from(row.target_minutes).saturating_sub(elapsed)) "m" }
+                    }
                     @if elapsed >= u64::from(row.target_minutes) {
-                        p class="strategic-warning" role="status" {
+                        p class="strategic-warning fireplace-ready-warning" role="status" {
+                            (decorative_game_icon("flame"))
                             @match row.method {
                                 CookingMethod::Stew => { "The dish is ready and will hold safely in its wet pot." }
                                 CookingMethod::Roast => { "The dish is ready. More time will dry and smoke it, reducing nutrition." }
@@ -881,6 +926,7 @@ pub fn live_merchant_shop_page(
     settlement: &Settlement,
     character: &Character,
     inventory: &[InventoryItem],
+    personal_amounts: &[InventoryItemAmount],
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
     party_members: &[Character],
@@ -920,7 +966,7 @@ pub fn live_merchant_shop_page(
             }
         })
         .unwrap_or(0);
-    let player_footer = if matches!(shop, MerchantShop::Herbalist) {
+    let player_footer = if matches!(shop, MerchantShop::Herbalist | MerchantShop::Weapons) {
         html! {}
     } else {
         inventory_footer_controls_with_leading(
@@ -942,6 +988,22 @@ pub fn live_merchant_shop_page(
         aside class=(if matches!(shop, MerchantShop::Inn) { "left-sidebar smith-wares-column service-left-sidebar" } else { "left-sidebar smith-wares-column" }) {
         div class=(if matches!(shop, MerchantShop::Inn) { "service-left-stack" } else { "merchant-stock-stack" }) {
         div class=(if matches!(shop, MerchantShop::Inn) { "service-inventory-area" } else { "merchant-stock-area" }) {
+        @if matches!(shop, MerchantShop::Weapons) {
+            section class="sidebar-section forge-customization" data-forge-customization data-live-preserve="forge-customization" {
+                h2 { "Forge a weapon" }
+                form method="post" action=(format!("/settlements/{}/weapons/forge", settlement.id)) {
+                    label { "Chassis" select data-forge-catalog aria-label="Weapon chassis" {} }
+                    div class="forge-recipe-editor" data-forge-editor aria-live="polite" { "Loading complete weapon recipe…" }
+                    input type="hidden" name="recipe" data-forge-recipe;
+                    dl class="forge-material-staging" data-forge-materials aria-live="polite" {}
+                    div class="forge-submit-row" {
+                        button type="submit" class="btn btn-primary" disabled data-forge-submit { "Forge" }
+                        span data-forge-eta { "Calculating…" }
+                    }
+                }
+            }
+        }
+        @if !matches!(shop, MerchantShop::Weapons) {
         (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Existing preparations and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             @if stocked_items.is_empty() {
@@ -969,6 +1031,7 @@ pub fn live_merchant_shop_page(
             }
         }))
         }
+        }
         @if matches!(shop, MerchantShop::Inn) {
             section class="inn-rest-panel" aria-label="Inn lodging and rest" {
                 (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, None, soap_preview))
@@ -979,19 +1042,19 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) (npc_description_stage(title, "Merchant counter and attending craftsperson")) (settlement_resident_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/storefront/{service_id}/offer", settlement.id) }) method="post" data-hard-navigation hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) @if matches!(shop, MerchantShop::Weapons) { (forge_description_stage(title, "Forge preview loading")) } @else { (npc_description_stage(title, "Merchant counter and attending craftsperson")) } (settlement_resident_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/storefront/{service_id}/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
-                @if !matches!(shop, MerchantShop::Herbalist) {
+                @if !matches!(shop, MerchantShop::Herbalist | MerchantShop::Weapons) {
                     button type="button" class="inventory-owner-tab" data-inventory-tab="party" { "Party" }
                 }
             }
             div data-inventory-pane="player" {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
-                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing), html! {
-                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
+                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, !matches!(shop, MerchantShop::Weapons), matches!(shop, MerchantShop::Armor | MerchantShop::Clothing), html! {
+                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| if matches!(shop, MerchantShop::Weapons) { matches!(definition.id.as_str(), "steel_stock" | "leather_stock" | "brass_stock" | "wood_stock") } else { shop.shows_inventory(definition) })) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
@@ -999,6 +1062,7 @@ pub fn live_merchant_shop_page(
                         @let is_equipped = equip.is_some_and(|equip| equip.contains(item.id));
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
                         @let target = target_quantity(personal_targets, &item.item_id);
+                        @let measured = personal_amounts.iter().find(|amount| amount.inventory_item_id == item.id).map(|amount| amount.remaining_milliunits);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-personal-inventory-id=(item.id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
                         @let repair_skill = smith_skill;
@@ -1006,8 +1070,8 @@ pub fn live_merchant_shop_page(
                         @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::ItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                        td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
-                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, true, equip)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
+                        td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist | MerchantShop::Weapons) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
+                        td class="inventory-count" { @if matches!(shop, MerchantShop::Weapons) { (format!("{:.3} kg", measured.unwrap_or(0) as f32 / 1_000_000.0 * definition.map_or(0.0, |definition| definition.weight))) } @else { (quantity_target_control(item.qty, target, &item.item_id, false)) } } td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, true, equip)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
@@ -1029,7 +1093,7 @@ pub fn live_merchant_shop_page(
                 }, player_footer, personal_encumbrance))
             }
             }
-            @if !matches!(shop, MerchantShop::Herbalist) { div data-inventory-pane="party" hidden {
+            @if !matches!(shop, MerchantShop::Herbalist | MerchantShop::Weapons) { div data-inventory-pane="party" hidden {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
                 (trade_inventory_table("merchant-party-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, false, false, html! {
@@ -2103,6 +2167,7 @@ fn item_name_with_display_quality(
             data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
             data-item-melee=[definition.map(|item| item.melee)]
+            data-item-weapon-holder=[matches!(item_id, "scabbard" | "weapon_loop").then_some("true")]
             data-item-ranged=[definition.map(|item| item.ranged)]
             data-item-group=[alcohol_group]
             data-group-name=[alcohol_group.map(|_| "Alcohol")]
@@ -2340,7 +2405,8 @@ fn repair_custody_panel(
         .collect();
     matching.sort_by_key(|order| (order.submitted_at_minutes, order.id));
     html! {
-        section class="repair-custody-panel" aria-label="Items entrusted for repair" {
+        section class="repair-custody-panel" aria-label="Items entrusted for repair"
+            data-repair-custody-service=(service_id) hidden {
             header class="repair-custody-header" {
                 h3 { @if matches!(shop, MerchantShop::Clothing) { "In the tailor's care" } @else { "In the smith's care" } }
                 @let craft = if matches!(shop, MerchantShop::Clothing) { "Tailoring" } else { "Smithing" };
@@ -2461,6 +2527,16 @@ mod tests {
     use adventuresim_core::equipment::EncumbranceSummary;
 
     #[test]
+    fn holder_inventory_rows_request_per_instance_icons() {
+        for id in ["scabbard", "weapon_loop"] {
+            let markup = item_name_with_display(id, id, None).into_string();
+            assert!(markup.contains("data-item-weapon-holder=\"true\""), "{id}");
+        }
+        let markup = item_name_with_display("belt", "belt", None).into_string();
+        assert!(!markup.contains("data-item-weapon-holder"));
+    }
+
+    #[test]
     fn fireplace_container_rows_expose_shared_browser_metadata_and_open_controls() {
         let source = include_str!("trade.rs");
         let fireplace = source
@@ -2513,6 +2589,38 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn authored_weapons_service_chapter_exposes_forge_without_economy_storefront() {
+        let mut guildhall = settlement();
+        guildhall.id = "viabundus-0".into();
+        guildhall.economy =
+            adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(MerchantShop::Weapons.available_at(&guildhall));
+
+        guildhall.id = "settlement-without-weapons-chapter".into();
+        assert!(!MerchantShop::Weapons.available_at(&guildhall));
+    }
+
+    #[test]
+    fn forge_client_restores_live_recipe_and_exposes_manual_preview_controls() {
+        let renderer = include_str!("../../../static/strategic-renderer.js");
+        assert!(renderer.contains("strategic-live-regions-refreshed"));
+        assert!(renderer.contains("currentForgeDesign"));
+        assert!(renderer.contains("wasm_weapon_editor_fields"));
+        assert!(!renderer.contains("numericBounds"));
+        assert!(renderer.contains(r#"type: "orbit-forge""#));
+        assert!(renderer.contains(r#"type: "zoom-forge""#));
+
+        let dialogue = include_str!("../../../static/dialogue-client.js");
+        assert!(dialogue.contains("data-repair-custody-service"));
+        assert!(dialogue.contains("npc.service_id !== panel.dataset.repairCustodyService"));
+
+        let css = include_str!("../../../static/css/strategic.css");
+        assert!(css.contains(".settlement-main:has(.forge-description-stage)"));
+        assert!(css.contains("background: transparent"));
+        assert!(css.contains(".repair-custody-panel[hidden] { display: none; }"));
     }
 
     #[test]
@@ -2706,6 +2814,7 @@ mod tests {
                 &[],
                 &[],
                 &[],
+                &[],
                 None,
                 &[],
                 &[],
@@ -2726,22 +2835,31 @@ mod tests {
             .into_string()
         };
         let merchant = render(MerchantShop::Weapons);
-        assert!(merchant.contains("action=\"/settlements/viabundus-1/storefront/weapons/offer\""));
-        assert!(merchant.contains("data-hard-navigation"));
+        assert!(merchant.contains("data-bevy-scene=\"forge\""));
+        assert!(merchant.contains("data-forge-customization"));
+        assert!(merchant.contains("action=\"/settlements/viabundus-1/weapons/forge\""));
+        assert!(merchant.contains("name=\"recipe\""));
+        assert!(merchant.contains("data-forge-editor"));
+        assert!(merchant.contains("data-forge-eta"));
         assert!(merchant.contains("data-inventory-pane=\"player\""));
-        assert!(merchant.contains("data-inventory-pane=\"party\""));
+        assert!(!merchant.contains("data-inventory-pane=\"party\""));
+        assert!(!merchant.contains("Merchant stock"));
+        assert!(!merchant.contains("Sell surplus"));
         assert!(
             merchant.contains(
                 "data-strategic-tooltip=\"Weight 10.0 / 100.0 kilograms; Penalty -10.0%\""
             )
         );
+        assert!(!merchant.contains(">10.0 / 100.0 kg<"));
+
+        let armourer = render(MerchantShop::Armor);
+        assert!(armourer.contains("data-inventory-pane=\"party\""));
         assert!(
-            merchant.contains(
+            armourer.contains(
                 "data-strategic-tooltip=\"Weight 30.0 / 200.0 kilograms; Penalty -15.0%\""
             )
         );
-        assert!(!merchant.contains(">10.0 / 100.0 kg<"));
-        assert!(!merchant.contains(">30.0 / 200.0 kg<"));
+        assert!(!armourer.contains(">30.0 / 200.0 kg<"));
 
         let herbalist = render(MerchantShop::Herbalist);
         assert!(
@@ -2790,6 +2908,7 @@ mod tests {
         let markup = live_merchant_shop_page(
             &town,
             &character,
+            &[],
             &[],
             std::slice::from_ref(&ration),
             &[],

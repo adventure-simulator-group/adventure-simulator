@@ -675,16 +675,16 @@ fn generated_claim_boundaries_exclude_narration_and_punctuation() {
     );
     assert!(!primary[2].challenge_text.ends_with('.'));
 
-    let visual = (0..100)
+    let visual = (0..1_000)
         .find_map(|seed| {
             let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).ok()?;
-            let draft = generated.witnesses[0].testimony[0].clone();
-            draft
-                .spoken_text
-                .starts_with("It looked like ")
-                .then_some(draft)
+            generated.witnesses[0]
+                .testimony
+                .iter()
+                .find(|draft| draft.spoken_text.starts_with("Methought it looked like "))
+                .cloned()
         })
         .expect("golden range includes a visual claim");
-    assert!(!visual.challenge_text.starts_with("It looked like "));
+    assert!(!visual.challenge_text.starts_with("Methought it looked like "));
     assert!(!visual.challenge_text.ends_with('.'));
 }

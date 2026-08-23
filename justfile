@@ -223,6 +223,26 @@ init-world-runtime:
     @{{ python_bin }} scripts/init_world_runtime.py --repository .
 replace-world-runtime:
     @{{ python_bin }} scripts/init_world_runtime.py --repository . --replace
+
+# Download and verify Meta MHR v1.0.1 into the ignored authoring cache.
+init-mhr-assets:
+    @{{ python_bin }} scripts/init_mhr_assets.py
+init-mhr-lod1-correctives:
+    @{{ python_bin }} scripts/init_mhr_assets.py --lod1-correctives
+verify-mhr-assets:
+    @{{ python_bin }} scripts/init_mhr_assets.py --verify-only
+# Edit the canonical John Fabelgeist MHR recipe and source rig.
+character-creator:
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml
+# Re-export the saved John recipe and prepare its spawnable runtime base.
+prepare-john-rig:
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --export-only
+    @{{ python_bin }} scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
+# Publish every currently authored motion as a mesh-free runtime animation.
+prepare-animation-assets:
+    @{{ python_bin }} scripts/prepare_animation_assets.py
+check-animation-assets:
+    @{{ python_bin }} scripts/prepare_animation_assets.py --check
 verify-world-data-bundle archive descriptor descriptor_sha256:
     @{{ python_bin }} scripts/world_data_bundle.py verify {{ quote(archive) }} --descriptor {{ quote(descriptor) }} --descriptor-sha256 {{ quote(descriptor_sha256) }}
 install-world-data archive descriptor descriptor_sha256:
@@ -256,9 +276,22 @@ load-viabundus-world server=spacetime_url database=spacetime_module: spacetime-v
     @{{ python_bin }} scripts/just_tasks.py recreate-world-database --server {{ server }} --database {{ database }} --module-dir {{ quote(strategic_dir) }}
     @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
 
-# Build the tactical server and spawner
+# Build the tactical server and spawner. Uses the same feature set as `just
+# tactical`/`client`/`client-headless` (--features debug) so this build and
+# those `cargo run`s share one `target/debug` build of the server instead of
+# fighting over it: since they select different features for the same crate,
+# cargo would otherwise recompile the whole dependency chain (bevy and
+# everything downstream) every time you switched between building here and
+# running there.
 build-tactical: verify-db-client
-    @cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
+    @cargo build --package adventuresim-tactical-server --features adventuresim-tactical-server/debug --package adventuresim-tactical-server-dispatcher
+
+# Same build as build-tactical, without first re-verifying bindings freshness
+# (a CI-hygiene check against the schema, not something a mission needs at
+# runtime). Used only by tactical-isolated so repeated combat-testing restarts
+# don't pay for a redundant module build/introspection every time.
+_build-tactical-unverified:
+    @cargo build --package adventuresim-tactical-server --features adventuresim-tactical-server/debug --package adventuresim-tactical-server-dispatcher
 
 # Build the WASM client
 build-wasm: verify-db-client
@@ -282,45 +315,175 @@ _spawner-stop:
 # Run a single tactical server (for testing). Defaults come from `.env.tactical`
 # (written by `tactical-isolated`) when present, otherwise from the canonical
 # stack - so a bare `just tactical` targets whichever is currently running.
-tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000"):
-    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout
+# Always reseeds a fresh mission first against a live `tactical-isolated`
+# instance (see `tactical-reseed`) - no-op if none is running, so this still
+# works unmodified against a non-isolated/canonical database. Because that
+# reseed rewrites .env.tactical *during* this recipe, `just` (which resolves
+# {{mission_id}} from the file's content before the recipe runs, and won't
+# see the rewrite) can't be relied on for the resulting value, so the second
+# line re-reads the file directly instead of trusting {{mission_id}}. This
+# means an explicitly-passed `mission_id=...` is only honored when no live
+# instance is found; get in touch if that trips you up.
+# Set brp_port to expose the Bevy Remote Protocol endpoint for CLI-driven
+# inspection/testing (see `scripts/tactical_brp.py`). Set world_dump to a
+# `.scn.ron` path (see `DebugDumpWorldRequest`, F10 in a debug client) to run
+# fully standalone instead: the server loads that reflected world state at
+# startup rather than generating fresh procedural terrain, and never
+# connects to SpacetimeDB at all (no `tactical-isolated` needed first).
+tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "woodland") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") brp_port=env_var_or_default("TACTICAL_BRP_PORT", "") world_dump=env_var_or_default("TACTICAL_WORLD_DUMP", "") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", "assets/tactical-scenes/dense-woodland.json"):
+    @if [ {{ quote(world_dump) }} = "" ]; then {{ python_bin }} scripts/dev_stack.py reseed-tactical-mission --if-live --scene-key {{ quote(scene_key) }} --enemy-count {{ quote(bots) }} tactical-dev 23200; fi
+    @MISSION_ID={{ quote(mission_id) }}; if [ -f .env.tactical ] && [ {{ quote(world_dump) }} = "" ]; then FRESH=$(grep '^TACTICAL_MISSION_ID=' .env.tactical | cut -d= -f2-); [ -n "$FRESH" ] && MISSION_ID="$FRESH"; FRESH_CLAIM=$(grep '^ADVENTURESIM_TACTICAL_CLAIM=' .env.tactical | cut -d= -f2-); [ -n "$FRESH_CLAIM" ] && export ADVENTURESIM_TACTICAL_CLAIM="$FRESH_CLAIM"; fi; cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id "$MISSION_ID" --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }} {{ if world_dump != "" { "--world-dump " + quote(world_dump) } else { "" } }}
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
-# from `.env.tactical` when present, same as `tactical` above.
-client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="":
-    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
+# from `.env.tactical` when present, same as `tactical` above. Set brp_port
+# to expose the Bevy Remote Protocol endpoint for CLI-driven inspection/testing.
+client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="" brp_port=env_var_or_default("TACTICAL_BRP_PORT", ""):
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }}
+
+# Run a native tactical client with no OS window, driven entirely over BRP
+# (see `scripts/tactical_brp.py`) - for CLI-only automated testing.
+client-headless id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) brp_port=env_var_or_default("TACTICAL_CLIENT_BRP_PORT", "15703"):
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" --headless --brp-port {{ brp_port }}
 
 # Start an isolated SpacetimeDB seeded with a standalone tactical mission.
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
 # .env.tactical so a bare `just tactical` / `just client` (no arguments) in
 # other terminals targets it automatically.
-tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="hills" character_id="0" bots="3": preflight verify-db-client build-tactical
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
+tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="1" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight _build-tactical-unverified
+    @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }} --scene-input {{ quote(scene_input) }}
+
+# Seed a fresh standalone tactical mission against an already-running
+# `tactical-isolated` instance (leave that one running in its terminal),
+# without touching the SpacetimeDB module at all: no cargo build, no
+# `spacetime publish`. Mission gets a randomized ID suffix each call so it
+# never collides with a still-bound mission from a prior/crashed attempt.
+# Rewrites .env.tactical so `just tactical` / `just client` pick it up.
+tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="mission:test-mission" scene_key="hills" character_id="1" bots="3":
+    @{{ python_bin }} scripts/dev_stack.py reseed-tactical-mission {{ quote(profile) }} {{ quote(base_port) }} --mission-id-prefix {{ quote(mission_id_prefix) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
 
 # Build and supervise a complete disposable native tactical test session.
 # animation disables combat, diagnostic runs scripted real-client input and
 # records every animation frame, combat uses normal enemies, and networking
 # omits the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }}
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json" input_script="": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }}
 
-# Launch the native-only graph editor after validating semantic packs and routes.
-animation-graph-editor asset_source="assets":
-    @cargo run -p adventuresim-tactical-client --no-default-features --features animation-graph-editor --bin animation-graph-editor -- --asset-source {{ quote(asset_source) }}
+# Benchmark steady raised-guard locomotion in all four cardinal directions.
+# It records transforms only: OBS and PresentMon are deliberately disabled.
+animation-direction-benchmark base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} {{ quote(scene_input) }} scripts/animation_direction_benchmark.json
 
-# Capture a deterministic semantic-route preview with the gameplay viewer.
-animation-graph-preview scenario="steady-walk-2.0" output="target/animation-captures/graph-preview":
+# Capture one deterministic tactical environment from fixed ground, overhead,
+# horizon, and collider-overlay cameras. Output must be a fresh directory when set.
+tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} --profile {{ quote(profile) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
+
+# Capture the production animation scene from the third-person spawn camera at
+# eight fixed yaw angles plus four live tree-obstruction boom checks, with
+# natural tree LODs and vista presentation enabled.
+tactical-animation-play-capture output="target/tactical-scene-captures/animation-play" settle_frames="12" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(scene_input) }} --profile animation-play --settle-frames {{ quote(settle_frames) }} --output {{ quote(output) }}
+
+# Capture the first cold approach, retreat, and identical warm second approach
+# through every natural tree LOD handoff. Only the distant-card warmup settles;
+# traversal plates intentionally preserve the first renderable frame.
+tactical-tree-cold-traversal-capture output="target/tactical-scene-captures/tree-cold-traversal" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(scene_input) }} --profile tree-cold-traversal --settle-frames 12 --output {{ quote(output) }}
+
+# Capture the production tactical scene sampled from the final real-world
+# terrain pack at signed WGS84 latitude/longitude decimal degrees.
+tactical-real-world-capture latitude longitude output="" absolute_minute="340320" settle_frames="12" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack":
+    @{{ python_bin }} scripts/real_world_tactical.py capture {{ quote(latitude) }} {{ quote(longitude) }} --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }} {{ if output != "" { "--output " + quote(output) } else { "" } }}
+
+# Capture the curated production vista matrix from real WGS84 locations.
+tactical-real-world-review output="target/tactical-real-world-captures/review" absolute_minute="340320" settle_frames="12" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack":
+    @{{ python_bin }} scripts/real_world_tactical.py review --output {{ quote(output) }} --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }}
+
+# Launch the animation demo on the same production coordinate-derived scene.
+tactical-real-world-play latitude longitude base_port="24920" absolute_minute="340320" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack": preflight verify-db-client
+    @{{ python_bin }} scripts/real_world_tactical.py play {{ quote(latitude) }} {{ quote(longitude) }} --base-port {{ quote(base_port) }} --absolute-minute {{ quote(absolute_minute) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }}
+
+# Compare cambered and flat PBR leaves in the same uncapped dense-forest scene.
+# Output must be a fresh directory.
+tactical-tree-leaf-benchmark output="target/tactical-scene-captures/tree-leaf-benchmark" frames="180":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --leaf-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+
+# Compare WebGPU-safe canopy AO and directional leaf self shadows in the same
+# uncapped dense-forest LOD0 scene. Output must be a fresh directory.
+tactical-tree-lighting-benchmark output="target/tactical-scene-captures/tree-lighting-benchmark" frames="180":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --absolute-minute 340560 --tree-lighting-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+
+# Attribute production real-world scene cost at QHD by tree family and forced LOD.
+# Input and output must identify one already generated coordinate scene and a
+# fresh results directory respectively.
+tactical-scene-performance-benchmark input output frames="120":
+    @cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(input) }} --scene-performance-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+
+# Acceptance and cost-attribution benchmark for the base 2026 M5 MacBook Air.
+# Run this release build on target-class hardware with the laptop connected to
+# power. The dense woodland fixture and full isolation matrix provide a
+# sustained QHD load; GPU timestamps make the 60 FPS verdict conclusive.
+tactical-qhd60-benchmark output="target/tactical-benchmarks/qhd60-dense-woodland" frames="600":
+    @cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --scene-performance-benchmark-frames {{ quote(frames) }} --scene-performance-render-diagnostics --output {{ quote(output) }}
+
+# Compare equal-area bare, grassland, woodland, wetland, and rocky production
+# plots and normalize their generated asset densities to one square kilometre.
+tactical-terrain-density-benchmark output="target/tactical-benchmarks/terrain-density" frames="600":
+    @{{ python_bin }} scripts/tactical_terrain_density_benchmark.py --output {{ quote(output) }} --frames {{ quote(frames) }}
+
+# Collect the same matrix with DX12/Vulkan render-pass timestamp and pipeline
+# statistics instrumentation. This intentionally has more observer overhead
+# than the timing-only benchmark above.
+tactical-scene-render-diagnostics input output frames="60":
+    @cargo run --release -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(input) }} --scene-performance-benchmark-frames {{ quote(frames) }} --scene-performance-render-diagnostics --output {{ quote(output) }}
+
+# Capture both leaf representations from face-on through grazing review
+# azimuths under identical controlled daylight.
+tactical-tree-leaf-comparison output="target/tactical-scene-captures/tree-leaf-comparison" settle_frames="8" absolute_minute="340560":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 0 --output {{ quote(output + "/angle-000") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 30 --output {{ quote(output + "/angle-030") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 60 --output {{ quote(output + "/angle-060") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 80 --output {{ quote(output + "/angle-080") }}
+
+# Regenerate every aligned common-hazel PBR channel from one canonical plate.
+build-hazel-leaf-textures:
+    powershell -ExecutionPolicy Bypass -File scripts/build_hazel_leaf_textures.ps1
+
+# Render one identical generated woodland at five world-data canopy values so
+# tree architecture can be compared without changing its seed or neighbours.
+tactical-tree-canopy-series output="target/tactical-scene-captures/tree-canopy-series" settle_frames="6" absolute_minute="340560":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 0 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-00000") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 2500 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-02500") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 5000 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-05000") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 7500 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-07500") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 10000 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-10000") }}
+
+# Capture the compact, environment-only fixture/time matrix and gated sky plates.
+tactical-scene-matrix output="" settle_frames="12":
+    @{{ python_bin }} scripts/capture_tactical_scenes.py {{ if output != "" { "--output " + quote(output) } else { "" } }} --settle-frames {{ quote(settle_frames) }}
+
+# Preferred explicit name for iterative environment-art review.
+tactical-environment-review output="" settle_frames="12":
+    @{{ python_bin }} scripts/capture_tactical_scenes.py {{ if output != "" { "--output " + quote(output) } else { "" } }} --settle-frames {{ quote(settle_frames) }}
+
+# Validate review-ledger semantic invariants after JSON-schema validation.
+tactical-environment-review-ledger ledger="assets/tactical-scenes/environment-review-ledger.template.json":
+    @{{ python_bin }} scripts/validate_environment_review_ledger.py {{ quote(ledger) }}
+
+# Capture one deterministic atmosphere/celestial verification view.
+tactical-sky-capture view="sun" output="target/tactical-sky-captures/sun.png" settle_frames="24":
+    @cargo run -p adventuresim-tactical-client --bin tactical-sky-viewer -- --view {{ quote(view) }} --output {{ quote(output) }} --settle-frames {{ quote(settle_frames) }}
+
+# Capture a deterministic semantic-route preview through pose-buffer playback.
+animation-preview scenario="steady-walk-2.0" output="target/animation-captures/animation-preview":
     @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
 
-# Launch the focused native Cascadeur-humanoid ragdoll fixture with a complete
-# Avian solver. This does not change the live client's query-only physics path.
-ragdoll-viewer asset_source="assets":
-    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }}
-
-# Capture animated, active-motor, and passive ragdoll review frames plus
-# manifest.json/failure.txt validation gates, then exit.
-ragdoll-capture output="target/animation-captures/ragdoll-review" asset_source="assets":
-    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }} --output {{ quote(output) }}
+# Run the deterministic animation regression suite and capture the complete
+# viewer scenario matrix. The manifest is the machine-readable result; PNGs
+# and index.html are retained for visual follow-up.
+animation-test output="target/animation-captures/animation-regression":
+    @cargo test -p adventuresim-tactical-client --bin animation-viewer
+    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --output {{ quote(output) }}
 
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.
@@ -330,6 +493,31 @@ tactical-status:
 # Relaunch only the native client after validating the supervised server.
 tactical-client:
     @{{ python_bin }} scripts/dev_stack.py tactical-client
+
+# Drive a running `just tactical brp_port=...` + `just client-headless` pair
+# over BRP: finds the local player, moves it, and asserts it moved. Both
+# processes must already be running (see scripts/tactical_brp.py).
+tactical-brp-smoke-test server_brp_port="15702" client_brp_port="15703":
+    @{{ python_bin }} scripts/tactical_brp.py smoke-test --server-brp-port {{ server_brp_port }} --client-brp-port {{ client_brp_port }}
+
+# Regenerates scripts/adventuresim_brp_lib.py: every BRP-queryable
+# (`ReflectComponent`/`ReflectResource`) type linked into the tactical
+# server/client, discovered dynamically from the real type registry (see
+# crates/adventuresim-tactical-brp-generator) rather than hand-copied - re-run
+# after adding, renaming, or moving a `#[reflect(Component)]`/
+# `#[reflect(Resource)]` type `scripts/tactical_brp.py` might want.
+generate-brp-types:
+    @cargo run --package adventuresim-tactical-brp-generator > scripts/adventuresim_brp_lib.py
+
+# End-to-end pytest suite: boots an isolated SpacetimeDB + tactical mission,
+# the tactical server, and a headless client itself, then drives them over
+# BRP. Slower than the unit-test recipes (real compile/bootstrap cost) - not
+# part of the default `test` recipe. Runs every pytest module under
+# scripts/tests/tactical/, so new tactical E2E suites just need to land there.
+# Pass `test` to run only tests whose name contains it (pytest -k), e.g.
+# `just tactical-test movement`.
+tactical-test test="":
+    @{{ python_bin }} -B -m pytest scripts/tests/tactical -v {{ if test != "" { "-k " + quote(test) } else { "" } }}
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":
@@ -352,7 +540,6 @@ wiki-check:
     @npm run check:wiki-tooling-format
     @{{ python_bin }} -B -m unittest scripts.test_format_wiki_markdown scripts.test_update_wiki_summary -v
     @{{ python_bin }} scripts/update_wiki_summary.py --check
-    @{{ python_bin }} scripts/update_project_map.py --check
     @mdbook build
 
 wiki-serve:
@@ -430,9 +617,17 @@ test: test-chat test-schedule test-dev-stack build-strategic
 
 fmt:
     @cargo fmt --all
+    @cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml
+
+fmt-check:
+    @cargo fmt --all -- --check
+    @cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --check
 
 lint:
-    @cargo clippy --workspace --all-targets --all-features -- -D warnings
+    # Keep warnings denied; these are legacy feature-gated/restriction diagnostics
+    # tracked separately from correctness and ordinary style regressions.
+    @cargo clippy --workspace --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
+    @cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
 
 clean:
     @cargo clean

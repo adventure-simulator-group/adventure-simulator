@@ -9,18 +9,28 @@ Strategic autoresolve uses shared bestiary combat profiles. Skeleton bone is a
 full-coverage innate protection layer with substantial resistance and no
 padding, making blunt attacks substantially more effective than cutting attacks
 through the normal force, resistance, padding, coverage, and penetration model.
-There is no species-level post-hoc damage multiplier. The tactical
-server does not yet receive canonical bestiary identity, so not every profile
-field changes real-time behavior; tactical enemy state remains transient.
-**Combat** is the solemn duty of any good knight or mercenary, and until we have a working [fashion](../client/models.md#fifth-version-clothing-and-armor) module, it'll be what players spend most of their time doing. So let's get it right!
+There is no species-level post-hoc damage multiplier. The tactical server does
+not yet receive canonical bestiary identity, so not every profile field changes
+real-time behavior; tactical enemy state remains transient. **Combat** is the
+solemn duty of any good knight or mercenary, and until we have a working
+[fashion](../client/models.md#fifth-version-clothing-and-armor) module, it'll be
+what players spend most of their time doing. So let's get it right!
 
 ## Attacking
-When the player clicks the [Attack button](../client/controls.md#direct-controls), initiating an attack animation, we run a shapecast in front of the player character. If there is an intersection between the attacker's hitreg and some other actor's hitbox, we calculate [input precision](../client/controls.md#direct-controls). Then comes the skill check algorithm.
+When the player clicks the
+[Attack button](../client/controls.md#direct-controls), initiating an attack
+animation, we run a shapecast in front of the player character. If there is an
+intersection between the attacker's hitreg and some other actor's hitbox, we
+calculate [input precision](../client/controls.md#direct-controls). Then comes
+the skill check algorithm.
 
 Client melee requests and server-controlled melee AI feed one internal server
-attack-intent path. Each melee weapon declares a preferred slash or stab and
+attack-intent path. Each melee weapon declares a preferred swing or thrust and
 separate swing and stab precision terms; the selected animation family selects
-the matching combat term. Unarmed fists are a stab-preferring melee fallback.
+the matching combat term. Unarmed fists prefer swings. If the preferred family
+has no initial contact pose, input uses the available alternate. If neither
+initial pose exists, the server rejects the attack as unavailable rather than
+playing a substitute animation for an otherwise valid hit.
 Client-reported input precision is preserved: reproducing
 full animation and secondary physics on the headless server is not an intended
 authority boundary, while character and equipment statistics still bound the
@@ -30,6 +40,15 @@ Client windup start and completion are variants of one mapped ordered melee
 action protocol, so completion cannot overtake start on a separate event
 stream. An observed windup expires one second after it becomes ready, bounding
 delayed or replayed completions.
+
+The active animation pack's attack set is authoritative gameplay capability.
+A pack that defines `swing` or `thrust` owns the complete main-hand set; a
+missing family remains unavailable even when a parent defines it. A pack with
+neither motion inherits the nearest parent's main-hand set. Offhand motion
+inherits independently. After a main-hand strike reaches frame-4 contact, one
+matching buffered attack may continue through frame 8 to a second contact at
+frame 12 when both continuation anchors exist. It cannot chain directly into
+another continuation. Other buffered requests wait until recovery completes.
 
 The variants carry only valid data: `Start` has no completion sentinels, melee
 `Complete` always carries a target, body part, and reported precision, while
@@ -78,15 +97,15 @@ temporary imbalance later lets it recover. The server immediately ends the
 mission as `Defeated` after all required enemies have been defeated, or as
 `Failed` after all loaded Party combatants are incapacitated. Simultaneous
 defeat is a failure. Strategic authority binds the expected living Party size;
-the decision waits until every expected adventurer has loaded at least once,
-no player is still loading, and all required enemies are loaded. After that
+the decision waits until every expected adventurer has loaded at least once, no
+player is still loading, and all required enemies are loaded. After that
 enrollment begins, an empty Party has a ten-second reconnection grace before the
 mission fails as abandoned, even if everyone disconnects before the seal. A
 timeout-disabled development server where nobody ever joins stays available.
 Terminal submission freezes the decided result and retries synchronous failures
-at one-second intervals before reevaluating combat, commits only after successful
-submission, and does not depend on the optional mission timeout; a configured
-timeout is only a bounded failure fallback.
+at one-second intervals before reevaluating combat, commits only after
+successful submission, and does not depend on the optional mission timeout; a
+configured timeout is only a bounded failure fallback.
 
 This remains an iteration harness without terrain/obstacle pathfinding, but
 offensive AI can pursue and attack with melee or ranged equipment. Accepted
@@ -108,7 +127,13 @@ Broadly speaking, the flow goes like this:
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
 	3. Multiply final value by [input precision](../client/controls.md)
 
-For melee weapons, the weapon term is selected from separate **swing precision** and **stab precision** values. Edges and impact faces generally have swing precision at or below 0.5, while points can be substantially more exact. The catalog's war hammer is the unusual high-swing-precision example because its compact four-sided beak concentrates a swung attack on a small target. Ranged weapons retain their single accuracy term. Damage type is not a recruitment role.
+For melee weapons, the weapon term is selected from separate **swing precision**
+and **stab precision** values. Edges and impact faces generally have swing
+precision at or below 0.5, while points can be substantially more exact. The
+catalog's war hammer is the unusual high-swing-precision example because its
+compact four-sided beak concentrates a swung attack on a small target. Ranged
+weapons retain their single accuracy term. Damage type is not a recruitment
+role.
 2. calculate `dodge_defense`:
 	1. Calculate `armor_dodge_term` from their armor.
 		1. This isn't actually the weight of the armor; it's based on articulations on joints.
@@ -126,7 +151,8 @@ For melee weapons, the weapon term is selected from separate **swing precision**
 	`shield_bonus()` = 0 for weapon; 1–2 for a small shield; 2–4 for normal; 5 for pavise
 
 $$
-\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 - e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)
+\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 -
+e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)
 $$
 
 4. Calculate `defense` from [`input reflex`](../client/controls.md):
@@ -145,7 +171,9 @@ $$
  	3.
 	
 $$
-D_{\text{final}} =D_{\text{base}} \cdot\mathrm{clamp}\left(\frac{\frac{3\pi}{4}-\left|\mathrm{atan2}(\sin(b-a), \cos(b-a))\right|}{\frac{\pi}{2}},0,1\right)
+D_{\text{final}} =D_{\text{base}}
+\cdot\mathrm{clamp}\left(\frac{\frac{3\pi}{4}-\left|\mathrm{atan2}(\sin(b-a),
+\cos(b-a))\right|}{\frac{\pi}{2}},0,1\right)
 $$
 
 6. Attack value is accuracy - defense
@@ -163,9 +191,10 @@ $$
 Ranged attacks use the same attack-minus-defense exchange, armor coverage,
 penetration, padding, and critical-hit rules as melee attacks. The attacker's
 Bow, Crossbow, Firearm, or Throw distribution supplies the weapon check, both
-arms contribute to aiming, and the weapon's projectile energy replaces muscular striking force. Focus adds the character's
-Weapon accuracy and future input precision affect attacks; neither is a
-character attribute. Agility governs physical-skill learning and mastery.
+arms contribute to aiming, and the weapon's projectile energy replaces muscular
+striking force. Focus adds the character's Weapon accuracy and future input
+precision affect attacks; neither is a character attribute. Agility governs
+physical-skill learning and mastery.
 
 An alert defender may dodge a projectile or interpose a shield using the normal
 Dodge and Block checks. An unaware defender has no active defense. A missed
@@ -186,7 +215,16 @@ maintains a bounded standoff distance while arrows remain, and returns to its
 melee pursuit/attack cadence when it cannot make a ranged attack.
 
 ## Incapacitation
-A character's incapacitation represents the sum of all disabling effects on them and corresponds to the state of their animation. When above half, they are "staggered" and each additional 1% of incapacitation causes a 2% penalty to movement and attribute checks, and when above 100% they are completely incapacitated (which also causes knockdown). Most negative effects that a character has can affect their incapacitation, past a certain threshold. Your incapacitation is displayed as a wheel in the center of the screen. If it is at 0%, the wheel is invisible, and as it increases it starts from 12 o'clock and extends as an arc clockwise. Each factor that contributes to incapacitation has a different color to differentiate them.
+A character's incapacitation represents the sum of all disabling effects on them
+and corresponds to the state of their animation. When above half, they are
+"staggered" and each additional 1% of incapacitation causes a 2% penalty to
+movement and attribute checks, and when above 100% they are completely
+incapacitated (which also causes knockdown). Most negative effects that a
+character has can affect their incapacitation, past a certain threshold. Your
+incapacitation is displayed as a wheel in the center of the screen. If it is at
+0%, the wheel is invisible, and as it increases it starts from 12 o'clock and
+extends as an arc clockwise. Each factor that contributes to incapacitation has
+a different color to differentiate them.
 
 The tactical client draws this wheel with EGUI around the center reticle. It
 preserves the strategic fear, fatigue, hunger, thirst, and temperature source
@@ -194,13 +232,22 @@ breakdown captured at mission enrollment, then combines those segments with
 live recomputed pain and blood loss plus transient white imbalance. The arc
 clamps at one revolution, and the reticle remains visible inside it.
 
-The strategic character panel uses the same colors for its segmented incapacitation meter, source meters, and source icons. Hunger and thirst share centered meters with their physiological reserves: reserve fills right, while incapacitation fills left after crossing zero. Exact percentages remain available on hover and to assistive technology, while the default view emphasizes the relative contribution of each source.
+The strategic character panel uses the same colors for its segmented
+incapacitation meter, source meters, and source icons. Hunger and thirst share
+centered meters with their physiological reserves: reserve fills right, while
+incapacitation fills left after crossing zero. Exact percentages remain
+available on hover and to assistive technology, while the default view
+emphasizes the relative contribution of each source.
 
 Each of the following factors range from 0% to at least 100%.
 ### Imbalance (white)
 > Halbe: This was written in terms of energy, but might make more sense in terms of momentum.
 
-The most direct way of being incapacitated, attacks which impart force on your character or losing your footing in difficult terrain can cause imbalance. Imbalance constantly recuperates. Your mass and the directness of an attack determine how much imbalance you actually take, and your agility determines how quickly it is regenerated.
+The most direct way of being incapacitated, attacks which impart force on your
+character or losing your footing in difficult terrain can cause imbalance.
+Imbalance constantly recuperates. Your mass and the directness of an attack
+determine how much imbalance you actually take, and your agility determines how
+quickly it is regenerated.
 ```rs
 # use these for calibration
 # direct hits by trained warrior in joules: halberd ~120, longsword ~70, shortsword ~30 dagger ~20
@@ -224,16 +271,18 @@ fn balance_damage(attacker, defender, attack_directness):
 	defender.imbalance += imparted_joules / resistance
 ```
 ### Exhaustion (grey)
-Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
-In tactical combat it is transient, server-authoritative grey incapacitation.
-The movement contribution is based on server-authoritative locomotion intent,
-not measured physics velocity: full jogging contributes exactly zero, walking
-or partial input recovers exhaustion, and sprinting adds it. External impulses
-therefore cannot create breath exhaustion, while poison, climbing, combat, and
-other future sources remain free to add independent rates. Tactical breath
-changes use a 5x response scale so exertion and recovery resolve quickly enough
-to matter during a fight without changing any movement-speed thresholds. Wheel
-segments below 0.5% are hidden as subpixel display noise without changing state.
+Exhaustion represents how out of breath your character is. Most actions will not
+actually exhaust faster than it recuperates, but climbing, sprinting, and
+fighting with heavy weapons, shield, and armor can. In tactical combat it is
+transient, server-authoritative grey incapacitation. The movement contribution
+is based on server-authoritative locomotion intent, not measured physics
+velocity: full jogging contributes exactly zero, walking or partial input
+recovers exhaustion, and sprinting adds it. External impulses therefore cannot
+create breath exhaustion, while poison, climbing, combat, and other future
+sources remain free to add independent rates. Tactical breath changes use a 5x
+response scale so exertion and recovery resolve quickly enough to matter during
+a fight without changing any movement-speed thresholds. Wheel segments below
+0.5% are hidden as subpixel display noise without changing state.
 ```rs
 const BREATH_PER_METERS_PER_SECOND = 0.0034
 const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
@@ -256,7 +305,9 @@ fn update_stamina(player):
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.
 
 $$
-\mathrm{pain}(\mathrm{damage}, \mathrm{will}) = \frac{\mathrm{damage}}{\mathrm{damage} + \alpha\cdot\mathrm{will}}\cdot e^{-\beta\cdot\mathrm{will}};\ \alpha=0.5,\ \beta=0.2
+\mathrm{pain}(\mathrm{damage}, \mathrm{will}) =
+\frac{\mathrm{damage}}{\mathrm{damage} + \alpha\cdot\mathrm{will}}\cdot
+e^{-\beta\cdot\mathrm{will}};\ \alpha=0.5,\ \beta=0.2
 $$
 
 ```rs
@@ -265,11 +316,16 @@ fn update_pain_factor(character):
 	character.pain = pain(damage, character.will)
 ```
 ### Blood loss (red)
-Unbandaged [wounds](../shared/health.md) will cause you to bleed out, which will eventually incapacitate you.
+Unbandaged [wounds](../shared/health.md) will cause you to bleed out, which will
+eventually incapacitate you.
 ### [Fear](../shared/morale.md) (blue)
-Morale only starts affecting incapacitation when it goes below 0, at which point each negative point of morale becomes fear, translating to 1% incapacitation.
+Morale only starts affecting incapacitation when it goes below 0, at which point
+each negative point of morale becomes fear, translating to 1% incapacitation.
 ### [Fatigue](../shared/energy.md) (black)
-This does not significantly accumulate in the course of combat, but is more a function of marching all day or going too long without sleeping. This probably has a threshold after which it starts applying nonlinearly ~halfway through the day.
+This does not significantly accumulate in the course of combat, but is more a
+function of marching all day or going too long without sleeping. This probably
+has a threshold after which it starts applying nonlinearly ~halfway through the
+day.
 
 ## Penetrating
 Each piece of armor has a "resistance" and "padding", both are in terms of
@@ -279,7 +335,9 @@ how much energy penetrates, if any. Weapons also have a "penetration"
 coefficient. The actual resistance used for an edged or pointed attack is:
 
 $$
-\mathrm{resistance_{\text{final}}} = \mathrm{resistance_{\text{base}}} - \mathrm{flexibility} \cdot \mathrm{resistance_{\text{base}}} \cdot \mathrm{penetration}
+\mathrm{resistance_{\text{final}}} = \mathrm{resistance_{\text{base}}} -
+\mathrm{flexibility} \cdot \mathrm{resistance_{\text{base}}} \cdot
+\mathrm{penetration}
 $$
 
 Penetration coefficient examples:
@@ -299,7 +357,10 @@ absorbed by resistance still transmits 50% as blunt force and applies the other
 50% as unbalance, as described above.
 ## Damage
 ### Cut
-Cut damage is divided by the penetration coefficient before being applied. This represents the greater surface area of flesh that is being torn up. Essentially, this makes axes and swords particularly ineffective against armor, but does extra damage against flesh.
+Cut damage is divided by the penetration coefficient before being applied. This
+represents the greater surface area of flesh that is being torn up. Essentially,
+this makes axes and swords particularly ineffective against armor, but does
+extra damage against flesh.
 
 Calibration:
 - 80kg male's forearm is about 1.2kg
@@ -313,21 +374,25 @@ Calibration:
 
 > Halbe: I'm not certain what a good physical base measurement is that we could use for mapping kj of energy to damage. Damage might be best represented as how many kgs of mass have been rendered inoperable, but its not clear to me how to convert between the two. Ultimately though, the damage value relevant to [stats](../shared/stats.md) maps "0" to "gains no function from the body part" and "1" means "body part is fully functioning", so the "displaced kgs of mass" would itself be an intermediate value not displayed to the player.
 ## Durability
-Every durable item defines an elastic/yield threshold, catastrophic fracture threshold, ordinary
-wear rate, and catastrophic failure share. Impacts below yield do no condition damage. Above yield,
-ordinary wear accumulates continuously; above fracture, additional damage is assigned to the bin
-matching the impact severity. The failure share makes segmented construction localize a broken
-plate while a monolithic breastplate loses much more usefulness from a comparable fracture.
+Every durable item defines an elastic/yield threshold, catastrophic fracture
+threshold, ordinary wear rate, and catastrophic failure share. Impacts below
+yield do no condition damage. Above yield, ordinary wear accumulates
+continuously; above fracture, additional damage is assigned to the bin matching
+the impact severity. The failure share makes segmented construction localize a
+broken plate while a monolithic breastplate loses much more usefulness from a
+comparable fracture.
 
-The five-bin condition remains one visually continuous bar. Bins indicate the Smithing skill needed
-for weapons, armor, and shields, or Tailoring for clothing, not discrete named faults. The first two bins are yellow and field-repairable;
-the last three are red and require settlement facilities. Stiff weapon steel has a relatively high
-yield threshold but a closer fracture threshold. Ductile armor yields and dents sooner while being
-harder to shatter.
+The five-bin condition remains one visually continuous bar. Bins indicate the
+Smithing skill needed for weapons, armor, and shields, or Tailoring for
+clothing, not discrete named faults. The first two bins are yellow and
+field-repairable; the last three are red and require settlement facilities.
+Stiff weapon steel has a relatively high yield threshold but a closer fracture
+threshold. Ductile armor yields and dents sooner while being harder to shatter.
 
-Condition continuously lowers weapon precision (and other edge-sensitive performance) and increases
-the handling/mobility penalty of armor and shields. Armor coverage is not reduced merely because a
-local hole exists. Thus deformation of a helmet or breastplate can still impede movement without
+Condition continuously lowers weapon precision (and other edge-sensitive
+performance) and increases the handling/mobility penalty of armor and shields.
+Armor coverage is not reduced merely because a local hole exists. Thus
+deformation of a helmet or breastplate can still impede movement without
 pretending that the whole protected region has disappeared.
 
 ## Strategic autoresolve
@@ -390,13 +455,14 @@ dirt and blood filth, morale, loot classification, and diagnostics). Random
 encounter reports use encounter IDs and never create quest battle results or
 complete an active quest.
 
-Dropped equipment uses dedicated item and terrain-support physics/query layers. Its authored box
-collider supports terrain and pointing pickup queries, but melee hit selection
-still targets only limb hitboxes and server combat line-of-sight explicitly
-excludes tactical scene-item boxes. Equipment therefore cannot extend a melee
-hit shape, collide with characters, affect camera collision, or provide
-improvised combat cover. The collider is offset from the grip by the same
-authored transform as the visible mesh, and drop searches bounded candidate
-positions with shape-overlap rejection before creating a body. Pickup remains server-authorized
-and requires the pointed candidate to win the deterministic ray-distance then
-entity-identity ordering, be in range, and have unobstructed line of sight.
+Dropped equipment uses dedicated item and terrain-support physics/query layers.
+Its authored box collider supports terrain and pointing pickup queries, but
+melee hit selection still targets only limb hitboxes and server combat
+line-of-sight explicitly excludes tactical scene-item boxes. Equipment therefore
+cannot extend a melee hit shape, collide with characters, affect camera
+collision, or provide improvised combat cover. The collider is offset from the
+grip by the same authored transform as the visible mesh, and drop searches
+bounded candidate positions with shape-overlap rejection before creating a body.
+Pickup remains server-authorized and requires the pointed candidate to win the
+deterministic ray-distance then entity-identity ordering, be in range, and have
+unobstructed line of sight.

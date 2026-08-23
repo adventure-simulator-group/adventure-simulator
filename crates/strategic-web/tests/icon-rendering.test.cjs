@@ -2,12 +2,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const staticRoot = path.join(__dirname, "..");
 
 test("travel planner uses accessible local route and rail icons", () => {
   const source = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
-  const template = fs.readFileSync(path.join(staticRoot, "src", "templates", "settlement.rs"), "utf8");
+  const template = readRustModuleSource(path.join(staticRoot, "src", "templates", "settlement", "mod.rs"));
   const css = fs.readFileSync(path.join(staticRoot, "static", "css", "strategic.css"), "utf8");
   assert.match(css, /camping-tent\.svg/);
   assert.doesNotMatch(source, /\u{1f3e0}|\u{26fa}|\u{1f3f0}|\u{1f9d1}/u);
@@ -54,7 +55,7 @@ test("travel planner renders journey provisions and exact staged market quantiti
   assert.match(planner, /TRACK_START \+ \(TRACK_END - TRACK_START\)/);
   assert.match(planner, /journeyTurnaroundMinutes/);
   assert.match(planner, /setPathRange\(planner\.querySelector\("\[data-travel-progress\]"\), 0, completedElapsed, elapsedTotal\)/);
-  assert.match(planner, /pathname === "\/camp\/continue"/);
+  assert.match(planner, /`\$\{returnUrl\.pathname\}\$\{returnUrl\.search\}\$\{returnUrl\.hash\}`/);
   assert.match(planner, /dataset\.travelPlannerReady === "true"/);
   assert.match(planner, /"strategic-live-regions-refreshed"/);
   assert.match(planner, /includes\("right-sidebar"\)\) initializeTravelPlanner\(\)/);
@@ -71,7 +72,7 @@ test("travel planner renders journey provisions and exact staged market quantiti
 test("travel provisioning keeps target math without forecast prose", () => {
   const planner = fs.readFileSync(path.join(staticRoot, "static", "travel-planner.js"), "utf8");
   const css = fs.readFileSync(path.join(staticRoot, "static", "css", "strategic.css"), "utf8");
-  const template = fs.readFileSync(path.join(staticRoot, "src", "templates", "settlement.rs"), "utf8");
+  const template = readRustModuleSource(path.join(staticRoot, "src", "templates", "settlement", "mod.rs"));
   assert.doesNotMatch(planner, /Target:/);
   assert.doesNotMatch(planner, /shortfall/);
   assert.doesNotMatch(template, /data-resource-target-label/);

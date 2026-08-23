@@ -29,8 +29,19 @@ impl CombatDuration {
         Self(duration)
     }
 
+    /// Clamped to a sane range for non-finite, negative, or absurd input -
+    /// `Duration::from_secs_f32` panics on any of those, and a malformed or
+    /// unset per-weapon windup must not be able to crash the server.
+    pub(crate) fn from_secs_f32(secs: f32) -> Self {
+        Self(Duration::from_secs_f32(secs.clamp(0.0, 30.0)))
+    }
+
     pub(crate) fn as_secs_f32(self) -> f32 {
         self.0.as_secs_f32()
+    }
+
+    pub(crate) fn saturating_sub(self, rhs: Self) -> Self {
+        Self(self.0.saturating_sub(rhs.0))
     }
 }
 

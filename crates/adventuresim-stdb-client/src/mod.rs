@@ -157,6 +157,8 @@ pub mod backend_social_chat_receipt_type;
 pub mod backend_social_chat_receipts_table;
 pub mod backend_tincture_status_type;
 pub mod backend_tincture_statuses_table;
+pub mod backend_weapon_holder_instances_table;
+pub mod backend_weapon_instances_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_solo_parties_reducer;
@@ -259,6 +261,7 @@ pub mod connected_equipment_occupancy_type;
 pub mod connected_player_item_type;
 pub mod connected_player_type;
 pub mod connected_players_table;
+pub mod connected_weapon_appearance_type;
 pub mod conscience_type;
 pub mod construction_commodity_type;
 pub mod construction_industry_type;
@@ -412,6 +415,7 @@ pub mod forage_harvest_material_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
+pub mod forge_weapon_reducer;
 pub mod generated_problem_incident_type;
 pub mod geologic_age_evidence_type;
 pub mod geologic_era_type;
@@ -925,6 +929,8 @@ pub mod water_distance_meters_type;
 pub mod water_holding_contribution_type;
 pub mod water_material_lot_type;
 pub mod water_output_lot_type;
+pub mod weapon_holder_instance_type;
+pub mod weapon_instance_type;
 pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
@@ -1092,6 +1098,8 @@ pub use backend_social_chat_receipt_type::BackendSocialChatReceipt;
 pub use backend_social_chat_receipts_table::*;
 pub use backend_tincture_status_type::BackendTinctureStatus;
 pub use backend_tincture_statuses_table::*;
+pub use backend_weapon_holder_instances_table::*;
+pub use backend_weapon_instances_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
@@ -1194,6 +1202,7 @@ pub use connected_equipment_occupancy_type::ConnectedEquipmentOccupancy;
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
+pub use connected_weapon_appearance_type::ConnectedWeaponAppearance;
 pub use conscience_type::Conscience;
 pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
@@ -1347,6 +1356,7 @@ pub use forage_harvest_material_type::ForageHarvestMaterial;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
+pub use forge_weapon_reducer::forge_weapon;
 pub use generated_problem_incident_type::GeneratedProblemIncident;
 pub use geologic_age_evidence_type::GeologicAgeEvidence;
 pub use geologic_era_type::GeologicEra;
@@ -1860,6 +1870,8 @@ pub use water_distance_meters_type::WaterDistanceMeters;
 pub use water_holding_contribution_type::WaterHoldingContribution;
 pub use water_material_lot_type::WaterMaterialLot;
 pub use water_output_lot_type::WaterOutputLot;
+pub use weapon_holder_instance_type::WeaponHolderInstance;
+pub use weapon_instance_type::WeaponInstance;
 pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
@@ -2248,6 +2260,11 @@ pub enum Reducer {
         requested_minutes: u64,
         attempt_generation: u64,
         attestation: ForageEnvironmentAttestation,
+    },
+    ForgeWeapon {
+        character_id: u64,
+        settlement_id: String,
+        recipe: Vec<u8>,
     },
     GrantBrowserCharacter {
         owner_key: String,
@@ -2919,6 +2936,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
             Reducer::ForageCurrentVicinity { .. } => "forage_current_vicinity",
+            Reducer::ForgeWeapon { .. } => "forge_weapon",
             Reducer::GrantBrowserCharacter { .. } => "grant_browser_character",
             Reducer::ImportSettlementAliases { .. } => "import_settlement_aliases",
             Reducer::ImportSettlementDescriptions { .. } => "import_settlement_descriptions",
@@ -3713,6 +3731,15 @@ Reducer::BeginFormalCourtship{
                 requested_minutes: requested_minutes.clone(),
                 attempt_generation: attempt_generation.clone(),
                 attestation: attestation.clone(),
+}),
+            Reducer::ForgeWeapon{
+                character_id,
+                settlement_id,
+                recipe,
+}             => __sats::bsatn::to_vec(&forge_weapon_reducer::ForgeWeaponArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                recipe: recipe.clone(),
 }),
             Reducer::GrantBrowserCharacter{
                 owner_key,
@@ -4847,6 +4874,8 @@ pub struct DbUpdate {
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     backend_social_chat_receipts: __sdk::TableUpdate<BackendSocialChatReceipt>,
     backend_tincture_statuses: __sdk::TableUpdate<BackendTinctureStatus>,
+    backend_weapon_holder_instances: __sdk::TableUpdate<WeaponHolderInstance>,
+    backend_weapon_instances: __sdk::TableUpdate<WeaponInstance>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -5188,6 +5217,14 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_tincture_statuses" => db_update.backend_tincture_statuses.append(
                     backend_tincture_statuses_table::parse_table_update(table_update)?,
+                ),
+                "backend_weapon_holder_instances" => {
+                    db_update.backend_weapon_holder_instances.append(
+                        backend_weapon_holder_instances_table::parse_table_update(table_update)?,
+                    )
+                }
+                "backend_weapon_instances" => db_update.backend_weapon_instances.append(
+                    backend_weapon_instances_table::parse_table_update(table_update)?,
                 ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -5924,6 +5961,14 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_tincture_statuses",
             &self.backend_tincture_statuses,
         );
+        diff.backend_weapon_holder_instances = cache.apply_diff_to_table::<WeaponHolderInstance>(
+            "backend_weapon_holder_instances",
+            &self.backend_weapon_holder_instances,
+        );
+        diff.backend_weapon_instances = cache.apply_diff_to_table::<WeaponInstance>(
+            "backend_weapon_instances",
+            &self.backend_weapon_instances,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
         diff.party = cache.apply_diff_to_table::<Party>("party", &self.party);
@@ -6166,6 +6211,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_tincture_statuses" => db_update
                     .backend_tincture_statuses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_weapon_holder_instances" => db_update
+                    .backend_weapon_holder_instances
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_weapon_instances" => db_update
+                    .backend_weapon_instances
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -6570,6 +6621,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_tincture_statuses" => db_update
                     .backend_tincture_statuses
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_weapon_holder_instances" => db_update
+                    .backend_weapon_holder_instances
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_weapon_instances" => db_update
+                    .backend_weapon_instances
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6843,6 +6900,8 @@ pub struct AppliedDiff<'r> {
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     backend_social_chat_receipts: __sdk::TableAppliedDiff<'r, BackendSocialChatReceipt>,
     backend_tincture_statuses: __sdk::TableAppliedDiff<'r, BackendTinctureStatus>,
+    backend_weapon_holder_instances: __sdk::TableAppliedDiff<'r, WeaponHolderInstance>,
+    backend_weapon_instances: __sdk::TableAppliedDiff<'r, WeaponInstance>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -7268,6 +7327,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendTinctureStatus>(
             "backend_tincture_statuses",
             &self.backend_tincture_statuses,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<WeaponHolderInstance>(
+            "backend_weapon_holder_instances",
+            &self.backend_weapon_holder_instances,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<WeaponInstance>(
+            "backend_weapon_instances",
+            &self.backend_weapon_instances,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -8260,6 +8329,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_social_beliefs_table::register_table(client_cache);
         backend_social_chat_receipts_table::register_table(client_cache);
         backend_tincture_statuses_table::register_table(client_cache);
+        backend_weapon_holder_instances_table::register_table(client_cache);
+        backend_weapon_instances_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -8392,6 +8463,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_social_beliefs",
         "backend_social_chat_receipts",
         "backend_tincture_statuses",
+        "backend_weapon_holder_instances",
+        "backend_weapon_instances",
         "battle_loot_item",
         "battle_participant",
         "battle_result",

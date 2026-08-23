@@ -47,12 +47,23 @@ pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
 
 /// Maximum server-authoritative movement speed while the weapon guard is raised.
 pub const TACTICAL_GUARD_SPEED_METRES_PER_SECOND: f32 = 2.0;
-pub const TACTICAL_PRONE_SPEED_METRES_PER_SECOND: f32 = 3.0;
-pub const TACTICAL_SUPINE_SPEED_METRES_PER_SECOND: f32 = 2.4;
-pub const TACTICAL_ROLL_SPEED_METRES_PER_SECOND: f32 = 0.65;
+
+/// Deliberate prone crawl speed used by the ordinary walking control mode.
+pub const TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND: f32 = 0.45;
+/// Maximum urgent unencumbered crawl speed used while sprint is held.
+pub const TACTICAL_PRONE_SPEED_METRES_PER_SECOND: f32 = 2.0;
+/// Body-local lateral crawl is intentionally slower than longitudinal travel.
+pub const TACTICAL_PRONE_LATERAL_SPEED_SCALE: f32 = 0.375;
+/// Crawling costs roughly three times the effort of upright travel at the same
+/// physical speed. Dividing the character's neutral jog by the same factor
+/// gives prone movement a breath-neutral middle pace.
+const TACTICAL_PRONE_EFFORT_SCALE: f32 = 3.0;
+pub const TACTICAL_ROLL_SPEED_METRES_PER_SECOND: f32 = 1.3;
 pub const TACTICAL_JUMP_HEIGHT_METRES: f32 = 1.8;
 pub const TACTICAL_DIVE_JUMP_HEIGHT_METRES: f32 = 0.65;
 pub const TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND: f32 = 7.0;
+pub const TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES: f32 = 0.35;
+pub const TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND: f32 = 5.0;
 
 /// Ahoy multiplies requested speed by this frequency to obtain ground
 /// acceleration. Scale the raised-guard frequency against its lower speed cap
@@ -101,12 +112,17 @@ pub fn tactical_movement_exhaustion_change_per_second(
     movement: Option<Vec2>,
     pace: MovementPace,
     weapon_guard: WeaponGuardState,
+    body: crate::animation::BodyState,
     endurance: f32,
     sprint_speed: f32,
 ) -> f32 {
     let jog_speed = tactical_jog_speed(endurance);
-    let effort_speed =
-        tactical_movement_speed_for_pace(movement, pace, weapon_guard, jog_speed, sprint_speed);
+    let effort_speed = if body == crate::animation::BodyState::Prone {
+        tactical_prone_movement_speed_for_pace(movement, pace, jog_speed)
+            * TACTICAL_PRONE_EFFORT_SCALE
+    } else {
+        tactical_movement_speed_for_pace(movement, pace, weapon_guard, jog_speed, sprint_speed)
+    };
     let change = tactical_exhaustion_change_per_second(effort_speed, endurance);
     if pace == MovementPace::Jog {
         change.min(0.0)
@@ -199,6 +215,27 @@ pub fn tactical_movement_speed_for_pace(
     cap * movement.map_or(0.0, |movement| movement.length().clamp(0.0, 1.0))
 }
 
+fn tactical_prone_movement_speed_for_pace(
+    movement: Option<Vec2>,
+    pace: MovementPace,
+    upright_jog_speed: f32,
+) -> f32 {
+    let speed = tactical_prone_speed_for_pace(pace, upright_jog_speed);
+    let movement = movement.unwrap_or_default();
+    speed
+        * Vec2::new(movement.x * TACTICAL_PRONE_LATERAL_SPEED_SCALE, movement.y)
+            .length()
+            .clamp(0.0, 1.0)
+}
+
+fn tactical_prone_speed_for_pace(pace: MovementPace, upright_jog_speed: f32) -> f32 {
+    match pace {
+        MovementPace::Walk => TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND,
+        MovementPace::Jog => upright_jog_speed / TACTICAL_PRONE_EFFORT_SCALE,
+        MovementPace::Sprint => TACTICAL_PRONE_SPEED_METRES_PER_SECOND,
+    }
+}
+
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
 }
@@ -274,7 +311,15 @@ fn apply_analogue_movement_speed(
     viewer: TacticalPlayerViewer,
 ) {
     for (entity, input, mut controller, skeleton, pace) in &mut controllers {
+        // Ahoy's crouch flag supplies the short collider used by downed and
+        // posture-transition states. Their configured speeds are already the
+        // final physical targets, so the collider must not scale speed again.
+        controller.crouch_speed_scale = 1.0;
         controller.jump_height = if skeleton.is_some_and(|skeleton| {
+            skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
+        }) {
+            TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES
+        } else if skeleton.is_some_and(|skeleton| {
             matches!(
                 skeleton
                     .posture_transition()
@@ -298,15 +343,33 @@ fn apply_analogue_movement_speed(
             controller.speed = 0.0;
             continue;
         }
-        let posture_cap = skeleton.and_then(|skeleton| match skeleton.body() {
-            crate::animation::BodyState::Prone => Some(TACTICAL_PRONE_SPEED_METRES_PER_SECOND),
-            crate::animation::BodyState::Supine => Some(TACTICAL_SUPINE_SPEED_METRES_PER_SECOND),
-            _ => None,
-        });
+        if skeleton.is_some_and(|skeleton| {
+            skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
+                && skeleton.action_direction() != Vec2::ZERO
+                && skeleton.quickstep_is_launched()
+                && skeleton.body() == crate::animation::BodyState::Airborne
+        }) {
+            controller.speed = TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
+            controller.acceleration_hz = TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
+                / TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
+            continue;
+        }
+        let body = skeleton.map(SkeletonState::body);
+        let input_magnitude = input
+            .last_movement
+            .map_or(0.0, |movement| movement.length().clamp(0.0, 1.0));
         let Some(pace) = pace else {
             controller.speed = tactical_movement_speed_for_guard(input.last_movement, guard);
-            if let Some(cap) = posture_cap {
-                controller.speed = controller.speed.min(cap);
+            match body {
+                Some(crate::animation::BodyState::Prone) => {
+                    controller.speed =
+                        tactical_prone_speed_for_pace(MovementPace::Walk, 3.75) * input_magnitude;
+                }
+                Some(crate::animation::BodyState::Supine) => {
+                    controller.speed =
+                        tactical_prone_speed_for_pace(MovementPace::Walk, 3.75) * input_magnitude;
+                }
+                _ => {}
             }
             controller.acceleration_hz = tactical_movement_acceleration_hz_for_guard(guard);
             continue;
@@ -331,15 +394,18 @@ fn apply_analogue_movement_speed(
                 });
         controller.speed =
             tactical_movement_speed_for_pace(input.last_movement, *pace, guard, jog, sprint);
-        if let Some(cap) = posture_cap {
-            controller.speed = controller.speed.min(cap);
+        match body {
+            Some(crate::animation::BodyState::Prone) => {
+                controller.speed = tactical_prone_speed_for_pace(*pace, jog) * input_magnitude;
+            }
+            Some(crate::animation::BodyState::Supine) => {
+                controller.speed = tactical_prone_speed_for_pace(*pace, jog) * input_magnitude;
+            }
+            _ => {}
         }
-        let magnitude = input
-            .last_movement
-            .map_or(0.0, |movement| movement.length().clamp(0.0, 1.0));
-        controller.acceleration_hz = if magnitude > f32::EPSILON {
+        controller.acceleration_hz = if input_magnitude > f32::EPSILON {
             TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
-                / (controller.speed / magnitude).max(0.01)
+                / (controller.speed / input_magnitude).max(0.01)
         } else {
             tactical_movement_acceleration_hz_for_guard(guard)
         };
@@ -430,6 +496,42 @@ mod tests {
     }
 
     #[test]
+    fn launched_quickstep_uses_the_short_hop_and_dodge_speed() {
+        let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        skeleton
+            .begin_dodge(
+                crate::animation::DodgeSpec::quickstep(Vec2::Y).unwrap(),
+                0,
+                20,
+            )
+            .unwrap();
+        skeleton.advance_action(5);
+        skeleton.transition_body(crate::animation::BodyState::Airborne);
+        assert!(skeleton.quickstep_is_launched());
+        let mut world = World::new();
+        let entity = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                CharacterController::default(),
+                skeleton,
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(apply_analogue_movement_speed);
+        schedule.run(&mut world);
+
+        let controller = world.get::<CharacterController>(entity).unwrap();
+        assert_eq!(
+            controller.jump_height,
+            TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES
+        );
+        assert_eq!(controller.speed, TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND);
+    }
+
+    #[test]
     fn raised_guard_and_running_have_equal_absolute_acceleration() {
         let running = TACTICAL_RUN_SPEED_METRES_PER_SECOND
             * tactical_movement_acceleration_hz_for_guard(WeaponGuardState::Lowered);
@@ -482,6 +584,7 @@ mod tests {
                 Some(Vec2::Y),
                 MovementPace::Jog,
                 WeaponGuardState::Lowered,
+                crate::animation::BodyState::default(),
                 3.0,
                 8.0,
             ),
@@ -492,6 +595,7 @@ mod tests {
                 Some(Vec2::splat(0.71)),
                 MovementPace::Jog,
                 WeaponGuardState::Lowered,
+                crate::animation::BodyState::default(),
                 3.0,
                 8.0,
             ) <= 0.0
@@ -501,6 +605,7 @@ mod tests {
                 Some(Vec2::Y),
                 MovementPace::Sprint,
                 WeaponGuardState::Lowered,
+                crate::animation::BodyState::default(),
                 3.0,
                 8.0,
             ) > 0.0
@@ -541,7 +646,78 @@ mod tests {
     }
 
     #[test]
-    fn prone_and_supine_ignore_faster_paces_and_transition_stops_motion() {
+    fn prone_walk_is_fixed_jog_is_neutral_and_sprint_costs_exhaustion() {
+        let body = crate::animation::BodyState::Prone;
+        for endurance in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] {
+            assert_eq!(
+                tactical_prone_movement_speed_for_pace(
+                    Some(Vec2::Y),
+                    MovementPace::Walk,
+                    tactical_jog_speed(endurance),
+                ),
+                TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND
+            );
+            assert!(
+                (tactical_prone_movement_speed_for_pace(
+                    Some(Vec2::Y),
+                    MovementPace::Jog,
+                    tactical_jog_speed(endurance),
+                ) - tactical_jog_speed(endurance) / TACTICAL_PRONE_EFFORT_SCALE)
+                    .abs()
+                    < f32::EPSILON
+            );
+            assert_eq!(
+                tactical_prone_movement_speed_for_pace(
+                    Some(Vec2::Y),
+                    MovementPace::Sprint,
+                    tactical_jog_speed(endurance),
+                ),
+                TACTICAL_PRONE_SPEED_METRES_PER_SECOND
+            );
+            assert_eq!(
+                tactical_prone_movement_speed_for_pace(
+                    Some(Vec2::X),
+                    MovementPace::Sprint,
+                    tactical_jog_speed(endurance),
+                ),
+                TACTICAL_PRONE_SPEED_METRES_PER_SECOND * TACTICAL_PRONE_LATERAL_SPEED_SCALE
+            );
+            assert_eq!(
+                tactical_movement_exhaustion_change_per_second(
+                    Some(Vec2::Y),
+                    MovementPace::Jog,
+                    WeaponGuardState::Lowered,
+                    body,
+                    endurance,
+                    REFERENCE_SPRINT_SPEED_METRES_PER_SECOND,
+                ),
+                0.0
+            );
+            assert!(
+                tactical_movement_exhaustion_change_per_second(
+                    Some(Vec2::Y),
+                    MovementPace::Walk,
+                    WeaponGuardState::Lowered,
+                    body,
+                    endurance,
+                    REFERENCE_SPRINT_SPEED_METRES_PER_SECOND,
+                ) < 0.0
+            );
+            assert!(
+                tactical_movement_exhaustion_change_per_second(
+                    Some(Vec2::Y),
+                    MovementPace::Sprint,
+                    WeaponGuardState::Lowered,
+                    body,
+                    endurance,
+                    REFERENCE_SPRINT_SPEED_METRES_PER_SECOND,
+                ) > 0.0
+            );
+        }
+    }
+
+    #[test]
+    fn prone_and_supine_share_selected_pace_after_directional_scaling() {
         let mut world = World::new();
         let prone = world
             .spawn((
@@ -563,6 +739,39 @@ mod tests {
                 CharacterController::default(),
                 SkeletonState::default().with_body_state(crate::animation::BodyState::Supine),
                 MovementPace::Sprint,
+            ))
+            .id();
+        let prone_walk = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                CharacterController::default(),
+                SkeletonState::default().with_body_state(crate::animation::BodyState::Prone),
+                MovementPace::Walk,
+            ))
+            .id();
+        let prone_half_input = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y * 0.5),
+                    ..default()
+                },
+                CharacterController::default(),
+                SkeletonState::default().with_body_state(crate::animation::BodyState::Prone),
+                MovementPace::Walk,
+            ))
+            .id();
+        let prone_jog = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                CharacterController::default(),
+                SkeletonState::default().with_body_state(crate::animation::BodyState::Prone),
+                MovementPace::Jog,
             ))
             .id();
         let mut transitioning = SkeletonState::default();
@@ -611,8 +820,31 @@ mod tests {
             TACTICAL_PRONE_SPEED_METRES_PER_SECOND
         );
         assert_eq!(
+            world
+                .get::<CharacterController>(prone)
+                .unwrap()
+                .crouch_speed_scale,
+            1.0,
+            "downed collision crouching must not reduce the final crawl target"
+        );
+        assert_eq!(
             world.get::<CharacterController>(supine).unwrap().speed,
-            TACTICAL_SUPINE_SPEED_METRES_PER_SECOND
+            TACTICAL_PRONE_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
+            world.get::<CharacterController>(prone_walk).unwrap().speed,
+            TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
+            world
+                .get::<CharacterController>(prone_half_input)
+                .unwrap()
+                .speed,
+            TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND * 0.5
+        );
+        assert_eq!(
+            world.get::<CharacterController>(prone_jog).unwrap().speed,
+            3.75 / TACTICAL_PRONE_EFFORT_SCALE
         );
         assert_eq!(
             world.get::<CharacterController>(transition).unwrap().speed,

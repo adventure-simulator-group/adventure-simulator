@@ -30,7 +30,7 @@ pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) 
             }
         }
     };
-    page_shell(title, header, content, ScriptProfile::Live)
+    page_shell(title, header, content, ScriptProfile::Strategic)
 }
 
 pub fn journal_layout(content: Markup, logged_in_as: Option<&str>) -> Markup {
@@ -169,7 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=organization-facades-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=visual-ui-audit-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=forge-preview-layering-3";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -180,15 +180,16 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-4" defer {}
-                    script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
+                    script src="/static/live-regions.js?v=preserved-client-regions-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/strategic-navigation.js?v=soft-navigation-1" defer {}
+                    script type="module" src="/static/strategic-renderer.js?v=model-owned-forge-controls-1" {}
                     script src="/static/strategic-mutations.js?v=formaction-override-1" defer {}
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
-                    script src="/static/inventory-browser.js?v=inventory-containers-1" defer {}
+                    script src="/static/inventory-browser.js?v=procedural-weapon-icons-1" defer {}
                     script src="/static/party-trade.js?v=provision-party-food-1-slot-controls-1" defer {}
                     script src="/static/cooking.js?v=fireplace-station-1" defer {}
                     script src="/static/herbalism.js?v=bounded-craft-1" defer {}
@@ -197,7 +198,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=fireplace-counterparty-1" defer {}
+                    script src="/static/dialogue-client.js?v=location-fixtures-2" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
                     script src="/static/developer-quest-editor.js?v=scenario-gallery-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
@@ -212,6 +213,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 }
             }
             body {
+                @if scripts == ScriptProfile::Strategic {
+                    div id="strategic-render-surface" aria-hidden="true" {
+                        canvas id="game-canvas" {}
+                    }
+                }
                 @if scripts != ScriptProfile::Entry {
                     div id="strategic-live-stream" data-init="@get('/live')" {
                         span id="strategic-live-revision" data-live-revision="0" hidden {}
@@ -254,10 +260,10 @@ fn settlement_top_bar(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let services = [
+        ("map", "map", "Map", "map"),
         ("", "public-square", "Public square", "market"),
         ("residences", "residences", "Residences", "house"),
         ("keep", "keep", "Keep", "castle"),
-        ("map", "map", "Map", "map"),
         ("merchants", "merchants", "General Market", "market"),
         ("weapons", "weapons", "Weapons", "weapons"),
         ("armor", "armor", "Armour", "armor"),
@@ -798,7 +804,7 @@ mod tests {
         let markup = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
         assert!(markup.contains("/static/local-chat.js?v=local-chat-location-authority-1"));
         assert!(!markup.contains("local-chat.js?v=herbalist-private-1"));
-        assert!(markup.contains("/static/live-regions.js?v=persistent-rest-refresh-2"));
+        assert!(markup.contains("/static/live-regions.js?v=preserved-client-regions-1"));
         assert!(markup.contains("id=\"strategic-page\""));
         assert!(markup.contains("/static/strategic-navigation.js"));
         assert!(markup.contains("/static/strategic-mutations.js?v=formaction-override-1\" defer"));
@@ -1061,6 +1067,27 @@ mod tests {
         assert!(town.contains(
             "data-service-id=\"keep\" data-building-id=\"keep\" data-building-material=\"stone\""
         ));
+    }
+
+    #[test]
+    fn settlement_map_is_the_first_service_tab() {
+        let markup = settlement_top_bar(
+            "Place",
+            "p",
+            &SettlementCategory::Village,
+            "public-square",
+            None,
+            None,
+            None,
+        )
+        .into_string();
+        let map = markup
+            .find("href=\"/locations/settlement/p/map\"")
+            .expect("settlement travel map tab");
+        let public_square = markup
+            .find("data-service-id=\"public-square\"")
+            .expect("public square tab");
+        assert!(map < public_square, "the travel map must remain first");
     }
 
     #[test]

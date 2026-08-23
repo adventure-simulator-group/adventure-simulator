@@ -30,6 +30,11 @@ path = "contributing/wiki-writing.md"
 
 [[item]]
 kind = "page"
+title = "Strategic interface style guide"
+path = "contributing/strategic-interface-style.md"
+
+[[item]]
+kind = "page"
 title = "Development workflow"
 path = "engineering/developing.md"
 
@@ -37,11 +42,6 @@ path = "engineering/developing.md"
 kind = "page"
 title = "Item definition authoring"
 path = "contributing/item-authoring.md"
-
-[[item]]
-kind = "page"
-title = "Project map maintenance"
-path = "engineering/project-map-maintenance.md"
 
 [[item]]
 kind = "part"
@@ -78,13 +78,14 @@ title = "Puzzle laboratory"
 path = "engineering/puzzle-lab.md"
 
 [[item]]
-kind = "part"
-title = "Generated reference"
+kind = "page"
+title = "Tactical automated testing"
+path = "engineering/tactical-testing.md"
 
 [[item]]
 kind = "page"
-title = "Project map"
-path = "generated/project-map.md"
+title = "Animation testing"
+path = "engineering/animation-testing.md"
 
 [[item]]
 kind = "part"
@@ -298,6 +299,11 @@ title = "Stealth"
 path = "tactical/stealth.md"
 
 [[item]]
+kind = "page"
+title = "Sky presentation"
+path = "tactical/sky.md"
+
+[[item]]
 kind = "part"
 title = "World data"
 
@@ -305,6 +311,11 @@ title = "World data"
 kind = "page"
 title = "World-data input bundles"
 path = "engineering/world-data/world-data-bundles.md"
+
+[[item]]
+kind = "page"
+title = "Tactical environment visual review"
+path = "engineering/world-data/environment-visual-review.md"
 
 [[item]]
 kind = "page"

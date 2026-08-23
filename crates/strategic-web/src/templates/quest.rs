@@ -201,21 +201,21 @@ fn quest_location_center(
                 None,
                 false,
             ))
-            nav class="settlement-npc-strip physical-evidence-strip"
+            nav class="scene-interactable-strip physical-evidence-strip"
                 aria-label="Physical evidence here"
                 data-evidence-strip
                 data-evidence-case-site=(&site.case_site_id) {
                 span class="text-muted" data-evidence-loading { "Looking over the scene…" }
             }
             @if !corpses.is_empty() {
-                nav class="settlement-npc-strip corpse-strip" aria-label="Counterparty corpses" {
+                nav class="scene-interactable-strip corpse-strip" aria-label="Counterparty corpses" {
                     @for corpse in corpses {
                         @let corpse_label = if corpse.location == "interred" { "Buried body" } else { &corpse.display_name };
-                        a class="npc-portrait corpse-portrait"
+                        a class="scene-interactable scene-interactable--remains corpse-portrait"
                             href=(format!("/locations/case-site/{}/enemy?corpse={}&medical=physiology", site.case_site_id, corpse.corpse_id))
                             aria-label=(format!("Examine {corpse_label} with Physiology")) {
-                            span class="npc-portrait-image" aria-hidden="true" { "☠" }
-                            span class="npc-portrait-name" { (corpse_label) }
+                            span class="scene-interactable-visual" aria-hidden="true" { "☠" }
+                            span class="scene-interactable-label" { (corpse_label) }
                         }
                     }
                 }
@@ -359,11 +359,11 @@ pub struct QuestCounterparty {
 
 fn quest_counterparty_strip(case_site_id: &str, counterparties: &[QuestCounterparty]) -> Markup {
     html! {
-        nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
+        nav class="scene-interactable-strip counterparty-strip" aria-label="People here" {
             @for counterparty in counterparties {
-                div class="npc-portrait counterparty-portrait" {
-                    span class="npc-portrait-image" aria-hidden="true" { "?" }
-                    span class="npc-portrait-name" { (&counterparty.character.name) }
+                div class="scene-interactable scene-interactable--person counterparty-portrait" {
+                    span class="scene-interactable-visual" aria-hidden="true" { "?" }
+                    span class="scene-interactable-label" { (&counterparty.character.name) }
                     @if counterparty.contact_decision == crate::spacetimedb::BackendContextualDecision::Request {
                       form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/contact")) {
                         input type="hidden" name="target_id" value=(counterparty.character.id);
@@ -647,7 +647,7 @@ mod tests {
         ];
         let markup = quest_counterparty_strip("case-site:known", &rows).into_string();
         let cards = markup
-            .split("<div class=\"npc-portrait counterparty-portrait\">")
+            .split("<div class=\"scene-interactable scene-interactable--person counterparty-portrait\">")
             .skip(1)
             .map(|card| {
                 card.split_once("</div>")

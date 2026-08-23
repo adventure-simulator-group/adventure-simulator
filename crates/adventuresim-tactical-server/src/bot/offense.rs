@@ -1,3 +1,5 @@
+use bevy::ecs::entity::MapEntities;
+
 use super::*;
 
 const AI_HIT_PRECISION: f32 = 1.0;
@@ -10,8 +12,10 @@ const AI_RANGED_STANDOFF_SLOP: f32 = 0.5;
 
 /// Enables server-owned offensive control, preferring ranged fire while a
 /// usable ranged weapon and arrows are available and otherwise using melee.
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Reflect, MapEntities)]
+#[reflect(Component)]
 pub struct OffensiveCombatAi {
+    #[entities]
     target: Option<Entity>,
     phase: OffensiveCombatPhase,
 }
@@ -32,10 +36,13 @@ impl OffensiveCombatAi {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Reflect)]
 enum OffensiveCombatPhase {
     Pursuing,
-    MeleeWindup(Timer),
+    MeleeWindup {
+        timer: Timer,
+        strike_family: StrikeFamily,
+    },
     RangedWindup(Timer),
     Cooldown(Timer),
 }
@@ -85,9 +92,10 @@ pub(super) fn drive_offensive_combat_ai(
         &mut input::AccumulatedInput,
         &mut OffensiveCombatAi,
         &TacticalCombatState,
+        &SkeletonState,
     )>,
 ) {
-    for (entity, transform, side, mut look, mut input, mut controller, state) in &mut ai {
+    for (entity, transform, side, mut look, mut input, mut controller, state, skeleton) in &mut ai {
         if state.is_incapacitated() {
             input.last_movement = None;
             continue;
@@ -139,7 +147,7 @@ pub(super) fn drive_offensive_combat_ai(
 
         let abort_windup = matches!(
             &controller.phase,
-            OffensiveCombatPhase::MeleeWindup(_)
+            OffensiveCombatPhase::MeleeWindup { .. }
                 if !weapon_is_melee || weapon_reach <= 0.0 || distance > interaction_range
         ) || matches!(
             &controller.phase,
@@ -160,12 +168,13 @@ pub(super) fn drive_offensive_combat_ai(
                     input.last_movement = Some(-Vec2::Y);
                 } else {
                     input.last_movement = None;
+                    let windup =
+                        CombatDuration::from_duration(std::time::Duration::from_millis(500));
                     cmd.trigger(RangedAttackStartedIntent {
                         attacker: entity,
                         target: Some(target),
-                        windup: CombatDuration::from_duration(std::time::Duration::from_millis(
-                            500,
-                        )),
+                        animation_windup: windup,
+                        minimum_windup: windup,
                     });
                     controller.phase = OffensiveCombatPhase::RangedWindup(Timer::from_seconds(
                         AI_WINDUP_SECS,
@@ -177,22 +186,28 @@ pub(super) fn drive_offensive_combat_ai(
                 if weapon_is_melee && weapon_reach > 0.0 && distance <= interaction_range =>
             {
                 input.last_movement = None;
+                let Some(strike_family) = skeleton.available_strike_family(strike_family) else {
+                    continue;
+                };
                 cmd.trigger(MeleeAttackStartedIntent {
                     attacker: entity,
                     target,
                     windup: CombatDuration::from_duration(std::time::Duration::from_millis(500)),
                     strike_family,
-                    footwork: Footwork::Switch,
+                    hand: AttackHand::Main,
                 });
-                controller.phase = OffensiveCombatPhase::MeleeWindup(Timer::from_seconds(
-                    AI_WINDUP_SECS,
-                    TimerMode::Once,
-                ));
+                controller.phase = OffensiveCombatPhase::MeleeWindup {
+                    timer: Timer::from_seconds(AI_WINDUP_SECS, TimerMode::Once),
+                    strike_family,
+                };
             }
             OffensiveCombatPhase::Pursuing => {
                 input.last_movement = Some(Vec2::Y);
             }
-            OffensiveCombatPhase::MeleeWindup(timer) => {
+            OffensiveCombatPhase::MeleeWindup {
+                timer,
+                strike_family,
+            } => {
                 input.last_movement = None;
                 timer.tick(time.delta());
                 if timer.is_finished() {
@@ -202,7 +217,8 @@ pub(super) fn drive_offensive_combat_ai(
                         body_part: AI_BODY_PART,
                         reported_precision: ReportedPrecision::new(AI_HIT_PRECISION)
                             .expect("AI precision is finite"),
-                        strike_family,
+                        strike_family: *strike_family,
+                        hand: AttackHand::Main,
                     });
                     controller.phase = OffensiveCombatPhase::Cooldown(Timer::from_seconds(
                         AI_COOLDOWN_SECS,

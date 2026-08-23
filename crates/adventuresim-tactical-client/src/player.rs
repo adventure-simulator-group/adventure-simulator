@@ -1,12 +1,14 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
-    client::DirectControlState,
+    client::{DirectControlState, WeaponGuardInputState},
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest},
 };
 use bevy::prelude::*;
 
-use crate::{animation::spawn_fallback_t_pose, camera::CameraAimState};
+use crate::{
+    animation::spawn_fallback_t_pose, camera::CameraAimState, presentation::GrassInteractor,
+};
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     (
@@ -46,8 +48,11 @@ const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     ),
 ];
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
-const PRE_HIT_DELAY: f32 = 0.3;
 const HIT_PRECISION: f32 = 1.0;
+/// Seconds a dead bot's detached visual takes to fade to transparent. Purely
+/// a client-side presentation detail: the server despawns the authoritative
+/// entity immediately on death and has no notion of this delay.
+const ENEMY_DEATH_FADE_SECONDS: f32 = 2.0;
 const GAMEPAD_LOOK_SCALE: Vec3 = Vec3::new(4.0, -4.0, 4.0);
 
 pub struct PlayerPlugin;
@@ -66,9 +71,19 @@ impl Plugin for PlayerPlugin {
             .add_systems(
                 Update,
                 (
-                    apply_direct_combat_controls,
-                    update_attack_state_system.run_if(any_with_component::<AttackState>),
+                    (
+                        apply_direct_combat_controls,
+                        update_attack_state_system.run_if(any_with_component::<AttackState>),
+                        flush_buffered_melee_attacks,
+                    )
+                        .chain(),
+                    start_fade_on_incapacitation,
+                    tick_fade_out.run_if(any_with_component::<FadingOut>),
                 ),
+            )
+            .add_systems(
+                PostUpdate,
+                predict_local_body_facing.before(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -76,11 +91,22 @@ impl Plugin for PlayerPlugin {
 /// Identifies which replicated character receives local controls and the
 /// gameplay camera. Kept separate from transport CLI arguments so local
 /// presentation fixtures use the exact same player-spawn observer.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
+#[reflect(Resource)]
 pub struct LocalCharacterId(pub u64);
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(Component)]
 pub struct ClientPlayer;
+
+/// Render-frame facing state for the locally controlled character. Replicated
+/// transforms remain authoritative; this state hides the gaps between their
+/// rotation samples for both camera-facing guard and velocity-facing travel.
+#[derive(Component, Debug, Clone, Copy, Default)]
+struct LocalBodyFacing {
+    rotation: Quat,
+    initialized: bool,
+}
 
 #[derive(EntityEvent)]
 pub struct HitPerformed {
@@ -93,11 +119,29 @@ pub struct HitPerformed {
 #[derive(Component, Clone, Copy)]
 pub struct LimbHitbox(pub BodyPart);
 
+/// A standalone, client-only entity holding a dead player/bot's detached body
+/// meshes, fading them to transparent over [`ENEMY_DEATH_FADE_SECONDS`] before
+/// despawning itself. Spawned by [`start_fade_on_incapacitation`] the moment
+/// [`TacticalCombatState`] is seen to be `Incapacitated`, since by that point the
+/// server may despawn (and replication may remove) the real player entity at
+/// any time — this entity has no server counterpart and outlives it on
+/// purpose so the fade has something to animate.
+#[derive(Component)]
+struct FadingOut {
+    timer: Timer,
+}
+
 #[derive(Component, Default)]
 pub struct AttackState {
     pub pre_hit_timer: Timer,
     pub reach: f32,
     pub ranged: bool,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct BufferedMeleeAttack {
+    family: StrikeFamily,
+    hand: AttackHand,
 }
 
 impl AttackState {
@@ -137,6 +181,8 @@ fn on_new_player_added_hook(
         commands.entity(event.entity).insert((
             tactical_character_controller(),
             ClientPlayer,
+            LocalBodyFacing::default(),
+            GrassInteractor,
             actions!(Player[
                 (
                     Action::<input::Movement>::new(),
@@ -197,6 +243,126 @@ fn on_new_player_added_hook(
     });
 
     Ok(())
+}
+
+/// Detaches another player/bot's body meshes onto a standalone [`FadingOut`]
+/// corpse entity the first time their replicated [`TacticalCombatState`] is
+/// seen to be `Incapacitated`. The server despawns the real entity immediately
+/// on death with no fade delay of its own (see the tactical server's
+/// `bot::on_authoritative_enemy_death`), so the meshes have to be moved off
+/// of it before that despawn — which recursively despawns children — can take
+/// them with it. Excludes the locally controlled player, which never spawns
+/// any body meshes to fade (see [`on_new_player_added_hook`]).
+fn start_fade_on_incapacitation(
+    mut commands: Commands,
+    q: Query<
+        (&TacticalCombatState, &Transform, &Children),
+        (Changed<TacticalCombatState>, Without<ClientPlayer>),
+    >,
+    q_mesh: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
+) {
+    for (state, transform, children) in &q {
+        if state.incapacitation_status() != IncapacitationStatus::Incapacitated {
+            continue;
+        }
+
+        let meshes: Vec<Entity> = children
+            .iter()
+            .filter(|&child| q_mesh.contains(child))
+            .collect();
+        if meshes.is_empty() {
+            // Already detached by an earlier `TacticalCombatState` change
+            // (e.g. the continuing imbalance-recovery ticks), or nothing to
+            // fade.
+            continue;
+        }
+
+        let corpse = commands
+            .spawn((
+                *transform,
+                Visibility::default(),
+                FadingOut {
+                    timer: Timer::from_seconds(ENEMY_DEATH_FADE_SECONDS, TimerMode::Once),
+                },
+            ))
+            .id();
+        for mesh in meshes {
+            commands.entity(mesh).insert(ChildOf(corpse));
+        }
+    }
+}
+
+/// Fades a [`FadingOut`] corpse's detached meshes toward transparent and
+/// despawns the corpse once the timer finishes — nothing server-side ever
+/// removes it, since it has no networked counterpart. Each material handle is
+/// unique per body part per player (see [`on_new_player_added_hook`]), so
+/// mutating alpha here can't bleed into any other entity's appearance.
+fn tick_fade_out(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut q_fading: Query<(Entity, &mut FadingOut, &Children)>,
+    q_material: Query<&MeshMaterial3d<StandardMaterial>>,
+) {
+    for (corpse, mut fading, children) in &mut q_fading {
+        fading.timer.tick(time.delta());
+        let alpha = (1.0 - fading.timer.fraction()).clamp(0.0, 1.0);
+
+        for child in children.iter() {
+            let Ok(material_handle) = q_material.get(child) else {
+                continue;
+            };
+            if let Some(mut material) = materials.get_mut(&material_handle.0) {
+                material.alpha_mode = AlphaMode::Blend;
+                material.base_color = material.base_color.with_alpha(alpha);
+            }
+        }
+
+        if fading.timer.is_finished() {
+            commands.entity(corpse).despawn();
+        }
+    }
+}
+
+fn predict_local_body_facing(
+    time: Res<Time>,
+    guard: Res<WeaponGuardInputState>,
+    mut players: Query<
+        (
+            &CharacterControllerCamera,
+            &SkeletonState,
+            &mut Transform,
+            &mut LocalBodyFacing,
+        ),
+        With<ClientPlayer>,
+    >,
+    cameras: Query<&Transform, (With<Camera3d>, Without<ClientPlayer>)>,
+) {
+    for (camera, skeleton, mut transform, mut facing) in &mut players {
+        if skeleton.body().is_downed() || skeleton.is_posture_transitioning() {
+            facing.rotation = transform.rotation;
+            facing.initialized = false;
+            continue;
+        }
+
+        let Ok(camera_transform) = cameras.get(camera.get()) else {
+            continue;
+        };
+        if !facing.initialized {
+            facing.rotation = transform.rotation;
+            facing.initialized = true;
+        }
+
+        facing.rotation = advance_body_facing(
+            facing.rotation,
+            camera_transform.rotation,
+            skeleton.world_velocity,
+            skeleton.action_kind(),
+            guard.desired,
+            time.delta_secs(),
+        );
+        transform.rotation = facing.rotation;
+    }
 }
 
 fn update_attack_state_system(
@@ -324,16 +490,15 @@ fn on_attack_fired_hook(
     event: On<Fire<Attack>>,
     mut cmd: Commands,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
-    q_leg_ik: Query<&crate::animation::LegIkState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
     try_start_attack(
         event.context,
         false,
+        AttackHand::Main,
         &mut cmd,
         &mut q_character,
-        &q_leg_ik,
         &viewer,
         &time,
     );
@@ -342,26 +507,26 @@ fn on_attack_fired_hook(
 fn try_start_attack(
     entity: Entity,
     alternate_attack: bool,
+    hand: AttackHand,
     cmd: &mut Commands,
     q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
-    q_leg_ik: &Query<&crate::animation::LegIkState>,
     viewer: &TacticalPlayerViewer,
     time: &Time,
 ) {
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
-    if attacking {
-        return;
-    }
-    let Ok((reach, ranged, melee, preferred_style)) = viewer.get(entity).map(|character| {
-        (
-            character.weapon_reach(),
-            character.weapon_is_ranged(),
-            character.weapon_is_melee(),
-            character.weapon_preferred_melee_style(),
-        )
-    }) else {
+    let Ok((reach, ranged, melee, windup_secs, preferred_style)) =
+        viewer.get_for_attack(entity, hand).map(|character| {
+            (
+                character.weapon_reach(),
+                hand == AttackHand::Main && character.weapon_is_ranged(),
+                character.weapon_is_melee(),
+                character.weapon_windup_secs(),
+                character.weapon_preferred_melee_style(),
+            )
+        })
+    else {
         warn!("Trying to attack, but can't get weapon reach. Not holding any weapons ?");
         return;
     };
@@ -370,55 +535,106 @@ fn try_start_attack(
         warn!("Trying to attack without a usable equipped weapon");
         return;
     }
-    cmd.entity(entity)
-        .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
     let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-    let predicted = if ranged {
-        AttackSpec::default()
+    if ranged {
+        if attacking {
+            return;
+        }
+        if skeleton
+            .begin_attack(AttackSpec::default(), start, start + 19)
+            .is_err()
+        {
+            return;
+        }
+        cmd.entity(entity)
+            .insert(AttackState::new(windup_secs, reach, true));
+        cmd.client_trigger(RangedActionRequest::Start);
     } else {
-        // Predict only from the last physical velocity already present in the
-        // replicated skeleton. The authority repeats the same typed
-        // classification from its observation; no input vector crosses the
-        // reliable action boundary.
         let preferred_family = StrikeFamily::from_melee_style(preferred_style);
-        let strike_family = if alternate_attack {
-            match preferred_family {
-                StrikeFamily::Slash => StrikeFamily::Thrust,
-                StrikeFamily::Thrust => StrikeFamily::Slash,
-            }
+        let requested_family = if alternate_attack && hand == AttackHand::Main {
+            preferred_family.alternate()
         } else {
             preferred_family
         };
-        let moving = skeleton.local_velocity.xz().length() > 0.05;
-        let feet_close = q_leg_ik
-            .get(entity)
-            .ok()
-            .and_then(crate::animation::LegIkState::feet_are_close_for_attack)
-            .unwrap_or(false);
-        let footwork = if moving {
-            if feet_close {
-                Footwork::Stay
-            } else {
-                Footwork::Switch
-            }
-        } else if strike_family == StrikeFamily::Slash {
-            Footwork::Switch
-        } else {
-            Footwork::Stay
+        let Some(strike_family) = skeleton.available_strike_family(requested_family) else {
+            return;
         };
-        AttackSpec::melee_from_local_velocity_and_style(
-            skeleton.local_velocity,
-            strike_family,
-            footwork,
-        )
-    };
-    skeleton.begin_attack(predicted, start, start + 19);
-    if ranged {
-        cmd.client_trigger(RangedActionRequest::Start);
-    } else {
+        let Some(spec) = (!attacking)
+            .then(|| match hand {
+                AttackHand::Main => skeleton.select_main_attack(strike_family),
+                AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
+            })
+            .flatten()
+        else {
+            cmd.entity(entity).insert(BufferedMeleeAttack {
+                family: strike_family,
+                hand,
+            });
+            return;
+        };
+        match skeleton.begin_attack(spec, start, start + 19) {
+            Ok(()) => {}
+            Err(ActionTransitionError::ActionBusy) => {
+                cmd.entity(entity).insert(BufferedMeleeAttack {
+                    family: strike_family,
+                    hand,
+                });
+                return;
+            }
+            Err(ActionTransitionError::Downed | ActionTransitionError::PostureTransitionActive) => {
+                return;
+            }
+        }
+        cmd.entity(entity)
+            .insert(AttackState::new(windup_secs, reach, false))
+            .remove::<BufferedMeleeAttack>();
         cmd.client_trigger(MeleeActionRequest::Start {
-            strike_family: predicted.strike_family,
-            footwork: predicted.footwork,
+            strike_family,
+            hand,
+        });
+    }
+}
+
+fn flush_buffered_melee_attacks(
+    mut cmd: Commands,
+    mut characters: Query<
+        (
+            Entity,
+            &BufferedMeleeAttack,
+            Has<AttackState>,
+            &mut SkeletonState,
+        ),
+        With<ControlledPlayer>,
+    >,
+    viewer: TacticalPlayerViewer,
+    time: Res<Time>,
+) {
+    for (entity, buffered, attacking, mut skeleton) in &mut characters {
+        if attacking {
+            continue;
+        }
+        let Some(spec) = (match buffered.hand {
+            AttackHand::Main => skeleton.select_main_attack(buffered.family),
+            AttackHand::Offhand => skeleton.select_offhand_attack(buffered.family),
+        }) else {
+            continue;
+        };
+        let Ok((reach, windup_secs)) = viewer
+            .get_for_attack(entity, buffered.hand)
+            .map(|character| (character.weapon_reach(), character.weapon_windup_secs()))
+        else {
+            continue;
+        };
+        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        if skeleton.begin_attack(spec, start, start + 19).is_err() {
+            continue;
+        }
+        cmd.entity(entity)
+            .insert(AttackState::new(windup_secs, reach, false))
+            .remove::<BufferedMeleeAttack>();
+        cmd.client_trigger(MeleeActionRequest::Start {
+            strike_family: buffered.family,
+            hand: buffered.hand,
         });
     }
 }
@@ -428,18 +644,51 @@ fn apply_direct_combat_controls(
     mut cmd: Commands,
     players: Query<Entity, With<ControlledPlayer>>,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
-    q_leg_ik: Query<&crate::animation::LegIkState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
     for entity in &players {
+        if let Ok((_, mut skeleton)) = q_character.get_mut(entity)
+            && let Ok(view) = viewer.get_for_attack(entity, AttackHand::Main)
+        {
+            let preferred = StrikeFamily::from_melee_style(view.weapon_preferred_melee_style());
+            let resolve = |input: MeleePreparationInput| match input {
+                MeleePreparationInput::Preferred => AttackAnimation::initial(
+                    skeleton
+                        .available_strike_family(preferred)
+                        .unwrap_or(preferred),
+                ),
+                MeleePreparationInput::Alternate => AttackAnimation::initial(
+                    skeleton
+                        .available_strike_family(preferred.alternate())
+                        .unwrap_or(preferred),
+                ),
+                MeleePreparationInput::Offhand
+                    if skeleton.attack_animations.offhand_preparation =>
+                {
+                    AttackAnimation::Offhand
+                }
+                MeleePreparationInput::Offhand => AttackAnimation::initial(
+                    skeleton
+                        .available_strike_family(preferred)
+                        .unwrap_or(preferred),
+                ),
+            };
+            let from = resolve(controls.local_preparation_from);
+            let to = resolve(controls.local_preparation_to);
+            skeleton.set_attack_preparation(AttackPreparation {
+                from,
+                to,
+                progress: controls.local_preparation_progress,
+            });
+        }
         if controls.attack_just_pressed {
             try_start_attack(
                 entity,
                 controls.alternate_attack,
+                controls.attack_hand,
                 &mut cmd,
                 &mut q_character,
-                &q_leg_ik,
                 &viewer,
                 &time,
             );
@@ -447,7 +696,9 @@ fn apply_direct_combat_controls(
         if controls.dodge_just_pressed {
             if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
                 let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-                skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
+                if let Some(spec) = DodgeSpec::quickstep(controls.quickstep_direction) {
+                    let _ = skeleton.begin_dodge(spec, start, start + 20);
+                }
             }
             cmd.client_trigger(DefendRequest::Dodge);
         }
@@ -465,7 +716,7 @@ fn on_dodge_fired(
 ) {
     if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
+        let _ = skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Dodge);
 }
@@ -478,7 +729,7 @@ fn on_parry_fired(
 ) {
     if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        skeleton.begin_block(BlockSpec::default(), start, start + 8);
+        let _ = skeleton.begin_block(BlockSpec::default(), start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Parry);
 }
@@ -491,5 +742,60 @@ mod tests {
     fn gamepad_look_keeps_horizontal_and_reverses_vertical_input() {
         assert!(GAMEPAD_LOOK_SCALE.x.is_sign_positive());
         assert!(GAMEPAD_LOOK_SCALE.y.is_sign_negative());
+    }
+
+    #[test]
+    fn local_aim_facing_advances_on_every_render_frame() {
+        let camera = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let target = advance_body_facing(
+            Quat::IDENTITY,
+            camera,
+            Vec3::ZERO,
+            SkeletonAction::None,
+            WeaponGuardState::Raised,
+            1.0,
+        );
+        let mut facing = Quat::IDENTITY;
+        let mut previous_distance = facing.angle_between(target);
+
+        for _ in 0..4 {
+            facing = advance_body_facing(
+                facing,
+                camera,
+                Vec3::ZERO,
+                SkeletonAction::None,
+                WeaponGuardState::Raised,
+                1.0 / 60.0,
+            );
+            let distance = facing.angle_between(target);
+            assert!(distance < previous_distance);
+            previous_distance = distance;
+        }
+
+        assert!(previous_distance > 0.0);
+    }
+
+    #[test]
+    fn local_travel_facing_advances_toward_world_velocity() {
+        let velocity = Vec3::X * 3.0;
+        let target = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            velocity,
+            SkeletonAction::None,
+            WeaponGuardState::Lowered,
+            1.0,
+        );
+        let next = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            velocity,
+            SkeletonAction::None,
+            WeaponGuardState::Lowered,
+            1.0 / 60.0,
+        );
+
+        assert!(next.angle_between(target) < Quat::IDENTITY.angle_between(target));
+        assert!(next.angle_between(target) > 0.0);
     }
 }

@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from prepare_animation_motion import strip_motion_mesh
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = ROOT / "assets" / "animations" / "biped" / "unarmed"
@@ -27,7 +29,6 @@ MIRRORED_MOTIONS = {
     "run": "run_mirrored",
     "prone_crawl": "prone_crawl_mirrored",
     "supine_scamper": "supine_scamper_mirrored",
-    "dive_left": "dive_right",
     "prone_supine_roll_left": "prone_supine_roll_right",
 }
 REFLECTION = np.diag((-1.0, 1.0, 1.0, 1.0))
@@ -144,6 +145,60 @@ def decompose(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return translation, matrix_quaternion(rotation), scale
 
 
+def resolve_global_matrices(
+    local_matrices: list[np.ndarray], parents: dict[int, int]
+) -> list[np.ndarray]:
+    """Resolve node globals independently of the GLB node-table order."""
+    resolved: list[np.ndarray | None] = [None] * len(local_matrices)
+    visiting: set[int] = set()
+
+    def resolve(index: int) -> np.ndarray:
+        if index < 0 or index >= len(local_matrices):
+            raise ValueError(f"node hierarchy references missing node {index}")
+        cached = resolved[index]
+        if cached is not None:
+            return cached
+        if index in visiting:
+            raise ValueError(f"node hierarchy contains a cycle at node {index}")
+        visiting.add(index)
+        parent = parents.get(index)
+        matrix = local_matrices[index]
+        global_matrix = matrix if parent is None else resolve(parent) @ matrix
+        visiting.remove(index)
+        resolved[index] = global_matrix
+        return global_matrix
+
+    return [resolve(index) for index in range(len(local_matrices))]
+
+
+def mhr_bilateral_pairs(by_name: dict[object, int]) -> list[tuple[int, int]]:
+    """Return every complete canonical MHR ``l_*``/``r_*`` node pair."""
+    return [
+        (left, by_name[f"r_{name[2:]}"])
+        for name, left in by_name.items()
+        if isinstance(name, str)
+        and name.startswith("l_")
+        and f"r_{name[2:]}" in by_name
+    ]
+
+
+def mirrored_pose_globals(
+    animated_globals: list[np.ndarray],
+    bind_globals: list[np.ndarray],
+    inverse_bind_globals: list[np.ndarray],
+    counterpart: dict[int, int],
+) -> list[np.ndarray]:
+    """Mirror skinning deformations while preserving target bind frames."""
+    return [
+        REFLECTION
+        @ animated_globals[counterpart[index]]
+        @ inverse_bind_globals[counterpart[index]]
+        @ REFLECTION
+        @ bind_globals[index]
+        for index in range(len(animated_globals))
+    ]
+
+
 def mirrored_glb(source: Path) -> bytes:
     document, binary = read_glb(source)
     nodes = document["nodes"]
@@ -152,16 +207,25 @@ def mirrored_glb(source: Path) -> bytes:
     for parent, node in enumerate(nodes):
         for child in node.get("children", ()):
             parents[child] = parent
-    # Cascadeur exports the complete bilateral hierarchy with `.L` / `.R`
-    # suffixes. Discover every pair so palms, fingers, breasts, and any future
-    # authored descendants follow their exchanged hand/limb parents.
-    pairs = [
-        (left, by_name[f"{name[:-2]}.R"])
-        for name, left in by_name.items()
-        if isinstance(name, str)
-        and name.endswith(".L")
-        and f"{name[:-2]}.R" in by_name
+    # Discover the complete canonical MHR bilateral hierarchy so palms,
+    # fingers, distributed twists, feet, and any future authored descendants
+    # follow their exchanged hand/limb parents.
+    pairs = mhr_bilateral_pairs(by_name)
+    counterpart = {index: index for index in range(len(nodes))}
+    for left, right in pairs:
+        counterpart[left] = right
+        counterpart[right] = left
+
+    bind_local = [
+        compose(
+            np.array(node.get("translation", (0, 0, 0))),
+            np.array(node.get("rotation", (0, 0, 0, 1))),
+            np.array(node.get("scale", (1, 1, 1))),
+        )
+        for node in nodes
     ]
+    bind_globals = resolve_global_matrices(bind_local, parents)
+    inverse_bind_globals = [np.linalg.inv(matrix) for matrix in bind_globals]
 
     channels: dict[tuple[int, str], np.ndarray] = {}
     animation = document["animations"][0]
@@ -191,21 +255,17 @@ def mirrored_glb(source: Path) -> bytes:
                     scale[frame] if scale is not None else np.array(node.get("scale", (1, 1, 1))),
                 )
             )
-        global_matrices: list[np.ndarray] = []
-        for index, matrix in enumerate(local):
-            parent = parents.get(index)
-            global_matrices.append(matrix if parent is None else global_matrices[parent] @ matrix)
-        counterpart = {index: index for index in range(len(nodes))}
-        for left, right in pairs:
-            counterpart[left] = right
-            counterpart[right] = left
-        # Mirror every animated center-line bone as well as exchanging paired
-        # limbs. Leaving pelvis/spine/head unreflected happened to be tolerable
-        # for upright gait, but twists a strongly asymmetric downed pose apart.
-        desired = [
-            REFLECTION @ global_matrices[counterpart[index]] @ REFLECTION
-            for index in range(len(nodes))
-        ]
+        global_matrices = resolve_global_matrices(local, parents)
+        # Mirror each source bone's deformation relative to its bind frame,
+        # then apply that deformation to the counterpart's bind frame. MHR
+        # joints have deliberately rolled local axes, so reflecting absolute
+        # globals would also reflect the bind skeleton and invert center bones.
+        desired = mirrored_pose_globals(
+            global_matrices,
+            bind_globals,
+            inverse_bind_globals,
+            counterpart,
+        )
         animated_nodes = {node for node, _path in channels}
         for target in animated_nodes:
             parent = parents.get(target)
@@ -230,7 +290,8 @@ def mirrored_glb(source: Path) -> bytes:
             if (target, "scale") in channels:
                 channels[(target, "scale")][frame] = scale
 
-    return encode_glb(document, binary)
+    stripped_document, stripped_binary = strip_motion_mesh(document, binary)
+    return encode_glb(stripped_document, bytearray(stripped_binary))
 
 
 def main() -> None:
@@ -238,9 +299,13 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     stale: list[Path] = []
+    skipped: list[Path] = []
     for motion, output_motion in MIRRORED_MOTIONS.items():
         source = ASSET_DIR / f"{motion}.glb"
         output = ASSET_DIR / f"{output_motion}.glb"
+        if not source.is_file():
+            skipped.append(source)
+            continue
         generated = mirrored_glb(source)
         if args.check:
             if not output.exists() or output.read_bytes() != generated:
@@ -248,6 +313,9 @@ def main() -> None:
         else:
             output.write_bytes(generated)
             print(output.relative_to(ROOT))
+    if skipped:
+        names = ", ".join(str(path.relative_to(ROOT)) for path in skipped)
+        print(f"skipped missing mirror sources: {names}")
     if stale:
         names = ", ".join(str(path.relative_to(ROOT)) for path in stale)
         raise SystemExit(f"stale mirrored gait assets: {names}")

@@ -13,14 +13,14 @@ pub(in crate::animation) struct OrdinaryLocomotionIkState {
 pub(super) fn owns(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded()
         && !skeleton.is_posture_transitioning()
-        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
+        && skeleton.posture() == Posture::Upright
         && skeleton.action_kind() == SkeletonAction::None
         && (skeleton.weapon_guard() == WeaponGuardState::Lowered
             || skeleton.guarded_sprint_locomotion())
 }
 
-/// Overgrowth-style ordinary locomotion IK: the graph supplies the complete
-/// FK pose and authored foot weights; this pass only conforms weighted ankles
+/// Overgrowth-style ordinary locomotion IK: semantic evaluation supplies the
+/// complete FK pose and authored foot weights; this pass only conforms weighted ankles
 /// to terrain, applies one shared hip correction, and solves each leg once.
 pub(in crate::animation) fn apply(
     enabled: Res<super::super::super::TerrainIkEnabled>,
@@ -312,7 +312,7 @@ mod tests {
         assert!(owns(&guarded_sprint));
 
         let mut attacking = ordinary.clone();
-        attacking.begin_attack(AttackSpec::default(), 0, 1);
+        attacking.begin_attack(AttackSpec::default(), 0, 1).unwrap();
         assert!(!owns(&attacking));
     }
 

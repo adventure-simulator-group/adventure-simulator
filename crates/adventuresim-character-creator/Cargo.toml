@@ -6,6 +6,20 @@ repository = "https://github.com/adventure-simulator-group/fabelgeist"
 license = "GPL-3.0"
 
 [dependencies]
+anyhow = "1"
 bevy = "0.19.0"
+bevy_egui = "0.40.1"
+burn = { git = "https://github.com/tracel-ai/burn", rev = "b1502de8b396e7c575981d8df9fc84099619f458", default-features = false, features = [
+    "std",
+    "wgpu",
+] }
+fabelgeist-mhr = { path = "../fabelgeist-mhr" }
+clap = { version = "4.5", features = ["derive", "env"] }
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+gltf = { version = "1.4", default-features = false }
 
 [workspace]

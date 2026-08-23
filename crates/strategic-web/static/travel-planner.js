@@ -495,8 +495,14 @@
         if (walkingOutput) walkingOutput.textContent = formatDays(walkingHours.value);
       });
       const save = async () => {
-        const response = await fetch(configuration.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(configuration)) });
-        if (response.ok) window.location.reload();
+        try {
+          await window.strategicSubmitMutation(configuration.action, {
+            body: new URLSearchParams(new FormData(configuration)),
+            originPage: configuration.closest("#strategic-page"),
+          });
+        } catch (error) {
+          window.reportStrategicError?.(error, "travel configuration");
+        }
       };
       let walkingWheelSave;
       walkingHours?.addEventListener("wheel", (event) => {
@@ -523,9 +529,16 @@
       event.preventDefault();
       if (form.dataset.submitting) return;
       form.dataset.submitting = "true";
-      const response = await fetch(form.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(form)) });
-      if (response.ok) window.location.assign(response.status === 202 ? window.location.href : (new URL(form.action).pathname === "/camp/continue" ? "/" : "/camp"));
-      else { form.dataset.submitting = ""; const status = form.parentElement?.querySelector("[data-travel-action-status]"); if (status) { status.hidden = false; status.textContent = await response.text(); } }
+      try {
+        await window.strategicSubmitMutation(form.action, {
+          body: new URLSearchParams(new FormData(form)),
+          originPage: form.closest("#strategic-page"),
+        });
+      } catch (error) {
+        form.dataset.submitting = "";
+        const status = form.parentElement?.querySelector("[data-travel-action-status]");
+        if (status) { status.hidden = false; status.textContent = error.message || "Travel could not begin."; }
+      }
     }));
     document.querySelectorAll("[data-rest-duration]").forEach((control) => control.querySelectorAll("input[type=radio]").forEach((radio) => radio.addEventListener("change", () => {
       control.querySelectorAll(".rest-duration-unit").forEach((label) => label.classList.toggle("active", label.contains(radio) && radio.checked));

@@ -7,6 +7,13 @@ pub(crate) struct HumanoidBone {
     pub(crate) role: BoneRole,
 }
 
+/// Every canonical MHR joint, including facial, finger, foot, and distributed
+/// twist joints which do not need a semantic procedural role of their own.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MhrBone {
+    pub(crate) owner: Entity,
+}
+
 /// Cached rig topology. It changes only while an asynchronously loaded scene
 /// is binding; procedural passes read it without rebuilding owner/role maps.
 #[derive(Component, Debug, Clone)]
@@ -14,6 +21,8 @@ pub(crate) struct HumanoidRig {
     bones: [Option<Entity>; BoneRole::COUNT],
     rig_scene: Option<Entity>,
     sole_axes: [Option<Vec3>; 2],
+    mirror_centers: Vec<Entity>,
+    mirror_pairs: Vec<(Entity, Entity)>,
 }
 
 impl Default for HumanoidRig {
@@ -22,6 +31,8 @@ impl Default for HumanoidRig {
             bones: [None; BoneRole::COUNT],
             rig_scene: None,
             sole_axes: [None; 2],
+            mirror_centers: Vec::new(),
+            mirror_pairs: Vec::new(),
         }
     }
 }
@@ -38,6 +49,14 @@ impl HumanoidRig {
     pub(super) fn sole_axis(&self, left: bool) -> Option<Vec3> {
         self.sole_axes[usize::from(!left)]
     }
+
+    pub(super) fn mirror_centers(&self) -> &[Entity] {
+        &self.mirror_centers
+    }
+
+    pub(super) fn mirror_pairs(&self) -> &[(Entity, Entity)] {
+        &self.mirror_pairs
+    }
 }
 
 #[repr(u8)]
@@ -47,73 +66,84 @@ pub(crate) enum BoneRole {
     Pelvis,
     StomachOne,
     StomachTwo,
+    StomachThree,
     Chest,
     NeckOne,
-    NeckTwo,
     Head,
+    Camera,
     ClavicleLeft,
     ClavicleRight,
     ThighLeft,
-    ThighTwistLeft,
     ShinLeft,
-    ShinTwistLeft,
     FootLeft,
     ToeLeft,
     ThighRight,
-    ThighTwistRight,
     ShinRight,
-    ShinTwistRight,
     FootRight,
     ToeRight,
     UpperArmLeft,
-    UpperArmTwistLeft,
     ForearmLeft,
-    ForearmTwistLeft,
     HandLeft,
     WeaponLeft,
     UpperArmRight,
-    UpperArmTwistRight,
     ForearmRight,
-    ForearmTwistRight,
     HandRight,
     WeaponRight,
 }
 
+fn is_mhr_joint_name(name: &str) -> bool {
+    matches!(name, "body_world" | "root")
+        || name.starts_with("c_")
+        || name.starts_with("l_")
+        || name.starts_with("r_")
+}
+
+fn mhr_mirror_topology(names: &BTreeMap<String, Entity>) -> (Vec<Entity>, Vec<(Entity, Entity)>) {
+    let centers = names
+        .iter()
+        .filter_map(|(name, &entity)| {
+            (matches!(name.as_str(), "body_world" | "root") || name.starts_with("c_"))
+                .then_some(entity)
+        })
+        .collect();
+    let pairs = names
+        .iter()
+        .filter_map(|(name, &left)| {
+            let suffix = name.strip_prefix("l_")?;
+            Some((left, *names.get(&format!("r_{suffix}"))?))
+        })
+        .collect();
+    (centers, pairs)
+}
+
 impl BoneRole {
-    pub(super) const COUNT: usize = 34;
+    pub(super) const COUNT: usize = 27;
     pub(super) const ALL: [Self; Self::COUNT] = [
         Self::Root,
         Self::Pelvis,
         Self::StomachOne,
         Self::StomachTwo,
+        Self::StomachThree,
         Self::Chest,
         Self::NeckOne,
-        Self::NeckTwo,
         Self::Head,
+        Self::Camera,
         Self::ClavicleLeft,
         Self::ClavicleRight,
         Self::ThighLeft,
-        Self::ThighTwistLeft,
         Self::ShinLeft,
-        Self::ShinTwistLeft,
         Self::FootLeft,
         Self::ToeLeft,
         Self::ThighRight,
-        Self::ThighTwistRight,
         Self::ShinRight,
-        Self::ShinTwistRight,
         Self::FootRight,
         Self::ToeRight,
         Self::UpperArmLeft,
-        Self::UpperArmTwistLeft,
         Self::ForearmLeft,
-        Self::ForearmTwistLeft,
         Self::HandLeft,
         Self::WeaponLeft,
         Self::UpperArmRight,
-        Self::UpperArmTwistRight,
         Self::ForearmRight,
-        Self::ForearmTwistRight,
         Self::HandRight,
         Self::WeaponRight,
     ];
@@ -124,40 +154,33 @@ impl BoneRole {
 
     pub(super) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
-            "root" => Self::Root,
-            "pelvis" => Self::Pelvis,
-            "stomach_01" => Self::StomachOne,
-            "stomach_02" => Self::StomachTwo,
-            "chest" => Self::Chest,
-            "neck_01" => Self::NeckOne,
-            "neck_02" => Self::NeckTwo,
-            "head" => Self::Head,
-            "clavicle.L" => Self::ClavicleLeft,
-            "clavicle.R" => Self::ClavicleRight,
-            "thigh.L" => Self::ThighLeft,
-            "thigh_twist.L" => Self::ThighTwistLeft,
-            "shin.L" => Self::ShinLeft,
-            "shin_twist.L" => Self::ShinTwistLeft,
-            "foot.L" => Self::FootLeft,
-            "toe.L" => Self::ToeLeft,
-            "thigh.R" => Self::ThighRight,
-            "thigh_twist.R" => Self::ThighTwistRight,
-            "shin.R" => Self::ShinRight,
-            "shin_twist.R" => Self::ShinTwistRight,
-            "foot.R" => Self::FootRight,
-            "toe.R" => Self::ToeRight,
-            "upper_arm.L" => Self::UpperArmLeft,
-            "upper_arm_twist.L" => Self::UpperArmTwistLeft,
-            "forearm.L" => Self::ForearmLeft,
-            "forearm_twist.L" => Self::ForearmTwistLeft,
-            "hand.L" => Self::HandLeft,
-            "weapon.L" => Self::WeaponLeft,
-            "upper_arm.R" => Self::UpperArmRight,
-            "upper_arm_twist.R" => Self::UpperArmTwistRight,
-            "forearm.R" => Self::ForearmRight,
-            "forearm_twist.R" => Self::ForearmTwistRight,
-            "hand.R" => Self::HandRight,
-            "weapon.R" => Self::WeaponRight,
+            "body_world" => Self::Root,
+            "root" => Self::Pelvis,
+            "c_spine0" => Self::StomachOne,
+            "c_spine1" => Self::StomachTwo,
+            "c_spine2" => Self::StomachThree,
+            "c_spine3" => Self::Chest,
+            "c_neck" => Self::NeckOne,
+            "c_head" => Self::Head,
+            "c_camera" => Self::Camera,
+            "l_clavicle" => Self::ClavicleLeft,
+            "r_clavicle" => Self::ClavicleRight,
+            "l_upleg" => Self::ThighLeft,
+            "l_lowleg" => Self::ShinLeft,
+            "l_foot" => Self::FootLeft,
+            "l_ball" => Self::ToeLeft,
+            "r_upleg" => Self::ThighRight,
+            "r_lowleg" => Self::ShinRight,
+            "r_foot" => Self::FootRight,
+            "r_ball" => Self::ToeRight,
+            "l_uparm" => Self::UpperArmLeft,
+            "l_lowarm" => Self::ForearmLeft,
+            "l_wrist" => Self::HandLeft,
+            "l_weapon" => Self::WeaponLeft,
+            "r_uparm" => Self::UpperArmRight,
+            "r_lowarm" => Self::ForearmRight,
+            "r_wrist" => Self::HandRight,
+            "r_weapon" => Self::WeaponRight,
             _ => return None,
         })
     }
@@ -176,21 +199,25 @@ fn retain_stable_role(
 
 pub(crate) fn bind_humanoid_bones(
     mut commands: Commands,
-    bones: Query<(Entity, &Name), (Added<Name>, Without<HumanoidBone>)>,
+    bones: Query<(Entity, &Name), (Added<Name>, Without<MhrBone>)>,
     parents: Query<&ChildOf>,
     roots: Query<&AnimationRigScene>,
 ) {
     for (entity, name) in &bones {
-        let Some(role) = BoneRole::from_name(name.as_str()) else {
+        if !is_mhr_joint_name(name.as_str()) {
             continue;
-        };
+        }
         let mut current = entity;
         for _ in 0..64 {
             if let Ok(root) = roots.get(current) {
-                commands.entity(entity).insert(HumanoidBone {
-                    owner: root.0,
-                    role,
-                });
+                let mut bone = commands.entity(entity);
+                bone.insert(MhrBone { owner: root.0 });
+                if let Some(role) = BoneRole::from_name(name.as_str()) {
+                    bone.insert(HumanoidBone {
+                        owner: root.0,
+                        role,
+                    });
+                }
                 break;
             }
             let Ok(parent) = parents.get(current) else {
@@ -204,12 +231,18 @@ pub(crate) fn bind_humanoid_bones(
 pub(crate) fn cache_humanoid_rigs(
     mut commands: Commands,
     all_bones: Query<(Entity, &HumanoidBone)>,
+    all_mhr_bones: Query<(Entity, &MhrBone, &Name)>,
     cached: Query<(Entity, &HumanoidRig)>,
     added: Query<(), Added<HumanoidBone>>,
+    added_mhr: Query<(), Added<MhrBone>>,
     mut removed: RemovedComponents<HumanoidBone>,
+    mut removed_mhr: RemovedComponents<MhrBone>,
     rig_scenes: Query<(Entity, &AnimationRigScene)>,
 ) {
-    let topology_changed = !added.is_empty() || removed.read().next().is_some();
+    let topology_changed = !added.is_empty()
+        || !added_mhr.is_empty()
+        || removed.read().next().is_some()
+        || removed_mhr.read().next().is_some();
     if !topology_changed {
         return;
     }
@@ -230,6 +263,13 @@ pub(crate) fn cache_humanoid_rigs(
         .iter()
         .map(|(root, scene)| (scene.0, root))
         .collect::<BTreeMap<_, _>>();
+    let mut named = BTreeMap::<Entity, BTreeMap<String, Entity>>::new();
+    for (entity, bone, name) in &all_mhr_bones {
+        named
+            .entry(bone.owner)
+            .or_default()
+            .insert(name.as_str().to_owned(), entity);
+    }
     for (owner, _) in &cached {
         if !rigs.contains_key(&owner) {
             commands.entity(owner).remove::<HumanoidRig>();
@@ -240,11 +280,15 @@ pub(crate) fn cache_humanoid_rigs(
             .get(owner)
             .map(|(_, rig)| rig.sole_axes)
             .unwrap_or([None; 2]);
+        let names = named.remove(&owner).unwrap_or_default();
+        let (mirror_centers, mirror_pairs) = mhr_mirror_topology(&names);
         if let Ok(mut entity) = commands.get_entity(owner) {
             entity.insert(HumanoidRig {
                 bones,
                 rig_scene: rig_roots.get(&owner).copied(),
                 sole_axes,
+                mirror_centers,
+                mirror_pairs,
             });
         }
     }
@@ -254,8 +298,8 @@ pub(crate) fn cache_humanoid_rigs(
 pub(in crate::animation) struct SoleAxisCaptured;
 
 /// Captures the foot's bind-space sole normal from the authored global bind
-/// transform. The Cascadeur rig has no cardinal local sole-up axis, so the
-/// authored flat bind pose defines it explicitly.
+/// transform. The MHR foot joint has no guaranteed cardinal local sole-up axis,
+/// so the authored flat bind pose defines it explicitly.
 pub(crate) fn capture_humanoid_rig_axes(
     mut commands: Commands,
     feet: Query<(Entity, &HumanoidBone, &AuthoredBindTransform), Without<SoleAxisCaptured>>,
@@ -285,7 +329,7 @@ pub(crate) fn capture_humanoid_rig_axes(
     }
 }
 
-fn authored_bind_global(
+pub(crate) fn authored_bind_global(
     entity: Entity,
     owner: Entity,
     bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
@@ -351,6 +395,37 @@ mod tests {
         retain_stable_role(&mut rig.bones, BoneRole::Head, Entity::from_bits(7));
         assert_eq!(rig.get(&BoneRole::Head), Some(&Entity::from_bits(7)));
         assert_eq!(rig.get(&BoneRole::NeckOne), None);
+    }
+
+    #[test]
+    fn mhr_mirroring_covers_center_attachments_and_every_bilateral_joint_kind() {
+        let named = [
+            ("body_world", 1),
+            ("root", 2),
+            ("c_spine2", 3),
+            ("c_camera", 4),
+            ("l_uparm_twist3_proc", 5),
+            ("r_uparm_twist3_proc", 6),
+            ("l_index2", 7),
+            ("r_index2", 8),
+            ("l_subtalar", 9),
+            ("r_subtalar", 10),
+            ("l_weapon", 11),
+            ("r_weapon", 12),
+        ]
+        .into_iter()
+        .map(|(name, entity)| (name.to_owned(), Entity::from_bits(entity)))
+        .collect::<BTreeMap<_, _>>();
+
+        let (centers, pairs) = mhr_mirror_topology(&named);
+
+        assert_eq!(centers.len(), 4);
+        assert!(centers.contains(&Entity::from_bits(4)));
+        assert_eq!(pairs.len(), 4);
+        assert!(pairs.contains(&(Entity::from_bits(5), Entity::from_bits(6))));
+        assert!(pairs.contains(&(Entity::from_bits(7), Entity::from_bits(8))));
+        assert!(pairs.contains(&(Entity::from_bits(9), Entity::from_bits(10))));
+        assert!(pairs.contains(&(Entity::from_bits(11), Entity::from_bits(12))));
     }
 
     #[test]

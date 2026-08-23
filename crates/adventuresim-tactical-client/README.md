@@ -29,73 +29,25 @@ not move animation or movement authority: `SkeletonState` and controller state
 remain server-owned, while authored pose evaluation, lighting, and the Bevy
 world-asset scene attachment are client presentation. Native and Wasm builds
 share those semantics through their existing explicit feature sets.
-The animation-graph runtime is pinned to an immutable reviewed fork revision.
-Its editor is a native-only optional feature and its Avian support is a
-separate opt-in feature; neither editor nor physics code enters the browser
-build. Merely linking the runtime does not install its plugin or replace the
-legacy evaluator.
 
-The exact graph revision is hosted in a private sibling repository. Local
-development therefore needs a Git credential that can read
-`adventure-simulator-group/bevy_animation_graph`; with GitHub CLI, run `gh auth
-setup-git` after authenticating an account with that repository's read access
-and set `CARGO_NET_GIT_FETCH_WITH_CLI=true` when Cargo's embedded Git transport
-cannot use the credential helper. Verify the lock and credential from a fresh,
-empty Cargo home with:
+## Client-generated geological geometry
 
-```powershell
-$fetchCargoHome = Join-Path $env:TEMP ("animation-graph-fetch-" + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $fetchCargoHome | Out-Null
-$env:CARGO_HOME = $fetchCargoHome
-$env:CARGO_NET_GIT_FETCH_WITH_CLI = "true"
-cargo fetch --locked
-```
+Collider-bearing rocks replicate compact recipes containing a seed, silhouette
+archetype, lithology, dimensions, and conservative collision radius. The
+tactical server creates only the bounded sphere collider and transform. The
+client samples each recipe on a small uniform grid and extracts its render
+surface with the private Surface Nets implementation in
+`src/presentation/volumetric.rs`; it rejects non-finite fields and tests the
+result for deterministic, outward, closed topology. Loose-stone ground cover
+reuses four shared client-generated variants without collision or foliage wind.
 
-CI must provision a GitHub App token, fine-grained PAT, or deploy credential
-with explicit read access to the sibling repository. A workflow's ordinary
-repo-scoped `GITHUB_TOKEN` is insufficient for another private repository, and
-GitHub does not expose repository secrets to untrusted fork pull requests.
-Those runs must use a trusted internal branch/check or report the private-fetch
-check as unavailable; do not weaken the exact pin or make the dependency public
-to bypass credential provisioning.
-
-The semantic bridge queries dependency-owned ordinary-locomotion and
-raised-guard/attack graphs with sparse semantic anchors. A dependency pose-blend
-chain composes locomotion weights and each action span's start/end contribution;
-the graph-returned values reconstruct the exact `PoseSample` weights and span
-progress consumed by the effective-pack resolver and FK player. A missing or
-invalid graph output atomically selects the untouched legacy evaluation.
-Persistent per-player graph contexts seek to authoritative gait/action phase.
-Diagnostic JSONL records requested and selected routes, read-only inputs,
-runtime success, and output equivalence. Every captured frame records that same
-evidence, and the viewer manifest fails if any frame expected to use a migrated
-route falls back. Existing bind restore,
-mirroring, body response, terrain IK/attack footwork, and weapon constraints
-still run after FK; graph root motion, events, inertialization, and IK remain
-unused.
-
-The visual graph editor is an opt-in native authoring tool, not a shipping
-client feature:
-
-```powershell
-just animation-graph-editor assets
-just animation-graph-preview steady-walk-2.0 target/animation-captures/graph-preview
-```
-
-Editor startup reports every code-owned missing motion, validates anchor frames,
-resolves the deterministic ordinary and raised/right-attack catalog routes, and
-prints exact or same-pack mirrored fallback choices. It then validates and
-queries the same centralized sparse-blend graph assets used by gameplay for a
-representative ordinary stride and right-lead attack before opening the upstream editor.
-Missing optional catalog motions are warnings; an invalid anchor or a missing
-motion required by either deterministic route is fatal; graph asset, schema, or
-query failure is also fatal. It registers Fabelgeist's sparse semantic
-blend node. The preview recipe uses
-the real deterministic gameplay viewer and its `manifest.json`/`failure.txt`
-gates; editor clip preview is useful for authoring but is not acceptance
-evidence. `animation-graph-editor` is disabled by default, native-target-only,
-and absent from server and ordinary Wasm dependency graphs.
-
+This extractor is infrastructure for later bounded cliffs, overhangs, and cave
+patches, not an implemented cave system. Future scene authority must send a
+compact deterministic field recipe, never a server-generated render mesh.
+Authored clips are sampled by the client-owned pose buffer. The semantic router
+reads presentation state, resolves weighted clip samples through the animation
+pack catalog, and applies fixed-rate FK with per-joint inertialization before
+procedural terrain, body-response, and weapon-constraint passes.
 ## Animation export contract
 
 The humanoid base rig is independent from authored motions:
@@ -103,7 +55,9 @@ The humanoid base rig is independent from authored motions:
 ```text
 assets/animations/biped/unarmed/base.glb
 assets/animations/biped/unarmed/walk.glb
-assets/animations/biped/unarmed/attack_thrust_lead_left_stay.glb
+assets/animations/biped/unarmed/swing.glb
+assets/animations/biped/unarmed/thrust.glb
+assets/animations/biped/unarmed/offhand.glb
 ```
 
 Only `base.glb` supplies a spawnable scene. Its default scene must retain the
@@ -118,17 +72,25 @@ files belong under `assets_src/biped/unarmed/`; `assets_src/base.*` remains the
 rig-source special case until `assets_src/biped/unarmed/base.casc` has a matching
 base GLB export.
 
-Prepare and verify runtime files without changing source exports:
+Publish and verify every currently available runtime animation without changing
+source exports:
 
 ```powershell
-python scripts/prepare_rig_base.py assets_src/base.glb assets/animations/biped/unarmed/base.glb
-python scripts/prepare_animation_motion.py assets_src/biped/unarmed/walk.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/walk.glb --last-frame 32
-python scripts/prepare_animation_motion.py assets_src/biped/unarmed/walk.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/walk.glb --last-frame 32 --check
+python scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
+python scripts/prepare_animation_assets.py
+python scripts/prepare_animation_assets.py --check
 ```
 
-Motion preparation validates the one-animation, duration, and canonical
-bone-path contracts, then copies the GLB byte-for-byte. Scenes and meshes in a
-motion export are harmless because the client loads only its animation asset.
+Motion publication validates the one-animation, duration, and canonical
+bone-path contracts. Runtime motion GLBs preserve only the canonical hierarchy,
+bind transforms, and animation data; mesh, skin, material, texture, and image
+payloads remain solely in the spawnable runtime `base.glb`. The publisher keeps
+only catalog-addressable frames for ordinary motions, removes tracks that equal
+the bind transform, and collapses other constant tracks to one key. Walk and run
+store five cubic anchor keys rather than Cascadeur's exported in-betweens.
+The `.casc` projects are tracked authoring sources. Their reproducible
+`assets_src/**/*.glb` exports are ignored; export them locally before publishing
+the tracked runtime GLBs.
 
 Use these conventions:
 
@@ -163,40 +125,14 @@ controller. A contact-edge calibration translates the complete visual rig so
 the supported sole meets the rig floor, then retains that baseline through the
 stride without reconstructing either leg. Idle poses blend back
 to their authored central-bone transforms. The 33mm hierarchy compensation is
-measured for upright, lowered-guard `humanoid_unarmed` locomotion only;
-crouching, guard movement, and specialized packs receive no inferred
-compensation.
-
-## Native ragdoll fixture
-
-`just ragdoll-viewer` launches the existing Cascadeur `humanoid_unarmed` rig
-over a complete Avian solver. Press `T` to cycle animated, active-motor, and
-zero-strength passive modes, and `R` to reset to animation. A deterministic
-three-quarter camera follows the client-only solved pelvis, keeping the rig and
-passive fall in frame without requiring a gameplay controller or collider. The active profile drives the revolute knee and elbow hinges;
-Avian does not expose an equivalent spherical-joint motor, so hips, shoulders,
-spine, and neck remain limit-only. The fixture maps pelvis, chest, head, major
-limbs, hands, and feet. Twist bones, toes, clavicles, neck intermediates, and weapon sockets stay
-under authored hierarchy control rather than receiving duplicate rigid bodies.
-
-This is a native presentation fixture, not a new gameplay authority. Its
-solver bodies collide with terrain but not one another, never replace the
-replicated player root or gameplay hitbox, and are discarded with the client.
-The ordinary live client deliberately retains its collider-query-only physics
-configuration.
-
-`just ragdoll-capture` deterministically settles each mode for an exact number
-of fixed solver ticks, independent of render-frame cadence, and captures it. It
-writes three screenshots and `manifest.json`, including bounded motor strength,
-driven-hinge count, finite/convergence error metrics, and the explicit passive
-zero-strength gate. A failed gate leaves `failure.txt`; screenshots still need
-visual review.
+measured for upright, lowered-guard `humanoid_unarmed` locomotion only; guard
+movement and specialized packs receive no inferred compensation.
 
 ## Deterministic animation capture
 
-Regenerate the mirrored endpoint clips after changing `walk.glb` or `run.glb`
-with `python scripts/mirror_gait_assets.py`; CI-style verification uses the
-same command with `--check`. The generator requires Python 3 and NumPy.
+Republish after changing any motion with
+`python scripts/prepare_animation_assets.py`; CI-style verification uses the
+same command with `--check`. The publisher requires Python 3 and NumPy.
 
 The native `animation-viewer` binary is a deterministic gameplay-presentation
 fixture rather than a separate pose renderer. It installs the gameplay player,
@@ -207,8 +143,8 @@ then advances the shared authoritative locomotion projector at its real 64Hz
 fixed tick. Default-off scenarios retain authored ordinary leg motion with a
 vertically fixed gameplay root; the explicit cross-slope scenario opts into
 the seeded terrain-IK pass. Coverage includes two-cycle 2.0m/s walk, 3.75m/s
-blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, and
-start/stop, guard-entry, guard-release, and crouch-enter/exit transitions. Every logical tick is captured first from the raw
+blend, 5.5m/s run, raised-guard full/half-speed movement, and start/stop,
+guard-entry, and guard-release transitions. Every logical tick is captured first from the raw
 gameplay third-person camera, then from side and front diagnostic cameras with
 a skeleton overlay and yellow supported-foot / pink swing-foot markers. The
 simulation is frozen while those three views are rendered, so they describe
@@ -258,12 +194,14 @@ just tactical-play diagnostic
 This launches the ordinary native client, server, transport, replicated
 physics controller, and rendering stack. Once the controlled character is
 available, the client turns 90 degrees right, holds forward at 0.5 analogue
-input for two seconds, holds forward at full input for two seconds, stops for
-half a second, and exits. The supervisor then stops its isolated server and
-database and returns successfully. The profile run directory contains the generated
+input for two seconds, raises its guard for half a second, starts a real
+preferred attack, captures a PNG during the attack, exercises full-speed
+movement and posture transitions, stops, and exits. The supervisor then stops
+its isolated server and database and returns successfully. The profile run
+directory contains the generated
 `animation-input-script.json`, the per-render-frame `animation-state.jsonl`,
-and the ordinary client/server logs. `just tactical-status` prints that run
-directory.
+the attack PNG, and the ordinary client/server logs. `just tactical-status`
+prints that run directory.
 
 The JSONL record includes the requested command and input, controller
 transform, replicated authoritative `SkeletonState`, client-predicted
@@ -272,9 +210,12 @@ and sample times, endpoint parity, whole-body mirror coordinates,
 phase prediction/correction deltas,
 authoritative phase measurements, pending drift correction, any presentation
 crossfade, wall-clock time, and the latest render-schedule completion counter.
-PresentMon remains the independent authority for actual swapchain presentation. This is
-the diagnostic boundary immediately after pose evaluation; it does not replace
-the real network or animation path.
+After final pose evaluation and transform propagation, each record also
+contains the global translation, rotation, and scale of every authored
+animation target. PresentMon remains the independent authority for actual
+swapchain presentation. This is the diagnostic boundary at the pose actually
+submitted for rendering; it does not replace the real network or animation
+path.
 
 Only the bounded `diagnostic` profile enables the per-frame JSONL log by
 default. Interactive `animation` and `combat` sessions avoid an unbounded log;
@@ -303,6 +244,10 @@ The native client also accepts custom files through `--input-script PATH` and
   "commands": [
     { "type": "rotate", "degrees_right": 90.0 },
     { "type": "move", "direction": "forward", "input_speed": 0.5, "duration_seconds": 2.0 },
+    { "type": "guard", "raised": true },
+    { "type": "wait", "duration_seconds": 0.5 },
+    { "type": "attack", "duration_seconds": 0.25 },
+    { "type": "screenshot", "path": "C:/capture/attack.png" },
     { "type": "wait_for_signal", "path": "C:/capture/ready.json" },
     { "type": "wait", "duration_seconds": 0.5 }
   ]
@@ -310,12 +255,16 @@ The native client also accepts custom files through `--input-script PATH` and
 ```
 
 Movement directions are `forward`, `backward`, `left`, and `right`.
+`guard` changes the persistent aiming state. `attack` presses the ordinary
+preferred-attack control once and then observes neutral input for
+`duration_seconds`; it requires raised guard under normal gameplay rules.
+`screenshot` captures the gameplay window directly through Bevy, without OBS.
 `wait_for_signal` holds neutral input until its file exists, which lets a
 capture supervisor release movement only after recording is ready. Add
 `--exit-after-script` for bounded unattended captures.
 
 The gameplay camera already runs with MSAA disabled. For matched performance
-diagnostics, pass `graphics_preset=no-shadows`, `no-ssao`, `no-bloom`, or
+diagnostics, pass `graphics_preset=no-shadows`, `no-bloom`, or
 `no-atmosphere` to disable one cost independently. `minimal` omits all four:
 
 ```powershell
@@ -384,38 +333,39 @@ clock toggle therefore cannot directly change walk/run selection.
 The procedural humanoid pass recognizes these case-sensitive bone names:
 
 ```text
-root                 pelvis               stomach_01 / stomach_02
-chest                neck_01 / neck_02    head
-clavicle.L / .R      upper_arm.L / .R     upper_arm_twist.L / .R
-forearm.L / .R       forearm_twist.L / .R hand.L / .R
-weapon.L / .R        thigh.L / .R         thigh_twist.L / .R
-shin.L / .R          shin_twist.L / .R    foot.L / .R, toe.L / .R
+body_world           root                 c_spine0 / c_spine1
+c_spine2 / c_spine3  c_neck               c_head / c_camera
+l_clavicle / r_clavicle                   l_uparm / r_uparm
+l_lowarm / r_lowarm  l_wrist / r_wrist    l_weapon / r_weapon
+l_upleg / r_upleg    l_lowleg / r_lowleg  l_foot / r_foot
+l_ball / r_ball
 ```
 
-Finger and breast bones remain under authored FK. Twist, toe, and weapon socket
-bones are canonical parts of the base hierarchy and are available to later
-procedural constraints.
+Finger, face, foot-articulation, and distributed twist bones retain authored FK.
+They still participate in full-pose mirroring. `l_weapon`, `r_weapon`, and
+`c_camera` are export-added attachment joints on the canonical MHR hierarchy.
+Equipment removes each target's rolled authored bind frame before following its
+live deformation; worn placeholders derive their +Y axis from semantic joint
+pairs, while held weapons retain the character-space +Y tip convention.
 
 The final client-only pose pass distributes bounded look across the actual
 spine/neck chain, converts bounded pelvis compensation through its real parent,
-and solves legs and optional hand targets through the twist-intermediate
-hierarchy without overwriting authored twist locals. Foot slope alignment uses
-the authored bind transform to derive its sole-up axis; local +Y is
-ankle-to-toe on this rig and is not a sole normal. A primary hand socket drives
-a held weapon, then an optional weapon-local secondary grip drives the off hand.
-These targets and constraints are client-only and never extend replicated
-`SkeletonState`.
+and solves legs and optional hand targets across the MHR hierarchy without
+overwriting authored twist locals. Foot slope alignment uses the authored bind
+transform to derive its sole-up axis rather than assuming an MHR joint-local
+cardinal axis. A primary hand socket drives a held weapon, then an optional
+weapon-local secondary grip drives the off hand. These targets and constraints
+are client-only and never extend replicated `SkeletonState`.
 
 ## Missing assets
 
-Pack lookup first follows the pack's single fallback chain. If the requested
-semantic pose is still absent, lookup follows the deterministic similar-pose
-chain (for example run to walk and thrust to slash), restarting pack lookup for
-each candidate. Missing, unloaded, zero-animation, multiple-animation, or short
-motion files affect only that motion. Every local or remote character also gets
-a generated T-pose safety net until the base scene is available. If no pose
-candidate resolves, the client uses the complete authored `base.glb` bind
-T-pose. The generated mannequin appears only when the compatible base rig
-itself is unavailable. Bind locals are reset before every animation evaluation
-so partial clips cannot accumulate stale or procedural transforms. Incomplete
-in-progress art does not panic.
+Ordinary pose lookup first follows the pack's single fallback chain, then its
+deterministic similar-pose chain. Attack availability is stricter because it is
+a gameplay capability. A pack that defines `swing` or `thrust` owns that
+complete main-hand set, and an absent family stays unavailable; only a pack
+with neither motion inherits its parent's main-hand attacks. `offhand` resolves
+independently through the parent chain. Missing, unloaded, zero-animation,
+multiple-animation, or short motion files are unavailable.
+Every local or remote character also gets a generated T-pose safety net until
+the base scene is available. Bind locals are reset before every animation
+evaluation so partial clips cannot accumulate stale or procedural transforms.

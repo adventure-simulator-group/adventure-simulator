@@ -27,9 +27,10 @@ const PARTY_RECONNECT_GRACE: Duration = Duration::from_secs(10);
 fn commit_terminal_resolution(
     resolution: TacticalMissionResolution,
     now: Duration,
-    conn: Res<SpacetimeDb>,
+    conn: Option<Res<SpacetimeDb>>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
+    cmd: Commands,
 ) -> Result {
     let frozen = FrozenTerminal {
         resolution,
@@ -38,15 +39,39 @@ fn commit_terminal_resolution(
     let Some(frozen) = state.begin_terminal_submission(frozen, now, TERMINAL_ACK_TIMEOUT) else {
         return Ok(());
     };
-    submit_frozen_terminal(frozen, now, conn, state)
+    submit_frozen_terminal(frozen, now, conn, state, cmd)
 }
 
 fn submit_frozen_terminal(
     frozen: FrozenTerminal,
     now: Duration,
-    conn: Res<SpacetimeDb>,
+    conn: Option<Res<SpacetimeDb>>,
     mut state: ResMut<MissionState>,
+    mut cmd: Commands,
 ) -> Result {
+    // Standalone mode (no SpacetimeDB connection): there is no strategic
+    // authority to submit to, so resolve immediately and locally instead of
+    // submitting-and-waiting. Nothing is ever left "pending" in this mode,
+    // so `process_terminal_submission_results` is simply not scheduled.
+    let Some(conn) = conn else {
+        if let Some(outcome) = state.apply_terminal_submission_result(
+            TerminalSubmissionResult::Accepted,
+            now,
+            TERMINAL_RETRY_BACKOFF,
+            TERMINAL_PRESENTATION_DELAY,
+        ) {
+            cmd.server_trigger(ToClients {
+                targets: SendTargets::CLIENTS_ONLY,
+                message: TacticalOutcomeResponse { outcome },
+            });
+            info!(
+                ?outcome,
+                resolution = ?frozen.resolution,
+                "Mission terminal resolved locally (standalone mode)"
+            );
+        }
+        return Ok(());
+    };
     if let Err(error) = conn.submit_terminal(frozen.resolution, frozen.receipt) {
         state.terminal_enqueue_failed(now, TERMINAL_RETRY_BACKOFF);
         warn!(
@@ -121,7 +146,7 @@ pub(crate) fn finish_terminal_presentation(
 pub(crate) fn check_terminal_combat_outcome(
     mut commands: Commands,
     time: Res<Time>,
-    conn: Res<SpacetimeDb>,
+    conn: Option<Res<SpacetimeDb>>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
     enemies: Query<(), (With<MissionEnemy>, With<Player>)>,
@@ -137,7 +162,7 @@ pub(crate) fn check_terminal_combat_outcome(
     loading_players: Query<(), With<LoadingPlayer>>,
 ) -> Result {
     if let Some(frozen) = state.terminal_retry_due(time.elapsed(), TERMINAL_ACK_TIMEOUT) {
-        return submit_frozen_terminal(frozen, time.elapsed(), conn, state);
+        return submit_frozen_terminal(frozen, time.elapsed(), conn, state, commands);
     }
     if !state.terminal_is_running() {
         return Ok(());
@@ -179,6 +204,7 @@ pub(crate) fn check_terminal_combat_outcome(
                 conn,
                 consequences,
                 state,
+                commands,
             );
         }
         EnrollmentEffect::None => {}
@@ -194,12 +220,20 @@ pub(crate) fn check_terminal_combat_outcome(
     let Some(resolution) = terminal_resolution(snapshot) else {
         return Ok(());
     };
-    commit_terminal_resolution(resolution, time.elapsed(), conn, consequences, state)
+    commit_terminal_resolution(
+        resolution,
+        time.elapsed(),
+        conn,
+        consequences,
+        state,
+        commands,
+    )
 }
 
 pub(crate) fn check_mission_timeout(
+    commands: Commands,
     time: Res<Time>,
-    conn: Res<SpacetimeDb>,
+    conn: Option<Res<SpacetimeDb>>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
 ) -> Result {
@@ -213,5 +247,48 @@ pub(crate) fn check_mission_timeout(
         conn,
         consequences,
         state,
+        commands,
     )
+}
+
+#[cfg(test)]
+mod standalone_resolution_tests {
+    use adventuresim_tactical_netcode::prelude::AdventureSimulatorNetPlugins;
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    #[test]
+    fn mission_timeout_resolves_immediately_without_spacetimedb() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins(AdventureSimulatorNetPlugins);
+        app.insert_resource(MissionState::new(
+            Some(Timer::from_seconds(0.0, TimerMode::Once)),
+            1,
+            std::num::NonZeroU32::new(1).unwrap(),
+        ));
+        app.insert_resource(TacticalConsequenceAccumulator::default());
+
+        // The `Res<SpacetimeDb>` param is `None` here (never inserted), so
+        // there is no strategic authority to submit to and wait on. Unlike
+        // the normal submit-and-wait path, nothing should ever be left
+        // "pending acknowledgement" to retry - it must have resolved
+        // synchronously within the single system run below (which would
+        // also panic if `cmd.server_trigger` couldn't find its message
+        // plumbing, proving that part of the local-resolve path runs too).
+        let result: Result = app
+            .world_mut()
+            .run_system_once(check_mission_timeout)
+            .expect("running the system should not fail");
+        result.expect("check_mission_timeout should not return an error");
+
+        let mut state = app.world_mut().resource_mut::<MissionState>();
+        assert!(
+            state
+                .terminal_retry_due(Duration::from_secs(9999), TERMINAL_ACK_TIMEOUT)
+                .is_none(),
+            "standalone resolution should never leave a submission pending"
+        );
+    }
 }

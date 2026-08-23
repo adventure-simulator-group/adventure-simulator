@@ -17,6 +17,7 @@ mod party_actions;
 pub mod quests;
 pub mod settlements;
 pub(crate) mod travel;
+mod weapon_icons;
 
 use axum::{
     Router,
@@ -782,6 +783,7 @@ fn terrain_route_json(
         "intensity_bps": weather.intensity_bps,
         "ground_moisture_bps": weather.ground_moisture_bps,
         "snow_cover_bps": weather.snow_cover_bps,
+        "atmosphere": weather.atmosphere,
         "distance_m": plan.distance_m,
         "minutes": plan.minutes,
         "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
@@ -967,6 +969,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(parties::routes())
                 .merge(quests::routes())
                 .merge(missions::routes())
+                .merge(weapon_icons::routes())
                 .merge(crate::live::routes())
                 .route("/time", get(current_time))
                 .layer(middleware::from_fn(require_same_origin_mutation))

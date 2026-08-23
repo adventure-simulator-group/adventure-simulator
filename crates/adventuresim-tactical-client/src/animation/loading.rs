@@ -27,7 +27,6 @@ pub(super) fn collect_loaded_packs(
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
     clips: Res<Assets<AnimationClip>>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
     mut runtime: ResMut<AnimationRuntime>,
 ) {
     let mut changed = false;
@@ -105,11 +104,11 @@ pub(super) fn collect_loaded_packs(
             changed = true;
             continue;
         };
-        if !frame_fits_clip(source.last_frame, clip.duration()) {
+        if !frame_fits_clip(source.required_last_frame, clip.duration()) {
             warn!(
                 pack = key.0,
                 motion = key.1,
-                last_frame = source.last_frame,
+                last_frame = source.required_last_frame,
                 duration = clip.duration(),
                 "Motion is shorter than its catalog frames"
             );
@@ -133,9 +132,13 @@ pub(super) fn collect_loaded_packs(
             .poses
             .iter()
             .filter(|(_, anchor)| {
-                runtime
-                    .processed_motions
-                    .contains(&(pack_id.clone(), anchor.motion.clone()))
+                let key = (pack_id.clone(), anchor.motion.clone());
+                runtime.processed_motions.contains(&key)
+                    && runtime
+                        .clip_handles
+                        .get(&key)
+                        .and_then(|handle| clips.get(handle))
+                        .is_some_and(|clip| frame_fits_clip(anchor.frame, clip.duration()))
             })
             .map(|(&pose, _)| pose)
             .collect();
@@ -148,100 +151,24 @@ pub(super) fn collect_loaded_packs(
             error!(?error, pack = pack_id, "Rejected animation pack");
         }
     }
-    let ordered = runtime
+    runtime.clips = runtime
         .clip_handles
         .iter()
         .map(|(key, handle)| (key.clone(), handle.clone()))
-        .collect::<Vec<_>>();
-    let mut graph = AnimationGraph::new();
-    for target in &runtime.lower_body_targets {
-        graph.add_target_to_mask_group(*target, LOWER_BODY_MASK_GROUP);
-    }
-    for target in &runtime.upper_body_targets {
-        graph.add_target_to_mask_group(*target, UPPER_BODY_MASK_GROUP);
-    }
-    runtime.clips = ordered
+        .collect::<Vec<_>>()
         .into_iter()
         .map(|(key, handle)| {
-            let node = graph.add_clip(handle.clone(), 1.0, graph.root);
-            let upper_node = graph.add_clip_with_mask(
-                handle.clone(),
-                1 << LOWER_BODY_MASK_GROUP,
-                1.0,
-                graph.root,
-            );
-            let lower_node = graph.add_clip_with_mask(
-                handle.clone(),
-                1 << UPPER_BODY_MASK_GROUP,
-                1.0,
-                graph.root,
-            );
-            let pack = &catalog.packs[&key.0];
-            let anchor_motion = key.1.strip_suffix("_mirrored").unwrap_or(&key.1);
-            let anchor_frames = pack
-                .poses
-                .values()
-                .filter(|anchor| anchor.motion == anchor_motion)
-                .map(|anchor| anchor.frame)
-                .chain(
-                    pack.references
-                        .get(anchor_motion)
-                        .into_iter()
-                        .flatten()
-                        .map(|reference| reference.frame),
-                )
-                .collect::<BTreeSet<_>>();
-            let anchor_nodes = anchor_frames
-                .iter()
-                .copied()
-                .map(|frame| (frame, graph.add_clip(handle.clone(), 1.0, graph.root)))
-                .collect();
             let duration_seconds = clips.get(&handle).map_or(0.0, AnimationClip::duration);
-            let upper_anchor_nodes = anchor_frames
-                .iter()
-                .copied()
-                .map(|frame| {
-                    (
-                        frame,
-                        graph.add_clip_with_mask(
-                            handle.clone(),
-                            1 << LOWER_BODY_MASK_GROUP,
-                            1.0,
-                            graph.root,
-                        ),
-                    )
-                })
-                .collect();
-            let lower_anchor_nodes = anchor_frames
-                .into_iter()
-                .map(|frame| {
-                    (
-                        frame,
-                        graph.add_clip_with_mask(
-                            handle.clone(),
-                            1 << UPPER_BODY_MASK_GROUP,
-                            1.0,
-                            graph.root,
-                        ),
-                    )
-                })
-                .collect();
             (
                 key,
                 LoadedClip {
-                    node,
+                    handle,
                     duration_seconds,
-                    anchor_nodes,
-                    upper_node,
-                    upper_anchor_nodes,
-                    lower_node,
-                    lower_anchor_nodes,
+                    layer: ClipLayer::Whole,
                 },
             )
         })
         .collect();
-    runtime.graph = Some(graphs.add(graph));
-    runtime.revision = runtime.revision.wrapping_add(1);
 }
 
 pub(super) fn sole_animation(
@@ -311,26 +238,15 @@ pub(super) fn establish_animation_targets(
     roots: Query<(Entity, &AnimationRigScene), Without<RigAnimationTargetsBound>>,
     children: Query<&Children>,
     names: Query<&Name>,
-    existing_players: Query<(), With<AnimationPlayer>>,
 ) {
-    for (rig_root, owner) in &roots {
+    for (rig_root, _owner) in &roots {
         let Some(skeleton_root) = find_named_descendant(rig_root, "Skeleton", &children, &names)
         else {
             continue;
         };
-        let player = descendants_including(skeleton_root, &children)
-            .into_iter()
-            .find(|entity| existing_players.contains(*entity))
-            .unwrap_or(skeleton_root);
-        commands.entity(player).insert((
-            AnimationPlayer::default(),
-            AnimationPlayerOwner(owner.0),
-            AnimationGraphRevision::default(),
-        ));
         bind_animation_target_paths(
             &mut commands,
             skeleton_root,
-            player,
             Vec::new(),
             &children,
             &names,
@@ -366,7 +282,6 @@ pub(super) fn find_named_descendant(
 pub(super) fn bind_animation_target_paths(
     commands: &mut Commands,
     entity: Entity,
-    player: Entity,
     mut path: Vec<Name>,
     children: &Query<&Children>,
     names: &Query<&Name>,
@@ -378,24 +293,10 @@ pub(super) fn bind_animation_target_paths(
     path.push(name.clone());
     let target = AnimationTargetId::from_names(path.iter());
     runtime.canonical_targets.insert(target);
-    let lower_body = is_lower_body_animation_target(name.as_str());
-    if lower_body {
-        runtime.lower_body_targets.insert(target);
-    } else {
-        runtime.upper_body_targets.insert(target);
-    }
-    commands.entity(entity).insert((target, AnimatedBy(player)));
+    commands.entity(entity).insert(target);
     if let Ok(entity_children) = children.get(entity) {
         for child in entity_children.iter() {
-            bind_animation_target_paths(
-                commands,
-                child,
-                player,
-                path.clone(),
-                children,
-                names,
-                runtime,
-            );
+            bind_animation_target_paths(commands, child, path.clone(), children, names, runtime);
         }
     }
 }
@@ -403,35 +304,17 @@ pub(super) fn bind_animation_target_paths(
 pub(super) fn is_lower_body_animation_target(name: &str) -> bool {
     let bone_name = name.to_ascii_lowercase();
     bone_name == "skeleton"
+        || bone_name == "body_world"
         || bone_name == "root"
-        || bone_name == "pelvis"
-        || bone_name.contains("hips")
-        || bone_name.contains("thigh")
-        || bone_name.contains("shin")
-        || bone_name.contains("foot")
-        || bone_name.contains("toe")
-}
-
-pub(super) fn identify_animation_players(
-    mut commands: Commands,
-    added: Query<Entity, Added<AnimationPlayer>>,
-    parents: Query<&ChildOf>,
-    roots: Query<&AnimationRigScene>,
-) {
-    for player in &added {
-        let mut current = player;
-        for _ in 0..64 {
-            if let Ok(root) = roots.get(current) {
-                commands.entity(player).insert((
-                    AnimationPlayerOwner(root.0),
-                    AnimationGraphRevision::default(),
-                ));
-                break;
-            }
-            let Ok(parent) = parents.get(current) else {
-                break;
-            };
-            current = parent.parent();
-        }
-    }
+        || [
+            "_upleg",
+            "_lowleg",
+            "_foot",
+            "_talocrural",
+            "_subtalar",
+            "_transversetarsal",
+            "_ball",
+        ]
+        .iter()
+        .any(|part| bone_name.contains(part))
 }

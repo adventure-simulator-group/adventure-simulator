@@ -1,0 +1,12 @@
+[package]
+name = "fabelgeist-timer"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/adventure-simulator-group/fabelgeist"
+license = "GPL-3.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["time"] }

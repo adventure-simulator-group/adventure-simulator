@@ -17,10 +17,13 @@ use bevy::{
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, VariantArray};
 
+use crate::animation::AttackHand;
+
 pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Deref, DerefMut)]
+#[reflect(Component)]
 pub struct ItemQuantity(pub NonZeroU32);
 
 impl Default for ItemQuantity {
@@ -30,20 +33,43 @@ impl Default for ItemQuantity {
 }
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, MapEntities)]
+#[reflect(Component)]
 #[require(ItemProperties, ItemQuantity)]
 #[relationship(relationship_target = InventoryItems)]
 pub struct ItemOf(#[entities] pub Entity);
 
+/// Reflectable so world dumps capture it alongside `ItemOf`, mirroring how
+/// bevy's own `ChildOf`/`Children` pair works with dynamic scenes: a scene
+/// carries *both* sides of a relationship and restores them verbatim
+/// (entity-mapped), which is exactly why `DynamicScene::write_to_world`
+/// silences relationship hooks. Capturing only the `ItemOf` side leaves
+/// loaded owners with no inventory at all - and every after-the-fact repair
+/// of that gap has proven fragile (a non-idempotent rebuild once wiped a
+/// bot's whole inventory on client join).
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Default)]
+#[reflect(Component)]
 #[relationship_target(relationship = ItemOf)]
 pub struct InventoryItems {
     #[relationship]
     items: Vec<Entity>,
+    #[entities]
     holding_weapon: Option<Entity>,
+    #[entities]
     holding_shield: Option<Entity>,
 }
 
+impl InventoryItems {
+    pub fn holding_weapon(&self) -> Option<Entity> {
+        self.holding_weapon
+    }
+
+    pub fn holding_shield(&self) -> Option<Entity> {
+        self.holding_shield
+    }
+}
+
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct ArmorItem {
     pub range_of_motion: f32,
     pub coverage: f32,
@@ -70,6 +96,7 @@ pub enum ArmorSide {
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct WeaponItem {
     pub skill_weights: [f32; 9],
     pub accuracy: f32,
@@ -85,14 +112,23 @@ pub struct WeaponItem {
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
+    /// Real-time seconds between committing to a swing and the hit actually
+    /// landing. The single source of truth for this weapon's windup pacing -
+    /// see `PlayerEquipment::weapon_windup_secs`.
+    pub windup_secs: f32,
+    /// Offhand-specific commitment-to-contact time. Offhand attacks use this
+    /// even when the same item is faster in the main hand.
+    pub offhand_windup_secs: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct ShieldItem {
     pub block: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct ItemProperties {
     pub id: String,
     pub weight: f32,
@@ -164,6 +200,30 @@ pub struct EquipmentPhysical {
     pub anchor_offset_m: Vec3,
 }
 
+/// Immutable, authoritative procedural appearance for a smith-made weapon.
+///
+/// The recipe uses the versioned `adventuresim-weapon-model` postcard wire
+/// format. Keeping the transport opaque here avoids coupling tactical combat
+/// state to render-only mesh types; the client validates and expands it into
+/// geometry, while the server continues to use [`EquipmentPhysical`] as its
+/// conservative interaction/collision proxy.
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WeaponAppearance {
+    pub generator_version: u16,
+    pub design_hash: [u8; 32],
+    pub recipe: Vec<u8>,
+}
+
+/// Immutable recipe used to derive a fitted sheath, scabbard, or haft loop.
+/// This is attached to the holder entity, while [`WeaponAppearance`] remains
+/// attached to the contained weapon entity.
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WeaponHolderAppearance {
+    pub generator_version: u16,
+    pub design_hash: [u8; 32],
+    pub recipe: Vec<u8>,
+}
+
 impl EquipmentPhysical {
     pub fn is_valid(self) -> bool {
         self.dimensions_m.is_finite()
@@ -199,6 +259,7 @@ pub struct EquipmentActionState {
     VariantArray,
     Display,
 )]
+#[reflect(Component)]
 #[component(on_insert = on_equip_slot_replaced, on_remove = on_equip_slot_removed)]
 pub enum EquipSlot {
     HoldingLeft,
@@ -258,6 +319,20 @@ impl InventoryViewer<'_, '_> {
             entity,
             q_inventory: &self.q_inventory,
             q_item: &self.q_item,
+            attack_hand: AttackHand::Main,
+        }
+    }
+
+    pub fn get_for_attack(
+        &self,
+        entity: Entity,
+        attack_hand: AttackHand,
+    ) -> InventoryView<'_, '_, '_> {
+        InventoryView {
+            entity,
+            q_inventory: &self.q_inventory,
+            q_item: &self.q_item,
+            attack_hand,
         }
     }
 }
@@ -266,6 +341,7 @@ pub struct InventoryView<'v, 'w, 's> {
     entity: Entity,
     q_inventory: &'v Query<'w, 's, &'static InventoryItems>,
     q_item: &'v Query<'w, 's, ItemQuery>,
+    attack_hand: AttackHand,
 }
 
 impl InventoryView<'_, '_, '_> {
@@ -286,16 +362,24 @@ impl InventoryView<'_, '_, '_> {
             .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
     }
 
+    fn striking_item(&self) -> Option<ItemQueryItem<'_, '_>> {
+        let slot = match self.attack_hand {
+            AttackHand::Main => EquipSlot::HoldingRight,
+            AttackHand::Offhand => EquipSlot::HoldingLeft,
+        };
+        self.iter().find(|item| item.slot == Some(&slot))
+    }
+
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
-        self.q_inventory
-            .get(self.entity)
-            .ok()
-            .and_then(|inventory| inventory.holding_weapon)
-            .and_then(|weapon| self.q_item.get(weapon).ok())
+        self.striking_item().filter(|item| item.weapon.is_some())
     }
 
     pub fn has_equipped_weapon(&self) -> bool {
         self.equipped_weapon().is_some()
+    }
+
+    pub fn has_striking_item(&self) -> bool {
+        self.striking_item().is_some()
     }
 
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
@@ -385,7 +469,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         if self
             .equipped_weapon()
             .and_then(|item| item.weapon)
-            .is_none_or(|weapon| weapon.prefers_stab)
+            .is_some_and(|weapon| weapon.prefers_stab)
         {
             MeleeAttackStyle::Stab
         } else {
@@ -424,13 +508,9 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_holding_side(&self) -> Option<BodySide> {
-        let Some(item) = self.equipped_weapon() else {
-            return Some(BodySide::Right);
-        };
-        item.slot.and_then(|slot| match slot {
-            EquipSlot::HoldingLeft => Some(BodySide::Left),
-            EquipSlot::HoldingRight => Some(BodySide::Right),
-            _ => None,
+        Some(match self.attack_hand {
+            AttackHand::Main => BodySide::Right,
+            AttackHand::Offhand => BodySide::Left,
         })
     }
 
@@ -439,6 +519,20 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.reach)
             .unwrap_or(crate::combat::HANDS_REACH)
+    }
+
+    fn weapon_windup_secs(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| match self.attack_hand {
+                AttackHand::Main => weapon.windup_secs,
+                AttackHand::Offhand => weapon.offhand_windup_secs,
+            })
+            .unwrap_or(match self.attack_hand {
+                AttackHand::Main => crate::combat::HANDS_WINDUP_SECS,
+                AttackHand::Offhand if self.striking_item().is_some() => 0.38,
+                AttackHand::Offhand => 0.24,
+            })
     }
 
     fn weapon_is_precise(&self) -> bool {
@@ -481,7 +575,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_weight(&self) -> f32 {
-        self.equipped_weapon()
+        self.striking_item()
             .map(|item| item.properties.weight)
             .unwrap_or_default()
     }
@@ -522,6 +616,13 @@ fn body_part_index(part: BodyPart) -> usize {
     }
 }
 
+/// Requires `ItemOf` to already be on the entity: single-component inserts
+/// in every live equip path place `ItemOf` first, and batched inserts
+/// (spawn bundles, replication) run hooks only after the whole batch has
+/// landed. The one path where neither holds - `bevy_scene` applying
+/// components one at a time in an order that puts `EquipSlot` before
+/// `ItemOf` - doesn't need this hook at all, because scenes capture and
+/// restore `InventoryItems` (holding fields included) as data.
 fn on_equip_slot_replaced(mut world: DeferredWorld, ctx: HookContext) {
     match world.get::<EquipSlot>(ctx.entity) {
         Some(EquipSlot::HoldingLeft | EquipSlot::HoldingRight)
@@ -569,6 +670,24 @@ fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::SystemState;
+
+    #[test]
+    fn unarmed_combat_has_authored_windup_timing() {
+        let mut world = World::new();
+        let owner = world.spawn(InventoryItems::default()).id();
+        let mut viewer = SystemState::<InventoryViewer>::new(&mut world);
+        let inventory = viewer.get(&world).unwrap();
+
+        assert_eq!(
+            inventory.get(owner).weapon_windup_secs(),
+            crate::combat::HANDS_WINDUP_SECS
+        );
+        assert_eq!(
+            inventory.get(owner).weapon_preferred_melee_style(),
+            MeleeAttackStyle::Swing
+        );
+    }
 
     #[test]
     fn rebuilding_holding_cache_preserves_weapon_and_shield_after_owner_rebind() {
@@ -593,6 +712,8 @@ mod tests {
                     blunt: false,
                     slash: true,
                     pierce: false,
+                    windup_secs: 0.0,
+                    offhand_windup_secs: 0.34,
                 },
             ))
             .id();

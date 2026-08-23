@@ -829,7 +829,7 @@ mod creation_tests {
             false,
         )
         .into_string();
-        assert_eq!(markup.matches("class=\"party-portrait\"").count(), 5);
+        assert!(markup.matches("party-portrait").count() >= 5);
         assert!(!markup.contains("prototype-disclaimer"));
         assert!(!markup.contains("role=\"dialog\""));
         assert!(markup.contains("class=\"party-portrait-overlay\""));

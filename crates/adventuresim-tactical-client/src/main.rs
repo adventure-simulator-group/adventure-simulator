@@ -10,11 +10,17 @@
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
+#[cfg(target_family = "wasm")]
+use bevy::asset::AssetMetaCheck;
+use bevy::asset::AssetPlugin;
+#[cfg(not(target_family = "wasm"))]
+use bevy::asset::io::AssetSourceBuilder;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
+#[cfg(not(target_family = "wasm"))]
+use bevy::image::BevyDefault;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
-    asset::io::AssetSourceBuilder,
     ecs::schedule::common_conditions::any_with_component,
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
@@ -27,7 +33,8 @@ use wasm_bindgen::prelude::*;
 
 #[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
-mod animation_graph_nodes;
+#[cfg(target_family = "wasm")]
+mod browser_runtime;
 #[allow(dead_code)] // Viewer-only camera diagnostics are compiled into this binary.
 mod camera;
 #[cfg(feature = "debug")]
@@ -64,6 +71,15 @@ struct Args {
     /// Swapchain presentation strategy for frame-pacing diagnostics.
     #[arg(long, value_enum, default_value_t)]
     present_mode: ClientPresentMode,
+    /// Run without opening an OS window, for CLI-driven automated testing.
+    #[cfg(feature = "debug")]
+    #[arg(long)]
+    headless: bool,
+    /// Port to expose the Bevy Remote Protocol (BRP) HTTP JSON-RPC endpoint
+    /// on for CLI-driven inspection/testing. Disabled unless set.
+    #[cfg(feature = "debug")]
+    #[arg(long)]
+    brp_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -95,7 +111,6 @@ enum GraphicsPreset {
     #[default]
     Default,
     NoShadows,
-    NoSsao,
     NoBloom,
     NoAtmosphere,
     NoEnvironmentLight,
@@ -107,20 +122,21 @@ impl GraphicsPreset {
         presentation::TacticalPresentationPlugin {
             shadows_enabled: !matches!(self, Self::NoShadows | Self::Minimal),
             atmosphere_enabled: !matches!(self, Self::NoAtmosphere | Self::Minimal),
+            celestial_enabled: !matches!(self, Self::Minimal),
             environment_light_enabled: !matches!(
                 self,
                 Self::NoAtmosphere | Self::NoEnvironmentLight | Self::Minimal
             ),
             environment_map_size: 64,
             bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
-            ssao_enabled: !matches!(self, Self::NoSsao | Self::Minimal),
+            max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
         }
     }
 }
 
 #[cfg(not(target_family = "wasm"))]
 fn main() {
-    run(Args::parse());
+    run(Args::parse(), true);
 }
 
 #[cfg(target_family = "wasm")]
@@ -132,33 +148,134 @@ fn main() {
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
 pub fn wasm_run(args: Vec<String>) {
-    run(Args::parse_from(args));
+    run(Args::parse_from(args), true);
 }
 
-fn run(args: Args) {
+/// Start the persistent browser renderer without joining a tactical server.
+/// JavaScript subsequently drives strategic scenes and tactical connections
+/// through `wasm_command`; Bevy and its WebGPU device remain alive throughout.
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_boot() {
+    run(
+        Args {
+            id: 0,
+            server_addr: String::new(),
+            input_script: None,
+            animation_log: None,
+            exit_after_script: false,
+            graphics_preset: GraphicsPreset::Default,
+            present_mode: ClientPresentMode::AutoVsync,
+            #[cfg(feature = "debug")]
+            headless: false,
+            #[cfg(feature = "debug")]
+            brp_port: None,
+        },
+        false,
+    );
+}
+
+/// Queue one browser-runtime command without borrowing Bevy's running world.
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_command(command: String) -> Result<(), JsValue> {
+    browser_runtime::queue_json(&command).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_weapon_catalog() -> Result<String, JsValue> {
+    browser_runtime::catalog_json().map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_default_weapon_design(catalog_id: String) -> Result<String, JsValue> {
+    browser_runtime::default_design_json(&catalog_id).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_encode_weapon_design(design_json: String) -> Result<Vec<u8>, JsValue> {
+    browser_runtime::encode_design_json(&design_json).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_weapon_editor_fields(design_json: String) -> Result<String, JsValue> {
+    browser_runtime::editor_fields_json(&design_json).map_err(|error| JsValue::from_str(&error))
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_quote_weapon_design(design_json: String) -> Result<String, JsValue> {
+    browser_runtime::quote_design_json(&design_json).map_err(|error| JsValue::from_str(&error))
+}
+
+fn run(args: Args, initial_tactical: bool) {
     let mut app = App::new();
+    #[cfg(not(target_family = "wasm"))]
+    let asset_root = native_asset_root();
+    #[cfg(not(target_family = "wasm"))]
+    validate_native_presentation_assets(&asset_root)
+        .unwrap_or_else(|error| panic!("invalid tactical client asset root: {error}"));
     #[cfg(not(target_family = "wasm"))]
     app.register_asset_source(
         "workspace",
-        AssetSourceBuilder::platform_default(
-            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../assets")
-                .to_string_lossy(),
-            None,
-        ),
+        AssetSourceBuilder::platform_default(&asset_root.to_string_lossy(), None),
     );
-    let default_plugins = DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Fabelgeist - Tactical".into(),
-            canvas: Some("#game-canvas".into()),
-            fit_canvas_to_parent: true,
-            prevent_default_event_handling: true,
-            present_mode: args.present_mode.into(),
-            decorations: false,
+    #[cfg(feature = "debug")]
+    let headless = args.headless;
+    #[cfg(not(feature = "debug"))]
+    let headless = false;
+    #[cfg(not(target_family = "wasm"))]
+    let default_plugins = {
+        let with_asset_plugin = DefaultPlugins.set(AssetPlugin {
+            file_path: asset_root.to_string_lossy().into_owned(),
             ..default()
-        }),
-        ..default()
-    });
+        });
+        if headless {
+            with_asset_plugin
+                .set(WindowPlugin {
+                    primary_window: None,
+                    exit_condition: bevy::window::ExitCondition::DontExit,
+                    ..default()
+                })
+                .disable::<bevy::winit::WinitPlugin>()
+        } else {
+            with_asset_plugin.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Fabelgeist - Tactical".into(),
+                    canvas: Some("#game-canvas".into()),
+                    fit_canvas_to_parent: true,
+                    prevent_default_event_handling: true,
+                    present_mode: args.present_mode.into(),
+                    decorations: false,
+                    ..default()
+                }),
+                ..default()
+            })
+        }
+    };
+    #[cfg(target_family = "wasm")]
+    let default_plugins = DefaultPlugins
+        .set(AssetPlugin {
+            file_path: "/tactical/assets".into(),
+            meta_check: AssetMetaCheck::Never,
+            ..default()
+        })
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Fabelgeist - Tactical".into(),
+                canvas: Some("#game-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                present_mode: args.present_mode.into(),
+                decorations: false,
+                ..default()
+            }),
+            ..default()
+        });
     app.add_plugins((
         default_plugins,
         FrameTimeDiagnosticsPlugin::default(),
@@ -179,10 +296,18 @@ fn run(args: Args) {
         equipment::TacticalEquipmentPlugin,
         animation::TacticalAnimationPlugin,
         camera::TacticalCameraPlugin,
-        args.graphics_preset.presentation(),
+        // Headless runs have no window/swapchain, and some render features
+        // (e.g. the atmosphere environment probe) crash without one, so
+        // force every optional GPU effect off regardless of the requested
+        // preset - there's nothing to present them to anyway.
+        if headless {
+            GraphicsPreset::Minimal.presentation()
+        } else {
+            args.graphics_preset.presentation()
+        },
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-    .add_systems(Startup, setup_client)
+    .add_systems(Startup, setup_initial_client)
     .add_systems(
         Update,
         (
@@ -197,7 +322,11 @@ fn run(args: Args) {
         ),
     )
     .insert_resource(player::LocalCharacterId(args.id))
+    .insert_resource(InitialTacticalMode(initial_tactical))
     .insert_resource(args.clone());
+
+    #[cfg(target_family = "wasm")]
+    app.add_plugins(browser_runtime::BrowserRuntimePlugin::new(initial_tactical));
 
     #[cfg(feature = "debug")]
     app.add_plugins(debug::DebugPlugin);
@@ -212,10 +341,105 @@ fn run(args: Args) {
         .unwrap_or_else(|error| panic!("invalid tactical client diagnostics: {error}")),
     );
 
+    #[cfg(not(target_family = "wasm"))]
+    if headless {
+        app.add_plugins(bevy::app::ScheduleRunnerPlugin {
+            run_mode: bevy::app::RunMode::Loop {
+                wait: Some(std::time::Duration::from_secs_f64(1.0 / 60.0)),
+            },
+        });
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+    if let Some(port) = args.brp_port {
+        app.add_plugins((
+            bevy::remote::RemotePlugin::default(),
+            bevy::remote::http::RemoteHttpPlugin::default().with_port(port),
+        ));
+    }
+
+    // Headless has no window to screenshot (F12, see `debug.rs`), so point
+    // the gameplay camera at an off-screen render target instead.
+    #[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+    if headless {
+        app.add_systems(Update, configure_headless_render_target);
+    }
+
     app.run();
 }
 
-fn setup_client(mut commands: Commands, args: Res<Args>) {
+#[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+const HEADLESS_SCREENSHOT_SIZE: (u32, u32) = (1280, 720);
+
+#[cfg(all(not(target_family = "wasm"), feature = "debug"))]
+fn configure_headless_render_target(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    cameras: Query<Entity, Added<Camera3d>>,
+) {
+    for entity in &cameras {
+        let image = images.add(Image::new_target_texture(
+            HEADLESS_SCREENSHOT_SIZE.0,
+            HEADLESS_SCREENSHOT_SIZE.1,
+            bevy::render::render_resource::TextureFormat::bevy_default(),
+            None,
+        ));
+        commands
+            .entity(entity)
+            .insert(bevy::camera::RenderTarget::Image(image.clone().into()));
+        commands.insert_resource(debug::HeadlessScreenshotTarget(image));
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn native_asset_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets")
+        .canonicalize()
+        .unwrap_or_else(|error| panic!("could not resolve native asset directory: {error}"))
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn validate_native_presentation_assets(asset_root: &std::path::Path) -> Result<(), String> {
+    const REQUIRED_ASSETS: &[&str] = &[
+        "shaders/tactical_foliage.wgsl",
+        "shaders/tactical_clouds.wgsl",
+        "shaders/tactical_moon.wgsl",
+        "shaders/tactical_stars.wgsl",
+        "shaders/tactical_terrain.wgsl",
+        "shaders/tactical_weather.wgsl",
+        "shaders/tactical_tree_impostor.wgsl",
+        "shaders/tactical_tree_leaf_card.wgsl",
+        "tactical-equipment-icons.png",
+        "textures/moon/lroc_color_2k.jpg",
+    ];
+    let missing = REQUIRED_ASSETS
+        .iter()
+        .filter(|path| !asset_root.join(path).is_file())
+        .copied()
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} is missing required presentation assets: {}",
+            asset_root.display(),
+            missing.join(", ")
+        ))
+    }
+}
+
+#[derive(Resource)]
+struct InitialTacticalMode(bool);
+
+fn setup_initial_client(
+    mut commands: Commands,
+    args: Res<Args>,
+    initial_tactical: Res<InitialTacticalMode>,
+) {
+    if !initial_tactical.0 {
+        return;
+    }
     commands.spawn(AdventureSimulatorClient {
         player_id: args.id,
         server_url: args.server_addr.clone(),
@@ -258,21 +482,19 @@ fn release_cursor(
 mod graphics_preset_tests {
     use super::*;
 
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn native_asset_root_contains_required_presentation_assets() {
+        validate_native_presentation_assets(&native_asset_root()).unwrap();
+    }
+
     #[test]
     fn individual_presets_disable_only_the_requested_effect() {
-        let no_ssao = GraphicsPreset::NoSsao.presentation();
-        assert!(no_ssao.shadows_enabled);
-        assert!(no_ssao.atmosphere_enabled);
-        assert!(no_ssao.environment_light_enabled);
-        assert!(no_ssao.bloom_enabled);
-        assert!(!no_ssao.ssao_enabled);
-
         let no_atmosphere = GraphicsPreset::NoAtmosphere.presentation();
         assert!(no_atmosphere.shadows_enabled);
         assert!(!no_atmosphere.atmosphere_enabled);
         assert!(!no_atmosphere.environment_light_enabled);
         assert!(no_atmosphere.bloom_enabled);
-        assert!(no_atmosphere.ssao_enabled);
     }
 
     #[test]
@@ -282,7 +504,6 @@ mod graphics_preset_tests {
         assert!(!minimal.atmosphere_enabled);
         assert!(!minimal.environment_light_enabled);
         assert!(!minimal.bloom_enabled);
-        assert!(!minimal.ssao_enabled);
     }
 
     #[test]

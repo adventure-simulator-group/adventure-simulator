@@ -32,17 +32,29 @@ pub struct ReconnectCapability {
     pub token: ReconnectToken,
 }
 
-#[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
+/// One bounded, ordered scene asset delivered only to an enrolled client.
+/// Vista samples intentionally bypass ordinary ECS component replication.
+#[derive(Debug, Clone, Event, Serialize, Deserialize)]
+pub struct SceneVistaBundle {
+    pub scene_digest: String,
+    /// Half-width and half-depth of the authoritative playable heightfield.
+    /// Presentation-only vista rings clip exactly to this rectangle.
+    pub playable_half_extent_metres: Vec2,
+    pub lods: Vec<VistaLod>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
+#[reflect(Default)]
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: JumpCommand,
-    pub crouch: bool,
     pub jump_charge: bool,
     pub downed_align: bool,
     pub posture: PostureCommand,
     pub pace: MovementPace,
     pub weapon_guard: WeaponGuardState,
+    pub melee_preparation: MeleePreparationInput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,23 +118,29 @@ pub enum EquipmentAction {
 /// Durable edge identity for jumping over the unreliable continuous-input
 /// channel. The latest sequence is repeated in every input packet, so dropping
 /// the release packet delays a jump rather than losing it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, Reflect)]
 pub struct JumpCommand {
     pub sequence: u32,
+    /// Camera-relative quickstep direction selected on this edge. `None`
+    /// requests an ordinary jump.
+    pub quickstep: Option<Vec2>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub struct PostureCommand {
     pub sequence: u32,
     pub action: Option<PostureActionRequest>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum PostureActionRequest {
     Toggle,
     RollLeft,
     RollRight,
-    Dive { direction: DiveDirection },
+    Dive {
+        animation_direction: DiveDirection,
+        travel_direction: DiveDirection,
+    },
 }
 
 /// Debug-build request to run the tactical simulation at normal or quarter
@@ -131,6 +149,13 @@ pub enum PostureActionRequest {
 pub struct DebugGameTimeScaleRequest {
     pub quarter_speed: bool,
 }
+
+/// Debug-build request to serialize the server's entire world (every entity's
+/// reflected components, plus reflected resources) to a `.scn.ron` file for
+/// offline inspection or replay as a test fixture. Production servers
+/// intentionally do not install a handler for it.
+#[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
+pub struct DebugDumpWorldRequest;
 
 impl DebugGameTimeScaleRequest {
     pub const fn relative_speed(self) -> f32 {
@@ -234,7 +259,7 @@ mod equipment_action_mapping_tests {
 pub enum MeleeActionRequest {
     Start {
         strike_family: StrikeFamily,
-        footwork: Footwork,
+        hand: AttackHand,
     },
     Complete {
         #[entities]

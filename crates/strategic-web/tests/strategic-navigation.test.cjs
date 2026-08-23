@@ -16,7 +16,7 @@ test("hard navigation boundaries and native anchor affordances remain explicit",
   const source = fs.readFileSync("crates/strategic-web/static/strategic-navigation.js", "utf8");
   for (const token of [
     "download", "hardNavigation", "_self", "/characters", "/map/data-license",
-    "/missions/", "/tactical/", "event.metaKey", "event.ctrlKey", "raw.startsWith(\"#\")",
+    "/tactical/", "event.metaKey", "event.ctrlKey", "raw.startsWith(\"#\")",
   ]) assert.ok(source.includes(token), token);
 });
 
@@ -75,4 +75,27 @@ test("negotiated navigation validates root metadata and never evaluates scripts"
   assert.match(source, /kind: "control"/);
   assert.match(source, /kind: "equipment"/);
   assert.match(source, /restoreFocus\(replacement, restore\.strategicFocus\)/);
+});
+
+test("ordinary strategic modules never reload or assign the document", () => {
+  for (const name of ["dialogue-client", "inventory-browser", "live-state", "travel-planner"]) {
+    const source = fs.readFileSync(`crates/strategic-web/static/${name}.js`, "utf8");
+    assert.doesNotMatch(source, /(?:window\.|global\.)?location\.(?:assign|reload|replace)\(/, name);
+  }
+  const navigation = fs.readFileSync("crates/strategic-web/static/strategic-navigation.js", "utf8");
+  assert.match(navigation, /if \(boundaryUrl\(finalUrl\)\)/);
+  assert.match(navigation, /throw new Error\("The server did not return the negotiated strategic contract"\)/);
+});
+
+test("strategic renderer keeps one fullscreen surface and sends typed scene commands", () => {
+  const renderer = fs.readFileSync("crates/strategic-web/static/strategic-renderer.js", "utf8");
+  const css = fs.readFileSync("crates/strategic-web/static/css/strategic.css", "utf8");
+  const layout = fs.readFileSync("crates/strategic-web/src/templates/layout.rs", "utf8");
+
+  assert.match(renderer, /type: "show-strategic-scene"/);
+  assert.match(renderer, /scene: \{ type: "forge"/);
+  assert.doesNotMatch(renderer, /positionSurface|ResizeObserver|surface\.hidden/);
+  assert.match(css, /#strategic-render-surface\s*\{[^}]*inset: 0;/s);
+  assert.match(css, /#strategic-render-surface\s*\{[^}]*width: 100vw;/s);
+  assert.doesNotMatch(layout, /id="strategic-render-surface" hidden/);
 });

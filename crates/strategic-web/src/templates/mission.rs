@@ -121,6 +121,9 @@ fn ready_state(server: &TacticalServer) -> Markup {
                 @if let Some(character_id) = server.character_id {
                     a href=(format!("/tactical/tactical.html?server={}&id={character_id}&autostart=1", server.addr))
                         class="btn btn-primary btn-large btn-block mt-2"
+                        data-persistent-tactical
+                        data-server-addr=(&server.addr)
+                        data-character-id=(character_id)
                     {
                         "Connect to Mission"
                     }

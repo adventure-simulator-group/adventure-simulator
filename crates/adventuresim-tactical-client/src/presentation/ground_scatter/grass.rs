@@ -1,0 +1,1928 @@
+use adventuresim_tactical_core::prelude::{
+    EnvironmentalSample, GroundCover, SceneEnvironment, SceneGround, SceneTerrain, TacticalSurface,
+};
+use bevy::{
+    asset::RenderAssetUsages,
+    camera::visibility::VisibilityRange,
+    color::ColorToComponents,
+    light::NotShadowCaster,
+    mesh::{Indices, PrimitiveTopology},
+    prelude::{
+        Color, Commands, Component, Handle, Image, Mesh, Mesh3d, MeshMaterial3d, Name, Quat,
+        Transform, Vec2, Vec3, Vec4,
+    },
+};
+
+use crate::presentation::{bps, splitmix64, unit_hash};
+
+use super::{GroundScatterLayer, TacticalFoliageMaterial, foliage_material};
+
+pub(super) struct Assets {
+    pub community_meshes: [CommunityMeshes; GrassCommunity::COUNT],
+    pub near_materials: GrassMaterialHandles,
+    pub far_materials: GrassMaterialHandles,
+    pub vista_materials: GrassMaterialHandles,
+}
+
+/// The two immutable material variants used by one grass LOD.  The selected
+/// handle makes the ground-mask path uniform for a whole draw, rather than
+/// requiring divergent per-blade decisions in the shader.
+#[derive(Clone)]
+pub(super) struct GrassMaterialHandles {
+    pub boundary: Handle<TacticalFoliageMaterial>,
+    pub interior: Handle<TacticalFoliageMaterial>,
+}
+
+impl GrassMaterialHandles {
+    pub(super) fn for_mask_mode(
+        &self,
+        mask_mode: GrassGroundMaskMode,
+    ) -> Handle<TacticalFoliageMaterial> {
+        match mask_mode {
+            GrassGroundMaskMode::Boundary => self.boundary.clone(),
+            GrassGroundMaskMode::Interior => self.interior.clone(),
+        }
+    }
+}
+
+/// Selects the material contract used by every grass distance tier.  Keeping
+/// this on the entity makes scene diagnostics prove that only the close field
+/// retains player-responsive, fully lit foliage.
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum GrassMaterialPath {
+    FullInteractive,
+    CheapLod,
+}
+
+impl GrassMaterialPath {
+    pub(in crate::presentation) const fn for_lod(lod: GrassMeshLod) -> Self {
+        match lod {
+            GrassMeshLod::Near => Self::FullInteractive,
+            GrassMeshLod::Far | GrassMeshLod::Vista => Self::CheapLod,
+        }
+    }
+}
+
+/// Records whether this patch's draw may skip the authored ground-cover mask.
+/// Boundary is deliberately the default: only a conservative all-grass
+/// footprint is eligible for the interior material.
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum GrassGroundMaskMode {
+    Boundary,
+    Interior,
+}
+
+impl GrassGroundMaskMode {
+    const fn shader_flag(self) -> f32 {
+        match self {
+            Self::Boundary => 0.0,
+            Self::Interior => 1.0,
+        }
+    }
+}
+
+pub(in crate::presentation) struct CommunityMeshes {
+    near: [Handle<Mesh>; GrassTopology::COUNT],
+    far: [Handle<Mesh>; GrassTopology::COUNT],
+    vista: [Handle<Mesh>; GrassTopology::COUNT],
+}
+
+impl CommunityMeshes {
+    pub(in crate::presentation) fn new(
+        mut build: impl FnMut(GrassMeshLod, GrassTopology) -> Handle<Mesh>,
+    ) -> Self {
+        Self {
+            near: GrassTopology::ALL.map(|topology| build(GrassMeshLod::Near, topology)),
+            far: GrassTopology::ALL.map(|topology| build(GrassMeshLod::Far, topology)),
+            vista: GrassTopology::ALL.map(|topology| build(GrassMeshLod::Vista, topology)),
+        }
+    }
+
+    pub(in crate::presentation) fn mesh(
+        &self,
+        lod: GrassMeshLod,
+        topology: GrassTopology,
+    ) -> &Handle<Mesh> {
+        match lod {
+            GrassMeshLod::Near => &self.near[topology.index()],
+            GrassMeshLod::Far => &self.far[topology.index()],
+            GrassMeshLod::Vista => &self.vista[topology.index()],
+        }
+    }
+}
+
+/// A deterministic subset of the shared grass patch topology. The continuous
+/// ground mask still rejects individual blades at authored boundaries; this
+/// only avoids submitting obviously unused blades for sparsely covered patches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::presentation) enum GrassTopology {
+    Quarter,
+    Half,
+    ThreeQuarters,
+    Full,
+}
+
+impl GrassTopology {
+    pub(in crate::presentation) const ALL: [Self; 4] =
+        [Self::Quarter, Self::Half, Self::ThreeQuarters, Self::Full];
+    pub(in crate::presentation) const COUNT: usize = Self::ALL.len();
+
+    pub(in crate::presentation) const fn index(self) -> usize {
+        self as usize
+    }
+
+    pub(in crate::presentation) const fn density(self) -> f32 {
+        match self {
+            Self::Quarter => 0.25,
+            Self::Half => 0.50,
+            Self::ThreeQuarters => 0.75,
+            Self::Full => 1.0,
+        }
+    }
+
+    pub(in crate::presentation) fn for_local_coverage(coverage: f32) -> Option<Self> {
+        let coverage = coverage.clamp(0.0, 1.0);
+        if coverage <= f32::EPSILON {
+            None
+        } else if coverage <= 0.25 {
+            Some(Self::Quarter)
+        } else if coverage <= 0.50 {
+            Some(Self::Half)
+        } else if coverage <= 0.75 {
+            Some(Self::ThreeQuarters)
+        } else {
+            Some(Self::Full)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum GrassCommunity {
+    /// Fertile lowland hay meadow: tall false oat-grass with coarse cocksfoot clumps.
+    MesicMeadow,
+    /// Leaner or more exposed turf: fine red fescue with airy common bent.
+    LeanSward,
+    /// Damp meadow and wet woodland gap: tufted hair-grass with Yorkshire fog.
+    WetTussock,
+}
+
+impl GrassCommunity {
+    pub(in crate::presentation) const ALL: [Self; 3] =
+        [Self::MesicMeadow, Self::LeanSward, Self::WetTussock];
+    pub(in crate::presentation) const COUNT: usize = Self::ALL.len();
+
+    const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(in crate::presentation) struct GrassCommunityProfile {
+    weights: [f32; GrassCommunity::COUNT],
+}
+
+impl GrassCommunityProfile {
+    pub(in crate::presentation) fn from_environment(environment: &SceneEnvironment) -> Self {
+        let wet = (bps(environment.wetland_bps)
+            + bps(environment.water_bps) * 0.55
+            + bps(environment.weather.ground_moisture_bps) * 0.35)
+            .clamp(0.0, 1.0);
+        let exposed = (bps(environment.hilly_bps) * 0.72
+            + (1.0 - bps(environment.cultivation_bps)) * 0.18)
+            .clamp(0.0, 1.0);
+        Self::from_site_drivers(wet, exposed)
+    }
+
+    fn from_site_drivers(wet: f32, exposed: f32) -> Self {
+        let wet = wet.clamp(0.0, 1.0);
+        let exposed = exposed.clamp(0.0, 1.0);
+        let mesic = (1.0 - wet) * (1.0 - exposed * 0.55);
+        let lean = exposed * (1.0 - wet * 0.65);
+        // A dry scene has no token wet-tussock cells. Deschampsia and
+        // Yorkshire fog appear only once the available moisture signal is
+        // material, while mesic and lean communities trade off continuously.
+        let wet_tussock = (wet - 0.18).max(0.0) * 1.25;
+        Self {
+            weights: [mesic.max(0.001), lean, wet_tussock],
+        }
+    }
+
+    pub(in crate::presentation) fn localized(self, sample: EnvironmentalSample) -> Self {
+        let surface_wet = match sample.surface {
+            TacticalSurface::Water | TacticalSurface::Wetland => 1.0,
+            _ => 0.0,
+        };
+        let wet = (bps(sample.wetland_bps) + bps(sample.water_bps) * 0.7 + surface_wet * 0.7)
+            .clamp(0.0, 1.0);
+        let exposed = (bps(sample.hilly_bps) * 0.8 + (1.0 - bps(sample.cultivation_bps)) * 0.12)
+            .clamp(0.0, 1.0);
+        let local = Self::from_site_drivers(wet, exposed);
+        Self {
+            weights: core::array::from_fn(|index| {
+                self.weights[index] * 0.35 + local.weights[index] * 0.65
+            }),
+        }
+    }
+
+    fn select(self, roll: f32, site_hash: u64) -> GrassCommunity {
+        // Stable low-frequency pseudo-fields stand in for finer soil data we
+        // do not yet have. They modulate, but never invent, a habitat that the
+        // scene/local environmental sample assigned zero weight.
+        let moisture_field = 0.68 + unit_hash(splitmix64(site_hash ^ 0x6d6f_6973_7475)) * 0.64;
+        let exposure_field = 0.68 + unit_hash(splitmix64(site_hash ^ 0x6578_706f_7375)) * 0.64;
+        let fertility_field = 0.76 + unit_hash(splitmix64(site_hash ^ 0x6665_7274_696c)) * 0.48;
+        let weights = [
+            self.weights[0] * fertility_field,
+            self.weights[1] * exposure_field,
+            self.weights[2] * moisture_field,
+        ];
+        let total = weights.iter().sum::<f32>().max(f32::EPSILON);
+        let target = roll * total;
+        if target < weights[0] {
+            GrassCommunity::MesicMeadow
+        } else if target < weights[0] + weights[1] {
+            GrassCommunity::LeanSward
+        } else {
+            GrassCommunity::WetTussock
+        }
+    }
+}
+
+pub(in crate::presentation) fn grass_community_at(
+    point: Vec2,
+    seed: u64,
+    profile: GrassCommunityProfile,
+) -> GrassCommunity {
+    // Jittered Voronoi cells create coherent 12-40 m sward communities. A
+    // patch selects one community; species vary within that community rather
+    // than becoming independent blade-by-blade confetti.
+    const CELL_SIZE: f32 = 24.0;
+    let cell = (point / CELL_SIZE).floor().as_ivec2();
+    let mut nearest_distance = f32::INFINITY;
+    let mut nearest_hash = 0;
+    for offset_z in -1..=1 {
+        for offset_x in -1..=1 {
+            let candidate = cell + bevy::math::IVec2::new(offset_x, offset_z);
+            let key = ((candidate.x as u32 as u64) << 32) | candidate.y as u32 as u64;
+            let hash = splitmix64(seed ^ key ^ 0x6772_6173_735f_636f);
+            let site = (candidate.as_vec2()
+                + Vec2::new(
+                    0.18 + unit_hash(hash) * 0.64,
+                    0.18 + unit_hash(splitmix64(hash)) * 0.64,
+                ))
+                * CELL_SIZE;
+            let distance = point.distance_squared(site);
+            if distance < nearest_distance {
+                nearest_distance = distance;
+                nearest_hash = hash;
+            }
+        }
+    }
+    profile.select(
+        unit_hash(splitmix64(nearest_hash ^ 0x7377_6172_645f_7479)),
+        nearest_hash,
+    )
+}
+
+pub(super) fn spawn(
+    commands: &mut Commands,
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    base_seed: u64,
+    profile: GrassCommunityProfile,
+    assets: &Assets,
+) {
+    let half_x = terrain.width() * 0.5;
+    let half_z = terrain.depth() * 0.5;
+    let minimum_x = (-half_x / GRASS_PATCH_SPACING).floor() as i32;
+    let maximum_x = (half_x / GRASS_PATCH_SPACING).ceil() as i32;
+    let minimum_z = (-half_z / GRASS_PATCH_SPACING).floor() as i32;
+    let maximum_z = (half_z / GRASS_PATCH_SPACING).ceil() as i32;
+    for z in minimum_z..=maximum_z {
+        for x in minimum_x..=maximum_x {
+            let cell = ((x as u32 as u64) << 32) | z as u32 as u64;
+            let hash = splitmix64(base_seed ^ cell);
+            let jitter_x = unit_hash(splitmix64(hash ^ 0x39bd_7f21)) - 0.5;
+            let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
+            let eligibility_world_x = (x as f32 + jitter_x * 0.24) * GRASS_PATCH_SPACING;
+            let eligibility_world_z = (z as f32 + jitter_z * 0.24) * GRASS_PATCH_SPACING;
+            let world_x = (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
+            let world_z = (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
+            let Some(transform) = grass_patch_placement(
+                terrain,
+                ground,
+                Vec2::new(eligibility_world_x, eligibility_world_z),
+                Vec2::new(world_x, world_z),
+            ) else {
+                continue;
+            };
+            let Some(topology) = grass_patch_topology(ground, Vec2::new(world_x, world_z)) else {
+                continue;
+            };
+            let mask_mode =
+                grass_ground_mask_mode(ground, Vec2::new(world_x, world_z), GrassMeshLod::Near);
+            let meshes = &assets.community_meshes
+                [grass_community_at(Vec2::new(world_x, world_z), base_seed, profile).index()];
+            commands.spawn((
+                Name::new("Tactical grass near ribbons"),
+                GroundScatterLayer::Grass,
+                GrassMaterialPath::for_lod(GrassMeshLod::Near),
+                mask_mode,
+                NotShadowCaster,
+                Mesh3d(meshes.mesh(GrassMeshLod::Near, topology).clone()),
+                MeshMaterial3d(assets.near_materials.for_mask_mode(mask_mode)),
+                grass_lod_visibility(GrassMeshLod::Near),
+                transform,
+            ));
+            commands.spawn((
+                Name::new("Tactical grass far ribbons"),
+                GroundScatterLayer::Grass,
+                GrassMaterialPath::for_lod(GrassMeshLod::Far),
+                mask_mode,
+                NotShadowCaster,
+                Mesh3d(meshes.mesh(GrassMeshLod::Far, topology).clone()),
+                MeshMaterial3d(assets.far_materials.for_mask_mode(mask_mode)),
+                grass_lod_visibility(GrassMeshLod::Far),
+                transform,
+            ));
+        }
+    }
+
+    let minimum_x = (-half_x / VISTA_GRASS_PATCH_SPACING).floor() as i32;
+    let maximum_x = (half_x / VISTA_GRASS_PATCH_SPACING).ceil() as i32;
+    let minimum_z = (-half_z / VISTA_GRASS_PATCH_SPACING).floor() as i32;
+    let maximum_z = (half_z / VISTA_GRASS_PATCH_SPACING).ceil() as i32;
+    for z in minimum_z..=maximum_z {
+        for x in minimum_x..=maximum_x {
+            let cell = ((x as u32 as u64) << 32) | z as u32 as u64;
+            let hash = splitmix64(base_seed ^ cell ^ 0x7669_7374_615f_6c6f);
+            let jitter_x = unit_hash(splitmix64(hash ^ 0x39bd_7f21)) - 0.5;
+            let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
+            let centre = Vec2::new(
+                (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
+                (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
+            );
+            let Some(transform) = grass_patch_placement(terrain, ground, centre, centre) else {
+                continue;
+            };
+            let Some(topology) = grass_patch_topology(ground, centre) else {
+                continue;
+            };
+            let mask_mode = grass_ground_mask_mode(ground, centre, GrassMeshLod::Vista);
+            let meshes =
+                &assets.community_meshes[grass_community_at(centre, base_seed, profile).index()];
+            commands.spawn((
+                Name::new("Tactical grass vista tufts"),
+                GroundScatterLayer::Grass,
+                GrassMaterialPath::for_lod(GrassMeshLod::Vista),
+                mask_mode,
+                NotShadowCaster,
+                Mesh3d(meshes.mesh(GrassMeshLod::Vista, topology).clone()),
+                MeshMaterial3d(assets.vista_materials.for_mask_mode(mask_mode)),
+                grass_lod_visibility(GrassMeshLod::Vista),
+                transform,
+            ));
+        }
+    }
+}
+
+// A 64 x 64 grid preserves the established macro-patch footprint with a
+// deliberately coarser near sward. Density lives inside the shared mesh rather
+// than in more ECS entities, so extraction and visibility costs stay bounded.
+const GRASS_PATCH_GRID_SIDE: usize = 64;
+pub(in crate::presentation) const GRASS_PATCH_SPACING: f32 = 3.2;
+const GRASS_BLADE_SPACING: f32 = 3.51 / (GRASS_PATCH_GRID_SIDE - 1) as f32;
+// Keep neighbouring near-flat macro patches inside the blade footprint even
+// when their deterministic centre jitter diverges in opposite directions.
+const GRASS_PATCH_JITTER_FRACTION: f32 = 0.04;
+// Far and Vista are evenly distributed subsets of Near. Retaining exact Near
+// roots keeps mask thresholds, pigment, and deterministic community selection
+// continuous during the existing LOD crossfades.
+const GRASS_FAR_GRID_COORDINATES: [usize; 16] =
+    [0, 4, 8, 13, 17, 21, 25, 29, 34, 38, 42, 46, 50, 55, 59, 63];
+const GRASS_VISTA_GRID_COORDINATES: [usize; 8] = [0, 9, 18, 27, 36, 45, 54, 63];
+pub(in crate::presentation) const VISTA_GRASS_PATCH_SPACING: f32 = 6.4;
+/// The final physical-grass fade overlaps the terrain's band-limited sward.
+/// Keeping these bounds here makes the playable and vista lattices share the
+/// same terminal representation contract.
+pub(in crate::presentation) const TERMINAL_SWARD_FADE_START_METRES: f32 = 55.0;
+pub(in crate::presentation) const TERMINAL_SWARD_FADE_END_METRES: f32 = 65.0;
+// `grass_cover_mask_pixels` feathers authored non-grass cover over this
+// radius. The organic source lookup can warp by one cell; 1.5 cells also
+// covers its rounding and bilinear filtering. Any uncertainty stays on the
+// boundary material, which retains the exact texture-driven collapse.
+const GRASS_MASK_FEATHER_METRES: f32 = 4.8;
+const GRASS_MASK_SOURCE_WARP_GUARD_CELLS: f32 = 1.5;
+pub(super) fn grass_material(
+    wind_scale: f32,
+    lod: GrassMeshLod,
+    grass_density: f32,
+    grass_dryness: f32,
+    ground_mask: Handle<Image>,
+    ground: &SceneGround,
+    mask_mode: GrassGroundMaskMode,
+) -> TacticalFoliageMaterial {
+    let mut material = foliage_material(wind_scale, true);
+    // Grass uses this otherwise generic meadow-variation lane as a replicated
+    // environmental dryness factor. Woodland shade and wet cover retain green
+    // growth; exposed low-moisture swards develop coherent senescent cohorts.
+    material.shading.y = grass_dryness;
+    material.shading.w = if lod == GrassMeshLod::Near { 1.0 } else { 0.0 };
+    TacticalFoliageMaterial {
+        // The far mesh is still substantially reduced, but retains enough
+        // shoots to keep a dense meadow from visually collapsing at distance.
+        shape: Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(grass_density)),
+        ground_mask_transform: Vec4::new(1.0 / ground.width(), 1.0 / ground.depth(), 0.5, 0.5),
+        ground_mask: Some(ground_mask),
+        // A uniform material selector lets an entire Far/Vista draw bypass
+        // player interaction, camera-facing reconstruction, and full PBR.
+        quality: Vec4::new(
+            if lod == GrassMeshLod::Near { 0.0 } else { 1.0 },
+            mask_mode.shader_flag(),
+            0.0,
+            0.0,
+        ),
+        ..material
+    }
+}
+
+pub(in crate::presentation) fn vista_grass_material(
+    wind_scale: f32,
+    grass_dryness: f32,
+    ground_mask: Handle<Image>,
+    ground_mask_transform: Vec4,
+    lod: GrassMeshLod,
+) -> TacticalFoliageMaterial {
+    let mut material = foliage_material(wind_scale, true);
+    material.shading.y = grass_dryness;
+    material.shading.w = if lod == GrassMeshLod::Near { 1.0 } else { 0.0 };
+    material.quality.x = if lod == GrassMeshLod::Near { 0.0 } else { 1.0 };
+    material.shape = match lod {
+        // The close exterior field keeps the full interactive representation.
+        // Far/Vista retain this authored footprint while their material's
+        // quality selector uses the cheap wind and Lambert path.
+        GrassMeshLod::Near | GrassMeshLod::Far => {
+            Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(1.0))
+        }
+        GrassMeshLod::Vista => Vec4::new(1.0, 0.94, 0.055, lod.width_compensation(1.0)),
+    };
+    material.ground_mask_transform = ground_mask_transform;
+    material.ground_mask = Some(ground_mask);
+    material
+}
+fn ground_allows_grass_patch(ground: &SceneGround, centre: Vec2) -> bool {
+    let half_extent = GRASS_PATCH_SPACING * 0.58;
+    [-1.0, 0.0, 1.0].into_iter().any(|z| {
+        [-1.0, 0.0, 1.0].into_iter().any(|x| {
+            ground
+                .ground_at(centre + Vec2::new(x, z) * half_extent)
+                .is_some_and(|sample| sample.cover == GroundCover::TallGrass)
+        })
+    })
+}
+
+fn grass_patch_topology(ground: &SceneGround, centre: Vec2) -> Option<GrassTopology> {
+    let half_extent = GRASS_PATCH_SPACING * 0.58;
+    let mut total = 0.0;
+    let mut samples = 0;
+    for z in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+        for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let coverage = ground
+                .ground_at(centre + Vec2::new(x, z) * half_extent)
+                .filter(|sample| sample.cover == GroundCover::TallGrass)
+                .map_or(0.0, |sample| f32::from(sample.cover_density_bps) / 10_000.0);
+            total += coverage;
+            samples += 1;
+        }
+    }
+    GrassTopology::for_local_coverage(total / samples as f32)
+}
+
+fn grass_ground_mask_mode(
+    ground: &SceneGround,
+    centre: Vec2,
+    lod: GrassMeshLod,
+) -> GrassGroundMaskMode {
+    let half_extent = lod.masked_root_half_extent()
+        + GRASS_MASK_FEATHER_METRES
+        + ground.grid_scale() * GRASS_MASK_SOURCE_WARP_GUARD_CELLS;
+    // A patch near the edge cannot establish the complete authoritative
+    // footprint, so it always preserves the texture mask's edge behaviour.
+    if centre.x.abs() + half_extent > ground.width() * 0.5
+        || centre.y.abs() + half_extent > ground.depth() * 0.5
+    {
+        return GrassGroundMaskMode::Boundary;
+    }
+    let touches_non_grass = [
+        GroundCover::Bare,
+        GroundCover::LeafLitter,
+        GroundCover::LooseStone,
+        GroundCover::Reeds,
+    ]
+    .into_iter()
+    .any(|cover| ground.cover_intersects_square(centre, half_extent, cover));
+    if touches_non_grass {
+        GrassGroundMaskMode::Boundary
+    } else {
+        GrassGroundMaskMode::Interior
+    }
+}
+fn grass_patch_transform(terrain: &SceneTerrain, world_x: f32, world_z: f32) -> Option<Transform> {
+    let sample = Vec2::new(world_x, world_z);
+    let height = terrain.height_at(sample)?;
+    let normal = terrain.normal_at(sample)?;
+    if normal.y < 0.72 {
+        return None;
+    }
+    Some(
+        Transform::from_xyz(world_x, height, world_z)
+            .with_rotation(Quat::from_rotation_arc(Vec3::Y, normal)),
+    )
+}
+
+fn grass_patch_placement(
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    legacy_predicate_centre: Vec2,
+    render_centre: Vec2,
+) -> Option<Transform> {
+    // The legacy centre remains a one-way count-invariance guard: a formerly
+    // rejected patch stays rejected. The actual rendered centre must also be
+    // legal, so reducing jitter cannot move grass into leaf litter or outside
+    // a usable terrain anchor.
+    if !ground_allows_grass_patch(ground, legacy_predicate_centre)
+        || !ground_allows_grass_patch(ground, render_centre)
+    {
+        return None;
+    }
+    grass_patch_transform(terrain, render_centre.x, render_centre.y)
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum GrassMeshLod {
+    Near,
+    Far,
+    /// Patch-level vista representation. Broad five-vertex tuft ribbons carry
+    /// the field here instead of merely thinning the close-range blade mesh.
+    Vista,
+}
+
+impl GrassMeshLod {
+    fn masked_root_half_extent(self) -> f32 {
+        let blade_spacing = GRASS_BLADE_SPACING
+            * if self == Self::Vista {
+                VISTA_GRASS_PATCH_SPACING / GRASS_PATCH_SPACING
+            } else {
+                1.0
+            };
+        blade_spacing * (GRASS_PATCH_GRID_SIDE - 1) as f32 * 0.5
+    }
+
+    fn row_heights(self) -> &'static [f32] {
+        match self {
+            // Five paired rows plus a shared tip: eleven vertices preserve the
+            // original base, shoulder, tip, and monotonic UV progression while
+            // removing two intermediate ribbon segments from ordinary Near
+            // grass.
+            Self::Near => &[0.0, 0.22, 0.45, 0.68, 0.9],
+            // Three paired rows plus a shared tip: seven vertices at distance.
+            Self::Far => &[0.0, 0.45, 0.82],
+            Self::Vista => &[0.0, 0.62],
+        }
+    }
+
+    fn blade_grid_indices(self, grass_density: f32) -> impl Iterator<Item = usize> {
+        let coordinates: &[usize] = match self {
+            Self::Near => &[],
+            Self::Far => &GRASS_FAR_GRID_COORDINATES,
+            Self::Vista => &GRASS_VISTA_GRID_COORDINATES,
+        };
+        (0..GRASS_PATCH_GRID_SIDE * GRASS_PATCH_GRID_SIDE).filter(move |index| {
+            let selected_for_lod = if coordinates.is_empty() {
+                true
+            } else {
+                let row = index / GRASS_PATCH_GRID_SIDE;
+                let column = index % GRASS_PATCH_GRID_SIDE;
+                coordinates.contains(&row) && coordinates.contains(&column)
+            };
+            selected_for_lod
+                && (grass_density >= 1.0
+                    || unit_hash(splitmix64(*index as u64 ^ 0x24e8_51c6_9a37_b40d)) < grass_density)
+        })
+    }
+
+    fn blade_count(self, grass_density: f32) -> usize {
+        self.blade_grid_indices(grass_density).count()
+    }
+
+    fn width_compensation(self, grass_density: f32) -> f32 {
+        match self {
+            Self::Near => return 1.0,
+            // These intentionally read as broad clump silhouettes rather than
+            // The 8 x 8 vista mesh reads as broad clump silhouettes rather
+            // than pretending that its 64 survivors are close-range blades.
+            // This bounded multiplier restores much of the lost projected
+            // coverage without turning the horizon into solid ribbons.
+            Self::Vista => return 3.2,
+            Self::Far => {}
+        }
+        // Compensate only for blades discarded by the Far LOD. The square-root
+        // response retains clumped negative space while keeping projected
+        // cover close to Near through the crossfade.
+        let near_count =
+            (GRASS_PATCH_GRID_SIDE * GRASS_PATCH_GRID_SIDE) as f32 * grass_density.clamp(0.0, 1.0);
+        let lod_count = self.blade_count(grass_density).max(1) as f32;
+        (near_count.max(1.0) / lod_count).sqrt().min(4.0)
+    }
+}
+
+pub(in crate::presentation) fn grass_lod_visibility(lod: GrassMeshLod) -> VisibilityRange {
+    match lod {
+        GrassMeshLod::Near => VisibilityRange {
+            start_margin: 0.0..0.0,
+            end_margin: 16.0..20.0,
+            use_aabb: false,
+        },
+        GrassMeshLod::Far => VisibilityRange {
+            start_margin: 16.0..20.0,
+            end_margin: 52.0..58.0,
+            use_aabb: false,
+        },
+        GrassMeshLod::Vista => VisibilityRange {
+            start_margin: 50.0..54.0,
+            end_margin: TERMINAL_SWARD_FADE_START_METRES..TERMINAL_SWARD_FADE_END_METRES,
+            use_aabb: false,
+        },
+    }
+}
+
+pub(in crate::presentation) fn grass_patch_mesh(
+    color: Color,
+    lod: GrassMeshLod,
+    grass_density: f32,
+    community: GrassCommunity,
+) -> Mesh {
+    let grid_side = GRASS_PATCH_GRID_SIDE;
+    let centre = (grid_side - 1) as f32 * 0.5;
+    let blade_spacing = GRASS_BLADE_SPACING
+        * if lod == GrassMeshLod::Vista {
+            VISTA_GRASS_PATCH_SPACING / GRASS_PATCH_SPACING
+        } else {
+            1.0
+        };
+    let blades = lod
+        .blade_grid_indices(grass_density)
+        .map(|index| {
+            let row = index / grid_side;
+            let column = index % grid_side;
+            let hash = splitmix64(index as u64 ^ 0x8d12_6f4a_0bc3_7791);
+            let species_cell = (((column / 8) as u64) << 32) | (row / 8) as u64;
+            let species_hash = splitmix64(species_cell ^ 0x7475_6674_5f63_656c);
+            let clump_x = ((row as f32 * 0.47 + column as f32 * 0.19).sin()) * blade_spacing * 0.24;
+            let clump_z = ((column as f32 * 0.41 - row as f32 * 0.23).sin()) * blade_spacing * 0.24;
+            let jitter_x = (unit_hash(hash) - 0.5) * blade_spacing * 0.46;
+            let jitter_z = (unit_hash(splitmix64(hash)) - 0.5) * blade_spacing * 0.46;
+            let clump_vigor = 0.5 + 0.5 * (row as f32 * 0.31 + column as f32 * 0.17 + 0.8).sin();
+            let height_scale =
+                (0.50 + unit_hash(splitmix64(hash ^ 0x52a9_f131)) * 0.62 + clump_vigor * 0.20)
+                    .clamp(0.50, 1.30);
+            let width_scale = 0.62 + unit_hash(splitmix64(hash ^ 0x91e2_57a4)) * 0.76;
+            let base_x = (column as f32 - centre) * blade_spacing;
+            let base_z = (row as f32 - centre) * blade_spacing;
+            let mut offset_x = base_x + jitter_x + clump_x;
+            let mut offset_z = base_z + jitter_z + clump_z;
+            // Boundary rows may wander outward but never inward. This retains
+            // organic clumping inside the patch while mitigating gaps along
+            // near-flat and ordinary sloped shared edges.
+            if column == 0 {
+                offset_x = offset_x.min(base_x);
+            } else if column + 1 == grid_side {
+                offset_x = offset_x.max(base_x);
+            }
+            if row == 0 {
+                offset_z = offset_z.min(base_z);
+            } else if row + 1 == grid_side {
+                offset_z = offset_z.max(base_z);
+            }
+            GrassBlade {
+                offset_x,
+                offset_z,
+                height_scale,
+                width_scale,
+                seed: index as u64,
+                species: grass_species(community, species_hash),
+            }
+        })
+        .collect::<Vec<_>>();
+    grass_ribbon_patch_mesh(0.026, 0.82, color, lod, &blades)
+}
+
+#[derive(Clone, Copy)]
+struct GrassBlade {
+    offset_x: f32,
+    offset_z: f32,
+    height_scale: f32,
+    width_scale: f32,
+    seed: u64,
+    species: GrassSpecies,
+}
+
+#[derive(Clone, Copy)]
+struct GrassInflorescence {
+    root: Vec3,
+    angle: f32,
+    total_height: f32,
+    species: GrassSpecies,
+    normal: [f32; 3],
+    color: [f32; 4],
+    blade_root: [f32; 2],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GrassSpecies {
+    FalseOatGrass,
+    Cocksfoot,
+    RedFescue,
+    CommonBent,
+    TuftedHairGrass,
+    YorkshireFog,
+}
+
+fn grass_species(community: GrassCommunity, hash: u64) -> GrassSpecies {
+    let roll = unit_hash(splitmix64(hash ^ 0x7370_6563_6965_735f));
+    match community {
+        GrassCommunity::MesicMeadow if roll < 0.68 => GrassSpecies::FalseOatGrass,
+        GrassCommunity::MesicMeadow => GrassSpecies::Cocksfoot,
+        GrassCommunity::LeanSward if roll < 0.64 => GrassSpecies::RedFescue,
+        GrassCommunity::LeanSward => GrassSpecies::CommonBent,
+        GrassCommunity::WetTussock if roll < 0.66 => GrassSpecies::TuftedHairGrass,
+        GrassCommunity::WetTussock => GrassSpecies::YorkshireFog,
+    }
+}
+
+impl GrassSpecies {
+    fn inflorescence_branch_count(self) -> usize {
+        match self {
+            Self::FalseOatGrass => 2,
+            Self::Cocksfoot => 3,
+            Self::CommonBent | Self::TuftedHairGrass => 4,
+            Self::RedFescue | Self::YorkshireFog => 0,
+        }
+    }
+
+    fn spikelets_per_branch(self) -> usize {
+        match self {
+            Self::Cocksfoot | Self::TuftedHairGrass => 3,
+            Self::FalseOatGrass | Self::CommonBent => 2,
+            Self::RedFescue | Self::YorkshireFog => 0,
+        }
+    }
+
+    fn height_scale(self) -> f32 {
+        match self {
+            Self::FalseOatGrass => 1.24,
+            Self::Cocksfoot => 0.94,
+            Self::RedFescue => 0.64,
+            Self::CommonBent => 0.78,
+            Self::TuftedHairGrass => 1.08,
+            Self::YorkshireFog => 0.82,
+        }
+    }
+
+    fn width_scale(self) -> f32 {
+        match self {
+            Self::FalseOatGrass => 0.88,
+            Self::Cocksfoot => 1.34,
+            Self::RedFescue => 0.48,
+            Self::CommonBent => 0.58,
+            Self::TuftedHairGrass => 0.76,
+            Self::YorkshireFog => 1.04,
+        }
+    }
+
+    fn shoulder_scale(self, height_fraction: f32) -> f32 {
+        if height_fraction < 0.76 {
+            return 1.0;
+        }
+        match self {
+            // Dense, lumpy cocksfoot panicles remain conspicuous at the last
+            // paired ribbon row, while open panicles stay optically lighter.
+            Self::Cocksfoot => 1.75,
+            Self::FalseOatGrass | Self::TuftedHairGrass => 1.16,
+            Self::CommonBent => 0.82,
+            Self::RedFescue | Self::YorkshireFog => 1.0,
+        }
+    }
+
+    fn pigment_scale(self) -> [f32; 3] {
+        match self {
+            Self::FalseOatGrass => [1.02, 1.0, 0.84],
+            Self::Cocksfoot => [0.72, 0.86, 0.74],
+            Self::RedFescue => [0.80, 0.86, 0.72],
+            Self::CommonBent => [0.92, 0.94, 0.78],
+            Self::TuftedHairGrass => [0.82, 0.90, 0.82],
+            Self::YorkshireFog => [1.02, 0.94, 0.88],
+        }
+    }
+}
+
+fn grass_ribbon_patch_mesh(
+    width: f32,
+    height: f32,
+    color: Color,
+    lod: GrassMeshLod,
+    blades: &[GrassBlade],
+) -> Mesh {
+    let rows = lod.row_heights();
+    let vertices_per_blade = rows.len() * 2 + 1;
+    let triangles_per_blade = (rows.len() - 1) * 2 + 1;
+    let mut positions = Vec::with_capacity(blades.len() * vertices_per_blade);
+    let mut normals = Vec::with_capacity(blades.len() * vertices_per_blade);
+    let mut uvs = Vec::with_capacity(blades.len() * vertices_per_blade);
+    let mut blade_roots = Vec::with_capacity(blades.len() * vertices_per_blade);
+    let mut colors = Vec::with_capacity(blades.len() * vertices_per_blade);
+    let mut indices = Vec::with_capacity(blades.len() * triangles_per_blade * 3);
+    let mut inflorescences = Vec::new();
+    let linear = color.to_linear().to_f32_array();
+
+    for &GrassBlade {
+        offset_x,
+        offset_z,
+        height_scale,
+        width_scale,
+        seed: blade_seed,
+        species,
+    } in blades
+    {
+        let root = Vec3::new(offset_x, 0.0, offset_z);
+        let hash = splitmix64(blade_seed ^ 0x6c8e_9cf5_701a_d30b);
+        let angle = unit_hash(hash) * core::f32::consts::TAU;
+        let half_width = Vec3::new(angle.cos(), 0.0, angle.sin())
+            * width
+            * width_scale
+            * species.width_scale()
+            * 0.5;
+        let normal = Vec3::Y.cross(half_width).normalize_or_zero().to_array();
+        let blade_threshold = unit_hash(splitmix64(hash ^ 0x3d91_02ea_61b8_7c45));
+        let age = unit_hash(splitmix64(hash ^ 0x1b47_c95a_622d_41e3));
+        // Healthy blades share their species pigment. Senescent tips retain a
+        // hard straw region, while blade separation comes from the material's
+        // specular response rather than randomized albedo.
+        let species_scale = species.pigment_scale();
+        let blade_color = [
+            (linear[0] * species_scale[0]).clamp(0.0, 1.0),
+            (linear[1] * species_scale[1]).clamp(0.0, 1.0),
+            (linear[2] * species_scale[2]).clamp(0.0, 1.0),
+            blade_threshold,
+        ];
+        let luminance = blade_color[0] * 0.2126 + blade_color[1] * 0.7152 + blade_color[2] * 0.0722;
+        let straw_color = [luminance * 1.12, luminance * 0.88, luminance * 0.42];
+        let senescent = age > 0.82;
+        let base = positions.len() as u32;
+
+        for &height_fraction in rows {
+            let taper =
+                (1.0 - height_fraction).powf(0.72) * species.shoulder_scale(height_fraction);
+            let side = half_width * taper;
+            let centre =
+                root + Vec3::Y * height * height_scale * species.height_scale() * height_fraction;
+            positions.extend_from_slice(&[(centre - side).to_array(), (centre + side).to_array()]);
+            normals.extend_from_slice(&[normal; 2]);
+            uvs.extend_from_slice(&[[0.0, height_fraction], [1.0, height_fraction]]);
+            blade_roots.extend_from_slice(&[[offset_x, offset_z]; 2]);
+            let row_color = if senescent && height_fraction >= 0.72 {
+                [
+                    straw_color[0],
+                    straw_color[1],
+                    straw_color[2],
+                    blade_threshold,
+                ]
+            } else {
+                blade_color
+            };
+            colors.extend_from_slice(&[row_color; 2]);
+        }
+        positions
+            .push((root + Vec3::Y * height * height_scale * species.height_scale()).to_array());
+        normals.push(normal);
+        uvs.push([0.5, 1.0]);
+        blade_roots.push([offset_x, offset_z]);
+        colors.push(if senescent {
+            [
+                straw_color[0],
+                straw_color[1],
+                straw_color[2],
+                blade_threshold,
+            ]
+        } else {
+            blade_color
+        });
+
+        for row in 0..rows.len() - 1 {
+            let lower = base + (row * 2) as u32;
+            let upper = lower + 2;
+            indices.extend_from_slice(&[lower, lower + 1, upper + 1, lower, upper + 1, upper]);
+        }
+        let shoulder = base + ((rows.len() - 1) * 2) as u32;
+        let tip = base + (vertices_per_blade - 1) as u32;
+        indices.extend_from_slice(&[shoulder, shoulder + 1, tip]);
+
+        // Seed heads are a sparse Near-only diagnostic. Far/Vista retain the
+        // same optical mass with the ribbon shoulder, while close cocksfoot
+        // reads as compact offset clusters and oat/bent/hair-grass as open
+        // panicles. Only about one shoot in eight bears one, keeping the cost
+        // bounded and avoiding sub-pixel triangles at distance.
+        let branch_count = species.inflorescence_branch_count();
+        if lod == GrassMeshLod::Near
+            && branch_count > 0
+            && unit_hash(splitmix64(hash ^ 0x0070_616e_6963_6c65)) < 0.125
+        {
+            let total_height = height * height_scale * species.height_scale();
+            inflorescences.push(GrassInflorescence {
+                root,
+                angle,
+                total_height,
+                species,
+                normal,
+                color: blade_color,
+                blade_root: [offset_x, offset_z],
+            });
+        }
+    }
+
+    for GrassInflorescence {
+        root,
+        angle,
+        total_height,
+        species,
+        normal,
+        color,
+        blade_root,
+    } in inflorescences
+    {
+        let compact = species == GrassSpecies::Cocksfoot;
+        let branch_count = species.inflorescence_branch_count();
+        let stem_side = Vec3::new(angle.cos(), 0.0, angle.sin()) * 0.0025;
+        for (start_fraction, end_fraction) in [(0.62, 0.82), (0.82, 1.03)] {
+            let start = root + Vec3::Y * total_height * start_fraction;
+            let end = root + Vec3::Y * total_height * end_fraction;
+            append_attached_quad(
+                &mut positions,
+                &mut normals,
+                &mut uvs,
+                &mut blade_roots,
+                &mut colors,
+                &mut indices,
+                start - stem_side,
+                start + stem_side,
+                end - stem_side * 0.62,
+                end + stem_side * 0.62,
+                normal,
+                color,
+                blade_root,
+                start.y,
+                start_fraction,
+            );
+        }
+
+        for branch in 0..branch_count {
+            let fraction = branch as f32 / branch_count as f32;
+            let side_sign = if branch % 2 == 0 { 1.0 } else { -1.0 };
+            let branch_angle = angle + side_sign * (0.72 + fraction * 0.38);
+            let direction = Vec3::new(branch_angle.cos(), 0.0, branch_angle.sin());
+            let length = if compact {
+                0.035 + fraction * 0.022
+            } else {
+                0.075 + fraction * 0.055
+            };
+            let thickness = if compact { 0.010 } else { 0.005 };
+            let start = root
+                + Vec3::Y
+                    * total_height
+                    * (if compact {
+                        0.78 + fraction * 0.045
+                    } else {
+                        0.70 + fraction * 0.055
+                    });
+            let end = start
+                + direction * length
+                + Vec3::Y * total_height * if compact { 0.018 } else { 0.045 };
+            let side = Vec3::new(-direction.z, 0.0, direction.x) * thickness;
+            let attachment_fraction = start.y / total_height;
+            append_attached_quad(
+                &mut positions,
+                &mut normals,
+                &mut uvs,
+                &mut blade_roots,
+                &mut colors,
+                &mut indices,
+                start - side,
+                start + side,
+                end - side * 0.55,
+                end + side * 0.55,
+                normal,
+                color,
+                blade_root,
+                start.y,
+                attachment_fraction,
+            );
+
+            for spikelet in 0..species.spikelets_per_branch() {
+                let along = if compact {
+                    0.52 + spikelet as f32 * 0.18
+                } else {
+                    0.64 + spikelet as f32 * 0.27
+                };
+                let centre = start.lerp(end, along.min(1.0));
+                append_crossed_spikelet(
+                    &mut positions,
+                    &mut normals,
+                    &mut uvs,
+                    &mut blade_roots,
+                    &mut colors,
+                    &mut indices,
+                    centre,
+                    direction,
+                    if compact { 0.008 } else { 0.005 },
+                    if compact { 0.014 } else { 0.010 },
+                    color,
+                    blade_root,
+                    start.y,
+                    attachment_fraction,
+                );
+            }
+        }
+    }
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, blade_roots);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_attached_quad(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    blade_roots: &mut Vec<[f32; 2]>,
+    colors: &mut Vec<[f32; 4]>,
+    indices: &mut Vec<u32>,
+    lower_left: Vec3,
+    lower_right: Vec3,
+    upper_left: Vec3,
+    upper_right: Vec3,
+    normal: [f32; 3],
+    color: [f32; 4],
+    blade_root: [f32; 2],
+    attachment_height: f32,
+    attachment_fraction: f32,
+) {
+    let base = positions.len() as u32;
+    positions.extend_from_slice(&[
+        lower_left.to_array(),
+        lower_right.to_array(),
+        upper_left.to_array(),
+        upper_right.to_array(),
+    ]);
+    normals.extend_from_slice(&[normal; 4]);
+    // Negative V identifies rigid seed-head geometry. U carries its authored
+    // stalk attachment height so the shader can preserve the mesh while
+    // inheriting the parent shoot's deformation.
+    uvs.extend_from_slice(&[[attachment_height, -attachment_fraction]; 4]);
+    blade_roots.extend_from_slice(&[blade_root; 4]);
+    colors.extend_from_slice(&[color; 4]);
+    indices.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_crossed_spikelet(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    blade_roots: &mut Vec<[f32; 2]>,
+    colors: &mut Vec<[f32; 4]>,
+    indices: &mut Vec<u32>,
+    centre: Vec3,
+    branch_direction: Vec3,
+    half_width: f32,
+    half_height: f32,
+    color: [f32; 4],
+    blade_root: [f32; 2],
+    attachment_height: f32,
+    attachment_fraction: f32,
+) {
+    let horizontal =
+        Vec3::new(-branch_direction.z, 0.0, branch_direction.x).normalize_or_zero() * half_width;
+    let along = branch_direction.normalize_or_zero() * half_width;
+    for side in [horizontal, along] {
+        let normal = Vec3::Y.cross(side).normalize_or_zero().to_array();
+        append_attached_quad(
+            positions,
+            normals,
+            uvs,
+            blade_roots,
+            colors,
+            indices,
+            centre - Vec3::Y * half_height,
+            centre - side,
+            centre + side,
+            centre + Vec3::Y * half_height,
+            normal,
+            color,
+            blade_root,
+            attachment_height,
+            attachment_fraction,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use adventuresim_tactical_core::prelude::GroundSurface;
+    use bevy::{
+        mesh::VertexAttributeValues,
+        pbr::Material,
+        prelude::{AlphaMode, default},
+    };
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn coherent_sward_selector_honors_habitat_profiles_deterministically() {
+        let point = Vec2::new(17.0, -9.0);
+        let mesic = GrassCommunityProfile {
+            weights: [1.0, 0.0, 0.0],
+        };
+        let lean = GrassCommunityProfile {
+            weights: [0.0, 1.0, 0.0],
+        };
+        let wet = GrassCommunityProfile {
+            weights: [0.0, 0.0, 1.0],
+        };
+        assert_eq!(
+            grass_community_at(point, 42, mesic),
+            GrassCommunity::MesicMeadow
+        );
+        assert_eq!(
+            grass_community_at(point, 42, lean),
+            GrassCommunity::LeanSward
+        );
+        assert_eq!(
+            grass_community_at(point, 42, wet),
+            GrassCommunity::WetTussock
+        );
+        assert_eq!(
+            grass_community_at(point, 42, wet),
+            grass_community_at(point, 42, wet)
+        );
+    }
+
+    #[test]
+    fn dry_wet_and_exposed_site_drivers_change_community_availability() {
+        let dry = GrassCommunityProfile::from_site_drivers(0.0, 0.15);
+        let wet = GrassCommunityProfile::from_site_drivers(0.95, 0.05);
+        let exposed = GrassCommunityProfile::from_site_drivers(0.05, 1.0);
+        assert_eq!(dry.weights[GrassCommunity::WetTussock.index()], 0.0);
+        assert!(
+            wet.weights[GrassCommunity::WetTussock.index()]
+                > wet.weights[GrassCommunity::MesicMeadow.index()]
+        );
+        assert!(
+            exposed.weights[GrassCommunity::LeanSward.index()]
+                > dry.weights[GrassCommunity::LeanSward.index()]
+        );
+
+        let locally_wet = dry.localized(EnvironmentalSample {
+            wetland_bps: 10_000,
+            surface: TacticalSurface::Wetland,
+            ..EnvironmentalSample::default()
+        });
+        assert!(locally_wet.weights[GrassCommunity::WetTussock.index()] > 0.0);
+    }
+
+    #[test]
+    fn near_far_and_vista_resolve_the_same_world_community() {
+        let profile = GrassCommunityProfile::from_site_drivers(0.48, 0.42);
+        let seed = 0x51a7_7eed;
+        for point in [
+            Vec2::new(-24.01, 11.8),
+            Vec2::new(-23.99, 11.8),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(23.99, -17.0),
+            Vec2::new(24.01, -17.0),
+            Vec2::new(71.5, 54.25),
+        ] {
+            let near = grass_community_at(point, seed, profile);
+            let far = grass_community_at(point, seed, profile);
+            let vista = grass_community_at(point, seed, profile);
+            assert_eq!(near, far);
+            assert_eq!(far, vista);
+        }
+    }
+
+    #[test]
+    fn grass_species_have_distinct_near_morphology_and_diagnostic_seed_heads() {
+        let mesic = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Near,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let lean = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Near,
+            1.0,
+            GrassCommunity::LeanSward,
+        );
+        assert_ne!(mesic.count_vertices(), lean.count_vertices());
+        assert_ne!(
+            mesic.attribute(Mesh::ATTRIBUTE_POSITION),
+            lean.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        assert!(GrassSpecies::RedFescue.width_scale() < GrassSpecies::FalseOatGrass.width_scale());
+        assert!(
+            GrassSpecies::Cocksfoot.shoulder_scale(0.9)
+                > GrassSpecies::FalseOatGrass.shoulder_scale(0.9)
+        );
+        assert_eq!(GrassSpecies::RedFescue.inflorescence_branch_count(), 0);
+        assert!(
+            GrassSpecies::CommonBent.inflorescence_branch_count()
+                > GrassSpecies::FalseOatGrass.inflorescence_branch_count()
+        );
+    }
+
+    #[test]
+    fn near_seed_heads_are_crossed_clusters_with_rigid_attachment_metadata() {
+        let mesh = (0..4_096)
+            .find_map(|seed| {
+                let mesh = grass_ribbon_patch_mesh(
+                    0.026,
+                    0.82,
+                    Color::WHITE,
+                    GrassMeshLod::Near,
+                    &[GrassBlade {
+                        offset_x: 0.0,
+                        offset_z: 0.0,
+                        height_scale: 1.0,
+                        width_scale: 1.0,
+                        seed,
+                        species: GrassSpecies::Cocksfoot,
+                    }],
+                );
+                (mesh.count_vertices() > 11).then_some(mesh)
+            })
+            .expect("the bounded seed search should find a flowering cocksfoot shoot");
+
+        let positions = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .expect("seed heads should retain authored positions");
+        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("seed heads should carry attachment metadata");
+        };
+        let seed_head_positions = &positions[11..];
+        let seed_head_uvs = &uvs[11..];
+
+        assert!(seed_head_positions.len() >= 92);
+        assert!(seed_head_uvs.iter().all(|uv| uv[0] > 0.0 && uv[1] < 0.0));
+        assert!(
+            seed_head_positions
+                .iter()
+                .any(|position| position[0].abs().max(position[2].abs()) > 0.03),
+            "the nearest seed head must contain authored lateral branches"
+        );
+        assert_eq!(seed_head_positions.len() % 4, 0);
+    }
+
+    #[test]
+    fn grass_ribbon_lods_have_exact_per_blade_geometry_and_valid_meshes() {
+        let expected = [
+            (GrassMeshLod::Near, 11, 27),
+            (GrassMeshLod::Far, 7, 15),
+            (GrassMeshLod::Vista, 5, 9),
+        ];
+
+        for (lod, vertices_per_blade, indices_per_blade) in expected {
+            let mesh = grass_ribbon_patch_mesh(
+                0.026,
+                0.82,
+                Color::WHITE,
+                lod,
+                &[GrassBlade {
+                    offset_x: 0.0,
+                    offset_z: 0.0,
+                    height_scale: 1.0,
+                    width_scale: 1.0,
+                    seed: 0,
+                    species: GrassSpecies::RedFescue,
+                }],
+            );
+            assert_eq!(mesh.count_vertices(), vertices_per_blade);
+            let indices = mesh.indices().unwrap().iter().collect::<Vec<_>>();
+            assert_eq!(indices.len(), indices_per_blade);
+
+            for attribute in [
+                Mesh::ATTRIBUTE_POSITION,
+                Mesh::ATTRIBUTE_NORMAL,
+                Mesh::ATTRIBUTE_UV_0,
+                Mesh::ATTRIBUTE_UV_1,
+                Mesh::ATTRIBUTE_COLOR,
+            ] {
+                assert_eq!(mesh.attribute(attribute).unwrap().len(), vertices_per_blade);
+            }
+            assert!(indices.iter().all(|index| *index < vertices_per_blade));
+            assert_eq!(indices.len() % 3, 0);
+            let expected_indices = match lod {
+                GrassMeshLod::Near => vec![
+                    0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 4, 5, 7, 4, 7, 6, 6, 7, 9, 6, 9, 8, 8, 9,
+                    10,
+                ],
+                GrassMeshLod::Far => vec![0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 4, 5, 6],
+                GrassMeshLod::Vista => vec![0, 1, 3, 0, 3, 2, 2, 3, 4],
+            };
+            assert_eq!(indices, expected_indices);
+        }
+    }
+
+    #[test]
+    fn grass_patches_use_a_stable_reduced_far_subset() {
+        let near = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Near,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let far = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Far,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let vista = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Vista,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let sparse = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Near,
+            0.25,
+            GrassCommunity::MesicMeadow,
+        );
+        let near_positions = near
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        let far_positions = far
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        assert_eq!(GrassMeshLod::Near.blade_count(1.0), 4_096);
+        assert_eq!(GrassMeshLod::Far.blade_count(1.0), 256);
+        assert_eq!(GrassMeshLod::Vista.blade_count(1.0), 64);
+        assert_eq!(near_positions.len(), 75_308);
+        let near_blade_positions = &near_positions[..4_096 * 11];
+        assert_eq!(far_positions.len(), 256 * 7);
+        assert_eq!(vista.count_vertices(), 64 * 5);
+        assert!(64.0 / VISTA_GRASS_PATCH_SPACING.powi(2) >= 1.5);
+        assert!(near_blade_positions.len() > far_positions.len());
+        assert!(far_positions.len() > vista.count_vertices());
+        let sparse_positions = sparse
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        assert!(!sparse_positions.is_empty());
+        assert!(sparse_positions.len() < near_positions.len());
+        let Some(VertexAttributeValues::Float32x2(near_roots)) =
+            near.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("grass mesh must carry stable blade roots");
+        };
+        let Some(VertexAttributeValues::Float32x2(far_roots)) = far.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("far grass mesh must carry stable blade roots");
+        };
+        assert_eq!(near_roots.len(), near_positions.len());
+        let near_blade_roots = &near_roots[..4_096 * 11];
+        assert_eq!(far_roots.len(), far_positions.len());
+        assert!(far_roots.iter().all(|root| near_blade_roots.contains(root)));
+        let Some(VertexAttributeValues::Float32x4(colors)) = near.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("grass mesh must carry stable blade thresholds");
+        };
+        let Some(VertexAttributeValues::Float32x4(far_colors)) =
+            far.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("far grass mesh must carry stable blade thresholds");
+        };
+        assert!(colors.iter().all(|color| (0.0..1.0).contains(&color[3])));
+        assert!(colors.iter().any(|color| color[3] < 0.25));
+        assert!(colors.iter().any(|color| color[3] > 0.75));
+        for (far_root, far_color) in far_roots.chunks_exact(7).zip(far_colors.chunks_exact(7)) {
+            let matching_near_blade = near_blade_roots
+                .chunks_exact(11)
+                .position(|near_root| near_root[0] == far_root[0])
+                .expect("every far blade must retain its exact near-LOD root");
+            assert_eq!(
+                colors[matching_near_blade * 11][3],
+                far_color[0][3],
+                "near and far LODs must apply the same ground-mask threshold"
+            );
+            assert_eq!(
+                colors[matching_near_blade * 11],
+                far_color[0],
+                "near and far LOD roots must retain the same base pigment and age"
+            );
+            assert_eq!(
+                colors[matching_near_blade * 11 + 10],
+                far_color[6],
+                "near and far LOD tips must retain the same senescent pigment"
+            );
+        }
+
+        let blade_heights = near_blade_positions
+            .chunks_exact(11)
+            .map(|blade| {
+                blade
+                    .iter()
+                    .map(|position| position[1])
+                    .fold(0.0_f32, f32::max)
+            })
+            .collect::<Vec<_>>();
+        let minimum_height = blade_heights.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum_height = blade_heights
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            minimum_height < 0.52,
+            "short blades should break the curtain silhouette"
+        );
+        assert!(
+            maximum_height > 0.95,
+            "mature blades should remain visibly taller"
+        );
+        assert!(maximum_height - minimum_height > 0.45);
+
+        let blade_widths = near_blade_positions
+            .chunks_exact(11)
+            .map(|blade| Vec3::from_array(blade[0]).distance(Vec3::from_array(blade[1])))
+            .collect::<Vec<_>>();
+        let minimum_width = blade_widths.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum_width = blade_widths
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(maximum_width / minimum_width > 2.0);
+
+        let distinct_pigments = colors
+            .iter()
+            .map(|color| [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()])
+            .collect::<BTreeSet<_>>();
+        assert!(distinct_pigments.len() <= 4);
+        assert!(distinct_pigments.len() >= 3);
+
+        let repeated_far = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Far,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let repeated_vista = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Vista,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        assert_eq!(
+            far.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_far.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        assert_eq!(
+            vista.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_vista.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+
+        let Some(VertexAttributeValues::Float32x2(vista_roots)) =
+            vista.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("vista grass mesh must carry stable blade roots");
+        };
+        assert_eq!(vista_roots.len(), vista.count_vertices());
+        assert!(vista_roots.iter().any(|root| root[0] < -1.7));
+        assert!(vista_roots.iter().any(|root| root[0] > 1.7));
+    }
+
+    #[test]
+    fn local_coverage_selects_monotonic_deterministic_topologies_and_skips_zero() {
+        assert_eq!(GrassTopology::for_local_coverage(0.0), None);
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.01),
+            Some(GrassTopology::Quarter)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.25),
+            Some(GrassTopology::Quarter)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.26),
+            Some(GrassTopology::Half)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.51),
+            Some(GrassTopology::ThreeQuarters)
+        );
+        assert_eq!(
+            GrassTopology::for_local_coverage(0.76),
+            Some(GrassTopology::Full)
+        );
+
+        let zero = SceneGround::from_samples(41, 41, 0.1, vec![GroundSurface::default(); 41 * 41])
+            .unwrap();
+        assert_eq!(grass_patch_topology(&zero, Vec2::ZERO), None);
+
+        let topology_for_density = |density| {
+            let sample = GroundSurface {
+                cover: GroundCover::TallGrass,
+                cover_density_bps: density,
+                ..default()
+            };
+            let ground = SceneGround::from_samples(41, 41, 0.1, vec![sample; 41 * 41]).unwrap();
+            grass_patch_topology(&ground, Vec2::ZERO)
+        };
+        assert_eq!(topology_for_density(2_500), Some(GrassTopology::Quarter));
+        assert_eq!(topology_for_density(5_000), Some(GrassTopology::Half));
+        assert_eq!(
+            topology_for_density(7_500),
+            Some(GrassTopology::ThreeQuarters)
+        );
+        assert_eq!(topology_for_density(10_000), Some(GrassTopology::Full));
+
+        let variants = GrassTopology::ALL.map(|topology| {
+            grass_patch_mesh(
+                Color::WHITE,
+                GrassMeshLod::Far,
+                topology.density(),
+                GrassCommunity::MesicMeadow,
+            )
+        });
+        let repeated = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Far,
+            GrassTopology::Half.density(),
+            GrassCommunity::MesicMeadow,
+        );
+        assert_eq!(
+            variants[1].attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        for pair in variants.windows(2) {
+            assert!(pair[0].count_vertices() <= pair[1].count_vertices());
+        }
+    }
+
+    #[test]
+    fn unit_scale_macro_patch_footprints_overlap_at_worst_case_near_flat_jitter() {
+        let near = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Near,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let Some(VertexAttributeValues::Float32x2(roots)) = near.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("grass mesh must carry roots");
+        };
+        let min_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_z = roots
+            .iter()
+            .map(|root| root[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_z = roots
+            .iter()
+            .map(|root| root[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let worst_adjacent_centre_distance =
+            GRASS_PATCH_SPACING * (1.0 + GRASS_PATCH_JITTER_FRACTION);
+        assert!(max_x - min_x > worst_adjacent_centre_distance);
+        assert!(max_z - min_z > worst_adjacent_centre_distance);
+
+        let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).unwrap();
+        let transform = grass_patch_transform(&terrain, 0.0, 0.0).unwrap();
+        assert_eq!(transform.scale, Vec3::ONE);
+        assert_eq!(transform.rotation, Quat::IDENTITY);
+    }
+
+    #[test]
+    fn boundary_patch_is_retained_for_per_blade_ground_masking() {
+        let width = 81;
+        let depth = 41;
+        let mut samples = vec![GroundSurface::default(); width * depth];
+        // x=1.9 m: outside the legacy footprint centred at -0.32 m, but
+        // inside the actual footprint centred at 0.0 m.
+        let leaf_x = 59;
+        let leaf_z = 20;
+        samples[leaf_z * width + leaf_x].cover = GroundCover::LeafLitter;
+        let ground = SceneGround::from_samples(width, depth, 0.1, samples).unwrap();
+        let terrain = SceneTerrain::from_heightmap(9, 9, 1.0, vec![0.0; 81]).unwrap();
+        let legacy = Vec2::new(-0.32, 0.0);
+        let rendered = Vec2::ZERO;
+        assert!(ground_allows_grass_patch(&ground, legacy));
+        assert!(ground_allows_grass_patch(&ground, rendered));
+        assert!(grass_patch_placement(&terrain, &ground, legacy, rendered).is_some());
+    }
+
+    #[test]
+    fn invalid_render_anchor_is_skipped_without_legacy_fallback() {
+        let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).unwrap();
+        let ground =
+            SceneGround::from_samples(81, 81, 0.1, vec![GroundSurface::default(); 81 * 81])
+                .unwrap();
+        assert!(grass_patch_transform(&terrain, 0.0, 0.0).is_some());
+        assert!(
+            grass_patch_placement(&terrain, &ground, Vec2::ZERO, Vec2::new(2.0, 0.0)).is_none()
+        );
+    }
+
+    #[test]
+    fn representative_slope_keeps_adjacent_boundary_rows_overlapping() {
+        let heights = (0..3)
+            .flat_map(|_| (0..9).map(|x| x as f32 * 0.25))
+            .collect::<Vec<_>>();
+        let terrain = SceneTerrain::from_heightmap(9, 3, 1.0, heights).unwrap();
+        let left = grass_patch_transform(&terrain, -1.6, 0.0).unwrap();
+        let right = grass_patch_transform(&terrain, 1.6, 0.0).unwrap();
+        let near = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Near,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let Some(VertexAttributeValues::Float32x2(roots)) = near.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("grass mesh must carry roots");
+        };
+        let min_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let direction = (right.translation - left.translation).normalize();
+        let left_edge = left.transform_point(Vec3::new(max_x, 0.0, 0.0));
+        let right_edge = right.transform_point(Vec3::new(min_x, 0.0, 0.0));
+        assert!((right_edge - left_edge).dot(direction) <= 0.0);
+    }
+
+    #[test]
+    fn grass_lods_crossfade_across_the_same_distance_interval() {
+        let near = grass_lod_visibility(GrassMeshLod::Near);
+        let far = grass_lod_visibility(GrassMeshLod::Far);
+        let vista = grass_lod_visibility(GrassMeshLod::Vista);
+
+        assert_eq!(near.start_margin, 0.0..0.0);
+        assert_eq!(near.end_margin, 16.0..20.0);
+        assert_eq!(far.start_margin, 16.0..20.0);
+        assert_eq!(far.end_margin, 52.0..58.0);
+        assert_eq!(vista.start_margin, 50.0..54.0);
+        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(
+            vista.end_margin,
+            TERMINAL_SWARD_FADE_START_METRES..TERMINAL_SWARD_FADE_END_METRES
+        );
+
+        // The next LOD begins fading before the previous one has finished,
+        // so the range never exposes an uncovered distance interval.
+        assert_eq!(near.end_margin, far.start_margin);
+        assert!(far.end_margin.start >= vista.start_margin.start);
+        assert!(far.end_margin.end >= vista.start_margin.end);
+        // The terrain sward begins while the final physical tier remains
+        // visible, and reaches full coverage exactly as that tier ends.
+        assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
+        assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
+        assert!(!near.is_abrupt());
+        assert!(!far.is_abrupt());
+        assert!(!vista.is_abrupt());
+    }
+
+    #[test]
+    fn grass_composition_guards_boundary_mask_fetches_and_preserves_topology() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_foliage.wgsl"
+        ));
+        // The full Near and cheap Far/Vista paths each retain one boundary
+        // fetch. Both are nested under the uniform interior selector, so an
+        // interior material cannot sample or collapse a grass blade.
+        assert_eq!(shader.matches("textureSampleLevel(").count(), 2);
+        assert_eq!(shader.matches("if foliage.quality.y < 0.5 {").count(), 2);
+        assert!(
+            shader
+                .contains("if foliage.quality.y < 0.5 {\n            let mask_uv = root_world.xz")
+        );
+        assert!(shader.contains("let effective_coverage = ground_coverage * clump_coverage"));
+        assert!(shader.contains("let edge_growth = mix(0.26, 1.0"));
+        assert!(!shader.contains("let tip_age"));
+        assert!(shader.contains("* mix(1.0, 0.94, mature_age)"));
+        assert!(shader.contains("lean_amount + 0.012 * mature_age"));
+        assert!(shader.contains("let is_inflorescence = vertex.uv.y < 0.0"));
+        assert!(shader.contains("let bent_offset = rotate_between"));
+        assert!(shader.contains("abs(f32(in.visibility_range_dither)) / 16.0"));
+        assert!(!shader.contains("visibility_range_dither(in.position"));
+        assert!(shader.contains("vec4<f32>(root_world, 1.0)"));
+        assert!(shader.contains("0.60,"));
+        assert!(shader.contains("foliage.shading.w > 0.5"));
+
+        let near = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Near,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        let far = grass_patch_mesh(
+            Color::WHITE,
+            GrassMeshLod::Far,
+            1.0,
+            GrassCommunity::MesicMeadow,
+        );
+        assert_eq!(near.count_vertices(), 75_308);
+        assert_eq!(far.count_vertices(), 256 * 7);
+    }
+
+    #[test]
+    fn mask_mode_selects_uniform_material_flags_for_every_grass_lod() {
+        let ground = SceneGround::from_samples(2, 2, 1.0, vec![GroundSurface::default(); 4])
+            .expect("a flat ground mask is valid");
+        assert_eq!(
+            GrassMaterialPath::for_lod(GrassMeshLod::Near),
+            GrassMaterialPath::FullInteractive
+        );
+        assert_eq!(
+            GrassMaterialPath::for_lod(GrassMeshLod::Far),
+            GrassMaterialPath::CheapLod
+        );
+        assert_eq!(
+            GrassMaterialPath::for_lod(GrassMeshLod::Vista),
+            GrassMaterialPath::CheapLod
+        );
+        for lod in [GrassMeshLod::Near, GrassMeshLod::Far, GrassMeshLod::Vista] {
+            let boundary = grass_material(
+                0.3,
+                lod,
+                1.0,
+                0.2,
+                Handle::default(),
+                &ground,
+                GrassGroundMaskMode::Boundary,
+            );
+            let interior = grass_material(
+                0.3,
+                lod,
+                1.0,
+                0.2,
+                Handle::default(),
+                &ground,
+                GrassGroundMaskMode::Interior,
+            );
+            assert_eq!(boundary.quality.y, 0.0);
+            assert_eq!(interior.quality.y, 1.0);
+            assert_eq!(
+                boundary.quality.x,
+                if lod == GrassMeshLod::Near { 0.0 } else { 1.0 }
+            );
+            assert_eq!(interior.quality.x, boundary.quality.x);
+            assert_eq!(boundary.alpha_mode(), AlphaMode::AlphaToCoverage);
+            assert_eq!(interior.alpha_mode(), AlphaMode::AlphaToCoverage);
+        }
+        let exterior_vista =
+            vista_grass_material(0.3, 0.2, Handle::default(), Vec4::ONE, GrassMeshLod::Vista);
+        assert_eq!(exterior_vista.quality.y, 0.0);
+    }
+
+    #[test]
+    fn cheap_grass_branch_pins_reduced_vertex_and_fragment_work() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_foliage.wgsl"
+        ));
+        assert!(
+            !shader.contains("world_position.xz +="),
+            "WGSL vector swizzles are not valid compound-assignment targets"
+        );
+        let cheap_vertex_start = shader
+            .find("if foliage.quality.x > 0.5 {")
+            .expect("cheap vertex selector");
+        let expensive_vertex_start = shader.find("let spatial_noise").expect("full vertex path");
+        let cheap_vertex = &shader[cheap_vertex_start..expensive_vertex_start];
+        assert_eq!(cheap_vertex.matches("textureSampleLevel(").count(), 1);
+        assert!(cheap_vertex.contains("if foliage.quality.y < 0.5 {"));
+        assert_eq!(cheap_vertex.matches("sin(").count(), 1);
+        assert!(!cheap_vertex.contains("interaction_offset"));
+        assert!(!cheap_vertex.contains("camera_side"));
+        assert!(!cheap_vertex.contains("rotate_between"));
+
+        let fragment = shader
+            .split("fn fragment")
+            .nth(1)
+            .expect("foliage fragment");
+        let cheap_fragment_start = fragment
+            .find("if foliage.quality.x > 0.5 {")
+            .expect("cheap fragment selector");
+        let full_fragment_start = fragment
+            .find("let height_fraction")
+            .expect("full fragment path");
+        let cheap_fragment = &fragment[cheap_fragment_start..full_fragment_start];
+        assert!(cheap_fragment.contains("main_pass_post_lighting_processing"));
+        assert!(!cheap_fragment.contains("apply_pbr_lighting"));
+        assert!(!cheap_fragment.contains("diffuse_transmission"));
+    }
+
+    #[test]
+    fn conservative_ground_mask_classification_only_marks_clear_tall_grass_as_interior() {
+        const WIDTH: usize = 201;
+        let mut samples = vec![GroundSurface::default(); WIDTH * WIDTH];
+        // The central leaf-litter island is inside every LOD's conservative
+        // root, feather, and source-warp footprint. Two otherwise identical
+        // patches are far enough away to be genuine interior draws.
+        samples[100 * WIDTH + 108].cover = GroundCover::LeafLitter;
+        let ground = SceneGround::from_samples(WIDTH, WIDTH, 1.0, samples).unwrap();
+        let centres = [Vec2::new(-24.0, 0.0), Vec2::ZERO, Vec2::new(24.0, 0.0)];
+        for lod in [GrassMeshLod::Near, GrassMeshLod::Far, GrassMeshLod::Vista] {
+            let modes = centres.map(|centre| grass_ground_mask_mode(&ground, centre, lod));
+            let interiors = modes
+                .iter()
+                .filter(|&&mode| mode == GrassGroundMaskMode::Interior)
+                .count();
+            let boundaries = modes
+                .iter()
+                .filter(|&&mode| mode == GrassGroundMaskMode::Boundary)
+                .count();
+            assert_eq!((interiors, boundaries), (2, 1), "{lod:?}");
+            assert_eq!(modes[1], GrassGroundMaskMode::Boundary, "{lod:?}");
+        }
+        assert_eq!(
+            grass_ground_mask_mode(&ground, Vec2::new(96.0, 0.0), GrassMeshLod::Near),
+            GrassGroundMaskMode::Boundary,
+            "scene edges retain the texture path"
+        );
+    }
+
+    #[test]
+    fn only_deep_leaf_litter_omits_a_grass_patch() {
+        let mut samples = vec![GroundSurface::default(); 81];
+        samples[40].cover = GroundCover::LeafLitter;
+        let boundary = SceneGround::from_samples(9, 9, 1.0, samples).unwrap();
+        assert!(ground_allows_grass_patch(&boundary, Vec2::ZERO));
+        let litter = SceneGround::from_samples(
+            9,
+            9,
+            1.0,
+            vec![
+                GroundSurface {
+                    cover: GroundCover::LeafLitter,
+                    ..default()
+                };
+                81
+            ],
+        )
+        .unwrap();
+        assert!(!ground_allows_grass_patch(&litter, Vec2::ZERO));
+    }
+
+    #[test]
+    fn ground_foliage_enables_continuous_lod_and_interaction() {
+        let grass = foliage_material(0.3, true);
+        let crown = foliage_material(0.3, false);
+        assert_eq!(grass.shading.w, 1.0);
+        assert_eq!(crown.shading.w, 0.0);
+        assert_eq!(grass.shape, Vec4::ZERO);
+        assert_eq!(GrassMeshLod::Near.width_compensation(1.0), 1.0);
+        assert_eq!(
+            Vec4::new(1.0, 0.88, 0.09, GrassMeshLod::Near.width_compensation(1.0)),
+            Vec4::new(1.0, 0.88, 0.09, 1.0)
+        );
+        assert_eq!(
+            Vec4::new(1.0, 0.88, 0.09, GrassMeshLod::Far.width_compensation(1.0)),
+            Vec4::new(1.0, 0.88, 0.09, 4.0)
+        );
+        assert_eq!(GrassMeshLod::Vista.width_compensation(1.0), 3.2);
+    }
+}
