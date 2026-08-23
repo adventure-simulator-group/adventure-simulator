@@ -13,7 +13,7 @@ pub(in crate::animation) struct OrdinaryLocomotionIkState {
 pub(super) fn owns(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded()
         && !skeleton.is_posture_transitioning()
-        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
+        && skeleton.posture() == Posture::Upright
         && skeleton.action_kind() == SkeletonAction::None
         && (skeleton.weapon_guard() == WeaponGuardState::Lowered
             || skeleton.guarded_sprint_locomotion())

@@ -3751,12 +3751,11 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 &parents,
                 &transforms.p0(),
             );
-            let solve_reach =
-                if skeleton.posture() == Posture::Crouched || skeleton.animation_speed() <= 0.05 {
-                    terrain_maximum_reach(upper_length, lower_length)
-                } else {
-                    maximum_reach(upper_length, lower_length)
-                };
+            let solve_reach = if skeleton.animation_speed() <= 0.05 {
+                terrain_maximum_reach(upper_length, lower_length)
+            } else {
+                maximum_reach(upper_length, lower_length)
+            };
             // The transported pole already provides temporal continuity.
             // Authored-bend preservation happens inside the generic solver
             // after pole selection and can rotate the resulting knee outside
@@ -4071,7 +4070,7 @@ pub(super) fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool
 pub(super) fn terrain_ik_posture_is_valid(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded()
         && !skeleton.is_posture_transitioning()
-        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
+        && skeleton.posture() == Posture::Upright
         && matches!(
             skeleton.action_kind(),
             SkeletonAction::None | SkeletonAction::Attack

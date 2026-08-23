@@ -288,7 +288,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_landing_leg_compression,
                     procedural::apply_locomotion_body_response,
-                    procedural::apply_jump_charge_crouch,
+                    procedural::apply_jump_anticipation,
                     procedural::apply_head_and_torso_look,
                     procedural::apply_impact_reaction,
                     procedural::apply_ordinary_locomotion_ik,

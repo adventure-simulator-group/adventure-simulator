@@ -125,9 +125,8 @@ controller. A contact-edge calibration translates the complete visual rig so
 the supported sole meets the rig floor, then retains that baseline through the
 stride without reconstructing either leg. Idle poses blend back
 to their authored central-bone transforms. The 33mm hierarchy compensation is
-measured for upright, lowered-guard `humanoid_unarmed` locomotion only;
-crouching, guard movement, and specialized packs receive no inferred
-compensation.
+measured for upright, lowered-guard `humanoid_unarmed` locomotion only; guard
+movement and specialized packs receive no inferred compensation.
 
 ## Deterministic animation capture
 
@@ -144,8 +143,8 @@ then advances the shared authoritative locomotion projector at its real 64Hz
 fixed tick. Default-off scenarios retain authored ordinary leg motion with a
 vertically fixed gameplay root; the explicit cross-slope scenario opts into
 the seeded terrain-IK pass. Coverage includes two-cycle 2.0m/s walk, 3.75m/s
-blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, and
-start/stop, guard-entry, guard-release, and crouch-enter/exit transitions. Every logical tick is captured first from the raw
+blend, 5.5m/s run, raised-guard full/half-speed movement, and start/stop,
+guard-entry, and guard-release transitions. Every logical tick is captured first from the raw
 gameplay third-person camera, then from side and front diagnostic cameras with
 a skeleton overlay and yellow supported-foot / pink swing-foot markers. The
 simulation is frozen while those three views are rendered, so they describe

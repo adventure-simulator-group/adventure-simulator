@@ -35,7 +35,6 @@ pub struct AnimationEvaluation {
     pub action: Vec<PoseSample>,
     pub movement_speed: f32,
     pub gait_phase: f32,
-    pub crouch_amount: f32,
     pub airborne_phase: f32,
     pub action_phase: f32,
     pub attack_target_height: f32,
@@ -47,7 +46,6 @@ impl AnimationEvaluation {
     pub fn from_skeleton(state: &SkeletonState) -> Self {
         let speed = state.animation_speed();
         let gait_phase = state.gait_phase.rem_euclid(1.0);
-        let crouch_amount = matches!(state.posture(), Posture::Crouched) as u8 as f32;
         let base = match state.action_kind() {
             SkeletonAction::Dodge => raised_guard_locomotion_samples(state),
             _ => match state.posture() {
@@ -68,9 +66,7 @@ impl AnimationEvaluation {
                 Posture::Upright if state.weapon_guard() == WeaponGuardState::Raised => {
                     raised_guard_locomotion_samples(state)
                 }
-                Posture::Upright | Posture::Crouched => {
-                    locomotion_samples(speed, gait_phase, crouch_amount)
-                }
+                Posture::Upright => locomotion_samples(speed, gait_phase),
             },
         };
         let lower_body = if let Some(transition) = state.posture_transition()
@@ -81,7 +77,7 @@ impl AnimationEvaluation {
             && state.raised_locomotion().is_moving()
             && speed > 0.05
         {
-            locomotion_samples(speed, gait_phase, 0.0)
+            locomotion_samples(speed, gait_phase)
         } else {
             Vec::new()
         };
@@ -94,7 +90,6 @@ impl AnimationEvaluation {
             action,
             movement_speed: speed,
             gait_phase,
-            crouch_amount,
             airborne_phase: (0.5 - state.local_velocity.y * 0.2).clamp(0.0, 1.0),
             action_phase: state.action_phase().clamp(0.0, 1.0),
             attack_target_height: state.attack_target_height().clamp(0.0, 1.0),
@@ -114,14 +109,14 @@ fn posture_transition_samples(state: &SkeletonState) -> Option<Vec<PoseSample>> 
     }
     let (start, middle, end) = match transition.kind() {
         UprightToProne => (
-            SemanticPose::CrouchIdle,
+            SemanticPose::IdleRelaxed,
             SemanticPose::ProneTransition,
             SemanticPose::ProneIdle,
         ),
         ProneToUpright => (
             SemanticPose::ProneIdle,
             SemanticPose::ProneTransition,
-            SemanticPose::CrouchIdle,
+            SemanticPose::IdleRelaxed,
         ),
         ProneToSupine { direction } => (
             SemanticPose::ProneIdle,
@@ -138,7 +133,7 @@ fn posture_transition_samples(state: &SkeletonState) -> Option<Vec<PoseSample>> 
         SupineToUpright => (
             SemanticPose::SupineIdle,
             SemanticPose::SupineTransition,
-            SemanticPose::CrouchIdle,
+            SemanticPose::IdleRelaxed,
         ),
         DiveToDowned { .. } => unreachable!("dive transitions return above"),
     };
@@ -197,16 +192,15 @@ fn downed_facing_samples(state: &SkeletonState) -> Option<Vec<PoseSample>> {
 }
 
 fn dive_transition_samples(
-    lead: LeadFoot,
+    _lead: LeadFoot,
     direction: DiveDirection,
     phase: f32,
 ) -> Vec<PoseSample> {
-    let duck = duck_direction_pose(lead, direction);
     let dive = dive_pose(direction);
     let phase = phase.clamp(0.0, 1.0);
     if phase <= 0.5 {
         return vec![PoseSample {
-            pose: duck,
+            pose: SemanticPose::GuardThrust,
             sampling: PoseSampling::Span {
                 end: dive,
                 progress: phase * 2.0,
@@ -234,14 +228,12 @@ fn dive_transition_samples(
 }
 
 /// The dive clip contributes only above the pelvis. The lower body holds the
-/// directional load through takeoff, then procedurally blends that existing
-/// stance into the appropriate authored ground contact after impact.
+/// guard through takeoff, then blends into the appropriate ground contact.
 fn dive_lower_body_samples(
-    lead: LeadFoot,
+    _lead: LeadFoot,
     direction: DiveDirection,
     phase: f32,
 ) -> Vec<PoseSample> {
-    let duck = duck_direction_pose(lead, direction);
     let phase = phase.clamp(0.0, 1.0);
     let sampling = if phase <= 0.5 {
         PoseSampling::Anchor
@@ -258,7 +250,7 @@ fn dive_lower_body_samples(
         }
     };
     vec![PoseSample {
-        pose: duck,
+        pose: SemanticPose::GuardThrust,
         sampling,
         weight: 1.0,
         mirror_lower_body: false,
@@ -345,29 +337,32 @@ fn alternating_contact_pair(phase: f32, contact: SemanticPose) -> Vec<PoseSample
     samples
 }
 
-fn locomotion_samples(speed: f32, phase: f32, crouch: f32) -> Vec<PoseSample> {
+fn locomotion_samples(speed: f32, phase: f32) -> Vec<PoseSample> {
     const LOCOMOTION_BLEND_SPEED: f32 = 0.75;
     let locomotion = smoothstep01(speed / LOCOMOTION_BLEND_SPEED);
     let run = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
         / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
         .clamp(0.0, 1.0);
-    let mut samples = Vec::with_capacity(8);
-    let idle = weighted_pair(SemanticPose::IdleRelaxed, SemanticPose::CrouchIdle, crouch);
-    append_scaled(&mut samples, idle, 1.0 - locomotion);
+    let mut samples = Vec::with_capacity(5);
+    append_scaled(
+        &mut samples,
+        vec![PoseSample {
+            pose: SemanticPose::IdleRelaxed,
+            sampling: PoseSampling::Anchor,
+            weight: 1.0,
+            mirror_lower_body: false,
+        }],
+        1.0 - locomotion,
+    );
     append_scaled(
         &mut samples,
         vec![cycle_sample(SemanticPose::WalkContact, phase)],
-        locomotion * (1.0 - run) * (1.0 - crouch),
+        locomotion * (1.0 - run),
     );
     append_scaled(
         &mut samples,
         vec![cycle_sample(SemanticPose::RunContact, phase)],
-        locomotion * run * (1.0 - crouch),
-    );
-    append_scaled(
-        &mut samples,
-        vec![cycle_sample(SemanticPose::WalkContact, phase)],
-        locomotion * crouch,
+        locomotion * run,
     );
     samples.retain(|sample| sample.weight > f32::EPSILON);
     samples
@@ -389,28 +384,6 @@ fn append_scaled(into: &mut Vec<PoseSample>, samples: Vec<PoseSample>, scale: f3
         sample.weight *= scale;
         sample
     }));
-}
-
-fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSample> {
-    let b_weight = b_weight.clamp(0.0, 1.0);
-    let mut samples = Vec::with_capacity(2);
-    if b_weight < 1.0 {
-        samples.push(PoseSample {
-            pose: a,
-            sampling: PoseSampling::Anchor,
-            weight: 1.0 - b_weight,
-            mirror_lower_body: false,
-        });
-    }
-    if b_weight > 0.0 {
-        samples.push(PoseSample {
-            pose: b,
-            sampling: PoseSampling::Anchor,
-            weight: b_weight,
-            mirror_lower_body: false,
-        });
-    }
-    samples
 }
 
 #[cfg(test)]
@@ -468,40 +441,12 @@ fn airborne_sample(horizontal_speed: f32) -> PoseSample {
     }
 }
 
-fn out_and_back(start: SemanticPose, middle: SemanticPose, phase: f32) -> PoseSample {
-    let phase = phase.clamp(0.0, 1.0);
-    let (pose, end, progress) = if phase < 0.5 {
-        (start, middle, phase * 2.0)
-    } else {
-        (middle, start, (phase - 0.5) * 2.0)
-    };
-    PoseSample {
-        pose,
-        sampling: PoseSampling::Span { end, progress },
-        weight: 1.0,
-        mirror_lower_body: false,
-    }
-}
-
 fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
     match state.action_kind() {
         SkeletonAction::None => Vec::new(),
         SkeletonAction::Dodge => Vec::new(),
         SkeletonAction::Attack => attack_samples(state),
-        SkeletonAction::Block => vec![out_and_back(
-            guard_pose(state.attack_preparation().to),
-            block_pose(state.incoming_attack_line()),
-            state.action_phase(),
-        )],
-    }
-}
-
-fn duck_direction_pose(_lead: LeadFoot, direction: DiveDirection) -> SemanticPose {
-    match direction {
-        DiveDirection::Forward => SemanticPose::DuckForward,
-        DiveDirection::Backward => SemanticPose::DuckBackward,
-        DiveDirection::Left => SemanticPose::DuckLeft,
-        DiveDirection::Right => SemanticPose::DuckRight,
+        SkeletonAction::Block => Vec::new(),
     }
 }
 
@@ -547,14 +492,6 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
     }]
 }
 
-fn block_pose(line: AttackLine) -> SemanticPose {
-    match line {
-        AttackLine::CutFromLeft => SemanticPose::BlockCutLeft,
-        AttackLine::CutFromRight => SemanticPose::BlockCutRight,
-        AttackLine::Thrust => SemanticPose::BlockThrust,
-    }
-}
-
 fn guard_pose(animation: AttackAnimation) -> SemanticPose {
     match animation {
         AttackAnimation::Swing => SemanticPose::GuardSwing,
@@ -592,9 +529,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dive_blends_from_guard_specific_duck_to_direction_only_airborne_pose() {
+    fn dive_blends_from_guard_to_directional_airborne_pose() {
         let loading = dive_transition_samples(LeadFoot::Left, DiveDirection::Right, 0.1);
-        assert_eq!(loading[0].pose, SemanticPose::DuckRight);
+        assert_eq!(loading[0].pose, SemanticPose::GuardThrust);
         assert_eq!(
             loading[0].sampling,
             PoseSampling::Span {
@@ -643,13 +580,13 @@ mod tests {
     }
 
     #[test]
-    fn dive_lower_body_never_samples_the_dive_asset() {
+    fn dive_lower_body_holds_guard_until_ground_contact() {
         let airborne = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Backward, 0.5);
-        assert_eq!(airborne[0].pose, SemanticPose::DuckBackward);
+        assert_eq!(airborne[0].pose, SemanticPose::GuardThrust);
         assert_eq!(airborne[0].sampling, PoseSampling::Anchor);
 
         let recovery = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Backward, 0.75);
-        assert_eq!(recovery[0].pose, SemanticPose::DuckBackward);
+        assert_eq!(recovery[0].pose, SemanticPose::GuardThrust);
         assert_eq!(
             recovery[0].sampling,
             PoseSampling::Span {

@@ -49,7 +49,6 @@ pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: JumpCommand,
-    pub crouch: bool,
     pub jump_charge: bool,
     pub downed_align: bool,
     pub posture: PostureCommand,

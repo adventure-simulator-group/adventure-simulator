@@ -11,11 +11,6 @@ pub enum SemanticPose {
     WalkPassing,
     RunContact,
     RunFlight,
-    CrouchIdle,
-    DuckForward,
-    DuckBackward,
-    DuckLeft,
-    DuckRight,
     DiveForward,
     DiveBackward,
     DiveLeft,
@@ -41,9 +36,6 @@ pub enum SemanticPose {
     GuardOffhand,
     AttackOffhand,
     AttackOffhandPrepared,
-    BlockCutLeft,
-    BlockCutRight,
-    BlockThrust,
 }
 
 #[cfg(test)]
@@ -52,8 +44,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_twenty_five_semantic_variants() {
-        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 27);
+    fn humanoid_contract_resolves_from_eighteen_semantic_variants() {
+        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 19);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -61,7 +53,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 25);
+        assert_eq!(authored.len(), 18);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -147,7 +139,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::splat(f32::NAN),
                 grounded: false,
-                crouching: true,
                 delta_seconds: f32::NAN,
                 tick: 1,
             },
@@ -339,7 +330,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::ZERO,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 0.25,
                 tick: 1,
             },
@@ -364,7 +354,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 0.25,
                 tick: 1,
             },
@@ -412,7 +401,7 @@ mod contract_tests {
         state.advance_posture_transition(100);
         assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
 
-        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.transition_body(BodyState::Grounded(GroundedPosture::Upright));
         state.advance_posture_transition(101);
         assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
         state.advance_posture_transition(106);
@@ -434,7 +423,7 @@ mod contract_tests {
         ));
         state.transition_body(BodyState::Airborne);
         state.advance_posture_transition(6);
-        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.transition_body(BodyState::Grounded(GroundedPosture::Upright));
         state.advance_posture_transition(7);
         state.advance_posture_transition(18);
         assert_eq!(state.body(), BodyState::Supine);
@@ -451,7 +440,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::ZERO,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick: 1,
             },
@@ -570,17 +558,12 @@ mod contract_tests {
 }
 
 impl SemanticPose {
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 30] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
-        Self::CrouchIdle,
-        Self::DuckForward,
-        Self::DuckBackward,
-        Self::DuckLeft,
-        Self::DuckRight,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -606,24 +589,16 @@ impl SemanticPose {
         Self::GuardOffhand,
         Self::AttackOffhand,
         Self::AttackOffhandPrepared,
-        Self::BlockCutLeft,
-        Self::BlockCutRight,
-        Self::BlockThrust,
     ];
     /// Non-attack semantics every complete humanoid family must resolve.
     /// Attack clips are capabilities: a pack may deliberately omit any or all
     /// of them, and gameplay respects that absence.
-    pub const HUMANOID_REQUIRED: [Self; 27] = [
+    pub const HUMANOID_REQUIRED: [Self; 19] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
-        Self::CrouchIdle,
-        Self::DuckForward,
-        Self::DuckBackward,
-        Self::DuckLeft,
-        Self::DuckRight,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -638,9 +613,6 @@ impl SemanticPose {
         Self::ProneSupineRollLeft,
         Self::ProneSupineRollRight,
         Self::SupineTransition,
-        Self::BlockCutLeft,
-        Self::BlockCutRight,
-        Self::BlockThrust,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -651,11 +623,6 @@ impl SemanticPose {
             WalkPassing => "walk_passing",
             RunContact => "run_contact",
             RunFlight => "run_flight",
-            CrouchIdle => "crouch_idle",
-            DuckForward => "duck_forward",
-            DuckBackward => "duck_backward",
-            DuckLeft => "duck_left",
-            DuckRight => "duck_right",
             DiveForward => "dive_forward",
             DiveBackward => "dive_backward",
             DiveLeft => "dive_left",
@@ -681,9 +648,6 @@ impl SemanticPose {
             GuardOffhand => "guard_offhand",
             AttackOffhand => "offhand",
             AttackOffhandPrepared => "offhand_prepared",
-            BlockCutLeft => "block_cut_left",
-            BlockCutRight => "block_cut_right",
-            BlockThrust => "block_thrust",
         }
     }
 
@@ -694,8 +658,6 @@ impl SemanticPose {
     pub fn mirrored_counterpart(self) -> Option<Self> {
         use SemanticPose::*;
         Some(match self {
-            DuckLeft => DuckRight,
-            DuckRight => DuckLeft,
             ProneSupineRollLeft => ProneSupineRollRight,
             ProneSupineRollRight => ProneSupineRollLeft,
             _ => return None,
@@ -712,23 +674,19 @@ impl SemanticPose {
             WalkPassing => WalkContact,
             RunContact => WalkContact,
             RunFlight => WalkPassing,
-            CrouchIdle => IdleRelaxed,
-            DuckForward | DuckBackward | DuckLeft | DuckRight => GuardThrust,
             DiveForward | DiveBackward | DiveLeft | DiveRight => GuardThrust,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,
-            ProneIdle | SupineIdle => CrouchIdle,
+            ProneIdle | SupineIdle => IdleRelaxed,
             ProneCrawlContact => ProneIdle,
             SupineScamperContact => SupineIdle,
-            ProneTransition => CrouchIdle,
+            ProneTransition => IdleRelaxed,
             ProneSupineRollLeft | ProneSupineRollRight => ProneIdle,
-            SupineTransition => CrouchIdle,
+            SupineTransition => IdleRelaxed,
             GuardSwing | GuardThrust | GuardOffhand => IdleRelaxed,
             AttackSwing | RecoverSwing | ContinueSwing => GuardSwing,
             AttackThrust | RecoverThrust | ContinueThrust => GuardThrust,
             AttackOffhand | AttackOffhandPrepared => GuardOffhand,
-            BlockCutLeft | BlockCutRight => BlockThrust,
-            BlockThrust => GuardThrust,
         })
     }
 }

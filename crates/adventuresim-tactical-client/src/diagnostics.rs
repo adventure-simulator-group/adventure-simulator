@@ -455,7 +455,6 @@ fn drive_scripted_input(
             movement,
             look: script.look,
             jump: default(),
-            crouch: false,
             jump_charge: false,
             downed_align: false,
             posture,

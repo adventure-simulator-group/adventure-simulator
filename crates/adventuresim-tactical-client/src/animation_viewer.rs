@@ -105,7 +105,7 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
         || name.starts_with("dive-")
         || name.ends_with("-get-up")
         || name.starts_with("prone-roll-")
-        || name == "jump-charge-crouch"
+        || name == "jump-charge-anticipation"
     {
         ScenarioMetadata {
             kind: ScenarioKind::Transition,
@@ -292,7 +292,6 @@ struct PlannedFrame {
     local_direction: Vec2,
     camera_yaw: f32,
     camera_pitch: f32,
-    crouching: bool,
     action: SkeletonAction,
     weapon_guard: WeaponGuardState,
     lead_foot: LeadFoot,
@@ -707,7 +706,6 @@ fn steady_scenario_in_direction(
             local_direction,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -742,29 +740,12 @@ fn transition_scenario() -> Vec<PlannedFrame> {
                 local_direction: Vec2::NEG_Y,
                 camera_yaw: 0.0,
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
                 lead_foot: LeadFoot::Left,
             }
         })
         .collect()
-}
-
-fn crouch_steady_scenario() -> Vec<PlannedFrame> {
-    let mut frames = steady_scenario("steady-crouch-1.5", 1.5, 2.0);
-    for frame in &mut frames {
-        frame.crouching = true;
-    }
-    frames
-}
-
-fn terrain_crouch_scenario() -> Vec<PlannedFrame> {
-    let mut frames = steady_scenario_in_direction("terrain-crouch-cross-slope", 1.5, 3.0, Vec2::X);
-    for frame in &mut frames {
-        frame.crouching = true;
-    }
-    frames
 }
 
 fn terrain_toggle_scenario() -> Vec<PlannedFrame> {
@@ -777,7 +758,6 @@ fn terrain_toggle_scenario() -> Vec<PlannedFrame> {
             local_direction: Vec2::X,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -799,7 +779,6 @@ fn terrain_half_turn_reversal_scenario() -> Vec<PlannedFrame> {
                 0.0
             },
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -821,24 +800,6 @@ fn terrain_ik_enabled_for_frame(frame: &PlannedFrame) -> bool {
 fn raised_scenario_requires_zero_flight(scenario: &str) -> bool {
     scenario_metadata(scenario).kind == ScenarioKind::RaisedGuard
         && !scenario.starts_with("raised-guard-tap-stop-")
-}
-
-fn crouch_transition_scenario() -> Vec<PlannedFrame> {
-    (0_usize..=96)
-        .map(|scenario_frame| PlannedFrame {
-            scenario: "crouch-enter-exit",
-            scenario_frame,
-            speed: 1.5,
-            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
-            local_direction: Vec2::NEG_Y,
-            camera_yaw: 0.0,
-            camera_pitch: 0.0,
-            crouching: (24..72).contains(&scenario_frame),
-            action: SkeletonAction::None,
-            weapon_guard: WeaponGuardState::Lowered,
-            lead_foot: LeadFoot::Left,
-        })
-        .collect()
 }
 
 fn dynamics_speed_scenario(name: &'static str, hard_stop: bool) -> Vec<PlannedFrame> {
@@ -863,7 +824,6 @@ fn dynamics_speed_scenario(name: &'static str, hard_stop: bool) -> Vec<PlannedFr
                 local_direction: Vec2::NEG_Y,
                 camera_yaw: 0.0,
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
                 lead_foot: LeadFoot::Left,
@@ -890,7 +850,6 @@ fn flat_grid_walk_stop_scenario() -> Vec<PlannedFrame> {
                 local_direction: Vec2::NEG_Y,
                 camera_yaw: 0.0,
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
                 lead_foot: LeadFoot::Left,
@@ -918,7 +877,6 @@ fn terrain_tap_stop_scenario(
             local_direction,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -938,7 +896,6 @@ fn terrain_tap_restart_scenario() -> Vec<PlannedFrame> {
                 local_direction: Vec2::NEG_Y,
                 camera_yaw: 0.0,
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
                 lead_foot: LeadFoot::Left,
@@ -982,7 +939,6 @@ fn terrain_threshold_chatter_scenario() -> Vec<PlannedFrame> {
             local_direction: Vec2::NEG_Y,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -1007,7 +963,6 @@ fn raised_guard_lateral_tap_stop_scenario(
             local_direction: direction,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Raised,
             lead_foot: LeadFoot::Left,
@@ -1025,7 +980,6 @@ fn airborne_landing_scenario() -> Vec<PlannedFrame> {
             local_direction: Vec2::ZERO,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -1070,7 +1024,6 @@ fn attack_live_scenario(
                 0.0
             },
             camera_pitch: 0.0,
-            crouching: false,
             action: if scenario_frame < START {
                 SkeletonAction::None
             } else {
@@ -1114,7 +1067,6 @@ fn capture_plan() -> Vec<PlannedFrame> {
         steady_scenario("steady-walk-2.0", 2.0, 2.0),
         steady_scenario("walk-run-blend-3.75", 3.75, 2.0),
         steady_scenario("steady-run-5.5", 5.5, 2.0),
-        crouch_steady_scenario(),
         steady_scenario_in_direction("lateral-walk-2.0", 2.0, 1.0, Vec2::X),
         steady_scenario_in_direction("reverse-walk-2.0", 2.0, 1.0, Vec2::Y),
         turning_scenario("gradual-camera-turn", false),
@@ -1246,7 +1198,6 @@ fn capture_plan() -> Vec<PlannedFrame> {
             LeadFoot::Left,
             false,
         ),
-        crouch_transition_scenario(),
         dynamics_speed_scenario("speed-ramp-up-down", false),
         dynamics_speed_scenario("hard-stop", true),
         dynamics_turn_scenario("dynamics-turn-90", std::f32::consts::FRAC_PI_2),
@@ -1265,7 +1216,6 @@ fn capture_plan() -> Vec<PlannedFrame> {
             3.0,
             Vec2::new(1.0, -1.0).normalize(),
         ),
-        terrain_crouch_scenario(),
         terrain_toggle_scenario(),
         dynamics_speed_scenario("terrain-hard-stop", true),
         terrain_tap_stop_scenario("terrain-tap-stop-forward", 0.8, 8..20, Vec2::NEG_Y),
@@ -1301,7 +1251,6 @@ fn quickstep_scenario() -> Vec<PlannedFrame> {
             local_direction: Vec2::X,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::Dodge,
             weapon_guard: WeaponGuardState::Raised,
             lead_foot: LeadFoot::Left,
@@ -1327,7 +1276,6 @@ fn downed_contact_scenario(name: &'static str, body: BodyState) -> Vec<PlannedFr
             local_direction: Vec2::NEG_Y,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: true,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -1345,7 +1293,6 @@ fn downed_look_scenario() -> Vec<PlannedFrame> {
             local_direction: Vec2::ZERO,
             camera_yaw: std::f32::consts::FRAC_PI_2,
             camera_pitch: 0.6,
-            crouching: true,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Raised,
             lead_foot: LeadFoot::Left,
@@ -1369,7 +1316,6 @@ fn ordinary_camera_pitch_scenario() -> Vec<PlannedFrame> {
             } else {
                 -0.6
             },
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -1390,7 +1336,6 @@ fn posture_transition_scenario(name: &'static str, _start: BodyState) -> Vec<Pla
             local_direction: Vec2::ZERO,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: true,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -1440,9 +1385,6 @@ fn dive_impact_scenario_with_aim(name: &'static str, aimed: bool) -> Vec<Planned
             local_direction,
             camera_yaw: if aimed { 0.85 } else { 0.0 },
             camera_pitch: 0.0,
-            // The live controller reports crouching for the complete authored
-            // posture transition, including its terrain-contact recovery.
-            crouching: true,
             action: SkeletonAction::None,
             weapon_guard: if aimed {
                 WeaponGuardState::Raised
@@ -1457,14 +1399,13 @@ fn dive_impact_scenario_with_aim(name: &'static str, aimed: bool) -> Vec<Planned
 fn jump_charge_scenario() -> Vec<PlannedFrame> {
     (0..=64)
         .map(|scenario_frame| PlannedFrame {
-            scenario: "jump-charge-crouch",
+            scenario: "jump-charge-anticipation",
             scenario_frame,
             speed: 0.0,
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             local_direction: Vec2::ZERO,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: (4..48).contains(&scenario_frame),
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
@@ -1549,7 +1490,6 @@ fn turning_scenario(name: &'static str, reversal: bool) -> Vec<PlannedFrame> {
                     std::f32::consts::FRAC_PI_2 * progress
                 },
                 camera_pitch: 0.55 * progress,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
                 lead_foot: LeadFoot::Left,
@@ -1570,7 +1510,6 @@ fn dynamics_turn_scenario(name: &'static str, angle_radians: f32) -> Vec<Planned
                 local_direction: Vec2::NEG_Y,
                 camera_yaw: angle_radians * progress,
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
                 lead_foot: LeadFoot::Left,
@@ -1591,7 +1530,6 @@ fn guard_plant_turn_scenario() -> Vec<PlannedFrame> {
                 local_direction: Vec2::X,
                 camera_yaw: std::f32::consts::FRAC_PI_2 * progress,
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::Block,
                 weapon_guard: WeaponGuardState::Lowered,
                 lead_foot: LeadFoot::Left,
@@ -1612,7 +1550,6 @@ fn raised_guard_stationary_turn_scenario() -> Vec<PlannedFrame> {
                 local_direction: Vec2::ZERO,
                 camera_yaw: std::f32::consts::FRAC_PI_2 * smoothstep01(turn_progress),
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Raised,
                 lead_foot: LeadFoot::Left,
@@ -1656,7 +1593,6 @@ fn raised_guard_steady_scenario_with_lead(
             local_direction: direction.normalize_or_zero(),
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Raised,
             lead_foot,
@@ -1686,7 +1622,6 @@ fn raised_guard_acceleration_scenario_with_lead(
                 local_direction: Vec2::X,
                 camera_yaw: 0.0,
                 camera_pitch: 0.0,
-                crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Raised,
                 lead_foot,
@@ -1706,7 +1641,6 @@ fn raised_guard_transition_scenario() -> Vec<PlannedFrame> {
             camera_yaw: 0.0,
             camera_pitch: 0.0,
             action: SkeletonAction::None,
-            crouching: false,
             weapon_guard: if scenario_frame < 16 {
                 WeaponGuardState::Lowered
             } else {
@@ -1734,7 +1668,6 @@ fn raised_guard_release_scenario_with_lead(
             local_direction: Vec2::NEG_Y,
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Raised,
             lead_foot,
@@ -1763,7 +1696,6 @@ fn raised_guard_reversal_scenario_with_lead(
             },
             camera_yaw: 0.0,
             camera_pitch: 0.0,
-            crouching: false,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Raised,
             lead_foot,
@@ -2091,14 +2023,14 @@ fn drive_sequence(
             );
         }
         sequence.scenario_distance += frame.speed * delta_seconds;
-        let jump_charging = frame.scenario == "jump-charge-crouch" && frame.crouching;
+        let jump_charging =
+            frame.scenario == "jump-charge-anticipation" && (4..48).contains(&frame.scenario_frame);
         project_skeleton_locomotion(
             &mut skeleton,
             SkeletonLocomotionInput {
                 orientation,
                 linear_velocity: world_velocity,
                 grounded,
-                crouching: frame.crouching && frame.scenario != "jump-charge-crouch",
                 delta_seconds,
                 tick: sequence.simulation_tick,
             },
@@ -2925,7 +2857,7 @@ fn finish_capture(
     let phase_owned_height_valid = scenarios.iter().all(|metrics| {
         if matches!(
             metrics.scenario.as_str(),
-            "start-stop-transition" | "raised-guard-transition" | "crouch-enter-exit"
+            "start-stop-transition" | "raised-guard-transition"
         ) && metrics.maximum_pelvis_vertical_step_metres
             > LOCOMOTION_STATE_MAXIMUM_PELVIS_VERTICAL_STEP_METRES
         {
@@ -3334,7 +3266,7 @@ fn finish_capture(
         }
         if metrics.scenario.starts_with("downed-")
             || metrics.scenario.ends_with("-get-up")
-            || metrics.scenario == "jump-charge-crouch"
+            || metrics.scenario == "jump-charge-anticipation"
             || metrics.scenario == "ordinary-camera-pitch"
         {
             // Posture scenarios deliberately leave the upright foot-track and
@@ -3775,10 +3707,6 @@ fn scenario_requires_strict_terrain_toe_clearance(scenario: &str) -> bool {
 fn planted_drift_limit(scenario: &str) -> f32 {
     if scenario.starts_with("raised-guard") {
         0.01
-    } else if scenario == "terrain-crouch-cross-slope" {
-        // The crouched stride deliberately operates near its compact reach limit.
-        // Permit the small sole travel needed to keep both feet above uneven ground.
-        0.051
     } else if scenario == "terrain-steady-run-5.5" {
         0.01
     } else {
@@ -4039,7 +3967,6 @@ fn expected_visual_height(scenario: &str) -> Option<(f32, f32, usize)> {
         // of the 4 cm phase wave even though this terrain has zero relief.
         "flat-grid-walk-2.0" => (0.025, 0.075, 2),
         "steady-run-5.5" | "flat-grid-run-5.5" => (0.025, 0.10, 2),
-        "steady-crouch-1.5" => (0.035, 0.065, 2),
         "raised-guard-forward" | "raised-guard-half-speed" => (0.018, 0.05, 2),
         _ => return None,
     })
@@ -5586,17 +5513,6 @@ mod tests {
             transition.last().unwrap().weapon_guard,
             WeaponGuardState::Raised
         );
-        let crouch = plan
-            .iter()
-            .filter(|frame| frame.scenario == "crouch-enter-exit")
-            .collect::<Vec<_>>();
-        assert!(crouch.iter().any(|frame| frame.crouching));
-        assert!(!crouch.first().unwrap().crouching);
-        assert!(!crouch.last().unwrap().crouching);
-        assert!(
-            plan.iter()
-                .any(|frame| { frame.scenario == "steady-crouch-1.5" && frame.crouching })
-        );
         for scenario in [
             "raised-guard-right-support-left",
             "raised-guard-right-support-right",
@@ -5665,7 +5581,6 @@ mod tests {
                             frame.local_direction.y,
                         ) * frame.speed,
                         grounded: true,
-                        crouching: false,
                         delta_seconds: if frame.scenario_frame == 0 {
                             0.0
                         } else {
@@ -5706,7 +5621,6 @@ mod tests {
                             frame.local_direction.y,
                         ) * frame.speed,
                         grounded: true,
-                        crouching: false,
                         delta_seconds: if frame.scenario_frame == 0 {
                             0.0
                         } else {

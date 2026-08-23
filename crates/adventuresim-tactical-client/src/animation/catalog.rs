@@ -155,7 +155,7 @@ impl AnimationPackCatalog {
             None,
             "animations/biped/unarmed",
         );
-        for pose in ["idle_relaxed", "crouch_idle", "prone_idle", "supine_idle"] {
+        for pose in ["idle_relaxed", "prone_idle", "supine_idle"] {
             builder.motion(pose, 0);
             builder.pose(
                 pose,
@@ -193,19 +193,6 @@ impl AnimationPackCatalog {
         builder.motion("run_mirrored", 64);
         builder.motion("prone_crawl_mirrored", 0);
         builder.motion("supine_scamper_mirrored", 0);
-        for (motion, pose) in [
-            ("duck_forward", "duck_forward"),
-            ("duck_backward", "duck_backward"),
-            ("duck_left", "duck_left"),
-            ("duck_right", "duck_right"),
-        ] {
-            builder.motion(motion, 0);
-            builder.pose(
-                motion,
-                0,
-                SemanticPose::from_str(pose).expect("typed catalog pose"),
-            )?;
-        }
         builder.motion("dive", 0);
         for pose in [
             SemanticPose::DiveForward,
@@ -244,16 +231,6 @@ impl AnimationPackCatalog {
         builder.pose("offhand", 0, SemanticPose::GuardOffhand)?;
         builder.pose("offhand", 0, SemanticPose::AttackOffhand)?;
         builder.pose("offhand", 4, SemanticPose::AttackOffhandPrepared)?;
-        for motion in ["block_cut_left", "block_cut_right", "block_thrust"] {
-            builder.motion(motion, 14);
-            builder.pose(
-                motion,
-                6,
-                SemanticPose::from_str(motion).expect("typed block pose"),
-            )?;
-            builder.reference(motion, 0, "guard_thrust")?;
-            builder.reference(motion, 14, "guard_thrust")?;
-        }
         for (motion, pose) in [
             ("prone_transition", "prone_transition"),
             ("prone_supine_roll_left", "prone_supine_roll_left"),

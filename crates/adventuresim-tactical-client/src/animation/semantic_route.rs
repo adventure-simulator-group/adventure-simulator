@@ -18,7 +18,6 @@ pub(crate) struct SemanticRouteInputs {
     pub direction: Vec2,
     pub gait_phase: f32,
     pub action: SkeletonAction,
-    pub crouch: f32,
     pub airborne: bool,
     pub target_height: f32,
     pub lead: LeadFoot,
@@ -37,7 +36,6 @@ impl SemanticRouteInputs {
             direction: skeleton.animation_local_velocity().xz().normalize_or_zero(),
             gait_phase: evaluation.gait_phase,
             action: skeleton.action_kind(),
-            crouch: evaluation.crouch_amount,
             airborne: !skeleton.is_grounded(),
             target_height: evaluation.attack_target_height,
             lead: skeleton.lead_foot,
@@ -85,9 +83,7 @@ fn requested_path(skeleton: &PresentedSkeleton) -> SemanticRoutePath {
         || skeleton.weapon_guard() == WeaponGuardState::Raised
     {
         SemanticRoutePath::RaisedGuardAttack
-    } else if skeleton.is_grounded()
-        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
-    {
+    } else if skeleton.is_grounded() && skeleton.posture() == Posture::Upright {
         SemanticRoutePath::OrdinaryLocomotion
     } else {
         SemanticRoutePath::LegacyFallback
