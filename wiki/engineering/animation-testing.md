@@ -59,6 +59,13 @@ networking, replication, terrain, and rendering behavior. The viewer is the
 fast deterministic check; it is not a replacement for that native run when a
 defect depends on live gameplay.
 
+Animation mode seeds four named combat targets: a passive bandit, an
+omnidirectional shield blocker that doesn't turn toward the player, an
+omnidirectional dodger, and a passive demi-lancer in three-quarter armor. The
+targets use ordinary combat statistics and equipment rules. Their behavior is
+assembled from independent offense and reactive-defense packages, so a test
+target can defend without inheriting movement, facing, or attack behavior.
+
 The native logger records input, authoritative and presented locomotion,
 semantic animation clocks, animation-layer weights, procedural owner state,
 foot targets and derivatives, reach state, support state, terrain samples,

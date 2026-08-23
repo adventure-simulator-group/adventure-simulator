@@ -3583,6 +3583,36 @@ pub fn add_and_equip_item(
     equip_item_internal(ctx, character_id, id, destination, false)
 }
 
+/// Replaces only the equipped roots of a disposable development character,
+/// reusing matching inventory rows before creating anything new. Keeping this
+/// beside the ordinary equipment internals gives fixtures the same placement
+/// validation as gameplay without exposing an unrestricted reducer.
+pub(crate) fn replace_development_loadout(
+    ctx: &ReducerContext,
+    character_id: u64,
+    loadout: &[(&str, ItemSlot)],
+) -> Result<(), String> {
+    for inventory_item_id in equipped_wearable_ids(ctx, character_id) {
+        unequip_wearable(ctx, inventory_item_id);
+    }
+
+    let mut selected = std::collections::BTreeSet::new();
+    for (item_id, destination) in loadout {
+        let inventory_item_id = ctx
+            .db
+            .inventory_item()
+            .character_and_item_id()
+            .filter((character_id, *item_id))
+            .find(|item| !selected.contains(&item.id))
+            .map(|item| item.id)
+            .or_else(|| add_inventory_item(ctx, character_id, item_id, 1))
+            .ok_or_else(|| format!("Failed to add {item_id} to development loadout"))?;
+        selected.insert(inventory_item_id);
+        equip_item_internal(ctx, character_id, inventory_item_id, *destination, false)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod starting_character_boundary_tests {
     use super::{

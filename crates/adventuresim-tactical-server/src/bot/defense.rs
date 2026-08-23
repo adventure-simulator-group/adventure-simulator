@@ -17,10 +17,8 @@ const FRONTAL_FLANKING_MAX: f32 = 0.01;
 const REACTION_DELAY_SECS: std::ops::Range<f32> = 0.20..0.27;
 
 /// Per-bot chance (each out of 1.0) that a reflex defense (see
-/// `try_start_reaction`) resolves to a parry or dodge, once the bot even
-/// gets a chance to react at all - that part still requires facing the
-/// attacker (`FRONTAL_FLANKING_MAX`), which this doesn't override. Inserted
-/// alongside `OffensiveCombatAi` with balance-tuned defaults; BRP tests
+/// `try_start_reaction`) resolves to a parry or dodge. Inserted by a reactive
+/// defense behavior package with balance-tuned defaults; BRP tests
 /// mutate it to force deterministic parry/dodge outcomes (see
 /// `DefenseChances` in `scripts/adventuresim_brp_lib.py`, regenerated via
 /// `just generate-brp-types`).
@@ -40,6 +38,20 @@ impl Default for DefenseChances {
     }
 }
 
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct ReactiveDefenseAi {
+    pub requires_facing: bool,
+}
+
+impl Default for ReactiveDefenseAi {
+    fn default() -> Self {
+        Self {
+            requires_facing: true,
+        }
+    }
+}
+
 #[derive(Component)]
 pub(super) struct PendingBotReaction {
     timer: Timer,
@@ -49,9 +61,8 @@ pub(super) struct PendingBotReaction {
 /// Predicts whether the nearest opposing AI facing a client attacker notices
 /// the untargeted client windup and decides to dodge or parry it.
 ///
-/// A bot has no real reflexes: it only ever gets a chance to react when it is
-/// facing its attacker (`flanking <= FRONTAL_FLANKING_MAX`), and even then it
-/// correctly reads the attack only some of the time. A decision to react is
+/// A bot has no real reflexes: its package controls whether facing is required
+/// and how often it reads the attack correctly. A decision to react is
 /// committed only after a random delay (see [`REACTION_DELAY_SECS`]).
 pub(super) fn on_attack_started(
     event: On<FromClient<MeleeActionRequest>>,
@@ -64,9 +75,10 @@ pub(super) fn on_attack_started(
             &Transform,
             &TacticalCombatSide,
             &TacticalCombatState,
+            Option<&ReactiveDefenseAi>,
             Option<&DefenseChances>,
         ),
-        With<OffensiveCombatAi>,
+        With<MissionEnemy>,
     >,
 ) {
     if !matches!(**event, MeleeActionRequest::Start { .. }) {
@@ -80,13 +92,15 @@ pub(super) fn on_attack_started(
     };
     let nearest = q_bots
         .iter()
-        .filter(|(_, _, _, side, state, _)| **side != *attacker_side && !state.is_incapacitated())
+        .filter(|(_, _, _, side, state, _, _)| {
+            **side != *attacker_side && !state.is_incapacitated()
+        })
         .min_by(
-            |(a, _, a_transform, _, _, _), (b, _, b_transform, _, _, _)| {
+            |(a, _, a_transform, _, _, _, _), (b, _, b_transform, _, _, _, _)| {
                 compare_target(attacker_transform, a_transform, *a, b_transform, *b)
             },
         );
-    let Some((bot, bot_look, _, _, _, chances)) = nearest else {
+    let Some((bot, bot_look, _, _, _, Some(defense), chances)) = nearest else {
         return;
     };
     try_start_reaction(
@@ -94,6 +108,7 @@ pub(super) fn on_attack_started(
         bot,
         attacker_look,
         bot_look,
+        *defense,
         chances.copied().unwrap_or_default(),
     );
 }
@@ -102,20 +117,18 @@ pub(super) fn on_targeted_attack_started(
     event: On<MeleeAttackStartedIntent>,
     mut cmd: Commands,
     q_character: Query<&CharacterLook>,
-    q_ai: Query<
-        (
-            &CharacterLook,
-            &TacticalCombatState,
-            Option<&DefenseChances>,
-        ),
-        With<OffensiveCombatAi>,
-    >,
+    q_ai: Query<(
+        &CharacterLook,
+        &TacticalCombatState,
+        &ReactiveDefenseAi,
+        Option<&DefenseChances>,
+    )>,
 ) {
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, event.target])
     else {
         return;
     };
-    if let Ok((_, state, chances)) = q_ai.get(event.target)
+    if let Ok((_, state, defense, chances)) = q_ai.get(event.target)
         && !state.is_incapacitated()
     {
         try_start_reaction(
@@ -123,6 +136,7 @@ pub(super) fn on_targeted_attack_started(
             event.target,
             attacker_look,
             defender_look,
+            *defense,
             chances.copied().unwrap_or_default(),
         );
     }
@@ -132,14 +146,12 @@ pub(super) fn on_targeted_ranged_attack_started(
     event: On<RangedAttackStartedIntent>,
     mut cmd: Commands,
     q_character: Query<&CharacterLook>,
-    q_ai: Query<
-        (
-            &CharacterLook,
-            &TacticalCombatState,
-            Option<&DefenseChances>,
-        ),
-        With<OffensiveCombatAi>,
-    >,
+    q_ai: Query<(
+        &CharacterLook,
+        &TacticalCombatState,
+        &ReactiveDefenseAi,
+        Option<&DefenseChances>,
+    )>,
 ) {
     let Some(target) = event.target else {
         return;
@@ -147,7 +159,7 @@ pub(super) fn on_targeted_ranged_attack_started(
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, target]) else {
         return;
     };
-    if let Ok((_, state, chances)) = q_ai.get(target)
+    if let Ok((_, state, defense, chances)) = q_ai.get(target)
         && !state.is_incapacitated()
     {
         try_start_reaction(
@@ -155,6 +167,7 @@ pub(super) fn on_targeted_ranged_attack_started(
             target,
             attacker_look,
             defender_look,
+            *defense,
             chances.copied().unwrap_or_default(),
         );
     }
@@ -165,11 +178,12 @@ pub(super) fn try_start_reaction(
     defender: Entity,
     attacker_look: &CharacterLook,
     defender_look: &CharacterLook,
+    defense: ReactiveDefenseAi,
     chances: DefenseChances,
 ) {
     let (a2, a1) = attacker_look.yaw.sin_cos();
     let (d2, d1) = defender_look.yaw.sin_cos();
-    if flanking_from_dir((a1, a2), (d1, d2)) > FRONTAL_FLANKING_MAX {
+    if defense.requires_facing && flanking_from_dir((a1, a2), (d1, d2)) > FRONTAL_FLANKING_MAX {
         return;
     }
     let Some(choice) = roll_defend_choice(chances) else {

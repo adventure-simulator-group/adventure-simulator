@@ -352,6 +352,62 @@ pub fn bootstrap_development_world(
 /// launch the tactical server with (as `ADVENTURESIM_TACTICAL_CLAIM`); only
 /// its hash is stored, mirroring [`crate::tactical::authorize_tactical_server_claim`].
 /// Gated by the same development capability as [`bootstrap_development_world`].
+fn configure_animation_lab_enemies(
+    ctx: &ReducerContext,
+    hostile_group_id: &str,
+) -> Result<(), String> {
+    use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
+    use crate::item::ItemSlot;
+
+    const PADDED_BASE: &[(&str, ItemSlot)] = &[
+        ("quilted_sleeve", ItemSlot::LeftArm),
+        ("quilted_sleeve", ItemSlot::RightArm),
+        ("arming_cap", ItemSlot::Head),
+        ("arming_doublet", ItemSlot::Chest),
+        ("padded_skirt", ItemSlot::Stomach),
+        ("padded_chausses", ItemSlot::LeftLeg),
+        ("padded_chausses", ItemSlot::RightLeg),
+    ];
+
+    let enemy_ids = crate::world_actor::context_character_ids(ctx, hostile_group_id);
+    if enemy_ids.len() != AnimationLabEnemyRole::ALL.len() {
+        return Err(format!(
+            "Animation lab requires exactly {} enemies, got {}",
+            AnimationLabEnemyRole::ALL.len(),
+            enemy_ids.len()
+        ));
+    }
+    for (character_id, role) in enemy_ids.into_iter().zip(AnimationLabEnemyRole::ALL) {
+        let mut character = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .ok_or("Animation lab enemy disappeared")?;
+        character.name = role.name().into();
+        ctx.db.character().id().update(character);
+
+        let mut loadout = PADDED_BASE.to_vec();
+        match role {
+            AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::Dodger => {}
+            AnimationLabEnemyRole::ShieldBlocker => {
+                loadout.push(("buckler", ItemSlot::LeftHolding));
+            }
+            AnimationLabEnemyRole::DemiLancer => {
+                loadout.extend([
+                    ("morion", ItemSlot::Head),
+                    ("cuirass", ItemSlot::Chest),
+                    ("tassets", ItemSlot::Stomach),
+                    ("vambrace", ItemSlot::LeftArm),
+                    ("vambrace", ItemSlot::RightArm),
+                ]);
+            }
+        }
+        crate::character::replace_development_loadout(ctx, character_id, &loadout)?;
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn seed_standalone_tactical_mission(
     ctx: &ReducerContext,
@@ -471,6 +527,9 @@ pub fn seed_standalone_tactical_mission(
         &group.enemy_type,
         group.enemy_count,
     )?;
+    if mission_id.starts_with("mission:animation-") {
+        configure_animation_lab_enemies(ctx, &hostile_group_id)?;
+    }
     let objective_id = format!("objective:standalone:{mission_id}");
     if ctx.db.case_authority().id().find(&case_id).is_none() {
         use adventuresim_core::case::{

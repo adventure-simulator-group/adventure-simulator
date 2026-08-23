@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, num::NonZeroU32};
 
+use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::physics::{
@@ -19,7 +20,7 @@ use bevy::time::Stopwatch;
 
 use crate::{
     Args, SceneVistaBundleResource,
-    bot::{DefenseChances, MissionEnemy, OffensiveCombatAi},
+    bot::{CombatantBehaviorPackages, MissionEnemy},
     combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
     equipment::{
         LastEquipmentSequence, PendingEquipmentActions, purge_equipment_lifecycle,
@@ -212,6 +213,7 @@ pub(crate) fn spawn_connected_players(
         spawn_connected_player(
             &player,
             args.enemy_combat_scale_bps,
+            args.animation_behavior_lab,
             &mut cmd,
             &q_loading,
             &q_scene,
@@ -222,16 +224,36 @@ pub(crate) fn spawn_connected_players(
 fn spawn_connected_player(
     player: &ConnectedPlayer,
     enemy_combat_scale_bps: u32,
+    animation_behavior_lab: bool,
     cmd: &mut Commands,
     q_loading: &Query<(Entity, &LoadingPlayer)>,
     q_scene: &Query<&SceneTerrain>,
 ) {
     let entity = if player.mission_side == TacticalMissionSide::Enemy {
-        let mut enemy = cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy));
-        if enemy_combat_scale_bps > 0 {
-            enemy.insert((OffensiveCombatAi::default(), DefenseChances::default()));
-        }
-        enemy.id()
+        let packages = if animation_behavior_lab {
+            match AnimationLabEnemyRole::from_name(&player.character.name) {
+                Some(AnimationLabEnemyRole::ShieldBlocker) => {
+                    CombatantBehaviorPackages::always_block_without_facing()
+                }
+                Some(AnimationLabEnemyRole::Dodger) => CombatantBehaviorPackages::always_dodge(),
+                Some(AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::DemiLancer) => {
+                    CombatantBehaviorPackages::default()
+                }
+                None => {
+                    warn!(
+                        name = player.character.name,
+                        "Animation lab enemy has no recognized behavior role; leaving passive"
+                    );
+                    CombatantBehaviorPackages::default()
+                }
+            }
+        } else if enemy_combat_scale_bps > 0 {
+            CombatantBehaviorPackages::standard_combat()
+        } else {
+            CombatantBehaviorPackages::default()
+        };
+        cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy, packages))
+            .id()
     } else {
         let Some((entity, _)) = q_loading
             .iter()
@@ -1848,7 +1870,7 @@ mod standalone_join_tests {
                 CharacterId(99),
                 MissionEnemy,
                 TacticalCombatSide::Enemy,
-                OffensiveCombatAi::default(),
+                crate::bot::OffensiveCombatAi::default(),
             ))
             .id();
 

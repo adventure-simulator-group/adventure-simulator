@@ -73,6 +73,9 @@ struct Args {
     expected_party_members: u32,
     #[arg(long)]
     enemy_combat_scale_bps: u32,
+    /// Install the passive/block/dodge/armored animation laboratory packages.
+    #[arg(long, action = ArgAction::SetTrue)]
+    animation_behavior_lab: bool,
     #[arg(long, default_value = "http://localhost:3000")]
     spacetimedb_url: String,
     #[arg(long, default_value = "adventuresim-stdb-module")]
@@ -337,6 +340,8 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         .allow_component::<SceneTerrain>()
         .allow_component::<crate::bot::MissionEnemy>()
         .allow_component::<crate::bot::OffensiveCombatAi>()
+        .allow_component::<crate::bot::CombatantBehaviorPackages>()
+        .allow_component::<crate::bot::ReactiveDefenseAi>()
         .allow_component::<crate::bot::DefenseChances>()
         // Inventory items are separate entities (linked back to their
         // owning character via `ItemOf`), not components on the character
@@ -507,6 +512,7 @@ mod debug_dump_world_tests {
             required_enemy_kills: 1,
             expected_party_members: 1,
             enemy_combat_scale_bps: 0,
+            animation_behavior_lab: false,
             spacetimedb_url: String::new(),
             spacetimedb_module: String::new(),
             timeout: 0.0,

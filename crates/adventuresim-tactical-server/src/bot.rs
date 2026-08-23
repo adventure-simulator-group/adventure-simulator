@@ -15,7 +15,7 @@ use crate::combat::{
     PendingDefenderResponse, RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision,
     TacticalCombatSide,
 };
-pub use defense::DefenseChances;
+pub use defense::{DefenseChances, ReactiveDefenseAi};
 use defense::{
     on_attack_started, on_targeted_attack_started, on_targeted_ranged_attack_started,
     tick_bot_reactions,
@@ -31,6 +31,84 @@ use offense::{compare_target, drive_offensive_combat_ai};
 #[reflect(Component)]
 pub struct MissionEnemy;
 
+/// Declarative capabilities that can be composed into a combatant. Higher
+/// level tactics such as flanking or ambushing can add packages later without
+/// turning the bot controller into one mutually-exclusive behavior enum.
+#[derive(Reflect, Debug, Clone, Copy, PartialEq)]
+pub enum CombatantBehaviorPackage {
+    OffensiveCombat,
+    ReactiveDefense {
+        chances: DefenseChances,
+        requires_facing: bool,
+    },
+}
+
+#[derive(Component, Reflect, Debug, Clone, Default, PartialEq)]
+#[reflect(Component)]
+pub struct CombatantBehaviorPackages(pub Vec<CombatantBehaviorPackage>);
+
+impl CombatantBehaviorPackages {
+    #[must_use]
+    pub fn standard_combat() -> Self {
+        Self(vec![
+            CombatantBehaviorPackage::OffensiveCombat,
+            CombatantBehaviorPackage::ReactiveDefense {
+                chances: DefenseChances::default(),
+                requires_facing: true,
+            },
+        ])
+    }
+
+    #[must_use]
+    pub fn always_block_without_facing() -> Self {
+        Self(vec![CombatantBehaviorPackage::ReactiveDefense {
+            chances: DefenseChances {
+                parry_chance: 1.0,
+                dodge_chance: 0.0,
+            },
+            requires_facing: false,
+        }])
+    }
+
+    #[must_use]
+    pub fn always_dodge() -> Self {
+        Self(vec![CombatantBehaviorPackage::ReactiveDefense {
+            chances: DefenseChances {
+                parry_chance: 0.0,
+                dodge_chance: 1.0,
+            },
+            requires_facing: false,
+        }])
+    }
+}
+
+fn materialize_behavior_packages(
+    mut cmd: Commands,
+    packages: Query<(Entity, &CombatantBehaviorPackages), Added<CombatantBehaviorPackages>>,
+) {
+    for (entity, packages) in &packages {
+        let mut entity = cmd.entity(entity);
+        for package in &packages.0 {
+            match package {
+                CombatantBehaviorPackage::OffensiveCombat => {
+                    entity.insert(OffensiveCombatAi::default());
+                }
+                CombatantBehaviorPackage::ReactiveDefense {
+                    chances,
+                    requires_facing,
+                } => {
+                    entity.insert((
+                        ReactiveDefenseAi {
+                            requires_facing: *requires_facing,
+                        },
+                        *chances,
+                    ));
+                }
+            }
+        }
+    }
+}
+
 pub struct BotPlugin;
 
 impl Plugin for BotPlugin {
@@ -40,7 +118,13 @@ impl Plugin for BotPlugin {
             .add_observer(on_targeted_ranged_attack_started)
             .add_systems(
                 Update,
-                (drive_offensive_combat_ai, tick_bot_reactions).after(CombatSet::Condition),
+                (
+                    materialize_behavior_packages,
+                    drive_offensive_combat_ai,
+                    tick_bot_reactions,
+                )
+                    .chain()
+                    .after(CombatSet::Condition),
             );
     }
 }
@@ -49,6 +133,7 @@ impl Plugin for BotPlugin {
 mod tests {
     use std::{num::NonZeroU32, time::Duration};
 
+    use super::defense::PendingBotReaction;
     use super::*;
 
     #[derive(Resource, Default)]
@@ -209,6 +294,100 @@ mod tests {
             .add_observer(record_ranged_attack)
             .add_systems(Update, drive_offensive_combat_ai);
         app
+    }
+
+    #[test]
+    fn behavior_packages_compose_runtime_capabilities() {
+        let mut app = App::new();
+        app.add_systems(Update, materialize_behavior_packages);
+        let blocker = app
+            .world_mut()
+            .spawn(CombatantBehaviorPackages::always_block_without_facing())
+            .id();
+        let standard = app
+            .world_mut()
+            .spawn(CombatantBehaviorPackages::standard_combat())
+            .id();
+
+        app.update();
+
+        let blocker = app.world().entity(blocker);
+        assert!(!blocker.contains::<OffensiveCombatAi>());
+        assert!(!blocker.get::<ReactiveDefenseAi>().unwrap().requires_facing);
+        assert_eq!(
+            blocker.get::<DefenseChances>(),
+            Some(&DefenseChances {
+                parry_chance: 1.0,
+                dodge_chance: 0.0,
+            })
+        );
+
+        let standard = app.world().entity(standard);
+        assert!(standard.contains::<OffensiveCombatAi>());
+        assert!(standard.get::<ReactiveDefenseAi>().unwrap().requires_facing);
+        assert_eq!(
+            standard.get::<DefenseChances>(),
+            Some(&DefenseChances::default())
+        );
+    }
+
+    #[test]
+    fn untargeted_windup_only_reacts_on_the_nearest_enemy() {
+        let mut app = App::new();
+        app.add_observer(on_attack_started);
+        let attacker = app
+            .world_mut()
+            .spawn((
+                CharacterLook::default(),
+                Transform::default(),
+                TacticalCombatSide::Party,
+            ))
+            .id();
+        let passive = app
+            .world_mut()
+            .spawn((
+                MissionEnemy,
+                CharacterLook::default(),
+                Transform::from_xyz(0.0, 0.0, 1.0),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+            ))
+            .id();
+        let blocker = app
+            .world_mut()
+            .spawn((
+                MissionEnemy,
+                CharacterLook::default(),
+                Transform::from_xyz(0.0, 0.0, 2.0),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+                ReactiveDefenseAi {
+                    requires_facing: false,
+                },
+                DefenseChances {
+                    parry_chance: 1.0,
+                    dodge_chance: 0.0,
+                },
+            ))
+            .id();
+        let start = FromClient {
+            client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
+                attacker,
+            ),
+            message: MeleeActionRequest::Start {
+                strike_family: StrikeFamily::Swing,
+                hand: AttackHand::Main,
+            },
+        };
+
+        app.world_mut().trigger(start.clone());
+        app.world_mut().flush();
+        assert!(!app.world().entity(blocker).contains::<PendingBotReaction>());
+
+        app.world_mut().despawn(passive);
+        app.world_mut().trigger(start);
+        app.world_mut().flush();
+        assert!(app.world().entity(blocker).contains::<PendingBotReaction>());
     }
 
     #[test]
