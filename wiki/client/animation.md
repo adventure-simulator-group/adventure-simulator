@@ -46,13 +46,13 @@ came from a human or AI.
 
 Skeleton state contains the minimum authoritative information needed to
 reproduce what a character is doing. It is not a single mutually exclusive
-enum, because a character may be moving, crouching, looking at an opponent,
+enum, because a character may be moving, looking at an opponent,
 and starting an attack at the same time. It is instead composed from several
 cooperating, typed dimensions. The body mode owns ground contact, and each
 active action owns its own timeline and parameters. State-changing methods
 preserve these invariants rather than exposing a public property bag:
 
-- **Body:** grounded upright/crouched, airborne, prone, supine, or ragdolled;
+- **Body:** grounded upright, airborne, prone, supine, or ragdolled;
   this tagged value owns the ground-contact/posture relationship.
 - **Locomotion:** local/world velocity, acceleration, gait phase, and the
   currently leading or planted foot.
@@ -90,7 +90,7 @@ cadence. Speed follows the controller throughout a step. Ordinary turns are
 accepted at the next foot handoff, while a material opposite-direction reversal
 performs an immediate safe semantic handoff so the support foot agrees with the
 already-reversed gameplay root. Releasing movement completes only the active
-half-step. Lowering, incapacitation, crouching, or leaving the ground clears the
+half-step. Lowering, incapacitation, or leaving the ground clears the
 intent.
 
 The replicated stance is a tagged `lowered` or `raised` value; only the raised
@@ -141,7 +141,7 @@ The animation evaluator consumes skeleton state in this order:
 3. Advance normalized gait or action phase from authoritative timing and
    motion.
 4. Interpolate authored poses using continuous blend coordinates.
-5. Apply masked or additive layers such as directional ducking and impact
+5. Apply masked or additive layers such as jump anticipation and impact
    flinches.
 6. For ordinary locomotion, apply contact-weighted terrain correction, one
    shared hip correction, and one two-bone solve per leg. Raised-guard foot
@@ -151,7 +151,7 @@ The animation evaluator consumes skeleton state in this order:
 
 The semantic router reads a read-only snapshot of `PresentedSkeleton` and its
 pure `AnimationEvaluation`: speed, local direction, gait/action phase,
-crouch/airborne state, attack height, lead and support feet, contact sequence,
+airborne state, attack height, lead and support feet, contact sequence,
 effective pack, and the selected attack contact. Movement remains live input;
 the action contains no captured movement or foot-step plan.
 
@@ -192,7 +192,7 @@ controller, or move server state. The editor feature and its large UI/preview
 dependencies are native-only and disabled in shipping Wasm.
 
 Overgrowth similarly supplies named blend coordinates such as movement speed,
-ground speed, crouch height, and attack height from AngelScript, then evaluates
+ground speed and attack height from AngelScript, then evaluates
 nested synchronized animation groups against the same normalized time in
 [`aschar.as`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Data/Scripts/aschar.as#L11834-L12077)
 and
@@ -204,7 +204,6 @@ The initial evaluator should support at least:
 
 - gait phase;
 - movement speed, including continuous walk-to-run blending;
-- crouch amount;
 - local movement or dodge direction;
 - airborne phase derived primarily from vertical velocity;
 - attack target height;
@@ -213,14 +212,14 @@ The initial evaluator should support at least:
 
 Animations blended along a shared coordinate must be phase-compatible. For
 example, the contact frame of a walk must have the same gait phase as the
-contact frame of a run and crouch-walk. Overgrowth's synchronized animation
+contact frame of a walk and run. Overgrowth's synchronized animation
 groups also adjust playback frequency from actual ground speed, which is the
 behavior we want to emulate rather than allowing feet to slide.
 
 ## Animation packs and fallback
 
 An animation pack maps semantic names to authored pose data and may declare one
-compatible parent pack. Ordinary posture, locomotion, duck, dive, block, and
+compatible parent pack. Ordinary posture, locomotion, dive, and
 downed poses resolve independently through that parent chain, then through the
 deterministic similar-pose chain. Missing content ultimately leaves the rig in
 its authored bind pose rather than crashing or hiding the actor.
@@ -373,7 +372,6 @@ Single-pose files place their named semantic at frame 0:
 | File basename under `biped/unarmed/` | Semantic pose at frame 0 |
 |---|---|
 | `idle_relaxed` | `idle_relaxed` |
-| `crouch_idle` | `crouch_idle` |
 | `airborne_center` | `airborne_center` |
 | `airborne_travel` | `airborne_travel` |
 | `prone_idle` | `prone_idle` |
@@ -408,14 +406,6 @@ Raised-guard movement has no authored locomotion files. `guard` remains the
 whole-body FK reference while the client procedurally plans the same live feet
 for stationary, forward, backward, lateral, and diagonal movement.
 
-Directional ducks are independent of stance lead:
-
-| File basename | Frame assignment |
-|---|---|
-| `duck_forward` | 0 `duck_forward` |
-| `duck_backward` | 0 `duck_backward` |
-| `duck_left` | 0 `duck_left` |
-| `duck_right` | 0 `duck_right` |
 Every direction shares one stance-independent upper-body dive pose:
 
 | File basename | Frame assignment |
@@ -425,7 +415,7 @@ Every direction shares one stance-independent upper-body dive pose:
 The runtime samples the direction-neutral frame-0 dive pose above the pelvis. It
 ignores that file's pelvis and leg tracks, even when an older asset still
 contains them. A missing `dive` uses `guard` for the upper-body layer. The
-lower body holds the selected directional duck/load through takeoff, while a
+lower body holds the guard through takeoff, while a
 procedural pelvis override removes the load or guard's hip yaw, faces the hips
 forward, and supplies the dive direction with a 40-degree tilt. The override
 remains fixed for terrain-dependent airtime, then unwinds as the load blends
@@ -451,7 +441,7 @@ ordinary-locomotion IK, terrain IK, landing leg compression, locomotion body
 response, and upright height normalization must remain disabled until that
 transition completes. The dive file contains neither an impact pose nor arrival
 at prone or supine idle. These are standalone single-pose files; the older
-frame-5 convention belonged to the discarded combined duck/dive layout and is
+frame-5 convention belonged to the discarded combined dive layout and is
 not part of the runtime contract. A missing `dive.glb` uses `guard` above the
 pelvis.
 
@@ -496,15 +486,8 @@ motions. Frame 0 of a main-hand motion is its guard. Frame 4 is contact. Frames
 and its second contact. Runtime timing normalizes these authored anchors to the
 selected weapon's timing and supplies recovery to the current guard.
 
-Each block file uses its semantic name as its basename. Frame 0 reproduces
-`guard`, frame 6 is the named block contact, and frame 14 returns toward
-`guard`:
-
-```text
-block_cut_left
-block_cut_right
-block_thrust
-```
+Blocking has no authored motion. Until its procedural presentation is added,
+the character retains the selected guard throughout a block action.
 The remaining ground transitions are single midpoint poses. Runtime blends
 between their separately authored contact endpoints:
 
@@ -610,48 +593,43 @@ explicit weapon or hand constraint after gait reconstruction.
 | `walk_passing` | Keep the left foot planted beneath or just behind the pelvis while the right swing foot passes beside it on the way forward. The right knee is flexed enough for toe clearance and the right foot is not planted. The body is near its tallest point in the walk cycle, but the left knee remains soft. Pelvis and shoulder rotation are between their contact extremes. |
 | `run_contact` | Pose the instant the left foot accepts a running landing beneath or only modestly ahead of the center of mass. Flex the left ankle, knee, and hip to absorb load. The right leg trails and is leaving the prior flight phase. The torso inclines forward from the ankles without folding at the waist. Only the left foot is marked planted; avoid a long over-stride. |
 | `run_flight` | Pose the airborne crossover after left support, with neither foot planted. The right knee travels forward, the left leg trails, and both knees remain flexed rather than forming a split. Keep the pelvis level enough to interpolate cleanly, the body traveling forward, and the upper-body carriage compatible with the pack's held item. This must read as a run flight phase, not a walking passing pose. |
-| `crouch_idle` | Lower the pelvis by flexing hips, knees, and ankles while keeping both whole feet stably planted about shoulder-width apart. Keep the chest sufficiently upright to look forward and use the hands. Do not obtain the height by bending only the spine. The pose must be able to load into a jump and serve as the center of the directional duck blend. |
 
 Walk and run use the same normalized gait phase, and speed blends continuously
 between them. A run is not merely an exaggerated walk: it retains an airborne
-phase, while walking retains ground contact. Until a dedicated crouch gait is
-authored, crouched locomotion reuses the ordinary leg motion with its 0.025 m
-phase bob. It does not add a flat-ground pelvis drop or leg solve, because
-moving the pelvis alone would drive the authored feet through the floor.
+phase, while walking retains ground contact.
 
 Server-authoritative tactical movement tops out at 5.5 metres per second with
 the guard lowered and 2.0 metres per second with the guard raised. Analogue
 input preserves its radial magnitude, so half stick deflection requests 2.75 m/s
 lowered or 1.0 m/s raised. Radial clamping prevents diagonal overspeed, generic
-controllers without skeleton state use the lowered cap, and Ahoy still applies
-its existing crouch multiplier and deceleration. Raised guard scales Ahoy's
-acceleration frequency from 8 Hz to 22 Hz, so its 2.0 m/s cap and the ordinary
-5.5 m/s run cap both produce the same 44 m/s² full-input ground acceleration.
-Gait phase 0 through 1 is one complete left-right cycle rather than one step.
-Shared typed walk, run, crouch, and raised-guard profiles own reference speed,
-step distance, support, flight, bounce, and compression metadata used by both
-authoritative projection and client presentation. This keeps cadence tied to
-actual post-physics ground distance without duplicated timing formulas or
+controllers without skeleton state use the lowered cap. Raised guard scales
+Ahoy's acceleration frequency from 8 Hz to 22 Hz, so its 2.0 m/s cap and the
+ordinary 5.5 m/s run cap both produce the same 44 m/s² full-input ground
+acceleration. Gait phase 0 through 1 is one complete left-right cycle rather
+than one step. Shared typed walk, run, and raised-guard profiles own reference
+speed, step distance, support, flight, bounce, and compression metadata used by
+both authoritative projection and client presentation. This keeps cadence tied
+to actual post-physics ground distance without duplicated timing formulas or
 double-speed footfalls. The server retains each player's latest validated
 analogue movement request until a later request explicitly replaces or clears
 it. Before every movement step, the server restores Ahoy's disposable fixed-loop
 accumulator from that state. Missing packets on the unreliable input channel
 therefore cannot erase movement intent for one fixed tick. Intent drives the
 controller but does not select an authored gait. Measured post-physics planar
-velocity owns idle/walk/run selection and stride cadence. Presentation also
-uses body-relative velocity for a sustained travel lean and measured
-acceleration for a stronger transient inertial response. The authored
-locomotion backs remain straight; the procedural response rotates the pelvis
-and torso as one rigid hierarchy in the stable authored pelvis reference frame,
-while exactly compensating the legs before their IK pass. This keeps gait-phase
-pelvis twist from steering forward lean sideways and supplies forward, backward,
-and lateral inclination without bending the spine or turning lean into an
-additional leg animation. Turn-driven lateral inertia is deliberately gentler
-than the forward acceleration response. Braking counter-lean scales with
-current planar speed and fades to zero at rest, while acceleration into motion
-retains the full response. The run flight curve contributes about nine
-centimetres of visible rise after authored passing-height normalization. The
-debug game-clock switch therefore cannot directly select a different gait.
+velocity owns idle/walk/run selection and stride cadence. Presentation also uses
+body-relative velocity for a sustained travel lean and measured acceleration for
+a stronger transient inertial response. The authored locomotion backs remain
+straight; the procedural response rotates the pelvis and torso as one rigid
+hierarchy in the stable authored pelvis reference frame, while exactly
+compensating the legs before their IK pass. This keeps gait-phase pelvis twist
+from steering forward lean sideways and supplies forward, backward, and lateral
+inclination without bending the spine or turning lean into an additional leg
+animation. Turn-driven lateral inertia is deliberately gentler than the forward
+acceleration response. Braking counter-lean scales with current planar speed and
+fades to zero at rest, while acceleration into motion retains the full response.
+The run flight curve contributes about nine centimetres of visible rise after
+authored passing-height normalization. The debug game-clock switch therefore
+cannot directly select a different gait.
 
 Ordinary idle, walk, and run now follow one compact ownership contract:
 
@@ -717,7 +695,7 @@ an attack without loading the raw trace into an interactive review.
 Locomotion is projected and integrated continuously at the authoritative 64Hz
 fixed tick. Non-terrain scenarios can still exercise authored leg motion with
 fixed controller Y. The terrain suite enables seeded uneven-ground IK for
-cross-slope, uphill, downhill, diagonal, crouched, mid-stride toggle, hard-stop,
+cross-slope, uphill, downhill, diagonal, mid-stride toggle, hard-stop,
 small tap-stop, flight-phase run-stop, tap/restart crossfade, speed-threshold
 chatter, steady 5.5 m/s run, raised-guard tap-stop, gradual 90-degree turn, and
 exact 180-degree reversal probes. A deterministic procedural clock prevents
@@ -798,8 +776,8 @@ continuity, clearance, phase-height, and visual gates rather than being
 mislabeled as world-planted. Ordinary terrain probes require unloaded swing feet
 to remain free of terrain correction and near-full graph contact weights to
 converge on terrain. Stops are graph crossfades and do not require a
-capture-point or planned-footprint diagnostic. Start/stop, guard-entry, and
-crouch-state transitions permit at most 0.04 m of pelvis-height change per 64 Hz
+capture-point or planned-footprint diagnostic. Start/stop and guard-entry
+transitions permit at most 0.04 m of pelvis-height change per 64 Hz
 sample; the pre-existing guard entry itself uses about 0.033 m of that budget.
 Loop-seam gates apply only to repeatable cycles. The complete authored Run cycle
 permits a 0.03 m sampled positional seam (measured at 0.029 m); other repeatable
@@ -890,34 +868,19 @@ abruptly flip a pole target. The final raised-guard and attack knee pole has its
 ground-plane yaw constrained to within plus or minus pi/8 radians of the
 rendered foot-to-toe direction, then receives the vertical component required by
 the leg's valid bend plane. This pivot state, like all procedural foot targets,
-is presentation-only and is never replicated. Raised crouched and airborne
-characters retain the existing crouch and airborne posture rules; specialized
-raised variants can be added later.
+is presentation-only and is never replicated. Airborne characters retain their
+existing posture rules; specialized raised variants can be added later.
 
 ### Combat guards
 
 Every complete combat pack provides or inherits one `guard` pose. It is the
-stable endpoint for attacks, blocks, and directional ducks. Place the feet on
+stable endpoint for attacks and blocks. Place the feet on
 two useful tracks with neither knee locked, distribute weight so either foot
 can move, and carry the upper body according to the pack's fighting method.
 
 There is no alternate lead guard and no switch animation. The procedural
 raised-guard planner may put either foot forward as movement unfolds, and the
 same authored guard remains interchangeable with those live foot targets.
-### Crouching and directional ducking
-
-Directional ducking begins from `guard` and keeps its live foot targets. The
-four optional frame-0 contact poses are `duck_forward`, `duck_backward`,
-`duck_left`, and `duck_right`. Direction describes the character's local body
-or head displacement, not a stance lead or the attacker's bearing.
-
-| Pose | Animator brief |
-|---|---|
-| `duck_forward` | Lower and incline the body forward behind the hands or weapon while preserving a controlled base. |
-| `duck_backward` | Withdraw the head and upper torso while sitting the pelvis down and back between the feet. |
-| `duck_left` | Shift the pelvis, ribcage, and head toward anatomical left without crossing the legs or moving the feet. |
-| `duck_right` | Make the corresponding anatomical-right displacement while retaining the same foot contacts. |
-
 The standalone `dive` file is a stance-independent upper-body airborne pose at
 frame 0. It contains no impact or arrival pose; direction, contact timing, and
 the subsequent prone, supine, or side-roll blend are runtime-owned.
@@ -934,10 +897,10 @@ height, distance, and timing rather than selecting another authored sequence:
 The sequence is:
 
 ```text
-directional duck/load -> airborne blend -> directional duck/load -> guard
+guard -> airborne blend -> guard
 ```
 
-The load and landing both reuse the crouch/duck blend, with the runtime choosing
+Takeoff and landing retain the guard below the pelvis, with the runtime choosing
 the pushing and receiving legs from horizontal velocity and planted-foot state.
 It synthesizes the short leg extension after takeoff, reaches a receiving foot
 beneath the projected center of mass before landing, and uses foot IK at ground
@@ -1001,19 +964,9 @@ target line with coordinated pelvis and ribcage rotation. Frames 8 and 12 form
 the natural continuation after the first contact.
 ### Blocking
 
-The initial design has one guard and three incoming attack lines: a cut from
-left, a cut from right, and a thrust. It therefore uses three block contacts:
-
-| Pose | Animator brief |
-|---|---|
-| `block_cut_left` | Interpose the weapon, shield, forearms, or other blocking structure on anatomical left while keeping the face and centerline protected. |
-| `block_cut_right` | Make the corresponding structurally supported interposition on anatomical right. |
-| `block_thrust` | Meet or deflect a forward thrust near the centerline without locking the elbows or abandoning the face. |
-
-Each block file reproduces `guard` at frame 0, reaches its named contact at
-frame 6, and returns toward `guard` at frame 14. Procedural height adjustment
-may move the contact toward the predicted line without creating more authored
-stance variants.
+Block direction remains authoritative gameplay state, but animation packs do
+not contain block poses. The character retains the selected guard until a
+procedural blocking layer is implemented.
 ### Prone and supine
 
 The initial complete set contains:
@@ -1024,10 +977,10 @@ The initial complete set contains:
 | `supine_idle` | Lie on the back with the head and shoulders slightly raised enough to see forward. Flex the knees enough to keep the feet available for movement, with one or both soles planted, and keep the arms in a protective usable position rather than flat in a rigid anatomical display pose. |
 | `prone_crawl_contact` | Show a contralateral crawling support: left forearm/hand reaches or plants forward while the right knee/inside leg advances, with the right arm and left leg contributing rearward support. Keep hips and chest low and mark the current supporting surfaces. This is the maximum useful extension of the crawl, not a long military split. |
 | `supine_scamper_contact` | On the back, plant the left heel/foot and the opposite hand or forearm as the canonical extended support, with the pelvis slightly lifted or unloaded enough to move. The right leg is advancing toward its next plant. Protect the head and keep the neck from bearing body weight. |
-| `prone_transition` | Pose the stable intermediate between standing/crouching and prone: both hands or forearms and at least one knee contact the floor, the head remains protected and able to look forward, and the pelvis is low enough to continue down without dropping the chest through the ground. It must work in both directions. |
+| `prone_transition` | Pose the stable intermediate between standing and prone: both hands or forearms and at least one knee contact the floor, the head remains protected and able to look forward, and the pelvis is low enough to continue down without dropping the chest through the ground. It must work in both directions. |
 | `prone_supine_roll_left` | Pose the stable side-supported midpoint of a leftward roll between prone and supine. Keep the head clear of the floor, draw the near arm and held equipment out of the torso's path, and use the shoulder, flank, hip, and bent legs to distribute contact without balancing on the neck or spine. The silhouette must remain valid when mirrored for `prone_supine_roll_right` and when traversed backward from supine. |
 | `prone_supine_roll_right` | Optional authored counterpart to the canonical leftward roll for equipment or anatomy that cannot be mirrored cleanly. Preserve the same contacts and endpoint compatibility on the opposite side. |
-| `supine_transition` | Pose the protected midpoint between supine and upright/crouched support. Turn partly onto one side, post with a hand or forearm, bring at least one foot beneath the body, and keep the head protected while the pelvis changes level. Avoid a symmetric sit-up that leaves both hands and feet unavailable. It must work in both directions, even though direct controls currently use only the get-up direction. |
+| `supine_transition` | Pose the protected midpoint between supine and upright support. Turn partly onto one side, post with a hand or forearm, bring at least one foot beneath the body, and keep the head protected while the pelvis changes level. Avoid a symmetric sit-up that leaves both hands and feet unavailable. It must work in both directions, even though direct controls currently use only the get-up direction. |
 
 Backward crawling may initially reverse the forward cycle, and getting up may
 reverse the upright-to-prone transition. Pressing the jump/roll modifier with
@@ -1056,8 +1009,8 @@ times its physical speed, making the middle pace breath-neutral and the maximum
 pace exhausting at every endurance rank. Prone WASD input uses tank controls in
 the body's orientation rather than the camera orientation, with lateral input
 limited to three-eighths of longitudinal speed. Downed postures retain Ahoy's
-shortened crouch collision shape without inheriting its upright one-third crouch
-speed penalty. Authored prone contacts follow authoritative velocity directly.
+shortened collision shape without applying an additional speed penalty.
+Authored prone contacts follow authoritative velocity directly.
 Their 0.60 m contact step balances the authored hand and knee reach so neither
 support point accumulates the much larger slide produced by a full metre of
 controller travel. Supine scampering remains capped at 2.4 m/s with its
@@ -1068,21 +1021,18 @@ residual velocity.
 
 ## Initial complete-pack size
 
-The humanoid unarmed root has 28 required non-attack semantics. Two mirrored
-pairs and one dive file shared by four directional semantics let it satisfy
-those with 23 authored poses. Attack poses are optional capabilities and
+The humanoid unarmed root has 19 required non-attack semantics. One mirrored
+pair and one dive file shared by four directional semantics let it satisfy
+those with 15 authored pose sources. Attack poses are optional capabilities and
 therefore do not participate in complete-pack validation.
 The current authored size is:
 
 | Family | Authored poses |
 |---|---:|
-| Standing and locomotion | 6 |
-| Directional ducking | 3 |
+| Standing and locomotion | 5 |
 | Jumping, dodging, and diving | 3 |
 | Prone and supine | 7 |
-| Combat guard | 1 |
-| Blocks | 3 |
-| **Required unarmed root** | **23** |
+| **Required unarmed root** | **15** |
 | Optional attacks | **0-3** |
 
 A specialized pack may inherit all ordinary poses. If it supplies no attacks,

@@ -317,7 +317,7 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
     let mut total = 0.0;
     for sample in samples {
         let mut weights = match (sample.pose, sample.sampling) {
-            (SemanticPose::IdleRelaxed | SemanticPose::CrouchIdle, _) => Vec2::ONE,
+            (SemanticPose::IdleRelaxed, _) => Vec2::ONE,
             (SemanticPose::WalkContact, PoseSampling::Cycle { phase }) => {
                 let (left, right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, phase);
                 Vec2::new(left, right)

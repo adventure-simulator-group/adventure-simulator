@@ -72,7 +72,6 @@ pub struct DebugForceAttackTrigger(pub bool);
 #[reflect(Resource)]
 pub struct DirectControlState {
     pub pace: MovementPace,
-    pub crouch: bool,
     pub jump_charge: bool,
     pub attack_just_pressed: bool,
     pub alternate_attack: bool,
@@ -107,7 +106,6 @@ impl Default for DirectControlState {
     fn default() -> Self {
         Self {
             pace: MovementPace::Walk,
-            crouch: false,
             jump_charge: false,
             attack_just_pressed: false,
             alternate_attack: false,
@@ -480,9 +478,6 @@ fn update_direct_control_input(
     let charging_keyboard_jump =
         controls.space_jump_armed && space_pressed && !downed && !raised && !keyboard_dive_chord;
     controls.jump_charge = charging_keyboard_jump;
-    controls.crouch = raised
-        && ((shift_down && !moving)
-            || (left_trigger && right_bumper && !moving && !controls.reserved_throw_chord));
     let quickstep_direction = if keyboard_quickstep {
         keyboard_direction
     } else if gamepad_quickstep {
@@ -629,7 +624,6 @@ fn send_player_input(
             movement,
             look: Vec2::new(look.yaw, look.pitch),
             jump: controls.jump_command,
-            crouch: controls.crouch,
             jump_charge: controls.jump_charge,
             downed_align: controls.downed_align,
             posture: controls.posture_command,
@@ -1055,7 +1049,6 @@ mod tests {
             .press(KeyCode::Space);
         schedule.run(&mut world);
         assert!(world.resource::<DirectControlState>().jump_charge);
-        assert!(!world.resource::<DirectControlState>().crouch);
         assert_eq!(
             world.resource::<DirectControlState>().jump_command.sequence,
             0
@@ -1068,7 +1061,6 @@ mod tests {
         }
         schedule.run(&mut world);
         assert!(!world.resource::<DirectControlState>().jump_charge);
-        assert!(!world.resource::<DirectControlState>().crouch);
         assert_eq!(
             world.resource::<DirectControlState>().jump_command.sequence,
             1
@@ -1287,7 +1279,6 @@ mod tests {
         schedule.run(&mut world);
         let controls = world.resource::<DirectControlState>();
         assert!(controls.jump_charge);
-        assert!(!controls.crouch);
         assert_eq!(controls.pace, MovementPace::Sprint);
     }
 

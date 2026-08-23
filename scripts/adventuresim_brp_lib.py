@@ -10320,7 +10320,6 @@ class PlayerInputRequest:
     movement: list[float] | None  # len 2
     look: list[float]  # len 2
     jump: JumpCommand
-    crouch: bool
     jump_charge: bool
     downed_align: bool
     posture: PostureCommand
@@ -10332,7 +10331,6 @@ class PlayerInputRequest:
             "movement": ((list(v0)) if (v0 := self.movement) is not None else None),
             "look": list(self.look),
             "jump": self.jump.to_brp(),
-            "crouch": self.crouch,
             "jump_charge": self.jump_charge,
             "downed_align": self.downed_align,
             "posture": self.posture.to_brp(),
@@ -10348,7 +10346,6 @@ class PlayerInputRequest:
             movement=((list(v0)) if (v0 := data["movement"]) is not None else None),
             look=list(data["look"]),
             jump=JumpCommand.from_brp(data["jump"]),
-            crouch=data["crouch"],
             jump_charge=data["jump_charge"],
             downed_align=data["downed_align"],
             posture=PostureCommand.from_brp(data["posture"]),

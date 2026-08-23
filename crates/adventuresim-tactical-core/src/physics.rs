@@ -47,7 +47,6 @@ pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
 
 /// Maximum server-authoritative movement speed while the weapon guard is raised.
 pub const TACTICAL_GUARD_SPEED_METRES_PER_SECOND: f32 = 2.0;
-const TACTICAL_UPRIGHT_CROUCH_SPEED_SCALE: f32 = 1.0 / 3.0;
 
 /// Deliberate prone crawl speed used by the ordinary walking control mode.
 pub const TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND: f32 = 0.45;
@@ -312,16 +311,10 @@ fn apply_analogue_movement_speed(
     viewer: TacticalPlayerViewer,
 ) {
     for (entity, input, mut controller, skeleton, pace) in &mut controllers {
-        let is_downed = skeleton.is_some_and(|skeleton| skeleton.body().is_downed());
-        // Ahoy uses the crouch flag for both its shortened collision shape and
-        // a one-third upright crouch speed penalty. Downed postures need the
-        // short collider, but their configured crawl/scamper speeds already
-        // are the final physical targets and must not be reduced a second time.
-        controller.crouch_speed_scale = if is_downed {
-            1.0
-        } else {
-            TACTICAL_UPRIGHT_CROUCH_SPEED_SCALE
-        };
+        // Ahoy's crouch flag supplies the short collider used by downed and
+        // posture-transition states. Their configured speeds are already the
+        // final physical targets, so the collider must not scale speed again.
+        controller.crouch_speed_scale = 1.0;
         controller.jump_height = if skeleton.is_some_and(|skeleton| {
             skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
         }) {
@@ -781,22 +774,6 @@ mod tests {
                 MovementPace::Jog,
             ))
             .id();
-        let upright_crouch = world
-            .spawn((
-                AccumulatedInput {
-                    last_movement: Some(Vec2::Y),
-                    ..default()
-                },
-                CharacterController {
-                    crouch_speed_scale: 1.0,
-                    ..default()
-                },
-                SkeletonState::default().with_body_state(crate::animation::BodyState::Grounded(
-                    crate::animation::GroundedPosture::Crouched,
-                )),
-                MovementPace::Walk,
-            ))
-            .id();
         let mut transitioning = SkeletonState::default();
         assert!(transitioning.begin_posture_transition(
             crate::animation::PostureTransitionKind::UprightToProne,
@@ -868,13 +845,6 @@ mod tests {
         assert_eq!(
             world.get::<CharacterController>(prone_jog).unwrap().speed,
             3.75 / TACTICAL_PRONE_EFFORT_SCALE
-        );
-        assert_eq!(
-            world
-                .get::<CharacterController>(upright_crouch)
-                .unwrap()
-                .crouch_speed_scale,
-            TACTICAL_UPRIGHT_CROUCH_SPEED_SCALE
         );
         assert_eq!(
             world.get::<CharacterController>(transition).unwrap().speed,

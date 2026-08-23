@@ -14,7 +14,7 @@ pub(crate) struct ProceduralLookState {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct ProceduralCrouchState {
+pub(crate) struct ProceduralJumpAnticipationState {
     base: Transform,
     applied: Transform,
     amount: f32,
@@ -249,14 +249,14 @@ pub(super) fn apply_procedural_dive_lower_body(
 /// Space begins an upright jump with a small procedural anticipation rather
 /// than launching on the press edge. FK remains authored; this layer lowers
 /// the pelvis and shares a modest forward fold across the spine.
-pub(super) fn apply_jump_charge_crouch(
+pub(super) fn apply_jump_anticipation(
     mut commands: Commands,
     owners: Query<&PresentedSkeleton>,
     mut bones: Query<(
         Entity,
         &HumanoidBone,
         &mut Transform,
-        Option<&mut ProceduralCrouchState>,
+        Option<&mut ProceduralJumpAnticipationState>,
     )>,
 ) {
     for (entity, bone, mut transform, state) in &mut bones {
@@ -268,7 +268,7 @@ pub(super) fn apply_jump_charge_crouch(
         } else {
             0.0
         };
-        let crouched = skeleton.jump_anticipation() == JumpAnticipation::Charging;
+        let charging = skeleton.jump_anticipation() == JumpAnticipation::Charging;
         let previous = state.as_deref().copied();
         let base = previous.map_or(*transform, |previous| {
             if previous.evaluation_tick == skeleton.locomotion_sample_tick
@@ -289,7 +289,7 @@ pub(super) fn apply_jump_charge_crouch(
         {
             previous_amount
         } else {
-            let target = if crouched { 1.0 } else { quickstep_amount };
+            let target = if charging { 1.0 } else { quickstep_amount };
             previous_amount + (target - previous_amount).clamp(-0.125, 0.125)
         };
         let pelvis_amount = if previous
@@ -297,7 +297,7 @@ pub(super) fn apply_jump_charge_crouch(
         {
             previous_pelvis_amount
         } else {
-            let target = jump_charge_pelvis_target(crouched, skeleton.weapon_guard());
+            let target = jump_charge_pelvis_target(charging, skeleton.weapon_guard());
             previous_pelvis_amount + (target - previous_pelvis_amount).clamp(-0.125, 0.125)
         };
         let mut applied = base;
@@ -335,7 +335,7 @@ pub(super) fn apply_jump_charge_crouch(
             continue;
         }
         *transform = applied;
-        let next = ProceduralCrouchState {
+        let next = ProceduralJumpAnticipationState {
             base,
             applied,
             amount,
@@ -558,7 +558,7 @@ fn locomotion_normalization_target(skeleton: &SkeletonState) -> f32 {
     (skeleton.is_grounded()
         && !skeleton.is_posture_transitioning()
         && skeleton.action_kind() == SkeletonAction::None
-        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
+        && skeleton.posture() == Posture::Upright
         && skeleton.animation_speed() > 0.05) as u8 as f32
 }
 
@@ -625,7 +625,7 @@ pub(super) fn stabilize_locomotion_torso(
         let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
         let ordinary_stop = skeleton.is_grounded()
             && skeleton.action_kind() == SkeletonAction::None
-            && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
+            && skeleton.posture() == Posture::Upright
             && skeleton.animation_speed() <= 0.05;
         next.amplitude = if ordinary_stop {
             advance_towards(
@@ -1324,12 +1324,11 @@ mod legacy_tests {
     }
 
     #[test]
-    fn locomotion_height_amplitude_covers_walk_run_guard_and_crouch() {
+    fn locomotion_height_amplitude_covers_walk_run_and_guard() {
         let moving = |speed, posture, guard| {
             SkeletonState::default()
                 .with_local_velocity(Vec3::NEG_Z * speed)
                 .with_body_state(match posture {
-                    Posture::Crouched => BodyState::Grounded(GroundedPosture::Crouched),
                     Posture::Airborne => BodyState::Airborne,
                     _ => BodyState::Grounded(GroundedPosture::Upright),
                 })
@@ -1362,13 +1361,6 @@ mod legacy_tests {
                 < 0.0001
         );
         assert!(
-            (locomotion_height_wave(
-                &moving(1.5, Posture::Crouched, WeaponGuardState::Lowered,).with_gait_phase(0.25)
-            ) - CROUCH_LOCOMOTION_PROFILE.bounce_metres)
-                .abs()
-                < 0.0001
-        );
-        assert!(
             (authored_height_compensation(&moving(
                 2.0,
                 Posture::Upright,
@@ -1379,14 +1371,6 @@ mod legacy_tests {
         );
         assert_eq!(
             authored_height_compensation(&moving(2.0, Posture::Upright, WeaponGuardState::Raised,)),
-            0.0
-        );
-        assert_eq!(
-            authored_height_compensation(&moving(
-                1.5,
-                Posture::Crouched,
-                WeaponGuardState::Lowered,
-            )),
             0.0
         );
         let mut specialized = moving(2.0, Posture::Upright, WeaponGuardState::Lowered);
@@ -1749,11 +1733,7 @@ mod legacy_tests {
 
     #[test]
     fn inactive_postures_require_raised_footwork_reset() {
-        for body in [
-            BodyState::Airborne,
-            BodyState::Grounded(GroundedPosture::Crouched),
-            BodyState::Prone,
-        ] {
+        for body in [BodyState::Airborne, BodyState::Prone] {
             let skeleton = SkeletonState::default()
                 .with_body_state(body)
                 .with_weapon_guard(WeaponGuardState::Raised);
@@ -1786,10 +1766,9 @@ mod legacy_tests {
     }
 
     #[test]
-    fn terrain_ik_accepts_grounded_crouch_but_not_airborne() {
-        let crouched = SkeletonState::default()
-            .with_body_state(BodyState::Grounded(GroundedPosture::Crouched));
-        assert!(terrain_ik_posture_is_valid(&crouched));
+    fn terrain_ik_accepts_grounded_upright_but_not_airborne() {
+        let upright = SkeletonState::default();
+        assert!(terrain_ik_posture_is_valid(&upright));
 
         let airborne = SkeletonState::default().with_body_state(BodyState::Airborne);
         assert!(!terrain_ik_posture_is_valid(&airborne));

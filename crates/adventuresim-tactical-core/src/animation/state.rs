@@ -4,7 +4,6 @@ use super::*;
 pub enum Posture {
     #[default]
     Upright,
-    Crouched,
     Airborne,
     Prone,
     Supine,
@@ -32,12 +31,10 @@ impl Default for BodyState {
 pub enum GroundedPosture {
     #[default]
     Upright,
-    Crouched,
 }
 
-/// Presentation-only anticipation for a release-triggered jump. This is kept
-/// separate from `GroundedPosture::Crouched`: charging a jump must not select
-/// crouched locomotion or change the authoritative movement speed.
+/// Presentation-only anticipation for a release-triggered jump. Charging a
+/// jump does not change authoritative posture or movement speed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JumpAnticipation {
     #[default]
@@ -52,7 +49,6 @@ impl BodyState {
     pub fn posture(self) -> Posture {
         match self {
             Self::Grounded(GroundedPosture::Upright) => Posture::Upright,
-            Self::Grounded(GroundedPosture::Crouched) => Posture::Crouched,
             Self::Airborne => Posture::Airborne,
             Self::Prone => Posture::Prone,
             Self::Supine => Posture::Supine,
@@ -370,7 +366,7 @@ impl PostureTransitionState {
     }
 
     /// Returns the dive recovery progress after terrain contact.
-    /// The first half of a dive is duck-to-airborne and remains fixed at its
+    /// The first half of a dive is guard-to-airborne and remains fixed at its
     /// airborne endpoint until impact; only the second half transfers the
     /// directional pose into its canonical downed contact pose.
     pub fn dive_recovery(self) -> Option<(DiveDirection, f32)> {
@@ -1628,7 +1624,6 @@ pub struct SkeletonLocomotionInput {
     pub orientation: Quat,
     pub linear_velocity: Vec3,
     pub grounded: bool,
-    pub crouching: bool,
     pub delta_seconds: f32,
     pub tick: u64,
 }
@@ -1772,7 +1767,6 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.transition_body(if input.grounded {
         match skeleton.body {
             BodyState::Prone | BodyState::Supine => skeleton.body,
-            _ if input.crouching => BodyState::Grounded(GroundedPosture::Crouched),
             _ => BodyState::Grounded(GroundedPosture::Upright),
         }
     } else {

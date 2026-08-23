@@ -65,10 +65,7 @@ mod legacy_tests {
 
     #[test]
     fn leaving_grounded_upright_plants_raised_movement() {
-        for body in [
-            BodyState::Grounded(GroundedPosture::Crouched),
-            BodyState::Airborne,
-        ] {
+        for body in [BodyState::Airborne] {
             let mut state = SkeletonState::default()
                 .with_weapon_guard(WeaponGuardState::Raised)
                 .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
@@ -90,10 +87,7 @@ mod legacy_tests {
             .with_weapon_guard(WeaponGuardState::Raised)
             .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
 
-        for body in [
-            BodyState::Grounded(GroundedPosture::Crouched),
-            BodyState::Airborne,
-        ] {
+        for body in [BodyState::Airborne] {
             let mut wire = serde_json::to_value(&moving).unwrap();
             wire["body"] = serde_json::to_value(body).unwrap();
             let state: SkeletonState = serde_json::from_value(wire).unwrap();
@@ -207,7 +201,6 @@ mod legacy_tests {
                 orientation,
                 linear_velocity: orientation * local_velocity,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 1.0 / 64.0,
                 tick: 1,
             },
@@ -250,7 +243,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick: 1,
             },
@@ -289,7 +281,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 0.1,
                 tick: 2,
             },
@@ -305,7 +296,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 0.1,
                 tick: 3,
             },
@@ -330,7 +320,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::X * 2.5,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick: 11,
             },
@@ -361,7 +350,6 @@ mod legacy_tests {
                 orientation,
                 linear_velocity: current_velocity,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick: 5,
             },
@@ -383,7 +371,6 @@ mod legacy_tests {
                 orientation,
                 linear_velocity: world_velocity,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 1.0 / 64.0,
                 tick: 1,
             },
@@ -397,7 +384,6 @@ mod legacy_tests {
             orientation: Quat::IDENTITY,
             linear_velocity,
             grounded: true,
-            crouching: false,
             delta_seconds: 0.1,
             tick: 1,
         };
@@ -523,7 +509,7 @@ mod legacy_tests {
         ));
         state.transition_body(BodyState::Airborne);
         state.advance_posture_transition(1);
-        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.transition_body(BodyState::Grounded(GroundedPosture::Upright));
         state.advance_posture_transition(2);
         let previous = state.posture_transition();
         state.advance_posture_transition(6);
@@ -718,7 +704,6 @@ mod legacy_tests {
             orientation: Quat::IDENTITY,
             linear_velocity: velocity,
             grounded: true,
-            crouching: false,
             delta_seconds,
             tick: 1,
         };
@@ -742,7 +727,6 @@ mod legacy_tests {
             orientation: Quat::IDENTITY,
             linear_velocity: velocity,
             grounded: true,
-            crouching: false,
             delta_seconds,
             tick: 1,
         };
@@ -766,7 +750,6 @@ mod legacy_tests {
             orientation: Quat::IDENTITY,
             linear_velocity: velocity,
             grounded: true,
-            crouching: false,
             delta_seconds: 0.05,
             tick: 1,
         };
@@ -785,7 +768,6 @@ mod legacy_tests {
             orientation: Quat::IDENTITY,
             linear_velocity: velocity,
             grounded: true,
-            crouching: false,
             delta_seconds: 0.05,
             tick: 1,
         };
@@ -807,7 +789,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                crouching: false,
                 // At 2 m/s a full two-step cycle is 0.38 seconds.
                 delta_seconds: guard_step_length(2.0) * 2.0 / 2.0,
                 tick: 1,
@@ -818,19 +799,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn raised_guard_preserves_existing_crouch_and_airborne_postures() {
-        let crouched = AnimationEvaluation::from_skeleton(
-            &SkeletonState::default()
-                .with_local_velocity(Vec3::NEG_Z)
-                .with_body_state(BodyState::Grounded(GroundedPosture::Crouched))
-                .with_weapon_guard(WeaponGuardState::Raised),
-        );
-        assert!(
-            crouched
-                .base
-                .iter()
-                .any(|sample| { sample.pose == SemanticPose::WalkContact })
-        );
+    fn raised_guard_preserves_airborne_posture() {
         let airborne = AnimationEvaluation::from_skeleton(
             &SkeletonState::default()
                 .with_local_velocity(Vec3::Y)
@@ -1047,7 +1016,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                crouching: false,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick,
             };
@@ -1112,14 +1080,7 @@ mod legacy_tests {
             .unwrap();
         block_state.advance_action(150);
         let block = AnimationEvaluation::from_skeleton(&block_state);
-        assert_eq!(block.action[0].pose, SemanticPose::BlockThrust);
-        assert_eq!(
-            block.action[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::GuardThrust,
-                progress: 0.5,
-            }
-        );
+        assert!(block.action.is_empty());
     }
 
     #[test]
@@ -1139,7 +1100,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn jump_anticipation_is_upright_presentation_not_crouched_posture() {
+    fn jump_anticipation_does_not_change_upright_posture() {
         let mut state = SkeletonState::default();
         state.set_jump_anticipation(true);
         assert_eq!(state.jump_anticipation(), JumpAnticipation::Charging);

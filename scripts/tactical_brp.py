@@ -186,7 +186,6 @@ def smoke_test_command(args: argparse.Namespace) -> int:
                 movement=[0.0, 1.0],
                 look=[0.0, 0.0],
                 jump=JumpCommand(sequence=0),
-                crouch=False,
                 jump_charge=False,
                 downed_align=False,
                 posture=PostureCommand(sequence=0, action=None),

@@ -10,10 +10,7 @@ biped/
     swing.glb
     thrust.glb
     offhand.glb
-    duck_forward.glb
-    duck_backward.glb
-    duck_left.glb
-    duck_right.glb
+    dive.glb
     ...
 ```
 
@@ -32,6 +29,8 @@ Guard movement is procedural around frame 0 of the selected `swing.glb` or
 `thrust.glb`. The ordinary raised-guard foot-target planner handles forward,
 backward, and lateral movement. There are no authored directional guard-motion,
 alternate-stance, or stance-transition files.
+
+Blocking is also procedural. Packs do not provide authored block motions.
 
 `swing.glb` and `thrust.glb` are optional main-hand motions. Frame 0 is guard
 and frame 4 is first contact; optional frames 8 and 12 provide recovery into

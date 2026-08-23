@@ -51,7 +51,6 @@ pub(crate) struct AuthoritativeMovementIntent(pub(crate) Option<Vec2>);
 
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct AuthoritativePostureIntent {
-    crouch: bool,
     facing: CameraFacingIntent,
     last_jump_sequence: u32,
     last_command_sequence: u32,
@@ -836,7 +835,6 @@ pub(crate) fn on_player_input(
         input.look,
         input.movement,
         input.jump,
-        input.crouch,
         input.jump_charge,
         input.downed_align,
         input.posture,
@@ -878,7 +876,6 @@ pub(crate) fn on_player_input(
         movement_intent.0 = None;
         accumulated_input.jumped = None;
         accumulated_input.crouched = false;
-        posture_intent.crouch = false;
         posture_intent.facing = CameraFacingIntent::Free;
         posture_intent.quickstep_launch_tick = None;
         skeleton.set_jump_anticipation(false);
@@ -915,10 +912,8 @@ pub(crate) fn on_player_input(
             velocity.z = horizontal.z;
         }
     }
-    accumulated_input.crouched =
-        validated.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
+    accumulated_input.crouched = skeleton.body().is_downed() || skeleton.is_posture_transitioning();
     movement_intent.0 = validated.movement;
-    posture_intent.crouch = validated.crouch;
     posture_intent.facing =
         CameraFacingIntent::from_input(validated.weapon_guard, validated.downed_align);
     skeleton.set_jump_anticipation(validated.jump_charge);
@@ -989,7 +984,6 @@ struct ValidatedPlayerInput {
     yaw: f32,
     pitch: f32,
     jump: JumpCommand,
-    crouch: bool,
     jump_charge: bool,
     downed_align: bool,
     posture: PostureCommand,
@@ -1002,7 +996,6 @@ fn validate_player_input(
     look: Vec2,
     movement: Option<Vec2>,
     jump: JumpCommand,
-    crouch: bool,
     jump_charge: bool,
     downed_align: bool,
     posture: PostureCommand,
@@ -1031,7 +1024,6 @@ fn validate_player_input(
             - std::f32::consts::PI,
         pitch: look.y.clamp(-1.5, 1.5),
         jump,
-        crouch,
         jump_charge,
         downed_align,
         posture,
@@ -1208,7 +1200,7 @@ pub(crate) fn restore_authoritative_movement_intent(
             accumulated_input.last_movement = None;
         }
         accumulated_input.crouched =
-            posture.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
+            skeleton.body().is_downed() || skeleton.is_posture_transitioning();
         let roll_motion = skeleton.downed_lateral_motion();
         if roll_motion.abs() > f32::EPSILON {
             accumulated_input.last_movement = match (controller, transform) {
@@ -1396,7 +1388,6 @@ pub(crate) fn update_skeleton_locomotion(
                 orientation: controller.orientation,
                 linear_velocity: velocity.0,
                 grounded: controller.grounded.is_some(),
-                crouching: controller.crouching,
                 delta_seconds: time.delta_secs(),
                 tick,
             },
@@ -2133,7 +2124,6 @@ mod tests {
                 },
                 false,
                 false,
-                false,
                 PostureCommand::default(),
                 MovementPace::Sprint,
                 WeaponGuardState::Raised,
@@ -2175,7 +2165,6 @@ mod tests {
                 sequence: 7,
                 ..default()
             },
-            false,
             true,
             true,
             PostureCommand::default(),
@@ -2205,7 +2194,6 @@ mod tests {
             },
             false,
             false,
-            false,
             PostureCommand::default(),
             MovementPace::Walk,
             WeaponGuardState::Raised,
@@ -2221,7 +2209,6 @@ mod tests {
                     sequence: 4,
                     quickstep: Some(Vec2::new(f32::NAN, 0.0)),
                 },
-                false,
                 false,
                 false,
                 PostureCommand::default(),
@@ -2276,7 +2263,7 @@ mod tests {
 
         skeleton.transition_body(BodyState::Airborne);
         skeleton.advance_posture_transition(1);
-        skeleton.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        skeleton.transition_body(BodyState::Grounded(GroundedPosture::Upright));
         skeleton.advance_posture_transition(2);
         let previous = skeleton.posture_transition();
         skeleton.advance_posture_transition(BACKWARD_DIVE_POSTURE_TRANSITION_TICKS + 2);
@@ -2779,7 +2766,7 @@ mod tests {
 
             skeleton.transition_body(BodyState::Airborne);
             skeleton.advance_posture_transition(1);
-            skeleton.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+            skeleton.transition_body(BodyState::Grounded(GroundedPosture::Upright));
             skeleton.advance_posture_transition(2);
 
             let previous = skeleton.posture_transition();

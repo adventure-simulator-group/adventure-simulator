@@ -118,7 +118,6 @@ mod legacy_tests {
                     orientation: Quat::IDENTITY,
                     linear_velocity: Vec3::NEG_Z * 5.5,
                     grounded: true,
-                    crouching: false,
                     delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                     tick,
                 },
@@ -155,7 +154,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: velocity,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick: 1,
             },
@@ -320,8 +318,8 @@ mod legacy_tests {
                 "required pose {required:?} did not resolve"
             );
         }
-        // The 27 required semantics collapse to 25 independently resolvable
-        // variants when each supported whole-body mirror pair appears once.
+        // The 19 required semantics collapse to 18 independently resolvable
+        // variants when the supported whole-body mirror pair appears once.
         let authored_variants = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -329,7 +327,7 @@ mod legacy_tests {
                     .is_none_or(|counterpart| pose.as_str() < counterpart.as_str())
             })
             .count();
-        assert_eq!(authored_variants, 25);
+        assert_eq!(authored_variants, 18);
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -348,21 +346,6 @@ mod legacy_tests {
                 frame: 4,
             }
         );
-        assert_eq!(
-            root.poses[&SemanticPose::DuckBackward],
-            PoseAnchor {
-                motion: "duck_backward".to_owned(),
-                frame: 0,
-            }
-        );
-        assert_eq!(
-            root.poses[&SemanticPose::DuckForward],
-            PoseAnchor {
-                motion: "duck_forward".to_owned(),
-                frame: 0,
-            }
-        );
-        assert_eq!(root.motions["duck_forward"].last_frame, 0);
         assert_eq!(
             root.poses[&SemanticPose::DiveForward],
             PoseAnchor {
