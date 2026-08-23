@@ -489,6 +489,12 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .is_some_and(|weapon| weapon.ranged)
     }
 
+    fn weapon_is_unarmed(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_none()
+    }
+
     fn weapon_does_blunt(&self) -> bool {
         self.equipped_weapon()
             .and_then(|item| item.weapon)

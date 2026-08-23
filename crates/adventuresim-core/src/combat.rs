@@ -9,8 +9,8 @@ use crate::{
     skill::{PlayerSkills, Skill},
 };
 
-/// Blood-volume fraction lost per point of limb health removed by combat.
-pub const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+/// Blood-volume fraction lost per point of cutting limb damage.
+pub const CUT_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 /// Combat recovers this much imbalance per second for each effective point of
 /// Balance skill.
 pub const BALANCE_RECOVERY_PER_SKILL_SECOND: f32 = 0.03;
@@ -69,6 +69,11 @@ const UPPER_MUSCLE_KG_PER_STRENGTH: f32 = 5.0;
 const MUSCLE_KG_TO_JOULES: f32 = 2.0;
 const UPPER_MUSCLE_KG_TO_PUNCH_KG: f32 = 0.1;
 const STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 10.0;
+/// Empty-hand contacts move a whole body much more readily than they cause
+/// disabling tissue injury. This resistance puts an ordinary 12 J punch into
+/// a 70 kg opponent at roughly 43% imbalance.
+const UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 0.2;
+const UNARMED_BLUNT_INJURY_SCALE: f32 = 0.2;
 
 fn precision_damage_multiplier(excess_accuracy: f32, lore_cap: f32) -> f32 {
     excess_accuracy.max(0.0).min(lore_cap.max(2.0))
@@ -478,8 +483,9 @@ fn calculate_damage_from_force(
 ) -> AttackResult {
     let attack = attack.clamp(0.0, 1.0);
 
+    let unarmed = attacker_equip.weapon_is_unarmed();
     let has_edge = attacker_equip.weapon_does_slash() || attacker_equip.weapon_does_pierce();
-    let has_blunt = attacker_equip.weapon_does_blunt();
+    let has_blunt = unarmed || attacker_equip.weapon_does_blunt();
     let defender_resistance = if armor_applies && has_edge {
         let resistance = defender_equip.armor_resistance(defender_body_part);
         let flexibility = defender_equip.armor_flexibility(defender_body_part);
@@ -493,7 +499,12 @@ fn calculate_damage_from_force(
     } else {
         0.0
     };
-    let defender_stagger_resistance = STAGGER_RESISTANCE_JOULES_PER_KG
+    let stagger_resistance_per_kg = if unarmed {
+        UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG
+    } else {
+        STAGGER_RESISTANCE_JOULES_PER_KG
+    };
+    let defender_stagger_resistance = stagger_resistance_per_kg
         * (defender_equip.inventory_weight() + defender_body.body_weight());
 
     let attack_force = full_force.max(0.0) * attack;
@@ -516,7 +527,12 @@ fn calculate_damage_from_force(
     } else {
         0.0
     };
-    let blunt_force = absorbed_force * 0.5 + transmitted_blunt_force;
+    let blunt_force = (absorbed_force * 0.5 + transmitted_blunt_force)
+        * if unarmed {
+            UNARMED_BLUNT_INJURY_SCALE
+        } else {
+            1.0
+        };
     let blunt_damage = (blunt_force - defender_padding).max(0.0);
     // A pure blunt impact still transfers momentum when there is no edge for
     // resistance to absorb. Edge and mixed contacts retain the absorbed-force
@@ -558,11 +574,93 @@ pub fn health_damage_from_attack(result: AttackResult, part: BodyPart) -> f32 {
     ((cut_damage + blunt_damage * 0.75) / capacity_joules).max(0.0)
 }
 
+/// Partitions clamped limb-health damage according to each attack channel's
+/// contribution to the health calculation.
+#[must_use]
+pub fn apportion_attack_health_damage(result: AttackResult, applied: f32) -> (f32, f32) {
+    let AttackResult::ToDefender {
+        cut_damage,
+        blunt_damage,
+        ..
+    } = result
+    else {
+        return (0.0, 0.0);
+    };
+    let cut_weight = cut_damage.max(0.0);
+    let blunt_weight = blunt_damage.max(0.0) * 0.75;
+    let total_weight = cut_weight + blunt_weight;
+    if applied <= 0.0 || total_weight <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let applied_cut = applied * cut_weight / total_weight;
+    (applied_cut, applied - applied_cut)
+}
+
+/// Estimates immediate blood-volume loss from already-applied limb damage.
+/// Cuts bleed substantially; blunt trauma contributes only modest internal
+/// bleeding, with the head and abdomen carrying the greatest risk.
+#[must_use]
+pub fn blood_loss_from_applied_health_damage(
+    part: BodyPart,
+    applied_cut: f32,
+    applied_blunt: f32,
+) -> f32 {
+    let blunt_coefficient = match part {
+        BodyPart::Head => 0.015,
+        BodyPart::Stomach => 0.01,
+        BodyPart::Chest => 0.0075,
+        BodyPart::LeftArm | BodyPart::RightArm | BodyPart::LeftLeg | BodyPart::RightLeg => 0.005,
+    };
+    applied_cut.max(0.0) * CUT_BLOOD_LOSS_PER_HEALTH_DAMAGE
+        + applied_blunt.max(0.0) * blunt_coefficient
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::autoresolve::{CombatArmor, CombatEquipment, CombatWeapon};
     use crate::stub::{StubAttributes, StubBody, StubEquipment, StubEssentials, StubSkills};
+
+    #[derive(Debug)]
+    struct MatchupCombatant {
+        name: &'static str,
+        strength: f32,
+        weight_kg: f32,
+        will_check: f32,
+    }
+
+    impl PlayerAttributes for MatchupCombatant {
+        fn raw_limb_attr(&self, _attr: LimbAttribute, _limb: BodyPart) -> f32 {
+            self.strength
+        }
+
+        fn raw_single_body_part_attr(&self, _attr: crate::attribute::SimpleAttribute) -> f32 {
+            1.0
+        }
+    }
+
+    impl PlayerBody for MatchupCombatant {
+        fn body_part_health(&self, _part: BodyPart) -> f32 {
+            1.0
+        }
+
+        fn body_weight(&self) -> f32 {
+            self.weight_kg
+        }
+
+        fn primary_side(&self) -> BodySide {
+            BodySide::Right
+        }
+    }
+
+    fn assert_in_window(label: &str, actual: f32, expected: (f32, f32)) {
+        assert!(
+            (expected.0..=expected.1).contains(&actual),
+            "{label}: {actual:.4} was outside {:.4}..={:.4}",
+            expected.0,
+            expected.1,
+        );
+    }
 
     #[test]
     fn no_defender_response_has_zero_defense() {
@@ -626,6 +724,122 @@ mod tests {
         assert_eq!(cut_damage, 0.0);
         assert_eq!(blunt_damage, 80.0);
         assert_eq!(balance_damage, 50.0 / (70.0 * 10.0));
+    }
+
+    #[test]
+    fn unarmed_matchups_land_in_realistic_outcome_windows() {
+        struct Matchup<'a> {
+            attacker: &'a MatchupCombatant,
+            defender: &'a MatchupCombatant,
+            target: BodyPart,
+            imbalance: (f32, f32),
+            health_damage: (f32, f32),
+            total_incapacitation: (f32, f32),
+        }
+
+        let trained_puncher = MatchupCombatant {
+            name: "trained puncher",
+            strength: 1.55,
+            weight_kg: 75.0,
+            will_check: 1.5,
+        };
+        let light_bandit = MatchupCombatant {
+            name: "light bandit",
+            strength: 1.0,
+            weight_kg: 55.0,
+            will_check: 1.5,
+        };
+        let average_bandit = MatchupCombatant {
+            name: "average bandit",
+            strength: 1.0,
+            weight_kg: 70.0,
+            will_check: 1.5,
+        };
+        let heavy_bandit = MatchupCombatant {
+            name: "heavy bandit",
+            strength: 1.0,
+            weight_kg: 95.0,
+            will_check: 1.5,
+        };
+        let unarmed = CombatEquipment::default();
+
+        let matchups = [
+            Matchup {
+                attacker: &trained_puncher,
+                defender: &average_bandit,
+                target: BodyPart::Head,
+                imbalance: (0.38, 0.48),
+                health_damage: (0.08, 0.10),
+                total_incapacitation: (0.47, 0.56),
+            },
+            Matchup {
+                attacker: &trained_puncher,
+                defender: &light_bandit,
+                target: BodyPart::Chest,
+                imbalance: (0.50, 0.60),
+                health_damage: (0.018, 0.027),
+                total_incapacitation: (0.52, 0.62),
+            },
+            Matchup {
+                attacker: &trained_puncher,
+                defender: &heavy_bandit,
+                target: BodyPart::Stomach,
+                imbalance: (0.28, 0.35),
+                health_damage: (0.027, 0.038),
+                total_incapacitation: (0.30, 0.40),
+            },
+        ];
+
+        for matchup in matchups {
+            let label = format!(
+                "{} -> {} ({})",
+                matchup.attacker.name, matchup.defender.name, matchup.target
+            );
+            let result = calculate_damage(
+                1.0,
+                matchup.attacker,
+                matchup.attacker,
+                &unarmed,
+                matchup.target,
+                matchup.defender,
+                &unarmed,
+                false,
+            );
+            let AttackResult::ToDefender { balance_damage, .. } = result else {
+                panic!("{label}: undefended punch did not reach defender");
+            };
+            let health_damage = health_damage_from_attack(result, matchup.target);
+            let (cut, blunt) = apportion_attack_health_damage(result, health_damage);
+            let blood_loss = blood_loss_from_applied_health_damage(matchup.target, cut, blunt);
+            let total_incapacitation = combat_incapacitation(
+                0.0,
+                1.0,
+                blood_loss,
+                health_damage,
+                matchup.defender.will_check,
+                balance_damage,
+            );
+
+            assert_in_window(
+                &format!("{label} imbalance"),
+                balance_damage,
+                matchup.imbalance,
+            );
+            assert_in_window(
+                &format!("{label} health damage"),
+                health_damage,
+                matchup.health_damage,
+            );
+            assert_in_window(
+                &format!("{label} total incapacitation"),
+                total_incapacitation,
+                matchup.total_incapacitation,
+            );
+            assert!(
+                blood_loss < 0.002,
+                "{label}: blunt punch caused {blood_loss:.4} immediate blood loss"
+            );
+        }
     }
 
     #[test]

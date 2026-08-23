@@ -316,8 +316,11 @@ impl PlayerEquipment for CombatEquipment {
     fn weapon_is_ranged(&self) -> bool {
         self.weapon.is_some_and(|weapon| weapon.ranged)
     }
+    fn weapon_is_unarmed(&self) -> bool {
+        self.weapon.is_none()
+    }
     fn weapon_does_blunt(&self) -> bool {
-        self.weapon.is_some_and(|weapon| weapon.blunt)
+        self.weapon.is_none_or(|weapon| weapon.blunt)
     }
     fn weapon_does_slash(&self) -> bool {
         self.weapon.is_some_and(|weapon| weapon.slash)
@@ -1560,25 +1563,11 @@ fn apply_attack_result(
         AttackResult::ToDefender { balance_damage, .. } => {
             defender.imbalance += balance_damage.max(0.0);
             let damage = health_damage_from_attack(result, part);
-            let raw_cut = match result {
-                AttackResult::ToDefender { cut_damage, .. } => cut_damage.max(0.0),
-                _ => 0.0,
-            };
-            let raw_total = match result {
-                AttackResult::ToDefender {
-                    cut_damage,
-                    blunt_damage,
-                    ..
-                } => (cut_damage + blunt_damage).max(0.0),
-                _ => 0.0,
-            };
             let applied = defender.body.apply_damage(part, damage);
-            defender.cut_damage += if raw_total > 0.0 {
-                applied * raw_cut / raw_total
-            } else {
-                0.0
-            };
-            defender.blood_loss_fraction += applied * BLOOD_LOSS_PER_HEALTH_DAMAGE;
+            let (applied_cut, applied_blunt) = apportion_attack_health_damage(result, applied);
+            defender.cut_damage += applied_cut;
+            defender.blood_loss_fraction +=
+                blood_loss_from_applied_health_damage(part, applied_cut, applied_blunt);
             AttackEffect {
                 hit: true,
                 health_damage: applied,

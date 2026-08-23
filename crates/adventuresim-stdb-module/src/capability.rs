@@ -704,8 +704,11 @@ impl PlayerEquipment for StrategicEquipment {
     fn weapon_is_ranged(&self) -> bool {
         self.weapon.as_ref().is_some_and(|item| item.ranged)
     }
+    fn weapon_is_unarmed(&self) -> bool {
+        self.weapon.is_none()
+    }
     fn weapon_does_blunt(&self) -> bool {
-        self.weapon.as_ref().is_some_and(|item| item.blunt)
+        self.weapon.as_ref().is_none_or(|item| item.blunt)
     }
     fn weapon_does_slash(&self) -> bool {
         self.weapon.as_ref().is_some_and(|item| item.slash)

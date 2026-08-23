@@ -561,6 +561,14 @@ pub trait PlayerEquipment {
     fn weapon_is_ranged(&self) -> bool {
         false
     }
+    /// Whether the selected attack uses the character's empty hands.
+    ///
+    /// This is intentionally explicit: zero weapon weight is not a reliable
+    /// proxy because an item may be exceptionally light, while empty-hand
+    /// impacts have their own injury and stagger calibration.
+    fn weapon_is_unarmed(&self) -> bool {
+        false
+    }
     fn weapon_does_blunt(&self) -> bool {
         false
     }
