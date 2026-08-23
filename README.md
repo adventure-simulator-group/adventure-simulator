@@ -4,12 +4,10 @@
 
 # Fabelgeist
 
-*Fabelgeist* is a browser-based historical fantasy RPG set in 16th-century
-Germany.
-
-## Links
+*Fabelgeist* is a browser-based historical fantasy role-playing game set in
+16th-century Germany.
 
 *   [Project home and wiki](https://fabelgeist.com)
-*   [Source code](https://github.com/adventure-simulator-group/fabelgeist)
+*   [Project repository](https://github.com/adventure-simulator-group/fabelgeist)
 *   [Contribute on GitHub](https://github.com/adventure-simulator-group/fabelgeist/issues)
 *   [AGPLv3 license](LICENSE)
