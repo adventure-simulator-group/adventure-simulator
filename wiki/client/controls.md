@@ -12,8 +12,8 @@ developers will be interested in taking ownership and providing input on game
 design, which we strongly encourage. Thus, the goal of this page isn't really to
 describe the game's controls; the top priority is to provide a list of design
 goals and principles for the controls, mostly downstream of the principles laid
-out in the [readme](../../README.md). After that, we provide a tentative
-proposal/outline for a control scheme which meets those goals.
+out in the [project introduction](../index.md). After that, we provide a
+tentative proposal/outline for a control scheme which meets those goals.
 
 ## Goals
 In order of importance, we want controls which are unambiguous; comprehensive;

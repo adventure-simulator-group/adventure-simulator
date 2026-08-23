@@ -4,7 +4,7 @@ excluded = []
 [[item]]
 kind = "page"
 title = "Introduction"
-path = "../README.md"
+path = "index.md"
 bullet = false
 
 [[item]]

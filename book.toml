@@ -12,7 +12,7 @@ renderer = ["html"]
 [output.html]
 mathjax-support = true
 admonitions = true
-site-url = "https://adventuresim.org"
+site-url = "https://fabelgeist.com"
 git-repository-url = "https://github.com/adventure-simulator-group/fabelgeist"
 
 [output.linkcheck]

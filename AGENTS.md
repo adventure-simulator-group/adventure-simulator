@@ -18,13 +18,23 @@
 
 ## Documentation and interface assets
 
-- Update factual README or wiki documentation when behavior, architecture, or
-  developer workflow changes.
-- For README or wiki prose, follow `wiki/contributing/wiki-writing.md` because it
-  defines the project's editorial voice. Bruno Segovia owns final approval for
-  user-facing prose; unless Bruno explicitly requests it, agents may update
-  factual implementation documentation but must not originate voice-bearing
-  copy.
+- `README.md` provides repository orientation; `wiki/index.md` owns the game
+  vision and product boundaries.
+- Keep documented behavior, architecture, and developer workflow synchronized
+  with implementation changes. Apply public documentation wording that Bruno
+  supplies; when wording is missing, identify the required update and ask Bruno
+  rather than inventing it.
+- For any public-facing prose, first follow
+  `wiki/contributing/wiki-writing.md`, which defines the project's editorial
+  voice.
+- Bruno Segovia writes all public-facing prose, including README and wiki pages
+  and public GitHub issue or pull-request titles and descriptions. Agents may
+  prepare private research drafts, propose information architecture and
+  argument maps, and edit prose Bruno supplies. Do not originate public prose
+  unless Bruno explicitly asks for a draft, and never publish a draft until he
+  approves its exact wording. In the normal workflow, give Bruno the private
+  structure, ask him to write the public section, respond as editor, and apply
+  the wording only after he decides it.
 - `wiki/SUMMARY.md` is generated from `wiki/navigation.toml`. When adding,
   removing, or moving a wiki page, update the manifest and run
   `python scripts/update_wiki_summary.py`; never edit the summary directly.
