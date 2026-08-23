@@ -10,20 +10,15 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 use std::cmp::Ordering;
 
-use crate::{
-    combat::{
-        CombatDuration, CombatInstant, CombatSet, MeleeAttackIntent, MeleeAttackStartedIntent,
-        PendingDefenderResponse, RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision,
-        TacticalCombatSide, TacticalCombatantDefeated,
-    },
-    mission::MissionState,
+use crate::combat::{
+    CombatDuration, CombatInstant, CombatSet, MeleeAttackIntent, MeleeAttackStartedIntent,
+    PendingDefenderResponse, RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision,
+    TacticalCombatSide,
 };
-#[cfg(test)]
-use defense::CountedEnemyDefeat;
 pub use defense::DefenseChances;
 use defense::{
-    on_attack_started, on_tactical_combatant_defeated, on_targeted_attack_started,
-    on_targeted_ranged_attack_started, tick_bot_reactions,
+    on_attack_started, on_targeted_attack_started, on_targeted_ranged_attack_started,
+    tick_bot_reactions,
 };
 pub use offense::OffensiveCombatAi;
 #[cfg(test)]
@@ -36,61 +31,17 @@ use offense::{compare_target, drive_offensive_combat_ai};
 #[reflect(Component)]
 pub struct MissionEnemy;
 
-/// Real-time grace period between a bot dying and its ECS despawn. See
-/// [`PendingRemoval`] for why this exists; it has nothing to do with the
-/// client's (much longer, purely cosmetic) fade-out duration.
-const DESPAWN_REPLICATION_GRACE_SECONDS: f32 = 0.3;
-
-/// Marks a dead bot for removal after [`DESPAWN_REPLICATION_GRACE_SECONDS`]
-/// of real time, rather than despawning it the instant it dies.
-///
-/// This has nothing to do with the client's cosmetic fade (that lives
-/// entirely in the tactical client's `player::start_fade_on_incapacitation`
-/// and is invisible to the server, and lasts far longer). It exists because
-/// bevy_replicon sends this bot's killing-blow `SuccessfulAttackResponse` and
-/// its eventual despawn as separate messages, and an event referencing an
-/// already-despawned entity fails to deserialize client-side ("unable to map
-/// entities ... from the server"). Rather than relying on exact same-frame
-/// scheduling order against bevy_replicon's internal tick/send machinery (an
-/// assumption two earlier attempts got wrong in practice), this just waits
-/// long enough in wall-clock time that several replication sends have
-/// unambiguously happened first, however that machinery is actually timed.
-#[derive(Component)]
-struct PendingRemoval {
-    timer: Timer,
-}
-
 pub struct BotPlugin;
 
 impl Plugin for BotPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_tactical_combatant_defeated)
-            .add_observer(on_attack_started)
+        app.add_observer(on_attack_started)
             .add_observer(on_targeted_attack_started)
             .add_observer(on_targeted_ranged_attack_started)
             .add_systems(
                 Update,
-                (
-                    drive_offensive_combat_ai,
-                    tick_bot_reactions,
-                    despawn_pending_removals,
-                )
-                    .after(CombatSet::Condition),
+                (drive_offensive_combat_ai, tick_bot_reactions).after(CombatSet::Condition),
             );
-    }
-}
-
-/// Despawns bots marked [`PendingRemoval`] once their grace timer elapses.
-fn despawn_pending_removals(
-    mut commands: Commands,
-    time: Res<Time<()>>,
-    mut q: Query<(Entity, &mut PendingRemoval)>,
-) {
-    for (entity, mut pending) in &mut q {
-        pending.timer.tick(time.delta());
-        if pending.timer.is_finished() {
-            commands.entity(entity).despawn();
-        }
     }
 }
 
@@ -307,22 +258,6 @@ mod tests {
             "ammo exhaustion should return a melee-capable weapon to melee cadence"
         );
         assert_eq!(app.world().resource::<RecordedRangedAttacks>().0.len(), 1);
-    }
-
-    #[test]
-    fn enemy_defeat_is_counted_only_once() {
-        let mut app = App::new();
-        app.insert_resource(MissionState::new(None, 1, NonZeroU32::new(1).unwrap()))
-            .add_observer(on_tactical_combatant_defeated);
-        let enemy = app.world_mut().spawn(MissionEnemy).id();
-
-        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
-        app.update();
-        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
-        app.update();
-
-        assert_eq!(app.world().resource::<MissionState>().enemies_defeated(), 1);
-        assert!(app.world().entity(enemy).contains::<CountedEnemyDefeat>());
     }
 
     #[test]
@@ -560,7 +495,7 @@ mod tests {
             crate::mission::terminal_resolution(crate::mission::TerminalCombatSnapshot {
                 required_enemies: 1,
                 loaded_enemies: 1,
-                defeated_enemies: u32::from(enemy_defeated),
+                incapacitated_enemies: u32::from(enemy_defeated),
                 loaded_party: 1,
                 incapacitated_party: u32::from(party_defeated),
                 enrollment_sealed: true,

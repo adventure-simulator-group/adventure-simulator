@@ -189,6 +189,7 @@ pub(super) struct ImpactReaction {
     pub(super) remaining: f32,
     pub(super) duration: f32,
     pub(super) strength: f32,
+    pub(super) velocity_change: Vec3,
 }
 
 mod loading;
@@ -388,13 +389,16 @@ fn restore_authored_bind_pose(
 }
 
 fn on_successful_attack(event: On<SuccessfulAttackResponse>, mut commands: Commands) {
-    let strength = (event.total_damage() / 100.0).clamp(0.15, 1.0);
-    for entity in &event.hit {
-        commands.entity(*entity).insert(ImpactReaction {
-            remaining: 0.22,
-            duration: 0.22,
-            strength,
-        });
+    let strength = (event.impact_velocity_change.length() / 5.0).clamp(0.0, 1.0);
+    if strength > f32::EPSILON {
+        commands
+            .entity(event.impact_recipient)
+            .insert(ImpactReaction {
+                remaining: 0.22,
+                duration: 0.22,
+                strength,
+                velocity_change: event.impact_velocity_change,
+            });
     }
 }
 

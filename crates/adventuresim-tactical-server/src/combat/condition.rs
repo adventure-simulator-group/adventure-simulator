@@ -15,7 +15,6 @@ pub(crate) fn update_tactical_combat_state(
     )>,
 ) {
     for (entity, mut state, mut input, mut movement_intent, pace, skeleton) in &mut states {
-        let was_incapacitated = state.is_incapacitated();
         let Ok(view) = viewer.get(entity) else {
             continue;
         };
@@ -61,10 +60,7 @@ pub(crate) fn update_tactical_combat_state(
             if let Some(movement_intent) = movement_intent.as_deref_mut() {
                 movement_intent.0 = None;
             }
-            if !was_incapacitated {
-                cmd.entity(entity).remove::<PendingDefenderResponse>();
-                cmd.trigger(TacticalCombatantDefeated(entity));
-            }
+            cmd.entity(entity).remove::<PendingDefenderResponse>();
         }
     }
 }

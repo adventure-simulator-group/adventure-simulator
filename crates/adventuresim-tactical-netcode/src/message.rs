@@ -293,6 +293,12 @@ pub struct SuccessfulAttackResponse {
     pub result: AttackResult,
     pub flanking: f32,
     pub defender_response: DefenderResponse,
+    /// Entity whose controller received `impact_velocity_change`.
+    #[entities]
+    pub impact_recipient: Entity,
+    /// Server-applied change in world-space linear velocity, in metres per
+    /// second. Presentation consumes the identical value for secondary motion.
+    pub impact_velocity_change: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

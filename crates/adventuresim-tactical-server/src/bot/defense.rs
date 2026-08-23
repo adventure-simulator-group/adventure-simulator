@@ -41,31 +41,9 @@ impl Default for DefenseChances {
 }
 
 #[derive(Component)]
-pub(super) struct CountedEnemyDefeat;
-
-#[derive(Component)]
 pub(super) struct PendingBotReaction {
     timer: Timer,
     choice: DefendRequest,
-}
-
-pub(super) fn on_tactical_combatant_defeated(
-    defeated: On<TacticalCombatantDefeated>,
-    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDefeat>)>,
-    mut commands: Commands,
-    mut state: ResMut<MissionState>,
-) {
-    let entity = defeated.0;
-    if enemies.get(entity).is_err() {
-        return;
-    }
-    commands.entity(entity).insert((
-        CountedEnemyDefeat,
-        PendingRemoval {
-            timer: Timer::from_seconds(DESPAWN_REPLICATION_GRACE_SECONDS, TimerMode::Once),
-        },
-    ));
-    state.record_enemy_defeat();
 }
 
 /// Predicts whether the nearest opposing AI facing a client attacker notices

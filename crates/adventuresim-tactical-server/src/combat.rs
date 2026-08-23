@@ -36,7 +36,7 @@ use ingress::{
 use melee::resolve_melee_attack;
 pub(crate) use protocol::{
     MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse, RangedAttackIntent,
-    RangedAttackStartedIntent, TacticalCombatSide, TacticalCombatantDefeated,
+    RangedAttackStartedIntent, TacticalCombatSide,
 };
 use ranged::resolve_ranged_attack;
 
@@ -115,6 +115,50 @@ struct ApplyMeleeAttackResult {
     attacker_weapon_slot: EquipSlot,
     defender_parry_slot: Option<EquipSlot>,
     attacker_weapon_contact: bool,
+    impact_recipient: Entity,
+    impact_velocity_change: Vec3,
+}
+
+const MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND: f32 = 12.0;
+
+/// Converts combat contact energy into an explicit physical delta-v. Combat
+/// resolution historically calls the energy-like value `contact_force`; this
+/// seam prevents those joules from being mistaken for either newtons or an
+/// already mass-normalized impulse.
+fn hit_velocity_change(
+    result: AttackResult,
+    attacker_position: Vec3,
+    defender_position: Vec3,
+    attacker_mass_kg: f32,
+    defender_mass_kg: f32,
+) -> (bool, Vec3) {
+    let (hits_attacker, contact_energy, mass) = match result {
+        AttackResult::ToAttacker { contact_force, .. } => {
+            (true, contact_force.max(0.0), attacker_mass_kg)
+        }
+        AttackResult::ToDefender { contact_force, .. } => {
+            (false, contact_force.max(0.0), defender_mass_kg)
+        }
+    };
+    if !contact_energy.is_finite() || contact_energy <= f32::EPSILON {
+        return (hits_attacker, Vec3::ZERO);
+    }
+    let horizontal = (defender_position - attacker_position)
+        .xz()
+        .normalize_or_zero();
+    if horizontal == Vec2::ZERO {
+        return (hits_attacker, Vec3::ZERO);
+    }
+    let horizontal = if hits_attacker {
+        -horizontal
+    } else {
+        horizontal
+    };
+    let direction = Vec3::new(horizontal.x, 0.12, horizontal.y).normalize_or_zero();
+    let speed = (2.0 * contact_energy / mass.max(1.0))
+        .sqrt()
+        .min(MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND);
+    (hits_attacker, direction * speed)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -817,5 +861,35 @@ mod tests {
 
         assert_eq!(app.world().resource::<AcceptedCompletions>().0, 1);
         assert!((app.world().entity(target).get::<Limbs>().unwrap().chest - 0.9).abs() < 0.0001);
+    }
+
+    #[test]
+    fn contact_energy_becomes_mass_normalized_directional_velocity() {
+        let result = AttackResult::ToDefender {
+            cut_damage: 0.0,
+            blunt_damage: 1.0,
+            balance_damage: 0.0,
+            contact_force: 140.0,
+            armor_contact: false,
+        };
+        let (hits_attacker, velocity_change) =
+            hit_velocity_change(result, Vec3::ZERO, Vec3::new(0.0, 0.0, 2.0), 70.0, 70.0);
+        assert!(!hits_attacker);
+        assert!((velocity_change.length() - 2.0).abs() < 1.0e-4);
+        assert!(velocity_change.z > 0.0);
+        assert!(velocity_change.y > 0.0);
+    }
+
+    #[test]
+    fn parry_recoil_points_back_at_attacker() {
+        let result = AttackResult::ToAttacker {
+            balance_damage: 1.0,
+            contact_force: 40.0,
+            physical_contact: true,
+        };
+        let (hits_attacker, velocity_change) =
+            hit_velocity_change(result, Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), 80.0, 60.0);
+        assert!(hits_attacker);
+        assert!(velocity_change.x < 0.0);
     }
 }

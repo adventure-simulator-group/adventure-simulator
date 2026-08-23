@@ -20,7 +20,6 @@ use terminal::TerminalState;
 #[derive(Resource, Debug)]
 pub(crate) struct MissionState {
     timeout: Option<Timer>,
-    enemies_defeated: u32,
     required_enemy_defeats: u32,
     enrollment: PartyEnrollment,
     terminal: TerminalState,
@@ -34,19 +33,10 @@ impl MissionState {
     ) -> Self {
         Self {
             timeout,
-            enemies_defeated: 0,
             required_enemy_defeats,
             enrollment: PartyEnrollment::new(expected_party_members),
             terminal: TerminalState::default(),
         }
-    }
-
-    pub(crate) fn record_enemy_defeat(&mut self) {
-        self.enemies_defeated = self.enemies_defeated.saturating_add(1);
-    }
-
-    pub(crate) fn enemies_defeated(&self) -> u32 {
-        self.enemies_defeated
     }
 
     pub(crate) fn required_enemy_defeats(&self) -> u32 {
@@ -147,7 +137,7 @@ impl MissionState {
 pub(crate) struct TerminalCombatSnapshot {
     pub required_enemies: u32,
     pub loaded_enemies: u32,
-    pub defeated_enemies: u32,
+    pub incapacitated_enemies: u32,
     pub loaded_party: u32,
     pub incapacitated_party: u32,
     pub enrollment_sealed: bool,
@@ -165,7 +155,7 @@ pub(crate) fn terminal_resolution(
     {
         return None;
     }
-    let enemies_defeated = snapshot.defeated_enemies >= snapshot.required_enemies;
+    let enemies_defeated = snapshot.incapacitated_enemies >= snapshot.required_enemies;
     let party_defeated = snapshot.incapacitated_party >= snapshot.loaded_party;
     match (enemies_defeated, party_defeated) {
         (_, true) => Some(TacticalMissionResolution::Failed),
@@ -184,7 +174,7 @@ mod tests {
         TerminalCombatSnapshot {
             required_enemies: 2,
             loaded_enemies: 2,
-            defeated_enemies: 0,
+            incapacitated_enemies: 0,
             loaded_party: 2,
             incapacitated_party: 0,
             enrollment_sealed: true,
@@ -213,7 +203,7 @@ mod tests {
     fn simultaneous_defeat_deterministically_fails() {
         assert_eq!(
             terminal_resolution(TerminalCombatSnapshot {
-                defeated_enemies: 2,
+                incapacitated_enemies: 2,
                 incapacitated_party: 2,
                 ..snapshot()
             }),
@@ -225,7 +215,25 @@ mod tests {
     fn victory_requires_enemy_defeat_with_an_active_party_member() {
         assert_eq!(
             terminal_resolution(TerminalCombatSnapshot {
-                defeated_enemies: 2,
+                incapacitated_enemies: 2,
+                ..snapshot()
+            }),
+            Some(TacticalMissionResolution::Defeated)
+        );
+    }
+
+    #[test]
+    fn enemy_incapacitation_must_be_simultaneous() {
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                incapacitated_enemies: 1,
+                ..snapshot()
+            }),
+            None
+        );
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                incapacitated_enemies: 2,
                 ..snapshot()
             }),
             Some(TacticalMissionResolution::Defeated)

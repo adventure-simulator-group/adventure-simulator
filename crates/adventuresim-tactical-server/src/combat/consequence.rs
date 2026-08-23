@@ -3,6 +3,7 @@ use super::*;
 pub(super) fn apply_melee_attack_result(
     event: On<ApplyMeleeAttackResult>,
     mut combatants: Query<(&mut Limbs, &mut TacticalCombatState)>,
+    mut velocities: Query<&mut LinearVelocity>,
     metadata: Query<(&TacticalCombatSide, &CharacterId)>,
     mut consequences: ResMut<TacticalConsequenceAccumulator>,
     items: Query<(
@@ -26,6 +27,9 @@ pub(super) fn apply_melee_attack_result(
         event.result,
         event.body_part,
     );
+    if let Ok(mut velocity) = velocities.get_mut(event.impact_recipient) {
+        velocity.0 += event.impact_velocity_change;
+    }
     let attacker_metadata = metadata.get(event.attacker).ok();
     let defender_metadata = metadata.get(event.target).ok();
     if defender_metadata.is_some_and(|(side, _)| *side == TacticalCombatSide::Party)

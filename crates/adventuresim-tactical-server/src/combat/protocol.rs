@@ -20,10 +20,6 @@ pub(crate) enum TacticalCombatSide {
     Enemy,
 }
 
-/// Emitted once per transition from active to incapacitated.
-#[derive(Event, Clone, Copy, Debug)]
-pub(crate) struct TacticalCombatantDefeated(pub(crate) Entity);
-
 /// Both network clients and server-owned AI enter melee through this seam.
 #[derive(Event, Clone, Copy, Debug)]
 pub(crate) struct MeleeAttackIntent {

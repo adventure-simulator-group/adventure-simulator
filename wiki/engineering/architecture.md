@@ -699,43 +699,47 @@ always name a target, and ranged completion distinguishes a miss from a targeted
 hit. Raw finite precision becomes `ReportedPrecision` without clamping or
 geometric reconstruction, and duration-backed authority types gate mutation.
 Accepted results mutate replicated limb health plus transient blood loss and
-imbalance. Shared autoresolve rules derive pain, blood-loss, and imbalance
-incapacitation and recover balance over time. Tactical enrollment projects
-authoritative body weight, current/maximum blood, and strategic condition
-contributions. It preserves the source values for fear, fatigue, hunger, thirst,
-and temperature so the client can present the same segmented condition language
-as the strategic UI; the same shared derivation as autoresolve excludes pain and
-blood from starting incapacitation before recomputing them live. Actors
-currently over the threshold stop moving, attacking, defending, and
-participating in offensive AI target selection; imbalance-only incapacitation
-can recover. The numeric incapacitation value is the sole stored readiness
-authority; active, staggered, and incapacitated status are mechanically derived
-from it rather than synchronized through a second boolean or ECS marker.
+imbalance. Contact energy also becomes a mass-normalized world-space velocity
+change on the struck character controller. The ordered response carries that
+same velocity change and recipient so client secondary motion responds to the
+server-applied impact rather than reconstructing it. Shared autoresolve rules
+derive pain, blood-loss, and imbalance incapacitation and recover balance over
+time. Tactical enrollment projects authoritative body weight, current/maximum
+blood, and strategic condition contributions. It preserves the source values for
+fear, fatigue, hunger, thirst, and temperature so the client can present the
+same segmented condition language as the strategic UI; the same shared
+derivation as autoresolve excludes pain and blood from starting incapacitation
+before recomputing them live. Actors currently over the threshold stop moving,
+attacking, defending, and participating in offensive AI target selection;
+imbalance-only incapacitation can recover. The numeric incapacitation value is
+the sole stored readiness authority; active, staggered, and incapacitated status
+are mechanically derived from it rather than synchronized through a second
+boolean or ECS marker.
 
-These per-tick effects remain in memory only. A mission enemy's first transition
-into incapacitation counts as its defeat; recovery and later incapacitation do
-not count it again. Once all required enemies are defeated, the tactical server
-immediately reports `Defeated`. Once every loaded Party combatant is
-incapacitated, it immediately reports `Failed`; simultaneous defeat also fails
-deterministically. Strategic authority binds the expected living Party count
-into the request and active server records, and the trusted dispatcher passes it
-to the child. Resolution waits until every expected adventurer has loaded at
-least once, no player is still loading, and all required enemies have loaded.
-Enrollment is then sealed. Once enrollment has begun, an empty Party has a
-ten-second reconnection grace before `Failed`, including when every client
-disconnects before the seal. A timeout-disabled development server where nobody
-ever joins remains available. Terminal submission retries a frozen result after
-synchronous errors no more than once per second, before reevaluating combat
-predicates. Queueing is not commitment: only an `end_tactical_server_then`
-callback confirming reducer acceptance latches the result and broadcasts the
-authoritative Victory/Defeat presentation event, keeps the transport alive for a
-bounded three-second display window, and then exits. The delay is strictly
-post-commit: it cannot defer strategic authority or create a second outcome. A
-configured timeout remains a bounded `Failed` fallback. Enrollment and terminal
-progress are private lifecycle enums. A resolution and its bounded receipt form
-one frozen value whose retry time, acknowledgement deadline, transport failure,
-committed presentation, and finished state exist only in their applicable
-variants.
+These per-tick effects remain in memory only. Incapacitated combatants remain
+spawned and may recover; there is no corpse fade or server-side removal. The
+tactical server reports `Defeated` only while all required loaded enemies are
+incapacitated simultaneously. It reports `Failed` only while every loaded Party
+combatant is incapacitated simultaneously; simultaneous Party and Enemy
+incapacitation fails deterministically. Strategic authority binds the expected
+living Party count into the request and active server records, and the trusted
+dispatcher passes it to the child. Resolution waits until every expected
+adventurer has loaded at least once, no player is still loading, and all
+required enemies have loaded. Enrollment is then sealed. Once enrollment has
+begun, an empty Party has a ten-second reconnection grace before `Failed`,
+including when every client disconnects before the seal. A timeout-disabled
+development server where nobody ever joins remains available. Terminal
+submission retries a frozen result after synchronous errors no more than once
+per second, before reevaluating combat predicates. Queueing is not commitment:
+only an `end_tactical_server_then` callback confirming reducer acceptance
+latches the result and broadcasts the authoritative Victory/Defeat presentation
+event, keeps the transport alive for a bounded three-second display window, and
+then exits. The delay is strictly post-commit: it cannot defer strategic
+authority or create a second outcome. A configured timeout remains a bounded
+`Failed` fallback. Enrollment and terminal progress are private lifecycle enums.
+A resolution and its bounded receipt form one frozen value whose retry time,
+acknowledgement deadline, transport failure, committed presentation, and
+finished state exist only in their applicable variants.
 
 The terminal call carries a bounded authenticated consequence receipt frozen
 with the resolution. It contains only Party character IDs, applied (clamped)

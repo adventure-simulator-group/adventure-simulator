@@ -149,7 +149,7 @@ pub(crate) fn check_terminal_combat_outcome(
     conn: Option<Res<SpacetimeDb>>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
-    enemies: Query<(), (With<MissionEnemy>, With<Player>)>,
+    enemies: Query<&TacticalCombatState, (With<MissionEnemy>, With<Player>)>,
     combatants: Query<
         (
             Entity,
@@ -212,7 +212,10 @@ pub(crate) fn check_terminal_combat_outcome(
     let snapshot = TerminalCombatSnapshot {
         required_enemies: state.required_enemy_defeats(),
         loaded_enemies: enemies.iter().count() as u32,
-        defeated_enemies: state.enemies_defeated(),
+        incapacitated_enemies: enemies
+            .iter()
+            .filter(|combat_state| combat_state.is_incapacitated())
+            .count() as u32,
         loaded_party,
         incapacitated_party,
         enrollment_sealed: state.enrollment_ready(has_loading_player),
