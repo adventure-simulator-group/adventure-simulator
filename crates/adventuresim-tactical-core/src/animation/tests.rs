@@ -75,8 +75,8 @@ mod legacy_tests {
             assert_eq!(state.body(), body);
             assert_eq!(state.weapon_guard(), WeaponGuardState::Raised);
             assert!(!state.raised_locomotion().is_moving());
-            let rebuilt = state
-                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 3.0));
+            let rebuilt =
+                state.with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 3.0));
             assert!(!rebuilt.raised_locomotion().is_moving());
         }
     }
@@ -115,11 +115,7 @@ mod legacy_tests {
             ))
             .unwrap();
         library
-            .insert(pack(
-                "sword",
-                Some("unarmed"),
-                [SemanticPose::AttackSwing],
-            ))
+            .insert(pack("sword", Some("unarmed"), [SemanticPose::AttackSwing]))
             .unwrap();
         library
             .insert(pack("shield", Some("unarmed"), [SemanticPose::GuardThrust]))
@@ -455,20 +451,14 @@ mod legacy_tests {
         let same_heading = Quat::from_rotation_y(std::f32::consts::PI);
         let side_heading = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
         assert!(downed_camera_roll_target(body, same_heading).abs() < 0.0001);
-        assert!(
-            (downed_camera_roll_target(body, side_heading).abs() - 0.5).abs() < 0.0001
-        );
+        assert!((downed_camera_roll_target(body, side_heading).abs() - 0.5).abs() < 0.0001);
         assert!((downed_camera_roll_target(body, Quat::IDENTITY) - 1.0).abs() < 0.0001);
     }
 
     #[test]
     fn lateral_dive_lands_at_its_half_roll_without_crossing_prone_idle() {
         for (direction, expected_half_turns, expected_pose) in [
-            (
-                DiveDirection::Left,
-                -0.5,
-                SemanticPose::ProneSupineRollLeft,
-            ),
+            (DiveDirection::Left, -0.5, SemanticPose::ProneSupineRollLeft),
             (
                 DiveDirection::Right,
                 0.5,
@@ -818,7 +808,12 @@ mod legacy_tests {
         );
         assert!(evaluation.base.len() >= 2);
         assert!(!evaluation.base[0].mirror_lower_body);
-        assert!(evaluation.base.iter().all(|sample| !sample.mirror_lower_body));
+        assert!(
+            evaluation
+                .base
+                .iter()
+                .all(|sample| !sample.mirror_lower_body)
+        );
         assert!(evaluation.base.iter().any(|sample| matches!(
             sample.sampling,
             PoseSampling::Cycle { phase } if (phase - 0.375).abs() < 0.0001
@@ -870,7 +865,11 @@ mod legacy_tests {
             );
             assert!(samples.len() <= 2);
             assert!((samples.iter().map(|sample| sample.weight).sum::<f32>() - 1.0).abs() < 0.0001);
-            assert!(samples.iter().all(|sample| sample.sampling == PoseSampling::Anchor));
+            assert!(
+                samples
+                    .iter()
+                    .all(|sample| sample.sampling == PoseSampling::Anchor)
+            );
         }
     }
 
@@ -882,11 +881,8 @@ mod legacy_tests {
                 .map(|frame| {
                     let phase = frame as f32 * step;
                     let quarter = phase.rem_euclid(1.0) * 4.0;
-                    let gait = gait_pair(
-                        phase,
-                        SemanticPose::WalkContact,
-                        SemanticPose::WalkPassing,
-                    );
+                    let gait =
+                        gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing);
                     let end_weight = gait.get(1).map_or(0.0, |sample| sample.weight);
                     (quarter.floor() as u8, end_weight)
                 })
@@ -920,12 +916,15 @@ mod legacy_tests {
             );
             let middle_delta = near_middle.get(1).map_or(0.0, |sample| sample.weight)
                 - middle.get(1).map_or(0.0, |sample| sample.weight);
-            assert!(start_delta < middle_delta, "Hermite endpoints ease into motion");
+            assert!(
+                start_delta < middle_delta,
+                "Hermite endpoints ease into motion"
+            );
         }
     }
 
     #[test]
-    fn attack_blends_guard_contact_and_end_guard() {
+    fn attack_curve_reaches_contact_then_recovers_through_guard_contact_axis() {
         let mut state = SkeletonState::default();
         state
             .begin_attack(AttackSpec::new(AttackAnimation::Swing), 0, 100)
@@ -935,10 +934,10 @@ mod legacy_tests {
         assert_eq!(
             evaluation.action,
             vec![PoseSample {
-                pose: SemanticPose::AttackSwing,
-                sampling: PoseSampling::Span {
-                    end: SemanticPose::GuardThrust,
-                    progress: 0.0,
+                pose: SemanticPose::GuardSwing,
+                sampling: PoseSampling::CurveSpan {
+                    end: SemanticPose::AttackSwing,
+                    coordinate: 1.0,
                 },
                 weight: 1.0,
                 mirror_lower_body: false,
@@ -947,11 +946,11 @@ mod legacy_tests {
 
         state.advance_action(199);
         let end = AnimationEvaluation::from_skeleton(&state);
-        let PoseSampling::Span { end, progress } = end.action[0].sampling else {
-            panic!("attack recovery should remain a sparse span");
+        let PoseSampling::CurveSpan { end, coordinate } = end.action[0].sampling else {
+            panic!("attack recovery should remain an extrapolating curve span");
         };
-        assert_eq!(end, SemanticPose::GuardThrust);
-        assert!((progress - 0.99).abs() < 0.0001);
+        assert_eq!(end, SemanticPose::AttackSwing);
+        assert!(coordinate > 0.0 && coordinate < 0.01);
     }
 
     #[test]
@@ -1031,7 +1030,8 @@ mod legacy_tests {
         assert_eq!(attack.attack_animation(), Some(AttackAnimation::Thrust));
     }
 
-    #[test]    fn horizontal_speed_drives_continuous_airborne_span() {
+    #[test]
+    fn horizontal_speed_drives_continuous_airborne_span() {
         for (speed, progress) in [(0.0, 0.0), (2.0, 1.0)] {
             let evaluation = AnimationEvaluation::from_skeleton(
                 &SkeletonState::default()
@@ -1100,14 +1100,36 @@ mod legacy_tests {
     }
 
     #[test]
+    fn authoritative_attack_clock_supports_asymmetric_recovery() {
+        let mut state = SkeletonState::default();
+        state
+            .begin_attack_timed(AttackSpec::default(), 10, 20, 26)
+            .unwrap();
+        state.advance_action(23);
+        assert_eq!(state.action_phase(), 0.75);
+        state.advance_action(26);
+        assert_eq!(state.action_phase(), 1.0);
+        state.advance_action(27);
+        assert_eq!(state.action(), ActionState::default());
+    }
+
+    #[test]
+    fn poor_handling_increases_readable_drawback_and_follow_through() {
+        let controlled = AttackCurve::from_handling(0.9, 5.0);
+        let uncontrolled = AttackCurve::from_handling(0.2, 1.0);
+        assert!(uncontrolled.tell_fraction > controlled.tell_fraction);
+        assert!(uncontrolled.coordinate(0.15) < controlled.coordinate(0.15));
+        assert!(uncontrolled.coordinate(0.6) > controlled.coordinate(0.6));
+        assert_eq!(uncontrolled.coordinate(0.5), 1.0);
+        assert!(uncontrolled.coordinate(1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
     fn jump_anticipation_does_not_change_upright_posture() {
         let mut state = SkeletonState::default();
         state.set_jump_anticipation(true);
         assert_eq!(state.jump_anticipation(), JumpAnticipation::Charging);
-        assert_eq!(
-            state.body(),
-            BodyState::Grounded(GroundedPosture::Upright)
-        );
+        assert_eq!(state.body(), BodyState::Grounded(GroundedPosture::Upright));
         assert_eq!(state.posture(), Posture::Upright);
 
         state.transition_body(BodyState::Airborne);
