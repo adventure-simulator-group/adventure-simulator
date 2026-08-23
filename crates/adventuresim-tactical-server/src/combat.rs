@@ -8,6 +8,7 @@ mod ragdoll;
 mod ranged;
 
 use adventuresim_core::item_references::ARROW_ID;
+pub(crate) use adventuresim_tactical_core::player::TacticalCombatSide;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{FromClient, SendTargets, ServerTriggerExt, ToClients},
@@ -37,7 +38,7 @@ use ingress::{
 use melee::resolve_melee_attack;
 pub(crate) use protocol::{
     MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse, RangedAttackIntent,
-    RangedAttackStartedIntent, TacticalCombatSide,
+    RangedAttackStartedIntent,
 };
 use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;

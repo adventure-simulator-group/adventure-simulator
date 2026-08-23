@@ -12,14 +12,6 @@ pub(crate) struct PendingDefenderResponse {
     pub(crate) set_at: CombatInstant,
 }
 
-/// Transient allegiance is independent from connectivity and bot control.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Reflect)]
-#[reflect(Component)]
-pub(crate) enum TacticalCombatSide {
-    Party,
-    Enemy,
-}
-
 /// Both network clients and server-owned AI enter melee through this seam.
 #[derive(Event, Clone, Copy, Debug)]
 pub(crate) struct MeleeAttackIntent {

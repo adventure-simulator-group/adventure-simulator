@@ -28,6 +28,17 @@ pub struct Player {
     pub name: String,
 }
 
+/// Transient tactical allegiance. This is authoritative on the tactical
+/// server and replicated so clients can present enemy-only combat UI without
+/// inferring allegiance from connectivity or local control.
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, Copy, PartialEq, Eq)]
+#[reflect(Component)]
+#[component(immutable)]
+pub enum TacticalCombatSide {
+    Party,
+    Enemy,
+}
+
 pub fn default_tactical_character_id() -> u64 {
     adventuresim_core::starting_character::default_character("tactical").id
 }

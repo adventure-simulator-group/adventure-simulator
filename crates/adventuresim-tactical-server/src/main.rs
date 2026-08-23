@@ -331,7 +331,7 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         .allow_component::<Attributes>()
         .allow_component::<Stats>()
         .allow_component::<TacticalCombatState>()
-        .allow_component::<crate::combat::TacticalCombatSide>()
+        .allow_component::<TacticalCombatSide>()
         .allow_component::<Transform>()
         .allow_component::<SceneId>()
         .allow_component::<SceneTerrain>()

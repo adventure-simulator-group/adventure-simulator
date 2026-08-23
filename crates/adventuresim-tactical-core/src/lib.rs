@@ -58,8 +58,8 @@ pub mod prelude {
     };
     pub use crate::player::{
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
-        Stats, TacticalCombatState, TacticalIncapacitationSources, TacticalPlayerView,
-        TacticalPlayerViewer, default_tactical_character_id,
+        Stats, TacticalCombatSide, TacticalCombatState, TacticalIncapacitationSources,
+        TacticalPlayerView, TacticalPlayerViewer, default_tactical_character_id,
     };
     pub use crate::scene::{
         GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,
