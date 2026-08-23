@@ -10,9 +10,12 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 use std::cmp::Ordering;
 
-use crate::combat::{
-    CombatDuration, CombatSet, DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent,
-    RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
+use crate::{
+    combat::{
+        CombatDuration, CombatSet, DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent,
+        RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
+    },
+    player_projection::begin_get_up_transition,
 };
 pub use defense::{DefenseChances, ReactiveDefenseAi};
 use defense::{
@@ -37,6 +40,8 @@ pub struct MissionEnemy;
 pub enum CombatantBehaviorPackage {
     OffensiveCombat,
     RaisedGuard,
+    AimAtNearestOpponent,
+    RecoverToUpright,
     ReactiveDefense {
         chances: DefenseChances,
         requires_facing: bool,
@@ -51,6 +56,7 @@ impl CombatantBehaviorPackages {
     #[must_use]
     pub fn standard_combat() -> Self {
         Self(vec![
+            CombatantBehaviorPackage::RecoverToUpright,
             CombatantBehaviorPackage::OffensiveCombat,
             CombatantBehaviorPackage::ReactiveDefense {
                 chances: DefenseChances::default(),
@@ -60,8 +66,14 @@ impl CombatantBehaviorPackages {
     }
 
     #[must_use]
+    pub fn passive() -> Self {
+        Self(vec![CombatantBehaviorPackage::RecoverToUpright])
+    }
+
+    #[must_use]
     pub fn always_block_without_facing() -> Self {
         Self(vec![
+            CombatantBehaviorPackage::RecoverToUpright,
             CombatantBehaviorPackage::RaisedGuard,
             CombatantBehaviorPackage::ReactiveDefense {
                 chances: DefenseChances {
@@ -75,13 +87,18 @@ impl CombatantBehaviorPackages {
 
     #[must_use]
     pub fn always_dodge() -> Self {
-        Self(vec![CombatantBehaviorPackage::ReactiveDefense {
-            chances: DefenseChances {
-                parry_chance: 0.0,
-                dodge_chance: 1.0,
+        Self(vec![
+            CombatantBehaviorPackage::RecoverToUpright,
+            CombatantBehaviorPackage::RaisedGuard,
+            CombatantBehaviorPackage::AimAtNearestOpponent,
+            CombatantBehaviorPackage::ReactiveDefense {
+                chances: DefenseChances {
+                    parry_chance: 0.0,
+                    dodge_chance: 1.0,
+                },
+                requires_facing: true,
             },
-            requires_facing: false,
-        }])
+        ])
     }
 }
 
@@ -98,6 +115,12 @@ fn materialize_behavior_packages(
                 }
                 CombatantBehaviorPackage::RaisedGuard => {
                     entity.insert(RaisedGuardAi);
+                }
+                CombatantBehaviorPackage::AimAtNearestOpponent => {
+                    entity.insert(AimAtNearestOpponentAi);
+                }
+                CombatantBehaviorPackage::RecoverToUpright => {
+                    entity.insert(RecoverToUprightAi);
                 }
                 CombatantBehaviorPackage::ReactiveDefense {
                     chances,
@@ -122,6 +145,14 @@ fn materialize_behavior_packages(
 #[reflect(Component)]
 pub struct RaisedGuardAi;
 
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct AimAtNearestOpponentAi;
+
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct RecoverToUprightAi;
+
 fn maintain_guard_stance(
     mut guarded: Query<(&TacticalCombatState, &mut SkeletonState), With<RaisedGuardAi>>,
 ) {
@@ -132,6 +163,61 @@ fn maintain_guard_stance(
             WeaponGuardState::Raised
         };
         set_weapon_guard(&mut skeleton, guard);
+    }
+}
+
+fn aim_at_nearest_opponent(
+    candidates: Query<
+        (
+            Entity,
+            &Transform,
+            &TacticalCombatSide,
+            &TacticalCombatState,
+        ),
+        With<Player>,
+    >,
+    mut aiming: Query<
+        (
+            Entity,
+            &Transform,
+            &TacticalCombatSide,
+            &TacticalCombatState,
+            &mut CharacterLook,
+        ),
+        With<AimAtNearestOpponentAi>,
+    >,
+) {
+    for (entity, transform, side, state, mut look) in &mut aiming {
+        if state.is_incapacitated() {
+            continue;
+        }
+        let nearest = candidates
+            .iter()
+            .filter(|(candidate, _, candidate_side, candidate_state)| {
+                *candidate != entity
+                    && **candidate_side != *side
+                    && !candidate_state.is_incapacitated()
+            })
+            .min_by(|(a, a_transform, _, _), (b, b_transform, _, _)| {
+                compare_target(transform, a_transform, *a, b_transform, *b)
+            });
+        let Some((_, target_transform, _, _)) = nearest else {
+            continue;
+        };
+        let offset = target_transform.translation.xz() - transform.translation.xz();
+        if offset.length_squared() > f32::EPSILON {
+            look.yaw = (-offset.x).atan2(-offset.y);
+        }
+    }
+}
+
+fn recover_to_upright(
+    mut recovering: Query<(&TacticalCombatState, &mut SkeletonState), With<RecoverToUprightAi>>,
+) {
+    for (state, mut skeleton) in &mut recovering {
+        if !state.is_incapacitated() && !skeleton.is_posture_transitioning() {
+            begin_get_up_transition(&mut skeleton);
+        }
     }
 }
 
@@ -147,6 +233,8 @@ impl Plugin for BotPlugin {
                 (
                     materialize_behavior_packages,
                     maintain_guard_stance,
+                    aim_at_nearest_opponent,
+                    recover_to_upright,
                     drive_offensive_combat_ai,
                     tick_bot_reactions,
                 )
@@ -162,6 +250,8 @@ mod tests {
 
     use super::defense::PendingBotReaction;
     use super::*;
+    use crate::combat::PendingDefenderResponse;
+    use crate::player_projection::AuthoritativePostureIntent;
 
     #[derive(Resource, Default)]
     struct RecordedAttacks(Vec<(Entity, Entity)>);
@@ -335,12 +425,17 @@ mod tests {
             .world_mut()
             .spawn(CombatantBehaviorPackages::standard_combat())
             .id();
+        let dodger = app
+            .world_mut()
+            .spawn(CombatantBehaviorPackages::always_dodge())
+            .id();
 
         app.update();
 
         let blocker = app.world().entity(blocker);
         assert!(!blocker.contains::<OffensiveCombatAi>());
         assert!(blocker.contains::<RaisedGuardAi>());
+        assert!(blocker.contains::<RecoverToUprightAi>());
         assert!(!blocker.get::<ReactiveDefenseAi>().unwrap().requires_facing);
         assert_eq!(
             blocker.get::<DefenseChances>(),
@@ -353,17 +448,27 @@ mod tests {
         let standard = app.world().entity(standard);
         assert!(standard.contains::<OffensiveCombatAi>());
         assert!(standard.get::<ReactiveDefenseAi>().unwrap().requires_facing);
+        assert!(standard.contains::<RecoverToUprightAi>());
         assert_eq!(
             standard.get::<DefenseChances>(),
             Some(&DefenseChances::default())
         );
         assert!(!standard.contains::<RaisedGuardAi>());
+
+        let dodger = app.world().entity(dodger);
+        assert!(dodger.contains::<RaisedGuardAi>());
+        assert!(dodger.contains::<AimAtNearestOpponentAi>());
+        assert!(dodger.get::<ReactiveDefenseAi>().unwrap().requires_facing);
+        assert!(dodger.contains::<RecoverToUprightAi>());
     }
 
     #[test]
     fn raised_guard_package_uses_shared_skeleton_guard_state() {
         let mut app = App::new();
-        app.add_systems(Update, (materialize_behavior_packages, maintain_guard_stance).chain());
+        app.add_systems(
+            Update,
+            (materialize_behavior_packages, maintain_guard_stance).chain(),
+        );
         let blocker = app
             .world_mut()
             .spawn((
@@ -436,6 +541,122 @@ mod tests {
         app.world_mut().trigger(start);
         app.world_mut().flush();
         assert!(app.world().entity(blocker).contains::<PendingBotReaction>());
+    }
+
+    #[test]
+    fn completed_bot_reaction_enters_the_shared_block_animation() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(on_attack_started)
+            .add_observer(crate::combat::apply_defend_intent)
+            .add_systems(Update, tick_bot_reactions);
+        let attacker = app
+            .world_mut()
+            .spawn((
+                CharacterLook::default(),
+                Transform::default(),
+                TacticalCombatSide::Party,
+            ))
+            .id();
+        let blocker = app
+            .world_mut()
+            .spawn((
+                MissionEnemy,
+                CharacterLook::default(),
+                Transform::from_xyz(0.0, 0.0, 1.0),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+                AuthoritativePostureIntent::default(),
+                ReactiveDefenseAi {
+                    requires_facing: false,
+                },
+                DefenseChances {
+                    parry_chance: 1.0,
+                    dodge_chance: 0.0,
+                },
+            ))
+            .id();
+        app.world_mut().trigger(FromClient {
+            client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
+                attacker,
+            ),
+            message: MeleeActionRequest::Start {
+                strike_family: StrikeFamily::Swing,
+                hand: AttackHand::Main,
+            },
+        });
+        app.world_mut().flush();
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+
+        app.update();
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(blocker)
+                .unwrap()
+                .action_kind(),
+            SkeletonAction::Block
+        );
+        assert!(
+            app.world()
+                .get::<PendingDefenderResponse>(blocker)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn aiming_package_faces_the_nearest_opponent() {
+        let mut app = App::new();
+        app.add_systems(Update, aim_at_nearest_opponent);
+        let dodger = app
+            .world_mut()
+            .spawn((
+                Player::default(),
+                Transform::default(),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+                CharacterLook::default(),
+                AimAtNearestOpponentAi,
+            ))
+            .id();
+        app.world_mut().spawn((
+            Player::default(),
+            Transform::from_xyz(2.0, 0.0, 0.0),
+            TacticalCombatSide::Party,
+            TacticalCombatState::default(),
+        ));
+
+        app.update();
+
+        let look = app.world().get::<CharacterLook>(dodger).unwrap();
+        assert!((look.yaw + std::f32::consts::FRAC_PI_2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn recovery_package_starts_authored_get_up_without_skipping_upright() {
+        let mut app = App::new();
+        app.add_systems(Update, recover_to_upright);
+        let prone = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default().with_body_state(BodyState::Prone),
+                RecoverToUprightAi,
+            ))
+            .id();
+
+        app.update();
+
+        let skeleton = app.world().get::<SkeletonState>(prone).unwrap();
+        assert_eq!(skeleton.body(), BodyState::Prone);
+        assert_eq!(
+            skeleton.posture_transition().unwrap().kind(),
+            PostureTransitionKind::ProneToUpright
+        );
     }
 
     #[test]

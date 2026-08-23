@@ -17,12 +17,12 @@ pub(super) fn on_defender_response_request(
     });
 }
 
-pub(super) fn apply_defend_intent(
+pub(crate) fn apply_defend_intent(
     event: On<DefendIntent>,
     mut cmd: Commands,
     time: Res<Time<()>>,
     states: Query<&TacticalCombatState>,
-    mut skeletons: Query<&mut SkeletonState>,
+    mut skeletons: Query<(&mut SkeletonState, &mut AuthoritativePostureIntent)>,
 ) {
     let Ok(combat_state) = states.get(event.defender) else {
         return;
@@ -31,15 +31,16 @@ pub(super) fn apply_defend_intent(
         return;
     }
 
-    let Ok(mut skeleton) = skeletons.get_mut(event.defender) else {
+    let Ok((mut skeleton, mut posture_intent)) = skeletons.get_mut(event.defender) else {
         return;
     };
     let start = animation_tick(&time);
     let accepted = match event.choice {
-        DefendRequest::Dodge if skeleton.action_kind() == SkeletonAction::Dodge => true,
-        DefendRequest::Dodge => skeleton
-            .begin_dodge(DodgeSpec::default(), start, start + 8)
-            .is_ok(),
+        DefendRequest::Dodge { direction } if DodgeSpec::quickstep(direction).is_none() => false,
+        DefendRequest::Dodge { .. } if skeleton.action_kind() == SkeletonAction::Dodge => true,
+        DefendRequest::Dodge { direction } => {
+            begin_authoritative_quickstep(&mut skeleton, &mut posture_intent, direction)
+        }
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
         DefendRequest::Roll => true,
         DefendRequest::Parry => skeleton
@@ -110,7 +111,7 @@ pub(super) fn resolve_defender_response(
         (1.0 - elapsed.as_secs_f32() / MAX_REFLEX_WINDOW.as_secs_f32()).clamp(0.0, 1.0);
 
     match pending.choice {
-        DefendRequest::Dodge => DefenderResponse::Dodge { input_reflex },
+        DefendRequest::Dodge { .. } => DefenderResponse::Dodge { input_reflex },
         DefendRequest::Roll => DefenderResponse::Dodge {
             input_reflex: roll_dodge_reflex(input_reflex),
         },
@@ -174,11 +175,19 @@ mod roll_tests {
             .add_observer(apply_defend_intent);
         let player = app
             .world_mut()
-            .spawn((TacticalCombatState::default(), SkeletonState::default()))
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+                AuthoritativePostureIntent::default(),
+            ))
             .id();
         let bot = app
             .world_mut()
-            .spawn((TacticalCombatState::default(), SkeletonState::default()))
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
+                AuthoritativePostureIntent::default(),
+            ))
             .id();
 
         app.world_mut().trigger(FromClient {
@@ -189,17 +198,27 @@ mod roll_tests {
         });
         app.world_mut().trigger(DefendIntent {
             defender: bot,
-            choice: DefendRequest::Dodge,
+            choice: DefendRequest::Dodge { direction: Vec2::X },
         });
         app.world_mut().flush();
 
         assert_eq!(
-            app.world().get::<SkeletonState>(player).unwrap().action_kind(),
+            app.world()
+                .get::<SkeletonState>(player)
+                .unwrap()
+                .action_kind(),
             SkeletonAction::Block
         );
         assert_eq!(
             app.world().get::<SkeletonState>(bot).unwrap().action_kind(),
             SkeletonAction::Dodge
+        );
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(bot)
+                .unwrap()
+                .action_direction(),
+            Vec2::X
         );
         assert!(matches!(
             app.world().get::<PendingDefenderResponse>(player),
@@ -211,10 +230,80 @@ mod roll_tests {
         assert!(matches!(
             app.world().get::<PendingDefenderResponse>(bot),
             Some(PendingDefenderResponse {
-                choice: DefendRequest::Dodge,
+                choice: DefendRequest::Dodge { direction: Vec2::X },
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn stationary_dodge_request_is_rejected() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(apply_defend_intent);
+        let defender = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
+                AuthoritativePostureIntent::default(),
+            ))
+            .id();
+
+        app.world_mut().trigger(DefendIntent {
+            defender,
+            choice: DefendRequest::Dodge {
+                direction: Vec2::ZERO,
+            },
+        });
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(defender)
+                .unwrap()
+                .action_kind(),
+            SkeletonAction::None
+        );
+        assert!(
+            app.world()
+                .get::<PendingDefenderResponse>(defender)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn directional_dodge_request_without_raised_guard_is_rejected() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(apply_defend_intent);
+        let defender = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+                AuthoritativePostureIntent::default(),
+            ))
+            .id();
+
+        app.world_mut().trigger(DefendIntent {
+            defender,
+            choice: DefendRequest::Dodge { direction: Vec2::X },
+        });
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(defender)
+                .unwrap()
+                .action_kind(),
+            SkeletonAction::None
+        );
+        assert!(
+            app.world()
+                .get::<PendingDefenderResponse>(defender)
+                .is_none()
+        );
     }
 }
 

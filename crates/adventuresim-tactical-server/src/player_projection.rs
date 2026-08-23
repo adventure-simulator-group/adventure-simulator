@@ -237,20 +237,20 @@ fn spawn_connected_player(
                 }
                 Some(AnimationLabEnemyRole::Dodger) => CombatantBehaviorPackages::always_dodge(),
                 Some(AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::DemiLancer) => {
-                    CombatantBehaviorPackages::default()
+                    CombatantBehaviorPackages::passive()
                 }
                 None => {
                     warn!(
                         name = player.character.name,
                         "Animation lab enemy has no recognized behavior role; leaving passive"
                     );
-                    CombatantBehaviorPackages::default()
+                    CombatantBehaviorPackages::passive()
                 }
             }
         } else if enemy_combat_scale_bps > 0 {
             CombatantBehaviorPackages::standard_combat()
         } else {
-            CombatantBehaviorPackages::default()
+            CombatantBehaviorPackages::passive()
         };
         cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy, packages))
             .id()
@@ -975,15 +975,7 @@ pub(crate) fn on_player_input(
                 if validated.weapon_guard == WeaponGuardState::Raised
                     && skeleton.body() == BodyState::Grounded(GroundedPosture::Upright) =>
             {
-                let start = skeleton.locomotion_sample_tick;
-                if let Some(spec) = DodgeSpec::quickstep(direction)
-                    && skeleton
-                        .begin_dodge(spec, start, start + QUICKSTEP_CONTACT_TICKS)
-                        .is_ok()
-                {
-                    posture_intent.quickstep_launch_tick =
-                        Some(start + QUICKSTEP_PREPARATION_TICKS);
-                }
+                begin_authoritative_quickstep(&mut skeleton, &mut posture_intent, direction);
                 false
             }
             Some(_) => false,
@@ -993,6 +985,30 @@ pub(crate) fn on_player_input(
             accumulated_input.jumped = Some(Stopwatch::new());
         }
     }
+}
+
+pub(crate) fn begin_authoritative_quickstep(
+    skeleton: &mut SkeletonState,
+    posture_intent: &mut AuthoritativePostureIntent,
+    direction: Vec2,
+) -> bool {
+    if skeleton.weapon_guard() != WeaponGuardState::Raised
+        || skeleton.body() != BodyState::Grounded(GroundedPosture::Upright)
+    {
+        return false;
+    }
+    let start = skeleton.locomotion_sample_tick;
+    let Some(spec) = DodgeSpec::quickstep(direction) else {
+        return false;
+    };
+    if skeleton
+        .begin_dodge(spec, start, start + QUICKSTEP_CONTACT_TICKS)
+        .is_err()
+    {
+        return false;
+    }
+    posture_intent.quickstep_launch_tick = Some(start + QUICKSTEP_PREPARATION_TICKS);
+    true
 }
 
 fn sequence_is_newer(candidate: u32, previous: u32) -> bool {
@@ -1060,14 +1076,18 @@ fn apply_posture_action(
     skeleton: &mut SkeletonState,
     accumulated_input: &mut AccumulatedInput,
 ) -> Option<DiveDirection> {
+    if action == PostureActionRequest::Toggle && skeleton.body().is_downed() {
+        begin_get_up_transition(skeleton);
+        return None;
+    }
     let tick = skeleton.locomotion_sample_tick;
     let mut dive_travel_direction = None;
     let transition = match action {
         PostureActionRequest::Toggle => match skeleton.body() {
             BodyState::Grounded(_) => Some(PostureTransitionKind::UprightToProne),
-            BodyState::Prone => Some(PostureTransitionKind::ProneToUpright),
-            BodyState::Supine => Some(PostureTransitionKind::SupineToUpright),
-            BodyState::Airborne | BodyState::Ragdolled => None,
+            BodyState::Prone | BodyState::Supine | BodyState::Airborne | BodyState::Ragdolled => {
+                None
+            }
         },
         PostureActionRequest::RollLeft => roll_transition(skeleton.body(), RollDirection::Left),
         PostureActionRequest::RollRight => roll_transition(skeleton.body(), RollDirection::Right),
@@ -1101,6 +1121,19 @@ fn apply_posture_action(
         return dive_travel_direction;
     }
     None
+}
+
+pub(crate) fn begin_get_up_transition(skeleton: &mut SkeletonState) -> bool {
+    let transition = match skeleton.body() {
+        BodyState::Prone => PostureTransitionKind::ProneToUpright,
+        BodyState::Supine => PostureTransitionKind::SupineToUpright,
+        _ => return false,
+    };
+    skeleton.begin_posture_transition(
+        transition,
+        skeleton.locomotion_sample_tick,
+        GROUND_POSTURE_TRANSITION_TICKS,
+    )
 }
 
 fn dive_horizontal_velocity(yaw: f32, direction: DiveDirection) -> Vec3 {

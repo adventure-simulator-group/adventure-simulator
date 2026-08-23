@@ -62,7 +62,6 @@ impl Plugin for PlayerPlugin {
             .register_required_components_with::<Player, _>(|| Visibility::Inherited)
             .add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
-            .add_observer(on_dodge_fired)
             .add_observer(on_parry_fired)
             .add_systems(
                 Update,
@@ -601,25 +600,14 @@ fn apply_direct_combat_controls(
                     let _ = skeleton.begin_dodge(spec, start, start + 20);
                 }
             }
-            cmd.client_trigger(DefendRequest::Dodge);
+            cmd.client_trigger(DefendRequest::Dodge {
+                direction: controls.quickstep_direction,
+            });
         }
         if controls.roll_just_pressed {
             cmd.client_trigger(DefendRequest::Roll);
         }
     }
-}
-
-fn on_dodge_fired(
-    event: On<Fire<Dodge>>,
-    mut cmd: Commands,
-    time: Res<Time>,
-    mut skeletons: Query<&mut SkeletonState>,
-) {
-    if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
-        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        let _ = skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
-    }
-    cmd.client_trigger(DefendRequest::Dodge);
 }
 
 fn on_parry_fired(

@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is a simplified version of [`DefenderResponse`] that omits
 /// `input_reflex` — the server computes reflex from timestamp delta.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Event, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Event, Serialize, Deserialize)]
 pub enum DefendRequest {
-    Dodge,
+    Dodge { direction: Vec2 },
     Roll,
     Parry,
 }

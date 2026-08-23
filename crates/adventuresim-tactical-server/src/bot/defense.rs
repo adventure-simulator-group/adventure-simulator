@@ -200,7 +200,9 @@ pub(super) fn roll_defend_choice(chances: DefenseChances) -> Option<DefendReques
     if roll < chances.parry_chance {
         Some(DefendRequest::Parry)
     } else if roll < chances.parry_chance + chances.dodge_chance {
-        Some(DefendRequest::Dodge)
+        Some(DefendRequest::Dodge {
+            direction: if rand::random() { Vec2::X } else { Vec2::NEG_X },
+        })
     } else {
         None
     }

@@ -61,10 +61,13 @@ defect depends on live gameplay.
 
 Animation mode seeds four named combat targets: a passive bandit, an
 omnidirectional shield blocker that doesn't turn toward the player, an
-omnidirectional dodger, and a passive demi-lancer in three-quarter armor. The
-targets use ordinary combat statistics and equipment rules. Their behavior is
-assembled from independent offense and reactive-defense packages, so a test
-target can defend without inheriting movement, facing, or attack behavior.
+aiming directional dodger, and a passive demi-lancer in three-quarter armor.
+The targets use ordinary combat statistics and equipment rules. Their behavior
+is assembled from independent offense, guard, facing, reactive-defense, and
+get-up packages, so a test target can defend without inheriting unrelated
+movement or attack behavior. Directional dodges require a raised guard and a
+nonzero travel direction, and recovered prone or supine targets use the same
+authored get-up transition as players before returning upright.
 
 The native logger records input, authoritative and presented locomotion,
 semantic animation clocks, animation-layer weights, procedural owner state,

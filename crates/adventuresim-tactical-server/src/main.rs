@@ -344,6 +344,8 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         .allow_component::<crate::bot::ReactiveDefenseAi>()
         .allow_component::<crate::bot::DefenseChances>()
         .allow_component::<crate::bot::RaisedGuardAi>()
+        .allow_component::<crate::bot::AimAtNearestOpponentAi>()
+        .allow_component::<crate::bot::RecoverToUprightAi>()
         // Inventory items are separate entities (linked back to their
         // owning character via `ItemOf`), not components on the character
         // itself - without these, a dumped/loaded character's equipment is

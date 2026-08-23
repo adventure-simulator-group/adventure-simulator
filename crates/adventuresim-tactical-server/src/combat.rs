@@ -17,7 +17,10 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 use std::{collections::HashMap, num::NonZeroU32, time::Duration};
 
-use crate::player_projection::{AuthoritativeMovementIntent, PlayerProjectionSet};
+use crate::player_projection::{
+    AuthoritativeMovementIntent, AuthoritativePostureIntent, PlayerProjectionSet,
+    begin_authoritative_quickstep,
+};
 pub(crate) use authority::{
     CombatDuration, CombatInstant, MeleeAttackAuthority, RangedAttackAuthority, ReportedPrecision,
 };
@@ -30,10 +33,11 @@ use consequence::{apply_melee_attack_result, record_party_ammunition_use};
 use consequence::{
     attacker_weapon_contact_matches, defender_equipment_contact_matches, record_party_injury,
 };
+pub(crate) use ingress::apply_defend_intent;
 use ingress::{
-    apply_defend_intent, authoritative_line_of_sight, on_defender_response_request,
-    on_melee_action_request, on_melee_attack_started, on_ranged_action_request,
-    on_ranged_attack_started, resolve_defender_response,
+    authoritative_line_of_sight, on_defender_response_request, on_melee_action_request,
+    on_melee_attack_started, on_ranged_action_request, on_ranged_attack_started,
+    resolve_defender_response,
 };
 use melee::resolve_melee_attack;
 pub(crate) use protocol::{
