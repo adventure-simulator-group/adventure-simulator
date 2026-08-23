@@ -15,9 +15,8 @@ pub const CUT_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 /// matchup/autoresolve equipment.
 pub const UNARMED_SWING_PRECISION: f32 = 0.2;
 pub const UNARMED_STAB_PRECISION: f32 = 0.5;
-/// Combat recovers this much imbalance per second for each effective point of
-/// Balance skill.
-pub const BALANCE_RECOVERY_PER_SKILL_SECOND: f32 = 0.03;
+/// Fraction of maximum balance recovered per second while combat continues.
+pub const IMBALANCE_RECOVERY_PER_SECOND: f32 = 0.25;
 
 #[must_use]
 pub fn apply_clamped_limb_damage(health: &mut f32, damage: f32) -> f32 {
@@ -27,9 +26,8 @@ pub fn apply_clamped_limb_damage(health: &mut f32, damage: f32) -> f32 {
 }
 
 #[must_use]
-pub fn recover_combat_imbalance(imbalance: f32, balance_check: f32, seconds: f32) -> f32 {
-    (imbalance - BALANCE_RECOVERY_PER_SKILL_SECOND * balance_check.max(0.25) * seconds.max(0.0))
-        .max(0.0)
+pub fn recover_combat_imbalance(imbalance: f32, seconds: f32) -> f32 {
+    (imbalance - IMBALANCE_RECOVERY_PER_SECOND * seconds.max(0.0)).max(0.0)
 }
 
 #[must_use]

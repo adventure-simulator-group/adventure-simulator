@@ -483,15 +483,7 @@ impl Combatant {
     }
 
     fn recover_balance(&mut self) {
-        let balance = self.skills.skill_check_by_parts(
-            Skill::Balance,
-            &self.attributes,
-            &self.body,
-            &self.essentials,
-            &self.equipment,
-            LimbWeights::both_legs(),
-        );
-        self.imbalance = recover_combat_imbalance(self.imbalance, balance, COMBAT_ROUND_SECONDS);
+        self.imbalance = recover_combat_imbalance(self.imbalance, COMBAT_ROUND_SECONDS);
     }
 
     fn can_attack_ranged(&self) -> bool {

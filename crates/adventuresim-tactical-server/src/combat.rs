@@ -708,8 +708,8 @@ mod tests {
         assert!(combat_incapacitation(0.0, 1.0, 0.3, 0.0, 1.0, 0.0) >= 1.0);
         assert!(combat_incapacitation(0.2, 1.0, 0.0, 1.0, 0.0, 0.0) >= 1.0);
         assert!(combat_incapacitation(0.0, 1.0, 0.0, 0.0, 1.0, 1.0) >= 1.0);
-        assert!((recover_combat_imbalance(0.5, 2.0, 2.0) - 0.38).abs() < 0.0001);
-        assert_eq!(recover_combat_imbalance(0.01, 5.0, 1.0), 0.0);
+        assert_eq!(recover_combat_imbalance(0.75, 2.0), 0.25);
+        assert_eq!(recover_combat_imbalance(0.01, 1.0), 0.0);
     }
 
     #[test]

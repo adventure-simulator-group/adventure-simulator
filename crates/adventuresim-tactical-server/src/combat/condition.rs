@@ -38,8 +38,7 @@ pub(crate) fn update_tactical_combat_state(
         );
         state.exhaustion =
             (state.exhaustion + movement_exhaustion_change * time.delta_secs()).max(0.0);
-        let balance = view.skill_check(Skill::Balance, LimbWeights::both_legs());
-        state.imbalance = recover_combat_imbalance(state.imbalance, balance, time.delta_secs());
+        state.imbalance = recover_combat_imbalance(state.imbalance, time.delta_secs());
         let Ok(limbs) = limbs.get(entity) else {
             continue;
         };
