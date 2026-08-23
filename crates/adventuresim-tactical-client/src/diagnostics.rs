@@ -461,6 +461,7 @@ fn drive_scripted_input(
             posture,
             pace: MovementPace::Sprint,
             weapon_guard: script.weapon_guard,
+            melee_preparation: MeleePreparationInput::Preferred,
         };
         input_override.0 = Some(request);
         let next_status = DiagnosticInputStatus {

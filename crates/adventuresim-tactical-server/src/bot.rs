@@ -179,6 +179,7 @@ mod tests {
             slash: true,
             pierce: false,
             windup_secs: 0.3,
+            offhand_windup_secs: 0.34,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         actor
@@ -219,6 +220,7 @@ mod tests {
             slash: false,
             pierce: true,
             windup_secs: 0.3,
+            offhand_windup_secs: 0.34,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         let ammo = world

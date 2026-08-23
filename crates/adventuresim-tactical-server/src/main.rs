@@ -651,6 +651,7 @@ mod debug_dump_world_tests {
                     slash: true,
                     pierce: false,
                     windup_secs: 0.3,
+                    offhand_windup_secs: 0.34,
                     swing_precision: 0.0,
                     stab_precision: 0.0,
                     prefers_stab: false,

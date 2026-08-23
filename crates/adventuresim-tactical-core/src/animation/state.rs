@@ -477,6 +477,9 @@ enum ActionKind {
     Attack {
         target_height: f32,
         animation: AttackAnimation,
+        strike_family: StrikeFamily,
+        hand: AttackHand,
+        continuation: bool,
         timeline: ActionTimeline,
     },
     Block {
@@ -506,6 +509,9 @@ impl<'de> Deserialize<'de> for ActionState {
             ActionKind::Attack {
                 target_height,
                 animation,
+                strike_family,
+                hand,
+                continuation,
                 timeline,
             } => ActionKind::Attack {
                 target_height: if target_height.is_finite() {
@@ -514,6 +520,9 @@ impl<'de> Deserialize<'de> for ActionState {
                     AttackSpec::default().target_height
                 },
                 animation,
+                strike_family,
+                hand,
+                continuation,
                 timeline: timeline.normalized(),
             },
             ActionKind::Block {
@@ -595,6 +604,9 @@ pub enum ActionTransitionError {
 pub struct AttackSpec {
     pub target_height: f32,
     pub animation: AttackAnimation,
+    pub strike_family: StrikeFamily,
+    pub hand: AttackHand,
+    pub continuation: bool,
 }
 
 impl Default for AttackSpec {
@@ -602,6 +614,9 @@ impl Default for AttackSpec {
         Self {
             target_height: 0.5,
             animation: AttackAnimation::Thrust,
+            strike_family: StrikeFamily::Thrust,
+            hand: AttackHand::Main,
+            continuation: false,
         }
     }
 }
@@ -610,6 +625,27 @@ impl AttackSpec {
     pub fn new(animation: AttackAnimation) -> Self {
         Self {
             animation,
+            strike_family: animation.strike_family(),
+            ..Self::default()
+        }
+    }
+
+    pub fn main(family: StrikeFamily, continuation: bool) -> Self {
+        Self {
+            animation: AttackAnimation::initial(family),
+            strike_family: family,
+            hand: AttackHand::Main,
+            continuation,
+            ..Self::default()
+        }
+    }
+
+    pub fn offhand(family: StrikeFamily) -> Self {
+        Self {
+            animation: AttackAnimation::Offhand,
+            strike_family: family,
+            hand: AttackHand::Offhand,
+            continuation: false,
             ..Self::default()
         }
     }
@@ -646,6 +682,62 @@ pub enum StrikeFamily {
     Swing,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum AttackHand {
+    #[default]
+    Main,
+    Offhand,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum MeleePreparationInput {
+    #[default]
+    Preferred,
+    Alternate,
+    Offhand,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AttackPreparation {
+    pub from: AttackAnimation,
+    pub to: AttackAnimation,
+    pub progress: f32,
+}
+
+impl Default for AttackPreparation {
+    fn default() -> Self {
+        Self::main(StrikeFamily::Thrust)
+    }
+}
+
+impl AttackPreparation {
+    pub const fn main(family: StrikeFamily) -> Self {
+        let animation = AttackAnimation::initial(family);
+        Self {
+            from: animation,
+            to: animation,
+            progress: 1.0,
+        }
+    }
+
+    pub const fn offhand() -> Self {
+        Self {
+            from: AttackAnimation::Offhand,
+            to: AttackAnimation::Offhand,
+            progress: 1.0,
+        }
+    }
+
+    fn normalized(mut self) -> Self {
+        self.progress = if self.progress.is_finite() {
+            self.progress.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self
+    }
+}
+
 impl StrikeFamily {
     pub fn from_melee_style(style: MeleeAttackStyle) -> Self {
         match style {
@@ -672,16 +764,17 @@ impl StrikeFamily {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum AttackAnimation {
     Swing,
-    SwingFollow,
     #[default]
     Thrust,
+    Offhand,
 }
 
 impl AttackAnimation {
     pub fn strike_family(self) -> StrikeFamily {
         match self {
-            Self::Swing | Self::SwingFollow => StrikeFamily::Swing,
+            Self::Swing => StrikeFamily::Swing,
             Self::Thrust => StrikeFamily::Thrust,
+            Self::Offhand => StrikeFamily::Thrust,
         }
     }
 
@@ -696,21 +789,27 @@ impl AttackAnimation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub struct AttackAnimations {
     pub swing: bool,
-    pub swing_follow: bool,
+    pub swing_continuation: bool,
     pub thrust: bool,
+    pub thrust_continuation: bool,
+    pub offhand: bool,
+    pub offhand_preparation: bool,
 }
 
 impl AttackAnimations {
     pub const NONE: Self = Self {
         swing: false,
-        swing_follow: false,
+        swing_continuation: false,
         thrust: false,
+        thrust_continuation: false,
+        offhand: false,
+        offhand_preparation: false,
     };
     pub const fn supports(self, animation: AttackAnimation) -> bool {
         match animation {
             AttackAnimation::Swing => self.swing,
-            AttackAnimation::SwingFollow => self.swing_follow,
             AttackAnimation::Thrust => self.thrust,
+            AttackAnimation::Offhand => self.offhand,
         }
     }
 
@@ -719,7 +818,15 @@ impl AttackAnimations {
     }
 
     pub const fn any(self) -> bool {
-        self.swing || self.swing_follow || self.thrust
+        self.swing || self.thrust || self.offhand
+    }
+
+    pub const fn supports_continuation(self, animation: AttackAnimation) -> bool {
+        match animation {
+            AttackAnimation::Swing => self.swing_continuation,
+            AttackAnimation::Thrust => self.thrust_continuation,
+            AttackAnimation::Offhand => false,
+        }
     }
 }
 
@@ -727,8 +834,14 @@ impl Default for AttackAnimations {
     fn default() -> Self {
         Self {
             swing: true,
-            swing_follow: true,
+            swing_continuation: true,
             thrust: true,
+            thrust_continuation: false,
+            offhand: true,
+            // The server accepts replicated held preparation for every
+            // offhand attack. Each client resolves whether its loaded clip
+            // actually has the optional frame-4 contact anchor.
+            offhand_preparation: true,
         }
     }
 }
@@ -761,6 +874,7 @@ pub struct SkeletonState {
     pub lead_foot: LeadFoot,
     guarded_sprint_locomotion: bool,
     stance: StanceState,
+    attack_preparation: AttackPreparation,
     action: ActionState,
     posture_transition: Option<PostureTransitionState>,
     downed_facing: Option<DownedFacingState>,
@@ -785,6 +899,7 @@ struct SkeletonStateWire {
     lead_foot: LeadFoot,
     guarded_sprint_locomotion: bool,
     stance: StanceState,
+    attack_preparation: AttackPreparation,
     action: ActionState,
     posture_transition: Option<PostureTransitionState>,
     downed_facing: Option<DownedFacingState>,
@@ -823,6 +938,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
             lead_foot: wire.lead_foot,
             guarded_sprint_locomotion: wire.guarded_sprint_locomotion,
             stance: wire.stance,
+            attack_preparation: wire.attack_preparation.normalized(),
             action: wire.action,
             posture_transition: wire
                 .posture_transition
@@ -856,6 +972,7 @@ impl Default for SkeletonState {
             lead_foot: LeadFoot::Left,
             guarded_sprint_locomotion: false,
             stance: StanceState::Lowered,
+            attack_preparation: AttackPreparation::default(),
             action: ActionState::default(),
             posture_transition: None,
             downed_facing: None,
@@ -1270,15 +1387,38 @@ impl SkeletonState {
     }
     pub fn strike_family(&self) -> StrikeFamily {
         match self.action {
-            ActionState(ActionKind::Attack { animation, .. }) => animation.strike_family(),
+            ActionState(ActionKind::Attack { strike_family, .. }) => strike_family,
             _ => StrikeFamily::Thrust,
         }
+    }
+    pub fn attack_hand(&self) -> AttackHand {
+        match self.action {
+            ActionState(ActionKind::Attack { hand, .. }) => hand,
+            _ => AttackHand::Main,
+        }
+    }
+    pub fn attack_is_continuation(&self) -> bool {
+        matches!(
+            self.action,
+            ActionState(ActionKind::Attack {
+                continuation: true,
+                ..
+            })
+        )
     }
     pub fn attack_animation(&self) -> Option<AttackAnimation> {
         match self.action {
             ActionState(ActionKind::Attack { animation, .. }) => Some(animation),
             _ => None,
         }
+    }
+
+    pub fn attack_preparation(&self) -> AttackPreparation {
+        self.attack_preparation
+    }
+
+    pub fn set_attack_preparation(&mut self, preparation: AttackPreparation) {
+        self.attack_preparation = preparation.normalized();
     }
     pub fn available_strike_family(&self, preferred: StrikeFamily) -> Option<StrikeFamily> {
         if self.attack_animations.supports_family(preferred) {
@@ -1294,19 +1434,29 @@ impl SkeletonState {
     /// Selects a legal authored attack at the current action seam. An ordinary
     /// attack starts only from recovery-complete idle. A second swing may
     /// replace the first after contact when the pack owns a follow pose.
-    pub fn select_attack_animation(&self, family: StrikeFamily) -> Option<AttackAnimation> {
-        let initial = AttackAnimation::initial(family);
+    pub fn select_main_attack(&self, family: StrikeFamily) -> Option<AttackSpec> {
+        let animation = AttackAnimation::initial(family);
         match self.attack_animation() {
-            None => self.attack_animations.supports(initial).then_some(initial),
-            Some(AttackAnimation::Swing)
-                if family == StrikeFamily::Swing
+            None => self
+                .attack_animations
+                .supports(animation)
+                .then_some(AttackSpec::main(family, false)),
+            Some(active)
+                if active == animation
+                    && self.attack_hand() == AttackHand::Main
+                    && !self.attack_is_continuation()
                     && self.action_phase() >= 0.5
-                    && self.attack_animations.swing_follow =>
+                    && self.attack_animations.supports_continuation(animation) =>
             {
-                Some(AttackAnimation::SwingFollow)
+                Some(AttackSpec::main(family, true))
             }
             _ => None,
         }
+    }
+
+    pub fn select_offhand_attack(&self, family: StrikeFamily) -> Option<AttackSpec> {
+        (self.action_kind() == SkeletonAction::None && self.attack_animations.offhand)
+            .then_some(AttackSpec::offhand(family))
     }
     pub fn action_start_tick(&self) -> Option<u64> {
         match self.action {
@@ -1396,10 +1546,15 @@ impl SkeletonState {
         let may_follow = matches!(
             self.action,
             ActionState(ActionKind::Attack {
-                animation: AttackAnimation::Swing,
+                animation,
+                hand: AttackHand::Main,
+                continuation: false,
                 timeline,
                 ..
-            }) if timeline.phase >= 0.5 && spec.animation == AttackAnimation::SwingFollow
+            }) if timeline.phase >= 0.5
+                && spec.hand == AttackHand::Main
+                && spec.continuation
+                && spec.animation == animation
         );
         if self.action_kind() != SkeletonAction::None && !may_follow {
             return Err(ActionTransitionError::ActionBusy);
@@ -1412,6 +1567,9 @@ impl SkeletonState {
         self.action = ActionState(ActionKind::Attack {
             target_height,
             animation: spec.animation,
+            strike_family: spec.strike_family,
+            hand: spec.hand,
+            continuation: spec.continuation,
             timeline: ActionTimeline::new(start_tick, contact_tick),
         });
         Ok(())

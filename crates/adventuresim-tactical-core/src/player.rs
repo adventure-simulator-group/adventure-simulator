@@ -3,7 +3,10 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_enhanced_input::prelude::Actions;
 use serde::{Deserialize, Serialize};
 
-use crate::inventory::{InventoryView, InventoryViewer};
+use crate::{
+    animation::AttackHand,
+    inventory::{InventoryView, InventoryViewer},
+};
 
 /// BEI Component alias to mark players that are controlled by the present client.
 pub type ControlledPlayer = Actions<Player>;
@@ -569,6 +572,21 @@ impl TacticalPlayerViewer<'_, '_> {
     pub fn get(&self, entity: Entity) -> Result<TacticalPlayerView<'_, '_, '_>> {
         let (limbs, skills, stats, attributes) = self.q_player.get(entity)?;
         let inventory = self.inventory.get(entity);
+        Ok(PlayerInfo::empty()
+            .with_attributes(attributes)
+            .with_body(limbs)
+            .with_essentials(stats)
+            .with_equipment(inventory)
+            .with_skills(skills))
+    }
+
+    pub fn get_for_attack(
+        &self,
+        entity: Entity,
+        hand: AttackHand,
+    ) -> Result<TacticalPlayerView<'_, '_, '_>> {
+        let (limbs, skills, stats, attributes) = self.q_player.get(entity)?;
+        let inventory = self.inventory.get_for_attack(entity, hand);
         Ok(PlayerInfo::empty()
             .with_attributes(attributes)
             .with_body(limbs)

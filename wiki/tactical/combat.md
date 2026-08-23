@@ -27,7 +27,7 @@ the skill check algorithm.
 Client melee requests and server-controlled melee AI feed one internal server
 attack-intent path. Each melee weapon declares a preferred swing or thrust and
 separate swing and stab precision terms; the selected animation family selects
-the matching combat term. Unarmed fists prefer thrusts. If the preferred family
+the matching combat term. Unarmed fists prefer swings. If the preferred family
 has no initial contact pose, input uses the available alternate. If neither
 initial pose exists, the server rejects the attack as unavailable rather than
 playing a substitute animation for an otherwise valid hit.
@@ -42,12 +42,13 @@ stream. An observed windup expires one second after it becomes ready, bounding
 delayed or replayed completions.
 
 The active animation pack's attack set is authoritative gameplay capability.
-A pack that defines any of `swing`, `swing_follow`, or `thrust` owns all three
-decisions; its missing members remain unavailable even when a parent defines
-them. A pack with no attack poses inherits the nearest parent's attack set.
-After a swing reaches contact, another swing may begin as `swing_follow` when
-that pose exists. A follow cannot chain directly into another follow. Other
-buffered requests wait until recovery completes.
+A pack that defines `swing` or `thrust` owns the complete main-hand set; a
+missing family remains unavailable even when a parent defines it. A pack with
+neither motion inherits the nearest parent's main-hand set. Offhand motion
+inherits independently. After a main-hand strike reaches frame-4 contact, one
+matching buffered attack may continue through frame 8 to a second contact at
+frame 12 when both continuation anchors exist. It cannot chain directly into
+another continuation. Other buffered requests wait until recovery completes.
 
 The variants carry only valid data: `Start` has no completion sentinels, melee
 `Complete` always carries a target, body part, and reported precision, while

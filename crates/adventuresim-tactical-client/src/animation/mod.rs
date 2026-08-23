@@ -738,8 +738,8 @@ mod contract_tests {
         assert!(root.motions.contains_key("airborne_center"));
         assert!(root.motions.contains_key("airborne_travel"));
         assert!(root.motions.contains_key("swing"));
-        assert!(root.motions.contains_key("swing_follow"));
         assert!(root.motions.contains_key("thrust"));
+        assert!(root.motions.contains_key("offhand"));
         assert!(!root.motions.keys().any(|name| name.starts_with("jump_")));
     }
 
@@ -749,10 +749,8 @@ mod contract_tests {
         let root = &catalog.packs[HUMANOID_UNARMED_PACK];
         assert_eq!(root.poses[&SemanticPose::AttackThrust].motion, "thrust");
         assert_eq!(root.poses[&SemanticPose::AttackSwing].motion, "swing");
-        assert_eq!(
-            root.poses[&SemanticPose::AttackSwingFollow].motion,
-            "swing_follow"
-        );
+        assert_eq!(root.poses[&SemanticPose::ContinueSwing].motion, "swing");
+        assert_eq!(root.poses[&SemanticPose::AttackOffhand].motion, "offhand");
     }
 }
 

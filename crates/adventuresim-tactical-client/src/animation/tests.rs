@@ -320,7 +320,7 @@ mod legacy_tests {
                 "required pose {required:?} did not resolve"
             );
         }
-        // The 28 required semantics collapse to 26 independently resolvable
+        // The 27 required semantics collapse to 25 independently resolvable
         // variants when each supported whole-body mirror pair appears once.
         let authored_variants = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
@@ -329,7 +329,7 @@ mod legacy_tests {
                     .is_none_or(|counterpart| pose.as_str() < counterpart.as_str())
             })
             .count();
-        assert_eq!(authored_variants, 26);
+        assert_eq!(authored_variants, 25);
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -345,7 +345,7 @@ mod legacy_tests {
             root.poses[&SemanticPose::AttackThrust],
             PoseAnchor {
                 motion: "thrust".to_owned(),
-                frame: 0,
+                frame: 4,
             }
         );
         assert_eq!(
@@ -378,18 +378,15 @@ mod legacy_tests {
             assert_eq!(root.poses[&pose].motion, "dive");
         }
         assert_eq!(SemanticPose::DiveRight.mirrored_counterpart(), None);
-        for pose in [
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-        ] {
-            let anchor = &root.poses[&pose];
-            assert_eq!(anchor.frame, 0);
-            assert_eq!(root.motions[&anchor.motion].last_frame, 0);
-        }
+        assert_eq!(root.poses[&SemanticPose::GuardSwing].frame, 0);
+        assert_eq!(root.poses[&SemanticPose::GuardThrust].frame, 0);
+        assert_eq!(root.poses[&SemanticPose::AttackOffhand].frame, 0);
+        assert_eq!(root.motions["swing"].last_frame, 12);
+        assert_eq!(root.motions["swing"].required_last_frame, 4);
+        assert_eq!(root.motions["thrust"].last_frame, 12);
+        assert_eq!(root.motions["thrust"].required_last_frame, 4);
+        assert_eq!(root.motions["offhand"].last_frame, 4);
+        assert_eq!(root.motions["offhand"].required_last_frame, 0);
     }
 
     #[test]
@@ -506,9 +503,10 @@ mod legacy_tests {
     }
 
     #[test]
-    fn attack_entry_blends_guard_and_contact_motions() {
+    fn attack_entry_blends_frame_zero_guard_and_contact_in_one_motion() {
         let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([SemanticPose::Guard, SemanticPose::AttackThrust]);
+        let runtime =
+            runtime_with_available([SemanticPose::GuardThrust, SemanticPose::AttackThrust]);
         let mut weighted = Vec::new();
         append_resolved_sample(
             &mut weighted,
@@ -516,7 +514,7 @@ mod legacy_tests {
             &catalog,
             HUMANOID_UNARMED_PACK,
             PoseSample {
-                pose: SemanticPose::Guard,
+                pose: SemanticPose::GuardThrust,
                 sampling: PoseSampling::Span {
                     end: SemanticPose::AttackThrust,
                     progress: 0.5,
@@ -526,26 +524,26 @@ mod legacy_tests {
             },
         );
         assert_eq!(weighted.len(), 2);
-        assert!(
-            weighted
-                .iter()
-                .all(|sample| sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001)
-        );
-        let guard = runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "guard".to_owned())]
-            .handle
-            .id();
-        let contact = runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "thrust".to_owned())]
+        let thrust = runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "thrust".to_owned())]
             .handle
             .id();
         assert!(
             weighted
                 .iter()
-                .any(|sample| sample.clip.handle.id() == guard)
+                .all(|sample| sample.clip.handle.id() == thrust)
         );
         assert!(
             weighted
                 .iter()
-                .any(|sample| sample.clip.handle.id() == contact)
+                .any(|sample| sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001)
+        );
+        assert!(
+            weighted
+                .iter()
+                .any(
+                    |sample| (sample.time_seconds - 4.0 / ANIMATION_FPS).abs() < 0.0001
+                        && (sample.weight - 0.5).abs() < 0.0001
+                )
         );
     }
 

@@ -20,11 +20,12 @@ pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
         ActionState, ActionTransitionError, AnimationEvaluation, AnimationPack,
-        AnimationPackLibrary, AttackAnimation, AttackAnimations, AttackLine, AttackSpec,
-        BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState, CROUCH_LOCOMOTION_PROFILE,
-        DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec, DownedFacingPose, GroundedPosture,
-        HUMANOID_LANDING_PROFILE, JumpAnticipation, LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot,
-        LocomotionGait, LocomotionProfile, PackValidationError, PoseSample, PoseSampling, Posture,
+        AnimationPackLibrary, AttackAnimation, AttackAnimations, AttackHand, AttackLine,
+        AttackPreparation, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
+        CROUCH_LOCOMOTION_PROFILE, DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec,
+        DownedFacingPose, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
+        LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile,
+        MeleePreparationInput, PackValidationError, PoseSample, PoseSampling, Posture,
         PostureTransitionKind, PostureTransitionState, RAISED_GUARD_LOCOMOTION_PROFILE,
         RUN_LOCOMOTION_PROFILE, RaisedLocomotionIntent, ResolvedPose, RollDirection, SemanticPose,
         SkeletonAction, SkeletonLocomotionInput, SkeletonState, StanceState, StrikeFamily,

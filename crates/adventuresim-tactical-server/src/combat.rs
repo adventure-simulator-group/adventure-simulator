@@ -802,6 +802,7 @@ mod tests {
             client_id: ClientId::Client(attacker),
             message: MeleeActionRequest::Start {
                 strike_family: StrikeFamily::Thrust,
+                hand: AttackHand::Main,
             },
         });
         // The bare test attacker has no equipped weapon, so its observed

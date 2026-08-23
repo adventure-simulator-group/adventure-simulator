@@ -194,6 +194,7 @@ pub(super) fn drive_offensive_combat_ai(
                     target,
                     windup: CombatDuration::from_duration(std::time::Duration::from_millis(500)),
                     strike_family,
+                    hand: AttackHand::Main,
                 });
                 controller.phase = OffensiveCombatPhase::MeleeWindup {
                     timer: Timer::from_seconds(AI_WINDUP_SECS, TimerMode::Once),
@@ -217,6 +218,7 @@ pub(super) fn drive_offensive_combat_ai(
                         reported_precision: ReportedPrecision::new(AI_HIT_PRECISION)
                             .expect("AI precision is finite"),
                         strike_family: *strike_family,
+                        hand: AttackHand::Main,
                     });
                     controller.phase = OffensiveCombatPhase::Cooldown(Timer::from_seconds(
                         AI_COOLDOWN_SECS,
