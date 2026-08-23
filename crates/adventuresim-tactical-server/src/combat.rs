@@ -123,6 +123,11 @@ struct ApplyMeleeAttackResult {
 }
 
 const MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND: f32 = 12.0;
+/// Contact energy describes the local collision, not whole-body kinetic
+/// energy. This transfer scale makes John Fabelgeist's ordinary ~49.5 J punch
+/// move an 80 kg equipped bandit about 0.25 m under the tactical controller's
+/// standard grounded friction.
+const HIT_WHOLE_BODY_VELOCITY_SCALE: f32 = 2.63;
 
 /// Converts combat contact energy into an explicit physical delta-v. Combat
 /// resolution historically calls the energy-like value `contact_force`; this
@@ -157,9 +162,8 @@ fn hit_velocity_change(
     } else {
         horizontal
     };
-    let direction = Vec3::new(horizontal.x, 0.12, horizontal.y).normalize_or_zero();
-    let speed = (2.0 * contact_energy / mass.max(1.0))
-        .sqrt()
+    let direction = Vec3::new(horizontal.x, 0.0, horizontal.y);
+    let speed = ((2.0 * contact_energy / mass.max(1.0)).sqrt() * HIT_WHOLE_BODY_VELOCITY_SCALE)
         .min(MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND);
     (hits_attacker, direction * speed)
 }
@@ -870,7 +874,7 @@ mod tests {
     }
 
     #[test]
-    fn contact_energy_becomes_mass_normalized_directional_velocity() {
+    fn contact_energy_becomes_calibrated_mass_normalized_directional_velocity() {
         let result = AttackResult::ToDefender {
             cut_damage: 0.0,
             blunt_damage: 1.0,
@@ -881,9 +885,48 @@ mod tests {
         let (hits_attacker, velocity_change) =
             hit_velocity_change(result, Vec3::ZERO, Vec3::new(0.0, 0.0, 2.0), 70.0, 70.0);
         assert!(!hits_attacker);
-        assert!((velocity_change.length() - 2.0).abs() < 1.0e-4);
+        assert!((velocity_change.length() - 5.26).abs() < 1.0e-4);
         assert!(velocity_change.z > 0.0);
-        assert!(velocity_change.y > 0.0);
+        assert_eq!(velocity_change.y, 0.0);
+    }
+
+    fn default_ground_stopping_distance(mut speed: f32) -> f32 {
+        use adventuresim_tactical_core::physics::{
+            TACTICAL_CHARACTER_FRICTION_HZ, TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND,
+        };
+
+        const TICK_SECONDS: f32 = 1.0 / 64.0;
+        const DEFAULT_GROUND_DYNAMIC_FRICTION: f32 = 0.5;
+        let mut distance = 0.0;
+        while speed >= 0.001 {
+            let control = speed.max(TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND);
+            speed = (speed
+                - control
+                    * TACTICAL_CHARACTER_FRICTION_HZ
+                    * DEFAULT_GROUND_DYNAMIC_FRICTION
+                    * TICK_SECONDS)
+                .max(0.0);
+            distance += speed * TICK_SECONDS;
+        }
+        distance
+    }
+
+    #[test]
+    fn ordinary_unarmed_hit_moves_equipped_bandit_about_quarter_metre() {
+        let result = AttackResult::ToDefender {
+            cut_damage: 0.0,
+            blunt_damage: 0.1,
+            balance_damage: 0.4,
+            contact_force: 49.4667,
+            armor_contact: false,
+        };
+        let (_, velocity_change) = hit_velocity_change(result, Vec3::ZERO, Vec3::Z, 80.0, 80.0);
+        let stopping_distance = default_ground_stopping_distance(velocity_change.xz().length());
+
+        assert!(
+            (0.23..=0.27).contains(&stopping_distance),
+            "ordinary punch stopping distance was {stopping_distance:.3} m"
+        );
     }
 
     #[test]

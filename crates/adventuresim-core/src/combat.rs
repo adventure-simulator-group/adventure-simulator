@@ -722,6 +722,7 @@ mod tests {
         struct Matchup<'a, 'b> {
             defender: &'a MatchupCombatant<'b>,
             target: BodyPart,
+            contact_energy: (f32, f32),
             imbalance: (f32, f32),
             health_damage: (f32, f32),
             total_incapacitation: (f32, f32),
@@ -755,6 +756,7 @@ mod tests {
             Matchup {
                 defender: &average_bandit,
                 target: BodyPart::Head,
+                contact_energy: (48.0, 51.0),
                 imbalance: (0.38, 0.45),
                 health_damage: (0.25, 0.40),
                 total_incapacitation: (0.55, 0.75),
@@ -762,6 +764,7 @@ mod tests {
             Matchup {
                 defender: &light_bandit,
                 target: BodyPart::Chest,
+                contact_energy: (48.0, 51.0),
                 imbalance: (0.45, 0.60),
                 health_damage: (0.06, 0.11),
                 total_incapacitation: (0.50, 0.70),
@@ -769,6 +772,7 @@ mod tests {
             Matchup {
                 defender: &heavy_bandit,
                 target: BodyPart::Stomach,
+                contact_energy: (48.0, 51.0),
                 imbalance: (0.25, 0.35),
                 health_damage: (0.09, 0.15),
                 total_incapacitation: (0.34, 0.48),
@@ -799,7 +803,12 @@ mod tests {
                 &StubEssentials,
                 &unarmed,
             );
-            let AttackResult::ToDefender { balance_damage, .. } = result else {
+            let AttackResult::ToDefender {
+                balance_damage,
+                contact_force,
+                ..
+            } = result
+            else {
                 panic!("{label}: undefended punch did not reach defender");
             };
             let health_damage = health_damage_from_attack(result, matchup.target);
@@ -814,6 +823,11 @@ mod tests {
                 balance_damage,
             );
 
+            assert_in_window(
+                &format!("{label} contact energy"),
+                contact_force,
+                matchup.contact_energy,
+            );
             assert_in_window(
                 &format!("{label} imbalance"),
                 balance_damage,

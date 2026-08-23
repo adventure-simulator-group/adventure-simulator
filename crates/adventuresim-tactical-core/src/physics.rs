@@ -72,6 +72,10 @@ pub const TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND: f32 = 5.0;
 pub const TACTICAL_RUN_ACCELERATION_HZ: f32 = 8.0;
 pub const TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 =
     TACTICAL_RUN_SPEED_METRES_PER_SECOND * TACTICAL_RUN_ACCELERATION_HZ;
+/// Ahoy's grounded friction response is part of hit-reaction tuning, so keep
+/// these values explicit instead of inheriting dependency defaults.
+pub const TACTICAL_CHARACTER_FRICTION_HZ: f32 = 12.0;
+pub const TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND: f32 = 2.54;
 
 pub fn tactical_jog_speed(endurance: f32) -> f32 {
     let endurance = endurance.clamp(0.0, 5.0);
@@ -159,6 +163,8 @@ pub fn tactical_character_controller() -> CharacterController {
     CharacterController {
         speed: TACTICAL_RUN_SPEED_METRES_PER_SECOND,
         acceleration_hz: TACTICAL_RUN_ACCELERATION_HZ,
+        friction_hz: TACTICAL_CHARACTER_FRICTION_HZ,
+        stop_speed: TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND,
         jump_height: TACTICAL_JUMP_HEIGHT_METRES,
         ..default()
     }
