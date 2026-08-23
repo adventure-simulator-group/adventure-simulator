@@ -76,6 +76,12 @@ const STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 10.0;
 /// ordinary connected punch into a 70 kg opponent at roughly 40% imbalance.
 const UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 0.875;
 const UNARMED_BLUNT_INJURY_SCALE: f32 = 0.2;
+/// Avoiding a committed swing can pull the attacker off balance, but this is
+/// a bounded physical consequence of their own momentum rather than the raw
+/// (and unbounded) margin between two skill checks.
+const DODGE_OVEREXTENSION_SCALE: f32 = 0.25;
+const PARRY_REBOUND_SCALE: f32 = 0.5;
+const MAX_AVOIDED_ATTACK_BALANCE_DAMAGE: f32 = 0.5;
 
 fn precision_damage_multiplier(excess_accuracy: f32, lore_cap: f32) -> f32 {
     excess_accuracy.max(0.0).min(lore_cap.max(2.0))
@@ -250,9 +256,15 @@ pub fn resolve_melee_attack_by_parts(
     let attack = accuracy - defense;
 
     match attack {
-        // (7) Missed the attack, unbalance damage to attacker
+        // (7) Avoided attack, bounded overextension/rebound to attacker.
         ..0.0 => AttackResult::ToAttacker {
-            balance_damage: attack.abs(),
+            balance_damage: avoided_attack_balance_damage(
+                accuracy,
+                attacker_attr,
+                attacker_body,
+                attacker_equip,
+                defender_response,
+            ),
             contact_force: if matches!(defender_response, DefenderResponse::Parry { .. }) {
                 attack_force(attacker_attr, attacker_body, attacker_equip)
                     * accuracy.clamp(0.0, 1.0)
@@ -302,6 +314,32 @@ pub fn resolve_melee_attack_by_parts(
             true,
         ),
     }
+}
+
+fn avoided_attack_balance_damage(
+    accuracy: f32,
+    attacker_attr: &impl PlayerAttributes,
+    attacker_body: &impl PlayerBody,
+    attacker_equip: &impl PlayerEquipment,
+    defender_response: DefenderResponse,
+) -> f32 {
+    let response_scale = match defender_response {
+        DefenderResponse::None => 0.0,
+        DefenderResponse::Dodge { .. } => DODGE_OVEREXTENSION_SCALE,
+        DefenderResponse::Parry { .. } => PARRY_REBOUND_SCALE,
+    };
+    let resistance_per_kg = if attacker_equip.weapon_is_unarmed() {
+        UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG
+    } else {
+        STAGGER_RESISTANCE_JOULES_PER_KG
+    };
+    let whole_body_mass = attacker_body.body_weight() + attacker_equip.inventory_weight();
+    let resistance = resistance_per_kg * whole_body_mass.max(f32::EPSILON);
+    let committed_impulse = attack_force(attacker_attr, attacker_body, attacker_equip)
+        * accuracy.clamp(0.0, 1.0)
+        * 0.5;
+    (committed_impulse / resistance * response_scale)
+        .clamp(0.0, MAX_AVOIDED_ATTACK_BALANCE_DAMAGE)
 }
 
 /// Resolve a ranged attack using the same defense, armor, and damage model as
@@ -847,6 +885,69 @@ mod tests {
                 blood_loss < 0.01,
                 "{label}: blunt punch caused {blood_loss:.4} immediate blood loss"
             );
+        }
+
+        struct AvoidedMatchup {
+            label: &'static str,
+            response: DefenderResponse,
+            defender_equipment: CombatEquipment,
+            expected_imbalance: (f32, f32),
+            expected_contact: bool,
+        }
+        let avoided_matchups = [
+            AvoidedMatchup {
+                label: "John punch cleanly dodged",
+                response: DefenderResponse::Dodge { input_reflex: 1.0 },
+                defender_equipment: CombatEquipment::default(),
+                expected_imbalance: (0.08, 0.13),
+                expected_contact: false,
+            },
+            AvoidedMatchup {
+                label: "John punch caught by shield parry",
+                response: DefenderResponse::Parry { input_reflex: 1.0 },
+                defender_equipment: CombatEquipment {
+                    shield_block_bonus: 5.0,
+                    ..Default::default()
+                },
+                expected_imbalance: (0.17, 0.24),
+                expected_contact: true,
+            },
+        ];
+
+        for matchup in avoided_matchups {
+            let result = resolve_melee_attack_by_parts(
+                &john.skills,
+                &john.attributes,
+                &john_body,
+                &StubEssentials,
+                &unarmed,
+                BodySide::Right,
+                crate::equipment::MeleeAttackStyle::Swing,
+                1.0,
+                2.0,
+                0.0,
+                BodyPart::Chest,
+                matchup.response,
+                &john.skills,
+                &john.attributes,
+                &john_body,
+                &StubEssentials,
+                &matchup.defender_equipment,
+            );
+            let AttackResult::ToAttacker {
+                balance_damage,
+                physical_contact,
+                ..
+            } = result
+            else {
+                panic!("{}: defense did not avoid the punch", matchup.label);
+            };
+            assert_in_window(
+                &format!("{} attacker imbalance", matchup.label),
+                balance_damage,
+                matchup.expected_imbalance,
+            );
+            assert_eq!(physical_contact, matchup.expected_contact, "{}", matchup.label);
         }
     }
 
