@@ -716,6 +716,15 @@ the sole stored readiness authority; active, staggered, and incapacitated status
 are mechanically derived from it rather than synchronized through a second
 boolean or ECS marker.
 
+At exactly one hundred percent incapacitation, the tactical server hands the
+replicated root from the kinematic character controller to an Avian dynamic
+body. This coarse root is the network authority for translation, rotation, and
+velocity; clients construct a terrain-colliding articulated ragdoll around it
+without replicating individual bones. If incapacitation later falls below the
+threshold, the server classifies prone versus supine from the pelvis-facing
+direction, restores an upright yaw and the character controller, and leaves the
+ordinary lower-body animation system to resume foot placement.
+
 These per-tick effects remain in memory only. Incapacitated combatants remain
 spawned and may recover; there is no corpse fade or server-side removal. The
 tactical server reports `Defeated` only while all required loaded enemies are

@@ -1259,7 +1259,9 @@ impl SkeletonState {
         aim_held: bool,
         maximum_step: f32,
     ) -> bool {
-        if !self.body.is_downed() || self.posture_transition.is_some() {
+        if !matches!(self.body, BodyState::Prone | BodyState::Supine)
+            || self.posture_transition.is_some()
+        {
             self.downed_facing = None;
             return false;
         }
@@ -1759,6 +1761,11 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.local_velocity = local_velocity;
     skeleton.world_velocity = linear_velocity;
     skeleton.locomotion_sample_tick = input.tick;
+    if skeleton.body == BodyState::Ragdolled {
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
+        skeleton.action = ActionState::default();
+        return;
+    }
     let landed = !was_supported && input.grounded;
     if landed {
         skeleton.landing_sequence = skeleton.landing_sequence.wrapping_add(1);

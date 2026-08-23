@@ -4,6 +4,7 @@ mod consequence;
 mod ingress;
 mod melee;
 mod protocol;
+mod ragdoll;
 mod ranged;
 
 use adventuresim_core::item_references::ARROW_ID;
@@ -38,6 +39,7 @@ pub(crate) use protocol::{
     MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse, RangedAttackIntent,
     RangedAttackStartedIntent, TacticalCombatSide,
 };
+use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;
 
 #[derive(Clone, Debug)]
@@ -264,9 +266,12 @@ impl Plugin for CombatPlugin {
             .configure_sets(Update, CombatSet::Condition)
             .add_systems(
                 Update,
-                update_tactical_combat_state
-                    .in_set(CombatSet::Condition)
-                    .after(PlayerProjectionSet::Spawn),
+                (
+                    update_tactical_combat_state
+                        .in_set(CombatSet::Condition)
+                        .after(PlayerProjectionSet::Spawn),
+                    update_authoritative_ragdoll_lifecycle.after(CombatSet::Condition),
+                ),
             );
     }
 }

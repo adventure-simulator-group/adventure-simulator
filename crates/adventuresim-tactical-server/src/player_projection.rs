@@ -1351,7 +1351,9 @@ pub(crate) fn update_skeleton_locomotion(
             // Authored transitions own their direction relative to a fixed
             // root until a roll or get-up has reached its endpoint.
             skeleton.set_downed_turning(false);
-        } else if skeleton.body().is_downed() && !skeleton.is_posture_transitioning() {
+        } else if matches!(skeleton.body(), BodyState::Prone | BodyState::Supine)
+            && !skeleton.is_posture_transitioning()
+        {
             let target = downed_camera_roll_target(transform.rotation, controller.orientation);
             if posture.facing == CameraFacingIntent::DownedAlign {
                 let next = advance_downed_body_facing(
@@ -1371,7 +1373,7 @@ pub(crate) fn update_skeleton_locomotion(
                         / GROUND_POSTURE_TRANSITION_TICKS as f32,
                 );
             }
-        } else {
+        } else if skeleton.body() != BodyState::Ragdolled {
             skeleton.set_downed_turning(false);
             transform.rotation = advance_body_facing(
                 transform.rotation,

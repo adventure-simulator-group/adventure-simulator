@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use adventuresim_tactical_core::prelude::*;
 use bevy::{math::Affine3A, prelude::*};
 
-use super::{AnimationPlayback, AuthoredBindTransform, ImpactReaction, PresentedSkeleton};
+use super::{AnimationPlayback, AuthoredBindTransform, PresentedSkeleton};
 
 mod rig;
 pub(crate) use rig::*;
@@ -961,31 +961,6 @@ fn mirrored_across_anatomical_center(mut transform: Transform) -> Transform {
     let rotation = transform.rotation;
     transform.rotation = Quat::from_xyzw(rotation.x, -rotation.y, -rotation.z, rotation.w);
     transform
-}
-
-pub(super) fn apply_impact_reaction(
-    reactions: Query<&ImpactReaction>,
-    mut bones: Query<(&HumanoidBone, &mut Transform)>,
-) {
-    for (bone, mut transform) in &mut bones {
-        let Ok(reaction) = reactions.get(bone.owner) else {
-            continue;
-        };
-        if !matches!(
-            bone.role,
-            BoneRole::Chest | BoneRole::NeckOne | BoneRole::Head
-        ) {
-            continue;
-        }
-        let progress = 1.0 - (reaction.remaining / reaction.duration).clamp(0.0, 1.0);
-        let pulse = (progress * std::f32::consts::PI).sin() * reaction.strength;
-        let scale = if bone.role == BoneRole::Head {
-            0.12
-        } else {
-            0.2
-        };
-        transform.rotation *= Quat::from_rotation_x(-pulse * scale);
-    }
 }
 
 #[derive(Clone, Copy, Debug)]

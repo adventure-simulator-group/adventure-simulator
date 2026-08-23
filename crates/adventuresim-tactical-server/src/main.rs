@@ -171,6 +171,7 @@ fn main() {
             .build()
             .set(AdventureSimulatorPhysicsPlugin {
                 enable_simulation: true,
+                enable_presentation_simulation: false,
             }),
         AdventureSimulatorNetPlugins,
     ))

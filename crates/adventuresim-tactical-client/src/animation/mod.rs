@@ -187,12 +187,13 @@ pub(crate) struct AuthoredBindTransform {
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) struct ImpactReaction {
     pub(super) remaining: f32,
-    pub(super) duration: f32,
-    pub(super) strength: f32,
     pub(super) velocity_change: Vec3,
+    pub(super) body_part: BodyPart,
 }
 
+mod full_ragdoll;
 mod loading;
+mod secondary_physics;
 use loading::*;
 fn evaluate_skeletons(
     mut commands: Commands,
@@ -389,15 +390,13 @@ fn restore_authored_bind_pose(
 }
 
 fn on_successful_attack(event: On<SuccessfulAttackResponse>, mut commands: Commands) {
-    let strength = (event.impact_velocity_change.length() / 5.0).clamp(0.0, 1.0);
-    if strength > f32::EPSILON {
+    if event.impact_velocity_change.length_squared() > f32::EPSILON {
         commands
             .entity(event.impact_recipient)
             .insert(ImpactReaction {
                 remaining: 0.22,
-                duration: 0.22,
-                strength,
                 velocity_change: event.impact_velocity_change,
+                body_part: event.body_part,
             });
     }
 }

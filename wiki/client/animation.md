@@ -1040,10 +1040,30 @@ it also inherits the nearest parent's attack set. Once it supplies any attack,
 its own missing attack members deliberately remain unavailable.
 ## Secondary animation
 
-Secondary procedural dynamics may later add bone inertia and reactions to
-movement, collisions, weapons, clothing, and equipment. Those effects remain
-client presentation and must not move the replicated player root, gameplay
-collider, hitboxes, or persistent strategic state.
+Every major humanoid bone carries a persistent damped local-space angular
+simulation. Its baseline physics weight depends on the semantic motion: relaxed
+arms are comparatively loose, running arms are more controlled, airborne limbs
+are loose, and guarded hands are nearly animation-driven. Feet and toes retain
+only a trace weight because contact IK owns their placement. Weapon constraints
+run after this pass, so a held weapon can stiffen the hands without suppressing
+motion elsewhere.
+
+For bones above the pelvis, incapacitation uses the remaining blend range:
+`baseline + incapacitation * (1 - baseline)`. Thus one percent incapacitation
+adds one percent of the motion that remains beyond the baseline, while one
+hundred percent gives physics full ownership. Ordered hit responses add their
+authoritative velocity change to the struck region's angular simulation instead
+of estimating an impulse from client geometry.
+
+At one hundred percent incapacitation the server replaces the character
+controller with a coarse dynamic root body. Clients use that replicated root as
+the kinematic pelvis of a fifteen-body constrained presentation ragdoll whose
+other bodies collide only with terrain. Intermediate spine and twist bones
+follow the solved major bones through the ordinary hierarchy. When
+incapacitation falls below one hundred percent, the server restores the
+controller and chooses prone or supine from the pelvis anterior direction.
+Detailed bone poses remain client presentation: they do not move gameplay
+hitboxes or persistent strategic state.
 ## Stylistic principles
 
 Animations should remain realistic in accordance with the

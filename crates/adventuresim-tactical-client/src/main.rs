@@ -286,6 +286,7 @@ fn run(args: Args, initial_tactical: bool) {
             .build()
             .set(AdventureSimulatorPhysicsPlugin {
                 enable_simulation: false,
+                enable_presentation_simulation: true,
             }),
         AdventureSimulatorNetPlugins,
     ))

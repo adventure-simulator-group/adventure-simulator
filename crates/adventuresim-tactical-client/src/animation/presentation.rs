@@ -253,6 +253,7 @@ impl Plugin for TacticalAnimationPlugin {
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
             .init_resource::<procedural::FixedTickPoseCache>()
+            .register_required_components::<procedural::HumanoidBone, secondary_physics::SecondaryBoneDynamics>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
@@ -265,6 +266,8 @@ impl Plugin for TacticalAnimationPlugin {
                     establish_animation_targets,
                     procedural::bind_humanoid_bones,
                     procedural::cache_humanoid_rigs,
+                    full_ragdoll::sync_full_ragdolls,
+                    full_ragdoll::resolve_ragdoll_terrain_contacts,
                     capture_authored_bind_transforms,
                     procedural::capture_humanoid_rig_axes,
                     semantic_route::evaluate_semantic_route_paths,
@@ -290,12 +293,13 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::apply_locomotion_body_response,
                     procedural::apply_jump_anticipation,
                     procedural::apply_head_and_torso_look,
-                    procedural::apply_impact_reaction,
+                    secondary_physics::apply_secondary_bone_physics,
                     procedural::apply_ordinary_locomotion_ik,
                     procedural::apply_terrain_leg_ik,
                     procedural::apply_quickstep_ik,
                     procedural::enforce_anatomical_knee_yaw,
                     procedural::apply_arm_and_weapon_constraints,
+                    full_ragdoll::apply_full_ragdoll_pose,
                     procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()

@@ -238,6 +238,9 @@ fn tactical_prone_speed_for_pace(pace: MovementPace, upright_jog_speed: f32) -> 
 
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
+    /// Runs Avian's solver for explicitly enabled client-only presentation
+    /// bodies while keeping every ordinary replicated rigid body disabled.
+    pub enable_presentation_simulation: bool,
 }
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -249,6 +252,7 @@ impl Default for AdventureSimulatorPhysicsPlugin {
     fn default() -> Self {
         Self {
             enable_simulation: true,
+            enable_presentation_simulation: false,
         }
     }
 }
@@ -266,6 +270,9 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
                     .in_set(AdventureSimulatorPhysicsSet::ApplyMovementSpeed)
                     .before(AhoySystems::MoveCharacters),
             );
+        } else if self.enable_presentation_simulation {
+            app.add_plugins((PhysicsPlugins::new(FixedPostUpdate), AhoyCameraPlugin))
+                .register_required_components::<RigidBody, RigidBodyDisabled>();
         } else {
             app.add_plugins((
                 PhysicsSchedulePlugin::new(FixedPostUpdate),
