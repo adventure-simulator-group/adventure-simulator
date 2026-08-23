@@ -10,7 +10,6 @@ use bevy::prelude::*;
 
 use super::{
     AdmissionResult, EnrollmentEffect, FrozenTerminal, MissionState, TerminalCombatSnapshot,
-    terminal_resolution,
 };
 use crate::{
     bot::MissionEnemy,
@@ -220,7 +219,7 @@ pub(crate) fn check_terminal_combat_outcome(
         incapacitated_party,
         enrollment_sealed: state.enrollment_ready(has_loading_player),
     };
-    let Some(resolution) = terminal_resolution(snapshot) else {
+    let Some(resolution) = state.advance_combat_outcome(snapshot, time.delta()) else {
         return Ok(());
     };
     commit_terminal_resolution(

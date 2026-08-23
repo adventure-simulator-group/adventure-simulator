@@ -728,11 +728,12 @@ ordinary lower-body animation system to resume foot placement.
 These per-tick effects remain in memory only. Incapacitated combatants remain
 spawned and may recover; there is no corpse fade or server-side removal. The
 tactical server reports `Defeated` only while all required loaded enemies are
-incapacitated simultaneously. It reports `Failed` only while every loaded Party
-combatant is incapacitated simultaneously; simultaneous Party and Enemy
-incapacitation fails deterministically. Strategic authority binds the expected
-living Party count into the request and active server records, and the trusted
-dispatcher passes it to the child. Resolution waits until every expected
+incapacitated simultaneously for three continuous seconds. It reports `Failed`
+only after every loaded Party combatant has remained incapacitated for three
+continuous seconds. Recovery resets only that side's hold timer; if both timers
+mature together, failure wins deterministically. Strategic authority binds the
+expected living Party count into the request and active server records, and the
+trusted dispatcher passes it to the child. Resolution waits until every expected
 adventurer has loaded at least once, no player is still loading, and all
 required enemies have loaded. Enrollment is then sealed. Once enrollment has
 begun, an empty Party has a ten-second reconnection grace before `Failed`,

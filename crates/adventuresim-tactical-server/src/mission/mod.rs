@@ -17,11 +17,20 @@ pub(crate) use systems::{
 pub(crate) use terminal::FrozenTerminal;
 use terminal::TerminalState;
 
+const COMBAT_OUTCOME_HOLD: Duration = Duration::from_secs(3);
+
+#[derive(Debug, Default)]
+struct CombatOutcomeHold {
+    enemies: Duration,
+    party: Duration,
+}
+
 #[derive(Resource, Debug)]
 pub(crate) struct MissionState {
     timeout: Option<Timer>,
     required_enemy_defeats: u32,
     enrollment: PartyEnrollment,
+    combat_outcome_hold: CombatOutcomeHold,
     terminal: TerminalState,
 }
 
@@ -35,6 +44,7 @@ impl MissionState {
             timeout,
             required_enemy_defeats,
             enrollment: PartyEnrollment::new(expected_party_members),
+            combat_outcome_hold: CombatOutcomeHold::default(),
             terminal: TerminalState::default(),
         }
     }
@@ -75,6 +85,14 @@ impl MissionState {
 
     pub(crate) fn expected_party_members(&self) -> NonZeroU32 {
         self.enrollment.expected()
+    }
+
+    pub(crate) fn advance_combat_outcome(
+        &mut self,
+        snapshot: TerminalCombatSnapshot,
+        delta: Duration,
+    ) -> Option<adventuresim_stdb_client::TacticalMissionResolution> {
+        self.combat_outcome_hold.advance(snapshot, delta)
     }
 
     pub(crate) fn terminal_is_running(&self) -> bool {
@@ -143,25 +161,50 @@ pub(crate) struct TerminalCombatSnapshot {
     pub enrollment_sealed: bool,
 }
 
+impl CombatOutcomeHold {
+    fn advance(
+        &mut self,
+        snapshot: TerminalCombatSnapshot,
+        delta: Duration,
+    ) -> Option<adventuresim_stdb_client::TacticalMissionResolution> {
+        use adventuresim_stdb_client::TacticalMissionResolution;
+
+        if snapshot.required_enemies == 0
+            || snapshot.loaded_enemies < snapshot.required_enemies
+            || !snapshot.enrollment_sealed
+            || snapshot.loaded_party == 0
+        {
+            *self = Self::default();
+            return None;
+        }
+        let enemies_defeated = snapshot.incapacitated_enemies >= snapshot.required_enemies;
+        let party_defeated = snapshot.incapacitated_party >= snapshot.loaded_party;
+        self.enemies = held_duration(self.enemies, enemies_defeated, delta);
+        self.party = held_duration(self.party, party_defeated, delta);
+        match (
+            self.enemies >= COMBAT_OUTCOME_HOLD,
+            self.party >= COMBAT_OUTCOME_HOLD,
+        ) {
+            (_, true) => Some(TacticalMissionResolution::Failed),
+            (true, false) => Some(TacticalMissionResolution::Defeated),
+            (false, false) => None,
+        }
+    }
+}
+
+fn held_duration(current: Duration, condition: bool, delta: Duration) -> Duration {
+    if condition {
+        current.saturating_add(delta)
+    } else {
+        Duration::ZERO
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn terminal_resolution(
     snapshot: TerminalCombatSnapshot,
 ) -> Option<adventuresim_stdb_client::TacticalMissionResolution> {
-    use adventuresim_stdb_client::TacticalMissionResolution;
-
-    if snapshot.required_enemies == 0
-        || snapshot.loaded_enemies < snapshot.required_enemies
-        || !snapshot.enrollment_sealed
-        || snapshot.loaded_party == 0
-    {
-        return None;
-    }
-    let enemies_defeated = snapshot.incapacitated_enemies >= snapshot.required_enemies;
-    let party_defeated = snapshot.incapacitated_party >= snapshot.loaded_party;
-    match (enemies_defeated, party_defeated) {
-        (_, true) => Some(TacticalMissionResolution::Failed),
-        (true, false) => Some(TacticalMissionResolution::Defeated),
-        (false, false) => None,
-    }
+    CombatOutcomeHold::default().advance(snapshot, COMBAT_OUTCOME_HOLD)
 }
 
 #[cfg(test)]
@@ -183,60 +226,126 @@ mod tests {
 
     #[test]
     fn terminal_resolution_waits_for_complete_enrollment_and_enemy_projection() {
+        let mut hold = CombatOutcomeHold::default();
         assert_eq!(
-            terminal_resolution(TerminalCombatSnapshot {
-                loaded_enemies: 1,
-                ..snapshot()
-            }),
+            hold.advance(
+                TerminalCombatSnapshot {
+                    loaded_enemies: 1,
+                    ..snapshot()
+                },
+                COMBAT_OUTCOME_HOLD,
+            ),
             None
         );
         assert_eq!(
-            terminal_resolution(TerminalCombatSnapshot {
-                enrollment_sealed: false,
-                ..snapshot()
-            }),
+            hold.advance(
+                TerminalCombatSnapshot {
+                    enrollment_sealed: false,
+                    ..snapshot()
+                },
+                COMBAT_OUTCOME_HOLD,
+            ),
             None
         );
     }
 
     #[test]
     fn simultaneous_defeat_deterministically_fails() {
+        let mut hold = CombatOutcomeHold::default();
         assert_eq!(
-            terminal_resolution(TerminalCombatSnapshot {
-                incapacitated_enemies: 2,
-                incapacitated_party: 2,
-                ..snapshot()
-            }),
+            hold.advance(
+                TerminalCombatSnapshot {
+                    incapacitated_enemies: 2,
+                    incapacitated_party: 2,
+                    ..snapshot()
+                },
+                COMBAT_OUTCOME_HOLD,
+            ),
             Some(TacticalMissionResolution::Failed)
         );
     }
 
     #[test]
     fn victory_requires_enemy_defeat_with_an_active_party_member() {
+        let mut hold = CombatOutcomeHold::default();
         assert_eq!(
-            terminal_resolution(TerminalCombatSnapshot {
-                incapacitated_enemies: 2,
-                ..snapshot()
-            }),
+            hold.advance(
+                TerminalCombatSnapshot {
+                    incapacitated_enemies: 2,
+                    ..snapshot()
+                },
+                COMBAT_OUTCOME_HOLD,
+            ),
             Some(TacticalMissionResolution::Defeated)
         );
     }
 
     #[test]
-    fn enemy_incapacitation_must_be_simultaneous() {
+    fn enemy_incapacitation_must_be_continuous_for_three_seconds() {
+        let mut hold = CombatOutcomeHold::default();
+        let defeated = TerminalCombatSnapshot {
+            incapacitated_enemies: 2,
+            ..snapshot()
+        };
+        assert_eq!(hold.advance(defeated, Duration::from_millis(2_999)), None);
         assert_eq!(
-            terminal_resolution(TerminalCombatSnapshot {
-                incapacitated_enemies: 1,
-                ..snapshot()
-            }),
-            None
-        );
-        assert_eq!(
-            terminal_resolution(TerminalCombatSnapshot {
-                incapacitated_enemies: 2,
-                ..snapshot()
-            }),
+            hold.advance(defeated, Duration::from_millis(1)),
             Some(TacticalMissionResolution::Defeated)
         );
+    }
+
+    #[test]
+    fn recovery_resets_only_that_sides_hold() {
+        let both_down = TerminalCombatSnapshot {
+            incapacitated_enemies: 2,
+            incapacitated_party: 2,
+            ..snapshot()
+        };
+        let mut hold = CombatOutcomeHold::default();
+        assert_eq!(hold.advance(both_down, Duration::from_secs(2)), None);
+        assert_eq!(
+            hold.advance(
+                TerminalCombatSnapshot {
+                    incapacitated_party: 2,
+                    ..snapshot()
+                },
+                Duration::from_secs(1),
+            ),
+            Some(TacticalMissionResolution::Failed)
+        );
+
+        let mut hold = CombatOutcomeHold::default();
+        assert_eq!(hold.advance(both_down, Duration::from_secs(2)), None);
+        assert_eq!(
+            hold.advance(
+                TerminalCombatSnapshot {
+                    incapacitated_enemies: 2,
+                    ..snapshot()
+                },
+                Duration::from_secs(1),
+            ),
+            Some(TacticalMissionResolution::Defeated)
+        );
+    }
+
+    #[test]
+    fn any_recovery_resets_the_continuous_hold() {
+        let mut hold = CombatOutcomeHold::default();
+        let defeated = TerminalCombatSnapshot {
+            incapacitated_enemies: 2,
+            ..snapshot()
+        };
+        assert_eq!(hold.advance(defeated, Duration::from_secs(2)), None);
+        assert_eq!(
+            hold.advance(
+                TerminalCombatSnapshot {
+                    incapacitated_enemies: 1,
+                    ..snapshot()
+                },
+                Duration::from_secs(1),
+            ),
+            None
+        );
+        assert_eq!(hold.advance(defeated, Duration::from_secs(2)), None);
     }
 }
