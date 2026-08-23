@@ -221,11 +221,11 @@ pub(super) fn tick_bot_reactions(
             continue;
         }
 
-        cmd.entity(bot)
-            .remove::<PendingBotReaction>()
-            .insert(PendingDefenderResponse {
-                choice: reaction.choice,
-                set_at: CombatInstant::from_elapsed(&time),
-            });
+        let choice = reaction.choice;
+        cmd.entity(bot).remove::<PendingBotReaction>();
+        cmd.trigger(DefendIntent {
+            defender: bot,
+            choice,
+        });
     }
 }

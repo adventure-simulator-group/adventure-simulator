@@ -12,6 +12,16 @@ pub(crate) struct PendingDefenderResponse {
     pub(crate) set_at: CombatInstant,
 }
 
+/// Authoritative defensive action requested by either an authenticated client
+/// or a server-owned behavior package. Source-specific code may choose the
+/// actor, but all validation, animation state, and combat timing happens after
+/// this seam.
+#[derive(Event, Clone, Copy, Debug)]
+pub(crate) struct DefendIntent {
+    pub(crate) defender: Entity,
+    pub(crate) choice: DefendRequest,
+}
+
 /// Both network clients and server-owned AI enter melee through this seam.
 #[derive(Event, Clone, Copy, Debug)]
 pub(crate) struct MeleeAttackIntent {

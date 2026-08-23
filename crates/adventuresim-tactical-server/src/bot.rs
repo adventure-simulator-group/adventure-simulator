@@ -11,9 +11,8 @@ use bevy::prelude::*;
 use std::cmp::Ordering;
 
 use crate::combat::{
-    CombatDuration, CombatInstant, CombatSet, MeleeAttackIntent, MeleeAttackStartedIntent,
-    PendingDefenderResponse, RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision,
-    TacticalCombatSide,
+    CombatDuration, CombatSet, DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent,
+    RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
 };
 pub use defense::{DefenseChances, ReactiveDefenseAi};
 use defense::{
@@ -37,6 +36,7 @@ pub struct MissionEnemy;
 #[derive(Reflect, Debug, Clone, Copy, PartialEq)]
 pub enum CombatantBehaviorPackage {
     OffensiveCombat,
+    RaisedGuard,
     ReactiveDefense {
         chances: DefenseChances,
         requires_facing: bool,
@@ -61,13 +61,16 @@ impl CombatantBehaviorPackages {
 
     #[must_use]
     pub fn always_block_without_facing() -> Self {
-        Self(vec![CombatantBehaviorPackage::ReactiveDefense {
-            chances: DefenseChances {
-                parry_chance: 1.0,
-                dodge_chance: 0.0,
+        Self(vec![
+            CombatantBehaviorPackage::RaisedGuard,
+            CombatantBehaviorPackage::ReactiveDefense {
+                chances: DefenseChances {
+                    parry_chance: 1.0,
+                    dodge_chance: 0.0,
+                },
+                requires_facing: false,
             },
-            requires_facing: false,
-        }])
+        ])
     }
 
     #[must_use]
@@ -93,6 +96,9 @@ fn materialize_behavior_packages(
                 CombatantBehaviorPackage::OffensiveCombat => {
                     entity.insert(OffensiveCombatAi::default());
                 }
+                CombatantBehaviorPackage::RaisedGuard => {
+                    entity.insert(RaisedGuardAi);
+                }
                 CombatantBehaviorPackage::ReactiveDefense {
                     chances,
                     requires_facing,
@@ -109,6 +115,26 @@ fn materialize_behavior_packages(
     }
 }
 
+/// Maintains the same authoritative raised-guard state that player input
+/// projects into [`SkeletonState`]. It intentionally does not imply facing or
+/// target selection; those are separate behavior capabilities.
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct RaisedGuardAi;
+
+fn maintain_guard_stance(
+    mut guarded: Query<(&TacticalCombatState, &mut SkeletonState), With<RaisedGuardAi>>,
+) {
+    for (state, mut skeleton) in &mut guarded {
+        let guard = if state.is_incapacitated() {
+            WeaponGuardState::Lowered
+        } else {
+            WeaponGuardState::Raised
+        };
+        set_weapon_guard(&mut skeleton, guard);
+    }
+}
+
 pub struct BotPlugin;
 
 impl Plugin for BotPlugin {
@@ -120,6 +146,7 @@ impl Plugin for BotPlugin {
                 Update,
                 (
                     materialize_behavior_packages,
+                    maintain_guard_stance,
                     drive_offensive_combat_ai,
                     tick_bot_reactions,
                 )
@@ -313,6 +340,7 @@ mod tests {
 
         let blocker = app.world().entity(blocker);
         assert!(!blocker.contains::<OffensiveCombatAi>());
+        assert!(blocker.contains::<RaisedGuardAi>());
         assert!(!blocker.get::<ReactiveDefenseAi>().unwrap().requires_facing);
         assert_eq!(
             blocker.get::<DefenseChances>(),
@@ -329,6 +357,26 @@ mod tests {
             standard.get::<DefenseChances>(),
             Some(&DefenseChances::default())
         );
+        assert!(!standard.contains::<RaisedGuardAi>());
+    }
+
+    #[test]
+    fn raised_guard_package_uses_shared_skeleton_guard_state() {
+        let mut app = App::new();
+        app.add_systems(Update, (materialize_behavior_packages, maintain_guard_stance).chain());
+        let blocker = app
+            .world_mut()
+            .spawn((
+                CombatantBehaviorPackages::always_block_without_facing(),
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+            ))
+            .id();
+
+        app.update();
+
+        let skeleton = app.world().get::<SkeletonState>(blocker).unwrap();
+        assert_eq!(skeleton.weapon_guard(), WeaponGuardState::Raised);
     }
 
     #[test]

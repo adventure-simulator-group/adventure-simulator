@@ -1,32 +1,41 @@
 use super::*;
 
-pub(super) fn on_defender_response(
+pub(super) fn on_defender_response_request(
     event: On<FromClient<DefendRequest>>,
     mut cmd: Commands,
-    time: Res<Time<()>>,
-    states: Query<&TacticalCombatState>,
-    mut skeletons: Query<&mut SkeletonState>,
 ) {
-    let Some(entity) = event.client_id.entity() else {
+    let Some(defender) = event.client_id.entity() else {
         warn!(
             "Got defender response from an unknown client: {:?}",
             event.client_id
         );
         return;
     };
+    cmd.trigger(DefendIntent {
+        defender,
+        choice: **event,
+    });
+}
 
-    let Ok(combat_state) = states.get(entity) else {
+pub(super) fn apply_defend_intent(
+    event: On<DefendIntent>,
+    mut cmd: Commands,
+    time: Res<Time<()>>,
+    states: Query<&TacticalCombatState>,
+    mut skeletons: Query<&mut SkeletonState>,
+) {
+    let Ok(combat_state) = states.get(event.defender) else {
         return;
     };
     if combat_state.is_incapacitated() {
         return;
     }
 
-    let Ok(mut skeleton) = skeletons.get_mut(entity) else {
+    let Ok(mut skeleton) = skeletons.get_mut(event.defender) else {
         return;
     };
     let start = animation_tick(&time);
-    let accepted = match **event {
+    let accepted = match event.choice {
         DefendRequest::Dodge if skeleton.action_kind() == SkeletonAction::Dodge => true,
         DefendRequest::Dodge => skeleton
             .begin_dodge(DodgeSpec::default(), start, start + 8)
@@ -41,8 +50,8 @@ pub(super) fn on_defender_response(
         return;
     }
 
-    cmd.entity(entity).insert(PendingDefenderResponse {
-        choice: **event,
+    cmd.entity(event.defender).insert(PendingDefenderResponse {
+        choice: event.choice,
         set_at: CombatInstant::from_elapsed(&time),
     });
 }
@@ -155,6 +164,57 @@ mod roll_tests {
 
         assert_eq!(duration_ticks(animation_windup), 19);
         assert_eq!(duration_ticks(minimum_windup), 16);
+    }
+
+    #[test]
+    fn clients_and_server_ai_share_authoritative_defense_transitions() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(on_defender_response_request)
+            .add_observer(apply_defend_intent);
+        let player = app
+            .world_mut()
+            .spawn((TacticalCombatState::default(), SkeletonState::default()))
+            .id();
+        let bot = app
+            .world_mut()
+            .spawn((TacticalCombatState::default(), SkeletonState::default()))
+            .id();
+
+        app.world_mut().trigger(FromClient {
+            client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
+                player,
+            ),
+            message: DefendRequest::Parry,
+        });
+        app.world_mut().trigger(DefendIntent {
+            defender: bot,
+            choice: DefendRequest::Dodge,
+        });
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world().get::<SkeletonState>(player).unwrap().action_kind(),
+            SkeletonAction::Block
+        );
+        assert_eq!(
+            app.world().get::<SkeletonState>(bot).unwrap().action_kind(),
+            SkeletonAction::Dodge
+        );
+        assert!(matches!(
+            app.world().get::<PendingDefenderResponse>(player),
+            Some(PendingDefenderResponse {
+                choice: DefendRequest::Parry,
+                ..
+            })
+        ));
+        assert!(matches!(
+            app.world().get::<PendingDefenderResponse>(bot),
+            Some(PendingDefenderResponse {
+                choice: DefendRequest::Dodge,
+                ..
+            })
+        ));
     }
 }
 

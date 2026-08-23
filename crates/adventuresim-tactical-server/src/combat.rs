@@ -31,14 +31,14 @@ use consequence::{
     attacker_weapon_contact_matches, defender_equipment_contact_matches, record_party_injury,
 };
 use ingress::{
-    authoritative_line_of_sight, on_defender_response, on_melee_action_request,
-    on_melee_attack_started, on_ranged_action_request, on_ranged_attack_started,
-    resolve_defender_response,
+    apply_defend_intent, authoritative_line_of_sight, on_defender_response_request,
+    on_melee_action_request, on_melee_attack_started, on_ranged_action_request,
+    on_ranged_attack_started, resolve_defender_response,
 };
 use melee::resolve_melee_attack;
 pub(crate) use protocol::{
-    MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse, RangedAttackIntent,
-    RangedAttackStartedIntent,
+    DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
+    RangedAttackIntent, RangedAttackStartedIntent,
 };
 use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;
@@ -267,7 +267,8 @@ impl Plugin for CombatPlugin {
             .add_observer(resolve_melee_attack)
             .add_observer(resolve_ranged_attack)
             .add_observer(apply_melee_attack_result)
-            .add_observer(on_defender_response)
+            .add_observer(on_defender_response_request)
+            .add_observer(apply_defend_intent)
             .configure_sets(Update, CombatSet::Condition)
             .add_systems(
                 Update,
