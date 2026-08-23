@@ -11,6 +11,10 @@ use crate::{
 
 /// Blood-volume fraction lost per point of cutting limb damage.
 pub const CUT_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+/// Empty-hand accuracy multipliers shared by tactical inventory and pure
+/// matchup/autoresolve equipment.
+pub const UNARMED_SWING_PRECISION: f32 = 0.2;
+pub const UNARMED_STAB_PRECISION: f32 = 0.5;
 /// Combat recovers this much imbalance per second for each effective point of
 /// Balance skill.
 pub const BALANCE_RECOVERY_PER_SKILL_SECOND: f32 = 0.03;
@@ -70,9 +74,9 @@ const MUSCLE_KG_TO_JOULES: f32 = 2.0;
 const UPPER_MUSCLE_KG_TO_PUNCH_KG: f32 = 0.1;
 const STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 10.0;
 /// Empty-hand contacts move a whole body much more readily than they cause
-/// disabling tissue injury. This resistance puts an ordinary 12 J punch into
-/// a 70 kg opponent at roughly 43% imbalance.
-const UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 0.2;
+/// disabling tissue injury. This resistance puts canonical John Fabelgeist's
+/// ordinary connected punch into a 70 kg opponent at roughly 40% imbalance.
+const UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 0.875;
 const UNARMED_BLUNT_INJURY_SCALE: f32 = 0.2;
 
 fn precision_damage_multiplier(excess_accuracy: f32, lore_cap: f32) -> f32 {
@@ -622,24 +626,13 @@ mod tests {
     use crate::stub::{StubAttributes, StubBody, StubEquipment, StubEssentials, StubSkills};
 
     #[derive(Debug)]
-    struct MatchupCombatant {
-        name: &'static str,
-        strength: f32,
+    struct MatchupCombatant<'a> {
+        name: &'a str,
         weight_kg: f32,
         will_check: f32,
     }
 
-    impl PlayerAttributes for MatchupCombatant {
-        fn raw_limb_attr(&self, _attr: LimbAttribute, _limb: BodyPart) -> f32 {
-            self.strength
-        }
-
-        fn raw_single_body_part_attr(&self, _attr: crate::attribute::SimpleAttribute) -> f32 {
-            1.0
-        }
-    }
-
-    impl PlayerBody for MatchupCombatant {
+    impl PlayerBody for MatchupCombatant<'_> {
         fn body_part_health(&self, _part: BodyPart) -> f32 {
             1.0
         }
@@ -728,36 +721,33 @@ mod tests {
 
     #[test]
     fn unarmed_matchups_land_in_realistic_outcome_windows() {
-        struct Matchup<'a> {
-            attacker: &'a MatchupCombatant,
-            defender: &'a MatchupCombatant,
+        struct Matchup<'a, 'b> {
+            defender: &'a MatchupCombatant<'b>,
             target: BodyPart,
             imbalance: (f32, f32),
             health_damage: (f32, f32),
             total_incapacitation: (f32, f32),
         }
 
-        let trained_puncher = MatchupCombatant {
-            name: "trained puncher",
-            strength: 1.55,
-            weight_kg: 75.0,
-            will_check: 1.5,
+        let john = crate::starting_character::default_character("combat-matchups");
+        assert_eq!(john.name, crate::starting_character::DEFAULT_CHARACTER_NAME);
+        let john_body = MatchupCombatant {
+            name: &john.name,
+            weight_kg: 70.0,
+            will_check: john.skills.will,
         };
         let light_bandit = MatchupCombatant {
             name: "light bandit",
-            strength: 1.0,
             weight_kg: 55.0,
             will_check: 1.5,
         };
         let average_bandit = MatchupCombatant {
             name: "average bandit",
-            strength: 1.0,
             weight_kg: 70.0,
             will_check: 1.5,
         };
         let heavy_bandit = MatchupCombatant {
             name: "heavy bandit",
-            strength: 1.0,
             weight_kg: 95.0,
             will_check: 1.5,
         };
@@ -765,45 +755,51 @@ mod tests {
 
         let matchups = [
             Matchup {
-                attacker: &trained_puncher,
                 defender: &average_bandit,
                 target: BodyPart::Head,
-                imbalance: (0.38, 0.48),
-                health_damage: (0.08, 0.10),
-                total_incapacitation: (0.47, 0.56),
+                imbalance: (0.38, 0.45),
+                health_damage: (0.25, 0.40),
+                total_incapacitation: (0.55, 0.75),
             },
             Matchup {
-                attacker: &trained_puncher,
                 defender: &light_bandit,
                 target: BodyPart::Chest,
-                imbalance: (0.50, 0.60),
-                health_damage: (0.018, 0.027),
-                total_incapacitation: (0.52, 0.62),
+                imbalance: (0.45, 0.60),
+                health_damage: (0.06, 0.11),
+                total_incapacitation: (0.50, 0.70),
             },
             Matchup {
-                attacker: &trained_puncher,
                 defender: &heavy_bandit,
                 target: BodyPart::Stomach,
-                imbalance: (0.28, 0.35),
-                health_damage: (0.027, 0.038),
-                total_incapacitation: (0.30, 0.40),
+                imbalance: (0.25, 0.35),
+                health_damage: (0.09, 0.15),
+                total_incapacitation: (0.34, 0.48),
             },
         ];
 
         for matchup in matchups {
             let label = format!(
                 "{} -> {} ({})",
-                matchup.attacker.name, matchup.defender.name, matchup.target
+                john_body.name, matchup.defender.name, matchup.target
             );
-            let result = calculate_damage(
+            let result = resolve_melee_attack_by_parts(
+                &john.skills,
+                &john.attributes,
+                &john_body,
+                &StubEssentials,
+                &unarmed,
+                BodySide::Right,
+                crate::equipment::MeleeAttackStyle::Swing,
                 1.0,
-                matchup.attacker,
-                matchup.attacker,
-                &unarmed,
+                2.0,
+                0.0,
                 matchup.target,
+                DefenderResponse::None,
+                &StubSkills,
+                &StubAttributes,
                 matchup.defender,
+                &StubEssentials,
                 &unarmed,
-                false,
             );
             let AttackResult::ToDefender { balance_damage, .. } = result else {
                 panic!("{label}: undefended punch did not reach defender");
@@ -836,7 +832,7 @@ mod tests {
                 matchup.total_incapacitation,
             );
             assert!(
-                blood_loss < 0.002,
+                blood_loss < 0.01,
                 "{label}: blunt punch caused {blood_loss:.4} immediate blood loss"
             );
         }

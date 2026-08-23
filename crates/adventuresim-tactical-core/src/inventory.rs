@@ -427,11 +427,13 @@ fn fold_armor_layers<'a>(
 
 impl PlayerEquipment for InventoryView<'_, '_, '_> {
     fn weapon_skill_distribution(&self) -> adventuresim_core::equipment::WeaponSkillDistribution {
-        let w = self
+        let Some(w) = self
             .equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.skill_weights)
-            .unwrap_or([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        else {
+            return adventuresim_core::equipment::WeaponSkillDistribution::UNARMED;
+        };
         adventuresim_core::equipment::WeaponSkillDistribution {
             polearm: w[0],
             axe: w[1],
@@ -455,14 +457,14 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.swing_precision)
-            .unwrap_or(0.2)
+            .unwrap_or(adventuresim_core::combat::UNARMED_SWING_PRECISION)
     }
 
     fn weapon_stab_precision(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.stab_precision)
-            .unwrap_or(0.5)
+            .unwrap_or(adventuresim_core::combat::UNARMED_STAB_PRECISION)
     }
 
     fn weapon_preferred_melee_style(&self) -> MeleeAttackStyle {
@@ -692,6 +694,18 @@ mod tests {
         assert_eq!(
             inventory.get(owner).weapon_preferred_melee_style(),
             MeleeAttackStyle::Swing
+        );
+        assert_eq!(
+            inventory.get(owner).weapon_skill_distribution(),
+            adventuresim_core::equipment::WeaponSkillDistribution::UNARMED
+        );
+        assert_eq!(
+            inventory.get(owner).weapon_swing_precision(),
+            adventuresim_core::combat::UNARMED_SWING_PRECISION
+        );
+        assert_eq!(
+            inventory.get(owner).weapon_stab_precision(),
+            adventuresim_core::combat::UNARMED_STAB_PRECISION
         );
     }
 

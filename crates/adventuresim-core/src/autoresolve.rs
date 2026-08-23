@@ -307,11 +307,13 @@ impl CombatEquipment {
 
 impl PlayerEquipment for CombatEquipment {
     fn weapon_skill_distribution(&self) -> crate::equipment::WeaponSkillDistribution {
-        self.weapon
-            .map_or_else(Default::default, |weapon| weapon.skills)
+        self.weapon.map_or(
+            crate::equipment::WeaponSkillDistribution::UNARMED,
+            |weapon| weapon.skills,
+        )
     }
     fn weapon_is_melee(&self) -> bool {
-        self.weapon.is_some_and(|weapon| weapon.melee)
+        self.weapon.is_none_or(|weapon| weapon.melee)
     }
     fn weapon_is_ranged(&self) -> bool {
         self.weapon.is_some_and(|weapon| weapon.ranged)
@@ -332,10 +334,12 @@ impl PlayerEquipment for CombatEquipment {
         self.weapon.map_or(0.0, |weapon| weapon.accuracy)
     }
     fn weapon_swing_precision(&self) -> f32 {
-        self.weapon.map_or(0.0, |weapon| weapon.swing_precision)
+        self.weapon
+            .map_or(UNARMED_SWING_PRECISION, |weapon| weapon.swing_precision)
     }
     fn weapon_stab_precision(&self) -> f32 {
-        self.weapon.map_or(0.0, |weapon| weapon.stab_precision)
+        self.weapon
+            .map_or(UNARMED_STAB_PRECISION, |weapon| weapon.stab_precision)
     }
     fn weapon_preferred_melee_style(&self) -> crate::equipment::MeleeAttackStyle {
         self.weapon

@@ -383,6 +383,18 @@ pub struct WeaponSkillDistribution {
 }
 
 impl WeaponSkillDistribution {
+    pub const UNARMED: Self = Self {
+        polearm: 0.0,
+        axe: 0.0,
+        bludgeon: 1.0,
+        sword: 0.0,
+        knife: 0.0,
+        bow: 0.0,
+        crossbow: 0.0,
+        firearm: 0.0,
+        throw: 0.0,
+    };
+
     pub const SKILLS: [Skill; 9] = [
         Skill::Polearm,
         Skill::Axe,
