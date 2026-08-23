@@ -139,7 +139,10 @@ pub struct AttackState {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-struct BufferedMeleeAttack(StrikeFamily);
+struct BufferedMeleeAttack {
+    family: StrikeFamily,
+    hand: AttackHand,
+}
 
 impl AttackState {
     pub fn new(pre_hit_delay: f32, reach: f32, ranged: bool) -> Self {
@@ -493,6 +496,7 @@ fn on_attack_fired_hook(
     try_start_attack(
         event.context,
         false,
+        AttackHand::Main,
         &mut cmd,
         &mut q_character,
         &viewer,
@@ -503,6 +507,7 @@ fn on_attack_fired_hook(
 fn try_start_attack(
     entity: Entity,
     alternate_attack: bool,
+    hand: AttackHand,
     cmd: &mut Commands,
     q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: &TacticalPlayerViewer,
@@ -512,10 +517,10 @@ fn try_start_attack(
         return;
     };
     let Ok((reach, ranged, melee, windup_secs, preferred_style)) =
-        viewer.get(entity).map(|character| {
+        viewer.get_for_attack(entity, hand).map(|character| {
             (
                 character.weapon_reach(),
-                character.weapon_is_ranged(),
+                hand == AttackHand::Main && character.weapon_is_ranged(),
                 character.weapon_is_melee(),
                 character.weapon_windup_secs(),
                 character.weapon_preferred_melee_style(),
@@ -546,7 +551,7 @@ fn try_start_attack(
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
         let preferred_family = StrikeFamily::from_melee_style(preferred_style);
-        let requested_family = if alternate_attack {
+        let requested_family = if alternate_attack && hand == AttackHand::Main {
             preferred_family.alternate()
         } else {
             preferred_family
@@ -554,19 +559,26 @@ fn try_start_attack(
         let Some(strike_family) = skeleton.available_strike_family(requested_family) else {
             return;
         };
-        let Some(animation) = (!attacking)
-            .then(|| skeleton.select_attack_animation(strike_family))
+        let Some(spec) = (!attacking)
+            .then(|| match hand {
+                AttackHand::Main => skeleton.select_main_attack(strike_family),
+                AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
+            })
             .flatten()
         else {
-            cmd.entity(entity)
-                .insert(BufferedMeleeAttack(strike_family));
+            cmd.entity(entity).insert(BufferedMeleeAttack {
+                family: strike_family,
+                hand,
+            });
             return;
         };
-        match skeleton.begin_attack(AttackSpec::new(animation), start, start + 19) {
+        match skeleton.begin_attack(spec, start, start + 19) {
             Ok(()) => {}
             Err(ActionTransitionError::ActionBusy) => {
-                cmd.entity(entity)
-                    .insert(BufferedMeleeAttack(strike_family));
+                cmd.entity(entity).insert(BufferedMeleeAttack {
+                    family: strike_family,
+                    hand,
+                });
                 return;
             }
             Err(ActionTransitionError::Downed | ActionTransitionError::PostureTransitionActive) => {
@@ -576,7 +588,10 @@ fn try_start_attack(
         cmd.entity(entity)
             .insert(AttackState::new(windup_secs, reach, false))
             .remove::<BufferedMeleeAttack>();
-        cmd.client_trigger(MeleeActionRequest::Start { strike_family });
+        cmd.client_trigger(MeleeActionRequest::Start {
+            strike_family,
+            hand,
+        });
     }
 }
 
@@ -598,27 +613,28 @@ fn flush_buffered_melee_attacks(
         if attacking {
             continue;
         }
-        let Some(animation) = skeleton.select_attack_animation(buffered.0) else {
+        let Some(spec) = (match buffered.hand {
+            AttackHand::Main => skeleton.select_main_attack(buffered.family),
+            AttackHand::Offhand => skeleton.select_offhand_attack(buffered.family),
+        }) else {
             continue;
         };
         let Ok((reach, windup_secs)) = viewer
-            .get(entity)
+            .get_for_attack(entity, buffered.hand)
             .map(|character| (character.weapon_reach(), character.weapon_windup_secs()))
         else {
             continue;
         };
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        if skeleton
-            .begin_attack(AttackSpec::new(animation), start, start + 19)
-            .is_err()
-        {
+        if skeleton.begin_attack(spec, start, start + 19).is_err() {
             continue;
         }
         cmd.entity(entity)
             .insert(AttackState::new(windup_secs, reach, false))
             .remove::<BufferedMeleeAttack>();
         cmd.client_trigger(MeleeActionRequest::Start {
-            strike_family: buffered.0,
+            strike_family: buffered.family,
+            hand: buffered.hand,
         });
     }
 }
@@ -632,10 +648,45 @@ fn apply_direct_combat_controls(
     time: Res<Time>,
 ) {
     for entity in &players {
+        if let Ok((_, mut skeleton)) = q_character.get_mut(entity)
+            && let Ok(view) = viewer.get_for_attack(entity, AttackHand::Main)
+        {
+            let preferred = StrikeFamily::from_melee_style(view.weapon_preferred_melee_style());
+            let resolve = |input: MeleePreparationInput| match input {
+                MeleePreparationInput::Preferred => AttackAnimation::initial(
+                    skeleton
+                        .available_strike_family(preferred)
+                        .unwrap_or(preferred),
+                ),
+                MeleePreparationInput::Alternate => AttackAnimation::initial(
+                    skeleton
+                        .available_strike_family(preferred.alternate())
+                        .unwrap_or(preferred),
+                ),
+                MeleePreparationInput::Offhand
+                    if skeleton.attack_animations.offhand_preparation =>
+                {
+                    AttackAnimation::Offhand
+                }
+                MeleePreparationInput::Offhand => AttackAnimation::initial(
+                    skeleton
+                        .available_strike_family(preferred)
+                        .unwrap_or(preferred),
+                ),
+            };
+            let from = resolve(controls.local_preparation_from);
+            let to = resolve(controls.local_preparation_to);
+            skeleton.set_attack_preparation(AttackPreparation {
+                from,
+                to,
+                progress: controls.local_preparation_progress,
+            });
+        }
         if controls.attack_just_pressed {
             try_start_attack(
                 entity,
                 controls.alternate_attack,
+                controls.attack_hand,
                 &mut cmd,
                 &mut q_character,
                 &viewer,

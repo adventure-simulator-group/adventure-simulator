@@ -5677,7 +5677,7 @@ mod tests {
                 assert_eq!(skeleton.lead_foot, frame.lead_foot);
                 let evaluation = AnimationEvaluation::from_skeleton(&skeleton);
                 assert_eq!(evaluation.base.len(), 1);
-                assert_eq!(evaluation.base[0].pose, SemanticPose::Guard);
+                assert_eq!(evaluation.base[0].pose, SemanticPose::GuardThrust);
                 assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
                 phases.push(skeleton.gait_phase);
             }
@@ -5751,7 +5751,7 @@ mod tests {
     #[test]
     fn guard_and_attack_captures_use_prepared_runtime_pose_assets() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for name in ["guard.glb", "swing.glb", "swing_follow.glb", "thrust.glb"] {
+        for name in ["swing.glb", "thrust.glb", "offhand.glb"] {
             let source = root.join("assets_src/biped/unarmed").join(name);
             let runtime = root.join("assets/animations/biped/unarmed").join(name);
             assert_eq!(fs::read(source).unwrap(), fs::read(runtime).unwrap());

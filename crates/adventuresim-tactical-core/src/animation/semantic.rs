@@ -30,10 +30,17 @@ pub enum SemanticPose {
     ProneSupineRollLeft,
     ProneSupineRollRight,
     SupineTransition,
-    Guard,
+    GuardSwing,
     AttackSwing,
-    AttackSwingFollow,
+    RecoverSwing,
+    ContinueSwing,
+    GuardThrust,
     AttackThrust,
+    RecoverThrust,
+    ContinueThrust,
+    GuardOffhand,
+    AttackOffhand,
+    AttackOffhandPrepared,
     BlockCutLeft,
     BlockCutRight,
     BlockThrust,
@@ -45,8 +52,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_twenty_six_semantic_variants() {
-        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 28);
+    fn humanoid_contract_resolves_from_twenty_five_semantic_variants() {
+        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 27);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -54,7 +61,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 26);
+        assert_eq!(authored.len(), 25);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -156,7 +163,7 @@ mod contract_tests {
         state.begin_attack(AttackSpec::default(), 0, 10).unwrap();
         state.advance_action(5);
         let early = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(early.action[0].pose, SemanticPose::Guard);
+        assert_eq!(early.action[0].pose, SemanticPose::GuardThrust);
         assert_eq!(
             early.action[0].sampling,
             PoseSampling::Span {
@@ -563,7 +570,7 @@ mod contract_tests {
 }
 
 impl SemanticPose {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 38] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
@@ -588,10 +595,17 @@ impl SemanticPose {
         Self::ProneSupineRollLeft,
         Self::ProneSupineRollRight,
         Self::SupineTransition,
-        Self::Guard,
+        Self::GuardSwing,
         Self::AttackSwing,
-        Self::AttackSwingFollow,
+        Self::RecoverSwing,
+        Self::ContinueSwing,
+        Self::GuardThrust,
         Self::AttackThrust,
+        Self::RecoverThrust,
+        Self::ContinueThrust,
+        Self::GuardOffhand,
+        Self::AttackOffhand,
+        Self::AttackOffhandPrepared,
         Self::BlockCutLeft,
         Self::BlockCutRight,
         Self::BlockThrust,
@@ -599,7 +613,7 @@ impl SemanticPose {
     /// Non-attack semantics every complete humanoid family must resolve.
     /// Attack clips are capabilities: a pack may deliberately omit any or all
     /// of them, and gameplay respects that absence.
-    pub const HUMANOID_REQUIRED: [Self; 28] = [
+    pub const HUMANOID_REQUIRED: [Self; 27] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
@@ -624,7 +638,6 @@ impl SemanticPose {
         Self::ProneSupineRollLeft,
         Self::ProneSupineRollRight,
         Self::SupineTransition,
-        Self::Guard,
         Self::BlockCutLeft,
         Self::BlockCutRight,
         Self::BlockThrust,
@@ -657,10 +670,17 @@ impl SemanticPose {
             ProneSupineRollLeft => "prone_supine_roll_left",
             ProneSupineRollRight => "prone_supine_roll_right",
             SupineTransition => "supine_transition",
-            Guard => "guard",
+            GuardSwing => "guard_swing",
             AttackSwing => "swing",
-            AttackSwingFollow => "swing_follow",
+            RecoverSwing => "recover_swing",
+            ContinueSwing => "continue_swing",
+            GuardThrust => "guard_thrust",
             AttackThrust => "thrust",
+            RecoverThrust => "recover_thrust",
+            ContinueThrust => "continue_thrust",
+            GuardOffhand => "guard_offhand",
+            AttackOffhand => "offhand",
+            AttackOffhandPrepared => "offhand_prepared",
             BlockCutLeft => "block_cut_left",
             BlockCutRight => "block_cut_right",
             BlockThrust => "block_thrust",
@@ -693,8 +713,8 @@ impl SemanticPose {
             RunContact => WalkContact,
             RunFlight => WalkPassing,
             CrouchIdle => IdleRelaxed,
-            DuckForward | DuckBackward | DuckLeft | DuckRight => Guard,
-            DiveForward | DiveBackward | DiveLeft | DiveRight => Guard,
+            DuckForward | DuckBackward | DuckLeft | DuckRight => GuardThrust,
+            DiveForward | DiveBackward | DiveLeft | DiveRight => GuardThrust,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,
             ProneIdle | SupineIdle => CrouchIdle,
@@ -703,10 +723,12 @@ impl SemanticPose {
             ProneTransition => CrouchIdle,
             ProneSupineRollLeft | ProneSupineRollRight => ProneIdle,
             SupineTransition => CrouchIdle,
-            Guard => IdleRelaxed,
-            AttackSwing | AttackSwingFollow | AttackThrust => Guard,
+            GuardSwing | GuardThrust | GuardOffhand => IdleRelaxed,
+            AttackSwing | RecoverSwing | ContinueSwing => GuardSwing,
+            AttackThrust | RecoverThrust | ContinueThrust => GuardThrust,
+            AttackOffhand | AttackOffhandPrepared => GuardOffhand,
             BlockCutLeft | BlockCutRight => BlockThrust,
-            BlockThrust => Guard,
+            BlockThrust => GuardThrust,
         })
     }
 }

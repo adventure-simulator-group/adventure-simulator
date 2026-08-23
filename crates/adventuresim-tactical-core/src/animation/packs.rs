@@ -49,6 +49,9 @@ impl AnimationPackLibrary {
     pub fn attack_animations(&self, root: &str) -> AttackAnimations {
         let mut pack_id = Some(root);
         let mut seen = HashSet::new();
+        let mut main = None;
+        let mut offhand = false;
+        let mut offhand_preparation = false;
         while let Some(id) = pack_id {
             if !seen.insert(id) {
                 break;
@@ -58,15 +61,28 @@ impl AnimationPackLibrary {
             };
             let attacks = AttackAnimations {
                 swing: pack.clips.contains(&SemanticPose::AttackSwing),
-                swing_follow: pack.clips.contains(&SemanticPose::AttackSwingFollow),
+                swing_continuation: pack.clips.contains(&SemanticPose::RecoverSwing)
+                    && pack.clips.contains(&SemanticPose::ContinueSwing),
                 thrust: pack.clips.contains(&SemanticPose::AttackThrust),
+                thrust_continuation: pack.clips.contains(&SemanticPose::RecoverThrust)
+                    && pack.clips.contains(&SemanticPose::ContinueThrust),
+                offhand: pack.clips.contains(&SemanticPose::AttackOffhand),
+                offhand_preparation: pack.clips.contains(&SemanticPose::AttackOffhandPrepared),
             };
-            if attacks.any() {
-                return attacks;
+            if main.is_none() && (attacks.swing || attacks.thrust) {
+                main = Some(attacks);
+            }
+            offhand |= attacks.offhand;
+            offhand_preparation |= attacks.offhand && attacks.offhand_preparation;
+            if main.is_some() && offhand {
+                break;
             }
             pack_id = pack.fallback.as_deref();
         }
-        AttackAnimations::NONE
+        let mut attacks = main.unwrap_or(AttackAnimations::NONE);
+        attacks.offhand = offhand;
+        attacks.offhand_preparation = offhand_preparation;
+        attacks
     }
 
     pub fn insert(&mut self, pack: AnimationPack) -> Result<(), PackValidationError> {

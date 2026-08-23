@@ -16,7 +16,7 @@ import tempfile
 
 from build_locomotion_cycles import MOTIONS as LOCOMOTION_MOTIONS, build_cycle
 from mirror_gait_assets import MIRRORED_MOTIONS, mirrored_glb
-from prepare_animation_motion import prepare_motion
+from prepare_animation_motion import ANIMATION_FPS, accessor_view, prepare_motion
 from prepare_rig_base import GlbError, read_glb
 
 
@@ -30,7 +30,6 @@ RUNTIME_BASE = RUNTIME_DIR / "base.glb"
 DIRECT_MOTIONS = {
     "idle_relaxed": (0,),
     "crouch_idle": (0,),
-    "guard": (0,),
     "prone_idle": (0,),
     "supine_idle": (0,),
     "prone_crawl": (0,),
@@ -42,9 +41,9 @@ DIRECT_MOTIONS = {
     "dive": (0,),
     "airborne_center": (0,),
     "airborne_travel": (0,),
-    "swing": (0,),
-    "swing_follow": (0,),
-    "thrust": (0,),
+    "swing": (0, 4, 8, 12),
+    "thrust": (0, 4, 8, 12),
+    "offhand": (0, 4),
     "block_cut_left": (0, 6, 14),
     "block_cut_right": (0, 6, 14),
     "block_thrust": (0, 6, 14),
@@ -52,6 +51,28 @@ DIRECT_MOTIONS = {
     "prone_supine_roll_left": (0,),
     "supine_transition": (0,),
 }
+
+VARIABLE_ATTACK_FRAMES = {"swing", "thrust", "offhand"}
+
+
+def available_authored_frames(
+    source: Path, candidates: tuple[int, ...]
+) -> tuple[int, ...]:
+    """Return canonical attack anchors covered by the authored GLB duration."""
+    document, binary = read_glb(source)
+    try:
+        animation = document["animations"][0]
+        duration = max(
+            float(accessor_view(document, binary, sampler["input"])[-1, 0])
+            for sampler in animation["samplers"]
+        )
+    except (KeyError, IndexError, TypeError, ValueError) as error:
+        raise GlbError(f"animation duration is malformed: {source}") from error
+    return tuple(
+        frame
+        for frame in candidates
+        if frame / ANIMATION_FPS <= duration + 0.5 / ANIMATION_FPS
+    )
 
 
 @dataclass(frozen=True)
@@ -81,7 +102,16 @@ def publish_animation_assets(
         raise GlbError(f"runtime MHR base is unavailable: {runtime_base}")
 
     generated_names = set(LOCOMOTION_MOTIONS) | set(MIRRORED_MOTIONS.values())
-    allowed_sources = {"base", *DIRECT_MOTIONS, *LOCOMOTION_MOTIONS}
+    # Retain superseded authoring sources without publishing them. Artists may
+    # keep the old files while the runtime contract now derives guard from the
+    # frame-0 attack anchors and continuation from frames 8/12.
+    allowed_sources = {
+        "base",
+        "guard",
+        "swing_follow",
+        *DIRECT_MOTIONS,
+        *LOCOMOTION_MOTIONS,
+    }
     unknown = sorted(
         path.stem
         for path in source_dir.glob("*.glb")
@@ -100,6 +130,13 @@ def publish_animation_assets(
         if not source.is_file():
             skipped.append(motion)
             continue
+        if motion in VARIABLE_ATTACK_FRAMES:
+            kept_frames = available_authored_frames(source, kept_frames)
+            required_frames = 1 if motion == "offhand" else 2
+            if len(kept_frames) < required_frames:
+                raise GlbError(
+                    f"{motion} does not expose its required attack anchors"
+                )
         prepare_motion(
             source,
             runtime_base,

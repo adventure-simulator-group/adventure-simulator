@@ -10,6 +10,7 @@ use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 
 const SPRINT_HOLD_THRESHOLD_SECONDS: f32 = 0.25;
+const ALTERNATE_ATTACK_HOLD_SECONDS: f32 = 0.2;
 
 #[derive(Default)]
 pub struct AdventureSimulatorClientPlugin;
@@ -75,6 +76,11 @@ pub struct DirectControlState {
     pub jump_charge: bool,
     pub attack_just_pressed: bool,
     pub alternate_attack: bool,
+    pub attack_hand: AttackHand,
+    pub melee_preparation: MeleePreparationInput,
+    pub local_preparation_from: MeleePreparationInput,
+    pub local_preparation_to: MeleePreparationInput,
+    pub local_preparation_progress: f32,
     pub dodge_just_pressed: bool,
     pub quickstep_direction: Vec2,
     pub roll_just_pressed: bool,
@@ -91,6 +97,10 @@ pub struct DirectControlState {
     keyboard_quickstep_latched: bool,
     space_jump_armed: bool,
     jump_command: JumpCommand,
+    mouse_main_attack_armed: bool,
+    mouse_main_attack_seconds: f32,
+    mouse_offhand_attack_armed: bool,
+    mouse_offhand_attack_seconds: f32,
 }
 
 impl Default for DirectControlState {
@@ -101,6 +111,11 @@ impl Default for DirectControlState {
             jump_charge: false,
             attack_just_pressed: false,
             alternate_attack: false,
+            attack_hand: AttackHand::Main,
+            melee_preparation: MeleePreparationInput::Preferred,
+            local_preparation_from: MeleePreparationInput::Preferred,
+            local_preparation_to: MeleePreparationInput::Preferred,
+            local_preparation_progress: 1.0,
             dodge_just_pressed: false,
             quickstep_direction: Vec2::ZERO,
             roll_just_pressed: false,
@@ -117,6 +132,10 @@ impl Default for DirectControlState {
             keyboard_quickstep_latched: false,
             space_jump_armed: false,
             jump_command: JumpCommand::default(),
+            mouse_main_attack_armed: false,
+            mouse_main_attack_seconds: 0.0,
+            mouse_offhand_attack_armed: false,
+            mouse_offhand_attack_seconds: 0.0,
         }
     }
 }
@@ -364,14 +383,84 @@ fn update_direct_control_input(
     }
 
     let mouse_guard = mouse.pressed(MouseButton::Right);
-    let mouse_preferred_attack = mouse_guard && mouse.just_pressed(MouseButton::Left);
-    let mouse_alternate_attack = mouse_guard && mouse.just_pressed(MouseButton::Middle);
+    if mouse_guard && mouse.just_pressed(MouseButton::Left) {
+        controls.mouse_main_attack_armed = true;
+        controls.mouse_main_attack_seconds = 0.0;
+    }
+    if mouse_guard && mouse.just_pressed(MouseButton::Middle) {
+        controls.mouse_offhand_attack_armed = true;
+        controls.mouse_offhand_attack_seconds = 0.0;
+    }
+    if controls.mouse_main_attack_armed && mouse.pressed(MouseButton::Left) {
+        controls.mouse_main_attack_seconds += time.delta_secs();
+    }
+    if controls.mouse_offhand_attack_armed && mouse.pressed(MouseButton::Middle) {
+        controls.mouse_offhand_attack_seconds += time.delta_secs();
+    }
+    let mouse_main_attack =
+        controls.mouse_main_attack_armed && mouse.just_released(MouseButton::Left);
+    let mouse_offhand_attack =
+        controls.mouse_offhand_attack_armed && mouse.just_released(MouseButton::Middle);
+    let mouse_alternate_attack =
+        mouse_main_attack && controls.mouse_main_attack_seconds > ALTERNATE_ATTACK_HOLD_SECONDS;
     let controller_attack = left_trigger && right_trigger_just_pressed && !rolling;
     controls.attack_just_pressed =
-        mouse_preferred_attack || mouse_alternate_attack || controller_attack || force_attack.0;
+        mouse_main_attack || mouse_offhand_attack || controller_attack || force_attack.0;
     force_attack.0 = false;
     controls.alternate_attack =
         mouse_alternate_attack || (controller_attack && left_trigger_value < 0.95);
+    controls.attack_hand = if mouse_offhand_attack {
+        AttackHand::Offhand
+    } else {
+        AttackHand::Main
+    };
+
+    let controller_preparation = if left_trigger_value >= 0.95 {
+        MeleePreparationInput::Preferred
+    } else {
+        MeleePreparationInput::Alternate
+    };
+    if controls.mouse_offhand_attack_armed && mouse.pressed(MouseButton::Middle) {
+        controls.local_preparation_from = MeleePreparationInput::Preferred;
+        controls.local_preparation_to = MeleePreparationInput::Offhand;
+        controls.local_preparation_progress =
+            (controls.mouse_offhand_attack_seconds / ALTERNATE_ATTACK_HOLD_SECONDS).clamp(0.0, 1.0);
+        controls.melee_preparation =
+            if controls.mouse_offhand_attack_seconds > ALTERNATE_ATTACK_HOLD_SECONDS {
+                MeleePreparationInput::Offhand
+            } else {
+                MeleePreparationInput::Preferred
+            };
+    } else if controls.mouse_main_attack_armed && mouse.pressed(MouseButton::Left) {
+        controls.local_preparation_from = MeleePreparationInput::Preferred;
+        controls.local_preparation_to = MeleePreparationInput::Alternate;
+        controls.local_preparation_progress =
+            (controls.mouse_main_attack_seconds / ALTERNATE_ATTACK_HOLD_SECONDS).clamp(0.0, 1.0);
+        controls.melee_preparation =
+            if controls.mouse_main_attack_seconds > ALTERNATE_ATTACK_HOLD_SECONDS {
+                MeleePreparationInput::Alternate
+            } else {
+                MeleePreparationInput::Preferred
+            };
+    } else {
+        let preparation = if left_trigger {
+            controller_preparation
+        } else {
+            MeleePreparationInput::Preferred
+        };
+        controls.local_preparation_from = preparation;
+        controls.local_preparation_to = preparation;
+        controls.local_preparation_progress = 1.0;
+        controls.melee_preparation = preparation;
+    }
+    if mouse_main_attack {
+        controls.mouse_main_attack_armed = false;
+        controls.mouse_main_attack_seconds = 0.0;
+    }
+    if mouse_offhand_attack {
+        controls.mouse_offhand_attack_armed = false;
+        controls.mouse_offhand_attack_seconds = 0.0;
+    }
     let gamepad_quickstep = left_trigger
         && right_bumper_just_pressed
         && moving
@@ -546,6 +635,7 @@ fn send_player_input(
             posture: controls.posture_command,
             pace: controls.pace,
             weapon_guard: guard.desired,
+            melee_preparation: controls.melee_preparation,
         });
     }
 }
@@ -601,6 +691,70 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems(update_direct_control_input);
         (world, schedule)
+    }
+
+    #[test]
+    fn left_mouse_release_classifies_primary_before_and_alternate_after_threshold() {
+        for (held, alternate) in [(0.1, false), (0.21, true)] {
+            let (mut world, mut schedule) = input_fixture();
+            {
+                let mut mouse = world.resource_mut::<ButtonInput<MouseButton>>();
+                mouse.press(MouseButton::Right);
+                mouse.press(MouseButton::Left);
+            }
+            schedule.run(&mut world);
+            {
+                let controls = world.resource::<DirectControlState>();
+                assert!(!controls.attack_just_pressed);
+                assert_eq!(
+                    controls.local_preparation_to,
+                    MeleePreparationInput::Alternate
+                );
+                assert_eq!(controls.melee_preparation, MeleePreparationInput::Preferred);
+            }
+            world
+                .resource_mut::<Time<()>>()
+                .advance_by(std::time::Duration::from_secs_f32(held));
+            world
+                .resource_mut::<ButtonInput<MouseButton>>()
+                .clear_just_pressed(MouseButton::Left);
+            schedule.run(&mut world);
+            assert_eq!(
+                world.resource::<DirectControlState>().melee_preparation,
+                if alternate {
+                    MeleePreparationInput::Alternate
+                } else {
+                    MeleePreparationInput::Preferred
+                }
+            );
+            world
+                .resource_mut::<ButtonInput<MouseButton>>()
+                .release(MouseButton::Left);
+            schedule.run(&mut world);
+            let controls = world.resource::<DirectControlState>();
+            assert!(controls.attack_just_pressed);
+            assert_eq!(controls.attack_hand, AttackHand::Main);
+            assert_eq!(controls.alternate_attack, alternate);
+        }
+    }
+
+    #[test]
+    fn middle_mouse_is_release_triggered_offhand_input() {
+        let (mut world, mut schedule) = input_fixture();
+        {
+            let mut mouse = world.resource_mut::<ButtonInput<MouseButton>>();
+            mouse.press(MouseButton::Right);
+            mouse.press(MouseButton::Middle);
+        }
+        schedule.run(&mut world);
+        assert!(!world.resource::<DirectControlState>().attack_just_pressed);
+        world
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .release(MouseButton::Middle);
+        schedule.run(&mut world);
+        let controls = world.resource::<DirectControlState>();
+        assert!(controls.attack_just_pressed);
+        assert_eq!(controls.attack_hand, AttackHand::Offhand);
     }
 
     #[test]

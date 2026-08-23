@@ -33,6 +33,7 @@ pub(super) struct PackCatalog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct MotionSource {
     pub(super) path: String,
+    pub(super) required_last_frame: u16,
     pub(super) last_frame: u16,
 }
 
@@ -82,10 +83,15 @@ impl PackBuilder {
     }
 
     pub(super) fn motion(&mut self, id: &str, last_frame: u16) {
+        self.variable_motion(id, last_frame, last_frame);
+    }
+
+    pub(super) fn variable_motion(&mut self, id: &str, required_last_frame: u16, last_frame: u16) {
         self.pack.motions.insert(
             id.to_owned(),
             MotionSource {
                 path: format!("{}/{id}.glb", self.path_prefix),
+                required_last_frame,
                 last_frame,
             },
         );
@@ -149,13 +155,7 @@ impl AnimationPackCatalog {
             None,
             "animations/biped/unarmed",
         );
-        for pose in [
-            "idle_relaxed",
-            "crouch_idle",
-            "guard",
-            "prone_idle",
-            "supine_idle",
-        ] {
+        for pose in ["idle_relaxed", "crouch_idle", "prone_idle", "supine_idle"] {
             builder.motion(pose, 0);
             builder.pose(
                 pose,
@@ -222,14 +222,28 @@ impl AnimationPackCatalog {
             builder.motion(motion, 0);
             builder.pose(motion, 0, pose)?;
         }
-        for (motion, pose) in [
-            ("swing", SemanticPose::AttackSwing),
-            ("swing_follow", SemanticPose::AttackSwingFollow),
-            ("thrust", SemanticPose::AttackThrust),
+        builder.variable_motion("swing", 4, 12);
+        for (frame, pose) in [
+            (0, SemanticPose::GuardSwing),
+            (4, SemanticPose::AttackSwing),
+            (8, SemanticPose::RecoverSwing),
+            (12, SemanticPose::ContinueSwing),
         ] {
-            builder.motion(motion, 0);
-            builder.pose(motion, 0, pose)?;
+            builder.pose("swing", frame, pose)?;
         }
+        builder.variable_motion("thrust", 4, 12);
+        for (frame, pose) in [
+            (0, SemanticPose::GuardThrust),
+            (4, SemanticPose::AttackThrust),
+            (8, SemanticPose::RecoverThrust),
+            (12, SemanticPose::ContinueThrust),
+        ] {
+            builder.pose("thrust", frame, pose)?;
+        }
+        builder.variable_motion("offhand", 0, 4);
+        builder.pose("offhand", 0, SemanticPose::GuardOffhand)?;
+        builder.pose("offhand", 0, SemanticPose::AttackOffhand)?;
+        builder.pose("offhand", 4, SemanticPose::AttackOffhandPrepared)?;
         for motion in ["block_cut_left", "block_cut_right", "block_thrust"] {
             builder.motion(motion, 14);
             builder.pose(
@@ -237,8 +251,8 @@ impl AnimationPackCatalog {
                 6,
                 SemanticPose::from_str(motion).expect("typed block pose"),
             )?;
-            builder.reference(motion, 0, "guard")?;
-            builder.reference(motion, 14, "guard")?;
+            builder.reference(motion, 0, "guard_thrust")?;
+            builder.reference(motion, 14, "guard_thrust")?;
         }
         for (motion, pose) in [
             ("prone_transition", "prone_transition"),

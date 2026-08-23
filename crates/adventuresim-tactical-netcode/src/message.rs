@@ -55,6 +55,7 @@ pub struct PlayerInputRequest {
     pub posture: PostureCommand,
     pub pace: MovementPace,
     pub weapon_guard: WeaponGuardState,
+    pub melee_preparation: MeleePreparationInput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,6 +260,7 @@ mod equipment_action_mapping_tests {
 pub enum MeleeActionRequest {
     Start {
         strike_family: StrikeFamily,
+        hand: AttackHand,
     },
     Complete {
         #[entities]

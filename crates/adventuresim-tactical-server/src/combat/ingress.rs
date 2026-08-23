@@ -59,7 +59,10 @@ pub(super) fn on_melee_attack_started(
     let Some(strike_family) = skeleton.available_strike_family(event.strike_family) else {
         return;
     };
-    let Some(animation) = skeleton.select_attack_animation(strike_family) else {
+    let Some(spec) = (match event.hand {
+        AttackHand::Main => skeleton.select_main_attack(strike_family),
+        AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
+    }) else {
         return;
     };
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
@@ -67,11 +70,7 @@ pub(super) fn on_melee_attack_started(
     };
     let start = animation_tick(&time);
     if skeleton
-        .begin_attack(
-            AttackSpec::new(animation),
-            start,
-            start + duration_ticks(event.windup),
-        )
+        .begin_attack(spec, start, start + duration_ticks(event.windup))
         .is_err()
     {
         return;
@@ -179,14 +178,20 @@ pub(super) fn on_melee_action_request(
         return;
     };
     match **event {
-        MeleeActionRequest::Start { strike_family } => {
+        MeleeActionRequest::Start {
+            strike_family,
+            hand,
+        } => {
             let Ok(mut skeleton) = skeletons.get_mut(attacker) else {
                 return;
             };
             let Some(strike_family) = skeleton.available_strike_family(strike_family) else {
                 return;
             };
-            let Some(animation) = skeleton.select_attack_animation(strike_family) else {
+            let Some(spec) = (match hand {
+                AttackHand::Main => skeleton.select_main_attack(strike_family),
+                AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
+            }) else {
                 return;
             };
             let Ok(mut authority) = authorities.get_mut(attacker) else {
@@ -198,17 +203,13 @@ pub(super) fn on_melee_action_request(
             // authored hands timing; a genuinely viewless attacker still
             // falls back to zero and is rejected by later weapon checks.
             let authored_windup = viewer
-                .get(attacker)
+                .get_for_attack(attacker, hand)
                 .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
                 .unwrap_or_default();
             let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
             let start = animation_tick(&time);
             if skeleton
-                .begin_attack(
-                    AttackSpec::new(animation),
-                    start,
-                    start + duration_ticks(animation_windup),
-                )
+                .begin_attack(spec, start, start + duration_ticks(animation_windup))
                 .is_err()
             {
                 return;
@@ -231,16 +232,17 @@ pub(super) fn on_melee_action_request(
             };
             // Finite precision is intentionally accepted as reported. Full
             // animation and secondary physics remain client-owned.
-            let strike_family = skeletons
+            let (strike_family, hand) = skeletons
                 .get_mut(attacker)
-                .map(|skeleton| skeleton.strike_family())
-                .unwrap_or(StrikeFamily::Thrust);
+                .map(|skeleton| (skeleton.strike_family(), skeleton.attack_hand()))
+                .unwrap_or((StrikeFamily::Thrust, AttackHand::Main));
             cmd.trigger(MeleeAttackIntent {
                 attacker,
                 target,
                 body_part,
                 reported_precision,
                 strike_family,
+                hand,
             });
         }
     }

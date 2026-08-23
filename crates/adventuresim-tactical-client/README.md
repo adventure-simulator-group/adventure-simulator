@@ -55,10 +55,9 @@ The humanoid base rig is independent from authored motions:
 ```text
 assets/animations/biped/unarmed/base.glb
 assets/animations/biped/unarmed/walk.glb
-assets/animations/biped/unarmed/guard.glb
 assets/animations/biped/unarmed/swing.glb
-assets/animations/biped/unarmed/swing_follow.glb
 assets/animations/biped/unarmed/thrust.glb
+assets/animations/biped/unarmed/offhand.glb
 ```
 
 Only `base.glb` supplies a spawnable scene. Its default scene must retain the
@@ -363,10 +362,11 @@ are client-only and never extend replicated `SkeletonState`.
 
 Ordinary pose lookup first follows the pack's single fallback chain, then its
 deterministic similar-pose chain. Attack availability is stricter because it is
-a gameplay capability. A pack that defines any of `swing`, `swing_follow`, or
-`thrust` owns that complete set, and absent members stay unavailable; only a
-pack with no attack poses inherits its parent's attacks. Missing, unloaded,
-zero-animation, multiple-animation, or short motion files are unavailable.
+a gameplay capability. A pack that defines `swing` or `thrust` owns that
+complete main-hand set, and an absent family stays unavailable; only a pack
+with neither motion inherits its parent's main-hand attacks. `offhand` resolves
+independently through the parent chain. Missing, unloaded, zero-animation,
+multiple-animation, or short motion files are unavailable.
 Every local or remote character also gets a generated T-pose safety net until
 the base scene is available. Bind locals are reset before every animation
 evaluation so partial clips cannot accumulate stale or procedural transforms.

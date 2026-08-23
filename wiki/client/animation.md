@@ -225,19 +225,20 @@ downed poses resolve independently through that parent chain, then through the
 deterministic similar-pose chain. Missing content ultimately leaves the rig in
 its authored bind pose rather than crashing or hiding the actor.
 
-Attack poses use a stricter rule because their presence changes gameplay. The
-three-member set is `swing`, `swing_follow`, and `thrust`. Resolution walks up
-the parent chain only until it finds the first pack containing any member of
-that set. That pack owns all three results: present members are usable and
-absent members remain unavailable. If no pack in the chain contains an attack,
-the character has no melee attack animation capability.
+Main-hand attack clips use a stricter rule because their presence changes
+gameplay. The set is `swing` and `thrust`. Resolution walks up the parent chain
+only until it finds the first pack containing either clip. That pack owns both
+results: present clips are usable and absent clips remain unavailable. If no
+pack in the chain contains either attack, the character has no main-hand melee
+animation capability.
 
 This means a weapon pack may inherit every attack by defining none, or replace
 only the attacks it actually supports and intentionally disable the rest. A
 missing `swing` cannot be substituted with a parent's swing or with `thrust`;
 the input layer may instead choose the available alternate strike family.
-Likewise, a missing `swing_follow` forces recovery before another ordinary
-`swing` may begin.
+An `offhand` clip resolves independently through the parent chain, so a weapon,
+shield, or carried utility item may inherit the nearest compatible offhand
+motion even when its pack owns the main-hand set.
 
 Fallback graphs are deterministic and validated when assets load or build:
 cycles and missing parents are invalid, every pack in a chain must use a
@@ -373,12 +374,8 @@ Single-pose files place their named semantic at frame 0:
 |---|---|
 | `idle_relaxed` | `idle_relaxed` |
 | `crouch_idle` | `crouch_idle` |
-| `guard` | `guard` |
 | `airborne_center` | `airborne_center` |
 | `airborne_travel` | `airborne_travel` |
-| `swing` | `swing` |
-| `swing_follow` | `swing_follow` |
-| `thrust` | `thrust` |
 | `prone_idle` | `prone_idle` |
 | `supine_idle` | `supine_idle` |
 Gaits are complete cycles. Their second half is the opposite-foot counterpart
@@ -387,6 +384,9 @@ preview, but does not introduce additional semantic names:
 
 | File basename | Frame assignments |
 |---|---|
+| `swing` | 0 guard/preparation; 4 first hit; optional 8 continuation recovery; optional 12 follow-up hit. |
+| `thrust` | 0 guard/preparation; 4 first hit; optional 8 continuation recovery; optional 12 follow-up hit. |
+| `offhand` | A single-frame file supplies only the release contact. A two-frame file uses 0 preparation and 4 contact. |
 | `walk` runtime | 0 `walk_contact`; 16 `walk_passing`; 32 opposite contact; 48 opposite passing; 64 loop closure. The source file begins on contact and ends on the exact passing pose. |
 | `run` runtime | 0 `run_contact`; 16 `run_flight`; 32 opposite contact; 48 opposite flight; 64 loop closure. The source file begins on contact and ends on the exact flight pose; moderate its silhouette in the authored asset rather than the cycle builder. |
 | `prone_crawl` | 0 `prone_crawl_contact` |
@@ -490,9 +490,11 @@ pelvis correction is otherwise limited to the minimum required to keep a
 retained foot target within leg reach. The shared dive pose remains the
 upper-body airborne exception described above.
 
-Attacks use the optional `swing`, `swing_follow`, and `thrust` frame-0 contact
-poses. Runtime timing supplies the guard-to-contact and contact-to-guard spans.
-No attack file names a lead, step, switch, stay, wind-up, or recovery.
+Attacks use optional `swing`, `thrust`, and independently inherited `offhand`
+motions. Frame 0 of a main-hand motion is its guard. Frame 4 is contact. Frames
+8 and 12, when both are present, supply recovery into a buffered continuation
+and its second contact. Runtime timing normalizes these authored anchors to the
+selected weapon's timing and supplies recovery to the current guard.
 
 Each block file uses its semantic name as its basename. Frame 0 reproduces
 `guard`, frame 6 is the named block contact, and frame 14 returns toward
@@ -586,10 +588,9 @@ Locomotion semantic anchors use the **left** side as their canonical first
 half-cycle. Generated mirrored clips reflect the complete bilateral motion to
 construct the opposite half and closure before runtime FK blending.
 
-`guard`, all three attack contacts, and all four directional ducks are exact
-single poses without lead variants. Attack-set parent fallback follows the
-pack-local capability rule described above, while ordinary poses retain the
-normal per-semantic fallback chain.
+Main-hand guard is frame 0 of the selected `swing` or `thrust` motion. Attack-set
+parent fallback follows the pack-local capability rule described above, while
+offhand and ordinary poses retain their independent fallback chains.
 ## Required semantic poses
 
 The following inventory defines the complete initial humanoid unarmed pack.
@@ -948,24 +949,24 @@ uses the same general idea by deriving an `up_coord` from vertical velocity in
 
 ### Attacking
 
-A pack may contain at most three attack contact poses:
+A pack may contain two main-hand attack motions and one offhand motion:
 
 | Pose | Purpose |
 |---|---|
-| `swing` | Initial swing contact. Without it, the character cannot swing. |
-| `swing_follow` | A second swing that begins after the first swing reaches contact. Without it, another swing waits for full recovery. |
-| `thrust` | Initial thrust contact. Without it, the character cannot thrust. |
+| `swing` | Swing guard at frame 0 and contact at frame 4, with optional frames 8/12 for one continuation. |
+| `thrust` | Thrust guard at frame 0 and contact at frame 4, with optional frames 8/12 for one continuation. |
+| `offhand` | Left-hand contact at frame 0, or preparation/contact at frames 0/4. |
 
-These are single poses, not clips with authored wind-up, footwork, continuation,
-or recovery. The evaluator blends `guard -> contact -> guard` on the
-server-owned action timeline. `swing_follow` may replace a post-contact `swing`,
-but it cannot chain directly into another follow.
+For a two-anchor main-hand motion, the evaluator traverses frame 0 to frame 4
+and recovers to the current guard. For a four-anchor motion, one buffered repeat
+continues from frame 4 through frame 8 to the frame-12 hit. It cannot chain
+directly into another continuation.
 
 The owning client keeps one buffered melee request, replacing the previous
-buffered request when a newer input arrives. A second swing branches at contact
-when `swing_follow` is available. Any request that cannot branch waits until
-the current action recovers, then starts as an ordinary `swing` or `thrust` if
-that initial pose remains available.
+buffered request when a newer input arrives. A matching second main-hand attack
+branches after contact when frames 8 and 12 are available. Any request that
+cannot branch waits until the current action recovers, then starts normally if
+its clip remains available.
 
 The equipped weapon declares a preferred family. Preferred and alternate input
 request swing or thrust, but either input falls back to the other family when
@@ -973,9 +974,10 @@ only that initial pose is available. If neither initial pose is available, the
 character cannot begin a melee attack.
 
 Attack availability is resolved as one pack-local set. If a pack defines any
-of the three attack poses, only that pack's three presence bits count; a
-missing member is not borrowed from a parent. A pack that defines no attack
-poses inherits the nearest parent's complete attack set.
+of the two main-hand motions, only that pack's main-hand capabilities count; a
+missing family is not borrowed from a parent. A pack that defines neither
+inherits the nearest parent's main-hand set. Offhand resolution remains
+independent.
 
 Movement remains fully live throughout an attack. The attack pose may rotate
 the pelvis, knees, ankles, or feet and may pivot a foot on its ball, but it does
@@ -995,8 +997,8 @@ minimum gameplay authorization time and never shortens animation playback.
 At contact, align the striking structure from the feet through the hips and
 torso to the fist, claw, point, or edge without locking a knee or elbow. A
 `thrust` travels generally forward along a direct line. A `swing` crosses the
-target line with coordinated pelvis and ribcage rotation; `swing_follow` is the
-natural continuation available after that first contact.
+target line with coordinated pelvis and ribcage rotation. Frames 8 and 12 form
+the natural continuation after the first contact.
 ### Blocking
 
 The initial design has one guard and three incoming attack lines: a cut from

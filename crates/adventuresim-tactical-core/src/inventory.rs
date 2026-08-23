@@ -17,6 +17,8 @@ use bevy::{
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, VariantArray};
 
+use crate::animation::AttackHand;
+
 pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 
@@ -114,6 +116,9 @@ pub struct WeaponItem {
     /// landing. The single source of truth for this weapon's windup pacing -
     /// see `PlayerEquipment::weapon_windup_secs`.
     pub windup_secs: f32,
+    /// Offhand-specific commitment-to-contact time. Offhand attacks use this
+    /// even when the same item is faster in the main hand.
+    pub offhand_windup_secs: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -314,6 +319,20 @@ impl InventoryViewer<'_, '_> {
             entity,
             q_inventory: &self.q_inventory,
             q_item: &self.q_item,
+            attack_hand: AttackHand::Main,
+        }
+    }
+
+    pub fn get_for_attack(
+        &self,
+        entity: Entity,
+        attack_hand: AttackHand,
+    ) -> InventoryView<'_, '_, '_> {
+        InventoryView {
+            entity,
+            q_inventory: &self.q_inventory,
+            q_item: &self.q_item,
+            attack_hand,
         }
     }
 }
@@ -322,6 +341,7 @@ pub struct InventoryView<'v, 'w, 's> {
     entity: Entity,
     q_inventory: &'v Query<'w, 's, &'static InventoryItems>,
     q_item: &'v Query<'w, 's, ItemQuery>,
+    attack_hand: AttackHand,
 }
 
 impl InventoryView<'_, '_, '_> {
@@ -342,16 +362,24 @@ impl InventoryView<'_, '_, '_> {
             .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
     }
 
+    fn striking_item(&self) -> Option<ItemQueryItem<'_, '_>> {
+        let slot = match self.attack_hand {
+            AttackHand::Main => EquipSlot::HoldingRight,
+            AttackHand::Offhand => EquipSlot::HoldingLeft,
+        };
+        self.iter().find(|item| item.slot == Some(&slot))
+    }
+
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
-        self.q_inventory
-            .get(self.entity)
-            .ok()
-            .and_then(|inventory| inventory.holding_weapon)
-            .and_then(|weapon| self.q_item.get(weapon).ok())
+        self.striking_item().filter(|item| item.weapon.is_some())
     }
 
     pub fn has_equipped_weapon(&self) -> bool {
         self.equipped_weapon().is_some()
+    }
+
+    pub fn has_striking_item(&self) -> bool {
+        self.striking_item().is_some()
     }
 
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
@@ -441,7 +469,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         if self
             .equipped_weapon()
             .and_then(|item| item.weapon)
-            .is_none_or(|weapon| weapon.prefers_stab)
+            .is_some_and(|weapon| weapon.prefers_stab)
         {
             MeleeAttackStyle::Stab
         } else {
@@ -480,13 +508,9 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_holding_side(&self) -> Option<BodySide> {
-        let Some(item) = self.equipped_weapon() else {
-            return Some(BodySide::Right);
-        };
-        item.slot.and_then(|slot| match slot {
-            EquipSlot::HoldingLeft => Some(BodySide::Left),
-            EquipSlot::HoldingRight => Some(BodySide::Right),
-            _ => None,
+        Some(match self.attack_hand {
+            AttackHand::Main => BodySide::Right,
+            AttackHand::Offhand => BodySide::Left,
         })
     }
 
@@ -500,8 +524,15 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     fn weapon_windup_secs(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
-            .map(|weapon| weapon.windup_secs)
-            .unwrap_or(crate::combat::HANDS_WINDUP_SECS)
+            .map(|weapon| match self.attack_hand {
+                AttackHand::Main => weapon.windup_secs,
+                AttackHand::Offhand => weapon.offhand_windup_secs,
+            })
+            .unwrap_or(match self.attack_hand {
+                AttackHand::Main => crate::combat::HANDS_WINDUP_SECS,
+                AttackHand::Offhand if self.striking_item().is_some() => 0.38,
+                AttackHand::Offhand => 0.24,
+            })
     }
 
     fn weapon_is_precise(&self) -> bool {
@@ -544,7 +575,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_weight(&self) -> f32 {
-        self.equipped_weapon()
+        self.striking_item()
             .map(|item| item.properties.weight)
             .unwrap_or_default()
     }
@@ -652,6 +683,10 @@ mod tests {
             inventory.get(owner).weapon_windup_secs(),
             crate::combat::HANDS_WINDUP_SECS
         );
+        assert_eq!(
+            inventory.get(owner).weapon_preferred_melee_style(),
+            MeleeAttackStyle::Swing
+        );
     }
 
     #[test]
@@ -678,6 +713,7 @@ mod tests {
                     slash: true,
                     pierce: false,
                     windup_secs: 0.0,
+                    offhand_windup_secs: 0.34,
                 },
             ))
             .id();

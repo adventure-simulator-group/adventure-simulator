@@ -588,6 +588,7 @@ fn spawn_connected_player(
                     // uses. Extending the schema to author this per-weapon
                     // is future work, not done here.
                     windup_secs: 0.3,
+                    offhand_windup_secs: 0.34,
                 });
             }
             ItemKind::Armor | ItemKind::Clothing => {}
@@ -814,6 +815,7 @@ pub(crate) fn on_join_request_standalone(
 
 pub(crate) fn on_player_input(
     input: On<FromClient<PlayerInputRequest>>,
+    viewer: TacticalPlayerViewer,
     mut players: Query<
         (
             &mut AccumulatedInput,
@@ -840,6 +842,7 @@ pub(crate) fn on_player_input(
         input.posture,
         input.pace,
         input.weapon_guard,
+        input.melee_preparation,
     ) else {
         return;
     };
@@ -924,6 +927,28 @@ pub(crate) fn on_player_input(
         &mut skeleton,
         authoritative_weapon_guard(validated.weapon_guard, false),
     );
+    if validated.weapon_guard == WeaponGuardState::Raised
+        && let Ok(view) = viewer.get(entity)
+    {
+        let preferred = StrikeFamily::from_melee_style(view.weapon_preferred_melee_style());
+        let requested = match validated.melee_preparation {
+            MeleePreparationInput::Preferred => preferred,
+            MeleePreparationInput::Alternate => preferred.alternate(),
+            MeleePreparationInput::Offhand => preferred,
+        };
+        let preparation = if validated.melee_preparation == MeleePreparationInput::Offhand
+            && skeleton.attack_animations.offhand_preparation
+        {
+            AttackPreparation::offhand()
+        } else {
+            AttackPreparation::main(
+                skeleton
+                    .available_strike_family(requested)
+                    .unwrap_or(preferred),
+            )
+        };
+        skeleton.set_attack_preparation(preparation);
+    }
     if jump_requested
         && !skeleton.is_posture_transitioning()
         && matches!(skeleton.body(), BodyState::Grounded(_))
@@ -970,6 +995,7 @@ struct ValidatedPlayerInput {
     posture: PostureCommand,
     pace: MovementPace,
     weapon_guard: WeaponGuardState,
+    melee_preparation: MeleePreparationInput,
 }
 
 fn validate_player_input(
@@ -982,6 +1008,7 @@ fn validate_player_input(
     posture: PostureCommand,
     pace: MovementPace,
     weapon_guard: WeaponGuardState,
+    melee_preparation: MeleePreparationInput,
 ) -> Option<ValidatedPlayerInput> {
     if !look.is_finite()
         || movement.is_some_and(|movement| !movement.is_finite())
@@ -1010,6 +1037,7 @@ fn validate_player_input(
         posture,
         pace,
         weapon_guard,
+        melee_preparation,
     })
 }
 
@@ -1860,6 +1888,7 @@ mod standalone_join_tests {
                     slash: true,
                     pierce: false,
                     windup_secs: 0.3,
+                    offhand_windup_secs: 0.34,
                     swing_precision: 0.0,
                     stab_precision: 0.0,
                     prefers_stab: false,
@@ -1954,9 +1983,10 @@ mod tests {
     };
     use adventuresim_tactical_core::prelude::{
         BodyState, CharacterControllerState, CharacterId, DiveDirection, DodgeSpec,
-        GroundedPosture, LinearVelocity, MovementPace, PostureTransitionKind, RollDirection,
-        Rotation, SkeletonAction, SkeletonState, TACTICAL_PRONE_LATERAL_SPEED_SCALE,
-        advance_body_facing, controller_yaw, downed_camera_roll_target,
+        GroundedPosture, LinearVelocity, MeleePreparationInput, MovementPace,
+        PostureTransitionKind, RollDirection, Rotation, SkeletonAction, SkeletonState,
+        TACTICAL_PRONE_LATERAL_SPEED_SCALE, advance_body_facing, controller_yaw,
+        downed_camera_roll_target,
     };
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
     use adventuresim_tactical_netcode::prelude::{
@@ -2107,6 +2137,7 @@ mod tests {
                 PostureCommand::default(),
                 MovementPace::Sprint,
                 WeaponGuardState::Raised,
+                MeleePreparationInput::Preferred,
             ) {
                 controller_input = (
                     Vec2::new(validated.yaw, validated.pitch),
@@ -2150,6 +2181,7 @@ mod tests {
             PostureCommand::default(),
             MovementPace::Sprint,
             WeaponGuardState::Raised,
+            MeleePreparationInput::Preferred,
         )
         .unwrap();
         assert!((validated.yaw - 0.25).abs() < 0.0001);
@@ -2177,6 +2209,7 @@ mod tests {
             PostureCommand::default(),
             MovementPace::Walk,
             WeaponGuardState::Raised,
+            MeleePreparationInput::Preferred,
         )
         .unwrap();
         assert_eq!(validated.jump.quickstep, Some(Vec2::new(0.8, -0.6)));
@@ -2194,6 +2227,7 @@ mod tests {
                 PostureCommand::default(),
                 MovementPace::Walk,
                 WeaponGuardState::Raised,
+                MeleePreparationInput::Preferred,
             )
             .is_none()
         );
