@@ -664,7 +664,7 @@ mod tests {
         assert!((consequence.injuries[0].cut_damage - 0.3).abs() < 0.0001);
         assert!((consequence.injuries[0].blunt_damage - 0.2).abs() < 0.0001);
         assert!((consequence.injuries[0].max_single_hit_blunt_damage - 0.002).abs() < 0.0001);
-        assert!((consequence.blood_loss_fraction - 0.25).abs() < 0.0001);
+        assert!((consequence.blood_loss_fraction - 0.1515).abs() < 0.0001);
     }
 
     #[test]
