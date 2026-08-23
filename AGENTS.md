@@ -4,13 +4,15 @@
 
 Read these before making a non-trivial change:
 
-- `README.md` for the game vision and product boundaries.
+- `README.md` for repository orientation and `wiki/index.md` for the game vision
+  and product boundaries.
 - `wiki/engineering/architecture.md` for the strategic/tactical split and persistence rules.
 - `wiki/engineering/developing.md` and `justfile` for local development commands.
 - `wiki/generated/project-map.md` for a concise inventory of repository files.
 - Relevant pages in `wiki/` for gameplay, design, and technical decisions.
 
-For README or wiki prose, read `wiki/contributing/wiki-writing.md`.
+For any public-facing prose, first read
+`wiki/contributing/wiki-writing.md`.
 
 This is a Rust workspace. The strategic layer uses SpacetimeDB; the tactical
 layer uses Bevy and transient server state. Do not persist tactical tick state
@@ -22,12 +24,18 @@ documentation is intentionally changed as part of the task.
 - Keep changes scoped to the requested outcome and preserve unrelated working-tree changes.
 - Prefer `just fmt`, `just check`, `just test`, or the narrowest relevant command for verification.
 - Treat generated SpacetimeDB client bindings in `crates/adventuresim-stdb-client/src/` as generated output; regenerate them with `just generate-db-client` when changing their source schema.
-- Update the relevant README or `wiki/` page whenever a change affects documented behavior, architecture, or developer workflow.
-- Bruno Segovia owns final editorial approval for user-facing wiki prose.
-  Agents may prepare research drafts, propose structure, and provide editorial
-  feedback, but must not originate or finalize voice-bearing prose unless Bruno
-  explicitly requests it. Agents may update factual implementation documentation
-  alongside code changes while preserving the established voice.
+- Keep documented behavior, architecture, and developer workflow synchronized
+  with implementation changes. Apply public documentation wording that Bruno
+  supplies; when wording is missing, identify the required update and ask Bruno
+  rather than inventing it.
+- Bruno Segovia writes all public-facing prose, including README and wiki pages
+  and public GitHub issue or pull-request titles and descriptions. Agents may
+  prepare private research drafts, propose information architecture and
+  argument maps, and edit prose Bruno supplies. Do not originate public prose
+  unless Bruno explicitly asks for a draft, and never publish a draft until he
+  approves its exact wording. In the normal workflow, give Bruno the private
+  structure, ask him to write the public section, respond as editor, and apply
+  the wording only after he decides it.
 - Use icons where they improve the clarity or usability of the interface. Prefer the
   locally vendored Game Icons SVGs in `crates/strategic-web/static/icons/game/`;
   when a suitable icon is missing, source it from the same Game-Icons.net collection

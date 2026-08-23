@@ -6,10 +6,10 @@ Build output, Git internals, dependency directories, and generated browser artif
 
 ## How to use this map
 
-Start with `AGENTS.md`, then read the root README and the relevant architecture,
-development, or other wiki document before changing a subsystem.
+Start with `AGENTS.md`, then read the root README, wiki introduction, and
+relevant architecture, development, or other wiki document before changing a subsystem.
 
-## Files (1938)
+## Files (1940)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1874,6 +1874,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/world_source_init.py` — Development or documentation automation script.
 - `utils/generate_certificates.py` — Development or documentation automation script.
 - `wiki/SUMMARY.md` — Project documentation.
+- `wiki/assets/fabelgeist-logo.png` — Binary game or UI asset.
 - `wiki/client/animation.md` — Project documentation.
 - `wiki/client/controls.md` — Project documentation.
 - `wiki/client/models.md` — Project documentation.
@@ -1910,6 +1911,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/engineering/world-data/tree-species.md` — Project documentation.
 - `wiki/engineering/world-data/viabundus.md` — Project documentation.
 - `wiki/engineering/world-data/world-data-bundles.md` — Project documentation.
+- `wiki/index.md` — Project documentation.
 - `wiki/navigation.toml` — Tooling or build configuration.
 - `wiki/scenario.md` — Project documentation.
 - `wiki/shared/bestiary.md` — Project documentation.
