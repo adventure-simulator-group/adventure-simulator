@@ -2,8 +2,9 @@ use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 use crate::{
-    Attachment, ComponentRole, ComponentShape, WeaponDesign, WeaponHolderDesign, WeaponHolderKind,
-    recommended_holder,
+    Attachment, ComponentRole, ComponentShape, MAX_ROUND_GRIP_RADIUS_MM,
+    MAX_SWORD_GRIP_THICKNESS_MM, MAX_SWORD_GRIP_WIDTH_MM, WeaponDesign, WeaponHolderDesign,
+    WeaponHolderKind, recommended_holder,
 };
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -28,6 +29,18 @@ pub enum ValidationError {
     AttachmentCycle(String),
     #[error("component `{0}` has invalid quantized dimensions")]
     InvalidDimensions(String),
+    #[error(
+        "grip component `{component}` has effective radius {radius_mm} mm; maximum is {MAX_ROUND_GRIP_RADIUS_MM} mm"
+    )]
+    GripRadiusExceeded { component: String, radius_mm: u64 },
+    #[error(
+        "grip component `{component}` has effective cross-section {width_mm} x {thickness_mm} mm; maximum is {MAX_SWORD_GRIP_WIDTH_MM} x {MAX_SWORD_GRIP_THICKNESS_MM} mm"
+    )]
+    GripCrossSectionExceeded {
+        component: String,
+        width_mm: u64,
+        thickness_mm: u64,
+    },
     #[error("component `{0}` does not contact its attachment parent")]
     InvalidAttachment(String),
     #[error("resolved weapon axial span exceeds 12 metres")]
@@ -41,6 +54,14 @@ fn footprint(shape: &ComponentShape) -> (u64, u64, u64) {
             let radius =
                 mm(value.radius.0) * u64::from(value.bottom_scale.0.max(value.top_scale.0)) / 1_000;
             (radius, radius, mm(value.length.0))
+        }
+        ComponentShape::OvalGrip(value) => {
+            let scale = u64::from(value.bottom_scale.0.max(value.top_scale.0));
+            (
+                mm(value.width.0) * scale / 2_000,
+                mm(value.thickness.0) * scale / 2_000,
+                mm(value.length.0),
+            )
         }
         ComponentShape::Blade(value) => (
             mm(value.width.0) / 2,
@@ -224,6 +245,15 @@ pub fn validate(design: &WeaponDesign) -> Result<(), Vec<ValidationError>> {
                 ComponentShape::Cylinder(value) => {
                     (1..=6_000).contains(&value.length.0)
                         && (1..=500).contains(&value.radius.0)
+                        && (100..=2_000).contains(&value.bottom_scale.0)
+                        && (100..=2_000).contains(&value.top_scale.0)
+                        && (8..=256).contains(&value.segments.0)
+                }
+                ComponentShape::OvalGrip(value) => {
+                    (1..=1_000).contains(&value.length.0)
+                        && (1..=100).contains(&value.width.0)
+                        && (1..=100).contains(&value.thickness.0)
+                        && value.width.0 > value.thickness.0
                         && (100..=2_000).contains(&value.bottom_scale.0)
                         && (100..=2_000).contains(&value.top_scale.0)
                         && (8..=256).contains(&value.segments.0)
@@ -515,6 +545,35 @@ pub fn validate(design: &WeaponDesign) -> Result<(), Vec<ValidationError>> {
             };
         if !valid {
             errors.push(ValidationError::InvalidDimensions(component.id.clone()));
+        }
+        if component.role == ComponentRole::Grip
+            && let ComponentShape::Cylinder(value) = &component.shape
+        {
+            let effective_radius = (u64::from(value.radius.0)
+                * u64::from(value.bottom_scale.0.max(value.top_scale.0)))
+            .div_ceil(1_000);
+            if effective_radius > u64::from(MAX_ROUND_GRIP_RADIUS_MM) {
+                errors.push(ValidationError::GripRadiusExceeded {
+                    component: component.id.clone(),
+                    radius_mm: effective_radius,
+                });
+            }
+        }
+        if component.role == ComponentRole::Grip
+            && let ComponentShape::OvalGrip(value) = &component.shape
+        {
+            let scale = u64::from(value.bottom_scale.0.max(value.top_scale.0));
+            let effective_width = (u64::from(value.width.0) * scale).div_ceil(1_000);
+            let effective_thickness = (u64::from(value.thickness.0) * scale).div_ceil(1_000);
+            if effective_width > u64::from(MAX_SWORD_GRIP_WIDTH_MM)
+                || effective_thickness > u64::from(MAX_SWORD_GRIP_THICKNESS_MM)
+            {
+                errors.push(ValidationError::GripCrossSectionExceeded {
+                    component: component.id.clone(),
+                    width_mm: effective_width,
+                    thickness_mm: effective_thickness,
+                });
+            }
         }
     }
     let by_id: HashMap<_, _> = design

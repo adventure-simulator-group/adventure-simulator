@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { billHeadCurveSpans, billHeadOutline, buildWeapon, figureEightGuard, glaiveOutline, glaiveSpineCurveSpans, knuckleBow, maceFlangeOutline, sampleAdaptiveCurve, sampleCubicBezier, signedVolume, triangulatePolygon, tubePath, tubeRadialSegments } from "../src/mesh.js";
+import { billHeadCurveSpans, billHeadOutline, buildWeapon, figureEightGuard, glaiveOutline, glaiveSpineCurveSpans, knuckleBow, maceFlangeOutline, measureMassProperties, sampleAdaptiveCurve, sampleCubicBezier, signedVolume, triangulatePolygon, tubePath, tubeRadialSegments } from "../src/mesh.js";
+import { automaticGripPoint } from "../src/glb-export.js";
 import { HEAD_KINDS, PRESETS, copyPreset, getPath, setControlValue, setPath } from "../src/presets.js";
 import { fitDistance, projectedFit } from "../src/renderer.js";
 
@@ -25,6 +26,26 @@ test("every preset produces finite nonempty geometry", () => {
       assert.ok(value >= control.min && value <= control.max, `${preset.id}: ${control.path}`);
     }
   }
+});
+
+test("mesh mass distribution derives realistic pommel mass and handling", () => {
+  const preset = copyPreset(PRESETS.find((candidate) => candidate.id === "landsknecht-longsword"));
+  const mesh = buildWeapon(preset.definition);
+  const baseline = measureMassProperties(mesh, automaticGripPoint(mesh.resolvedDefinition));
+  const pommelMass = baseline.components.find((component) => component.id === "pommel").massKg;
+  assert.ok(baseline.massKg > 1 && baseline.massKg < 3, baseline.massKg);
+  assert.ok(pommelMass > 0.1 && pommelMass < 0.5, pommelMass);
+  assert.ok(pommelMass < baseline.massKg * 0.25, pommelMass / baseline.massKg);
+  assert.ok(baseline.centerOfMassFromGripM > 0);
+  assert.ok(baseline.momentOfInertiaKgM2 > 0);
+  assert.ok(baseline.balance > 0 && baseline.balance < 1);
+
+  const largerPommel = preset.definition.components.find((component) => component.id === "pommel");
+  largerPommel.profile = largerPommel.profile.map(([height, radius]) => [height, radius * 1.08]);
+  const changedMesh = buildWeapon(preset.definition);
+  const changed = measureMassProperties(changedMesh, automaticGripPoint(changedMesh.resolvedDefinition));
+  assert.ok(changed.centerOfMassFromGripM < baseline.centerOfMassFromGripM);
+  assert.ok(changed.balance < baseline.balance);
 });
 
 test("preset parameters can be independently copied and changed", () => {

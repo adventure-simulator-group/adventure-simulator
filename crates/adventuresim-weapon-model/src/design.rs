@@ -145,6 +145,16 @@ pub struct CylinderSpec {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct OvalGripSpec {
+    pub length: Millimeters,
+    pub width: Millimeters,
+    pub thickness: Millimeters,
+    pub bottom_scale: Permille,
+    pub top_scale: Permille,
+    pub segments: Segments,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct BladeSpec {
     pub length: Millimeters,
     pub width: Millimeters,
@@ -439,6 +449,7 @@ pub struct GothicMaceSpec {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum ComponentShape {
     Cylinder(CylinderSpec),
+    OvalGrip(OvalGripSpec),
     Blade(BladeSpec),
     Guard(GuardSpec),
     Mace(MaceSpec),
@@ -471,6 +482,7 @@ impl ComponentShape {
     pub fn axial_length(&self) -> Millimeters {
         match self {
             Self::Cylinder(value) => value.length,
+            Self::OvalGrip(value) => value.length,
             Self::Blade(value) => value.length,
             Self::Guard(_) => Millimeters(0),
             Self::Mace(value) => value.length,
@@ -548,6 +560,13 @@ pub struct DerivedProperties {
     pub mass_kg: f32,
     pub length_m: f32,
     pub grip_to_tip_m: f32,
+    /// Signed longitudinal center of mass relative to the controlling hand.
+    /// Positive values lie toward the weapon head.
+    pub center_of_mass_from_grip_m: f32,
+    /// Mean transverse rotational inertia about the controlling hand.
+    pub moment_of_inertia_kg_m2: f32,
+    /// Radius of gyration divided by grip-to-tip length. Lower is easier to redirect.
+    pub balance: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
