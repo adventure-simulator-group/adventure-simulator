@@ -234,6 +234,9 @@ verify-mhr-assets:
 # Edit the canonical John Fabelgeist MHR recipe and source rig.
 character-creator:
     @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml
+# Model an animator reference weapon and export it against the character rig.
+weapon-modeler:
+    @npm --prefix tools/weapon-modeler start
 # Re-export the saved John recipe and prepare its spawnable runtime base.
 prepare-john-rig:
     @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --export-only
