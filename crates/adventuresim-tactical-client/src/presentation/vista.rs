@@ -124,9 +124,12 @@ pub(super) fn on_scene_vista_bundle(
         let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
         for (chunk, mesh) in meshes_for_lod.into_iter().enumerate() {
             presented_chunk_count += 1;
+            let triangle_count = mesh_triangle_count(&mesh);
             commands.spawn((
                 Name::new(format!("Tactical vista LOD {} chunk {chunk}", lod.level)),
                 VistaTerrain(lod.level),
+                VistaTerrainMesh(lod.level),
+                TerrainTriangleCount(triangle_count),
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(material.clone()),
@@ -1468,6 +1471,11 @@ fn clear_vista_weather() -> WeatherSnapshot {
 #[derive(Component)]
 #[allow(dead_code)]
 pub(crate) struct VistaTerrain(pub(crate) u8);
+
+/// A terrain-surface chunk, excluding vista grass, rocks, and tree cards that
+/// also carry [`VistaTerrain`] for broad visibility isolation.
+#[derive(Component)]
+pub(crate) struct VistaTerrainMesh(pub(crate) u8);
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalVistaExtension {

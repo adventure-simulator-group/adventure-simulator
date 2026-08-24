@@ -80,7 +80,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // The camera-local mesh contains signed residual height. Remove the
     // coarse surface only where that patch is guaranteed to cover it, or the
     // old surface would depth-occlude every drainage channel and wheel rut.
-    // A 1.5 m overlap remains before the circular patch edge, where relief is
+    // A 2 m overlap remains before the circular patch edge, where relief is
     // already morphed almost completely back to the authoritative surface.
     if terrain.detail_patch.x > 0.5
         && distance(position.xz, view.lod_view_world_position.xz) < terrain.detail_patch.y {
