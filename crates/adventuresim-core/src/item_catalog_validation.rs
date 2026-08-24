@@ -592,9 +592,9 @@ fn validate_equipment(
                 "{file}: {path}.material: armor and clothing require a procedural PBR material"
             ));
         }
-    } else if material.is_some() {
+    } else if material.is_some_and(|material| !valid_materials.contains(&material)) {
         errors.push(format!(
-            "{file}: {path}.material: only armor and clothing may define a procedural PBR material"
+            "{file}: {path}.material: unknown procedural PBR material"
         ));
     }
     match equipment.get("physical").and_then(Value::as_object) {
@@ -848,6 +848,7 @@ fn validate_equipment(
                     file,
                     &placement_path,
                     item_kind,
+                    material.is_some(),
                     &protected,
                     errors,
                 );
@@ -991,6 +992,7 @@ fn validate_equipment_surface(
     file: &str,
     placement_path: &str,
     item_kind: &str,
+    has_material: bool,
     protected: &BTreeSet<&str>,
     errors: &mut Vec<String>,
 ) {
@@ -1012,9 +1014,9 @@ fn validate_equipment_surface(
         }
         return;
     }
-    if !required {
+    if !has_material {
         errors.push(format!(
-            "{file}: {path}: only armor and clothing may define anatomical surface spans"
+            "{file}: {path}: anatomical surface spans require a procedural PBR material"
         ));
     }
     let valid_regions = [
@@ -1072,7 +1074,7 @@ fn validate_equipment_surface(
         }
         for region in &region_names {
             let body_part = anatomical_body_part(region);
-            if !protected.contains(body_part) {
+            if !protected.is_empty() && !protected.contains(body_part) {
                 errors.push(format!(
                     "{file}: {span_path}.regions: {region:?} is outside placement protection {protected:?}"
                 ));
@@ -1827,6 +1829,49 @@ mod tests {
             equipment.placements[0].occupancy[0].location,
             crate::item_catalog_schema::EquipmentLocation::LeftArm
         );
+    }
+
+    #[test]
+    fn fitted_accessory_may_author_a_surface_without_protection() {
+        let mut item = valid_item("fitted_belt");
+        item.as_object_mut().unwrap().insert(
+            "equipment".into(),
+            json!({
+                "material": "vegetable_tanned_leather",
+                "physical": {
+                    "dimensions_m": [0.42, 0.10, 0.24],
+                    "grip_to_tip_m": 0.0,
+                    "anchor_offset_m": [0.0, 0.0, 0.0]
+                },
+                "placements": [{
+                    "id": "worn",
+                    "occupancy": [{"location": "left_belt", "channel": "accessory"}],
+                    "surface": [{
+                        "regions": ["stomach"],
+                        "anchor": "center",
+                        "coverage": 0.18
+                    }]
+                }]
+            }),
+        );
+
+        let equipment_value = item["equipment"].clone();
+        let mut errors = Vec::new();
+        validate_equipment(
+            &equipment_value,
+            "equipment.yaml",
+            "items.0",
+            "simple",
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:#?}");
+        let documents = [document(vec![item])];
+        let compiled: crate::item_catalog_schema::ItemCatalogDocument =
+            serde_json::from_value(documents[0].clone()).expect("typed catalog");
+        let belt = &compiled.items[0];
+        assert!(belt.equipment.as_ref().is_some_and(|equipment| {
+            equipment.material.is_some() && !equipment.placements[0].surface.is_empty()
+        }));
     }
 
     #[test]

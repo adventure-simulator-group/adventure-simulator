@@ -4,7 +4,7 @@ use adventuresim_character_creator::{
     CharacterRecipe, ClothingSelection, IdentityGroup,
     clothing::{GarmentSpecification, generate_clothing_shells},
     export::{RiggedMesh, RiggedShell, export_rigged_glb},
-    item_catalog_schema::{ItemCatalogDocument, ItemDefinition, ItemKind},
+    item_catalog_schema::{ItemCatalogDocument, ItemDefinition},
 };
 use anyhow::{Context, Result};
 use bevy::{
@@ -435,13 +435,13 @@ fn load_item_catalog(directory: &std::path::Path) -> Result<Vec<ItemDefinition>>
 
 fn procedural_items(catalog: &EquipmentCatalog) -> impl Iterator<Item = &ItemDefinition> {
     catalog.0.iter().filter(|item| {
-        matches!(item.kind, ItemKind::Armor { .. } | ItemKind::Clothing)
-            && item.equipment.as_ref().is_some_and(|equipment| {
-                equipment
+        item.equipment.as_ref().is_some_and(|equipment| {
+            equipment.material.is_some()
+                && equipment
                     .placements
                     .iter()
                     .any(|placement| !placement.surface.is_empty())
-            })
+        })
     })
 }
 
@@ -554,7 +554,8 @@ fn generate_equipment_assets(
                 &RiggedMesh {
                     positions: &generated.positions,
                     normals: &generated.normals,
-                    faces: &[],
+                    faces: &character.mesh.faces,
+                    export_body: false,
                     joint_indices: &character.skin_weights.index,
                     joint_weights: &character.skin_weights.weight,
                     joint_names: &character.skeleton.names,
@@ -863,6 +864,7 @@ fn export_character(
             positions: &generated.positions,
             normals: &generated.normals,
             faces: &clothed.visible_body_faces,
+            export_body: true,
             joint_indices: &character.skin_weights.index,
             joint_weights: &character.skin_weights.weight,
             joint_names: &character.skeleton.names,

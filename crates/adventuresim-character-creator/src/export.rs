@@ -38,6 +38,9 @@ pub struct RiggedMesh<'a> {
     pub positions: &'a [[f32; 3]],
     pub normals: &'a [[f32; 3]],
     pub faces: &'a [[u32; 3]],
+    /// Whether the source body faces are emitted as a rendered primitive.
+    /// Shell-only equipment still supplies them to locate authored sockets.
+    pub export_body: bool,
     pub joint_indices: &'a [[u32; 8]],
     pub joint_weights: &'a [[f32; 8]],
     pub joint_names: &'a [String],
@@ -477,8 +480,9 @@ pub fn export_rigged_glb(
         ),
         Some(34_962),
     );
+    let exported_faces = if mesh.export_body { mesh.faces } else { &[] };
     let indices = buffer.push(
-        &u32_bytes(mesh.faces.iter().flatten().copied()),
+        &u32_bytes(exported_faces.iter().flatten().copied()),
         Some(34_963),
     );
     let shell_views = shells
@@ -504,69 +508,77 @@ pub fn export_rigged_glb(
         .collect::<Vec<_>>();
     let mut joint_names = mesh.joint_names.to_vec();
     let mut joint_parents = mesh.joint_parents.to_vec();
-    let left_wrist = landmark(mesh, "l_wrist")?;
-    let left_middle = landmark(mesh, "l_middle1")?;
-    let left_index = landmark(mesh, "l_index1")?;
-    let left_ring = landmark(mesh, "l_ring1")?;
-    let left_thumb_base = landmark(mesh, "l_thumb0")?;
-    let left_thumb = landmark(mesh, "l_thumb1")?;
-    let right_wrist = landmark(mesh, "r_wrist")?;
-    let right_middle = landmark(mesh, "r_middle1")?;
-    let right_index = landmark(mesh, "r_index1")?;
-    let right_ring = landmark(mesh, "r_ring1")?;
-    let right_thumb_base = landmark(mesh, "r_thumb0")?;
-    let right_thumb = landmark(mesh, "r_thumb1")?;
-    let head = landmark(mesh, "c_head")?;
-    let left_eye = landmark(mesh, "l_eye")?;
-    let right_eye = landmark(mesh, "r_eye")?;
-    let left_grip = weapon_attachment(
-        mesh,
-        "left",
-        globals[left_wrist],
-        globals[left_middle],
-        globals[left_index],
-        globals[left_ring],
-        [globals[left_thumb_base], globals[left_thumb]],
-    )?;
-    let right_grip = weapon_attachment(
-        mesh,
-        "right",
-        globals[right_wrist],
-        globals[right_middle],
-        globals[right_index],
-        globals[right_ring],
-        [globals[right_thumb_base], globals[right_thumb]],
-    )?;
-    let camera_position = between(globals[left_eye], globals[right_eye], 0.5);
-    let camera = Transform {
-        translation: camera_position,
-        rotation: globals[head].rotation,
-        scale: globals[head].scale,
-    };
-    append_attachment(
-        &mut joint_names,
-        &mut joint_parents,
-        &mut globals,
-        LEFT_WEAPON_JOINT,
-        left_wrist,
-        left_grip,
-    );
-    append_attachment(
-        &mut joint_names,
-        &mut joint_parents,
-        &mut globals,
-        RIGHT_WEAPON_JOINT,
-        right_wrist,
-        right_grip,
-    );
-    append_attachment(
-        &mut joint_names,
-        &mut joint_parents,
-        &mut globals,
-        FIRST_PERSON_CAMERA_JOINT,
-        head,
-        camera,
-    );
+    let mut attachments = Vec::new();
+    if !mesh.faces.is_empty() {
+        let left_wrist = landmark(mesh, "l_wrist")?;
+        let left_middle = landmark(mesh, "l_middle1")?;
+        let left_index = landmark(mesh, "l_index1")?;
+        let left_ring = landmark(mesh, "l_ring1")?;
+        let left_thumb_base = landmark(mesh, "l_thumb0")?;
+        let left_thumb = landmark(mesh, "l_thumb1")?;
+        let right_wrist = landmark(mesh, "r_wrist")?;
+        let right_middle = landmark(mesh, "r_middle1")?;
+        let right_index = landmark(mesh, "r_index1")?;
+        let right_ring = landmark(mesh, "r_ring1")?;
+        let right_thumb_base = landmark(mesh, "r_thumb0")?;
+        let right_thumb = landmark(mesh, "r_thumb1")?;
+        let head = landmark(mesh, "c_head")?;
+        let left_eye = landmark(mesh, "l_eye")?;
+        let right_eye = landmark(mesh, "r_eye")?;
+        let left_grip = weapon_attachment(
+            mesh,
+            "left",
+            globals[left_wrist],
+            globals[left_middle],
+            globals[left_index],
+            globals[left_ring],
+            [globals[left_thumb_base], globals[left_thumb]],
+        )?;
+        let right_grip = weapon_attachment(
+            mesh,
+            "right",
+            globals[right_wrist],
+            globals[right_middle],
+            globals[right_index],
+            globals[right_ring],
+            [globals[right_thumb_base], globals[right_thumb]],
+        )?;
+        let camera_position = between(globals[left_eye], globals[right_eye], 0.5);
+        let camera = Transform {
+            translation: camera_position,
+            rotation: globals[head].rotation,
+            scale: globals[head].scale,
+        };
+        append_attachment(
+            &mut joint_names,
+            &mut joint_parents,
+            &mut globals,
+            LEFT_WEAPON_JOINT,
+            left_wrist,
+            left_grip,
+        );
+        append_attachment(
+            &mut joint_names,
+            &mut joint_parents,
+            &mut globals,
+            RIGHT_WEAPON_JOINT,
+            right_wrist,
+            right_grip,
+        );
+        append_attachment(
+            &mut joint_names,
+            &mut joint_parents,
+            &mut globals,
+            FIRST_PERSON_CAMERA_JOINT,
+            head,
+            camera,
+        );
+        attachments = vec![
+            json!({"name": LEFT_WEAPON_JOINT, "parent": "l_wrist", "role": "left_weapon_grip"}),
+            json!({"name": RIGHT_WEAPON_JOINT, "parent": "r_wrist", "role": "right_weapon_grip"}),
+            json!({"name": FIRST_PERSON_CAMERA_JOINT, "parent": "c_head", "role": "first_person_camera"}),
+        ];
+    }
     let inverse_bind_matrices = buffer.push(
         &f32_bytes(
             globals
@@ -606,7 +618,7 @@ pub fn export_rigged_glb(
     let weights_0_accessor = accessor(weights_0, 5_126, mesh.positions.len(), "VEC4", None);
     let joints_1_accessor = accessor(joints_1, 5_123, mesh.positions.len(), "VEC4", None);
     let weights_1_accessor = accessor(weights_1, 5_126, mesh.positions.len(), "VEC4", None);
-    let index_accessor = accessor(indices, 5_125, mesh.faces.len() * 3, "SCALAR", None);
+    let index_accessor = accessor(indices, 5_125, exported_faces.len() * 3, "SCALAR", None);
     let inverse_bind_accessor = accessor(
         inverse_bind_matrices,
         5_126,
@@ -616,7 +628,7 @@ pub fn export_rigged_glb(
     );
     let mut primitives = Vec::new();
     let mut material_values = Vec::new();
-    if !mesh.faces.is_empty() {
+    if mesh.export_body {
         primitives.push(json!({
             "attributes": {
                 "POSITION": position_accessor,
@@ -748,11 +760,7 @@ pub fn export_rigged_glb(
                 "units": "metres",
                 "up_axis": "+Y",
                 "forward_axis": "-Z",
-                "attachments": [
-                    {"name": LEFT_WEAPON_JOINT, "parent": "l_wrist", "role": "left_weapon_grip"},
-                    {"name": RIGHT_WEAPON_JOINT, "parent": "r_wrist", "role": "right_weapon_grip"},
-                    {"name": FIRST_PERSON_CAMERA_JOINT, "parent": "c_head", "role": "first_person_camera"},
-                ],
+                "attachments": attachments,
             }
         }
     });
@@ -870,6 +878,7 @@ mod tests {
                 positions: &positions,
                 normals: &normals,
                 faces: &faces,
+                export_body: true,
                 joint_indices: &joint_indices,
                 joint_weights: &joint_weights,
                 joint_names: &joint_names,
@@ -978,6 +987,7 @@ mod tests {
                 positions: &positions,
                 normals: &normals,
                 faces: &faces,
+                export_body: true,
                 joint_indices: &joint_indices,
                 joint_weights: &joint_weights,
                 joint_names: &joint_names,
@@ -1020,6 +1030,7 @@ mod tests {
                 positions: &positions,
                 normals: &normals,
                 faces: &faces,
+                export_body: true,
                 joint_indices: &joint_indices,
                 joint_weights: &joint_weights,
                 joint_names: &joint_names,
@@ -1042,6 +1053,61 @@ mod tests {
         assert_eq!(
             document["meshes"][0]["primitives"][1]["attributes"]["JOINTS_1"],
             document["meshes"][0]["primitives"][0]["attributes"]["JOINTS_1"]
+        );
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn exports_shell_only_equipment_without_character_attachment_geometry() {
+        let directory = std::env::temp_dir().join(format!(
+            "fabelgeist-mhr-equipment-export-{}",
+            std::process::id()
+        ));
+        let path = directory.join("belt.glb");
+        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let normals = [[0.0, 0.0, 1.0]; 3];
+        let joint_indices = [[0; 8]; 3];
+        let joint_weights = [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; 3];
+        let joint_names = ["root".to_owned()];
+        let joint_parents = [-1];
+        let global_joint_states = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]];
+        let shell_faces = [[0, 1, 2]];
+        let shell = RiggedShell {
+            name: "Leather belt",
+            positions: &positions,
+            faces: &shell_faces,
+            base_color: [0.5, 0.35, 0.23, 1.0],
+            metallic: 0.0,
+            roughness: 0.58,
+        };
+
+        export_rigged_glb(
+            &path,
+            "leather_belt",
+            1,
+            1,
+            &RiggedMesh {
+                positions: &positions,
+                normals: &normals,
+                faces: &[],
+                export_body: false,
+                joint_indices: &joint_indices,
+                joint_weights: &joint_weights,
+                joint_names: &joint_names,
+                joint_parents: &joint_parents,
+                global_joint_states: &global_joint_states,
+            },
+            &[shell],
+        )
+        .unwrap();
+
+        let bytes = fs::read(&path).unwrap();
+        let document = read_document(&bytes);
+        assert_eq!(document["meshes"][0]["primitives"].as_array().unwrap().len(), 1);
+        assert_eq!(document["skins"][0]["joints"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            document["extras"]["adventuresim_rig"]["attachments"],
+            json!([])
         );
         let _ = fs::remove_dir_all(directory);
     }

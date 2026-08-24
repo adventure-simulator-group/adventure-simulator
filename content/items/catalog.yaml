@@ -4174,6 +4174,7 @@
       "tags": ["clothing"],
       "presentation": {"icon": "belt-armor"},
       "equipment": {"physical": {"dimensions_m": [0.42, 0.10, 0.24], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.0, 0.0]},
+        "material": "vegetable_tanned_leather",
         "placements": [{
           "id": "worn",
           "occupancy": [
@@ -4181,7 +4182,8 @@
             {"location": "right_belt", "channel": "accessory"},
             {"location": "front_belt", "channel": "accessory"},
             {"location": "back_belt", "channel": "accessory"}
-          ]
+          ],
+          "surface": [{"regions": ["stomach"], "anchor": "center", "coverage": 0.18}]
         }],
         "attachment_points": [
           {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "locations": ["left_belt"], "accepts_tags": ["sheath", "bag"]},

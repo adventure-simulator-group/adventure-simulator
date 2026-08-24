@@ -255,6 +255,14 @@
       "material": "polished_steel",
       "placement_id": "worn",
       "triangles": 1058
+    },
+    {
+      "coverage": 0.18000000715255737,
+      "file": "leather_belt--worn.glb",
+      "item_id": "leather_belt",
+      "material": "vegetable_tanned_leather",
+      "placement_id": "worn",
+      "triangles": 32
     }
   ],
   "lod": 4,
