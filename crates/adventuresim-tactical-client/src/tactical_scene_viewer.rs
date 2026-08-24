@@ -13,10 +13,14 @@ use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::{
     app::ScheduleRunnerPlugin,
     camera::RenderTarget,
-    camera::{Exposure, visibility::VisibilityRange},
+    camera::{
+        Exposure,
+        visibility::{RenderLayers, VisibilityRange},
+    },
     core_pipeline::tonemapping::Tonemapping,
     ecs::system::SystemParam,
     light::{AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster},
+    pbr::wireframe::{Wireframe, WireframeColor, WireframeLineWidth, WireframePlugin},
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::{ExitCondition, PresentMode},
@@ -47,18 +51,19 @@ use view_specs::{
 
 use crate::camera::CameraRigConfig;
 use crate::presentation::{
-    AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
-    GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch, PlayableTreeAggregateWood,
-    PlayableTreeBuds, PlayableTreeCanopyCard, PlayableTreeDetailedLeaves,
-    PlayableTreeDetailedTrunk, PlayableTreeDetailedWood, PlayableTreeMidTrunk, PlayableTreeTrunk,
-    PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual, TacticalCloudAnimationStatus,
-    TacticalCloudBenchmarkIsolation, TacticalCloudLayer, TacticalGraphicsSettings,
-    TacticalPresentationPlugin, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
-    TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
+    AtmosphereIblAmbientHandoff, DETAIL_PATCH_SPACING_METRES, GroundLitterCaptureAnchors,
+    GroundLitterCapturePair, GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch,
+    PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
+    PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
+    PlayableTreeMidTrunk, PlayableTreeTrunk, PresentedTree, ProceduralEnvironmentAssets,
+    ProceduralRockVisual, TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation,
+    TacticalCloudLayer, TacticalGraphicsSettings, TacticalPresentationPlugin,
+    TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation, TacticalTreeLeafCardMaterial,
+    TerrainDetailPatch, TerrainMaterialPresentation, TerrainTriangleCount,
     TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
     TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    VistaTerrain, VistaTreePresentation, WeatherParticle, oak_bark_material, oak_leaf_material,
-    oak_review_terminal_specimen, terrain_heightmap_image,
+    VistaTerrain, VistaTerrainMesh, VistaTreePresentation, WeatherParticle, oak_bark_material,
+    oak_leaf_material, oak_review_terminal_specimen, terrain_heightmap_image,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -74,6 +79,40 @@ const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
 struct SceneSetup(Option<SceneSetupData>);
+
+#[derive(Resource)]
+struct TerrainWireframeCaptureState {
+    output: PathBuf,
+    configured: bool,
+    settled_frames: u32,
+    prime_readbacks: u8,
+    readback_in_flight: bool,
+    capture_requested: bool,
+}
+
+#[derive(Default, Serialize)]
+struct TerrainWireframeTierReport {
+    spacing_metres: f32,
+    color: &'static str,
+    resident_meshes: usize,
+    visible_meshes: usize,
+    resident_triangles: usize,
+    visible_triangles: usize,
+}
+
+#[derive(Serialize)]
+struct TerrainWireframeReport {
+    pipeline: &'static str,
+    fixture: String,
+    screenshot: &'static str,
+    resolution: [u32; 2],
+    camera_translation: [f32; 3],
+    camera_target: [f32; 3],
+    vertical_fov_degrees: f32,
+    count_semantics: &'static str,
+    tiers: BTreeMap<String, TerrainWireframeTierReport>,
+    total_visible_triangles: usize,
+}
 
 struct SceneSetupData {
     input: TacticalSceneInput,
@@ -685,6 +724,7 @@ pub(crate) fn run(
     tree_lighting_benchmark_frames: Option<u32>,
     scene_performance_benchmark_frames: Option<u32>,
     scene_performance_render_diagnostics: bool,
+    terrain_wireframe: bool,
     tree_review_azimuth_degrees: f32,
     profile: &'static str,
     requested_views: Vec<String>,
@@ -728,6 +768,7 @@ pub(crate) fn run(
     fs::copy(&input_path, output.join("input.json"))
         .unwrap_or_else(|error| panic!("failed to copy capture input: {error}"));
     println!("CAPTURE_OUTPUT={}", output.display());
+    let wireframe_output = output.clone();
 
     let views = selected_capture_views(profile, &requested_views)
         .unwrap_or_else(|error| panic!("invalid capture selection: {error}"));
@@ -799,6 +840,17 @@ pub(crate) fn run(
     .add_plugins(capture_presentation_plugin())
     .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
     .insert_resource(SceneSetup(Some(setup)));
+    if terrain_wireframe {
+        app.add_plugins(WireframePlugin::default())
+            .insert_resource(TerrainWireframeCaptureState {
+                output: wireframe_output,
+                configured: false,
+                settled_frames: 0,
+                prime_readbacks: 0,
+                readback_in_flight: false,
+                capture_requested: false,
+            });
+    }
     app.insert_gizmo_config(
         PhysicsGizmos::default(),
         GizmoConfig {
@@ -822,7 +874,9 @@ pub(crate) fn run(
     if scene_performance_benchmarking && scene_performance_render_diagnostics {
         app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin);
     }
-    if leaf_benchmarking {
+    if terrain_wireframe {
+        app.add_systems(Last, capture_terrain_wireframe);
+    } else if leaf_benchmarking {
         app.add_systems(Last, benchmark_leaf_representations);
     } else if tree_lighting_benchmarking {
         app.add_systems(Last, benchmark_tree_lighting);
@@ -835,6 +889,189 @@ pub(crate) fn run(
     if exit != AppExit::Success {
         std::process::exit(1);
     }
+}
+
+fn capture_terrain_wireframe(
+    mut commands: Commands,
+    mut state: ResMut<TerrainWireframeCaptureState>,
+    capture: Option<Res<CaptureState>>,
+    mut camera: Single<
+        (
+            Entity,
+            &mut Transform,
+            &mut GlobalTransform,
+            &mut Projection,
+        ),
+        With<Camera3d>,
+    >,
+    mut meshes_with_visibility: Query<
+        (
+            Entity,
+            &mut Visibility,
+            &ViewVisibility,
+            Has<TerrainDetailPatch>,
+            Has<TerrainMaterialPresentation>,
+            Option<&VistaTerrainMesh>,
+            Option<&TerrainTriangleCount>,
+            Has<Wireframe>,
+        ),
+        (With<Mesh3d>, Without<Camera3d>),
+    >,
+) {
+    let Some(capture) = capture.as_deref() else {
+        return;
+    };
+    let terrain_meshes = meshes_with_visibility
+        .iter()
+        .filter(|(_, _, _, detail, playable, vista, _, _)| *detail || *playable || vista.is_some())
+        .count();
+    if terrain_meshes == 0 {
+        return;
+    }
+
+    for (entity, mut visibility, _, detail, playable, vista, _, has_wireframe) in
+        &mut meshes_with_visibility
+    {
+        let color = if detail {
+            Some((Color::srgb(1.0, 0.82, 0.12), 1.5))
+        } else if playable {
+            Some((Color::srgb(0.08, 0.95, 1.0), 1.25))
+        } else {
+            vista.map(|lod| {
+                let color = match lod.0 {
+                    0 => Color::srgb(0.18, 1.0, 0.35),
+                    1 => Color::srgb(1.0, 0.36, 0.82),
+                    _ => Color::srgb(1.0, 0.25, 0.12),
+                };
+                (color, 1.0)
+            })
+        };
+        *visibility = if color.is_some() {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        if let Some((color, width)) = color
+            && !has_wireframe
+        {
+            commands.entity(entity).insert((
+                Wireframe,
+                WireframeColor { color },
+                WireframeLineWidth { width },
+                NotShadowCaster,
+                RenderLayers::layer(31),
+            ));
+        }
+    }
+
+    if !state.configured {
+        let transform = Transform::from_translation(capture.ground_eye_position)
+            .looking_at(capture.ground_eye_target, Vec3::Y);
+        commands.entity(camera.0).insert(RenderLayers::layer(31));
+        *camera.1 = transform;
+        *camera.2 = GlobalTransform::from(transform);
+        if let Projection::Perspective(projection) = &mut *camera.3 {
+            projection.fov = 80.0_f32.to_radians();
+        }
+        state.configured = true;
+        return;
+    }
+    if state.settled_frames < capture.settle_frames.max(30) {
+        state.settled_frames += 1;
+        return;
+    }
+    if state.readback_in_flight || state.capture_requested {
+        return;
+    }
+    if state.prime_readbacks < 2 {
+        state.readback_in_flight = true;
+        commands.spawn(Screenshot::primary_window()).observe(
+            |_: On<ScreenshotCaptured>, mut state: ResMut<TerrainWireframeCaptureState>| {
+                state.prime_readbacks += 1;
+                state.readback_in_flight = false;
+                state.settled_frames = 0;
+            },
+        );
+        return;
+    }
+
+    let input = TacticalSceneInput::load(&capture.input_path)
+        .unwrap_or_else(|error| panic!("failed to reload terrain wireframe input: {error}"));
+    let vista_spacing = input
+        .vista
+        .lods
+        .iter()
+        .map(|lod| (lod.level, lod.spacing_metres))
+        .collect::<BTreeMap<_, _>>();
+    let mut tiers = BTreeMap::<String, TerrainWireframeTierReport>::new();
+    for (_, _, view_visibility, detail, playable, vista, triangle_count, _) in
+        &mut meshes_with_visibility
+    {
+        let Some(triangle_count) = triangle_count else {
+            continue;
+        };
+        let triangles = triangle_count.0;
+        let (name, spacing_metres, color) = if detail {
+            (
+                "detail patch".to_owned(),
+                DETAIL_PATCH_SPACING_METRES,
+                "yellow",
+            )
+        } else if playable {
+            (
+                "playable terrain".to_owned(),
+                capture.terrain.spacing_metres,
+                "cyan",
+            )
+        } else if let Some(lod) = vista {
+            (
+                format!("vista LOD{}", lod.0),
+                vista_spacing.get(&lod.0).copied().unwrap_or_default(),
+                match lod.0 {
+                    0 => "green",
+                    1 => "magenta",
+                    _ => "red",
+                },
+            )
+        } else {
+            continue;
+        };
+        let tier = tiers.entry(name).or_default();
+        tier.spacing_metres = spacing_metres;
+        tier.color = color;
+        tier.resident_meshes += 1;
+        tier.resident_triangles += triangles;
+        if view_visibility.get() {
+            tier.visible_meshes += 1;
+            tier.visible_triangles += triangles;
+        }
+    }
+    let total_visible_triangles = tiers.values().map(|tier| tier.visible_triangles).sum();
+    let report = TerrainWireframeReport {
+        pipeline: "tactical_terrain_wireframe_v1",
+        fixture: capture.fixture.clone(),
+        screenshot: "terrain-wireframe.png",
+        resolution: [VIEW_WIDTH, VIEW_HEIGHT],
+        camera_translation: camera.1.translation.to_array(),
+        camera_target: capture.ground_eye_target.to_array(),
+        vertical_fov_degrees: 80.0,
+        count_semantics: "Triangles in terrain mesh entities whose Bevy ViewVisibility is true. Chunk-level vista culling is reflected; partial triangle clipping within a visible mesh is not.",
+        tiers,
+        total_visible_triangles,
+    };
+    fs::write(
+        state.output.join("terrain-wireframe.json"),
+        serde_json::to_vec_pretty(&report).expect("terrain wireframe report serializes"),
+    )
+    .expect("terrain wireframe report writes");
+    let path = state.output.join(report.screenshot);
+    state.capture_requested = true;
+    commands.spawn(Screenshot::primary_window()).observe(
+        move |captured: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
+            save_to_disk(&path)(captured);
+            exit.write(AppExit::Success);
+        },
+    );
 }
 
 /// Render performance captures into a texture so Windows compositor pacing

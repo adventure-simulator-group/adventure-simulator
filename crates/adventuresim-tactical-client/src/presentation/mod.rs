@@ -32,6 +32,14 @@ use vista::*;
 use volumetric::*;
 use weather::*;
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct TerrainTriangleCount(pub(crate) usize);
+
+fn mesh_triangle_count(mesh: &Mesh) -> usize {
+    mesh.indices()
+        .map_or_else(|| mesh.count_vertices() / 3, |indices| indices.len() / 3)
+}
+
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
@@ -72,10 +80,11 @@ pub(crate) use sky::AtmosphereIblAmbientHandoff;
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
 pub(crate) use terrain::{
-    TerrainDetailPatch, TerrainMaterialPresentation, terrain_heightmap_image,
+    DETAIL_PATCH_SPACING_METRES, TerrainDetailPatch, TerrainMaterialPresentation,
+    terrain_heightmap_image,
 };
 #[allow(unused_imports)]
-pub(crate) use vista::{VistaTerrain, VistaTreePresentation};
+pub(crate) use vista::{VistaTerrain, VistaTerrainMesh, VistaTreePresentation};
 #[allow(unused_imports)]
 pub(crate) use weather::WeatherParticle;
 
