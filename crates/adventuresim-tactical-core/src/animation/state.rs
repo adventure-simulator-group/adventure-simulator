@@ -1641,7 +1641,7 @@ impl SkeletonState {
     }
 
     pub fn quickstep_is_launched(&self) -> bool {
-        self.is_quickstep() && self.action_phase() >= 0.125
+        self.is_quickstep() && self.action_phase() >= 0.50
     }
 
     fn action_admission(&self) -> Result<(), ActionTransitionError> {

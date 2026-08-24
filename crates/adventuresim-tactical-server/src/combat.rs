@@ -18,8 +18,7 @@ use bevy::prelude::*;
 use std::{collections::HashMap, num::NonZeroU32};
 
 use crate::player_projection::{
-    AuthoritativeMovementIntent, AuthoritativePostureIntent, PlayerProjectionSet,
-    begin_authoritative_quickstep,
+    AuthoritativeMovementIntent, PlayerProjectionSet, begin_authoritative_quickstep,
 };
 pub(crate) use authority::{
     CombatDuration, CombatInstant, MeleeAttackAuthority, RangedAttackAuthority, ReportedPrecision,
@@ -877,27 +876,20 @@ mod tests {
             &default_impact_config(),
         );
         assert!(!hits_attacker);
-        assert!((velocity_change.length() - 5.26).abs() < 1.0e-4);
+        assert!((velocity_change.length() - 3.86).abs() < 1.0e-4);
         assert!(velocity_change.z > 0.0);
         assert_eq!(velocity_change.y, 0.0);
     }
 
-    fn default_ground_stopping_distance(mut speed: f32) -> f32 {
-        use adventuresim_tactical_core::physics::{
-            TACTICAL_CHARACTER_FRICTION_HZ, TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND,
-        };
-
+    fn default_ground_stopping_distance(mut speed: f32, mass_kg: f32) -> f32 {
         const TICK_SECONDS: f32 = 1.0 / 64.0;
-        const DEFAULT_GROUND_DYNAMIC_FRICTION: f32 = 0.5;
+        let config = TacticalCombatConfig::default();
+        let motor = &config.movement.motor;
+        let braking_acceleration = (motor.reference_ground_braking_force_newtons / mass_kg)
+            .min(motor.gravity_metres_per_second_squared * motor.traction_coefficient);
         let mut distance = 0.0;
         while speed >= 0.001 {
-            let control = speed.max(TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND);
-            speed = (speed
-                - control
-                    * TACTICAL_CHARACTER_FRICTION_HZ
-                    * DEFAULT_GROUND_DYNAMIC_FRICTION
-                    * TICK_SECONDS)
-                .max(0.0);
+            speed = (speed - braking_acceleration * TICK_SECONDS).max(0.0);
             distance += speed * TICK_SECONDS;
         }
         distance
@@ -920,7 +912,8 @@ mod tests {
             80.0,
             &default_impact_config(),
         );
-        let stopping_distance = default_ground_stopping_distance(velocity_change.xz().length());
+        let stopping_distance =
+            default_ground_stopping_distance(velocity_change.xz().length(), 80.0);
 
         assert!(
             (0.23..=0.27).contains(&stopping_distance),

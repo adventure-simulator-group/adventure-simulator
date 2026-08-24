@@ -40,10 +40,9 @@ use crate::{
         process_terminal_submission_results,
     },
     player_projection::{
-        PlayerProjectionSet, brake_quickstep_landing, expire_disconnected_players,
-        launch_pending_quicksteps, on_client_disconnected, on_join_request, on_player_added,
-        on_player_input, restore_authoritative_movement_intent, spawn_connected_players,
-        update_skeleton_locomotion,
+        PlayerProjectionSet, expire_disconnected_players, on_client_disconnected, on_join_request,
+        on_player_added, on_player_input, restore_authoritative_movement_intent,
+        spawn_connected_players, update_character_motion_snapshots, update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
@@ -254,13 +253,12 @@ fn main() {
     .add_systems(
         FixedPostUpdate,
         (
+            restore_authoritative_movement_intent
+                .before(AdventureSimulatorPhysicsSet::ApplyCharacterMotor),
             (
-                launch_pending_quicksteps,
-                restore_authoritative_movement_intent,
+                update_skeleton_locomotion,
+                update_character_motion_snapshots,
             )
-                .chain()
-                .before(AdventureSimulatorPhysicsSet::ApplyMovementSpeed),
-            (brake_quickstep_landing, update_skeleton_locomotion)
                 .chain()
                 .after(AhoySystems::MoveCharacters),
         ),

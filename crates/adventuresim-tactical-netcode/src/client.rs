@@ -23,6 +23,7 @@ impl Plugin for AdventureSimulatorClientPlugin {
             .init_resource::<DirectControlState>()
             .init_resource::<DebugForceAttackTrigger>()
             .init_resource::<PlayerInputOverride>()
+            .init_resource::<LocalInputTick>()
             .add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
             .add_observer(on_client_added)
             .add_observer(store_reconnect_capability)
@@ -204,6 +205,9 @@ impl SprintInputState {
 #[derive(Resource, Debug, Clone, Copy, Default, Reflect)]
 #[reflect(Resource, Default)]
 pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+struct LocalInputTick(u32);
 
 fn update_direct_control_input(
     time: Res<Time>,
@@ -639,14 +643,18 @@ fn announce_join(
 
 fn send_player_input(
     mut commands: Commands,
+    mut input_tick: ResMut<LocalInputTick>,
     players: Query<(&Actions<Player>, &CharacterLook), With<ControlledPlayer>>,
     movements: Query<&Action<input::Movement>>,
     guard: Res<WeaponGuardInputState>,
     controls: Res<DirectControlState>,
     scripted: Res<PlayerInputOverride>,
 ) {
+    let simulation_tick = input_tick.0;
+    input_tick.0 = input_tick.0.wrapping_add(1);
     for (actions, look) in &players {
-        if let Some(request) = scripted.0 {
+        if let Some(mut request) = scripted.0 {
+            request.simulation_tick = simulation_tick;
             commands.client_trigger(request);
             continue;
         }
@@ -655,6 +663,7 @@ fn send_player_input(
             .next()
             .map(|movement| **movement);
         commands.client_trigger(PlayerInputRequest {
+            simulation_tick,
             movement,
             look: Vec2::new(look.yaw, look.pitch),
             jump: controls.jump_command,

@@ -30,6 +30,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<TacticalCombatSide>()
             .replicate::<TacticalCombatState>()
             .replicate::<SkeletonState>()
+            .replicate::<CharacterMotionSnapshot>()
             .replicate::<Attributes>()
             .replicate::<Transform>()
             .replicate::<CharacterLook>()

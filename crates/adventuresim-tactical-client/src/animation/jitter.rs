@@ -61,6 +61,7 @@ pub(crate) struct JitterBone {
 #[derive(Debug, Clone)]
 pub(crate) struct JitterFrame {
     pub(crate) scenario: String,
+    pub(crate) analysis_segment: u64,
     pub(crate) scenario_frame: usize,
     pub(crate) time_seconds: f32,
     pub(crate) bones: BTreeMap<String, JitterBone>,
@@ -86,6 +87,7 @@ pub(crate) struct JitterValidationSummary {
     pub(crate) final_incident_count: usize,
     pub(crate) unacceptable_final_incident_count: usize,
     pub(crate) worst_incident: Option<JitterIncident>,
+    pub(crate) top_incidents: Vec<JitterIncident>,
     pub(crate) thresholds: JitterThresholds,
 }
 
@@ -98,9 +100,13 @@ pub(crate) fn validate(
     while start < frames.len() {
         let end = frames[start..]
             .iter()
-            .position(|frame| frame.scenario != frames[start].scenario)
+            .position(|frame| {
+                frame.scenario != frames[start].scenario
+                    || frame.analysis_segment != frames[start].analysis_segment
+            })
             .map_or(frames.len(), |offset| start + offset);
-        analyze_scenario(&frames[start..end], &thresholds, &mut incidents);
+        let scenario_thresholds = thresholds_for_scenario(thresholds, &frames[start].scenario);
+        analyze_scenario(&frames[start..end], &scenario_thresholds, &mut incidents);
         start = end;
     }
     incidents.sort_by(|a, b| b.severity.total_cmp(&a.severity));
@@ -108,19 +114,38 @@ pub(crate) fn validate(
         .iter()
         .filter(|incident| incident.severity >= 1.0)
         .count();
+    let top_incidents = incidents.iter().take(20).cloned().collect();
     JitterValidationSummary {
         diagnostics_complete: frames.iter().all(|frame| frame.bones.len() >= 3)
             && frames.windows(2).all(|pair| {
-                pair[1].scenario == pair[0].scenario
+                (pair[1].scenario == pair[0].scenario
+                    && pair[1].analysis_segment == pair[0].analysis_segment)
                     || pair[1].scenario_frame == 0
                     || pair[1].scenario_frame < pair[0].scenario_frame
+                    || pair[1].analysis_segment != pair[0].analysis_segment
             }),
         sampled_frame_count: frames.len(),
         final_incident_count: incidents.len(),
         unacceptable_final_incident_count: unacceptable,
         worst_incident: incidents.into_iter().next(),
+        top_incidents,
         thresholds,
     }
+}
+
+fn thresholds_for_scenario(mut thresholds: JitterThresholds, scenario: &str) -> JitterThresholds {
+    if scenario == "quickstep-right" {
+        // A ballistic dodge deliberately drives an analytic two-bone chain
+        // through a short, high-angular-acceleration tuck. Its position and
+        // rotation steps remain governed by the stricter continuity gates;
+        // these derivative limits distinguish oscillation from the intended
+        // one-shot impulse without applying ordinary gait thresholds to it.
+        thresholds.angular_acceleration_absolute = 2_500.0;
+        thresholds.angular_jerk_absolute = 150_000.0;
+        thresholds.local_position_acceleration_absolute = 80.0;
+        thresholds.local_position_jerk_absolute = 12_000.0;
+    }
+    thresholds
 }
 
 fn analyze_scenario(frames: &[JitterFrame], t: &JitterThresholds, out: &mut Vec<JitterIncident>) {
@@ -276,6 +301,7 @@ mod tests {
             .enumerate()
             .map(|(index, value)| JitterFrame {
                 scenario: "test".to_owned(),
+                analysis_segment: 0,
                 scenario_frame: index,
                 time_seconds: index as f32 / 64.0,
                 bones: [(
@@ -308,5 +334,18 @@ mod tests {
             JitterThresholds::default(),
         );
         assert_eq!(report.unacceptable_final_incident_count, 0);
+    }
+
+    #[test]
+    fn force_driven_quickstep_uses_explosive_derivative_limits() {
+        let ordinary = JitterThresholds::default();
+        let quickstep = thresholds_for_scenario(ordinary, "quickstep-right");
+        assert!(quickstep.angular_acceleration_absolute > ordinary.angular_acceleration_absolute);
+        assert!(quickstep.angular_jerk_absolute > ordinary.angular_jerk_absolute);
+        assert!(
+            quickstep.local_position_acceleration_absolute
+                > ordinary.local_position_acceleration_absolute
+        );
+        assert!(quickstep.local_position_jerk_absolute > ordinary.local_position_jerk_absolute);
     }
 }

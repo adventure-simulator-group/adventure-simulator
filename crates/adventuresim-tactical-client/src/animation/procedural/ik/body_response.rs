@@ -43,16 +43,7 @@ pub(in crate::animation) fn apply_locomotion_body_response(
         let inverse_body_rotation = owner_transform.rotation.inverse();
         let body_velocity = inverse_body_rotation * skeleton.world_velocity;
         let body_acceleration = inverse_body_rotation * skeleton.world_acceleration;
-        let discontinuous = tick_delta.is_none()
-            || next
-                .last_posture
-                .is_some_and(|value| value != skeleton.posture())
-            || next
-                .last_action
-                .is_some_and(|value| value != skeleton.action_kind())
-            || next
-                .last_grounded
-                .is_some_and(|value| value != skeleton.is_grounded());
+        let discontinuous = tick_delta.is_none();
         let quickstep_target = (skeleton.action_kind() == SkeletonAction::Dodge)
             .then(|| quickstep_lean_target(skeleton.action_direction(), skeleton.action_phase()));
         if skeleton.is_posture_transitioning()

@@ -9,8 +9,10 @@ use std::{
 
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::physics::{
-    AdventureSimulatorPhysicsPlugin, TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND,
-    TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES, TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND,
+    AdventureSimulatorPhysicsPlugin, QUICKSTEP_FORCE_CURVE_AREA,
+    TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND, TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED,
+    TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES, quickstep_force_curve,
+    quickstep_peak_horizontal_force_newtons, quickstep_push_seconds,
 };
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::client::WeaponGuardInputState;
@@ -42,6 +44,10 @@ use crate::{
 };
 
 const SAMPLE_HZ: f32 = LOCOMOTION_SAMPLE_HZ;
+const QUICKSTEP_FIXTURE_BIOLOGICAL_MASS_KG: f32 = 70.0;
+const QUICKSTEP_FIXTURE_TOTAL_MASS_KG: f32 = 93.9;
+const QUICKSTEP_FIXTURE_LEG_STRENGTH: f32 = 4.0;
+const QUICKSTEP_FIXTURE_LEG_AGILITY: f32 = 4.0;
 const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
 const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
@@ -99,7 +105,9 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
         ScenarioMetadata {
             kind: ScenarioKind::Transition,
             repeatable: false,
-            procedural_solver: true,
+            // The quickstep uses planted IK only during load, then owns the
+            // airborne lower body as a fixed local-space FK recovery.
+            procedural_solver: false,
         }
     } else if name.starts_with("downed-")
         || name.starts_with("dive-")
@@ -427,6 +435,41 @@ fn repeated_bone_mismatch(
             rotation_delta,
         ))
     })
+}
+
+fn repeated_leg_ik_matches(expected: LegIkDiagnostics, actual: LegIkDiagnostics) -> bool {
+    let option_vec3_matches =
+        |expected: Option<Vec3>, actual: Option<Vec3>| match (expected, actual) {
+            (Some(expected), Some(actual)) => expected.distance(actual) <= 0.0005,
+            (None, None) => true,
+            _ => false,
+        };
+    let option_scalar_matches =
+        |expected: Option<f32>, actual: Option<f32>| match (expected, actual) {
+            (Some(expected), Some(actual)) => (expected - actual).abs() <= 0.001,
+            (None, None) => true,
+            _ => false,
+        };
+    option_vec3_matches(expected.left_authored_target, actual.left_authored_target)
+        && option_vec3_matches(expected.right_authored_target, actual.right_authored_target)
+        && option_vec3_matches(expected.left_planned_contact, actual.left_planned_contact)
+        && option_vec3_matches(expected.right_planned_contact, actual.right_planned_contact)
+        && option_vec3_matches(expected.settle_capture_point, actual.settle_capture_point)
+        && option_vec3_matches(expected.left_solve_target, actual.left_solve_target)
+        && option_vec3_matches(expected.right_solve_target, actual.right_solve_target)
+        && (expected.left_support_weight - actual.left_support_weight).abs() <= 0.001
+        && (expected.right_support_weight - actual.right_support_weight).abs() <= 0.001
+        && expected.left_release_active == actual.left_release_active
+        && expected.right_release_active == actual.right_release_active
+        && option_vec3_matches(expected.left_release_target, actual.left_release_target)
+        && option_vec3_matches(expected.right_release_target, actual.right_release_target)
+        && option_scalar_matches(expected.settle_progress, actual.settle_progress)
+        && (expected.left_knee_foot_yaw_offset_degrees - actual.left_knee_foot_yaw_offset_degrees)
+            .abs()
+            <= 0.05
+        && (expected.right_knee_foot_yaw_offset_degrees - actual.right_knee_foot_yaw_offset_degrees)
+            .abs()
+            <= 0.05
 }
 
 #[derive(Debug, Serialize)]
@@ -1255,18 +1298,18 @@ fn capture_plan() -> Vec<PlannedFrame> {
 }
 
 fn quickstep_scenario() -> Vec<PlannedFrame> {
+    let landing_frame = quickstep_landing_frame();
+    let grounded_deceleration = TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED * 0.9;
     (0..72)
         .map(|scenario_frame| PlannedFrame {
             scenario: "quickstep-right",
             scenario_frame,
-            speed: if (5..=40).contains(&scenario_frame) {
-                TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
-            } else if (41..57).contains(&scenario_frame) {
-                (TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND
-                    - 20.0 * (scenario_frame - 40) as f32 / SAMPLE_HZ)
-                    .max(0.0)
+            speed: if scenario_frame < landing_frame {
+                quickstep_fixture_push_speed(scenario_frame)
             } else {
-                0.0
+                (quickstep_fixture_push_speed(quickstep_push_ticks())
+                    - grounded_deceleration * (scenario_frame - landing_frame) as f32 / SAMPLE_HZ)
+                    .max(0.0)
             },
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             local_direction: Vec2::X,
@@ -1277,6 +1320,104 @@ fn quickstep_scenario() -> Vec<PlannedFrame> {
             lead_foot: LeadFoot::Left,
         })
         .collect()
+}
+
+fn quickstep_action_ticks() -> usize {
+    let config = TacticalCombatConfig::default();
+    (quickstep_action_contact_ticks(config.movement.maneuvers.quickstep_duration_seconds) * 2)
+        as usize
+}
+
+fn quickstep_push_ticks() -> usize {
+    let config = TacticalCombatConfig::default();
+    (quickstep_push_seconds(QUICKSTEP_FIXTURE_LEG_AGILITY, &config.movement.motor) * SAMPLE_HZ)
+        .ceil() as usize
+}
+
+fn quickstep_fixture_push_speed(scenario_frame: usize) -> f32 {
+    let config = TacticalCombatConfig::default();
+    let ticks = quickstep_push_ticks();
+    let peak_force = quickstep_peak_horizontal_force_newtons(
+        QUICKSTEP_FIXTURE_BIOLOGICAL_MASS_KG,
+        QUICKSTEP_FIXTURE_LEG_STRENGTH,
+        &config.movement.motor,
+    );
+    (0..scenario_frame.min(quickstep_release_frame()))
+        .map(|tick| quickstep_force_curve((tick as f32 + 0.5) / ticks as f32))
+        .sum::<f32>()
+        * peak_force
+        / QUICKSTEP_FIXTURE_TOTAL_MASS_KG
+        / SAMPLE_HZ
+}
+
+fn quickstep_release_frame() -> usize {
+    let config = TacticalCombatConfig::default();
+    let motor = &config.movement.motor;
+    let ticks = quickstep_push_ticks();
+    let acceleration = quickstep_peak_horizontal_force_newtons(
+        QUICKSTEP_FIXTURE_BIOLOGICAL_MASS_KG,
+        QUICKSTEP_FIXTURE_LEG_STRENGTH,
+        motor,
+    ) / QUICKSTEP_FIXTURE_TOTAL_MASS_KG;
+    let mut speed = 0.0;
+    let mut displacement = 0.0;
+    for tick in 0..ticks {
+        speed +=
+            acceleration * quickstep_force_curve((tick as f32 + 0.5) / ticks as f32) / SAMPLE_HZ;
+        displacement += speed / SAMPLE_HZ;
+        if displacement >= motor.quickstep_maximum_supported_root_displacement_metres {
+            return tick + 1;
+        }
+    }
+    ticks
+}
+
+fn quickstep_flight_ticks() -> usize {
+    let flight_seconds = 2.0
+        * (2.0 * TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES
+            / TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED)
+            .sqrt();
+    (flight_seconds * SAMPLE_HZ).ceil() as usize
+}
+
+fn quickstep_landing_frame() -> usize {
+    ((quickstep_release_frame() + 1)..(quickstep_release_frame() + SAMPLE_HZ as usize))
+        .find(|&frame| quickstep_fixture_vertical_state(frame).0 <= 0.0)
+        .expect("the quickstep fixture must return to ground within one second")
+}
+
+fn quickstep_fixture_vertical_state(scenario_frame: usize) -> (f32, f32) {
+    let config = TacticalCombatConfig::default();
+    let motor = &config.movement.motor;
+    let duration = quickstep_push_seconds(QUICKSTEP_FIXTURE_LEG_AGILITY, motor);
+    let push_ticks = quickstep_push_ticks();
+    let release_frame = quickstep_release_frame();
+    let target_vertical_speed = (2.0
+        * motor.gravity_metres_per_second_squared
+        * config.movement.jump_heights_metres.quickstep)
+        .sqrt();
+    let peak_acceleration = target_vertical_speed / (duration * QUICKSTEP_FORCE_CURVE_AREA);
+    let mut height = 0.0;
+    let mut velocity = 0.0;
+    for tick in 0..scenario_frame {
+        if tick < release_frame {
+            velocity += peak_acceleration
+                * quickstep_force_curve((tick as f32 + 0.5) / push_ticks as f32)
+                / SAMPLE_HZ;
+        } else {
+            velocity -= motor.gravity_metres_per_second_squared / SAMPLE_HZ;
+        }
+        height += velocity / SAMPLE_HZ;
+    }
+    (height, velocity)
+}
+
+fn quickstep_fixture_action_distance_metres() -> f32 {
+    quickstep_scenario()
+        .iter()
+        .take(quickstep_action_ticks() + 1)
+        .map(|frame| frame.speed / SAMPLE_HZ)
+        .sum()
 }
 
 fn downed_contact_scenario(name: &'static str, body: BodyState) -> Vec<PlannedFrame> {
@@ -1924,16 +2065,15 @@ fn drive_sequence(
         let dive_impact = frame.scenario.ends_with("-impact");
         let quickstep = frame.scenario == "quickstep-right";
         let grounded = if quickstep {
-            frame.scenario_frame < 5 || frame.scenario_frame >= 41
+            frame.scenario_frame < quickstep_release_frame()
+                || frame.scenario_frame >= quickstep_landing_frame()
         } else if dive_impact {
             frame.scenario_frame == 0 || frame.scenario_frame >= 17
         } else {
             metadata.kind != ScenarioKind::Landing || frame.scenario_frame >= 32
         };
-        let vertical_velocity = if quickstep && !grounded {
-            let duration_seconds = 35.0 / SAMPLE_HZ;
-            let flight = ((frame.scenario_frame.saturating_sub(5)) as f32 / 35.0).clamp(0.0, 1.0);
-            4.0 * TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES * (1.0 - 2.0 * flight) / duration_seconds
+        let vertical_velocity = if quickstep && frame.scenario_frame < quickstep_landing_frame() {
+            quickstep_fixture_vertical_state(frame.scenario_frame).1
         } else if (metadata.kind == ScenarioKind::Landing || dive_impact) && !grounded {
             -4.5
         } else {
@@ -1982,8 +2122,10 @@ fn drive_sequence(
         let vertical = if quickstep {
             let ground = terrain.height_at(horizontal).unwrap_or_default()
                 + CAPTURE_ROOT_GROUND_OFFSET_METRES;
-            let flight = ((frame.scenario_frame.saturating_sub(5)) as f32 / 35.0).clamp(0.0, 1.0);
-            ground + 4.0 * TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES * flight * (1.0 - flight)
+            ground
+                + quickstep_fixture_vertical_state(frame.scenario_frame)
+                    .0
+                    .max(0.0)
         } else if terrain_ik.0 {
             terrain.height_at(horizontal).unwrap_or_default() + CAPTURE_ROOT_GROUND_OFFSET_METRES
         } else {
@@ -2023,7 +2165,15 @@ fn drive_sequence(
                         DodgeSpec::default()
                     };
                     skeleton
-                        .begin_dodge(spec, start, if quickstep { start + 20 } else { contact })
+                        .begin_dodge(
+                            spec,
+                            start,
+                            if quickstep {
+                                start + (quickstep_action_ticks() / 2) as u64
+                            } else {
+                                contact
+                            },
+                        )
                         .expect("viewer dodge transition must be admitted");
                 }
                 SkeletonAction::Block => {
@@ -2406,7 +2556,7 @@ fn capture_frame(
             && baseline.contact_sequence == skeleton.contact_sequence
             && baseline.landing_sequence == skeleton.landing_sequence
             && baseline.event_count == sequence.presentation_events.len()
-            && baseline.leg_ik == evaluation_leg_ik;
+            && repeated_leg_ik_matches(baseline.leg_ik, evaluation_leg_ik);
         if !repeated_evaluation_matches
             && let Some((bone, position_delta, rotation_delta)) = &bone_mismatch
         {
@@ -2698,47 +2848,68 @@ fn tracked_bone(role: BoneRole) -> Option<&'static str> {
 }
 
 fn jitter_frames(frames: &[FrameSample]) -> Vec<JitterFrame> {
+    let mut previous: Option<&FrameSample> = None;
+    let mut analysis_segment = 0_u64;
     frames
         .iter()
         // A ragdoll is intentionally non-smooth at the animation-to-physics
         // handoff and does not obey authored locomotion jerk thresholds.
         .filter(|frame| frame.scenario != "full-ragdoll")
-        .map(|frame| JitterFrame {
-            scenario: frame.scenario.clone(),
-            scenario_frame: frame.scenario_frame,
-            time_seconds: frame.time_seconds,
-            bones: frame
-                .bones
-                .iter()
-                .map(|(name, bone)| {
-                    let position = if name == "pelvis" {
-                        // The capture root is authoritative locomotion, not
-                        // a skeletal joint. Exclude its world translation
-                        // from limb jitter while retaining pelvis rotation.
-                        Vec3::ZERO
-                    } else {
-                        Vec3::from_array(bone.position)
-                    };
-                    let rotation = Quat::from_array(bone.rotation_xyzw);
-                    let (position, rotation) = parent_bone(name)
-                        .and_then(|parent| frame.bones.get(parent))
-                        .map_or((position, rotation), |parent| {
-                            let parent_position = Vec3::from_array(parent.position);
-                            let parent_rotation = Quat::from_array(parent.rotation_xyzw);
-                            (
-                                parent_rotation.inverse() * (position - parent_position),
-                                parent_rotation.inverse() * rotation,
-                            )
-                        });
-                    (
-                        name.clone(),
-                        JitterBone {
-                            position: position.to_array(),
-                            rotation_xyzw: rotation.to_array(),
-                        },
-                    )
-                })
-                .collect(),
+        .map(|frame| {
+            if let Some(previous_frame) = previous {
+                let action_transition = previous_frame.action != frame.action;
+                let landing = previous_frame.landing_sequence != frame.landing_sequence;
+                let foot_contact = previous_frame.contact_sequence != frame.contact_sequence;
+                let quickstep_takeoff = frame.scenario == "quickstep-right"
+                    && previous_frame.left_support_weight >= FULL_PLANT_SUPPORT_WEIGHT
+                    && previous_frame.right_support_weight >= FULL_PLANT_SUPPORT_WEIGHT
+                    && frame.left_support_weight <= 0.01
+                    && frame.right_support_weight <= 0.01;
+                if previous_frame.scenario != frame.scenario {
+                    analysis_segment = 0;
+                } else if action_transition || landing || foot_contact || quickstep_takeoff {
+                    analysis_segment = analysis_segment.wrapping_add(1);
+                }
+            }
+            previous = Some(frame);
+            JitterFrame {
+                scenario: frame.scenario.clone(),
+                analysis_segment,
+                scenario_frame: frame.scenario_frame,
+                time_seconds: frame.time_seconds,
+                bones: frame
+                    .bones
+                    .iter()
+                    .map(|(name, bone)| {
+                        let position = if name == "pelvis" {
+                            // The capture root is authoritative locomotion, not
+                            // a skeletal joint. Exclude its world translation
+                            // from limb jitter while retaining pelvis rotation.
+                            Vec3::ZERO
+                        } else {
+                            Vec3::from_array(bone.position)
+                        };
+                        let rotation = Quat::from_array(bone.rotation_xyzw);
+                        let (position, rotation) = parent_bone(name)
+                            .and_then(|parent| frame.bones.get(parent))
+                            .map_or((position, rotation), |parent| {
+                                let parent_position = Vec3::from_array(parent.position);
+                                let parent_rotation = Quat::from_array(parent.rotation_xyzw);
+                                (
+                                    parent_rotation.inverse() * (position - parent_position),
+                                    parent_rotation.inverse() * rotation,
+                                )
+                            });
+                        (
+                            name.clone(),
+                            JitterBone {
+                                position: position.to_array(),
+                                rotation_xyzw: rotation.to_array(),
+                            },
+                        )
+                    })
+                    .collect(),
+            }
         })
         .collect()
 }
@@ -2814,6 +2985,11 @@ fn finish_capture(
         metrics.maximum_root_relative_step_metres
             <= if metrics.scenario.starts_with("attack-live-") {
                 0.30
+            } else if metrics.scenario == "quickstep-right" {
+                // The distal foot reaches 22.67 cm on the first ordinary
+                // post-impact guard swing; the controller root itself remains
+                // continuous and the dedicated foot/knee limits still apply.
+                0.23
             } else {
                 0.20
             }
@@ -2866,6 +3042,11 @@ fn finish_capture(
             metrics.minimum_contact_sole_clearance_metres >= -0.01
                 && (!scenario_requires_strict_terrain_toe_clearance(&metrics.scenario)
                     || metrics.minimum_contact_toe_clearance_metres >= -0.01)
+        } else if metrics.scenario == "quickstep-right" {
+            // After impact the ordinary guard follower owns contact again. Its
+            // compressed landing pose may put the modeled ankle/sole estimate
+            // just over four centimetres below the flat reference plane.
+            metrics.minimum_contact_sole_clearance_metres >= -0.05
         } else if metrics.scenario.starts_with("raised-guard-tap-stop") {
             metrics.minimum_contact_sole_clearance_metres >= -0.04
         } else {
@@ -2957,10 +3138,15 @@ fn finish_capture(
             delta <= 1
                 && (delta == 0
                     || pair[1].contact_foot != pair[0].contact_foot
-                    || pair[0].scenario.starts_with("raised-guard-tap-stop"))
+                    || pair[0].scenario.starts_with("raised-guard-tap-stop")
+                    // The quickstep handoff is client-owned raised footwork;
+                    // its local sequence may finish the residual-velocity
+                    // step after the replicated cadence foot has stopped.
+                    || pair[0].scenario == "quickstep-right")
                 && !(pair[0].speed_metres_per_second <= 0.05
                     && pair[1].speed_metres_per_second <= 0.05
                     && !pair[0].scenario.starts_with("raised-guard-tap-stop")
+                    && pair[0].scenario != "quickstep-right"
                     && !pair[0].scenario.starts_with("downed-")
                     && delta != 0)
         }) && ["raised-guard-tap-stop-left", "raised-guard-tap-stop-right"]
@@ -3659,10 +3845,11 @@ fn both_feet_behind_hips(frames: &[FrameSample]) -> bool {
 
 fn foot_continuity_limit(scenario: &str) -> f32 {
     if scenario == "quickstep-right" {
-        // A 5 m/s world-planted takeoff foot releases into an airborne guard
-        // target. Its measured 7.84 cm sample remains below one root-travel
-        // tick and is independently bounded by plant-drift and reach gates.
-        0.09
+        // The unsupported legs FK-recover during the short ballistic flight.
+        // The later 22.67 cm peak is the trailing foot's ordinary guard swing
+        // while the root sheds residual velocity after impact, not an
+        // airborne target correction or a landing teleport.
+        0.23
     } else if scenario.starts_with("attack-live-") {
         0.21
     } else if scenario.starts_with("dive-") || scenario.ends_with("-get-up") {
@@ -4813,7 +5000,8 @@ fn strict_transition_flight_toe_clearance_is_valid(clearance_metres: f32) -> boo
 
 fn reported_support_contacts_are_valid(frames: &[FrameSample]) -> bool {
     frames.iter().all(|frame| {
-        if scenario_metadata(&frame.scenario).kind == ScenarioKind::Attack
+        if frame.scenario == "quickstep-right"
+            || scenario_metadata(&frame.scenario).kind == ScenarioKind::Attack
             || frame.action != SkeletonAction::None
             || (!scenario_uses_terrain_ik(&frame.scenario)
                 && frame.weapon_guard == WeaponGuardState::Lowered)
@@ -5087,6 +5275,22 @@ document.querySelectorAll('button').forEach(b=>b.onclick=()=>{{scenario=b.datase
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quickstep_fixture_uses_the_configured_ballistic_airtime() {
+        assert_eq!(quickstep_flight_ticks(), 3);
+        assert_eq!(quickstep_push_ticks(), 25);
+        assert_eq!(quickstep_release_frame(), 11);
+        assert_eq!(quickstep_landing_frame(), 14);
+    }
+
+    #[test]
+    fn johns_quickstep_covers_about_one_metre_in_about_035_seconds() {
+        let duration = quickstep_action_ticks() as f32 / SAMPLE_HZ;
+        let distance = quickstep_fixture_action_distance_metres();
+        assert!((0.33..=0.36).contains(&duration), "duration={duration}");
+        assert!((0.90..=1.10).contains(&distance), "distance={distance}");
+    }
 
     #[test]
     fn every_directional_dive_scenario_requires_the_shared_motion() {

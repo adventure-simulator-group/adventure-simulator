@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 1;
+pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 2;
 
 #[derive(Clone, Debug, PartialEq, Resource, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -67,11 +67,64 @@ pub struct TacticalMovementConfig {
     pub jump_heights_metres: JumpHeightsConfig,
     pub prone_lateral_speed_scale: f32,
     pub prone_effort_scale: f32,
-    pub run_acceleration_hz: f32,
-    pub character_friction_hz: f32,
-    pub character_stop_speed_metres_per_second: f32,
-    pub quickstep_landing_brake_metres_per_second_squared: f32,
+    pub motor: CharacterMotorConfig,
     pub maneuvers: ManeuverTimingConfig,
+}
+
+/// Mechanical parameters for the velocity-based kinematic character motor.
+///
+/// Locomotion changes velocity through bounded forces. The resulting velocity
+/// is then resolved by Ahoy's swept collision constraints; Ahoy does not apply
+/// a second horizontal acceleration or friction model.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CharacterMotorConfig {
+    /// Acceleration due to gravity used by ordinary movement and jump-height
+    /// conversion.
+    pub gravity_metres_per_second_squared: f32,
+    /// Total mass used when a controller has no projected character body.
+    pub fallback_character_mass_kg: f32,
+    /// Maximum horizontal drive force at the reference leg strength.
+    pub reference_ground_drive_force_newtons: f32,
+    /// Maximum deliberate braking force at the reference leg strength.
+    pub reference_ground_braking_force_newtons: f32,
+    /// Peak lateral ground-reaction force for a Strength 3 quickstep,
+    /// expressed in multiples of the character's biological body weight.
+    pub reference_quickstep_peak_horizontal_force_bodyweights: f32,
+    /// Additional peak lateral force, in bodyweights, per point of Strength
+    /// above the reference value (and correspondingly less below it).
+    pub quickstep_peak_horizontal_force_bodyweights_per_strength: f32,
+    /// Supported push duration for an Agility 3 character.
+    pub reference_quickstep_push_seconds: f32,
+    /// Seconds removed from the supported push for every Agility point above
+    /// the reference value (and added below it).
+    pub quickstep_push_seconds_reduction_per_agility: f32,
+    /// Maximum planar root travel while both quickstep feet remain planted.
+    /// Reaching this extension releases support even if force time remains.
+    pub quickstep_maximum_supported_root_displacement_metres: f32,
+    /// Reference strength corresponding to the configured forces.
+    pub reference_leg_strength: f32,
+    /// Reference agility corresponding to the configured lateral control.
+    pub reference_leg_agility: f32,
+    /// Sustained lateral acceleration available at the reference agility,
+    /// expressed as a multiple of gravity.
+    pub reference_lateral_acceleration_gravities: f32,
+    /// Full-sprint turn radius at the reference Agility 3 anchor. Slower
+    /// movement turns more tightly through the shared centripetal model.
+    pub reference_sprint_turn_radius_metres: f32,
+    /// Full-sprint turn radius for Agility 1, the valid attribute minimum.
+    pub agility_one_sprint_turn_radius_metres: f32,
+    /// Full-sprint turn radius for Agility 5, the valid attribute maximum.
+    pub agility_five_sprint_turn_radius_metres: f32,
+    /// Upper bound on ground force imposed by available traction, expressed as
+    /// a multiple of normal force.
+    pub traction_coefficient: f32,
+    /// Fraction of ground drive force available without support.
+    pub air_control_force_scale: f32,
+    /// Maximum vertical obstacle height treated as a deliberate step.
+    pub maximum_step_height_metres: f32,
+    /// Steepest surface that can supply ordinary standing support.
+    pub maximum_walkable_slope_degrees: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -102,8 +155,9 @@ pub struct ManeuverTimingConfig {
     pub roll_seconds: f32,
     pub dive_seconds: f32,
     pub backward_dive_seconds: f32,
-    pub quickstep_preparation_seconds: f32,
-    pub quickstep_contact_seconds: f32,
+    /// Complete input-to-recovery quickstep duration. `ActionTimeline` places
+    /// semantic contact halfway through this interval.
+    pub quickstep_duration_seconds: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -260,16 +314,35 @@ impl TacticalCombatConfig {
             movement.jump_heights_metres.quickstep,
             movement.prone_lateral_speed_scale,
             movement.prone_effort_scale,
-            movement.run_acceleration_hz,
-            movement.character_friction_hz,
-            movement.character_stop_speed_metres_per_second,
-            movement.quickstep_landing_brake_metres_per_second_squared,
+            movement.motor.gravity_metres_per_second_squared,
+            movement.motor.fallback_character_mass_kg,
+            movement.motor.reference_ground_drive_force_newtons,
+            movement.motor.reference_ground_braking_force_newtons,
+            movement
+                .motor
+                .reference_quickstep_peak_horizontal_force_bodyweights,
+            movement
+                .motor
+                .quickstep_peak_horizontal_force_bodyweights_per_strength,
+            movement.motor.reference_quickstep_push_seconds,
+            movement.motor.quickstep_push_seconds_reduction_per_agility,
+            movement
+                .motor
+                .quickstep_maximum_supported_root_displacement_metres,
+            movement.motor.reference_leg_strength,
+            movement.motor.reference_leg_agility,
+            movement.motor.reference_lateral_acceleration_gravities,
+            movement.motor.reference_sprint_turn_radius_metres,
+            movement.motor.agility_one_sprint_turn_radius_metres,
+            movement.motor.agility_five_sprint_turn_radius_metres,
+            movement.motor.traction_coefficient,
+            movement.motor.maximum_step_height_metres,
+            movement.motor.maximum_walkable_slope_degrees,
             movement.maneuvers.get_up_seconds,
             movement.maneuvers.roll_seconds,
             movement.maneuvers.dive_seconds,
             movement.maneuvers.backward_dive_seconds,
-            movement.maneuvers.quickstep_preparation_seconds,
-            movement.maneuvers.quickstep_contact_seconds,
+            movement.maneuvers.quickstep_duration_seconds,
         ];
         if !movement_values
             .into_iter()
@@ -277,6 +350,30 @@ impl TacticalCombatConfig {
         {
             return Err(TacticalCombatConfigError::Validation(
                 "movement values must be finite and positive",
+            ));
+        }
+        if !finite_nonnegative(movement.motor.air_control_force_scale)
+            || movement.motor.air_control_force_scale > 1.0
+            || movement.motor.reference_lateral_acceleration_gravities > 2.0
+            || movement.motor.traction_coefficient > 2.0
+            || movement.motor.maximum_step_height_metres > 1.0
+            || movement.motor.maximum_walkable_slope_degrees >= 90.0
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "character motor values exceed compiled safety bounds",
+            ));
+        }
+        let low_agility_radius = movement.motor.agility_one_sprint_turn_radius_metres;
+        let reference_radius = movement.motor.reference_sprint_turn_radius_metres;
+        let high_agility_radius = movement.motor.agility_five_sprint_turn_radius_metres;
+        let turn_curve_linear = (high_agility_radius - low_agility_radius) * 0.5;
+        let turn_curve_quadratic =
+            (high_agility_radius + low_agility_radius) * 0.5 - reference_radius;
+        if !(low_agility_radius > reference_radius && reference_radius > high_agility_radius)
+            || turn_curve_linear + 2.0 * turn_curve_quadratic.abs() >= 0.0
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "agility turn radii must define a strictly decreasing quadratic",
             ));
         }
 
@@ -436,7 +533,7 @@ impl Default for TacticalCombatConfig {
                     aim_half_angle_degrees: 20.0,
                 },
                 impact: ImpactConfig {
-                    whole_body_velocity_scale: 2.63,
+                    whole_body_velocity_scale: 1.93,
                     maximum_velocity_change_metres_per_second: 12.0,
                 },
             },
@@ -449,26 +546,44 @@ impl Default for TacticalCombatConfig {
                     prone: 2.0,
                     roll: 1.3,
                     dive: 7.0,
-                    quickstep: 5.0,
+                    quickstep: 3.5,
                 },
                 jump_heights_metres: JumpHeightsConfig {
-                    ordinary: 1.8,
-                    dive: 0.65,
-                    quickstep: 0.35,
+                    ordinary: 0.30,
+                    dive: 0.20,
+                    quickstep: 0.002,
                 },
                 prone_lateral_speed_scale: 0.375,
                 prone_effort_scale: 3.0,
-                run_acceleration_hz: 8.0,
-                character_friction_hz: 12.0,
-                character_stop_speed_metres_per_second: 2.54,
-                quickstep_landing_brake_metres_per_second_squared: 20.0,
+                motor: CharacterMotorConfig {
+                    gravity_metres_per_second_squared:
+                        crate::physics::TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED,
+                    fallback_character_mass_kg: 80.0,
+                    reference_ground_drive_force_newtons: 1_000.0,
+                    reference_ground_braking_force_newtons: 1_200.0,
+                    reference_quickstep_peak_horizontal_force_bodyweights: 4.50,
+                    quickstep_peak_horizontal_force_bodyweights_per_strength: 0.60,
+                    reference_quickstep_push_seconds: 0.40,
+                    quickstep_push_seconds_reduction_per_agility: 0.02,
+                    quickstep_maximum_supported_root_displacement_metres: 0.25,
+                    reference_leg_strength: 3.0,
+                    reference_leg_agility: 3.0,
+                    reference_lateral_acceleration_gravities: 0.45,
+                    reference_sprint_turn_radius_metres: 3.0,
+                    agility_one_sprint_turn_radius_metres: 4.5,
+                    agility_five_sprint_turn_radius_metres: 2.2,
+                    traction_coefficient: 0.9,
+                    air_control_force_scale: 0.08,
+                    maximum_step_height_metres: crate::physics::TACTICAL_MAXIMUM_STEP_HEIGHT_METRES,
+                    maximum_walkable_slope_degrees:
+                        crate::physics::TACTICAL_MAXIMUM_WALKABLE_SLOPE_DEGREES,
+                },
                 maneuvers: ManeuverTimingConfig {
                     get_up_seconds: 51.0 / 64.0,
                     roll_seconds: 26.0 / 64.0,
                     dive_seconds: 20.0 / 64.0,
                     backward_dive_seconds: 32.0 / 64.0,
-                    quickstep_preparation_seconds: 5.0 / 64.0,
-                    quickstep_contact_seconds: 20.0 / 64.0,
+                    quickstep_duration_seconds: 0.35,
                 },
             },
             ai: TacticalAiConfig {
@@ -565,6 +680,14 @@ mod tests {
     fn duplicate_hitbox_is_rejected() {
         let mut config = TacticalCombatConfig::default();
         config.targeting.body_part_hitboxes[1].body_part = BodyPart::Head;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn nonmonotonic_agility_turn_curve_is_rejected() {
+        let mut config = TacticalCombatConfig::default();
+        config.movement.motor.agility_one_sprint_turn_radius_metres = 4.0;
+        config.movement.motor.agility_five_sprint_turn_radius_metres = 2.9;
         assert!(config.validate().is_err());
     }
 }

@@ -44,14 +44,15 @@ pub mod prelude {
         WeaponItem, rebuild_inventory_holding_cache,
     };
     pub use crate::physics::{
-        AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, MovementPace,
-        TACTICAL_BREATH_RESPONSE_SCALE, TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
-        TACTICAL_PRONE_LATERAL_SPEED_SCALE, TACTICAL_PRONE_SPEED_METRES_PER_SECOND,
-        TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND, TACTICAL_ROLL_SPEED_METRES_PER_SECOND,
-        TACTICAL_RUN_SPEED_METRES_PER_SECOND, TACTICAL_WALK_SPEED_METRES_PER_SECOND,
+        AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, CharacterMotionSnapshot,
+        MovementPace, QUICKSTEP_FORCE_CURVE_AREA, QuickstepPush, TACTICAL_BREATH_RESPONSE_SCALE,
+        TACTICAL_GUARD_SPEED_METRES_PER_SECOND, TACTICAL_PRONE_LATERAL_SPEED_SCALE,
+        TACTICAL_PRONE_SPEED_METRES_PER_SECOND, TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND,
+        TACTICAL_ROLL_SPEED_METRES_PER_SECOND, TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+        TACTICAL_WALK_SPEED_METRES_PER_SECOND, quickstep_action_contact_ticks,
+        quickstep_force_curve, quickstep_peak_horizontal_force_newtons, quickstep_push_seconds,
         tactical_breath_recovery_per_second, tactical_character_controller,
         tactical_exhaustion_change_per_second, tactical_jog_speed,
-        tactical_movement_acceleration_hz_for_guard,
         tactical_movement_exhaustion_change_per_second, tactical_movement_speed,
         tactical_movement_speed_for_guard, tactical_movement_speed_for_pace, tactical_sprint_speed,
     };

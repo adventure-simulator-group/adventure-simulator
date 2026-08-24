@@ -485,6 +485,8 @@ pub(crate) struct LocomotionHeightState {
     wave_transition_offset: f32,
     normalization_weight: f32,
     pub(crate) landing_compression: f32,
+    landing_compression_target: f32,
+    landing_absorption_metres_per_second: f32,
     landing_recovery_metres_per_second: f32,
     landing_left_foot_target: Option<Vec3>,
     landing_right_foot_target: Option<Vec3>,
@@ -580,13 +582,9 @@ fn landing_compression_for_impact(profile: LocomotionProfile, impact_speed: f32)
 fn landing_compression_for_action(
     profile: LocomotionProfile,
     impact_speed: f32,
-    previous_action: Option<SkeletonAction>,
+    _previous_action: Option<SkeletonAction>,
 ) -> f32 {
-    if previous_action == Some(SkeletonAction::Dodge) {
-        0.0
-    } else {
-        landing_compression_for_impact(profile, impact_speed)
-    }
+    landing_compression_for_impact(profile, impact_speed)
 }
 
 /// Normalizes authored root/pelvis height before applying the single gait
@@ -662,14 +660,22 @@ pub(super) fn stabilize_locomotion_torso(
                 // Do not retain airborne feet or layer ordinary upright
                 // landing compression over its terrain-timed contact blend.
                 next.landing_compression = 0.0;
+                next.landing_compression_target = 0.0;
+                next.landing_absorption_metres_per_second = 0.0;
                 next.landing_recovery_metres_per_second = 0.0;
             } else {
-                next.landing_compression = landing_compression_for_action(
+                next.landing_compression_target = landing_compression_for_action(
                     locomotion_profile(skeleton),
                     skeleton.landing_impact_speed,
                     next.last_action,
                 );
-                next.landing_recovery_metres_per_second = next.landing_compression
+                // Continue the downward impact velocity into the pelvis. The
+                // legs reach peak flexion over physical time instead of
+                // changing their bend plane by the full compression in one
+                // presentation sample.
+                next.landing_absorption_metres_per_second =
+                    skeleton.landing_impact_speed.max(0.001);
+                next.landing_recovery_metres_per_second = next.landing_compression_target
                     / locomotion_profile(skeleton).landing.recovery_seconds;
             }
             next.landing_left_foot_target = None;
@@ -678,7 +684,16 @@ pub(super) fn stabilize_locomotion_torso(
             next.landing_plant_tick = None;
             next.landing_plant_resync_tick = None;
         }
-        if !landed {
+        if next.landing_compression < next.landing_compression_target {
+            next.landing_compression = advance_towards(
+                next.landing_compression,
+                next.landing_compression_target,
+                next.landing_absorption_metres_per_second * delta_seconds,
+            );
+            if (next.landing_compression - next.landing_compression_target).abs() <= 0.0001 {
+                next.landing_compression_target = 0.0;
+            }
+        } else if !landed {
             next.landing_compression = advance_towards(
                 next.landing_compression,
                 0.0,
@@ -1401,13 +1416,12 @@ mod legacy_tests {
             WALK_LOCOMOTION_PROFILE,
             4.5,
         )));
-        assert_eq!(
+        assert!(
             landing_compression_for_action(
                 WALK_LOCOMOTION_PROFILE,
                 4.5,
                 Some(SkeletonAction::Dodge),
-            ),
-            0.0
+            ) > 0.0
         );
         assert!(landing_compression_for_action(WALK_LOCOMOTION_PROFILE, 4.5, None) > 0.0);
         assert_eq!(presentation_tick_delta(Some(10), 10), Some(0));

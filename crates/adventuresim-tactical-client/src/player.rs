@@ -643,7 +643,10 @@ fn apply_direct_combat_controls(
                     let _ = skeleton.begin_dodge(
                         spec,
                         start,
-                        start + animation_ticks(combat_config.presentation.dodge_seconds),
+                        start
+                            + quickstep_action_contact_ticks(
+                                combat_config.movement.maneuvers.quickstep_duration_seconds,
+                            ),
                     );
                 }
             }

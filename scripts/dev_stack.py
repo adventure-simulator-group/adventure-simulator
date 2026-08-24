@@ -536,11 +536,29 @@ def runtime_root() -> Path:
         base = os.environ.get("LOCALAPPDATA")
         if not base:
             raise ValueError("LOCALAPPDATA is required for isolated profiles")
-        return Path(base) / "AdventureSimulator" / "runtime"
+        return resolve_writable_directory(Path(base) / "AdventureSimulator" / "runtime")
     base = os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("XDG_CACHE_HOME")
     if base:
         return Path(base) / "adventure-simulator"
     return Path.home() / ".cache" / "adventure-simulator" / "runtime"
+
+
+def resolve_writable_directory(path: Path) -> Path:
+    """Return where this Python process actually creates children of `path`.
+
+    Microsoft Store Python can virtualize writes below ``LOCALAPPDATA`` into
+    the package's ``LocalCache``. Resolving an existing parent still reports
+    the unvirtualized path, while resolving a newly created child reports its
+    real redirected location. Canonicalize through a private probe directory
+    so containment checks and child processes use the same physical root.
+    """
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    probe = path / f".path-resolution-{os.getpid()}-{time.time_ns()}"
+    probe.mkdir(mode=0o700)
+    try:
+        return probe.resolve(strict=True).parent
+    finally:
+        probe.rmdir()
 
 
 def ensure_secure_directory(path: Path, containment_root: Path) -> Path:

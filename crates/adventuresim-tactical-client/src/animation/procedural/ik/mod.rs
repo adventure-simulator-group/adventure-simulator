@@ -290,22 +290,6 @@ impl QuickstepContactHandoff {
     }
 }
 
-fn discard_quickstep_contact_handoff(memory: &mut LegIkMemory) {
-    memory.quickstep_handoff = QuickstepContactHandoff::None;
-    memory.left_foot_plant = None;
-    memory.right_foot_plant = None;
-    memory.left_foot_plant_acquired = false;
-    memory.right_foot_plant_acquired = false;
-    memory.left_foot_target = None;
-    memory.right_foot_target = None;
-    memory.left_foot_world_target = None;
-    memory.right_foot_world_target = None;
-    memory.left_authored_world_target = None;
-    memory.right_authored_world_target = None;
-    memory.left_support_weight = None;
-    memory.right_support_weight = None;
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 struct ArmIkMemory {
     left_arm: Option<Vec3>,
@@ -1031,16 +1015,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 true,
             ),
         };
-        if raised_guard_follower && memory.quickstep_handoff.is_pending() && skeleton.is_grounded()
-        {
-            // Contact returns directly to ordinary raised locomotion. Do not
-            // let residual physical speed keep the former landing handoff
-            // alive; the guard follower can present that momentum itself.
-            discard_quickstep_contact_handoff(&mut memory);
-            if let Ok(mut state) = raised_states.get_mut(owner) {
-                *state = RaisedFootworkState::default();
-            }
-        }
         let (state_delta_seconds, evaluation_advances) = match clock.fixed_tick {
             Some((tick, _)) if memory.evaluation_tick == Some(tick) => (0.0, false),
             Some((tick, delta_seconds)) => {
@@ -1494,9 +1468,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 && !quickstep_handoff_active
                 && !quickstep_stance_held;
             if quickstep_handoff_active {
-                // Residual velocity is the quickstep's landing brake, not a new
-                // guard step. Carry the already completed guard stance with the
-                // body until braking ends, then return it to stationary guard.
+                // Preserve the airborne pose through impact while the legs
+                // converge to their authored guard length. Once converged, the
+                // ordinary follower is free to step for any residual velocity.
                 footwork.step = GuardStepState::Stationary {
                     left: visible_left,
                     right: visible_right,
@@ -1738,10 +1712,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         left.distance(authored_left) <= 0.001
                             && right.distance(authored_right) <= 0.001
                     });
-            if memory.quickstep_handoff.is_pending()
-                && live_speed <= 0.05
-                && quickstep_handoff_converged
-            {
+            if memory.quickstep_handoff.is_pending() && quickstep_handoff_converged {
                 memory.quickstep_handoff.hold();
             }
 
@@ -1786,19 +1757,19 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     upper_snapshot.global.translation(),
                     left,
                 );
-                let remembered = if left {
-                    footwork.left_knee_bend_world
+                let quickstep_bend = if left {
+                    memory.left_leg
                 } else {
-                    footwork.right_knee_bend_world
+                    memory.right_leg
                 }
-                .or_else(|| {
-                    if left {
-                        memory.left_leg
-                    } else {
-                        memory.right_leg
-                    }
-                    .map(|bend| pole_to_world(rig_rotation, bend))
-                });
+                .map(|bend| pole_to_world(rig_rotation, bend));
+                let remembered = if quickstep_handoff_active {
+                    quickstep_bend
+                } else if left {
+                    footwork.left_knee_bend_world.or(quickstep_bend)
+                } else {
+                    footwork.right_knee_bend_world.or(quickstep_bend)
+                };
                 let previous_end_direction = if left {
                     footwork.left_end_direction
                 } else {
@@ -6236,31 +6207,14 @@ mod slope_cache_tests {
     }
 
     #[test]
-    fn quickstep_contact_discards_the_landing_handoff_regardless_of_speed() {
-        let mut memory = LegIkMemory {
-            quickstep_handoff: QuickstepContactHandoff::Converging {
-                left: Vec3::X,
-                right: Vec3::NEG_X,
-            },
-            left_foot_world_target: Some(Vec3::new(4.0, 0.0, 0.0)),
-            right_foot_world_target: Some(Vec3::new(-4.0, 0.0, 0.0)),
-            left_foot_plant_acquired: true,
-            right_foot_plant_acquired: true,
-            measured_owner_planar_speed: 5.0,
-            ..default()
+    fn quickstep_contact_handoff_can_be_held_without_waiting_for_a_full_stop() {
+        let mut handoff = QuickstepContactHandoff::Converging {
+            left: Vec3::X,
+            right: Vec3::NEG_X,
         };
-
-        discard_quickstep_contact_handoff(&mut memory);
-
-        assert!(matches!(
-            memory.quickstep_handoff,
-            QuickstepContactHandoff::None
-        ));
-        assert!(memory.left_foot_world_target.is_none());
-        assert!(memory.right_foot_world_target.is_none());
-        assert!(!memory.left_foot_plant_acquired);
-        assert!(!memory.right_foot_plant_acquired);
-        assert_eq!(memory.measured_owner_planar_speed, 5.0);
+        handoff.hold();
+        assert!(handoff.is_held());
+        assert_eq!(handoff.targets(), Some((Vec3::X, Vec3::NEG_X)));
     }
 
     #[test]

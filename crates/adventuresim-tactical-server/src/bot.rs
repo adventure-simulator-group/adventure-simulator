@@ -578,6 +578,7 @@ mod tests {
                 TacticalCombatState::default(),
                 SkeletonState::default(),
                 AuthoritativePostureIntent::default(),
+                QuickstepPush::default(),
                 ReactiveDefenseAi {
                     requires_facing: false,
                 },

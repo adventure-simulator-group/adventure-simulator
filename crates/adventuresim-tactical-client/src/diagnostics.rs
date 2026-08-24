@@ -563,6 +563,7 @@ fn drive_scripted_input(
             | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
         let request = PlayerInputRequest {
+            simulation_tick: 0,
             movement,
             look: script.look,
             jump: default(),
