@@ -10,46 +10,7 @@ use crate::{
     animation::spawn_fallback_t_pose, camera::CameraAimState, presentation::GrassInteractor,
 };
 
-const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
-    (
-        BodyPart::Head,
-        Vec3::new(0.0, 0.92, 0.0),
-        Vec3::new(0.27, 0.23, 0.22),
-    ),
-    (
-        BodyPart::Chest,
-        Vec3::new(0.0, 0.49, 0.0),
-        Vec3::new(0.33, 0.23, 0.29),
-    ),
-    (
-        BodyPart::Stomach,
-        Vec3::new(0.0, 0.17, 0.0),
-        Vec3::new(0.25, 0.12, 0.25),
-    ),
-    (
-        BodyPart::LeftArm,
-        Vec3::new(-0.40, 0.25, 0.0),
-        Vec3::new(0.1, 0.5, 0.1),
-    ),
-    (
-        BodyPart::RightArm,
-        Vec3::new(0.40, 0.25, 0.0),
-        Vec3::new(0.1, 0.5, 0.1),
-    ),
-    (
-        BodyPart::LeftLeg,
-        Vec3::new(-0.16, -0.40, 0.0),
-        Vec3::new(0.15, 0.5, 0.15),
-    ),
-    (
-        BodyPart::RightLeg,
-        Vec3::new(0.16, -0.40, 0.0),
-        Vec3::new(0.15, 0.5, 0.15),
-    ),
-];
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
-const HIT_PRECISION: f32 = 1.0;
-const GAMEPAD_LOOK_SCALE: Vec3 = Vec3::new(4.0, -4.0, 4.0);
 
 pub struct PlayerPlugin;
 
@@ -59,6 +20,7 @@ impl Plugin for PlayerPlugin {
         // Require visibility before Add<Player> observers attach mesh children
         // so authored rigs cannot inherit from a component-less parent.
         app.init_resource::<DirectControlState>()
+            .init_resource::<TacticalCombatConfig>()
             .register_required_components_with::<Player, _>(|| Visibility::Inherited)
             .add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
@@ -146,6 +108,7 @@ fn on_new_player_added_hook(
     local_character: Res<LocalCharacterId>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    combat_config: Res<TacticalCombatConfig>,
 ) -> Result {
     let (Player { name }, id) = query.get(event.entity)?;
     info!(entity = ?event.entity, id = id.0, "Added new player {name}");
@@ -176,7 +139,9 @@ fn on_new_player_added_hook(
                     Bindings::spawn((
                         Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
                         Axial::right_stick().with((
-                            Scale::new(GAMEPAD_LOOK_SCALE),
+                            Scale::new(Vec3::from_array(
+                                combat_config.client_input.gamepad_look_scale,
+                            )),
                             DeadZone::default(),
                         )),
                     ))
@@ -206,16 +171,17 @@ fn on_new_player_added_hook(
         );
 
         if !is_client_player {
-            for &(body_part, offset, half_extents) in BODY_PART_HITBOXES {
+            for hitbox in &combat_config.targeting.body_part_hitboxes {
+                let half_extents = Vec3::from_array(hitbox.half_extents_metres);
                 parent.spawn((
-                    LimbHitbox(body_part),
+                    LimbHitbox(hitbox.body_part),
                     Collider::cuboid(
                         half_extents.x * 2.0,
                         half_extents.y * 2.0,
                         half_extents.z * 2.0,
                     ),
                     CollisionLayers::new(HITBOX_LAYER, LayerMask::ALL),
-                    Transform::from_translation(offset),
+                    Transform::from_translation(Vec3::from_array(hitbox.center_metres)),
                 ));
             }
         }
@@ -227,6 +193,7 @@ fn on_new_player_added_hook(
 fn predict_local_body_facing(
     time: Res<Time>,
     guard: Res<WeaponGuardInputState>,
+    combat_config: Res<TacticalCombatConfig>,
     mut players: Query<
         (
             &CharacterControllerCamera,
@@ -253,13 +220,14 @@ fn predict_local_body_facing(
             facing.initialized = true;
         }
 
-        facing.rotation = advance_body_facing(
+        facing.rotation = advance_body_facing_with_speed(
             facing.rotation,
             camera_transform.rotation,
             skeleton.world_velocity,
             skeleton.action_kind(),
             guard.desired,
             time.delta_secs(),
+            std::f32::consts::PI / combat_config.presentation.body_turn_seconds_per_half_turn,
         );
         transform.rotation = facing.rotation;
     }
@@ -279,6 +247,7 @@ fn update_attack_state_system(
     q_camera: Query<&Transform>,
     q_collider: Query<(&ColliderOf, &LimbHitbox)>,
     q_scene_items: Query<Entity, With<TacticalSceneItem>>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     for (attacker, attacker_transform, mut state, camera) in &mut q_attacker {
         state.pre_hit_timer.tick(time.delta());
@@ -357,13 +326,13 @@ fn update_attack_state_system(
                 cmd.client_trigger(RangedActionRequest::CompleteHit {
                     target,
                     body_part,
-                    reported_precision: HIT_PRECISION,
+                    reported_precision: combat_config.targeting.reported_hit_precision,
                 });
             } else {
                 cmd.client_trigger(MeleeActionRequest::Complete {
                     target,
                     body_part,
-                    reported_precision: HIT_PRECISION,
+                    reported_precision: combat_config.targeting.reported_hit_precision,
                 });
             }
             cmd.trigger(HitPerformed {
@@ -392,6 +361,7 @@ fn on_attack_fired_hook(
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     try_start_attack(
         event.context,
@@ -401,6 +371,7 @@ fn on_attack_fired_hook(
         &mut q_character,
         &viewer,
         &time,
+        &combat_config,
     );
 }
 
@@ -412,6 +383,7 @@ fn try_start_attack(
     q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: &TacticalPlayerViewer,
     time: &Time,
+    combat_config: &TacticalCombatConfig,
 ) {
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
@@ -424,7 +396,12 @@ fn try_start_attack(
                 character.weapon_is_melee(),
                 character.weapon_ranged_windup_secs(),
                 attack_recovery_secs(&character, character.weapon_preferred_melee_style(), false),
-                configure_attack_curve(AttackSpec::default(), &character).curve,
+                configure_attack_curve(
+                    AttackSpec::default(),
+                    &character,
+                    &combat_config.presentation.attack_curve,
+                )
+                .curve,
                 character.weapon_preferred_melee_style(),
             )
         })
@@ -487,7 +464,12 @@ fn try_start_attack(
                 (
                     attack_preparation_secs(&character, style),
                     attack_recovery_secs(&character, style, spec.continuation),
-                    configure_attack_curve(AttackSpec::default(), &character).curve,
+                    configure_attack_curve(
+                        AttackSpec::default(),
+                        &character,
+                        &combat_config.presentation.attack_curve,
+                    )
+                    .curve,
                 )
             })
         else {
@@ -535,6 +517,7 @@ fn flush_buffered_melee_attacks(
     >,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     for (entity, buffered, attacking, mut skeleton) in &mut characters {
         if attacking {
@@ -557,7 +540,12 @@ fn flush_buffered_melee_attacks(
                         buffered.family.melee_style(),
                         spec.continuation,
                     ),
-                    configure_attack_curve(AttackSpec::default(), &character).curve,
+                    configure_attack_curve(
+                        AttackSpec::default(),
+                        &character,
+                        &combat_config.presentation.attack_curve,
+                    )
+                    .curve,
                 )
             })
         else {
@@ -597,6 +585,7 @@ fn apply_direct_combat_controls(
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     for entity in &players {
         if let Ok((_, mut skeleton)) = q_character.get_mut(entity)
@@ -642,13 +631,18 @@ fn apply_direct_combat_controls(
                 &mut q_character,
                 &viewer,
                 &time,
+                &combat_config,
             );
         }
         if controls.dodge_just_pressed {
             if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
                 let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
                 if let Some(spec) = DodgeSpec::quickstep(controls.quickstep_direction) {
-                    let _ = skeleton.begin_dodge(spec, start, start + 20);
+                    let _ = skeleton.begin_dodge(
+                        spec,
+                        start,
+                        start + animation_ticks(combat_config.presentation.dodge_seconds),
+                    );
                 }
             }
             cmd.client_trigger(DefendRequest::Dodge {
@@ -680,8 +674,13 @@ mod tests {
 
     #[test]
     fn gamepad_look_keeps_horizontal_and_reverses_vertical_input() {
-        assert!(GAMEPAD_LOOK_SCALE.x.is_sign_positive());
-        assert!(GAMEPAD_LOOK_SCALE.y.is_sign_negative());
+        let scale = Vec3::from_array(
+            TacticalCombatConfig::default()
+                .client_input
+                .gamepad_look_scale,
+        );
+        assert!(scale.x.is_sign_positive());
+        assert!(scale.y.is_sign_negative());
     }
 
     #[test]

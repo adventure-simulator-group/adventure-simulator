@@ -43,6 +43,11 @@ pub struct SceneVistaBundle {
     pub lods: Vec<VistaLod>,
 }
 
+/// Canonical tuning selected by the tactical server for this process lifetime.
+/// Clients consume this snapshot instead of loading an independent local file.
+#[derive(Debug, Clone, Event, Serialize, Deserialize)]
+pub struct TacticalCombatConfigSnapshot(pub TacticalCombatConfig);
+
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
 #[reflect(Default)]
 pub struct PlayerInputRequest {

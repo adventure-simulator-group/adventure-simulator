@@ -1,8 +1,5 @@
 use super::*;
 
-const FRONTAL_FLANKING_MAX: f32 = 0.01;
-const ORDINARY_REACTION_DELAY_SECS: std::ops::Range<f32> = 0.20..0.27;
-
 /// Per-bot chance (each out of 1.0) that a reflex defense (see
 /// `try_start_reaction`) resolves to a parry or dodge. Inserted by a reactive
 /// defense behavior package with balance-tuned defaults; BRP tests
@@ -68,6 +65,7 @@ pub(super) fn on_attack_started(
         ),
         With<MissionEnemy>,
     >,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     let MeleeActionRequest::Start {
         strike_family,
@@ -106,6 +104,7 @@ pub(super) fn on_attack_started(
             .get_for_attack(attacker, hand)
             .map(|view| attack_preparation_secs(&view, strike_family.melee_style()))
             .unwrap_or(0.3),
+        &combat_config.ai.ordinary.defense,
     );
 }
 
@@ -119,6 +118,7 @@ pub(super) fn on_targeted_attack_started(
         &ReactiveDefenseAi,
         Option<&DefenseChances>,
     )>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, event.target])
     else {
@@ -135,6 +135,7 @@ pub(super) fn on_targeted_attack_started(
             *defense,
             chances.copied().unwrap_or_default(),
             event.windup.as_secs_f32(),
+            &combat_config.ai.ordinary.defense,
         );
     }
 }
@@ -149,6 +150,7 @@ pub(super) fn on_targeted_ranged_attack_started(
         &ReactiveDefenseAi,
         Option<&DefenseChances>,
     )>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     let Some(target) = event.target else {
         return;
@@ -167,6 +169,7 @@ pub(super) fn on_targeted_ranged_attack_started(
             *defense,
             chances.copied().unwrap_or_default(),
             event.animation_windup.as_secs_f32(),
+            &combat_config.ai.ordinary.defense,
         );
     }
 }
@@ -179,10 +182,13 @@ pub(super) fn try_start_reaction(
     defense: ReactiveDefenseAi,
     chances: DefenseChances,
     windup_secs: f32,
+    config: &AiDefenseConfig,
 ) {
     let (a2, a1) = attacker_look.yaw.sin_cos();
     let (d2, d1) = defender_look.yaw.sin_cos();
-    if defense.requires_facing && flanking_from_dir((a1, a2), (d1, d2)) > FRONTAL_FLANKING_MAX {
+    if defense.requires_facing
+        && flanking_from_dir((a1, a2), (d1, d2)) > config.frontal_flanking_max
+    {
         return;
     }
     let Some(choice) = roll_defend_choice(chances) else {
@@ -193,7 +199,7 @@ pub(super) fn try_start_reaction(
         // of even a fast fist windup for the quickstep's launch phase.
         (windup_secs - 0.16).clamp(0.02, 0.12)
     } else {
-        rand::random_range(ORDINARY_REACTION_DELAY_SECS)
+        rand::random_range(config.reaction_delay_min_seconds..config.reaction_delay_max_seconds)
     };
     cmd.entity(defender).insert(PendingBotReaction {
         timer: Timer::from_seconds(delay, TimerMode::Once),

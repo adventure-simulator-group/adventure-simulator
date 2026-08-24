@@ -23,6 +23,7 @@ pub(crate) fn apply_defend_intent(
     time: Res<Time<()>>,
     states: Query<&TacticalCombatState>,
     mut skeletons: Query<(&mut SkeletonState, &mut AuthoritativePostureIntent)>,
+    config: Res<TacticalCombatConfig>,
 ) {
     let Ok(combat_state) = states.get(event.defender) else {
         return;
@@ -39,12 +40,19 @@ pub(crate) fn apply_defend_intent(
         DefendRequest::Dodge { direction } if DodgeSpec::quickstep(direction).is_none() => false,
         DefendRequest::Dodge { .. } if skeleton.action_kind() == SkeletonAction::Dodge => true,
         DefendRequest::Dodge { direction } => {
-            begin_authoritative_quickstep(&mut skeleton, &mut posture_intent, direction)
+            begin_authoritative_quickstep(&mut skeleton, &mut posture_intent, direction, &config)
         }
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
         DefendRequest::Roll => true,
         DefendRequest::Parry => skeleton
-            .begin_block(BlockSpec::default(), start, start + 8)
+            .begin_block(
+                BlockSpec::default(),
+                start,
+                start
+                    + duration_ticks(CombatDuration::from_secs_f32(
+                        config.presentation.block_seconds,
+                    )),
+            )
             .is_ok(),
     };
     if !accepted {
@@ -63,6 +71,7 @@ pub(super) fn on_melee_attack_started(
     mut skeletons: Query<&mut SkeletonState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
+    config: Res<TacticalCombatConfig>,
 ) {
     let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
         return;
@@ -83,7 +92,7 @@ pub(super) fn on_melee_attack_started(
         .get_for_attack(event.attacker, event.hand)
         .map(|view| {
             (
-                configure_attack_curve(spec, &view),
+                configure_attack_curve(spec, &view, &config.presentation.attack_curve),
                 CombatDuration::from_secs_f32(attack_recovery_secs(
                     &view,
                     event.strike_family.melee_style(),
@@ -110,7 +119,7 @@ pub(super) fn on_melee_attack_started(
         Some(event.target),
         CombatInstant::from_elapsed(&time),
         event.windup,
-        MELEE_WINDUP_NETWORK_ALLOWANCE,
+        CombatDuration::from_secs_f32(config.realtime_authority.melee.completion_allowance_seconds),
     );
 }
 
@@ -118,23 +127,24 @@ pub(super) fn resolve_defender_response(
     pending: Option<&PendingDefenderResponse>,
     time: &Time<()>,
     defender_view: &TacticalPlayerView,
+    config: &DefenseAuthorityConfig,
 ) -> DefenderResponse {
     let Some(pending) = pending else {
         return DefenderResponse::None;
     };
 
     let elapsed = CombatInstant::from_elapsed(time).elapsed_since(pending.set_at);
-    if elapsed > MAX_REFLEX_WINDOW {
+    let reflex_window = std::time::Duration::from_secs_f32(config.reflex_window_seconds);
+    if elapsed > reflex_window {
         return DefenderResponse::None;
     }
 
-    let input_reflex =
-        (1.0 - elapsed.as_secs_f32() / MAX_REFLEX_WINDOW.as_secs_f32()).clamp(0.0, 1.0);
+    let input_reflex = (1.0 - elapsed.as_secs_f32() / reflex_window.as_secs_f32()).clamp(0.0, 1.0);
 
     match pending.choice {
         DefendRequest::Dodge { .. } => DefenderResponse::Dodge { input_reflex },
         DefendRequest::Roll => DefenderResponse::Dodge {
-            input_reflex: roll_dodge_reflex(input_reflex),
+            input_reflex: roll_dodge_reflex(input_reflex, config.roll_dodge_effectiveness),
         },
         DefendRequest::Parry => {
             if defender_view.shield_block_bonus() > 0.0 {
@@ -146,10 +156,8 @@ pub(super) fn resolve_defender_response(
     }
 }
 
-const ROLL_DODGE_EFFECTIVENESS: f32 = 0.35;
-
-fn roll_dodge_reflex(input_reflex: f32) -> f32 {
-    input_reflex.clamp(0.0, 1.0) * ROLL_DODGE_EFFECTIVENESS
+fn roll_dodge_reflex(input_reflex: f32, effectiveness: f32) -> f32 {
+    input_reflex.clamp(0.0, 1.0) * effectiveness
 }
 
 fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
@@ -160,12 +168,13 @@ fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
 #[allow(clippy::items_after_test_module)]
 mod roll_tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn roll_is_a_bounded_fraction_of_an_ordinary_dodge() {
-        assert!((roll_dodge_reflex(1.0) - 0.35).abs() < f32::EPSILON);
-        assert_eq!(roll_dodge_reflex(-1.0), 0.0);
-        assert_eq!(roll_dodge_reflex(2.0), 0.35);
+        assert!((roll_dodge_reflex(1.0, 0.35) - 0.35).abs() < f32::EPSILON);
+        assert_eq!(roll_dodge_reflex(-1.0, 0.35), 0.0);
+        assert_eq!(roll_dodge_reflex(2.0, 0.35), 0.35);
     }
 
     #[test]
@@ -182,7 +191,9 @@ mod roll_tests {
     #[test]
     fn packet_tolerance_does_not_shorten_attack_animation_timing() {
         let authored = CombatDuration::from_duration(Duration::from_millis(300));
-        let (animation_windup, minimum_windup) = player_attack_windups(authored);
+        let config = TacticalCombatConfig::default();
+        let (animation_windup, minimum_windup) =
+            player_attack_windups(authored, &config.realtime_authority.melee);
 
         assert_eq!(duration_ticks(animation_windup), 19);
         assert_eq!(duration_ticks(minimum_windup), 18);
@@ -192,6 +203,7 @@ mod roll_tests {
     fn clients_and_server_ai_share_authoritative_defense_transitions() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .add_observer(on_defender_response_request)
             .add_observer(apply_defend_intent);
         let player = app
@@ -261,6 +273,7 @@ mod roll_tests {
     fn stationary_dodge_request_is_rejected() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .add_observer(apply_defend_intent);
         let defender = app
             .world_mut()
@@ -297,6 +310,7 @@ mod roll_tests {
     fn directional_dodge_request_without_raised_guard_is_rejected() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .add_observer(apply_defend_intent);
         let defender = app
             .world_mut()
@@ -328,9 +342,13 @@ mod roll_tests {
     }
 }
 
-fn player_attack_windups(authored: CombatDuration) -> (CombatDuration, CombatDuration) {
+fn player_attack_windups(
+    authored: CombatDuration,
+    config: &MeleeAuthorityConfig,
+) -> (CombatDuration, CombatDuration) {
     let tolerance = CombatDuration::from_secs_f32(
-        (authored.as_secs_f32() * 0.1).min(MAX_WINDUP_JITTER_TOLERANCE_SECS),
+        (authored.as_secs_f32() * config.windup_jitter_fraction)
+            .min(config.maximum_windup_jitter_seconds),
     );
     (authored, authored.saturating_sub(tolerance))
 }
@@ -342,6 +360,7 @@ pub(super) fn on_melee_action_request(
     viewer: TacticalPlayerViewer,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    config: Res<TacticalCombatConfig>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
         debug!(
@@ -384,12 +403,13 @@ pub(super) fn on_melee_action_request(
                     ))
                 })
                 .unwrap_or_default();
-            let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
+            let (animation_windup, minimum_windup) =
+                player_attack_windups(authored_windup, &config.realtime_authority.melee);
             let (spec, recovery) = viewer
                 .get_for_attack(attacker, hand)
                 .map(|view| {
                     (
-                        configure_attack_curve(spec, &view),
+                        configure_attack_curve(spec, &view, &config.presentation.attack_curve),
                         CombatDuration::from_secs_f32(attack_recovery_secs(
                             &view,
                             strike_family.melee_style(),
@@ -416,7 +436,9 @@ pub(super) fn on_melee_action_request(
                 None,
                 CombatInstant::from_elapsed(&time),
                 minimum_windup,
-                MELEE_WINDUP_NETWORK_ALLOWANCE,
+                CombatDuration::from_secs_f32(
+                    config.realtime_authority.melee.completion_allowance_seconds,
+                ),
             );
         }
         MeleeActionRequest::Complete {
@@ -450,6 +472,7 @@ pub(super) fn on_ranged_action_request(
     event: On<FromClient<RangedActionRequest>>,
     mut cmd: Commands,
     viewer: TacticalPlayerViewer,
+    config: Res<TacticalCombatConfig>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
         debug!(
@@ -466,7 +489,8 @@ pub(super) fn on_ranged_action_request(
                 .get(attacker)
                 .map(|view| CombatDuration::from_secs_f32(view.weapon_ranged_windup_secs()))
                 .unwrap_or_default();
-            let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
+            let (animation_windup, minimum_windup) =
+                player_attack_windups(authored_windup, &config.realtime_authority.melee);
             cmd.trigger(RangedAttackStartedIntent {
                 attacker,
                 target: None,
@@ -509,6 +533,7 @@ pub(super) fn on_ranged_attack_started(
     mut skeletons: Query<&mut SkeletonState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
+    config: Res<TacticalCombatConfig>,
 ) {
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
@@ -521,7 +546,11 @@ pub(super) fn on_ranged_attack_started(
         .get(event.attacker)
         .map(|view| {
             (
-                configure_attack_curve(AttackSpec::default(), &view),
+                configure_attack_curve(
+                    AttackSpec::default(),
+                    &view,
+                    &config.presentation.attack_curve,
+                ),
                 CombatDuration::from_secs_f32(attack_recovery_secs(
                     &view,
                     view.weapon_preferred_melee_style(),
@@ -546,7 +575,12 @@ pub(super) fn on_ranged_attack_started(
     authority.observe(
         CombatInstant::from_elapsed(&time),
         event.minimum_windup,
-        RANGED_NETWORK_ALLOWANCE,
+        CombatDuration::from_secs_f32(
+            config
+                .realtime_authority
+                .ranged
+                .completion_allowance_seconds,
+        ),
     );
 }
 
