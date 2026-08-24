@@ -19,9 +19,13 @@ var<uniform> cloud_spectral: vec4<f32>;
 var<uniform> cloud_geometry: vec4<f32>;
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(6)
-var cloud_baked_texture: texture_2d<f32>;
+var cloud_baked_texture_a: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(7)
-var cloud_noise_sampler: sampler;
+var cloud_sampler_a: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(8)
+var cloud_baked_texture_b: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(9)
+var cloud_sampler_b: sampler;
 
 fn shell_center() -> vec3<f32> {
     return vec3<f32>(cloud_geometry.x, -cloud_geometry.z, cloud_geometry.y);
@@ -43,18 +47,63 @@ fn ray_sphere_roots(
     return vec2<f32>(-projected - root, -projected + root);
 }
 
-/// One clamped lookup recovers the reference eye's native dome bake. U is
-/// azimuth and V is elevation, exactly matching the directional ray rather
-/// than collapsing low elevations into a texture edge. The CPU duplicates the
-/// two azimuth seam columns, so clamp addressing stays continuous.
-fn sample_cloud_surface(ray_direction: vec3<f32>) -> vec4<f32> {
+fn cloud_coordinate(ray_direction: vec3<f32>) -> vec2<f32> {
     let azimuth = atan2(ray_direction.z, ray_direction.x) / (2.0 * 3.14159265359) + 0.5;
     let elevation = asin(clamp(ray_direction.y, 0.0, 1.0)) / (0.5 * 3.14159265359);
-    let coordinate = vec2<f32>(azimuth, elevation);
-    return textureSample(
-        cloud_baked_texture,
-        cloud_noise_sampler,
-        coordinate,
+    return vec2<f32>(azimuth, elevation);
+}
+
+/// Move a dome ray through the representative cloud altitude before sampling
+/// an endpoint. This removes known wind translation, leaving only formation
+/// and erosion for the optical interpolation to dissolve.
+fn wind_compensated_direction(
+    ray_direction: vec3<f32>,
+    displacement: vec2<f32>,
+) -> vec3<f32> {
+    let reference_eye = vec3<f32>(0.0, cloud_shape.w, 0.0);
+    let radius = cloud_geometry.z + cloud_layer.x;
+    let roots = ray_sphere_roots(reference_eye, ray_direction, radius);
+    if roots.y <= 0.0 {
+        return ray_direction;
+    }
+    let point = reference_eye + ray_direction * roots.y;
+    return normalize(point + vec3<f32>(displacement.x, 0.0, displacement.y) - reference_eye);
+}
+
+fn sample_cloud_surface(ray_direction: vec3<f32>) -> vec4<f32> {
+    let blend = clamp(cloud_shape.y, 0.0, 1.0);
+    let interval = cloud_shape.z;
+    let wind = cloud_motion.xy;
+    let direction_a = wind_compensated_direction(
+        ray_direction,
+        -wind * (blend * interval),
+    );
+    let direction_b = wind_compensated_direction(
+        ray_direction,
+        wind * ((1.0 - blend) * interval),
+    );
+    let baked_a = textureSample(
+        cloud_baked_texture_a,
+        cloud_sampler_a,
+        cloud_coordinate(direction_a),
+    );
+    let baked_b = textureSample(
+        cloud_baked_texture_b,
+        cloud_sampler_b,
+        cloud_coordinate(direction_b),
+    );
+
+    // Interpolate attenuation rather than alpha/transmission directly. This
+    // preserves the exponential optical response through the handoff.
+    let opacity_depth_a = -log(max(1.0 - baked_a.r, 0.0001));
+    let opacity_depth_b = -log(max(1.0 - baked_b.r, 0.0001));
+    let transmission_depth_a = -log(max(baked_a.b, 0.0001));
+    let transmission_depth_b = -log(max(baked_b.b, 0.0001));
+    return vec4<f32>(
+        1.0 - exp(-mix(opacity_depth_a, opacity_depth_b, blend)),
+        mix(baked_a.g, baked_b.g, blend),
+        exp(-mix(transmission_depth_a, transmission_depth_b, blend)),
+        mix(baked_a.a, baked_b.a, blend),
     );
 }
 

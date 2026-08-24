@@ -51,7 +51,7 @@ use crate::presentation::{
     GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch, PlayableTreeAggregateWood,
     PlayableTreeBuds, PlayableTreeCanopyCard, PlayableTreeDetailedLeaves,
     PlayableTreeDetailedTrunk, PlayableTreeDetailedWood, PlayableTreeMidTrunk, PlayableTreeTrunk,
-    PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual,
+    PresentedTree, ProceduralEnvironmentAssets, ProceduralRockVisual, TacticalCloudAnimationStatus,
     TacticalCloudBenchmarkIsolation, TacticalCloudLayer, TacticalGraphicsSettings,
     TacticalPresentationPlugin, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
     TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
@@ -550,6 +550,12 @@ struct ScenePerformanceBenchmarkState {
     scene_entity_counts: Option<BTreeMap<String, usize>>,
     results: Vec<ScenePerformanceBenchmarkResult>,
     stop_after_mode: usize,
+}
+
+#[derive(SystemParam)]
+struct ScenePerformanceDiagnostics<'w> {
+    diagnostics: Res<'w, bevy::diagnostic::DiagnosticsStore>,
+    cloud_animation: Res<'w, TacticalCloudAnimationStatus>,
 }
 
 impl ScenePerformanceBenchmarkState {
@@ -2062,7 +2068,7 @@ fn benchmark_scene_performance(
     mut state: Option<ResMut<ScenePerformanceBenchmarkState>>,
     capture: Option<Res<CaptureState>>,
     time: Res<Time<Real>>,
-    diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
+    benchmark_diagnostics: ScenePerformanceDiagnostics,
     tree_asset_residency: Res<TreeAssetResidencyDiagnostics>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut tree_isolation: ResMut<TacticalTreeBenchmarkIsolation>,
@@ -2150,6 +2156,10 @@ fn benchmark_scene_performance(
     let Some(&mode) = SCENE_PERFORMANCE_MODES.get(state.mode) else {
         return;
     };
+    // Complete both visible endpoints and the queued successor before warmup.
+    // Freezing here prevents a background rebake from contaminating wall-time
+    // samples while preserving the production two-sample cloud shader.
+    cloud_isolation.freeze_animation = true;
 
     if state.configured_mode != Some(state.mode) {
         tree_lod_override.lod = mode.forced_lod;
@@ -2368,13 +2378,22 @@ fn benchmark_scene_performance(
         state.scene_entity_counts = Some(counts);
     }
 
+    let active_clouds = visibility_layers
+        .p6()
+        .iter()
+        .filter(|(_, cloud, _)| cloud.is_some_and(TacticalCloudLayer::is_active))
+        .count();
+    if active_clouds > 0 && !benchmark_diagnostics.cloud_animation.is_ready() {
+        return;
+    }
+
     if state.warmup_remaining > 0 {
         state.warmup_remaining -= 1;
         return;
     }
 
     state.samples_ms.push(time.delta_secs_f64() * 1_000.0);
-    for diagnostic in diagnostics.iter() {
+    for diagnostic in benchmark_diagnostics.diagnostics.iter() {
         let path = diagnostic.path().as_str();
         if !path.starts_with("render/") {
             continue;

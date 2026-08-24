@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[cfg(not(target_family = "wasm"))]
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on};
+
 const CLOUD_SHADER: &str = "shaders/tactical_clouds.wgsl";
 const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
 /// Deliberately smaller than Earth's radius so the global cloud surface bends
@@ -18,6 +21,11 @@ const CLOUD_BAKE_TEXTURE_HEIGHT: u32 = CLOUD_BAKE_ELEVATION_SEGMENTS + 1;
 const CLOUD_BAKE_CHANNELS: usize = 4;
 const CLOUD_BAKE_VERTICAL_SAMPLES: u32 = 48;
 const CLOUD_BAKE_REFERENCE_EYE_METRES: f32 = 1.7;
+/// Long endpoint spacing keeps the expensive CPU bake comfortably ahead of
+/// playback while wind compensation supplies continuous motion every frame.
+const CLOUD_ANIMATION_INTERVAL_SECONDS: f32 = 45.0;
+const CLOUD_MAX_WIND_METRES_PER_SECOND: f32 = 18.0;
+const CLOUD_EVOLUTION_PER_SECOND: f32 = 0.002_5;
 
 #[derive(Component)]
 pub(crate) struct TacticalCloudLayer {
@@ -50,6 +58,18 @@ pub(crate) struct TacticalCloudCaptureOverride(pub(crate) Option<TacticalCloudCa
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub(crate) struct TacticalCloudBenchmarkIsolation {
     pub(crate) hide_clouds: bool,
+    pub(crate) freeze_animation: bool,
+}
+
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub(crate) struct TacticalCloudAnimationStatus {
+    ready: bool,
+}
+
+impl TacticalCloudAnimationStatus {
+    pub(crate) fn is_ready(&self) -> bool {
+        self.ready
+    }
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
@@ -72,10 +92,13 @@ pub(in crate::presentation) struct TacticalCloudMaterial {
     /// Fixed scene anchor X/Z and curvature radius.
     #[uniform(5)]
     geometry: Vec4,
-    /// A finite, camera-locked directional optical-property bake.
+    /// Consecutive finite, camera-locked directional optical-property bakes.
     #[texture(6, dimension = "2d")]
     #[sampler(7)]
-    baked_texture: Handle<Image>,
+    baked_texture_a: Handle<Image>,
+    #[texture(8, dimension = "2d")]
+    #[sampler(9)]
+    baked_texture_b: Handle<Image>,
 }
 
 impl Material for TacticalCloudMaterial {
@@ -218,9 +241,40 @@ struct CloudBakeKey {
     seed: u64,
 }
 
+#[derive(Clone, Debug)]
+struct CloudBakeRequest {
+    key: CloudBakeKey,
+    endpoint: u64,
+    wind_velocity: Vec2,
+}
+
+impl CloudBakeRequest {
+    fn elapsed_seconds(&self) -> f32 {
+        self.endpoint as f32 * CLOUD_ANIMATION_INTERVAL_SECONDS
+    }
+
+    fn advection_metres(&self) -> Vec2 {
+        self.wind_velocity * self.elapsed_seconds()
+    }
+
+    fn evolution(&self) -> f32 {
+        self.elapsed_seconds() * CLOUD_EVOLUTION_PER_SECOND
+    }
+}
+
+struct CompletedCloudBake {
+    request: CloudBakeRequest,
+    image: Image,
+}
+
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct CloudBakeState {
     key: Option<CloudBakeKey>,
+    elapsed_seconds: f32,
+    end_ready: bool,
+    queued: Option<CompletedCloudBake>,
+    #[cfg(not(target_family = "wasm"))]
+    pending: Option<Task<CompletedCloudBake>>,
 }
 
 pub(in crate::presentation) fn setup_tactical_clouds(
@@ -230,11 +284,18 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
 ) {
     let mesh = meshes.add(cloud_hemisphere_mesh());
-    let baked_texture = images.add(cloud_bake_image(&CloudBakeKey {
-        layers: [None, None, None],
-        seed: 0,
-    }));
+    let empty_request = CloudBakeRequest {
+        key: CloudBakeKey {
+            layers: [None, None, None],
+            seed: 0,
+        },
+        endpoint: 0,
+        wind_velocity: Vec2::ZERO,
+    };
+    let baked_texture_a = images.add(cloud_bake_image(&empty_request));
+    let baked_texture_b = images.add(cloud_bake_image(&empty_request));
     commands.insert_resource(CloudBakeState::default());
+    commands.insert_resource(TacticalCloudAnimationStatus::default());
     commands.spawn((
         Name::new("Baked tactical cloud shell"),
         TacticalCloudLayer { active: false },
@@ -248,29 +309,32 @@ pub(in crate::presentation) fn setup_tactical_clouds(
             motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
             spectral: Vec4::ONE,
             geometry: cloud_shell_geometry(),
-            baked_texture,
+            baked_texture_a,
+            baked_texture_b,
         })),
         Transform::default(),
     ));
 }
 
-/// Bakes the former volume once from a stable tactical eye point into the
-/// upper dome's angular coordinates.  Runtime consequently sees the same
-/// coherent clouds as a ray march without repeating that integration.
-fn cloud_bake_image(key: &CloudBakeKey) -> Image {
+/// Bakes one endpoint from a stable tactical eye point into the upper dome's
+/// angular coordinates. Runtime sees the same coherent clouds as a ray march
+/// without repeating that integration every frame.
+fn cloud_bake_image(request: &CloudBakeRequest) -> Image {
     let mut pixels = Vec::with_capacity(
         CLOUD_BAKE_TEXTURE_WIDTH as usize
             * CLOUD_BAKE_TEXTURE_HEIGHT as usize
             * CLOUD_BAKE_CHANNELS,
     );
     let reference_eye = Vec3::new(0.0, CLOUD_BAKE_REFERENCE_EYE_METRES, 0.0);
+    let advection_metres = request.advection_metres();
+    let evolution = request.evolution();
     for y in 0..CLOUD_BAKE_TEXTURE_HEIGHT {
         for x in 0..CLOUD_BAKE_TEXTURE_WIDTH {
             let direction = cloud_bake_direction(x, y);
             let mut optical_depth = 0.0;
             let mut lighting = 0.0;
             let mut variation = 0.0;
-            for (slot, layer) in key.layers.iter().flatten().enumerate() {
+            for (slot, layer) in request.key.layers.iter().flatten().enumerate() {
                 let Some((start, end)) = cloud_ray_layer_interval(reference_eye, direction, *layer)
                 else {
                     continue;
@@ -282,16 +346,23 @@ fn cloud_bake_image(key: &CloudBakeKey) -> Image {
                     let height = ((cloud_shell_altitude(position) - layer.bottom_metres)
                         / layer.thickness_metres)
                         .clamp(0.0, 1.0);
-                    let density =
-                        baked_cloud_density(position.xz(), height, *layer, key.seed, slot as u64);
+                    let density = baked_cloud_density(
+                        position.xz() - advection_metres,
+                        height,
+                        *layer,
+                        request.key.seed,
+                        slot as u64,
+                        evolution,
+                    );
                     let contribution = density * step * 0.001_45;
                     optical_depth += contribution;
                     let detail = cloud_bake_lighting_variation(
-                        position.xz(),
+                        position.xz() - advection_metres,
                         height,
                         *layer,
-                        key.seed,
+                        request.key.seed,
                         slot as u64,
+                        evolution,
                     );
                     lighting += contribution * (0.18 + height * 0.76) * (0.18 + detail * 0.82);
                     variation += contribution * detail;
@@ -395,9 +466,10 @@ fn baked_cloud_density(
     layer: CloudLayerParameters,
     seed: u64,
     slot: u64,
+    evolution: f32,
 ) -> f32 {
     let kind = layer.profile as u32;
-    let coordinate = cloud_density_coordinate(world, height, layer, seed);
+    let coordinate = cloud_density_coordinate(world, height, layer, seed, evolution);
     // Broad coverage, domain warp, and fine erosion all sample a genuine
     // finite 3-D lattice. Height is an independent coordinate, not a planar
     // translation, so integrating a ray cannot turn a single 2-D field into
@@ -453,6 +525,7 @@ fn cloud_density_coordinate(
     height: f32,
     layer: CloudLayerParameters,
     seed: u64,
+    evolution: f32,
 ) -> Vec3 {
     let family_scale = match layer.profile as u32 {
         2 => Vec2::new(0.32, 1.8),
@@ -466,6 +539,10 @@ fn cloud_density_coordinate(
         height * 1.8 + seed_offset * 0.007,
         world.y * layer.horizontal_scale - seed_offset * 0.011,
     );
+    // Slow non-rigid evolution changes cell edges between endpoints. Known
+    // horizontal wind translation is handled separately and removed by the
+    // runtime warp before the two optical solutions are blended.
+    coordinate += Vec3::new(evolution * 0.37, evolution, -evolution * 0.23);
     coordinate.x *= family_scale.x;
     coordinate.z *= family_scale.y;
     coordinate
@@ -477,9 +554,11 @@ fn cloud_bake_lighting_variation(
     layer: CloudLayerParameters,
     seed: u64,
     slot: u64,
+    evolution: f32,
 ) -> f32 {
     non_periodic_value_noise_3d(
-        cloud_density_coordinate(world, height, layer, seed) * 3.17 + Vec3::new(2.1, 7.3, 11.9),
+        cloud_density_coordinate(world, height, layer, seed, evolution) * 3.17
+            + Vec3::new(2.1, 7.3, 11.9),
         seed ^ slot.rotate_left(21),
     )
 }
@@ -586,6 +665,7 @@ fn cloud_hemisphere_mesh() -> Mesh {
 }
 
 pub(in crate::presentation) fn update_tactical_clouds(
+    time: Res<Time>,
     active: Res<ActiveTacticalScene>,
     environments: Query<&SceneEnvironment>,
     celestial: Res<PresentedCelestialLighting>,
@@ -601,7 +681,9 @@ pub(in crate::presentation) fn update_tactical_clouds(
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut bake_state: ResMut<CloudBakeState>,
+    mut animation_status: ResMut<TacticalCloudAnimationStatus>,
 ) {
+    animation_status.ready = false;
     let environment = active
         .entity
         .and_then(|entity| environments.get(entity).ok());
@@ -641,16 +723,51 @@ pub(in crate::presentation) fn update_tactical_clouds(
             continue;
         };
         if bake_state.key.as_ref() != Some(&bake_key) {
-            if let Some(mut image) = images.get_mut(&material.baked_texture) {
-                *image = cloud_bake_image(&bake_key);
+            #[cfg(not(target_family = "wasm"))]
+            {
+                bake_state.pending = None;
             }
-            bake_state.key = Some(bake_key);
+            bake_state.queued = None;
+            bake_state.elapsed_seconds = 0.0;
+            bake_state.end_ready = false;
+
+            let wind_velocity = cloud_wind_velocity(environment);
+            let initial_request = CloudBakeRequest {
+                key: bake_key.clone(),
+                endpoint: 0,
+                wind_velocity,
+            };
+            let initial = cloud_bake_image(&initial_request);
+            if let Some(mut image) = images.get_mut(&material.baked_texture_a) {
+                *image = initial.clone();
+            }
+            if let Some(mut image) = images.get_mut(&material.baked_texture_b) {
+                *image = initial;
+            }
+            bake_state.key = Some(bake_key.clone());
+
+            #[cfg(not(target_family = "wasm"))]
+            {
+                bake_state.pending = Some(spawn_cloud_bake(CloudBakeRequest {
+                    key: bake_key.clone(),
+                    endpoint: 1,
+                    wind_velocity,
+                }));
+            }
         }
-        let lowest = layers
-            .iter()
-            .flatten()
-            .map(|layer| layer.bottom_metres)
-            .fold(f32::INFINITY, f32::min);
+
+        #[cfg(not(target_family = "wasm"))]
+        advance_cloud_bake_pipeline(
+            &mut bake_state,
+            &mut material,
+            &mut images,
+            if isolation.freeze_animation {
+                0.0
+            } else {
+                time.delta_secs()
+            },
+        );
+        let representative_altitude = cloud_representative_altitude(layers);
         let storminess = layers
             .iter()
             .flatten()
@@ -661,15 +778,125 @@ pub(in crate::presentation) fn update_tactical_clouds(
         let scene_luminance = 0.08 + daylight * 1.35;
         let solar_color = cloud_solar_color(celestial.sun_altitude_degrees);
         material.lighting = celestial.sun_direction.extend(scene_luminance);
-        material.shape = Vec4::new(storminess, 0.0, 0.0, 0.0);
-        material.layer = Vec4::new(lowest, 1.0, 0.0, 0.0);
-        // The field is world-aligned and finite. Weather changes re-bake it;
-        // unbounded scroll would eventually reveal a clamped guard or repeat.
-        material.motion = Vec4::new(0.0, 0.0, daylight, celestial.weather_transmission);
+        let blend = if bake_state.end_ready {
+            (bake_state.elapsed_seconds / CLOUD_ANIMATION_INTERVAL_SECONDS).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let wind_velocity = cloud_wind_velocity(environment);
+        material.shape = Vec4::new(
+            storminess,
+            blend,
+            CLOUD_ANIMATION_INTERVAL_SECONDS,
+            CLOUD_BAKE_REFERENCE_EYE_METRES,
+        );
+        material.layer = Vec4::new(representative_altitude, 1.0, 0.0, 0.0);
+        material.motion = Vec4::new(
+            wind_velocity.x,
+            wind_velocity.y,
+            daylight,
+            celestial.weather_transmission,
+        );
         material.spectral = solar_color.extend(1.0);
         material.geometry = cloud_shell_geometry();
+        #[cfg(not(target_family = "wasm"))]
+        {
+            animation_status.ready = bake_state.end_ready && bake_state.queued.is_some();
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            animation_status.ready = true;
+        }
         *visibility = cloud_visibility(true, *isolation);
     }
+}
+
+fn cloud_wind_velocity(environment: &SceneEnvironment) -> Vec2 {
+    let bearing = f32::from(environment.weather.atmosphere.wind_direction_degrees).to_radians();
+    let speed =
+        f32::from(environment.weather.wind_speed_bps) / 10_000.0 * CLOUD_MAX_WIND_METRES_PER_SECOND;
+    Vec2::new(bearing.sin(), -bearing.cos()) * speed
+}
+
+fn cloud_representative_altitude(layers: [Option<CloudLayerParameters>; 3]) -> f32 {
+    let mut weighted_altitude = 0.0;
+    let mut total_weight = 0.0;
+    for layer in layers.into_iter().flatten() {
+        let weight = (layer.coverage * layer.density).max(0.001);
+        weighted_altitude += (layer.bottom_metres + layer.thickness_metres * 0.5) * weight;
+        total_weight += weight;
+    }
+    if total_weight > 0.0 {
+        weighted_altitude / total_weight
+    } else {
+        2_000.0
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn spawn_cloud_bake(request: CloudBakeRequest) -> Task<CompletedCloudBake> {
+    AsyncComputeTaskPool::get().spawn(async move {
+        let image = cloud_bake_image(&request);
+        CompletedCloudBake { request, image }
+    })
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn advance_cloud_bake_pipeline(
+    state: &mut CloudBakeState,
+    material: &mut TacticalCloudMaterial,
+    images: &mut Assets<Image>,
+    delta_seconds: f32,
+) {
+    if state.pending.as_ref().is_some_and(Task::is_finished) {
+        let completed = block_on(
+            state
+                .pending
+                .take()
+                .expect("finished cloud bake task remains present"),
+        );
+        if state.key.as_ref() == Some(&completed.request.key) {
+            if state.end_ready {
+                state.queued = Some(completed);
+            } else {
+                if let Some(mut image) = images.get_mut(&material.baked_texture_b) {
+                    *image = completed.image;
+                }
+                state.end_ready = true;
+                state.elapsed_seconds = 0.0;
+                state.pending = Some(spawn_cloud_bake(CloudBakeRequest {
+                    key: completed.request.key,
+                    endpoint: completed.request.endpoint + 1,
+                    wind_velocity: completed.request.wind_velocity,
+                }));
+            }
+        }
+    }
+
+    if !state.end_ready {
+        return;
+    }
+    state.elapsed_seconds =
+        (state.elapsed_seconds + delta_seconds).min(CLOUD_ANIMATION_INTERVAL_SECONDS);
+    if state.elapsed_seconds < CLOUD_ANIMATION_INTERVAL_SECONDS {
+        return;
+    }
+    let Some(completed) = state.queued.take() else {
+        return;
+    };
+
+    let recycled = material.baked_texture_a.clone();
+    material.baked_texture_a = material.baked_texture_b.clone();
+    material.baked_texture_b = recycled;
+    if let Some(mut image) = images.get_mut(&material.baked_texture_b) {
+        *image = completed.image;
+    }
+    state.elapsed_seconds = 0.0;
+    state.pending = Some(spawn_cloud_bake(CloudBakeRequest {
+        key: completed.request.key,
+        endpoint: completed.request.endpoint + 1,
+        wind_velocity: completed.request.wind_velocity,
+    }));
 }
 
 fn cloud_visibility(active: bool, isolation: TacticalCloudBenchmarkIsolation) -> Visibility {
@@ -802,14 +1029,14 @@ mod tests {
         unseeded.seed = 0.0;
         let sample_world = Vec2::new(640.0, -420.0);
         assert!(
-            (baked_cloud_density(sample_world, 0.34, cumulus, 42, 0)
-                - baked_cloud_density(sample_world, 0.34, unseeded, 42, 0))
+            (baked_cloud_density(sample_world, 0.34, cumulus, 42, 0, 0.0)
+                - baked_cloud_density(sample_world, 0.34, unseeded, 42, 0, 0.0))
             .abs()
                 > 0.001
         );
         let occupied = (-3..=3)
             .flat_map(|z| (-3..=3).map(move |x| Vec2::new(x as f32 * 500.0, z as f32 * 500.0)))
-            .filter(|world| baked_cloud_density(*world, 0.34, cumulus, 42, 0) > 0.08)
+            .filter(|world| baked_cloud_density(*world, 0.34, cumulus, 42, 0, 0.0) > 0.08)
             .count();
         assert!(
             occupied >= 4,
@@ -821,8 +1048,8 @@ mod tests {
     fn cloud_volume_noise_decorrelates_height_without_translating_the_world_field() {
         let cumulus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cumulus).unwrap();
         let world = Vec2::new(860.0, -510.0);
-        let low = cloud_density_coordinate(world, 0.22, cumulus, 42);
-        let high = cloud_density_coordinate(world, 0.66, cumulus, 42);
+        let low = cloud_density_coordinate(world, 0.22, cumulus, 42, 0.0);
+        let high = cloud_density_coordinate(world, 0.66, cumulus, 42, 0.0);
         assert_eq!(low.xz(), high.xz());
         let low_noise = non_periodic_value_noise_3d(low * 1.23, 42);
         let high_noise = non_periodic_value_noise_3d(high * 1.23, 42);
@@ -839,7 +1066,13 @@ mod tests {
             Visibility::Inherited
         );
         assert_eq!(
-            cloud_visibility(true, TacticalCloudBenchmarkIsolation { hide_clouds: true }),
+            cloud_visibility(
+                true,
+                TacticalCloudBenchmarkIsolation {
+                    hide_clouds: true,
+                    freeze_animation: false,
+                }
+            ),
             Visibility::Hidden
         );
     }
@@ -907,12 +1140,16 @@ mod tests {
     fn cloud_bake_is_deterministic_finite_and_clamp_filtered() {
         use bevy::{image::ImageAddressMode, render::render_resource::FilterMode};
 
-        let key = CloudBakeKey {
-            layers: CloudLayerParameters::layers_from_environment(&environment(), None),
-            seed: 42,
+        let request = CloudBakeRequest {
+            key: CloudBakeKey {
+                layers: CloudLayerParameters::layers_from_environment(&environment(), None),
+                seed: 42,
+            },
+            endpoint: 0,
+            wind_velocity: Vec2::ZERO,
         };
-        let first = cloud_bake_image(&key);
-        let second = cloud_bake_image(&key);
+        let first = cloud_bake_image(&request);
+        let second = cloud_bake_image(&request);
         let data = first.data.as_ref().expect("generated bake has pixels");
         let extent = first.texture_descriptor.size;
         assert_eq!(extent.width, CLOUD_BAKE_TEXTURE_WIDTH);
@@ -956,9 +1193,13 @@ mod tests {
                 0.0,
             )
         );
-        let image = cloud_bake_image(&CloudBakeKey {
-            layers: CloudLayerParameters::layers_from_environment(&environment(), None),
-            seed: 42,
+        let image = cloud_bake_image(&CloudBakeRequest {
+            key: CloudBakeKey {
+                layers: CloudLayerParameters::layers_from_environment(&environment(), None),
+                seed: 42,
+            },
+            endpoint: 0,
+            wind_velocity: Vec2::ZERO,
         });
         let data = image.data.expect("generated bake has pixels");
         for row in 0..CLOUD_BAKE_TEXTURE_HEIGHT as usize {
@@ -984,16 +1225,20 @@ mod tests {
     }
 
     #[test]
-    fn cloud_shader_uses_one_2d_lookup_and_no_marching_or_shadow_loop() {
+    fn cloud_shader_warps_two_endpoints_and_has_no_marching_or_shadow_loop() {
         let shader = include_str!("../../../../assets/shaders/tactical_clouds.wgsl");
-        assert!(shader.contains("var cloud_baked_texture: texture_2d<f32>;"));
+        assert!(shader.contains("var cloud_baked_texture_a: texture_2d<f32>;"));
+        assert!(shader.contains("var cloud_baked_texture_b: texture_2d<f32>;"));
         assert!(shader.contains("fn sample_cloud_surface"));
+        assert!(shader.contains("fn wind_compensated_direction"));
         assert!(shader.contains("fn ray_sphere_roots"));
         assert!(shader.contains("atan2(ray_direction.z, ray_direction.x)"));
         assert!(shader.contains("asin(clamp(ray_direction.y, 0.0, 1.0))"));
         assert!(shader.contains("let horizon_fade"));
         assert!(shader.contains("let storminess"));
         assert!(shader.contains("let ray_opacity = baked.r"));
+        assert!(shader.contains("-log(max(1.0 - baked_a.r"));
+        assert_eq!(shader.matches("textureSample(").count(), 2);
         assert!(!shader.contains("vertical_depth"));
         assert!(!shader.contains("max(ray_direction.y, 0.14)"));
         assert!(!shader.contains("fract("));
@@ -1003,5 +1248,36 @@ mod tests {
         assert!(!shader.contains("sunlight_transmittance"));
         assert!(!shader.contains("cloud_render_budget"));
         assert!(!shader.contains("for ("));
+    }
+
+    #[test]
+    fn temporal_endpoints_advect_and_evolve_a_stable_cloud_field() {
+        let request = CloudBakeRequest {
+            key: CloudBakeKey {
+                layers: CloudLayerParameters::layers_from_environment(&environment(), None),
+                seed: 42,
+            },
+            endpoint: 2,
+            wind_velocity: Vec2::new(3.0, -4.0),
+        };
+        assert_eq!(request.elapsed_seconds(), 90.0);
+        assert_eq!(request.advection_metres(), Vec2::new(270.0, -360.0));
+        assert!(request.evolution() > 0.0);
+
+        let cumulus = CloudLayerParameters::capture(TacticalCloudCaptureProfile::Cumulus).unwrap();
+        let world = Vec2::new(640.0, -420.0);
+        let initial = cloud_density_coordinate(world, 0.34, cumulus, 42, 0.0);
+        let evolved = cloud_density_coordinate(world, 0.34, cumulus, 42, request.evolution());
+        assert!(!initial.abs_diff_eq(evolved, 0.001));
+    }
+
+    #[test]
+    fn cloud_wind_uses_authoritative_bearing_and_bounded_speed() {
+        let mut environment = environment();
+        environment.weather.wind_speed_bps = 10_000;
+        environment.weather.atmosphere.wind_direction_degrees = 90;
+        let velocity = cloud_wind_velocity(&environment);
+        assert!((velocity.x - CLOUD_MAX_WIND_METRES_PER_SECOND).abs() < 0.001);
+        assert!(velocity.y.abs() < 0.001);
     }
 }

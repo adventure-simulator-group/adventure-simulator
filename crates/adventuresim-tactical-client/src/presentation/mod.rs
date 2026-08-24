@@ -38,7 +38,8 @@ use weather::*;
 pub(crate) use clouds::TacticalCloudLayer;
 #[allow(unused_imports)]
 pub(crate) use clouds::{
-    TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride, TacticalCloudCaptureProfile,
+    TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride,
+    TacticalCloudCaptureProfile,
 };
 #[allow(unused_imports)]
 pub(crate) use environment::{
