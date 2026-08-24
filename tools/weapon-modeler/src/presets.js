@@ -195,9 +195,18 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
     name,
     family,
     description,
-    definition: { components },
-    controls: controls
-      ? [
+    definition: { gripClearance: 0.05, components },
+    controls: [
+      {
+        label: "Grip clearance",
+        path: "gripClearance",
+        min: 0.02,
+        max: 0.08,
+        step: 0.005,
+        unit: "m",
+      },
+      ...(controls
+        ? [
           {
             label: "Blade length",
             path: `components.${bi}.length`,
@@ -292,9 +301,10 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
                 },
               ]
             : []),
-          ...extraControls,
-        ]
-      : [],
+            ...extraControls,
+          ]
+        : []),
+    ],
   };
 };
 

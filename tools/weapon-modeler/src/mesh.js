@@ -235,8 +235,9 @@ const REQUIRED_FIELDS = {
 function schemaErrors(input) {
   const errors = [];
   if (!input || typeof input !== "object" || Array.isArray(input)) return ["definition must be an object"];
-  for (const key of Object.keys(input)) if (!["shaft", "components"].includes(key)) errors.push(`definition: unknown field ${key}`);
+  for (const key of Object.keys(input)) if (!["shaft", "components", "gripClearance"].includes(key)) errors.push(`definition: unknown field ${key}`);
   if (!Array.isArray(input.components)) return ["definition.components must be an array"];
+  if (input.gripClearance !== undefined && (!Number.isFinite(input.gripClearance) || input.gripClearance < 0)) errors.push("definition.gripClearance must be a non-negative finite distance");
   if (input.shaft !== undefined && (!input.shaft || typeof input.shaft !== "object" || !Number.isFinite(input.shaft.length) || !Number.isFinite(input.shaft.radius))) errors.push("shaft requires finite length and radius");
   if (input.shaft && typeof input.shaft === "object") {
     for (const key of Object.keys(input.shaft)) if (!SHAFT_KEYS.has(key)) errors.push(`shaft: unknown field ${key}`);
@@ -1437,6 +1438,12 @@ function validateWeaponUnchecked(definition, controls = []) {
   const finitePositive = (value, label, allowZero = false) => {
     if (!Number.isFinite(value) || (allowZero ? value < 0 : value <= 0)) errors.push(`${label} must be ${allowZero ? "non-negative" : "positive"}`);
   };
+  if (resolved.gripClearance !== undefined) {
+    const gripBase = resolved._frames["grip.base"],
+      gripTop = resolved._frames["grip.top"];
+    if (!gripBase || !gripTop) errors.push("gripClearance requires grip.base and grip.top frames");
+    else if (resolved.gripClearance > length(subtract(gripTop, gripBase)) + 1e-9) errors.push("gripClearance must remain within the modeled grip");
+  }
   if (resolved.shaft) {
     finitePositive(resolved.shaft.length, "shaft.length");
     finitePositive(resolved.shaft.radius, "shaft.radius");

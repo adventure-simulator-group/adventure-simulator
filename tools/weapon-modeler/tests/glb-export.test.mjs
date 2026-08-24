@@ -61,6 +61,8 @@ test("rejects a rig that does not contain the requested attachment", () => {
 });
 
 test("chooses the modeled grip center and a bounded polearm handhold", () => {
+  const configured = automaticGripPoint({ gripClearance: 0.05, _frames: { "grip.base": [0, 0.1, 0], "grip.top": [0, 0.3, 0] } });
+  assert.ok(Math.abs(configured[1] - 0.25) < 1e-9);
   assert.deepEqual(automaticGripPoint({ _frames: { "grip.center": [0, 0.22, 0] } }), [0, 0.22, 0]);
   assert.deepEqual(automaticGripPoint({ _frames: { "shaft.bottom": [0, 0, 0], "shaft.top": [0, 4, 0] } }), [0, 0.45, 0]);
 });
