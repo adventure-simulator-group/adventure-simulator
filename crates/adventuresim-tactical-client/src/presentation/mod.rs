@@ -104,6 +104,38 @@ use bevy::{
     },
     shader::ShaderRef,
 };
+use web_time::Instant;
+
+#[derive(Resource)]
+pub(crate) struct ClientStartupTiming {
+    started_at: Instant,
+    terrain_preparation_reported: bool,
+}
+
+impl ClientStartupTiming {
+    pub(crate) fn new(started_at: Instant) -> Self {
+        Self {
+            started_at,
+            terrain_preparation_reported: false,
+        }
+    }
+
+    pub(crate) fn mark(&self, phase: &str) {
+        let elapsed_ms = self.started_at.elapsed().as_millis();
+        info!(phase, elapsed_ms, "[startup] tactical client phase");
+        #[cfg(not(target_family = "wasm"))]
+        eprintln!("[startup] native client phase={phase:?} elapsed_ms={elapsed_ms}");
+    }
+
+    pub(crate) fn mark_terrain_prepared_once(&mut self) {
+        if self.terrain_preparation_reported {
+            return;
+        }
+        self.terrain_preparation_reported = true;
+        self.mark("first tactical terrain prepared");
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TacticalPresentationPlugin {
     pub shadows_enabled: bool,

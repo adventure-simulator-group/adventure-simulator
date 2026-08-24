@@ -441,12 +441,22 @@ pub fn seed_standalone_tactical_mission(
     }
     adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
 
+    if !ctx
+        .db
+        .settlement()
+        .iter()
+        .any(|settlement| settlement.scene_key == scene_key)
+    {
+        seed_tactical_host_world(ctx)?;
+    }
     if ctx.db.character().id().find(character_id).is_none() {
         let default =
             adventuresim_core::starting_character::default_character_with_id(character_id);
         crate::character::insert_starting_character(ctx, &default)?;
     }
     let party_id = create_solo_party_for_character(ctx, character_id)?;
+    crate::tactical::retire_interrupted_standalone_server_for_character(ctx, character_id)?;
+    retire_interrupted_standalone_requests(ctx, character_id, &party_id, &mission_id)?;
 
     let settlement = ctx
         .db
@@ -709,9 +719,60 @@ pub fn seed_standalone_tactical_mission(
     Ok(())
 }
 
+fn retire_interrupted_standalone_requests(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_id: &str,
+    next_mission_id: &str,
+) -> Result<(), String> {
+    let requests: Vec<_> = ctx
+        .db
+        .tactical_server_request_authority()
+        .iter()
+        .filter(|request| {
+            request.requested_by == character_id
+                && request.party_id == party_id
+                && request.mission_id != next_mission_id
+        })
+        .collect();
+    for request in requests {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&request.mission_id)
+            .ok_or("Interrupted tactical request has no mission authority")?;
+        if !mission.case_id.starts_with("case:standalone:") {
+            return Err("Refusing to retire a non-standalone tactical request".into());
+        }
+        ctx.db
+            .tactical_server_request_authority()
+            .mission_id()
+            .delete(&request.mission_id);
+        ctx.db
+            .tactical_server_claim()
+            .mission_id()
+            .delete(&request.mission_id);
+        fail_bound_mission_attempt(ctx, &request.mission_id)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn seed_world(
     ctx: &ReducerContext,
     include_errantry_demo_chapter: bool,
+) -> Result<(), String> {
+    seed_world_rows(ctx, include_errantry_demo_chapter, true)
+}
+
+fn seed_tactical_host_world(ctx: &ReducerContext) -> Result<(), String> {
+    seed_world_rows(ctx, false, false)
+}
+
+fn seed_world_rows(
+    ctx: &ReducerContext,
+    include_errantry_demo_chapter: bool,
+    materialize_strategic_activity: bool,
 ) -> Result<(), String> {
     const DEMO_SOURCES: &str = "- **Fabelgeist renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
 
@@ -927,6 +988,10 @@ pub(crate) fn seed_world(
                 sources: "- **Fabelgeist demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
             });
         }
+    }
+
+    if !materialize_strategic_activity {
+        return Ok(());
     }
 
     let settlement_ids: Vec<_> = ctx
@@ -2394,7 +2459,7 @@ mod developer_quest_source_tests {
 
         let source = include_str!("mission_bootstrap.rs");
         let seed = source
-            .split("pub(crate) fn seed_world")
+            .split("fn seed_world_rows")
             .nth(1)
             .unwrap()
             .split("pub fn ensure_settlement_activity")
@@ -2421,6 +2486,42 @@ mod developer_quest_source_tests {
         assert!(representative_seed.contains("organization_representative_id"));
         assert!(representative_seed.contains("representative.organization_id = organization.id"));
         assert!(representative_seed.contains("\"organization-representative\""));
+
+        let standalone = source
+            .split("pub fn seed_standalone_tactical_mission")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn seed_world")
+            .next()
+            .unwrap();
+        assert!(standalone.contains("seed_tactical_host_world(ctx)"));
+        let create_party = standalone
+            .find("create_solo_party_for_character")
+            .expect("standalone party creation");
+        let retire_server = standalone
+            .find("retire_interrupted_standalone_server_for_character")
+            .expect("interrupted server retirement");
+        let retire_request = standalone
+            .find("retire_interrupted_standalone_requests")
+            .expect("interrupted request retirement");
+        let new_case_site = standalone
+            .find("let case_site_id")
+            .expect("fresh standalone case site");
+        assert!(create_party < retire_server);
+        assert!(retire_server < retire_request);
+        assert!(retire_request < new_case_site);
+        assert!(
+            standalone.find("seed_tactical_host_world(ctx)").unwrap()
+                < standalone.find("ctx.db.character().id()").unwrap()
+        );
+        let tactical_host = source
+            .split("fn seed_tactical_host_world")
+            .nth(1)
+            .unwrap()
+            .split("fn seed_world_rows")
+            .next()
+            .unwrap();
+        assert!(tactical_host.contains("seed_world_rows(ctx, false, false)"));
 
         let bootstrap = source
             .split("pub fn bootstrap_development_world")

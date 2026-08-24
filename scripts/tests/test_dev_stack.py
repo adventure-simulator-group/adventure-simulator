@@ -92,6 +92,76 @@ class ProfileTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_startup_benchmark_persists_early_and_attached_phases(self):
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(
+            dev_stack.time, "monotonic", side_effect=[10.0, 11.0, 12.0, 13.0, 14.0]
+        ):
+            benchmark = dev_stack.StartupBenchmark.start()
+            benchmark.record("build", 10.0)
+            output = Path(temporary) / "startup.jsonl"
+            benchmark.attach(output)
+            benchmark.record("database", 12.0)
+            events = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(
+                [event["phase"] for event in events], ["build", "database"]
+            )
+            self.assertEqual(events[0]["duration_seconds"], 1.0)
+            self.assertEqual(events[1]["elapsed_seconds"], 4.0)
+
+    def test_binding_verification_cache_requires_module_and_bindings_digests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary) / "bindings.json"
+            dev_stack.atomic_write_json(cache, {
+                "format": 1,
+                "module_input_digest": "module-a",
+                "generated_bindings_digest": "bindings-a",
+            })
+            with mock.patch.object(
+                dev_stack, "generated_bindings_digest", return_value="bindings-a"
+            ), mock.patch.object(dev_stack.tempfile, "TemporaryDirectory") as generated:
+                self.assertEqual(dev_stack.verify_bindings(
+                    cache_path=cache, current_module_digest="module-a"
+                ), 0)
+                generated.assert_not_called()
+
+            failed = mock.Mock(returncode=7, stdout="generation failed")
+            with mock.patch.object(
+                dev_stack, "generated_bindings_digest", return_value="bindings-b"
+            ), mock.patch.object(dev_stack, "run_checked", return_value=failed):
+                self.assertEqual(dev_stack.verify_bindings(
+                    cache_path=cache, current_module_digest="module-a"
+                ), 7)
+
+    def test_tactical_profile_identity_invalidates_module_and_bootstrap_changes(self):
+        values = dev_stack.profile_values("demo", 23100)
+        first = dev_stack.tactical_profile_identity(values, "module-a", "token-a")
+        self.assertNotEqual(
+            first,
+            dev_stack.tactical_profile_identity(values, "module-b", "token-a"),
+        )
+        self.assertNotEqual(
+            first,
+            dev_stack.tactical_profile_identity(values, "module-a", "token-b"),
+        )
+        self.assertNotIn("token-a", json.dumps(first))
+
+    @mock.patch.object(dev_stack, "tactical_profile_database_is_ready", return_value=True)
+    def test_tactical_profile_cache_requires_exact_identity_and_live_seed(
+        self, database_is_ready
+    ):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "state.json"
+            identity = {"format": 1, "module_input_digest": "module-a"}
+            dev_stack.atomic_write_json(state, identity)
+            self.assertTrue(dev_stack.tactical_profile_cache_is_valid(
+                state, identity, "http://localhost:1", "db"
+            ))
+            self.assertFalse(dev_stack.tactical_profile_cache_is_valid(
+                state, {**identity, "module_input_digest": "module-b"},
+                "http://localhost:1", "db",
+            ))
+            self.assertEqual(database_is_ready.call_count, 1)
+
     @mock.patch.object(dev_stack, "run_checked")
     def test_authenticated_cli_token_is_forwarded_without_logging(self, run_checked):
         token = "header.payload.signature"
@@ -289,6 +359,15 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 dev_stack.stop_recorded(metadata, {"role": "test"})
             self.assertTrue(metadata.exists())
+
+    def test_termination_accepts_a_concurrent_natural_exit(self):
+        expected = {"pid": 42, "executable": "owned", "start_token": "start"}
+        with mock.patch.object(
+            dev_stack, "terminate_verified", side_effect=ValueError("already exiting")
+        ), mock.patch.object(
+            dev_stack, "process_snapshot", side_effect=[expected, None]
+        ), mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.terminate_verified_or_accept_exit(expected)
 
     def test_canonical_stop_does_not_require_tactical_binaries(self):
         with tempfile.TemporaryDirectory() as temp, \
@@ -838,6 +917,16 @@ class WorkflowTests(unittest.TestCase):
                     recorded,
                 )
             self.assertEqual(sql.call_count, 3)
+
+    def test_client_readiness_requires_server_received_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            client_log = Path(temporary) / "client.log"
+            server_log = Path(temporary) / "server.log"
+            client_log.write_text("render device ready\n")
+            server_log.write_text("[startup] first server input received for 399v0\n")
+            process = mock.Mock()
+            process.poll.return_value = None
+            dev_stack.wait_for_tactical_client(process, client_log, server_log)
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_sql_readiness_accepts_cli_quoted_text_rows(self, run_checked):

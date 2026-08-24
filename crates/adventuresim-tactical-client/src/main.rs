@@ -30,6 +30,7 @@ use clap::{Parser, ValueEnum};
 use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
+use web_time::Instant;
 
 #[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
@@ -213,6 +214,9 @@ pub fn wasm_quote_weapon_design(design_json: String) -> Result<String, JsValue> 
 }
 
 fn run(args: Args, initial_tactical: bool) {
+    let startup_started_at = Instant::now();
+    #[cfg(not(target_family = "wasm"))]
+    eprintln!("[startup] native client process entry");
     let mut app = App::new();
     #[cfg(not(target_family = "wasm"))]
     let asset_root = native_asset_root();
@@ -308,6 +312,7 @@ fn run(args: Args, initial_tactical: bool) {
         },
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
+    .insert_resource(presentation::ClientStartupTiming::new(startup_started_at))
     .add_systems(Startup, setup_initial_client)
     .add_systems(
         Update,
@@ -366,6 +371,11 @@ fn run(args: Args, initial_tactical: bool) {
         app.add_systems(Update, configure_headless_render_target);
     }
 
+    #[cfg(not(target_family = "wasm"))]
+    eprintln!(
+        "[startup] native client app constructed elapsed_ms={}",
+        startup_started_at.elapsed().as_millis()
+    );
     app.run();
 }
 
@@ -437,6 +447,7 @@ fn setup_initial_client(
     mut commands: Commands,
     args: Res<Args>,
     initial_tactical: Res<InitialTacticalMode>,
+    startup: Res<presentation::ClientStartupTiming>,
 ) {
     if !initial_tactical.0 {
         return;
@@ -445,6 +456,7 @@ fn setup_initial_client(
         player_id: args.id,
         server_url: args.server_addr.clone(),
     });
+    startup.mark("startup schedule complete; connection requested");
 }
 
 fn capture_cursor(
