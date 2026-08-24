@@ -3,15 +3,13 @@ use super::*;
 /// John has three unsupported fixed samples in the calibrated quickstep. The
 /// blend reaches guard on the last of them, before the landing sample.
 const QUICKSTEP_GUARD_FK_BLEND_TICKS: u64 = 3;
-// The John calibration releases support at semantic contact and is physically
-// back on the ground near 62% of the complete action. Preserve that
-// visible unsupported interval even when replication skips the very short
-// controller-airborne sample.
+// The John calibration releases support at semantic contact. Preserve
+// airborne FK ownership through the remainder of the action even when
+// replication skips the controller's unsupported samples.
 const QUICKSTEP_TAKEOFF_PHASE: f32 = 0.50;
-const QUICKSTEP_LANDING_PHASE: f32 = 0.62;
 
 fn quickstep_phase_is_airborne(phase: f32) -> bool {
-    (QUICKSTEP_TAKEOFF_PHASE..QUICKSTEP_LANDING_PHASE).contains(&phase)
+    phase >= QUICKSTEP_TAKEOFF_PHASE
 }
 
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -72,13 +70,10 @@ pub(in crate::animation) fn apply(
         let quickstep_phase = skeleton.action_phase();
         let predicted_airborne =
             skeleton.is_quickstep() && quickstep_phase_is_airborne(quickstep_phase);
-        let presentation_airborne = skeleton.is_quickstep()
-            && quickstep_phase < QUICKSTEP_LANDING_PHASE
-            && (!skeleton.is_grounded() || predicted_airborne);
+        let presentation_airborne =
+            skeleton.is_quickstep() && (!skeleton.is_grounded() || predicted_airborne);
         let landing_from_quickstep = state.airborne_start_tick.is_some()
-            && (!skeleton.is_quickstep()
-                || quickstep_phase >= QUICKSTEP_LANDING_PHASE
-                || (skeleton.is_grounded() && !predicted_airborne));
+            && (!skeleton.is_quickstep() || (skeleton.is_grounded() && !predicted_airborne));
         if !skeleton.is_quickstep() && !landing_from_quickstep {
             // Remember the actual post-footwork guard chain before the action
             // begins. Capturing it after the dodge route is already active can
@@ -500,8 +495,8 @@ mod tests {
             QUICKSTEP_TAKEOFF_PHASE - 0.001
         ));
         assert!(quickstep_phase_is_airborne(QUICKSTEP_TAKEOFF_PHASE));
-        assert!(quickstep_phase_is_airborne(QUICKSTEP_LANDING_PHASE - 0.001));
-        assert!(!quickstep_phase_is_airborne(QUICKSTEP_LANDING_PHASE));
+        assert!(quickstep_phase_is_airborne(0.999));
+        assert!(quickstep_phase_is_airborne(1.0));
     }
 
     #[test]

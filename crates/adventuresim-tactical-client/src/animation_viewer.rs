@@ -9,9 +9,8 @@ use std::{
 
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::physics::{
-    AdventureSimulatorPhysicsPlugin, QUICKSTEP_FORCE_CURVE_AREA,
-    TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND, TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED,
-    TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES, quickstep_force_curve,
+    AdventureSimulatorPhysicsPlugin, TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND,
+    TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED, quickstep_force_curve,
     quickstep_peak_horizontal_force_newtons, quickstep_push_seconds,
 };
 use adventuresim_tactical_core::prelude::*;
@@ -1372,14 +1371,6 @@ fn quickstep_release_frame() -> usize {
     ticks
 }
 
-fn quickstep_flight_ticks() -> usize {
-    let flight_seconds = 2.0
-        * (2.0 * TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES
-            / TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED)
-            .sqrt();
-    (flight_seconds * SAMPLE_HZ).ceil() as usize
-}
-
 fn quickstep_landing_frame() -> usize {
     ((quickstep_release_frame() + 1)..(quickstep_release_frame() + SAMPLE_HZ as usize))
         .find(|&frame| quickstep_fixture_vertical_state(frame).0 <= 0.0)
@@ -1389,14 +1380,14 @@ fn quickstep_landing_frame() -> usize {
 fn quickstep_fixture_vertical_state(scenario_frame: usize) -> (f32, f32) {
     let config = TacticalCombatConfig::default();
     let motor = &config.movement.motor;
-    let duration = quickstep_push_seconds(QUICKSTEP_FIXTURE_LEG_AGILITY, motor);
     let push_ticks = quickstep_push_ticks();
     let release_frame = quickstep_release_frame();
-    let target_vertical_speed = (2.0
-        * motor.gravity_metres_per_second_squared
-        * config.movement.jump_heights_metres.quickstep)
-        .sqrt();
-    let peak_acceleration = target_vertical_speed / (duration * QUICKSTEP_FORCE_CURVE_AREA);
+    let peak_acceleration = quickstep_peak_horizontal_force_newtons(
+        QUICKSTEP_FIXTURE_BIOLOGICAL_MASS_KG,
+        QUICKSTEP_FIXTURE_LEG_STRENGTH,
+        motor,
+    ) / QUICKSTEP_FIXTURE_TOTAL_MASS_KG
+        * motor.quickstep_takeoff_angle_degrees.to_radians().tan();
     let mut height = 0.0;
     let mut velocity = 0.0;
     for tick in 0..scenario_frame {
@@ -2986,10 +2977,10 @@ fn finish_capture(
             <= if metrics.scenario.starts_with("attack-live-") {
                 0.30
             } else if metrics.scenario == "quickstep-right" {
-                // The distal foot reaches 22.67 cm on the first ordinary
+                // The distal foot reaches 24.2 cm on the first ordinary
                 // post-impact guard swing; the controller root itself remains
                 // continuous and the dedicated foot/knee limits still apply.
-                0.23
+                0.25
             } else {
                 0.20
             }
@@ -3846,10 +3837,10 @@ fn both_feet_behind_hips(frames: &[FrameSample]) -> bool {
 fn foot_continuity_limit(scenario: &str) -> f32 {
     if scenario == "quickstep-right" {
         // The unsupported legs FK-recover during the short ballistic flight.
-        // The later 22.67 cm peak is the trailing foot's ordinary guard swing
+        // The later 24.2 cm peak is the trailing foot's ordinary guard swing
         // while the root sheds residual velocity after impact, not an
         // airborne target correction or a landing teleport.
-        0.23
+        0.25
     } else if scenario.starts_with("attack-live-") {
         0.21
     } else if scenario.starts_with("dive-") || scenario.ends_with("-get-up") {
@@ -5277,11 +5268,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn quickstep_fixture_uses_the_configured_ballistic_airtime() {
-        assert_eq!(quickstep_flight_ticks(), 3);
+    fn quickstep_fixture_keeps_feet_airborne_until_action_end() {
         assert_eq!(quickstep_push_ticks(), 25);
         assert_eq!(quickstep_release_frame(), 11);
-        assert_eq!(quickstep_landing_frame(), 14);
+        assert_eq!(quickstep_landing_frame(), 22);
+        assert_eq!(quickstep_landing_frame(), quickstep_action_ticks());
     }
 
     #[test]

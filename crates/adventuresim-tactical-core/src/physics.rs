@@ -63,7 +63,6 @@ pub const TACTICAL_ROLL_SPEED_METRES_PER_SECOND: f32 = 1.3;
 pub const TACTICAL_JUMP_HEIGHT_METRES: f32 = 0.30;
 pub const TACTICAL_DIVE_JUMP_HEIGHT_METRES: f32 = 0.20;
 pub const TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND: f32 = 7.0;
-pub const TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES: f32 = 0.002;
 pub const TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND: f32 = 3.5;
 pub const TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED: f32 = 9.81;
 pub const TACTICAL_MAXIMUM_STEP_HEIGHT_METRES: f32 = 0.35;
@@ -220,8 +219,6 @@ impl QuickstepPush {
 }
 
 const QUICKSTEP_FORCE_CURVE_RAMP_FRACTION: f32 = 0.31;
-pub const QUICKSTEP_FORCE_CURVE_AREA: f32 = 0.69;
-
 /// Smooth rise, maximal mid-push force, and smooth release. Its normalized
 /// area is 0.69, matching the force-time profile used to calibrate the
 /// biomechanical values in `combat.yaml`.
@@ -599,18 +596,13 @@ fn apply_character_motor(
                         leg_strength,
                         motor,
                     ) * force_scale;
-                    let target_vertical_speed = (2.0
-                        * motor.gravity_metres_per_second_squared
-                        * movement_config.jump_heights_metres.quickstep)
-                        .sqrt();
-                    let vertical_net_peak_force =
-                        mass_kg * target_vertical_speed / (duration * QUICKSTEP_FORCE_CURVE_AREA);
+                    let vertical_net_force =
+                        horizontal_force * motor.quickstep_takeoff_angle_degrees.to_radians().tan();
                     velocity.x +=
                         world_direction.x * horizontal_force / mass_kg * time.delta_secs();
                     velocity.z +=
                         world_direction.y * horizontal_force / mass_kg * time.delta_secs();
-                    velocity.y +=
-                        vertical_net_peak_force * force_scale / mass_kg * time.delta_secs();
+                    velocity.y += vertical_net_force / mass_kg * time.delta_secs();
                     // The action coasts after release; neither the ordinary
                     // target-speed motor nor an Ahoy jump event may inject or
                     // remove takeoff momentum.

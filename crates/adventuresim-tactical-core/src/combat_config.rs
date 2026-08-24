@@ -102,6 +102,9 @@ pub struct CharacterMotorConfig {
     /// Maximum planar root travel while both quickstep feet remain planted.
     /// Reaching this extension releases support even if force time remains.
     pub quickstep_maximum_supported_root_displacement_metres: f32,
+    /// Upward angle of the propulsive quickstep force above horizontal. The
+    /// separate baseline normal force supports body weight while planted.
+    pub quickstep_takeoff_angle_degrees: f32,
     /// Reference strength corresponding to the configured forces.
     pub reference_leg_strength: f32,
     /// Reference agility corresponding to the configured lateral control.
@@ -145,7 +148,6 @@ pub struct MovementSpeedsConfig {
 pub struct JumpHeightsConfig {
     pub ordinary: f32,
     pub dive: f32,
-    pub quickstep: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -311,7 +313,6 @@ impl TacticalCombatConfig {
             movement.speeds_metres_per_second.quickstep,
             movement.jump_heights_metres.ordinary,
             movement.jump_heights_metres.dive,
-            movement.jump_heights_metres.quickstep,
             movement.prone_lateral_speed_scale,
             movement.prone_effort_scale,
             movement.motor.gravity_metres_per_second_squared,
@@ -329,6 +330,7 @@ impl TacticalCombatConfig {
             movement
                 .motor
                 .quickstep_maximum_supported_root_displacement_metres,
+            movement.motor.quickstep_takeoff_angle_degrees,
             movement.motor.reference_leg_strength,
             movement.motor.reference_leg_agility,
             movement.motor.reference_lateral_acceleration_gravities,
@@ -356,6 +358,7 @@ impl TacticalCombatConfig {
             || movement.motor.air_control_force_scale > 1.0
             || movement.motor.reference_lateral_acceleration_gravities > 2.0
             || movement.motor.traction_coefficient > 2.0
+            || movement.motor.quickstep_takeoff_angle_degrees >= 45.0
             || movement.motor.maximum_step_height_metres > 1.0
             || movement.motor.maximum_walkable_slope_degrees >= 90.0
         {
@@ -551,7 +554,6 @@ impl Default for TacticalCombatConfig {
                 jump_heights_metres: JumpHeightsConfig {
                     ordinary: 0.30,
                     dive: 0.20,
-                    quickstep: 0.002,
                 },
                 prone_lateral_speed_scale: 0.375,
                 prone_effort_scale: 3.0,
@@ -566,6 +568,7 @@ impl Default for TacticalCombatConfig {
                     reference_quickstep_push_seconds: 0.40,
                     quickstep_push_seconds_reduction_per_agility: 0.02,
                     quickstep_maximum_supported_root_displacement_metres: 0.25,
+                    quickstep_takeoff_angle_degrees: 9.0,
                     reference_leg_strength: 3.0,
                     reference_leg_agility: 3.0,
                     reference_lateral_acceleration_gravities: 0.45,
