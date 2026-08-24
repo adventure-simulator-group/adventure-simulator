@@ -1,6 +1,9 @@
 //! Tactical grab input, QWERTY slot HUD, and placeholder item presentation.
 
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::LazyLock,
+};
 
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
@@ -12,17 +15,23 @@ use adventuresim_weapon_model::{
     generate_icon,
 };
 use bevy::{
-    asset::RenderAssetUsages,
-    mesh::{Indices, PrimitiveTopology},
+    asset::{LoadState, RenderAssetUsages},
+    camera::visibility::NoFrustumCulling,
+    gltf::{Gltf, GltfAssetLabel, GltfMesh, GltfNode, GltfSkin},
+    mesh::{
+        Indices, PrimitiveTopology,
+        skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+    },
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiTextureHandle, egui};
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
+use serde::Deserialize;
 
 use crate::{
     animation::{
-        AuthoredBindTransform, BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig,
+        AuthoredBindTransform, BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig, MhrBone,
         authored_bind_global,
     },
     player::ClientPlayer,
@@ -120,9 +129,13 @@ impl Plugin for TacticalEquipmentPlugin {
                 Update,
                 (
                     spawn_item_placeholders,
+                    request_procedural_equipment_models,
+                    resolve_procedural_equipment_models,
+                    sync_procedural_equipment_skins,
                     update_item_placeholders,
                     update_pickup_outlines,
-                ),
+                )
+                    .chain(),
             )
             .add_systems(EguiPrimaryContextPass, draw_slot_hud);
     }
@@ -182,6 +195,84 @@ struct ItemPlaceholder(Entity);
 
 #[derive(Component)]
 struct PickupOutline(Entity);
+
+#[derive(Deserialize)]
+struct ProceduralEquipmentManifest {
+    assets: Vec<ProceduralEquipmentManifestAsset>,
+}
+
+#[derive(Deserialize)]
+struct ProceduralEquipmentManifestAsset {
+    item_id: String,
+    placement_id: String,
+    file: String,
+}
+
+static PROCEDURAL_EQUIPMENT_ASSETS: LazyLock<BTreeMap<String, BTreeMap<String, String>>> =
+    LazyLock::new(|| {
+        let manifest: ProceduralEquipmentManifest = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/equipment/procedural/manifest.json"
+        )))
+        .expect("committed procedural equipment manifest must be valid");
+        let mut assets = BTreeMap::<String, BTreeMap<String, String>>::new();
+        for asset in manifest.assets {
+            let replaced = assets
+                .entry(asset.item_id)
+                .or_default()
+                .insert(asset.placement_id, asset.file);
+            assert!(
+                replaced.is_none(),
+                "procedural equipment manifest keys must be unique"
+            );
+        }
+        assets
+    });
+
+fn procedural_equipment_file(item_id: &str, placement_id: Option<&str>) -> Option<&'static str> {
+    let placements = PROCEDURAL_EQUIPMENT_ASSETS.get(item_id)?;
+    match placement_id {
+        Some(placement_id) => placements.get(placement_id),
+        None => placements.values().next(),
+    }
+    .map(String::as_str)
+}
+
+fn procedural_equipment_asset_path(file: &str) -> String {
+    let path = format!("equipment/procedural/{file}");
+    #[cfg(not(target_family = "wasm"))]
+    {
+        format!("workspace://{path}")
+    }
+    #[cfg(target_family = "wasm")]
+    {
+        path
+    }
+}
+
+#[derive(Component)]
+struct ProceduralEquipmentPresentation {
+    asset_path: String,
+}
+
+#[derive(Component)]
+struct ProceduralEquipmentRequest(Handle<Gltf>);
+
+#[derive(Component)]
+struct ProceduralEquipmentResolved;
+
+#[derive(Component)]
+struct ProceduralEquipmentFailed;
+
+#[derive(Component)]
+struct ItemFallback(Entity);
+
+#[derive(Component)]
+struct ProceduralEquipmentPart {
+    item: Entity,
+    inverse_bindposes: Handle<SkinnedMeshInverseBindposes>,
+    joint_names: Vec<String>,
+}
 
 fn held_item(
     actor: Entity,
@@ -1235,12 +1326,17 @@ fn spawn_item_placeholders(
         (
             Entity,
             &EquipmentPhysical,
+            Option<&EquipmentTopology>,
             Option<&ItemProperties>,
             Option<&WeaponAppearance>,
             Option<&WeaponHolderAppearance>,
         ),
         Or<(
             Added<EquipmentPhysical>,
+            Added<EquipmentTopology>,
+            Changed<EquipmentTopology>,
+            Added<ItemProperties>,
+            Changed<ItemProperties>,
             Added<WeaponAppearance>,
             Changed<WeaponAppearance>,
             Added<WeaponHolderAppearance>,
@@ -1252,7 +1348,7 @@ fn spawn_item_placeholders(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cache: ResMut<WeaponMeshCache>,
 ) {
-    for (item, physical, properties, appearance, holder_appearance) in &added {
+    for (item, physical, topology, properties, appearance, holder_appearance) in &added {
         if !physical.is_valid() {
             continue;
         }
@@ -1261,16 +1357,25 @@ fn spawn_item_placeholders(
                 commands.entity(root).despawn();
             }
         }
-        let root = commands
-            .spawn((
-                Name::new("Tactical item placeholder"),
-                ItemPlaceholder(item),
-                Transform::default(),
-                // Attachment is resolved on the following update. Keeping the
-                // root hidden avoids a one-frame flash at the world origin.
-                Visibility::Hidden,
-            ))
-            .id();
+        let mut root_commands = commands.spawn((
+            Name::new("Tactical item placeholder"),
+            ItemPlaceholder(item),
+            Transform::default(),
+            // Attachment is resolved on the following update. Keeping the
+            // root hidden avoids a one-frame flash at the world origin.
+            Visibility::Hidden,
+        ));
+        if let Some(file) = properties.and_then(|properties| {
+            procedural_equipment_file(
+                &properties.id,
+                topology.and_then(|topology| topology.placement_id.as_deref()),
+            )
+        }) {
+            root_commands.insert(ProceduralEquipmentPresentation {
+                asset_path: procedural_equipment_asset_path(file),
+            });
+        }
+        let root = root_commands.id();
         let (generated, part_name) = if let Some(holder) =
             holder_appearance.and_then(|appearance| {
                 cached_holder(appearance, &mut cache, &mut meshes, &mut materials)
@@ -1315,6 +1420,7 @@ fn spawn_item_placeholders(
         } else {
             commands.entity(root).with_child((
                 Name::new("Tactical item fallback"),
+                ItemFallback(item),
                 Mesh3d(meshes.add(Cuboid::new(
                     physical.dimensions_m.x,
                     physical.dimensions_m.y,
@@ -1336,6 +1442,192 @@ fn spawn_item_placeholders(
                 },
                 OutlineMode::FloodFlat,
             ));
+        }
+    }
+}
+
+fn request_procedural_equipment_models(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    pending: Query<(Entity, &ProceduralEquipmentPresentation), Without<ProceduralEquipmentRequest>>,
+) {
+    for (entity, presentation) in &pending {
+        commands.entity(entity).insert(ProceduralEquipmentRequest(
+            asset_server.load(&presentation.asset_path),
+        ));
+    }
+}
+
+fn mark_procedural_equipment_failed(
+    commands: &mut Commands,
+    entity: Entity,
+    path: &str,
+    reason: &str,
+) {
+    warn!(asset = path, %reason, "Procedural equipment asset is unusable; retaining cuboid fallback");
+    commands.entity(entity).insert(ProceduralEquipmentFailed);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_procedural_equipment_models(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    gltfs: Res<Assets<Gltf>>,
+    gltf_meshes: Res<Assets<GltfMesh>>,
+    gltf_skins: Res<Assets<GltfSkin>>,
+    gltf_nodes: Res<Assets<GltfNode>>,
+    pending: Query<
+        (
+            Entity,
+            &ItemPlaceholder,
+            &ProceduralEquipmentPresentation,
+            &ProceduralEquipmentRequest,
+        ),
+        (
+            Without<ProceduralEquipmentResolved>,
+            Without<ProceduralEquipmentFailed>,
+        ),
+    >,
+    fallbacks: Query<(Entity, &ItemFallback)>,
+) {
+    for (root, placeholder, presentation, request) in &pending {
+        if matches!(
+            asset_server.load_state(request.0.id()),
+            LoadState::Failed(_)
+        ) {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "root glTF failed to load",
+            );
+            continue;
+        }
+        let Some(gltf) = gltfs.get(&request.0) else {
+            continue;
+        };
+        let Some(gltf_mesh) = gltf.meshes.first().and_then(|mesh| gltf_meshes.get(mesh)) else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "missing mesh zero",
+            );
+            continue;
+        };
+        let Some(primitive) = gltf_mesh.primitives.first() else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "mesh zero has no primitive",
+            );
+            continue;
+        };
+        let Some(skin) = gltf.skins.first().and_then(|skin| gltf_skins.get(skin)) else {
+            continue;
+        };
+        let Some(joint_names) = skin
+            .joints
+            .iter()
+            .map(|joint| gltf_nodes.get(joint).map(|node| node.name.clone()))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some(material) = primitive.material.as_ref() else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "primitive has no material",
+            );
+            continue;
+        };
+        let Some(material_index) = gltf
+            .materials
+            .iter()
+            .position(|candidate| candidate.id() == material.id())
+        else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "primitive material is absent from the glTF material table",
+            );
+            continue;
+        };
+        let material_label = format!(
+            "{}/std",
+            GltfAssetLabel::Material {
+                index: material_index,
+                is_scale_inverted: false,
+            }
+        );
+        let material: Handle<StandardMaterial> =
+            asset_server.load(format!("{}#{material_label}", presentation.asset_path));
+        commands.entity(root).with_child((
+            Name::new("Procedural armor or clothing"),
+            Mesh3d(primitive.mesh.clone()),
+            MeshMaterial3d(material),
+            Transform::IDENTITY,
+            NoFrustumCulling,
+            ProceduralEquipmentPart {
+                item: placeholder.0,
+                inverse_bindposes: skin.inverse_bind_matrices.clone(),
+                joint_names,
+            },
+            PickupOutline(placeholder.0),
+            OutlineVolume {
+                visible: false,
+                colour: Color::WHITE,
+                width: 4.0,
+            },
+            OutlineMode::FloodFlat,
+        ));
+        for (fallback, item) in &fallbacks {
+            if item.0 == placeholder.0 {
+                commands.entity(fallback).despawn();
+            }
+        }
+        commands.entity(root).insert(ProceduralEquipmentResolved);
+    }
+}
+
+fn sync_procedural_equipment_skins(
+    mut commands: Commands,
+    parts: Query<(Entity, &ProceduralEquipmentPart, Option<&SkinnedMesh>)>,
+    items: Query<(Option<&ItemOf>, Has<TacticalSceneItem>)>,
+    bones: Query<(Entity, &MhrBone, &Name)>,
+) {
+    let mut rig_bones = HashMap::<Entity, HashMap<String, Entity>>::new();
+    for (entity, bone, name) in &bones {
+        rig_bones
+            .entry(bone.owner)
+            .or_default()
+            .insert(name.as_str().to_owned(), entity);
+    }
+    for (entity, part, current_skin) in &parts {
+        let desired_joints = items
+            .get(part.item)
+            .ok()
+            .and_then(|(owner, scene)| (!scene).then_some(owner?.0))
+            .and_then(|owner| {
+                let bones = rig_bones.get(&owner)?;
+                part.joint_names
+                    .iter()
+                    .map(|name| bones.get(name).copied())
+                    .collect::<Option<Vec<_>>>()
+            });
+        if let Some(joints) = desired_joints {
+            if current_skin.is_none_or(|skin| skin.joints != joints) {
+                commands.entity(entity).insert(SkinnedMesh {
+                    inverse_bindposes: part.inverse_bindposes.clone(),
+                    joints,
+                });
+            }
+        } else if current_skin.is_some() {
+            commands.entity(entity).remove::<SkinnedMesh>();
         }
     }
 }
@@ -1436,9 +1728,12 @@ fn update_item_placeholders(
         &mut Transform,
         &mut Visibility,
         Option<&ChildOf>,
+        Has<ProceduralEquipmentResolved>,
     )>,
 ) {
-    for (entity, placeholder, mut transform, mut visibility, parent) in &mut placeholders {
+    for (entity, placeholder, mut transform, mut visibility, parent, procedural) in
+        &mut placeholders
+    {
         let Ok((item_transform, owner, slot, topology, scene)) = items.get(placeholder.0) else {
             commands.entity(entity).despawn();
             continue;
@@ -1449,6 +1744,21 @@ fn update_item_placeholders(
             }
             *transform = *item_transform;
             *visibility = Visibility::Inherited;
+            commands.entity(entity).remove::<HeldWeaponConstraint>();
+        } else if procedural {
+            let rig_scene = resolve_character_location(topology, &topologies)
+                .and(owner)
+                .and_then(|owner| rigs.get(owner.0).ok())
+                .and_then(HumanoidRig::rig_scene);
+            if let Some(rig_scene) = rig_scene {
+                if parent.is_none_or(|parent| parent.parent() != rig_scene) {
+                    commands.entity(entity).insert(ChildOf(rig_scene));
+                }
+                *transform = Transform::IDENTITY;
+                *visibility = Visibility::Inherited;
+            } else {
+                *visibility = Visibility::Hidden;
+            }
             commands.entity(entity).remove::<HeldWeaponConstraint>();
         } else if let (Some(owner), Some(primary_hand)) = (owner, holding_side(slot)) {
             if parent.is_some() {
@@ -1564,6 +1874,112 @@ fn holding_side(slot: Option<&EquipSlot>) -> Option<HandSide> {
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+
+    #[test]
+    fn procedural_equipment_manifest_selects_exact_and_dropped_variants() {
+        assert_eq!(
+            procedural_equipment_file("mail_sleeve", Some("right")),
+            Some("mail_sleeve--right.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("mail_sleeve", None),
+            Some("mail_sleeve--left.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("mail_sleeve", Some("left_hand")),
+            None
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_belt", Some("worn")),
+            Some("leather_belt--worn.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_belt", None),
+            Some("leather_belt--worn.glb")
+        );
+        assert_eq!(procedural_equipment_file("arming_sword", None), None);
+
+        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        for placements in PROCEDURAL_EQUIPMENT_ASSETS.values() {
+            for file in placements.values() {
+                assert!(
+                    asset_root.join("equipment/procedural").join(file).is_file(),
+                    "manifest asset {file} should exist"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn procedural_equipment_uses_live_rig_while_worn_and_rest_pose_when_dropped() {
+        let mut world = World::new();
+        let owner = world.spawn_empty().id();
+        let root = world.spawn((MhrBone { owner }, Name::new("root"))).id();
+        let spine = world.spawn((MhrBone { owner }, Name::new("c_spine0"))).id();
+        let item = world.spawn(ItemOf(owner)).id();
+        let part = world
+            .spawn(ProceduralEquipmentPart {
+                item,
+                inverse_bindposes: Handle::default(),
+                joint_names: vec!["root".into(), "c_spine0".into()],
+            })
+            .id();
+
+        world
+            .run_system_once(sync_procedural_equipment_skins)
+            .unwrap();
+        assert_eq!(
+            world.get::<SkinnedMesh>(part).unwrap().joints,
+            [root, spine]
+        );
+
+        world.entity_mut(item).insert(TacticalSceneItem);
+        world
+            .run_system_once(sync_procedural_equipment_skins)
+            .unwrap();
+        assert!(world.get::<SkinnedMesh>(part).is_none());
+    }
+
+    #[test]
+    fn armor_starts_with_fallback_while_requesting_its_procedural_model() {
+        let mut world = World::new();
+        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.init_resource::<WeaponMeshCache>();
+        let item = world
+            .spawn((
+                valid_physical(),
+                EquipmentTopology {
+                    placement_id: Some("worn".into()),
+                    ..default()
+                },
+                ItemProperties {
+                    weight: 2.5,
+                    id: "arming_doublet".into(),
+                },
+            ))
+            .id();
+
+        world.run_system_once(spawn_item_placeholders).unwrap();
+
+        let presentation = world
+            .query::<(&ItemPlaceholder, &ProceduralEquipmentPresentation)>()
+            .iter(&world)
+            .find(|(placeholder, _)| placeholder.0 == item)
+            .map(|(_, presentation)| presentation)
+            .unwrap();
+        assert!(
+            presentation
+                .asset_path
+                .ends_with("equipment/procedural/arming_doublet--worn.glb")
+        );
+        assert!(
+            world
+                .query::<&ItemFallback>()
+                .iter(&world)
+                .any(|fallback| fallback.0 == item)
+        );
+    }
 
     #[test]
     fn identical_weapon_recipes_share_cached_mesh_handles() {

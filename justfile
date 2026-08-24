@@ -235,7 +235,7 @@ verify-mhr-assets:
 character-creator:
     @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml
 generate-procedural-equipment:
-    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --generate-equipment
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --generate-equipment --lod 4
 # Model an animator reference weapon and export it against the character rig.
 weapon-modeler:
     @npm --prefix tools/weapon-modeler start

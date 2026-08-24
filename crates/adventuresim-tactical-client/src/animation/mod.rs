@@ -18,7 +18,7 @@ mod procedural;
 pub(crate) use procedural::{
     ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
     HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
-    LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
+    LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, MhrBone, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, authored_bind_global,
     locomotion_support_weights,
 };

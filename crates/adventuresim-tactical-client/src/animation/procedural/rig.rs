@@ -42,7 +42,7 @@ impl HumanoidRig {
         self.bones[role.index()].as_ref()
     }
 
-    pub(super) fn rig_scene(&self) -> Option<Entity> {
+    pub(crate) fn rig_scene(&self) -> Option<Entity> {
         self.rig_scene
     }
 
