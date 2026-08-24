@@ -12,6 +12,10 @@ pub enum PoseSampling {
     /// Blend two semantic anchor poses. The client samples both catalog frames
     /// exactly and never evaluates exported in-between keys.
     Span { end: SemanticPose, progress: f32 },
+    /// Extrapolate the transform delta between two semantic anchors. Unlike a
+    /// normal span, the coordinate is intentionally allowed outside zero to
+    /// one, within the bounds enforced by [`AttackCurve`].
+    CurveSpan { end: SemanticPose, coordinate: f32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -477,15 +481,24 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
     } else if state.attack_is_continuation() {
         (continuation_pose(animation), end_guard, (phase - 0.5) * 2.0)
     } else if phase < 0.5 {
-        (start_guard, contact, phase * 2.0)
+        (start_guard, contact, state.attack_curve().coordinate(phase))
     } else {
-        (contact, end_guard, (phase - 0.5) * 2.0)
+        // Recovery uses the same guard/contact axis in reverse so the curve
+        // can continue beyond contact before returning to guard.
+        (start_guard, contact, state.attack_curve().coordinate(phase))
     };
     vec![PoseSample {
         pose,
-        sampling: PoseSampling::Span {
-            end,
-            progress: blend,
+        sampling: if state.attack_is_continuation() {
+            PoseSampling::Span {
+                end,
+                progress: blend,
+            }
+        } else {
+            PoseSampling::CurveSpan {
+                end,
+                coordinate: blend,
+            }
         },
         weight: 1.0,
         mirror_lower_body: false,

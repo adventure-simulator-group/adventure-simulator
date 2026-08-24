@@ -49,10 +49,6 @@ const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
 ];
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
 const HIT_PRECISION: f32 = 1.0;
-/// Seconds a dead bot's detached visual takes to fade to transparent. Purely
-/// a client-side presentation detail: the server despawns the authoritative
-/// entity immediately on death and has no notion of this delay.
-const ENEMY_DEATH_FADE_SECONDS: f32 = 2.0;
 const GAMEPAD_LOOK_SCALE: Vec3 = Vec3::new(4.0, -4.0, 4.0);
 
 pub struct PlayerPlugin;
@@ -66,20 +62,15 @@ impl Plugin for PlayerPlugin {
             .register_required_components_with::<Player, _>(|| Visibility::Inherited)
             .add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
-            .add_observer(on_dodge_fired)
             .add_observer(on_parry_fired)
             .add_systems(
                 Update,
-                (
-                    (
-                        apply_direct_combat_controls,
-                        update_attack_state_system.run_if(any_with_component::<AttackState>),
-                        flush_buffered_melee_attacks,
-                    )
-                        .chain(),
-                    start_fade_on_incapacitation,
-                    tick_fade_out.run_if(any_with_component::<FadingOut>),
-                ),
+                ((
+                    apply_direct_combat_controls,
+                    update_attack_state_system.run_if(any_with_component::<AttackState>),
+                    flush_buffered_melee_attacks,
+                )
+                    .chain(),),
             )
             .add_systems(
                 PostUpdate,
@@ -118,18 +109,6 @@ pub struct HitPerformed {
 
 #[derive(Component, Clone, Copy)]
 pub struct LimbHitbox(pub BodyPart);
-
-/// A standalone, client-only entity holding a dead player/bot's detached body
-/// meshes, fading them to transparent over [`ENEMY_DEATH_FADE_SECONDS`] before
-/// despawning itself. Spawned by [`start_fade_on_incapacitation`] the moment
-/// [`TacticalCombatState`] is seen to be `Incapacitated`, since by that point the
-/// server may despawn (and replication may remove) the real player entity at
-/// any time — this entity has no server counterpart and outlives it on
-/// purpose so the fade has something to animate.
-#[derive(Component)]
-struct FadingOut {
-    timer: Timer,
-}
 
 #[derive(Component, Default)]
 pub struct AttackState {
@@ -243,85 +222,6 @@ fn on_new_player_added_hook(
     });
 
     Ok(())
-}
-
-/// Detaches another player/bot's body meshes onto a standalone [`FadingOut`]
-/// corpse entity the first time their replicated [`TacticalCombatState`] is
-/// seen to be `Incapacitated`. The server despawns the real entity immediately
-/// on death with no fade delay of its own (see the tactical server's
-/// `bot::on_authoritative_enemy_death`), so the meshes have to be moved off
-/// of it before that despawn — which recursively despawns children — can take
-/// them with it. Excludes the locally controlled player, which never spawns
-/// any body meshes to fade (see [`on_new_player_added_hook`]).
-fn start_fade_on_incapacitation(
-    mut commands: Commands,
-    q: Query<
-        (&TacticalCombatState, &Transform, &Children),
-        (Changed<TacticalCombatState>, Without<ClientPlayer>),
-    >,
-    q_mesh: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
-) {
-    for (state, transform, children) in &q {
-        if state.incapacitation_status() != IncapacitationStatus::Incapacitated {
-            continue;
-        }
-
-        let meshes: Vec<Entity> = children
-            .iter()
-            .filter(|&child| q_mesh.contains(child))
-            .collect();
-        if meshes.is_empty() {
-            // Already detached by an earlier `TacticalCombatState` change
-            // (e.g. the continuing imbalance-recovery ticks), or nothing to
-            // fade.
-            continue;
-        }
-
-        let corpse = commands
-            .spawn((
-                *transform,
-                Visibility::default(),
-                FadingOut {
-                    timer: Timer::from_seconds(ENEMY_DEATH_FADE_SECONDS, TimerMode::Once),
-                },
-            ))
-            .id();
-        for mesh in meshes {
-            commands.entity(mesh).insert(ChildOf(corpse));
-        }
-    }
-}
-
-/// Fades a [`FadingOut`] corpse's detached meshes toward transparent and
-/// despawns the corpse once the timer finishes — nothing server-side ever
-/// removes it, since it has no networked counterpart. Each material handle is
-/// unique per body part per player (see [`on_new_player_added_hook`]), so
-/// mutating alpha here can't bleed into any other entity's appearance.
-fn tick_fade_out(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut q_fading: Query<(Entity, &mut FadingOut, &Children)>,
-    q_material: Query<&MeshMaterial3d<StandardMaterial>>,
-) {
-    for (corpse, mut fading, children) in &mut q_fading {
-        fading.timer.tick(time.delta());
-        let alpha = (1.0 - fading.timer.fraction()).clamp(0.0, 1.0);
-
-        for child in children.iter() {
-            let Ok(material_handle) = q_material.get(child) else {
-                continue;
-            };
-            if let Some(mut material) = materials.get_mut(&material_handle.0) {
-                material.alpha_mode = AlphaMode::Blend;
-                material.base_color = material.base_color.with_alpha(alpha);
-            }
-        }
-
-        if fading.timer.is_finished() {
-            commands.entity(corpse).despawn();
-        }
-    }
 }
 
 fn predict_local_body_facing(
@@ -516,13 +416,15 @@ fn try_start_attack(
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
-    let Ok((reach, ranged, melee, windup_secs, preferred_style)) =
+    let Ok((reach, ranged, melee, windup_secs, recovery_secs, curve, preferred_style)) =
         viewer.get_for_attack(entity, hand).map(|character| {
             (
                 character.weapon_reach(),
                 hand == AttackHand::Main && character.weapon_is_ranged(),
                 character.weapon_is_melee(),
-                character.weapon_windup_secs(),
+                character.weapon_ranged_windup_secs(),
+                attack_recovery_secs(&character, character.weapon_preferred_melee_style(), false),
+                configure_attack_curve(AttackSpec::default(), &character).curve,
                 character.weapon_preferred_melee_style(),
             )
         })
@@ -540,8 +442,15 @@ fn try_start_attack(
         if attacking {
             return;
         }
+        let mut spec = AttackSpec::default();
+        spec.curve = curve;
         if skeleton
-            .begin_attack(AttackSpec::default(), start, start + 19)
+            .begin_attack_timed(
+                spec,
+                start,
+                start + animation_ticks(windup_secs),
+                start + animation_ticks(windup_secs + recovery_secs),
+            )
             .is_err()
         {
             return;
@@ -559,7 +468,7 @@ fn try_start_attack(
         let Some(strike_family) = skeleton.available_strike_family(requested_family) else {
             return;
         };
-        let Some(spec) = (!attacking)
+        let Some(mut spec) = (!attacking)
             .then(|| match hand {
                 AttackHand::Main => skeleton.select_main_attack(strike_family),
                 AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
@@ -572,7 +481,25 @@ fn try_start_attack(
             });
             return;
         };
-        match skeleton.begin_attack(spec, start, start + 19) {
+        let style = strike_family.melee_style();
+        let Ok((windup_secs, recovery_secs, curve)) =
+            viewer.get_for_attack(entity, hand).map(|character| {
+                (
+                    attack_preparation_secs(&character, style),
+                    attack_recovery_secs(&character, style, spec.continuation),
+                    configure_attack_curve(AttackSpec::default(), &character).curve,
+                )
+            })
+        else {
+            return;
+        };
+        spec.curve = curve;
+        match skeleton.begin_attack_timed(
+            spec,
+            start,
+            start + animation_ticks(windup_secs),
+            start + animation_ticks(windup_secs + recovery_secs),
+        ) {
             Ok(()) => {}
             Err(ActionTransitionError::ActionBusy) => {
                 cmd.entity(entity).insert(BufferedMeleeAttack {
@@ -619,14 +546,34 @@ fn flush_buffered_melee_attacks(
         }) else {
             continue;
         };
-        let Ok((reach, windup_secs)) = viewer
+        let Ok((reach, windup_secs, recovery_secs, curve)) = viewer
             .get_for_attack(entity, buffered.hand)
-            .map(|character| (character.weapon_reach(), character.weapon_windup_secs()))
+            .map(|character| {
+                (
+                    character.weapon_reach(),
+                    attack_preparation_secs(&character, buffered.family.melee_style()),
+                    attack_recovery_secs(
+                        &character,
+                        buffered.family.melee_style(),
+                        spec.continuation,
+                    ),
+                    configure_attack_curve(AttackSpec::default(), &character).curve,
+                )
+            })
         else {
             continue;
         };
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        if skeleton.begin_attack(spec, start, start + 19).is_err() {
+        let spec = AttackSpec { curve, ..spec };
+        if skeleton
+            .begin_attack_timed(
+                spec,
+                start,
+                start + animation_ticks(windup_secs),
+                start + animation_ticks(windup_secs + recovery_secs),
+            )
+            .is_err()
+        {
             continue;
         }
         cmd.entity(entity)
@@ -637,6 +584,10 @@ fn flush_buffered_melee_attacks(
             hand: buffered.hand,
         });
     }
+}
+
+fn animation_ticks(seconds: f32) -> u64 {
+    (seconds.max(1.0 / LOCOMOTION_SAMPLE_HZ) * LOCOMOTION_SAMPLE_HZ).round() as u64
 }
 
 fn apply_direct_combat_controls(
@@ -700,25 +651,14 @@ fn apply_direct_combat_controls(
                     let _ = skeleton.begin_dodge(spec, start, start + 20);
                 }
             }
-            cmd.client_trigger(DefendRequest::Dodge);
+            cmd.client_trigger(DefendRequest::Dodge {
+                direction: controls.quickstep_direction,
+            });
         }
         if controls.roll_just_pressed {
             cmd.client_trigger(DefendRequest::Roll);
         }
     }
-}
-
-fn on_dodge_fired(
-    event: On<Fire<Dodge>>,
-    mut cmd: Commands,
-    time: Res<Time>,
-    mut skeletons: Query<&mut SkeletonState>,
-) {
-    if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
-        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        let _ = skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
-    }
-    cmd.client_trigger(DefendRequest::Dodge);
 }
 
 fn on_parry_fired(

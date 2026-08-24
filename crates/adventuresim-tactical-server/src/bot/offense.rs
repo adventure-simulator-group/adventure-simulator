@@ -4,8 +4,12 @@ use super::*;
 
 const AI_HIT_PRECISION: f32 = 1.0;
 const AI_BODY_PART: BodyPart = BodyPart::Chest;
-const AI_WINDUP_SECS: f32 = 0.5;
-const AI_COOLDOWN_SECS: f32 = 1.0;
+/// Ordinary low-competence enemies expose a long readable intent before the
+/// physically quick commitment represented by the latter part of the curve.
+const AI_WINDUP_SECS: f32 = 0.65;
+/// Recovery is short enough that cadence comes from the actual attack
+/// schedule rather than an unrelated one-second lockout.
+const AI_COOLDOWN_SECS: f32 = 0.25;
 const AI_RANGED_MIN_STANDOFF: f32 = 1.5;
 const AI_RANGED_MAX_STANDOFF: f32 = 12.0;
 const AI_RANGED_STANDOFF_SLOP: f32 = 0.5;
@@ -168,8 +172,7 @@ pub(super) fn drive_offensive_combat_ai(
                     input.last_movement = Some(-Vec2::Y);
                 } else {
                     input.last_movement = None;
-                    let windup =
-                        CombatDuration::from_duration(std::time::Duration::from_millis(500));
+                    let windup = CombatDuration::from_secs_f32(AI_WINDUP_SECS);
                     cmd.trigger(RangedAttackStartedIntent {
                         attacker: entity,
                         target: Some(target),
@@ -192,7 +195,7 @@ pub(super) fn drive_offensive_combat_ai(
                 cmd.trigger(MeleeAttackStartedIntent {
                     attacker: entity,
                     target,
-                    windup: CombatDuration::from_duration(std::time::Duration::from_millis(500)),
+                    windup: CombatDuration::from_secs_f32(AI_WINDUP_SECS),
                     strike_family,
                     hand: AttackHand::Main,
                 });

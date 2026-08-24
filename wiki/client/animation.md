@@ -920,10 +920,26 @@ A pack may contain two main-hand attack motions and one offhand motion:
 | `thrust` | Thrust guard at frame 0 and contact at frame 4, with optional frames 8/12 for one continuation. |
 | `offhand` | Left-hand contact at frame 0, or preparation/contact at frames 0/4. |
 
-For a two-anchor main-hand motion, the evaluator traverses frame 0 to frame 4
-and recovers to the current guard. For a four-anchor motion, one buffered repeat
-continues from frame 4 through frame 8 to the frame-12 hit. It cannot chain
-directly into another continuation.
+For a two-anchor main-hand motion, the evaluator treats frame 0 and frame 4 as
+an unclamped pose coordinate. The readable tell travels from frame 0 into a
+bounded negative coordinate, then commits through frame 0 to contact at
+coordinate one. Follow-through travels beyond coordinate one before braking
+back to guard. Translation and scale extend linearly; rotation extends the
+shortest relative quaternion arc. Ordinary animation spans remain clamped.
+For a four-anchor motion, one buffered repeat continues from frame 4 through
+frame 8 to the frame-12 hit. It cannot chain directly into another continuation.
+
+Melee cadence is not selected by weapon family. Each weapon authors its moment
+of inertia around the controlling hand in kg*m^2. The baseline cycle is
+`0.24 + 0.40 sqrt(I / (I + 0.45))` seconds; thrusts multiply it by 1.18 and
+unarmed swings use 0.36 seconds. At the initial catalog calibration this gives
+about 0.30 seconds for a knife cut, 0.48 for an arming-sword swing, 0.59 for a
+zweihander, and 0.62 for a halberd. Arm strength applies a bounded correction
+to preparation, while skill primarily reduces recovery and the size of the
+tell and follow-through. Neither applies an unrestricted whole-animation speed
+multiplier. The UI-facing balance coefficient is derived as
+`sqrt(I / mass) / grip-to-tip length`; it is not an independently authored
+gameplay value.
 
 The owning client keeps one buffered melee request, replacing the previous
 buffered request when a newer input arrives. A matching second main-hand attack
@@ -953,9 +969,14 @@ An attack start is transactional: the client creates its hit-timing state and
 sends the network request only after the typed animation transition accepts the
 action. An input received while another admissible melee action is recovering
 is buffered instead of creating a gameplay attack with no visual action. The
-server uses the weapon's complete authored windup for the visual preparation
-and equal-length recovery. Its packet-jitter tolerance applies only to the
+client and server derive preparation and recovery from the same weapon
+schedule. Contact remains semantic phase 0.5 even though the real durations
+are asymmetric. The replicated action also carries its handling-derived pose
+curve, so player and NPC presentation follows the same state. Packet-jitter
+tolerance is ten percent of preparation capped at 25 ms; it applies only to the
 minimum gameplay authorization time and never shortens animation playback.
+Ordinary low-competence enemy attacks use a 0.65-second readable windup and a
+0.25-second behavior cooldown around the shared physical schedule.
 
 At contact, align the striking structure from the feet through the hips and
 torso to the fist, claw, point, or edge without locking a knee or elbow. A
@@ -1040,10 +1061,30 @@ it also inherits the nearest parent's attack set. Once it supplies any attack,
 its own missing attack members deliberately remain unavailable.
 ## Secondary animation
 
-Secondary procedural dynamics may later add bone inertia and reactions to
-movement, collisions, weapons, clothing, and equipment. Those effects remain
-client presentation and must not move the replicated player root, gameplay
-collider, hitboxes, or persistent strategic state.
+Every major humanoid bone carries a persistent damped local-space angular
+simulation. Its baseline physics weight depends on the semantic motion: relaxed
+arms are comparatively loose, running arms are more controlled, airborne limbs
+are loose, and guarded hands are nearly animation-driven. Feet and toes retain
+only a trace weight because contact IK owns their placement. Weapon constraints
+run after this pass, so a held weapon can stiffen the hands without suppressing
+motion elsewhere.
+
+For bones above the pelvis, incapacitation uses the remaining blend range:
+`baseline + incapacitation * (1 - baseline)`. Thus one percent incapacitation
+adds one percent of the motion that remains beyond the baseline, while one
+hundred percent gives physics full ownership. Ordered hit responses add their
+authoritative velocity change to the struck region's angular simulation instead
+of estimating an impulse from client geometry.
+
+At one hundred percent incapacitation the server replaces the character
+controller with a coarse dynamic root body. Clients use that replicated root as
+the kinematic pelvis of a fifteen-body constrained presentation ragdoll whose
+other bodies collide only with terrain. Intermediate spine and twist bones
+follow the solved major bones through the ordinary hierarchy. When
+incapacitation falls below one hundred percent, the server restores the
+controller and chooses prone or supine from the pelvis anterior direction.
+Detailed bone poses remain client presentation: they do not move gameplay
+hitboxes or persistent strategic state.
 ## Stylistic principles
 
 Animations should remain realistic in accordance with the

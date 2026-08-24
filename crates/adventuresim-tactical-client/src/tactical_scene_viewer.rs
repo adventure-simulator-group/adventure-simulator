@@ -786,6 +786,7 @@ pub(crate) fn run(
     }
     app.add_plugins(AdventureSimulatorPhysicsPlugin {
         enable_simulation: false,
+        enable_presentation_simulation: false,
     })
     // Visual-review plates use the exact production presentation defaults.
     // Diagnostics may hide named occluder layers, but never substitute a

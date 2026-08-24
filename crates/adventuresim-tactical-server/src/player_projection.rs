@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, num::NonZeroU32};
 
+use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::physics::{
@@ -19,7 +20,7 @@ use bevy::time::Stopwatch;
 
 use crate::{
     Args, SceneVistaBundleResource,
-    bot::{DefenseChances, MissionEnemy, OffensiveCombatAi},
+    bot::{CombatantBehaviorPackages, MissionEnemy},
     combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
     equipment::{
         LastEquipmentSequence, PendingEquipmentActions, purge_equipment_lifecycle,
@@ -212,6 +213,7 @@ pub(crate) fn spawn_connected_players(
         spawn_connected_player(
             &player,
             args.enemy_combat_scale_bps,
+            args.animation_behavior_lab,
             &mut cmd,
             &q_loading,
             &q_scene,
@@ -222,16 +224,36 @@ pub(crate) fn spawn_connected_players(
 fn spawn_connected_player(
     player: &ConnectedPlayer,
     enemy_combat_scale_bps: u32,
+    animation_behavior_lab: bool,
     cmd: &mut Commands,
     q_loading: &Query<(Entity, &LoadingPlayer)>,
     q_scene: &Query<&SceneTerrain>,
 ) {
     let entity = if player.mission_side == TacticalMissionSide::Enemy {
-        let mut enemy = cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy));
-        if enemy_combat_scale_bps > 0 {
-            enemy.insert((OffensiveCombatAi::default(), DefenseChances::default()));
-        }
-        enemy.id()
+        let packages = if animation_behavior_lab {
+            match AnimationLabEnemyRole::from_name(&player.character.name) {
+                Some(AnimationLabEnemyRole::ShieldBlocker) => {
+                    CombatantBehaviorPackages::always_block_without_facing()
+                }
+                Some(AnimationLabEnemyRole::Dodger) => CombatantBehaviorPackages::always_dodge(),
+                Some(AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::DemiLancer) => {
+                    CombatantBehaviorPackages::passive()
+                }
+                None => {
+                    warn!(
+                        name = player.character.name,
+                        "Animation lab enemy has no recognized behavior role; leaving passive"
+                    );
+                    CombatantBehaviorPackages::passive()
+                }
+            }
+        } else if enemy_combat_scale_bps > 0 {
+            CombatantBehaviorPackages::standard_combat()
+        } else {
+            CombatantBehaviorPackages::passive()
+        };
+        cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy, packages))
+            .id()
     } else {
         let Some((entity, _)) = q_loading
             .iter()
@@ -555,6 +577,9 @@ fn spawn_connected_player(
             | ItemKind::Medication
             | ItemKind::Food => {}
             ItemKind::Weapon => {
+                let grip_to_tip_m = adventuresim_core::item_catalog::definition(&item.item.id)
+                    .and_then(|definition| definition.equipment.as_ref())
+                    .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
                 item_cmd.insert(WeaponItem {
                     skill_weights: [
                         item.item.weapon_skills.polearm,
@@ -573,21 +598,14 @@ fn spawn_connected_player(
                     prefers_stab: item.item.prefers_stab,
                     penetration: item.item.penetration,
                     reach: item.item.reach,
-                    balance: item.item.balance,
+                    grip_to_tip_m,
+                    moment_of_inertia_kg_m2: item.item.moment_of_inertia_kg_m_2,
                     precise: item.item.precise,
                     melee: item.item.melee,
                     ranged: item.item.ranged,
                     blunt: item.item.blunt,
                     slash: item.item.slash,
                     pierce: item.item.pierce,
-                    // The strategic item schema (adventuresim-stdb-module)
-                    // doesn't author a per-weapon windup yet, unlike
-                    // accuracy/reach/balance/etc above - falls back to the
-                    // same default `PlayerEquipment::weapon_windup_secs`
-                    // uses. Extending the schema to author this per-weapon
-                    // is future work, not done here.
-                    windup_secs: 0.3,
-                    offhand_windup_secs: 0.34,
                 });
             }
             ItemKind::Armor | ItemKind::Clothing => {}
@@ -953,15 +971,7 @@ pub(crate) fn on_player_input(
                 if validated.weapon_guard == WeaponGuardState::Raised
                     && skeleton.body() == BodyState::Grounded(GroundedPosture::Upright) =>
             {
-                let start = skeleton.locomotion_sample_tick;
-                if let Some(spec) = DodgeSpec::quickstep(direction)
-                    && skeleton
-                        .begin_dodge(spec, start, start + QUICKSTEP_CONTACT_TICKS)
-                        .is_ok()
-                {
-                    posture_intent.quickstep_launch_tick =
-                        Some(start + QUICKSTEP_PREPARATION_TICKS);
-                }
+                begin_authoritative_quickstep(&mut skeleton, &mut posture_intent, direction);
                 false
             }
             Some(_) => false,
@@ -971,6 +981,30 @@ pub(crate) fn on_player_input(
             accumulated_input.jumped = Some(Stopwatch::new());
         }
     }
+}
+
+pub(crate) fn begin_authoritative_quickstep(
+    skeleton: &mut SkeletonState,
+    posture_intent: &mut AuthoritativePostureIntent,
+    direction: Vec2,
+) -> bool {
+    if skeleton.weapon_guard() != WeaponGuardState::Raised
+        || skeleton.body() != BodyState::Grounded(GroundedPosture::Upright)
+    {
+        return false;
+    }
+    let start = skeleton.locomotion_sample_tick;
+    let Some(spec) = DodgeSpec::quickstep(direction) else {
+        return false;
+    };
+    if skeleton
+        .begin_dodge(spec, start, start + QUICKSTEP_CONTACT_TICKS)
+        .is_err()
+    {
+        return false;
+    }
+    posture_intent.quickstep_launch_tick = Some(start + QUICKSTEP_PREPARATION_TICKS);
+    true
 }
 
 fn sequence_is_newer(candidate: u32, previous: u32) -> bool {
@@ -1038,14 +1072,18 @@ fn apply_posture_action(
     skeleton: &mut SkeletonState,
     accumulated_input: &mut AccumulatedInput,
 ) -> Option<DiveDirection> {
+    if action == PostureActionRequest::Toggle && skeleton.body().is_downed() {
+        begin_get_up_transition(skeleton);
+        return None;
+    }
     let tick = skeleton.locomotion_sample_tick;
     let mut dive_travel_direction = None;
     let transition = match action {
         PostureActionRequest::Toggle => match skeleton.body() {
             BodyState::Grounded(_) => Some(PostureTransitionKind::UprightToProne),
-            BodyState::Prone => Some(PostureTransitionKind::ProneToUpright),
-            BodyState::Supine => Some(PostureTransitionKind::SupineToUpright),
-            BodyState::Airborne | BodyState::Ragdolled => None,
+            BodyState::Prone | BodyState::Supine | BodyState::Airborne | BodyState::Ragdolled => {
+                None
+            }
         },
         PostureActionRequest::RollLeft => roll_transition(skeleton.body(), RollDirection::Left),
         PostureActionRequest::RollRight => roll_transition(skeleton.body(), RollDirection::Right),
@@ -1079,6 +1117,19 @@ fn apply_posture_action(
         return dive_travel_direction;
     }
     None
+}
+
+pub(crate) fn begin_get_up_transition(skeleton: &mut SkeletonState) -> bool {
+    let transition = match skeleton.body() {
+        BodyState::Prone => PostureTransitionKind::ProneToUpright,
+        BodyState::Supine => PostureTransitionKind::SupineToUpright,
+        _ => return false,
+    };
+    skeleton.begin_posture_transition(
+        transition,
+        skeleton.locomotion_sample_tick,
+        GROUND_POSTURE_TRANSITION_TICKS,
+    )
 }
 
 fn dive_horizontal_velocity(yaw: f32, direction: DiveDirection) -> Vec3 {
@@ -1351,7 +1402,9 @@ pub(crate) fn update_skeleton_locomotion(
             // Authored transitions own their direction relative to a fixed
             // root until a roll or get-up has reached its endpoint.
             skeleton.set_downed_turning(false);
-        } else if skeleton.body().is_downed() && !skeleton.is_posture_transitioning() {
+        } else if matches!(skeleton.body(), BodyState::Prone | BodyState::Supine)
+            && !skeleton.is_posture_transitioning()
+        {
             let target = downed_camera_roll_target(transform.rotation, controller.orientation);
             if posture.facing == CameraFacingIntent::DownedAlign {
                 let next = advance_downed_body_facing(
@@ -1371,7 +1424,7 @@ pub(crate) fn update_skeleton_locomotion(
                         / GROUND_POSTURE_TRANSITION_TICKS as f32,
                 );
             }
-        } else {
+        } else if skeleton.body() != BodyState::Ragdolled {
             skeleton.set_downed_turning(false);
             transform.rotation = advance_body_facing(
                 transform.rotation,
@@ -1846,7 +1899,7 @@ mod standalone_join_tests {
                 CharacterId(99),
                 MissionEnemy,
                 TacticalCombatSide::Enemy,
-                OffensiveCombatAi::default(),
+                crate::bot::OffensiveCombatAi::default(),
             ))
             .id();
 
@@ -1871,15 +1924,14 @@ mod standalone_join_tests {
                     accuracy: 1.0,
                     penetration: 1.0,
                     reach: 0.8,
-                    balance: 0.0,
+                    grip_to_tip_m: 0.8,
+                    moment_of_inertia_kg_m2: 0.0,
                     precise: false,
                     melee: true,
                     ranged: false,
                     blunt: false,
                     slash: true,
                     pierce: false,
-                    windup_secs: 0.3,
-                    offhand_windup_secs: 0.34,
                     swing_precision: 0.0,
                     stab_precision: 0.0,
                     prefers_stab: false,

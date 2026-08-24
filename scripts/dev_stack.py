@@ -1580,7 +1580,7 @@ def tactical_session_config(
         "character_id": character_id,
         "enemy_count": enemy_count,
         "play_mode": mode.value,
-        "combat_enabled": mode is TacticalPlayMode.COMBAT,
+        "combat_enabled": mode in (TacticalPlayMode.ANIMATION, TacticalPlayMode.COMBAT),
         "native_client": mode is not TacticalPlayMode.NETWORKING,
         "browser_client": False,
         "session_id": session_id,
@@ -1595,7 +1595,7 @@ def tactical_session_config(
 
 
 def tactical_combat_scale(mode: TacticalPlayMode) -> int:
-    return 10_000 if mode is TacticalPlayMode.COMBAT else 0
+    return 10_000 if mode in (TacticalPlayMode.ANIMATION, TacticalPlayMode.COMBAT) else 0
 
 
 def launch_recorded_tactical_client(
@@ -2188,7 +2188,7 @@ def tactical_play(
     mission_id = f"mission:{mode.value}-{session_id[:12]}"
     # Physical custody deliberately reserves zero as an invalid identity.
     character_id = 1
-    enemy_count = 1
+    enemy_count = 4 if mode is TacticalPlayMode.ANIMATION else 1
     config = tactical_session_config(
         values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
         graphics_preset,
@@ -2294,6 +2294,8 @@ def tactical_play(
                 "--expected-party-members", "1", "--required-enemy-kills", str(enemy_count),
                 "--enemy-combat-scale-bps", str(combat_scale), "--no-timeout",
             ]
+            if mode is TacticalPlayMode.ANIMATION:
+                server_command.append("--animation-behavior-lab")
             if scene_input:
                 server_command.extend(["--scene-input", scene_input])
             server_process = spawn_recorded(

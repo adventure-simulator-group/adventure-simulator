@@ -757,9 +757,9 @@ class WorkflowTests(unittest.TestCase):
             "required",
         )
 
-    def test_visual_and_networking_profiles_disable_combat(self):
+    def test_animation_lab_and_combat_keep_full_stats(self):
         self.assertEqual(
-            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 0
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 10_000
         )
         self.assertEqual(
             dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.DIAGNOSTIC), 0

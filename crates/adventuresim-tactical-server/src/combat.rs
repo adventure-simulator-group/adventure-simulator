@@ -4,9 +4,11 @@ mod consequence;
 mod ingress;
 mod melee;
 mod protocol;
+mod ragdoll;
 mod ranged;
 
 use adventuresim_core::item_references::ARROW_ID;
+pub(crate) use adventuresim_tactical_core::player::TacticalCombatSide;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{FromClient, SendTargets, ServerTriggerExt, ToClients},
@@ -15,7 +17,10 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 use std::{collections::HashMap, num::NonZeroU32, time::Duration};
 
-use crate::player_projection::{AuthoritativeMovementIntent, PlayerProjectionSet};
+use crate::player_projection::{
+    AuthoritativeMovementIntent, AuthoritativePostureIntent, PlayerProjectionSet,
+    begin_authoritative_quickstep,
+};
 pub(crate) use authority::{
     CombatDuration, CombatInstant, MeleeAttackAuthority, RangedAttackAuthority, ReportedPrecision,
 };
@@ -28,16 +33,18 @@ use consequence::{apply_melee_attack_result, record_party_ammunition_use};
 use consequence::{
     attacker_weapon_contact_matches, defender_equipment_contact_matches, record_party_injury,
 };
+pub(crate) use ingress::apply_defend_intent;
 use ingress::{
-    authoritative_line_of_sight, on_defender_response, on_melee_action_request,
+    authoritative_line_of_sight, on_defender_response_request, on_melee_action_request,
     on_melee_attack_started, on_ranged_action_request, on_ranged_attack_started,
     resolve_defender_response,
 };
 use melee::resolve_melee_attack;
 pub(crate) use protocol::{
-    MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse, RangedAttackIntent,
-    RangedAttackStartedIntent, TacticalCombatSide, TacticalCombatantDefeated,
+    DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
+    RangedAttackIntent, RangedAttackStartedIntent,
 };
+use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;
 
 #[derive(Clone, Debug)]
@@ -73,7 +80,7 @@ pub(crate) struct TacticalConsequenceAccumulator {
 /// is still considered valid. A fresh press gives `input_reflex = 1.0`;
 /// a press older than this window is treated as no response.
 const MAX_REFLEX_WINDOW: Duration = Duration::from_millis(500);
-/// Subtracted from the weapon's authored windup
+/// At most this much is subtracted from the weapon's authored windup
 /// (`PlayerEquipment::weapon_windup_secs`, the same value the client paces
 /// its swing by) to form the server's minimum-windup threshold. The check
 /// must not compare against the exact authored value: `Start` and `Complete`
@@ -84,9 +91,10 @@ const MAX_REFLEX_WINDOW: Duration = Duration::from_millis(500);
 /// a same-machine loopback connection with effectively zero network latency,
 /// where jitter is the *only* source of the gap. The tolerance absorbs
 /// ordinary jitter without meaningfully loosening the windup check.
-const WINDUP_JITTER_TOLERANCE: CombatDuration =
-    CombatDuration::from_duration(Duration::from_millis(50));
-const MELEE_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(300));
+const MAX_WINDUP_JITTER_TOLERANCE_SECS: f32 = 0.025;
+/// Replay guard only. Actual cadence is owned by the replicated attack
+/// schedule and the one-entry client continuation buffer.
+const MELEE_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(80));
 /// Completion must arrive within this bounded ordered-network allowance after
 /// the windup becomes ready; old starts cannot authorize replayed completions.
 const MELEE_WINDUP_NETWORK_ALLOWANCE: CombatDuration =
@@ -115,6 +123,54 @@ struct ApplyMeleeAttackResult {
     attacker_weapon_slot: EquipSlot,
     defender_parry_slot: Option<EquipSlot>,
     attacker_weapon_contact: bool,
+    impact_recipient: Entity,
+    impact_velocity_change: Vec3,
+}
+
+const MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND: f32 = 12.0;
+/// Contact energy describes the local collision, not whole-body kinetic
+/// energy. This transfer scale makes John Fabelgeist's ordinary ~49.5 J punch
+/// move an 80 kg equipped bandit about 0.25 m under the tactical controller's
+/// standard grounded friction.
+const HIT_WHOLE_BODY_VELOCITY_SCALE: f32 = 2.63;
+
+/// Converts combat contact energy into an explicit physical delta-v. Combat
+/// resolution historically calls the energy-like value `contact_force`; this
+/// seam prevents those joules from being mistaken for either newtons or an
+/// already mass-normalized impulse.
+fn hit_velocity_change(
+    result: AttackResult,
+    attacker_position: Vec3,
+    defender_position: Vec3,
+    attacker_mass_kg: f32,
+    defender_mass_kg: f32,
+) -> (bool, Vec3) {
+    let (hits_attacker, contact_energy, mass) = match result {
+        AttackResult::ToAttacker { contact_force, .. } => {
+            (true, contact_force.max(0.0), attacker_mass_kg)
+        }
+        AttackResult::ToDefender { contact_force, .. } => {
+            (false, contact_force.max(0.0), defender_mass_kg)
+        }
+    };
+    if !contact_energy.is_finite() || contact_energy <= f32::EPSILON {
+        return (hits_attacker, Vec3::ZERO);
+    }
+    let horizontal = (defender_position - attacker_position)
+        .xz()
+        .normalize_or_zero();
+    if horizontal == Vec2::ZERO {
+        return (hits_attacker, Vec3::ZERO);
+    }
+    let horizontal = if hits_attacker {
+        -horizontal
+    } else {
+        horizontal
+    };
+    let direction = Vec3::new(horizontal.x, 0.0, horizontal.y);
+    let speed = ((2.0 * contact_energy / mass.max(1.0)).sqrt() * HIT_WHOLE_BODY_VELOCITY_SCALE)
+        .min(MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND);
+    (hits_attacker, direction * speed)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,13 +272,17 @@ impl Plugin for CombatPlugin {
             .add_observer(resolve_melee_attack)
             .add_observer(resolve_ranged_attack)
             .add_observer(apply_melee_attack_result)
-            .add_observer(on_defender_response)
+            .add_observer(on_defender_response_request)
+            .add_observer(apply_defend_intent)
             .configure_sets(Update, CombatSet::Condition)
             .add_systems(
                 Update,
-                update_tactical_combat_state
-                    .in_set(CombatSet::Condition)
-                    .after(PlayerProjectionSet::Spawn),
+                (
+                    update_tactical_combat_state
+                        .in_set(CombatSet::Condition)
+                        .after(PlayerProjectionSet::Spawn),
+                    update_authoritative_ragdoll_lifecycle.after(CombatSet::Condition),
+                ),
             );
     }
 }
@@ -610,7 +670,7 @@ mod tests {
         assert!((consequence.injuries[0].cut_damage - 0.3).abs() < 0.0001);
         assert!((consequence.injuries[0].blunt_damage - 0.2).abs() < 0.0001);
         assert!((consequence.injuries[0].max_single_hit_blunt_damage - 0.002).abs() < 0.0001);
-        assert!((consequence.blood_loss_fraction - 0.25).abs() < 0.0001);
+        assert!((consequence.blood_loss_fraction - 0.1515).abs() < 0.0001);
     }
 
     #[test]
@@ -658,8 +718,8 @@ mod tests {
         assert!(combat_incapacitation(0.0, 1.0, 0.3, 0.0, 1.0, 0.0) >= 1.0);
         assert!(combat_incapacitation(0.2, 1.0, 0.0, 1.0, 0.0, 0.0) >= 1.0);
         assert!(combat_incapacitation(0.0, 1.0, 0.0, 0.0, 1.0, 1.0) >= 1.0);
-        assert!((recover_combat_imbalance(0.5, 2.0, 2.0) - 0.38).abs() < 0.0001);
-        assert_eq!(recover_combat_imbalance(0.01, 5.0, 1.0), 0.0);
+        assert_eq!(recover_combat_imbalance(0.75, 2.0), 0.25);
+        assert_eq!(recover_combat_imbalance(0.01, 1.0), 0.0);
     }
 
     #[test]
@@ -817,5 +877,74 @@ mod tests {
 
         assert_eq!(app.world().resource::<AcceptedCompletions>().0, 1);
         assert!((app.world().entity(target).get::<Limbs>().unwrap().chest - 0.9).abs() < 0.0001);
+    }
+
+    #[test]
+    fn contact_energy_becomes_calibrated_mass_normalized_directional_velocity() {
+        let result = AttackResult::ToDefender {
+            cut_damage: 0.0,
+            blunt_damage: 1.0,
+            balance_damage: 0.0,
+            contact_force: 140.0,
+            armor_contact: false,
+        };
+        let (hits_attacker, velocity_change) =
+            hit_velocity_change(result, Vec3::ZERO, Vec3::new(0.0, 0.0, 2.0), 70.0, 70.0);
+        assert!(!hits_attacker);
+        assert!((velocity_change.length() - 5.26).abs() < 1.0e-4);
+        assert!(velocity_change.z > 0.0);
+        assert_eq!(velocity_change.y, 0.0);
+    }
+
+    fn default_ground_stopping_distance(mut speed: f32) -> f32 {
+        use adventuresim_tactical_core::physics::{
+            TACTICAL_CHARACTER_FRICTION_HZ, TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND,
+        };
+
+        const TICK_SECONDS: f32 = 1.0 / 64.0;
+        const DEFAULT_GROUND_DYNAMIC_FRICTION: f32 = 0.5;
+        let mut distance = 0.0;
+        while speed >= 0.001 {
+            let control = speed.max(TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND);
+            speed = (speed
+                - control
+                    * TACTICAL_CHARACTER_FRICTION_HZ
+                    * DEFAULT_GROUND_DYNAMIC_FRICTION
+                    * TICK_SECONDS)
+                .max(0.0);
+            distance += speed * TICK_SECONDS;
+        }
+        distance
+    }
+
+    #[test]
+    fn ordinary_unarmed_hit_moves_equipped_bandit_about_quarter_metre() {
+        let result = AttackResult::ToDefender {
+            cut_damage: 0.0,
+            blunt_damage: 0.1,
+            balance_damage: 0.4,
+            contact_force: 49.4667,
+            armor_contact: false,
+        };
+        let (_, velocity_change) = hit_velocity_change(result, Vec3::ZERO, Vec3::Z, 80.0, 80.0);
+        let stopping_distance = default_ground_stopping_distance(velocity_change.xz().length());
+
+        assert!(
+            (0.23..=0.27).contains(&stopping_distance),
+            "ordinary punch stopping distance was {stopping_distance:.3} m"
+        );
+    }
+
+    #[test]
+    fn parry_recoil_points_back_at_attacker() {
+        let result = AttackResult::ToAttacker {
+            balance_damage: 1.0,
+            contact_force: 40.0,
+            physical_contact: true,
+        };
+        let (hits_attacker, velocity_change) =
+            hit_velocity_change(result, Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), 80.0, 60.0);
+        assert!(hits_attacker);
+        assert!(velocity_change.x < 0.0);
     }
 }

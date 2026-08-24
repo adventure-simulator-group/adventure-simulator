@@ -151,6 +151,18 @@ pub(super) fn resolve_melee_attack(
             BodySide::Right => Some(EquipSlot::HoldingRight),
             BodySide::Both => None,
         });
+    let (hits_attacker, impact_velocity_change) = hit_velocity_change(
+        result,
+        attacker_transform.translation,
+        defender_transform.translation,
+        attacker_view.body_weight() + attacker_view.inventory_weight(),
+        defender_view.body_weight() + defender_view.inventory_weight(),
+    );
+    let impact_recipient = if hits_attacker {
+        attack.attacker()
+    } else {
+        attack.target()
+    };
 
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: attack.attacker(),
@@ -160,6 +172,8 @@ pub(super) fn resolve_melee_attack(
         attacker_weapon_slot,
         defender_parry_slot,
         attacker_weapon_contact: attacker_has_weapon,
+        impact_recipient,
+        impact_velocity_change,
     });
 
     match result {
@@ -194,6 +208,8 @@ pub(super) fn resolve_melee_attack(
             result,
             flanking,
             defender_response,
+            impact_recipient,
+            impact_velocity_change,
         },
     });
 }

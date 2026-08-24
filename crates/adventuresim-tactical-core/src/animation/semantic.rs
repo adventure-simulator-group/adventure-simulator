@@ -155,16 +155,20 @@ mod contract_tests {
         state.advance_action(5);
         let early = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(early.action[0].pose, SemanticPose::GuardThrust);
-        assert_eq!(
-            early.action[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::AttackThrust,
-                progress: 0.5,
-            }
+        let PoseSampling::CurveSpan { end, coordinate } = early.action[0].sampling else {
+            panic!("ordinary attacks should use the extrapolating pose curve");
+        };
+        assert_eq!(end, SemanticPose::AttackThrust);
+        assert!(
+            coordinate < 0.0,
+            "the early readable tell draws behind guard"
         );
-        state.advance_action(15);
+        state.advance_action(11);
         let recovery = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(recovery.action[0].pose, SemanticPose::AttackThrust);
+        let PoseSampling::CurveSpan { coordinate, .. } = recovery.action[0].sampling else {
+            panic!("ordinary recovery should use the extrapolating pose curve");
+        };
+        assert!(coordinate > 1.0, "recovery begins beyond contact");
     }
 
     #[test]

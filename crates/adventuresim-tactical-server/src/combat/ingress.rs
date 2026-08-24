@@ -1,36 +1,46 @@
 use super::*;
 
-pub(super) fn on_defender_response(
+pub(super) fn on_defender_response_request(
     event: On<FromClient<DefendRequest>>,
     mut cmd: Commands,
-    time: Res<Time<()>>,
-    states: Query<&TacticalCombatState>,
-    mut skeletons: Query<&mut SkeletonState>,
 ) {
-    let Some(entity) = event.client_id.entity() else {
+    let Some(defender) = event.client_id.entity() else {
         warn!(
             "Got defender response from an unknown client: {:?}",
             event.client_id
         );
         return;
     };
+    cmd.trigger(DefendIntent {
+        defender,
+        choice: **event,
+    });
+}
 
-    let Ok(combat_state) = states.get(entity) else {
+pub(crate) fn apply_defend_intent(
+    event: On<DefendIntent>,
+    mut cmd: Commands,
+    time: Res<Time<()>>,
+    states: Query<&TacticalCombatState>,
+    mut skeletons: Query<(&mut SkeletonState, &mut AuthoritativePostureIntent)>,
+) {
+    let Ok(combat_state) = states.get(event.defender) else {
         return;
     };
     if combat_state.is_incapacitated() {
         return;
     }
 
-    let Ok(mut skeleton) = skeletons.get_mut(entity) else {
+    let Ok((mut skeleton, mut posture_intent)) = skeletons.get_mut(event.defender) else {
         return;
     };
     let start = animation_tick(&time);
-    let accepted = match **event {
-        DefendRequest::Dodge if skeleton.action_kind() == SkeletonAction::Dodge => true,
-        DefendRequest::Dodge => skeleton
-            .begin_dodge(DodgeSpec::default(), start, start + 8)
-            .is_ok(),
+    let accepted = match event.choice {
+        DefendRequest::Dodge { direction } if DodgeSpec::quickstep(direction).is_none() => false,
+        DefendRequest::Dodge { .. } if skeleton.action_kind() == SkeletonAction::Dodge => true,
+        DefendRequest::Dodge { direction } => {
+            begin_authoritative_quickstep(&mut skeleton, &mut posture_intent, direction)
+        }
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
         DefendRequest::Roll => true,
         DefendRequest::Parry => skeleton
@@ -41,8 +51,8 @@ pub(super) fn on_defender_response(
         return;
     }
 
-    cmd.entity(entity).insert(PendingDefenderResponse {
-        choice: **event,
+    cmd.entity(event.defender).insert(PendingDefenderResponse {
+        choice: event.choice,
         set_at: CombatInstant::from_elapsed(&time),
     });
 }
@@ -51,6 +61,7 @@ pub(super) fn on_melee_attack_started(
     event: On<MeleeAttackStartedIntent>,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
 ) {
     let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
@@ -68,9 +79,29 @@ pub(super) fn on_melee_attack_started(
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
+    let (spec, recovery) = viewer
+        .get_for_attack(event.attacker, event.hand)
+        .map(|view| {
+            (
+                configure_attack_curve(spec, &view),
+                CombatDuration::from_secs_f32(attack_recovery_secs(
+                    &view,
+                    event.strike_family.melee_style(),
+                    spec.continuation,
+                )),
+            )
+        })
+        .unwrap_or((spec, event.windup));
     let start = animation_tick(&time);
     if skeleton
-        .begin_attack(spec, start, start + duration_ticks(event.windup))
+        .begin_attack_timed(
+            spec,
+            start,
+            start + duration_ticks(event.windup),
+            start
+                .saturating_add(duration_ticks(event.windup))
+                .saturating_add(duration_ticks(recovery)),
+        )
         .is_err()
     {
         return;
@@ -101,7 +132,7 @@ pub(super) fn resolve_defender_response(
         (1.0 - elapsed.as_secs_f32() / MAX_REFLEX_WINDOW.as_secs_f32()).clamp(0.0, 1.0);
 
     match pending.choice {
-        DefendRequest::Dodge => DefenderResponse::Dodge { input_reflex },
+        DefendRequest::Dodge { .. } => DefenderResponse::Dodge { input_reflex },
         DefendRequest::Roll => DefenderResponse::Dodge {
             input_reflex: roll_dodge_reflex(input_reflex),
         },
@@ -154,12 +185,154 @@ mod roll_tests {
         let (animation_windup, minimum_windup) = player_attack_windups(authored);
 
         assert_eq!(duration_ticks(animation_windup), 19);
-        assert_eq!(duration_ticks(minimum_windup), 16);
+        assert_eq!(duration_ticks(minimum_windup), 18);
+    }
+
+    #[test]
+    fn clients_and_server_ai_share_authoritative_defense_transitions() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(on_defender_response_request)
+            .add_observer(apply_defend_intent);
+        let player = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+                AuthoritativePostureIntent::default(),
+            ))
+            .id();
+        let bot = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
+                AuthoritativePostureIntent::default(),
+            ))
+            .id();
+
+        app.world_mut().trigger(FromClient {
+            client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
+                player,
+            ),
+            message: DefendRequest::Parry,
+        });
+        app.world_mut().trigger(DefendIntent {
+            defender: bot,
+            choice: DefendRequest::Dodge { direction: Vec2::X },
+        });
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(player)
+                .unwrap()
+                .action_kind(),
+            SkeletonAction::Block
+        );
+        assert_eq!(
+            app.world().get::<SkeletonState>(bot).unwrap().action_kind(),
+            SkeletonAction::Dodge
+        );
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(bot)
+                .unwrap()
+                .action_direction(),
+            Vec2::X
+        );
+        assert!(matches!(
+            app.world().get::<PendingDefenderResponse>(player),
+            Some(PendingDefenderResponse {
+                choice: DefendRequest::Parry,
+                ..
+            })
+        ));
+        assert!(matches!(
+            app.world().get::<PendingDefenderResponse>(bot),
+            Some(PendingDefenderResponse {
+                choice: DefendRequest::Dodge { direction: Vec2::X },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn stationary_dodge_request_is_rejected() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(apply_defend_intent);
+        let defender = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
+                AuthoritativePostureIntent::default(),
+            ))
+            .id();
+
+        app.world_mut().trigger(DefendIntent {
+            defender,
+            choice: DefendRequest::Dodge {
+                direction: Vec2::ZERO,
+            },
+        });
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(defender)
+                .unwrap()
+                .action_kind(),
+            SkeletonAction::None
+        );
+        assert!(
+            app.world()
+                .get::<PendingDefenderResponse>(defender)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn directional_dodge_request_without_raised_guard_is_rejected() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_observer(apply_defend_intent);
+        let defender = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+                AuthoritativePostureIntent::default(),
+            ))
+            .id();
+
+        app.world_mut().trigger(DefendIntent {
+            defender,
+            choice: DefendRequest::Dodge { direction: Vec2::X },
+        });
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(defender)
+                .unwrap()
+                .action_kind(),
+            SkeletonAction::None
+        );
+        assert!(
+            app.world()
+                .get::<PendingDefenderResponse>(defender)
+                .is_none()
+        );
     }
 }
 
 fn player_attack_windups(authored: CombatDuration) -> (CombatDuration, CombatDuration) {
-    (authored, authored.saturating_sub(WINDUP_JITTER_TOLERANCE))
+    let tolerance = CombatDuration::from_secs_f32(
+        (authored.as_secs_f32() * 0.1).min(MAX_WINDUP_JITTER_TOLERANCE_SECS),
+    );
+    (authored, authored.saturating_sub(tolerance))
 }
 
 pub(super) fn on_melee_action_request(
@@ -198,18 +371,43 @@ pub(super) fn on_melee_action_request(
                 return;
             };
             // The same authored per-weapon value the client paces its own
-            // swing by, minus a delivery-jitter tolerance - see
-            // `WINDUP_JITTER_TOLERANCE`. Unarmed attackers use the shared
+            // swing by, minus a bounded proportional delivery-jitter
+            // tolerance. Unarmed attackers use the shared
             // authored hands timing; a genuinely viewless attacker still
             // falls back to zero and is rejected by later weapon checks.
             let authored_windup = viewer
                 .get_for_attack(attacker, hand)
-                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .map(|view| {
+                    CombatDuration::from_secs_f32(attack_preparation_secs(
+                        &view,
+                        strike_family.melee_style(),
+                    ))
+                })
                 .unwrap_or_default();
             let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
+            let (spec, recovery) = viewer
+                .get_for_attack(attacker, hand)
+                .map(|view| {
+                    (
+                        configure_attack_curve(spec, &view),
+                        CombatDuration::from_secs_f32(attack_recovery_secs(
+                            &view,
+                            strike_family.melee_style(),
+                            spec.continuation,
+                        )),
+                    )
+                })
+                .unwrap_or((spec, animation_windup));
             let start = animation_tick(&time);
             if skeleton
-                .begin_attack(spec, start, start + duration_ticks(animation_windup))
+                .begin_attack_timed(
+                    spec,
+                    start,
+                    start + duration_ticks(animation_windup),
+                    start
+                        .saturating_add(duration_ticks(animation_windup))
+                        .saturating_add(duration_ticks(recovery)),
+                )
                 .is_err()
             {
                 return;
@@ -266,7 +464,7 @@ pub(super) fn on_ranged_action_request(
             // melee path - see `on_melee_action_request`.
             let authored_windup = viewer
                 .get(attacker)
-                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .map(|view| CombatDuration::from_secs_f32(view.weapon_ranged_windup_secs()))
                 .unwrap_or_default();
             let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
             cmd.trigger(RangedAttackStartedIntent {
@@ -309,6 +507,7 @@ pub(super) fn on_ranged_attack_started(
     event: On<RangedAttackStartedIntent>,
     mut authorities: Query<&mut RangedAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
 ) {
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
@@ -318,11 +517,27 @@ pub(super) fn on_ranged_attack_started(
         return;
     };
     let start = animation_tick(&time);
+    let (spec, recovery) = viewer
+        .get(event.attacker)
+        .map(|view| {
+            (
+                configure_attack_curve(AttackSpec::default(), &view),
+                CombatDuration::from_secs_f32(attack_recovery_secs(
+                    &view,
+                    view.weapon_preferred_melee_style(),
+                    false,
+                )),
+            )
+        })
+        .unwrap_or((AttackSpec::default(), event.animation_windup));
     if skeleton
-        .begin_attack(
-            AttackSpec::default(),
+        .begin_attack_timed(
+            spec,
             start,
             start + duration_ticks(event.animation_windup),
+            start
+                .saturating_add(duration_ticks(event.animation_windup))
+                .saturating_add(duration_ticks(recovery)),
         )
         .is_err()
     {

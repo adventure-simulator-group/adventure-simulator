@@ -30,6 +30,7 @@ use crate::camera::{CameraDebugEnabled, CameraRigDebugState};
 use crate::debug::DebugGameSpeed;
 use crate::{
     Args,
+    animation::{BoneRole, HumanoidRig},
     camera::CameraAimState,
     player::{AttackState, ClientPlayer},
 };
@@ -77,6 +78,10 @@ impl Plugin for UiPlugin {
 
 const INCAPACITATION_WHEEL_RADIUS: f32 = 26.0;
 const INCAPACITATION_WHEEL_WIDTH: f32 = 8.0;
+const ENEMY_INCAPACITATION_WHEEL_RADIUS: f32 = 18.0;
+const ENEMY_INCAPACITATION_WHEEL_WIDTH: f32 = 6.0;
+const ENEMY_WHEEL_HEAD_CLEARANCE_METRES: f32 = 0.25;
+const ENEMY_WHEEL_ROOT_FALLBACK_HEIGHT_METRES: f32 = 1.1;
 const INCAPACITATION_WHEEL_RESOLUTION: f32 = 96.0;
 const MIN_VISIBLE_INCAPACITATION_SEGMENT: f32 = 0.005;
 
@@ -99,18 +104,32 @@ fn visible_incapacitation_wheel_amount(raw_amount: f32, remaining: f32) -> Optio
     (amount >= MIN_VISIBLE_INCAPACITATION_SEGMENT).then_some(amount)
 }
 
+fn enemy_incapacitation_wheel_visible(side: TacticalCombatSide, incapacitation: f32) -> bool {
+    side == TacticalCombatSide::Enemy && incapacitation > 0.0
+}
+
 fn draw_incapacitation_wheel(
     mut contexts: EguiContexts,
     player: Single<(Entity, &TacticalCombatState, &Limbs), With<ClientPlayer>>,
+    enemies: Query<
+        (
+            Entity,
+            &TacticalCombatSide,
+            &TacticalCombatState,
+            &Limbs,
+            &GlobalTransform,
+            Option<&HumanoidRig>,
+        ),
+        (With<Player>, Without<ClientPlayer>),
+    >,
+    bone_transforms: Query<&GlobalTransform, Without<Player>>,
+    camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
     viewer: TacticalPlayerViewer,
 ) -> Result {
     let (entity, state, limbs) = player.into_inner();
     let view = viewer.get(entity)?;
     let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
     let sources = state.incapacitation_sources(limbs.total_damage(), will);
-    if state.incapacitation <= 0.0 {
-        return Ok(());
-    }
 
     let context = contexts.ctx_mut()?;
     let painter = context.layer_painter(egui::LayerId::new(
@@ -119,12 +138,82 @@ fn draw_incapacitation_wheel(
     ));
     let center = context.content_rect().center();
 
+    if state.incapacitation > 0.0 {
+        paint_incapacitation_wheel(
+            &painter,
+            center,
+            state,
+            sources,
+            INCAPACITATION_WHEEL_RADIUS,
+            INCAPACITATION_WHEEL_WIDTH,
+        );
+    }
+
+    let content_rect = context.content_rect();
+    let (camera, camera_transform) = camera.into_inner();
+    for (entity, side, state, limbs, root_transform, rig) in &enemies {
+        if !enemy_incapacitation_wheel_visible(*side, state.incapacitation) {
+            continue;
+        }
+        let Ok(view) = viewer.get(entity) else {
+            continue;
+        };
+        let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
+        let sources = state.incapacitation_sources(limbs.total_damage(), will);
+        let head_position = rig
+            .and_then(|rig| rig.get(&BoneRole::Head))
+            .and_then(|head| bone_transforms.get(*head).ok())
+            .map_or_else(
+                || root_transform.translation() + Vec3::Y * ENEMY_WHEEL_ROOT_FALLBACK_HEIGHT_METRES,
+                |head| head.translation() + Vec3::Y * ENEMY_WHEEL_HEAD_CLEARANCE_METRES,
+            );
+        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, head_position)
+        else {
+            continue;
+        };
+        let center = Pos2::new(viewport_position.x, viewport_position.y);
+        if !content_rect
+            .expand(ENEMY_INCAPACITATION_WHEEL_RADIUS)
+            .contains(center)
+        {
+            continue;
+        }
+        paint_incapacitation_wheel(
+            &painter,
+            center,
+            state,
+            sources,
+            ENEMY_INCAPACITATION_WHEEL_RADIUS,
+            ENEMY_INCAPACITATION_WHEEL_WIDTH,
+        );
+    }
+
+    Ok(())
+}
+
+fn paint_incapacitation_wheel(
+    painter: &egui::Painter,
+    center: Pos2,
+    state: &TacticalCombatState,
+    sources: TacticalIncapacitationSources,
+    radius: f32,
+    width: f32,
+) {
+    painter.circle_stroke(
+        center,
+        radius,
+        Stroke::new(
+            width,
+            Color32::from_rgba_unmultiplied(0x10, 0x12, 0x16, 150),
+        ),
+    );
+
     if state.is_incapacitated() {
         painter.circle_stroke(
             center,
-            INCAPACITATION_WHEEL_RADIUS,
+            radius,
             Stroke::new(
-                INCAPACITATION_WHEEL_WIDTH + 6.0,
+                width + 6.0,
                 Color32::from_rgba_unmultiplied(0xc8, 0x47, 0x47, 70),
             ),
         );
@@ -142,22 +231,18 @@ fn draw_incapacitation_wheel(
             .map(|step| {
                 let angle = cursor + (end - cursor) * step as f32 / steps as f32;
                 Pos2::new(
-                    center.x + INCAPACITATION_WHEEL_RADIUS * angle.cos(),
-                    center.y + INCAPACITATION_WHEEL_RADIUS * angle.sin(),
+                    center.x + radius * angle.cos(),
+                    center.y + radius * angle.sin(),
                 )
             })
             .collect();
-        painter.add(egui::Shape::line(
-            points,
-            Stroke::new(INCAPACITATION_WHEEL_WIDTH, color),
-        ));
+        painter.add(egui::Shape::line(points, Stroke::new(width, color)));
         cursor = end;
         remaining -= amount;
         if remaining <= 0.0 {
             break;
         }
     }
-    Ok(())
 }
 
 #[derive(Component)]
@@ -1110,5 +1195,21 @@ mod tests {
     fn incapacitation_wheel_hides_subpixel_segments_without_changing_state() {
         assert_eq!(visible_incapacitation_wheel_amount(0.0049, 1.0), None);
         assert_eq!(visible_incapacitation_wheel_amount(0.005, 1.0), Some(0.005));
+    }
+
+    #[test]
+    fn enemy_incapacitation_wheel_is_absent_at_zero() {
+        assert!(!enemy_incapacitation_wheel_visible(
+            TacticalCombatSide::Enemy,
+            0.0
+        ));
+        assert!(enemy_incapacitation_wheel_visible(
+            TacticalCombatSide::Enemy,
+            f32::EPSILON
+        ));
+        assert!(!enemy_incapacitation_wheel_visible(
+            TacticalCombatSide::Party,
+            0.5
+        ));
     }
 }

@@ -220,6 +220,7 @@ pub(crate) fn run(
                 .build()
                 .set(AdventureSimulatorPhysicsPlugin {
                     enable_simulation: false,
+                    enable_presentation_simulation: true,
                 }),
             EnhancedInputPlugin,
         ))
@@ -328,6 +329,7 @@ impl CaptureSequence {
             Some("flat-grid-walk-2.0") => steady_scenario("flat-grid-walk-2.0", 2.0, 3.0),
             Some("flat-grid-run-5.5") => steady_scenario("flat-grid-run-5.5", 5.5, 3.0),
             Some("flat-grid-walk-stop") => flat_grid_walk_stop_scenario(),
+            Some("full-ragdoll") => full_ragdoll_scenario(),
             _ => capture_plan()
                 .into_iter()
                 .filter(|frame| scenario.is_none_or(|scenario| frame.scenario == scenario))
@@ -682,6 +684,25 @@ struct GlobalBoneTransformSample {
 
 fn steady_scenario(name: &'static str, speed: f32, cycles: f32) -> Vec<PlannedFrame> {
     steady_scenario_in_direction(name, speed, cycles, Vec2::NEG_Y)
+}
+
+fn full_ragdoll_scenario() -> Vec<PlannedFrame> {
+    // The first logical sample receives the viewer's sixty-frame load/settle
+    // window, so nine captured samples already cover a stable physics result.
+    (0..=8)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: "full-ragdoll",
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
 }
 
 fn steady_scenario_in_direction(
@@ -1417,6 +1438,7 @@ fn downed_body_for_scenario(scenario: &str) -> Option<BodyState> {
     match scenario {
         "downed-prone-crawl" | "downed-prone-look-at" => Some(BodyState::Prone),
         "downed-supine-scamper" => Some(BodyState::Supine),
+        "full-ragdoll" => Some(BodyState::Ragdolled),
         _ => None,
     }
 }
@@ -1821,7 +1843,7 @@ fn drive_sequence(
             return;
         };
         presentation_settled = playback.presentation_is_settled();
-        if !playback.authored_pose_is_ready() {
+        if frame.scenario != "full-ragdoll" && !playback.authored_pose_is_ready() {
             return;
         }
 
@@ -2021,6 +2043,11 @@ fn drive_sequence(
                 skeleton.weapon_guard(),
                 delta_seconds,
             );
+        }
+        if frame.scenario == "full-ragdoll" {
+            let fall = (frame.scenario_frame as f32 / 8.0).clamp(0.0, 1.0);
+            transform.rotation = Quat::from_rotation_y(std::f32::consts::PI)
+                * Quat::from_rotation_x(1.25 * smoothstep01(fall));
         }
         sequence.scenario_distance += frame.speed * delta_seconds;
         let jump_charging =
@@ -2321,7 +2348,7 @@ fn capture_frame(
         );
         return;
     };
-    if !playback.authored_pose_is_ready() {
+    if sequence.active_scenario != Some("full-ragdoll") && !playback.authored_pose_is_ready() {
         wait_or_fail(
             &mut sequence,
             "authored locomotion clip has not resolved",
@@ -2673,6 +2700,9 @@ fn tracked_bone(role: BoneRole) -> Option<&'static str> {
 fn jitter_frames(frames: &[FrameSample]) -> Vec<JitterFrame> {
     frames
         .iter()
+        // A ragdoll is intentionally non-smooth at the animation-to-physics
+        // handoff and does not obey authored locomotion jerk thresholds.
+        .filter(|frame| frame.scenario != "full-ragdoll")
         .map(|frame| JitterFrame {
             scenario: frame.scenario.clone(),
             scenario_frame: frame.scenario_frame,
@@ -2774,6 +2804,13 @@ fn finish_capture(
         });
     let all_artifacts_written = capture_artifacts_written(&sequence.output, &frames);
     let continuity_within_review_bounds = scenarios.iter().all(|metrics| {
+        if metrics.scenario == "full-ragdoll" {
+            // The root handoff and unconstrained limb motion are the behavior
+            // under review; authored locomotion displacement limits do not
+            // apply. Finite output, topology, terrain penetration, and visual
+            // evidence remain mandatory.
+            return metrics.maximum_bone_rotation_step_degrees <= 60.0;
+        }
         metrics.maximum_root_relative_step_metres
             <= if metrics.scenario.starts_with("attack-live-") {
                 0.30
@@ -3264,7 +3301,8 @@ fn finish_capture(
             // dives. Judge the posed pelvis-to-head long axis instead.
             return metrics.maximum_dive_axis_motion_error_degrees <= 20.0;
         }
-        if metrics.scenario.starts_with("downed-")
+        if metrics.scenario == "full-ragdoll"
+            || metrics.scenario.starts_with("downed-")
             || metrics.scenario.ends_with("-get-up")
             || metrics.scenario == "jump-charge-anticipation"
             || metrics.scenario == "ordinary-camera-pitch"

@@ -440,20 +440,33 @@ pub fn supine_get_up_counter_yaw_delta(
 struct ActionTimeline {
     start_tick: u64,
     preparation_ticks: u64,
+    recovery_ticks: u64,
     phase: f32,
 }
 
 impl ActionTimeline {
     fn new(start_tick: u64, contact_tick: u64) -> Self {
+        let preparation_ticks = contact_tick.saturating_sub(start_tick).max(1);
+        Self {
+            start_tick,
+            preparation_ticks,
+            recovery_ticks: preparation_ticks,
+            phase: 0.0,
+        }
+    }
+
+    fn with_recovery(start_tick: u64, contact_tick: u64, end_tick: u64) -> Self {
         Self {
             start_tick,
             preparation_ticks: contact_tick.saturating_sub(start_tick).max(1),
+            recovery_ticks: end_tick.saturating_sub(contact_tick).max(1),
             phase: 0.0,
         }
     }
 
     fn normalized(mut self) -> Self {
         self.preparation_ticks = self.preparation_ticks.max(1);
+        self.recovery_ticks = self.recovery_ticks.max(1);
         self.phase = if self.phase.is_finite() {
             self.phase.clamp(0.0, 1.0)
         } else {
@@ -476,6 +489,7 @@ enum ActionKind {
         strike_family: StrikeFamily,
         hand: AttackHand,
         continuation: bool,
+        curve: AttackCurve,
         timeline: ActionTimeline,
     },
     Block {
@@ -508,6 +522,7 @@ impl<'de> Deserialize<'de> for ActionState {
                 strike_family,
                 hand,
                 continuation,
+                curve,
                 timeline,
             } => ActionKind::Attack {
                 target_height: if target_height.is_finite() {
@@ -519,6 +534,7 @@ impl<'de> Deserialize<'de> for ActionState {
                 strike_family,
                 hand,
                 continuation,
+                curve: curve.normalized(),
                 timeline: timeline.normalized(),
             },
             ActionKind::Block {
@@ -596,6 +612,103 @@ pub enum ActionTransitionError {
     ActionBusy,
 }
 
+/// Bounded blend-coordinate curve for an attack's authored guard/contact
+/// poses. Coordinates below zero draw back through the guard pose; coordinates
+/// above one continue through contact. This mirrors Overgrowth's synced-pose
+/// overshoot without extrapolating clip time beyond authored keys.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AttackCurve {
+    /// Fraction of preparation spent drawing back before commitment begins.
+    pub tell_fraction: f32,
+    /// Furthest negative guard-to-contact blend coordinate reached by the tell.
+    pub drawback: f32,
+    /// Fraction of recovery spent continuing beyond contact before braking.
+    pub follow_through_fraction: f32,
+    /// Furthest distance beyond the contact pose reached during follow-through.
+    pub overshoot: f32,
+}
+
+impl Default for AttackCurve {
+    fn default() -> Self {
+        Self::from_handling(0.3, 3.0)
+    }
+}
+
+impl AttackCurve {
+    pub const MAX_DRAWBACK: f32 = 0.65;
+    pub const MAX_OVERSHOOT: f32 = 0.55;
+
+    /// Produces a readable but controlled curve from physical weapon inertia
+    /// and the attacker's effective weapon skill check. High-inertia weapons
+    /// and low-skill attacks telegraph and follow through more.
+    pub fn from_handling(moment_of_inertia_kg_m2: f32, skill: f32) -> Self {
+        let inertia = if moment_of_inertia_kg_m2.is_finite() {
+            moment_of_inertia_kg_m2.max(0.0)
+        } else {
+            0.3
+        };
+        let inertia_difficulty = (inertia / (inertia + 0.45)).sqrt();
+        let skill = finite_clamp(skill / 5.0, 0.0, 1.0, 0.0);
+        let lack_of_control = inertia_difficulty * 0.55 + (1.0 - skill) * 0.45;
+        Self {
+            tell_fraction: 0.32 + 0.28 * lack_of_control,
+            drawback: 0.16 + 0.42 * lack_of_control,
+            follow_through_fraction: 0.18 + 0.22 * lack_of_control,
+            overshoot: 0.08 + 0.38 * lack_of_control,
+        }
+        .normalized()
+    }
+
+    fn normalized(mut self) -> Self {
+        self.tell_fraction = finite_clamp(self.tell_fraction, 0.15, 0.75, 0.45);
+        self.drawback = finite_clamp(self.drawback, 0.0, Self::MAX_DRAWBACK, 0.3);
+        self.follow_through_fraction = finite_clamp(self.follow_through_fraction, 0.1, 0.65, 0.3);
+        self.overshoot = finite_clamp(self.overshoot, 0.0, Self::MAX_OVERSHOOT, 0.2);
+        self
+    }
+
+    /// Unclamped semantic pose coordinate at a normalized action phase where
+    /// contact remains exactly 0.5.
+    pub fn coordinate(self, phase: f32) -> f32 {
+        let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
+        if phase <= 0.5 {
+            let preparation = phase * 2.0;
+            if preparation <= self.tell_fraction {
+                let progress = smoothstep(preparation / self.tell_fraction);
+                -self.drawback * progress
+            } else {
+                let progress =
+                    smoothstep((preparation - self.tell_fraction) / (1.0 - self.tell_fraction));
+                -self.drawback + (1.0 + self.drawback) * progress
+            }
+        } else {
+            let recovery = (phase - 0.5) * 2.0;
+            if recovery <= self.follow_through_fraction {
+                1.0 + self.overshoot * smoothstep(recovery / self.follow_through_fraction)
+            } else {
+                let progress = smoothstep(
+                    (recovery - self.follow_through_fraction)
+                        / (1.0 - self.follow_through_fraction),
+                );
+                (1.0 + self.overshoot) * (1.0 - progress)
+            }
+        }
+    }
+}
+
+fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(minimum, maximum)
+    } else {
+        fallback
+    }
+}
+
+fn smoothstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AttackSpec {
     pub target_height: f32,
@@ -603,6 +716,7 @@ pub struct AttackSpec {
     pub strike_family: StrikeFamily,
     pub hand: AttackHand,
     pub continuation: bool,
+    pub curve: AttackCurve,
 }
 
 impl Default for AttackSpec {
@@ -613,6 +727,7 @@ impl Default for AttackSpec {
             strike_family: StrikeFamily::Thrust,
             hand: AttackHand::Main,
             continuation: false,
+            curve: AttackCurve::default(),
         }
     }
 }
@@ -1259,7 +1374,9 @@ impl SkeletonState {
         aim_held: bool,
         maximum_step: f32,
     ) -> bool {
-        if !self.body.is_downed() || self.posture_transition.is_some() {
+        if !matches!(self.body, BodyState::Prone | BodyState::Supine)
+            || self.posture_transition.is_some()
+        {
             self.downed_facing = None;
             return false;
         }
@@ -1402,6 +1519,12 @@ impl SkeletonState {
             })
         )
     }
+    pub fn attack_curve(&self) -> AttackCurve {
+        match self.action {
+            ActionState(ActionKind::Attack { curve, .. }) => curve,
+            _ => AttackCurve::default(),
+        }
+    }
     pub fn attack_animation(&self) -> Option<AttackAnimation> {
         match self.action {
             ActionState(ActionKind::Attack { animation, .. }) => Some(animation),
@@ -1538,6 +1661,24 @@ impl SkeletonState {
         start_tick: u64,
         contact_tick: u64,
     ) -> Result<(), ActionTransitionError> {
+        let preparation_ticks = contact_tick.saturating_sub(start_tick).max(1);
+        self.begin_attack_timed(
+            spec,
+            start_tick,
+            contact_tick,
+            contact_tick.saturating_add(preparation_ticks),
+        )
+    }
+
+    /// Starts an attack with independently authored preparation and recovery.
+    /// Contact remains semantic phase 0.5 for presentation and gameplay.
+    pub fn begin_attack_timed(
+        &mut self,
+        spec: AttackSpec,
+        start_tick: u64,
+        contact_tick: u64,
+        end_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
         self.action_admission()?;
         let may_follow = matches!(
             self.action,
@@ -1566,7 +1707,8 @@ impl SkeletonState {
             strike_family: spec.strike_family,
             hand: spec.hand,
             continuation: spec.continuation,
-            timeline: ActionTimeline::new(start_tick, contact_tick),
+            curve: spec.curve.normalized(),
+            timeline: ActionTimeline::with_recovery(start_tick, contact_tick, end_tick),
         });
         Ok(())
     }
@@ -1588,8 +1730,8 @@ impl SkeletonState {
         Ok(())
     }
 
-    /// Advances an action whose contact is the midpoint of its visual
-    /// timeline. Recovery gets the same bounded duration as preparation.
+    /// Advances an action whose semantic contact is phase 0.5. Preparation
+    /// and recovery may have different real-time durations.
     pub fn advance_action(&mut self, current_tick: u64) {
         let timeline = match &mut self.action {
             ActionState(ActionKind::Idle) => return,
@@ -1598,8 +1740,9 @@ impl SkeletonState {
             | ActionState(ActionKind::Block { timeline, .. }) => timeline,
         };
         let preparation = timeline.preparation_ticks.max(1);
+        let recovery = timeline.recovery_ticks.max(1);
         let contact_tick = timeline.start_tick.saturating_add(preparation);
-        let end_tick = contact_tick.saturating_add(preparation);
+        let end_tick = contact_tick.saturating_add(recovery);
         if current_tick >= end_tick {
             if current_tick > end_tick || end_tick == u64::MAX {
                 self.action = ActionState::default();
@@ -1611,7 +1754,7 @@ impl SkeletonState {
         timeline.phase = if current_tick <= contact_tick {
             0.5 * current_tick.saturating_sub(timeline.start_tick) as f32 / preparation as f32
         } else {
-            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / preparation as f32
+            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / recovery as f32
         };
     }
 }
@@ -1759,6 +1902,11 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.local_velocity = local_velocity;
     skeleton.world_velocity = linear_velocity;
     skeleton.locomotion_sample_tick = input.tick;
+    if skeleton.body == BodyState::Ragdolled {
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
+        skeleton.action = ActionState::default();
+        return;
+    }
     let landed = !was_supported && input.grounded;
     if landed {
         skeleton.landing_sequence = skeleton.landing_sequence.wrapping_add(1);

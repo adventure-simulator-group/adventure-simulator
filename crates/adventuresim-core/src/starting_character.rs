@@ -148,6 +148,59 @@ pub struct StartingSkills {
     pub smithing: f32,
 }
 
+impl crate::skill::PlayerSkills for StartingSkills {
+    fn skill_hours_trained(&self, skill: Skill) -> f32 {
+        match skill {
+            Skill::Polearm => self.polearm,
+            Skill::Axe => self.axe,
+            Skill::Bludgeon => self.bludgeon,
+            Skill::Sword => self.sword,
+            Skill::Knife => self.knife,
+            Skill::Dodge => self.dodge,
+            Skill::Block => self.block,
+            Skill::Bow => self.bow,
+            Skill::Crossbow => self.crossbow,
+            Skill::Firearm => self.firearm,
+            Skill::Throw => self.throw,
+            Skill::Will => self.will,
+            Skill::Insight => self.insight,
+            Skill::Charm => self.charm,
+            Skill::Command => self.command,
+            Skill::Deception => self.deception,
+            Skill::Physiology => self.physiology,
+            Skill::Cooking => self.cooking,
+            Skill::Herbalism => self.herbalism,
+            Skill::Religion => [
+                self.religion.roman_catholic,
+                self.religion.lutheran,
+                self.religion.reformed,
+                self.religion.anglican,
+                self.religion.eastern_orthodox,
+                self.religion.islamic,
+                self.religion.judaism,
+            ]
+            .into_iter()
+            .sum(),
+            Skill::Bestiary => self.bestiary.aggregate_effective(),
+            Skill::Surgery => self.surgery,
+            Skill::Stealth => self.stealth,
+            Skill::Balance => self.balance,
+            Skill::TerrainPlains => self.terrain_plains,
+            Skill::TerrainForest => self.terrain_forest,
+            Skill::TerrainHills => self.terrain_hills,
+            Skill::TerrainWetlands => self.terrain_wetlands,
+            Skill::TerrainUrban => self.terrain_urban,
+            Skill::TerrainSnow => self.terrain_snow,
+            Skill::Tailoring => self.tailoring,
+            Skill::Smithing => self.smithing,
+        }
+    }
+
+    fn bestiary_hours_for(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32 {
+        self.bestiary.effective(category)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartingOrganization {
     pub organization_id: String,
@@ -814,13 +867,28 @@ fn starting_activity_profile(
         })
         .map(|item| {
             let definition = crate::item_catalog::definition(&item.item_id);
-            let (shield, balance) = definition.map_or((false, 1.0), |definition| match &definition
-                .kind
-            {
-                crate::item_catalog_schema::ItemKind::Shield { .. } => (true, 1.0),
-                crate::item_catalog_schema::ItemKind::Weapon { balance, .. } => (false, *balance),
-                _ => (false, 1.0),
-            });
+            let (shield, balance) =
+                definition.map_or((false, 1.0), |definition| match &definition.kind {
+                    crate::item_catalog_schema::ItemKind::Shield { .. } => (true, 1.0),
+                    crate::item_catalog_schema::ItemKind::Weapon {
+                        moment_of_inertia_kg_m2,
+                        ..
+                    } => {
+                        let grip_to_tip_m = definition
+                            .equipment
+                            .as_ref()
+                            .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
+                        (
+                            false,
+                            crate::equipment::weapon_balance_from_moment(
+                                *moment_of_inertia_kg_m2,
+                                definition.weight_kg,
+                                grip_to_tip_m,
+                            ),
+                        )
+                    }
+                    _ => (false, 1.0),
+                });
             EquippedCombatItem {
                 weapons: crate::equipment::weapon_skill_distribution_for_item(&item.item_id),
                 shield,

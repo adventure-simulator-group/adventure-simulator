@@ -1720,6 +1720,8 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub precise: bool,
     #[serde(default)]
+    pub moment_of_inertia_kg_m_2: f32,
+    #[serde(default)]
     pub balance: f32,
     #[serde(default)]
     pub melee: bool,
@@ -1922,6 +1924,7 @@ impl Default for ItemDefinition {
             flexibility: 0.0,
             range_of_motion: 0.0,
             precise: false,
+            moment_of_inertia_kg_m_2: 0.0,
             balance: 0.0,
             melee: false,
             ranged: false,

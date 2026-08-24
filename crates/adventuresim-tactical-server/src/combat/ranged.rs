@@ -166,6 +166,22 @@ pub(super) fn resolve_ranged_attack(
         Some(BodySide::Left) => EquipSlot::HoldingLeft,
         _ => EquipSlot::HoldingRight,
     };
+    let target_position = target_character
+        .map_or(attacker_transform.translation, |(_, transform)| {
+            transform.translation
+        });
+    let (hits_attacker, impact_velocity_change) = hit_velocity_change(
+        result,
+        attacker_transform.translation,
+        target_position,
+        attacker_view.body_weight() + attacker_view.inventory_weight(),
+        defender_view.body_weight() + defender_view.inventory_weight(),
+    );
+    let impact_recipient = if hits_attacker {
+        shot.attacker()
+    } else {
+        target
+    };
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: shot.attacker(),
         target,
@@ -174,6 +190,8 @@ pub(super) fn resolve_ranged_attack(
         attacker_weapon_slot,
         defender_parry_slot,
         attacker_weapon_contact: false,
+        impact_recipient,
+        impact_velocity_change,
     });
     cmd.server_trigger(ToClients {
         targets: SendTargets::All,
@@ -184,6 +202,8 @@ pub(super) fn resolve_ranged_attack(
             result,
             flanking,
             defender_response,
+            impact_recipient,
+            impact_velocity_change,
         },
     });
 }

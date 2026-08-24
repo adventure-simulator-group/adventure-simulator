@@ -72,6 +72,10 @@ pub const TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND: f32 = 5.0;
 pub const TACTICAL_RUN_ACCELERATION_HZ: f32 = 8.0;
 pub const TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 =
     TACTICAL_RUN_SPEED_METRES_PER_SECOND * TACTICAL_RUN_ACCELERATION_HZ;
+/// Ahoy's grounded friction response is part of hit-reaction tuning, so keep
+/// these values explicit instead of inheriting dependency defaults.
+pub const TACTICAL_CHARACTER_FRICTION_HZ: f32 = 12.0;
+pub const TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND: f32 = 2.54;
 
 pub fn tactical_jog_speed(endurance: f32) -> f32 {
     let endurance = endurance.clamp(0.0, 5.0);
@@ -159,6 +163,8 @@ pub fn tactical_character_controller() -> CharacterController {
     CharacterController {
         speed: TACTICAL_RUN_SPEED_METRES_PER_SECOND,
         acceleration_hz: TACTICAL_RUN_ACCELERATION_HZ,
+        friction_hz: TACTICAL_CHARACTER_FRICTION_HZ,
+        stop_speed: TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND,
         jump_height: TACTICAL_JUMP_HEIGHT_METRES,
         ..default()
     }
@@ -238,6 +244,9 @@ fn tactical_prone_speed_for_pace(pace: MovementPace, upright_jog_speed: f32) -> 
 
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
+    /// Runs Avian's solver for explicitly enabled client-only presentation
+    /// bodies while keeping every ordinary replicated rigid body disabled.
+    pub enable_presentation_simulation: bool,
 }
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -249,6 +258,7 @@ impl Default for AdventureSimulatorPhysicsPlugin {
     fn default() -> Self {
         Self {
             enable_simulation: true,
+            enable_presentation_simulation: false,
         }
     }
 }
@@ -266,6 +276,9 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
                     .in_set(AdventureSimulatorPhysicsSet::ApplyMovementSpeed)
                     .before(AhoySystems::MoveCharacters),
             );
+        } else if self.enable_presentation_simulation {
+            app.add_plugins((PhysicsPlugins::new(FixedPostUpdate), AhoyCameraPlugin))
+                .register_required_components::<RigidBody, RigidBodyDisabled>();
         } else {
             app.add_plugins((
                 PhysicsSchedulePlugin::new(FixedPostUpdate),

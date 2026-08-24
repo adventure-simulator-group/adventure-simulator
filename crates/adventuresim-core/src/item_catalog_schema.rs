@@ -273,7 +273,8 @@ pub enum ItemKind {
         accuracy: f32,
         reach_m: f32,
         penetration: f32,
-        balance: f32,
+        /// Rotational inertia around the controlling hand, in kg*m^2.
+        moment_of_inertia_kg_m2: f32,
         precise: bool,
         melee: bool,
         ranged: bool,

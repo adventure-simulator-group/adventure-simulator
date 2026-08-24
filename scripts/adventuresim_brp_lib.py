@@ -244,6 +244,7 @@ class WeaponItem(BevyComponent):
     slash: bool
     pierce: bool
     windup_secs: float
+    offhand_windup_secs: float
 
     def to_brp(self) -> object:
         return {
@@ -262,6 +263,7 @@ class WeaponItem(BevyComponent):
             "slash": self.slash,
             "pierce": self.pierce,
             "windup_secs": self.windup_secs,
+            "offhand_windup_secs": self.offhand_windup_secs,
         }
 
     @classmethod
@@ -284,6 +286,7 @@ class WeaponItem(BevyComponent):
             slash=data["slash"],
             pierce=data["pierce"],
             windup_secs=data["windup_secs"],
+            offhand_windup_secs=data["offhand_windup_secs"],
         )
 
 @dataclass
@@ -566,6 +569,19 @@ class Stats(BevyComponent):
         )
 
 @dataclass
+class TacticalCombatSide(BevyComponent):
+    """`adventuresim_tactical_core::player::TacticalCombatSide`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_core::player::TacticalCombatSide"
+    value: Literal["Party", "Enemy"]
+
+    def to_brp(self) -> object:
+        return self.value
+
+    @classmethod
+    def from_brp(cls, value: object) -> "TacticalCombatSide":
+        return cls(value=value)
+
+@dataclass
 class TacticalCombatState(BevyComponent):
     """`adventuresim_tactical_core::player::TacticalCombatState`"""
     type_path: ClassVar[str] = "adventuresim_tactical_core::player::TacticalCombatState"
@@ -670,11 +686,16 @@ class DirectControlState(BevyComponent):
     """`adventuresim_tactical_netcode::client::DirectControlState`"""
     type_path: ClassVar[str] = "adventuresim_tactical_netcode::client::DirectControlState"
     pace: Literal["Walk", "Jog", "Sprint"]
-    crouch: bool
     jump_charge: bool
     attack_just_pressed: bool
     alternate_attack: bool
+    attack_hand: Literal["Main", "Offhand"]
+    melee_preparation: Literal["Preferred", "Alternate", "Offhand"]
+    local_preparation_from: Literal["Preferred", "Alternate", "Offhand"]
+    local_preparation_to: Literal["Preferred", "Alternate", "Offhand"]
+    local_preparation_progress: float
     dodge_just_pressed: bool
+    quickstep_direction: list[float]  # len 2
     roll_just_pressed: bool
     downed_align: bool
     caps_jog: bool
@@ -684,17 +705,29 @@ class DirectControlState(BevyComponent):
     posture_control_armed: bool
     posture_control_consumed: bool
     gamepad_roll_latched: bool
+    keyboard_roll_pending: bool
+    keyboard_dive_latched: bool
+    keyboard_quickstep_latched: bool
     space_jump_armed: bool
     jump_command: JumpCommand
+    mouse_main_attack_armed: bool
+    mouse_main_attack_seconds: float
+    mouse_offhand_attack_armed: bool
+    mouse_offhand_attack_seconds: float
 
     def to_brp(self) -> object:
         return {
             "pace": self.pace,
-            "crouch": self.crouch,
             "jump_charge": self.jump_charge,
             "attack_just_pressed": self.attack_just_pressed,
             "alternate_attack": self.alternate_attack,
+            "attack_hand": self.attack_hand,
+            "melee_preparation": self.melee_preparation,
+            "local_preparation_from": self.local_preparation_from,
+            "local_preparation_to": self.local_preparation_to,
+            "local_preparation_progress": self.local_preparation_progress,
             "dodge_just_pressed": self.dodge_just_pressed,
+            "quickstep_direction": list(self.quickstep_direction),
             "roll_just_pressed": self.roll_just_pressed,
             "downed_align": self.downed_align,
             "caps_jog": self.caps_jog,
@@ -704,8 +737,15 @@ class DirectControlState(BevyComponent):
             "posture_control_armed": self.posture_control_armed,
             "posture_control_consumed": self.posture_control_consumed,
             "gamepad_roll_latched": self.gamepad_roll_latched,
+            "keyboard_roll_pending": self.keyboard_roll_pending,
+            "keyboard_dive_latched": self.keyboard_dive_latched,
+            "keyboard_quickstep_latched": self.keyboard_quickstep_latched,
             "space_jump_armed": self.space_jump_armed,
             "jump_command": self.jump_command.to_brp(),
+            "mouse_main_attack_armed": self.mouse_main_attack_armed,
+            "mouse_main_attack_seconds": self.mouse_main_attack_seconds,
+            "mouse_offhand_attack_armed": self.mouse_offhand_attack_armed,
+            "mouse_offhand_attack_seconds": self.mouse_offhand_attack_seconds,
         }
 
     @classmethod
@@ -714,11 +754,16 @@ class DirectControlState(BevyComponent):
         assert isinstance(data, dict)
         return cls(
             pace=data["pace"],
-            crouch=data["crouch"],
             jump_charge=data["jump_charge"],
             attack_just_pressed=data["attack_just_pressed"],
             alternate_attack=data["alternate_attack"],
+            attack_hand=data["attack_hand"],
+            melee_preparation=data["melee_preparation"],
+            local_preparation_from=data["local_preparation_from"],
+            local_preparation_to=data["local_preparation_to"],
+            local_preparation_progress=data["local_preparation_progress"],
             dodge_just_pressed=data["dodge_just_pressed"],
+            quickstep_direction=list(data["quickstep_direction"]),
             roll_just_pressed=data["roll_just_pressed"],
             downed_align=data["downed_align"],
             caps_jog=data["caps_jog"],
@@ -728,8 +773,15 @@ class DirectControlState(BevyComponent):
             posture_control_armed=data["posture_control_armed"],
             posture_control_consumed=data["posture_control_consumed"],
             gamepad_roll_latched=data["gamepad_roll_latched"],
+            keyboard_roll_pending=data["keyboard_roll_pending"],
+            keyboard_dive_latched=data["keyboard_dive_latched"],
+            keyboard_quickstep_latched=data["keyboard_quickstep_latched"],
             space_jump_armed=data["space_jump_armed"],
             jump_command=JumpCommand.from_brp(data["jump_command"]),
+            mouse_main_attack_armed=data["mouse_main_attack_armed"],
+            mouse_main_attack_seconds=data["mouse_main_attack_seconds"],
+            mouse_offhand_attack_armed=data["mouse_offhand_attack_armed"],
+            mouse_offhand_attack_seconds=data["mouse_offhand_attack_seconds"],
         )
 
 @dataclass
@@ -746,6 +798,35 @@ class PlayerInputOverride(BevyComponent):
         return cls(value=((PlayerInputRequest.from_brp(v0)) if (v0 := value) is not None else None))
 
 @dataclass
+class AimAtNearestOpponentAi(BevyComponent):
+    """`adventuresim_tactical_server::bot::AimAtNearestOpponentAi`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_server::bot::AimAtNearestOpponentAi"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "AimAtNearestOpponentAi":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class CombatantBehaviorPackages(BevyComponent):
+    """`adventuresim_tactical_server::bot::CombatantBehaviorPackages`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_server::bot::CombatantBehaviorPackages"
+    value: list[Any]  # unresolved: adventuresim_tactical_server::bot::CombatantBehaviorPackage
+
+    def to_brp(self) -> object:
+        return list(self.value)
+
+    @classmethod
+    def from_brp(cls, value: object) -> "CombatantBehaviorPackages":
+        return cls(value=list(value))
+
+@dataclass
 class MissionEnemy(BevyComponent):
     """`adventuresim_tactical_server::bot::MissionEnemy`"""
     type_path: ClassVar[str] = "adventuresim_tactical_server::bot::MissionEnemy"
@@ -756,6 +837,38 @@ class MissionEnemy(BevyComponent):
 
     @classmethod
     def from_brp(cls, value: object) -> "MissionEnemy":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class RaisedGuardAi(BevyComponent):
+    """`adventuresim_tactical_server::bot::RaisedGuardAi`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_server::bot::RaisedGuardAi"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RaisedGuardAi":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+        )
+
+@dataclass
+class RecoverToUprightAi(BevyComponent):
+    """`adventuresim_tactical_server::bot::RecoverToUprightAi`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_server::bot::RecoverToUprightAi"
+
+    def to_brp(self) -> object:
+        return {
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "RecoverToUprightAi":
         data = value
         assert isinstance(data, dict)
         return cls(
@@ -784,6 +897,25 @@ class DefenseChances(BevyComponent):
         )
 
 @dataclass
+class ReactiveDefenseAi(BevyComponent):
+    """`adventuresim_tactical_server::bot::defense::ReactiveDefenseAi`"""
+    type_path: ClassVar[str] = "adventuresim_tactical_server::bot::defense::ReactiveDefenseAi"
+    requires_facing: bool
+
+    def to_brp(self) -> object:
+        return {
+            "requires_facing": self.requires_facing,
+        }
+
+    @classmethod
+    def from_brp(cls, value: object) -> "ReactiveDefenseAi":
+        data = value
+        assert isinstance(data, dict)
+        return cls(
+            requires_facing=data["requires_facing"],
+        )
+
+@dataclass
 class OffensiveCombatAi(BevyComponent):
     """`adventuresim_tactical_server::bot::offense::OffensiveCombatAi`"""
     type_path: ClassVar[str] = "adventuresim_tactical_server::bot::offense::OffensiveCombatAi"
@@ -804,19 +936,6 @@ class OffensiveCombatAi(BevyComponent):
             target=data["target"],
             phase=data["phase"],
         )
-
-@dataclass
-class TacticalCombatSide(BevyComponent):
-    """`adventuresim_tactical_server::combat::protocol::TacticalCombatSide`"""
-    type_path: ClassVar[str] = "adventuresim_tactical_server::combat::protocol::TacticalCombatSide"
-    value: Literal["Party", "Enemy"]
-
-    def to_brp(self) -> object:
-        return self.value
-
-    @classmethod
-    def from_brp(cls, value: object) -> "TacticalCombatSide":
-        return cls(value=value)
 
 @dataclass
 class Session(BevyComponent):
@@ -3164,70 +3283,6 @@ class AnimationTransitions(BevyComponent):
         return cls(
             main_animation=data["main_animation"],
             transitions=[AnimationTransition.from_brp(v0) for v0 in data["transitions"]],
-        )
-
-@dataclass
-class AnimationGraphPlayer(BevyComponent):
-    """`bevy_animation_graph_core::animation_graph_player::AnimationGraphPlayer`"""
-    type_path: ClassVar[str] = "bevy_animation_graph_core::animation_graph_player::AnimationGraphPlayer"
-    playback_state: Literal["Paused", "Play", "PlayOneFrame"]
-    animation: Any  # unresolved: bevy_animation_graph_core::animation_graph_player::AnimationSource
-    skeleton: Any  # unresolved: bevy_asset::handle::Handle<bevy_animation_graph_core::skeleton::Skeleton>
-    ragdoll: Any | None  # unresolved: bevy_asset::handle::Handle<bevy_animation_graph_core::ragdoll::definition::Ragdoll>
-    ragdoll_bone_map: Any | None  # unresolved: bevy_asset::handle::Handle<bevy_animation_graph_core::ragdoll::bone_mapping::RagdollBoneMap>
-    spawned_ragdoll: SpawnedRagdoll | None
-    context_arena: GraphContextArena | None
-    elapsed: float
-    pending_update: Any  # unresolved: bevy_animation_graph_core::animation_graph::TimeUpdate
-    deferred_gizmos: DeferredGizmos
-    debug_draw_bones: list[Any]  # unresolved: (bevy_animation_graph_core::id::BoneId, bevy_color::color::Color, bool)
-    entity_map: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::id::BoneId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
-    queued_events: EventQueue
-    outputs: Any  # unresolved: bevy_platform::collections::HashMap<alloc::string::String, bevy_animation_graph_core::edge_data::DataValue, bevy_platform::hash::FixedHasher>
-    io_overrides: IoOverrides
-    global_input_data: Any  # unresolved: bevy_platform::collections::HashMap<alloc::string::String, bevy_animation_graph_core::edge_data::DataValue, bevy_platform::hash::FixedHasher>
-
-    def to_brp(self) -> object:
-        return {
-            "playback_state": self.playback_state,
-            "animation": self.animation,
-            "skeleton": self.skeleton,
-            "ragdoll": self.ragdoll,
-            "ragdoll_bone_map": self.ragdoll_bone_map,
-            "spawned_ragdoll": ((v0.to_brp()) if (v0 := self.spawned_ragdoll) is not None else None),
-            "context_arena": ((v0.to_brp()) if (v0 := self.context_arena) is not None else None),
-            "elapsed": self.elapsed,
-            "pending_update": self.pending_update,
-            "deferred_gizmos": self.deferred_gizmos.to_brp(),
-            "debug_draw_bones": list(self.debug_draw_bones),
-            "entity_map": self.entity_map,
-            "queued_events": self.queued_events.to_brp(),
-            "outputs": self.outputs,
-            "io_overrides": self.io_overrides.to_brp(),
-            "global_input_data": self.global_input_data,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "AnimationGraphPlayer":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            playback_state=data["playback_state"],
-            animation=data["animation"],
-            skeleton=data["skeleton"],
-            ragdoll=data["ragdoll"],
-            ragdoll_bone_map=data["ragdoll_bone_map"],
-            spawned_ragdoll=((SpawnedRagdoll.from_brp(v0)) if (v0 := data["spawned_ragdoll"]) is not None else None),
-            context_arena=((GraphContextArena.from_brp(v0)) if (v0 := data["context_arena"]) is not None else None),
-            elapsed=data["elapsed"],
-            pending_update=data["pending_update"],
-            deferred_gizmos=DeferredGizmos.from_brp(data["deferred_gizmos"]),
-            debug_draw_bones=list(data["debug_draw_bones"]),
-            entity_map=data["entity_map"],
-            queued_events=EventQueue.from_brp(data["queued_events"]),
-            outputs=data["outputs"],
-            io_overrides=IoOverrides.from_brp(data["io_overrides"]),
-            global_input_data=data["global_input_data"],
         )
 
 @dataclass
@@ -10300,10 +10355,12 @@ class SprintInputState:
 class JumpCommand:
     """`adventuresim_tactical_netcode::message::JumpCommand`"""
     sequence: int
+    quickstep: list[float] | None  # len 2
 
     def to_brp(self) -> object:
         return {
             "sequence": self.sequence,
+            "quickstep": ((list(v0)) if (v0 := self.quickstep) is not None else None),
         }
 
     @classmethod
@@ -10312,6 +10369,7 @@ class JumpCommand:
         assert isinstance(data, dict)
         return cls(
             sequence=data["sequence"],
+            quickstep=((list(v0)) if (v0 := data["quickstep"]) is not None else None),
         )
 
 @dataclass
@@ -10325,6 +10383,7 @@ class PlayerInputRequest:
     posture: PostureCommand
     pace: Literal["Walk", "Jog", "Sprint"]
     weapon_guard: Literal["Lowered", "Raised"]
+    melee_preparation: Literal["Preferred", "Alternate", "Offhand"]
 
     def to_brp(self) -> object:
         return {
@@ -10336,6 +10395,7 @@ class PlayerInputRequest:
             "posture": self.posture.to_brp(),
             "pace": self.pace,
             "weapon_guard": self.weapon_guard,
+            "melee_preparation": self.melee_preparation,
         }
 
     @classmethod
@@ -10351,6 +10411,7 @@ class PlayerInputRequest:
             posture=PostureCommand.from_brp(data["posture"]),
             pace=data["pace"],
             weapon_guard=data["weapon_guard"],
+            melee_preparation=data["melee_preparation"],
         )
 
 @dataclass
@@ -10801,204 +10862,6 @@ class AnimationTransition:
             current_weight=data["current_weight"],
             weight_decline_per_sec=data["weight_decline_per_sec"],
             animation=data["animation"],
-        )
-
-@dataclass
-class DeferredGizmos:
-    """`bevy_animation_graph_core::context::deferred_gizmos::DeferredGizmos`"""
-
-    def to_brp(self) -> object:
-        return {
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "DeferredGizmos":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-        )
-
-@dataclass
-class GraphState:
-    """`bevy_animation_graph_core::context::graph_context::GraphState`"""
-    node_states: NodeStates
-    node_caches: NodeCaches
-    query_output_time: Any  # unresolved: bevy_animation_graph_core::context::graph_context::QueryOutputTime
-    graph_id: Any  # unresolved: bevy_asset::id::AssetId<bevy_animation_graph_core::animation_graph::AnimationGraph>
-
-    def to_brp(self) -> object:
-        return {
-            "node_states": self.node_states.to_brp(),
-            "node_caches": self.node_caches.to_brp(),
-            "query_output_time": self.query_output_time,
-            "graph_id": self.graph_id,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "GraphState":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            node_states=NodeStates.from_brp(data["node_states"]),
-            node_caches=NodeCaches.from_brp(data["node_caches"]),
-            query_output_time=data["query_output_time"],
-            graph_id=data["graph_id"],
-        )
-
-@dataclass
-class GraphContextArena:
-    """`bevy_animation_graph_core::context::graph_context_arena::GraphContextArena`"""
-    contexts: list[GraphState]
-    hierarchy: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::context::graph_context_arena::SubContextId, bevy_animation_graph_core::context::graph_context_arena::GraphContextId, bevy_platform::hash::FixedHasher>
-    top_level_context: int
-
-    def to_brp(self) -> object:
-        return {
-            "contexts": [v0.to_brp() for v0 in self.contexts],
-            "hierarchy": self.hierarchy,
-            "top_level_context": self.top_level_context,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "GraphContextArena":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            contexts=[GraphState.from_brp(v0) for v0 in data["contexts"]],
-            hierarchy=data["hierarchy"],
-            top_level_context=data["top_level_context"],
-        )
-
-@dataclass
-class IoOverrides:
-    """`bevy_animation_graph_core::context::io_env::IoOverrides`"""
-    data: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::GraphInputPin, bevy_animation_graph_core::edge_data::DataValue, bevy_platform::hash::FixedHasher>
-    duration: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::GraphInputPin, core::option::Option<f32>, bevy_platform::hash::FixedHasher>
-    time: Any | None  # unresolved: bevy_animation_graph_core::animation_graph::TimeUpdate
-
-    def to_brp(self) -> object:
-        return {
-            "data": self.data,
-            "duration": self.duration,
-            "time": self.time,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "IoOverrides":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            data=data["data"],
-            duration=data["duration"],
-            time=data["time"],
-        )
-
-@dataclass
-class NodeCaches:
-    """`bevy_animation_graph_core::context::node_caches::NodeCaches`"""
-    caches: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::NodeId, bevy_animation_graph_core::context::node_caches::NodeCache, bevy_platform::hash::FixedHasher>
-
-    def to_brp(self) -> object:
-        return {
-            "caches": self.caches,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "NodeCaches":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            caches=data["caches"],
-        )
-
-@dataclass
-class NodeStates:
-    """`bevy_animation_graph_core::context::node_states::NodeStates`"""
-    states: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::animation_graph::NodeId, bevy_animation_graph_core::context::node_states::NodeState, bevy_platform::hash::FixedHasher>
-
-    def to_brp(self) -> object:
-        return {
-            "states": self.states,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "NodeStates":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            states=data["states"],
-        )
-
-@dataclass
-class EventQueue:
-    """`bevy_animation_graph_core::edge_data::events::EventQueue`"""
-    events: list[SampledEvent]
-
-    def to_brp(self) -> object:
-        return {
-            "events": [v0.to_brp() for v0 in self.events],
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "EventQueue":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            events=[SampledEvent.from_brp(v0) for v0 in data["events"]],
-        )
-
-@dataclass
-class SampledEvent:
-    """`bevy_animation_graph_core::edge_data::events::SampledEvent`"""
-    event: Any  # unresolved: bevy_animation_graph_core::edge_data::events::AnimationEvent
-    weight: float
-    percentage: float
-    track: str | None
-
-    def to_brp(self) -> object:
-        return {
-            "event": self.event,
-            "weight": self.weight,
-            "percentage": self.percentage,
-            "track": self.track,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SampledEvent":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            event=data["event"],
-            weight=data["weight"],
-            percentage=data["percentage"],
-            track=data["track"],
-        )
-
-@dataclass
-class SpawnedRagdoll:
-    """`bevy_animation_graph_core::ragdoll::spawning::SpawnedRagdoll`"""
-    root: int
-    bodies: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::ragdoll::definition::BodyId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
-    colliders: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::ragdoll::definition::ColliderId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
-    joints: Any  # unresolved: bevy_platform::collections::HashMap<bevy_animation_graph_core::ragdoll::definition::JointId, bevy_ecs::entity::Entity, bevy_platform::hash::FixedHasher>
-
-    def to_brp(self) -> object:
-        return {
-            "root": self.root,
-            "bodies": self.bodies,
-            "colliders": self.colliders,
-            "joints": self.joints,
-        }
-
-    @classmethod
-    def from_brp(cls, value: object) -> "SpawnedRagdoll":
-        data = value
-        assert isinstance(data, dict)
-        return cls(
-            root=data["root"],
-            bodies=data["bodies"],
-            colliders=data["colliders"],
-            joints=data["joints"],
         )
 
 @dataclass

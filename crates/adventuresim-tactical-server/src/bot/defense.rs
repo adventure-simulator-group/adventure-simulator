@@ -1,26 +1,11 @@
 use super::*;
 
 const FRONTAL_FLANKING_MAX: f32 = 0.01;
-/// Must land shortly before the attacker's weapon windup (see
-/// `PlayerEquipment::weapon_windup_secs`, 300ms by default - the delay
-/// between an attack's `Start` and its resolution), not just somewhere
-/// under it. `resolve_defender_response` scores a committed
-/// reaction by freshness at the moment of impact
-/// (`input_reflex = 1 - elapsed_since_commit / MAX_REFLEX_WINDOW`, 500ms),
-/// and `Dodge`/`Parry`'s effectiveness scales directly with that (`factor()`
-/// in `adventuresim-core::combat`) - a reaction that commits early in the
-/// window is technically "in time" but has mostly gone stale by the time
-/// the hit actually resolves, and barely reduces the attack roll. Landing
-/// in the last ~50ms before resolution keeps the reflex close to fresh
-/// (`input_reflex` near 1.0) while leaving margin for the windup race's own
-/// jitter.
-const REACTION_DELAY_SECS: std::ops::Range<f32> = 0.20..0.27;
+const ORDINARY_REACTION_DELAY_SECS: std::ops::Range<f32> = 0.20..0.27;
 
 /// Per-bot chance (each out of 1.0) that a reflex defense (see
-/// `try_start_reaction`) resolves to a parry or dodge, once the bot even
-/// gets a chance to react at all - that part still requires facing the
-/// attacker (`FRONTAL_FLANKING_MAX`), which this doesn't override. Inserted
-/// alongside `OffensiveCombatAi` with balance-tuned defaults; BRP tests
+/// `try_start_reaction`) resolves to a parry or dodge. Inserted by a reactive
+/// defense behavior package with balance-tuned defaults; BRP tests
 /// mutate it to force deterministic parry/dodge outcomes (see
 /// `DefenseChances` in `scripts/adventuresim_brp_lib.py`, regenerated via
 /// `just generate-brp-types`).
@@ -40,8 +25,19 @@ impl Default for DefenseChances {
     }
 }
 
-#[derive(Component)]
-pub(super) struct CountedEnemyDefeat;
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct ReactiveDefenseAi {
+    pub requires_facing: bool,
+}
+
+impl Default for ReactiveDefenseAi {
+    fn default() -> Self {
+        Self {
+            requires_facing: true,
+        }
+    }
+}
 
 #[derive(Component)]
 pub(super) struct PendingBotReaction {
@@ -49,36 +45,17 @@ pub(super) struct PendingBotReaction {
     choice: DefendRequest,
 }
 
-pub(super) fn on_tactical_combatant_defeated(
-    defeated: On<TacticalCombatantDefeated>,
-    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDefeat>)>,
-    mut commands: Commands,
-    mut state: ResMut<MissionState>,
-) {
-    let entity = defeated.0;
-    if enemies.get(entity).is_err() {
-        return;
-    }
-    commands.entity(entity).insert((
-        CountedEnemyDefeat,
-        PendingRemoval {
-            timer: Timer::from_seconds(DESPAWN_REPLICATION_GRACE_SECONDS, TimerMode::Once),
-        },
-    ));
-    state.record_enemy_defeat();
-}
-
 /// Predicts whether the nearest opposing AI facing a client attacker notices
 /// the untargeted client windup and decides to dodge or parry it.
 ///
-/// A bot has no real reflexes: it only ever gets a chance to react when it is
-/// facing its attacker (`flanking <= FRONTAL_FLANKING_MAX`), and even then it
-/// correctly reads the attack only some of the time. A decision to react is
+/// A bot has no real reflexes: its package controls whether facing is required
+/// and how often it reads the attack correctly. A decision to react is
 /// committed only after a random delay (see [`REACTION_DELAY_SECS`]).
 pub(super) fn on_attack_started(
     event: On<FromClient<MeleeActionRequest>>,
     mut cmd: Commands,
     q_character: Query<(&CharacterLook, &Transform, &TacticalCombatSide)>,
+    viewer: TacticalPlayerViewer,
     q_bots: Query<
         (
             Entity,
@@ -86,14 +63,19 @@ pub(super) fn on_attack_started(
             &Transform,
             &TacticalCombatSide,
             &TacticalCombatState,
+            Option<&ReactiveDefenseAi>,
             Option<&DefenseChances>,
         ),
-        With<OffensiveCombatAi>,
+        With<MissionEnemy>,
     >,
 ) {
-    if !matches!(**event, MeleeActionRequest::Start { .. }) {
+    let MeleeActionRequest::Start {
+        strike_family,
+        hand,
+    } = **event
+    else {
         return;
-    }
+    };
     let Some(attacker) = event.client_id.entity() else {
         return;
     };
@@ -102,13 +84,15 @@ pub(super) fn on_attack_started(
     };
     let nearest = q_bots
         .iter()
-        .filter(|(_, _, _, side, state, _)| **side != *attacker_side && !state.is_incapacitated())
+        .filter(|(_, _, _, side, state, _, _)| {
+            **side != *attacker_side && !state.is_incapacitated()
+        })
         .min_by(
-            |(a, _, a_transform, _, _, _), (b, _, b_transform, _, _, _)| {
+            |(a, _, a_transform, _, _, _, _), (b, _, b_transform, _, _, _, _)| {
                 compare_target(attacker_transform, a_transform, *a, b_transform, *b)
             },
         );
-    let Some((bot, bot_look, _, _, _, chances)) = nearest else {
+    let Some((bot, bot_look, _, _, _, Some(defense), chances)) = nearest else {
         return;
     };
     try_start_reaction(
@@ -116,7 +100,12 @@ pub(super) fn on_attack_started(
         bot,
         attacker_look,
         bot_look,
+        *defense,
         chances.copied().unwrap_or_default(),
+        viewer
+            .get_for_attack(attacker, hand)
+            .map(|view| attack_preparation_secs(&view, strike_family.melee_style()))
+            .unwrap_or(0.3),
     );
 }
 
@@ -124,20 +113,18 @@ pub(super) fn on_targeted_attack_started(
     event: On<MeleeAttackStartedIntent>,
     mut cmd: Commands,
     q_character: Query<&CharacterLook>,
-    q_ai: Query<
-        (
-            &CharacterLook,
-            &TacticalCombatState,
-            Option<&DefenseChances>,
-        ),
-        With<OffensiveCombatAi>,
-    >,
+    q_ai: Query<(
+        &CharacterLook,
+        &TacticalCombatState,
+        &ReactiveDefenseAi,
+        Option<&DefenseChances>,
+    )>,
 ) {
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, event.target])
     else {
         return;
     };
-    if let Ok((_, state, chances)) = q_ai.get(event.target)
+    if let Ok((_, state, defense, chances)) = q_ai.get(event.target)
         && !state.is_incapacitated()
     {
         try_start_reaction(
@@ -145,7 +132,9 @@ pub(super) fn on_targeted_attack_started(
             event.target,
             attacker_look,
             defender_look,
+            *defense,
             chances.copied().unwrap_or_default(),
+            event.windup.as_secs_f32(),
         );
     }
 }
@@ -154,14 +143,12 @@ pub(super) fn on_targeted_ranged_attack_started(
     event: On<RangedAttackStartedIntent>,
     mut cmd: Commands,
     q_character: Query<&CharacterLook>,
-    q_ai: Query<
-        (
-            &CharacterLook,
-            &TacticalCombatState,
-            Option<&DefenseChances>,
-        ),
-        With<OffensiveCombatAi>,
-    >,
+    q_ai: Query<(
+        &CharacterLook,
+        &TacticalCombatState,
+        &ReactiveDefenseAi,
+        Option<&DefenseChances>,
+    )>,
 ) {
     let Some(target) = event.target else {
         return;
@@ -169,7 +156,7 @@ pub(super) fn on_targeted_ranged_attack_started(
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, target]) else {
         return;
     };
-    if let Ok((_, state, chances)) = q_ai.get(target)
+    if let Ok((_, state, defense, chances)) = q_ai.get(target)
         && !state.is_incapacitated()
     {
         try_start_reaction(
@@ -177,7 +164,9 @@ pub(super) fn on_targeted_ranged_attack_started(
             target,
             attacker_look,
             defender_look,
+            *defense,
             chances.copied().unwrap_or_default(),
+            event.animation_windup.as_secs_f32(),
         );
     }
 }
@@ -187,18 +176,27 @@ pub(super) fn try_start_reaction(
     defender: Entity,
     attacker_look: &CharacterLook,
     defender_look: &CharacterLook,
+    defense: ReactiveDefenseAi,
     chances: DefenseChances,
+    windup_secs: f32,
 ) {
     let (a2, a1) = attacker_look.yaw.sin_cos();
     let (d2, d1) = defender_look.yaw.sin_cos();
-    if flanking_from_dir((a1, a2), (d1, d2)) > FRONTAL_FLANKING_MAX {
+    if defense.requires_facing && flanking_from_dir((a1, a2), (d1, d2)) > FRONTAL_FLANKING_MAX {
         return;
     }
     let Some(choice) = roll_defend_choice(chances) else {
         return;
     };
+    let delay = if chances.dodge_chance >= 1.0 && chances.parry_chance <= f64::EPSILON {
+        // The authored test dodger is deliberately anticipatory. Leave enough
+        // of even a fast fist windup for the quickstep's launch phase.
+        (windup_secs - 0.16).clamp(0.02, 0.12)
+    } else {
+        rand::random_range(ORDINARY_REACTION_DELAY_SECS)
+    };
     cmd.entity(defender).insert(PendingBotReaction {
-        timer: Timer::from_seconds(rand::random_range(REACTION_DELAY_SECS), TimerMode::Once),
+        timer: Timer::from_seconds(delay, TimerMode::Once),
         choice,
     });
 }
@@ -208,7 +206,9 @@ pub(super) fn roll_defend_choice(chances: DefenseChances) -> Option<DefendReques
     if roll < chances.parry_chance {
         Some(DefendRequest::Parry)
     } else if roll < chances.parry_chance + chances.dodge_chance {
-        Some(DefendRequest::Dodge)
+        Some(DefendRequest::Dodge {
+            direction: if rand::random() { Vec2::X } else { Vec2::NEG_X },
+        })
     } else {
         None
     }
@@ -229,11 +229,11 @@ pub(super) fn tick_bot_reactions(
             continue;
         }
 
-        cmd.entity(bot)
-            .remove::<PendingBotReaction>()
-            .insert(PendingDefenderResponse {
-                choice: reaction.choice,
-                set_at: CombatInstant::from_elapsed(&time),
-            });
+        let choice = reaction.choice;
+        cmd.entity(bot).remove::<PendingBotReaction>();
+        cmd.trigger(DefendIntent {
+            defender: bot,
+            choice,
+        });
     }
 }

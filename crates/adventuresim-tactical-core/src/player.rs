@@ -4,7 +4,7 @@ use bevy_enhanced_input::prelude::Actions;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    animation::AttackHand,
+    animation::{AttackCurve, AttackHand, AttackSpec},
     inventory::{InventoryView, InventoryViewer},
 };
 
@@ -26,6 +26,17 @@ pub type ControlledPlayer = Actions<Player>;
 #[component(immutable)]
 pub struct Player {
     pub name: String,
+}
+
+/// Transient tactical allegiance. This is authoritative on the tactical
+/// server and replicated so clients can present enemy-only combat UI without
+/// inferring allegiance from connectivity or local control.
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, Copy, PartialEq, Eq)]
+#[reflect(Component)]
+#[component(immutable)]
+pub enum TacticalCombatSide {
+    Party,
+    Enemy,
 }
 
 pub fn default_tactical_character_id() -> u64 {
@@ -594,6 +605,59 @@ impl TacticalPlayerViewer<'_, '_> {
             .with_equipment(inventory)
             .with_skills(skills))
     }
+}
+
+/// Effective leaf-skill check used by attack handling. The weapon's authored
+/// skill distribution is the single selector, including the shared unarmed
+/// bludgeon fallback.
+pub fn effective_weapon_handling_skill(view: &TacticalPlayerView<'_, '_, '_>) -> f32 {
+    view.weapon_skill_distribution()
+        .weighted_check(|skill| view.skill_check(skill, LimbWeights::all_equal()))
+}
+
+/// Applies the attacker's current equipment and skill to the replicated pose
+/// curve. Player input and NPC behavior call this same function.
+pub fn configure_attack_curve(
+    mut spec: AttackSpec,
+    view: &TacticalPlayerView<'_, '_, '_>,
+) -> AttackSpec {
+    spec.curve = AttackCurve::from_handling(
+        view.weapon_moment_of_inertia(),
+        effective_weapon_handling_skill(view),
+    );
+    spec
+}
+
+/// Contact timing combines authored rotational inertia with the attacker's arm
+/// strength. The correction is deliberately bounded: strength helps control a
+/// difficult weapon but does not erase the physical distinction between it
+/// and a knife.
+pub fn attack_preparation_secs(
+    view: &TacticalPlayerView<'_, '_, '_>,
+    style: MeleeAttackStyle,
+) -> f32 {
+    let inertia = view.weapon_moment_of_inertia().max(0.0);
+    let inertia_difficulty = if view.weapon_is_unarmed() {
+        0.35
+    } else {
+        (inertia / (inertia + 0.45)).sqrt()
+    };
+    let strength = view.limb_attr_by_weight(LimbAttribute::Strength, LimbWeights::both_arms());
+    let strength_scale = (1.0 + (3.0 - strength) * 0.08 * inertia_difficulty).clamp(0.85, 1.20);
+    (view.weapon_windup_secs_for(style) * strength_scale).clamp(0.08, 0.75)
+}
+
+/// Skill mostly improves braking and redirection rather than raw peak weapon
+/// speed. Continuations save additional recovery but remain bounded.
+pub fn attack_recovery_secs(
+    view: &TacticalPlayerView<'_, '_, '_>,
+    style: MeleeAttackStyle,
+    continuation: bool,
+) -> f32 {
+    let control = (effective_weapon_handling_skill(view) / 5.0).clamp(0.0, 1.0);
+    let skill_scale = 1.12 - 0.28 * control;
+    let continuation_scale = if continuation { 0.78 } else { 1.0 };
+    (view.weapon_recovery_secs_for(style) * skill_scale * continuation_scale).clamp(0.08, 0.55)
 }
 
 #[cfg(test)]
