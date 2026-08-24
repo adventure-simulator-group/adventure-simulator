@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import json
+import math
 import os
 import secrets
 from pathlib import Path
@@ -1685,24 +1686,32 @@ def reseed_tactical_mission(
     return 0
 
 
-def tactical_executable(package: str) -> Path:
+def tactical_executable(package: str, build_profile: str = "dev") -> Path:
+    if build_profile not in {"dev", "release"}:
+        raise ValueError(f"unsupported tactical build profile: {build_profile}")
     suffix = ".exe" if os.name == "nt" else ""
     target = cargo_target_dir()
     if not target.is_absolute():
         target = ROOT / target
-    return (target / "debug" / f"{package}{suffix}").resolve()
+    directory = "release" if build_profile == "release" else "debug"
+    return (target / directory / f"{package}{suffix}").resolve()
 
 
-def build_tactical_play(launch_client: bool) -> int:
+def build_tactical_play(launch_client: bool, client_profile: str = "dev") -> int:
+    if client_profile not in {"dev", "release"}:
+        raise ValueError(f"unsupported tactical client profile: {client_profile}")
     commands = [[
         "cargo", "build", "--package", "adventuresim-tactical-server",
         "--bin", "adventuresim-tactical-server", "--features", "debug",
     ]]
     if launch_client:
-        commands.append([
+        client_command = [
             "cargo", "build", "--package", "adventuresim-tactical-client",
             "--bin", "adventuresim-tactical-client", "--features", "debug",
-        ])
+        ]
+        if client_profile == "release":
+            client_command.insert(2, "--release")
+        commands.append(client_command)
     for command in commands:
         result = subprocess.run(command, cwd=ROOT)
         if result.returncode:
@@ -1827,6 +1836,9 @@ def tactical_session_config(
     capture_source: str = "window",
     render_backend: str = "auto",
     input_script: str | None = None,
+    client_profile: str = "dev",
+    frame_timing_seconds: float | None = None,
+    frame_timing_warmup_seconds: float = 5.0,
 ) -> dict[str, object]:
     return {
         "repository": str(ROOT.resolve()),
@@ -1850,6 +1862,9 @@ def tactical_session_config(
         "capture_source": capture_source,
         "render_backend": render_backend,
         "input_script_source": input_script,
+        "client_profile": client_profile,
+        "frame_timing_seconds": frame_timing_seconds,
+        "frame_timing_warmup_seconds": frame_timing_warmup_seconds,
     }
 
 
@@ -1861,7 +1876,9 @@ def launch_recorded_tactical_client(
     run_dir: Path,
     config: dict[str, object],
 ) -> subprocess.Popen[str]:
-    executable = tactical_executable("adventuresim-tactical-client")
+    executable = tactical_executable(
+        "adventuresim-tactical-client", str(config.get("client_profile", "dev"))
+    )
     if not executable.is_file():
         raise RuntimeError("native tactical client is not built; run `just tactical-play animation`")
     client_config = {
@@ -1881,6 +1898,16 @@ def launch_recorded_tactical_client(
         "--present-mode", str(config.get("present_mode", "auto-vsync")),
     ]
     suffix = str(config["session_id"])[:12]
+    if config.get("frame_timing_seconds") is not None:
+        frame_timing_log = run_dir / f"frame-timing-{suffix}.jsonl"
+        command.extend([
+            "--frame-timing-log", str(frame_timing_log),
+            "--frame-timing-seconds", str(config["frame_timing_seconds"]),
+            "--frame-timing-warmup-seconds",
+            str(config.get("frame_timing_warmup_seconds", 5.0)),
+        ])
+        client_config["frame_timing_log"] = str(frame_timing_log)
+        config["frame_timing_log"] = str(frame_timing_log)
     if config["play_mode"] == TacticalPlayMode.DIAGNOSTIC.value:
         animation_log = run_dir / f"animation-state-{suffix}.jsonl"
         command.extend(["--animation-log", str(animation_log)])
@@ -2429,13 +2456,23 @@ def tactical_play(
     render_backend: str = "auto",
     scene_input: str | None = None,
     input_script: str | None = None,
+    client_profile: str = "dev",
+    frame_timing_seconds: float | None = None,
+    frame_timing_warmup_seconds: float = 5.0,
 ) -> int:
     benchmark = StartupBenchmark.start()
     if input_script and mode is not TacticalPlayMode.DIAGNOSTIC:
         raise ValueError("--input-script is only valid for tactical-play diagnostic")
+    if frame_timing_seconds is not None:
+        if mode is not TacticalPlayMode.ANIMATION:
+            raise ValueError("--frame-timing-seconds is only valid for tactical-play animation")
+        if not math.isfinite(frame_timing_seconds) or frame_timing_seconds <= 0:
+            raise ValueError("--frame-timing-seconds must be finite and greater than zero")
+    if not math.isfinite(frame_timing_warmup_seconds) or frame_timing_warmup_seconds < 0:
+        raise ValueError("--frame-timing-warmup-seconds must be finite and non-negative")
     launch_client = mode is not TacticalPlayMode.NETWORKING
     phase_started_at = time.monotonic()
-    code = build_tactical_play(launch_client)
+    code = build_tactical_play(launch_client, client_profile)
     benchmark.record("native tactical binary build", phase_started_at)
     if code:
         return code
@@ -2464,7 +2501,8 @@ def tactical_play(
         values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
         graphics_preset,
         present_mode, window_capture, capture_source, render_backend,
-        input_script,
+        input_script, client_profile, frame_timing_seconds,
+        frame_timing_warmup_seconds,
     )
     session_file = run_dir / "tactical-session.json"
 
@@ -2655,7 +2693,11 @@ def tactical_play(
             else:
                 print("Press Ctrl+C to stop this profile's recorded processes.")
             while server_process.poll() is None:
-                if client_process is not None and mode is TacticalPlayMode.DIAGNOSTIC:
+                bounded_client = mode is TacticalPlayMode.DIAGNOSTIC or (
+                    mode is TacticalPlayMode.ANIMATION
+                    and frame_timing_seconds is not None
+                )
+                if client_process is not None and bounded_client:
                     client_code = client_process.poll()
                     if client_code is not None:
                         if client_code:
@@ -2668,7 +2710,10 @@ def tactical_play(
                             video_path = stop_obs_capture(obs_capture, run_dir, config)
                             obs_capture = None
                             print(f"Window capture complete: {video_path}")
-                        print(f"Diagnostic capture complete: {config['animation_log']}")
+                        if mode is TacticalPlayMode.DIAGNOSTIC:
+                            print(f"Diagnostic capture complete: {config['animation_log']}")
+                        else:
+                            print(f"Frame timing capture complete: {config['frame_timing_log']}")
                         return 0
                 time.sleep(0.25)
             raise RuntimeError(
@@ -2922,6 +2967,13 @@ def create_parser() -> argparse.ArgumentParser:
         "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
     )
     tactical_play_parser.add_argument("--input-script")
+    tactical_play_parser.add_argument(
+        "--client-profile", choices=("dev", "release"), default="dev"
+    )
+    tactical_play_parser.add_argument("--frame-timing-seconds", type=float)
+    tactical_play_parser.add_argument(
+        "--frame-timing-warmup-seconds", type=float, default=5.0
+    )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
     reseeder = sub.add_parser("reseed-tactical-mission")
@@ -2987,7 +3039,8 @@ def main() -> int:
                 TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
                 args.presentation_trace, args.present_mode, args.window_capture,
                 args.capture_source, args.render_backend, args.scene_input,
-                args.input_script,
+                args.input_script, args.client_profile, args.frame_timing_seconds,
+                args.frame_timing_warmup_seconds,
             )
         if args.command == "tactical-status":
             return tactical_status()
