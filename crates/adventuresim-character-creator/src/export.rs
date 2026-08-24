@@ -52,6 +52,7 @@ pub struct RiggedMesh<'a> {
 pub struct RiggedShell<'a> {
     pub name: &'a str,
     pub positions: &'a [[f32; 3]],
+    pub normals: &'a [[f32; 3]],
     pub faces: &'a [[u32; 3]],
     /// Artist-facing sRGB color. glTF factors are converted to linear RGB.
     pub base_color: [f32; 4],
@@ -369,9 +370,12 @@ fn validate(mesh: &RiggedMesh<'_>, shells: &[RiggedShell<'_>]) -> Result<()> {
         if shell.name.trim().is_empty() {
             bail!("clothing shell name cannot be empty");
         }
-        if shell.positions.len() != vertices || shell.faces.is_empty() {
+        if shell.positions.len() != vertices
+            || shell.normals.len() != vertices
+            || shell.faces.is_empty()
+        {
             bail!(
-                "clothing shell '{}' must have the body vertex count and at least one face",
+                "clothing shell '{}' must have body-sized positions and normals and at least one face",
                 shell.name
             );
         }
@@ -391,6 +395,11 @@ fn validate(mesh: &RiggedMesh<'_>, shells: &[RiggedShell<'_>]) -> Result<()> {
             .iter()
             .flatten()
             .any(|value| !value.is_finite())
+            || shell
+                .normals
+                .iter()
+                .flatten()
+                .any(|value| !value.is_finite())
             || !shell.metallic.is_finite()
             || !shell.roughness.is_finite()
             || shell.base_color.iter().any(|value| !value.is_finite())
@@ -492,11 +501,15 @@ pub fn export_rigged_glb(
                 &f32_bytes(shell.positions.iter().flatten().copied()),
                 Some(34_962),
             );
+            let normals = buffer.push(
+                &f32_bytes(shell.normals.iter().flatten().copied()),
+                Some(34_962),
+            );
             let indices = buffer.push(
                 &u32_bytes(shell.faces.iter().flatten().copied()),
                 Some(34_963),
             );
-            (positions, indices)
+            (positions, normals, indices)
         })
         .collect::<Vec<_>>();
 
@@ -650,7 +663,7 @@ pub fn export_rigged_glb(
             }
         }));
     }
-    for (shell, (position_view, index_view)) in shells.iter().zip(shell_views) {
+    for (shell, (position_view, normal_view, index_view)) in shells.iter().zip(shell_views) {
         let (minimum, maximum) = position_bounds(shell.positions);
         let shell_position_accessor = accessor(
             position_view,
@@ -661,11 +674,12 @@ pub fn export_rigged_glb(
         );
         let shell_index_accessor =
             accessor(index_view, 5_125, shell.faces.len() * 3, "SCALAR", None);
+        let shell_normal_accessor = accessor(normal_view, 5_126, shell.normals.len(), "VEC3", None);
         let material = material_values.len();
         primitives.push(json!({
             "attributes": {
                 "POSITION": shell_position_accessor,
-                "NORMAL": normal_accessor,
+                "NORMAL": shell_normal_accessor,
                 "JOINTS_0": joints_0_accessor,
                 "WEIGHTS_0": weights_0_accessor,
                 "JOINTS_1": joints_1_accessor,
@@ -1006,9 +1020,9 @@ mod tests {
             std::process::id()
         ));
         let path = directory.join("character.glb");
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-        let shell_positions = [[0.0, 0.0, 0.01], [1.0, 0.0, 0.01], [0.0, 1.0, 0.01]];
-        let normals = [[0.0, 0.0, 1.0]; 3];
+        let positions = [[-2.0, 0.98, -1.0], [2.0, 0.98, -1.0], [0.0, 0.98, 2.0]];
+        let shell_positions = [[-2.0, 0.99, -1.0], [2.0, 0.99, -1.0], [0.0, 0.99, 2.0]];
+        let normals = [[0.0, -1.0, 0.0]; 3];
         let faces = [[0, 1, 2]];
         let joint_indices = [[0; 8]; 3];
         let joint_weights = [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; 3];
@@ -1016,6 +1030,7 @@ mod tests {
         let shell = RiggedShell {
             name: "Tunic",
             positions: &shell_positions,
+            normals: &normals,
             faces: &faces,
             base_color: [0.1, 0.2, 0.3, 1.0],
             metallic: 0.0,
@@ -1050,6 +1065,10 @@ mod tests {
             .unwrap();
         assert!((red - 0.010_022_8).abs() < 1e-6);
         assert_eq!(document["meshes"][0]["primitives"][1]["material"], 1);
+        assert_ne!(
+            document["meshes"][0]["primitives"][1]["attributes"]["NORMAL"],
+            document["meshes"][0]["primitives"][0]["attributes"]["NORMAL"]
+        );
         assert_eq!(
             document["meshes"][0]["primitives"][1]["attributes"]["JOINTS_1"],
             document["meshes"][0]["primitives"][0]["attributes"]["JOINTS_1"]
@@ -1075,6 +1094,7 @@ mod tests {
         let shell = RiggedShell {
             name: "Leather belt",
             positions: &positions,
+            normals: &normals,
             faces: &shell_faces,
             base_color: [0.5, 0.35, 0.23, 1.0],
             metallic: 0.0,
@@ -1103,7 +1123,13 @@ mod tests {
 
         let bytes = fs::read(&path).unwrap();
         let document = read_document(&bytes);
-        assert_eq!(document["meshes"][0]["primitives"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            document["meshes"][0]["primitives"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(document["skins"][0]["joints"].as_array().unwrap().len(), 1);
         assert_eq!(
             document["extras"]["adventuresim_rig"]["attachments"],

@@ -541,6 +541,7 @@ fn generate_equipment_assets(
             let rigged_shell = RiggedShell {
                 name: &shell.specification.name,
                 positions: &shell.positions,
+                normals: &shell.normals,
                 faces: &shell.faces,
                 base_color: shell.specification.base_color,
                 metallic: shell.specification.metallic,
@@ -743,7 +744,7 @@ fn regenerate_mesh(
             RenderAssetUsages::default(),
         )
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, shell.positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals.clone())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, shell.normals)
         .with_inserted_indices(Indices::U32(indices));
         let [red, green, blue, alpha] = specification.base_color;
         commands.spawn((
@@ -848,6 +849,7 @@ fn export_character(
             RiggedShell {
                 name: &specification.name,
                 positions: &shell.positions,
+                normals: &shell.normals,
                 faces: &shell.faces,
                 base_color: specification.base_color,
                 metallic: specification.metallic,
