@@ -1,4 +1,8 @@
-use std::{fs::File, path::Path};
+use std::{
+    fs::File,
+    io::{BufWriter, Write},
+    path::Path,
+};
 
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::client::DebugForceAttackTrigger;
@@ -13,7 +17,7 @@ use bevy::{
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     render::{Render, RenderApp, RenderSystems},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     animation::{AnimationDiagnosticLog, DiagnosticInputStatus, RenderScheduleTelemetry},
@@ -116,14 +120,40 @@ struct PendingDiagnosticCaptures(usize);
 pub(crate) struct DiagnosticPlugin {
     script: Option<InputScript>,
     log: Option<File>,
+    frame_timing_log: Option<File>,
+    frame_timing_seconds: Option<f64>,
+    frame_timing_warmup_seconds: f64,
     exit_after_script: bool,
     render_schedule: Option<RenderScheduleTelemetry>,
+}
+
+#[derive(Resource)]
+struct FrameTimingTrace {
+    writer: BufWriter<File>,
+    frame: u64,
+    ready_elapsed_seconds: Option<f64>,
+    sample_seconds: f64,
+    warmup_seconds: f64,
+}
+
+#[derive(Serialize)]
+struct FrameTimingRecord {
+    trace_format: &'static str,
+    frame: u64,
+    sample_elapsed_seconds: f64,
+    render_delta_seconds: f32,
+    wall_clock_unix_micros: u64,
+    render_schedule_completion_count: u64,
+    render_schedule_completion_elapsed_micros: u64,
 }
 
 impl DiagnosticPlugin {
     pub(crate) fn new(
         script_path: Option<&str>,
         log_path: Option<&str>,
+        frame_timing_log_path: Option<&str>,
+        frame_timing_seconds: Option<f64>,
+        frame_timing_warmup_seconds: f64,
         exit_after_script: bool,
     ) -> Result<Self, String> {
         let script = script_path
@@ -137,25 +167,34 @@ impl DiagnosticPlugin {
             })
             .transpose()?;
         let log = log_path
-            .map(|path| {
-                let path = Path::new(path);
-                if let Some(parent) = path.parent() {
-                    std::fs::create_dir_all(parent).map_err(|error| {
-                        format!("failed to create animation log directory: {error}")
-                    })?;
-                }
-                File::create(path).map_err(|error| {
-                    format!("failed to create animation log {}: {error}", path.display())
-                })
-            })
+            .map(|path| create_diagnostic_file(path, "animation log"))
+            .transpose()?;
+        let frame_timing_log = frame_timing_log_path
+            .map(|path| create_diagnostic_file(path, "frame timing log"))
             .transpose()?;
         if exit_after_script && script.is_none() {
             return Err("--exit-after-script requires --input-script".to_owned());
         }
-        let render_schedule = log.as_ref().map(|_| RenderScheduleTelemetry::new());
+        if frame_timing_log.is_some() != frame_timing_seconds.is_some() {
+            return Err(
+                "--frame-timing-log and --frame-timing-seconds must be supplied together"
+                    .to_owned(),
+            );
+        }
+        if frame_timing_seconds.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
+            return Err("--frame-timing-seconds must be finite and greater than zero".to_owned());
+        }
+        if !frame_timing_warmup_seconds.is_finite() || frame_timing_warmup_seconds < 0.0 {
+            return Err("--frame-timing-warmup-seconds must be finite and non-negative".to_owned());
+        }
+        let render_schedule =
+            (log.is_some() || frame_timing_log.is_some()).then(RenderScheduleTelemetry::new);
         Ok(Self {
             script,
             log,
+            frame_timing_log,
+            frame_timing_seconds,
+            frame_timing_warmup_seconds,
             exit_after_script,
             render_schedule,
         })
@@ -172,6 +211,21 @@ impl Plugin for DiagnosticPlugin {
         }
         if let Some(telemetry) = &self.render_schedule {
             app.insert_resource(telemetry.clone());
+        }
+        if let (Some(file), Some(sample_seconds)) = (
+            self.frame_timing_log
+                .as_ref()
+                .and_then(|file| file.try_clone().ok()),
+            self.frame_timing_seconds,
+        ) {
+            app.insert_resource(FrameTimingTrace {
+                writer: BufWriter::new(file),
+                frame: 0,
+                ready_elapsed_seconds: None,
+                sample_seconds,
+                warmup_seconds: self.frame_timing_warmup_seconds,
+            })
+            .add_systems(Last, record_frame_timing);
         }
         if let Some(script) = &self.script {
             app.insert_resource(ScriptedInput {
@@ -208,6 +262,63 @@ impl Plugin for DiagnosticPlugin {
             Render,
             record_render_schedule_completion.after(RenderSystems::Render),
         );
+    }
+}
+
+fn create_diagnostic_file(path: &str, label: &str) -> Result<File, String> {
+    let path = Path::new(path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {label} directory: {error}"))?;
+    }
+    File::create(path)
+        .map_err(|error| format!("failed to create {label} {}: {error}", path.display()))
+}
+
+fn record_frame_timing(
+    time: Res<Time>,
+    mut trace: ResMut<FrameTimingTrace>,
+    render_schedule: Res<RenderScheduleTelemetry>,
+    players: Query<(), (With<Player>, With<ClientPlayer>)>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if players.is_empty() {
+        return;
+    }
+    let now = time.elapsed_secs_f64();
+    let ready = *trace.ready_elapsed_seconds.get_or_insert(now);
+    let elapsed_since_ready = now - ready;
+    if elapsed_since_ready < trace.warmup_seconds {
+        return;
+    }
+    let sample_elapsed_seconds = elapsed_since_ready - trace.warmup_seconds;
+    let (render_count, render_elapsed_micros) = render_schedule.snapshot();
+    let wall_clock_unix_micros = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_micros().min(u64::MAX as u128) as u64)
+        .unwrap_or_default();
+    let record = FrameTimingRecord {
+        trace_format: "real-client-frame-timing-v1",
+        frame: trace.frame,
+        sample_elapsed_seconds,
+        render_delta_seconds: time.delta_secs(),
+        wall_clock_unix_micros,
+        render_schedule_completion_count: render_count,
+        render_schedule_completion_elapsed_micros: render_elapsed_micros,
+    };
+    serde_json::to_writer(&mut trace.writer, &record)
+        .expect("frame timing log should remain writable");
+    trace
+        .writer
+        .write_all(b"\n")
+        .expect("frame timing log should remain writable");
+    trace.frame += 1;
+    if sample_elapsed_seconds >= trace.sample_seconds {
+        trace
+            .writer
+            .flush()
+            .expect("frame timing log should remain writable");
+        exit.write(AppExit::Success);
     }
 }
 
@@ -481,6 +592,23 @@ fn drive_scripted_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timing_bounds_must_be_finite_and_positive() {
+        assert!(DiagnosticPlugin::new(None, None, None, None, 5.0, false).is_ok());
+        assert!(
+            DiagnosticPlugin::new(None, None, None, Some(1.0), 5.0, false)
+                .err()
+                .unwrap()
+                .contains("supplied together")
+        );
+        assert!(
+            DiagnosticPlugin::new(None, None, None, None, -1.0, false)
+                .err()
+                .unwrap()
+                .contains("non-negative")
+        );
+    }
 
     #[test]
     fn example_script_parses_and_validates() {

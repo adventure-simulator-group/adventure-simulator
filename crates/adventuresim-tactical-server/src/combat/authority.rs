@@ -175,14 +175,14 @@ impl AuthorizedRangedShot {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ObservedMeleeWindup {
     target: Option<Entity>,
     ready_at: CombatInstant,
     expires_at: CombatInstant,
 }
 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub(crate) struct MeleeAttackAuthority {
     windup: Option<ObservedMeleeWindup>,
     cooldown_until: CombatInstant,
@@ -238,13 +238,13 @@ impl MeleeAttackAuthority {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ObservedRangedWindup {
     ready_at: CombatInstant,
     expires_at: CombatInstant,
 }
 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub(crate) struct RangedAttackAuthority {
     windup: Option<ObservedRangedWindup>,
     cooldown_until: CombatInstant,

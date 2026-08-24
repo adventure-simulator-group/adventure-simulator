@@ -63,6 +63,15 @@ struct Args {
     /// Write one JSON object per rendered animation frame.
     #[arg(long)]
     animation_log: Option<String>,
+    /// Write compact per-frame timing telemetry without animation pose data.
+    #[arg(long)]
+    frame_timing_log: Option<String>,
+    /// Record compact frame timing for this many seconds, then exit.
+    #[arg(long, requires = "frame_timing_log")]
+    frame_timing_seconds: Option<f64>,
+    /// Wait this many seconds after the local player is ready before timing.
+    #[arg(long, default_value_t = 5.0, requires = "frame_timing_log")]
+    frame_timing_warmup_seconds: f64,
     /// Close the native client shortly after the final scripted command.
     #[arg(long, requires = "input_script")]
     exit_after_script: bool,
@@ -162,6 +171,9 @@ pub fn wasm_boot() {
             server_addr: String::new(),
             input_script: None,
             animation_log: None,
+            frame_timing_log: None,
+            frame_timing_seconds: None,
+            frame_timing_warmup_seconds: 5.0,
             exit_after_script: false,
             graphics_preset: GraphicsPreset::Default,
             present_mode: ClientPresentMode::AutoVsync,
@@ -340,6 +352,9 @@ fn run(args: Args, initial_tactical: bool) {
         diagnostics::DiagnosticPlugin::new(
             args.input_script.as_deref(),
             args.animation_log.as_deref(),
+            args.frame_timing_log.as_deref(),
+            args.frame_timing_seconds,
+            args.frame_timing_warmup_seconds,
             args.exit_after_script,
         )
         .unwrap_or_else(|error| panic!("invalid tactical client diagnostics: {error}")),

@@ -475,6 +475,10 @@ class WorkflowTests(unittest.TestCase):
         benchmark = parser.parse_args([
             "tactical-play", "diagnostic", "--input-script", "benchmark.json"
         ])
+        timed_release = parser.parse_args([
+            "tactical-play", "animation", "--client-profile", "release",
+            "--frame-timing-seconds", "15", "--frame-timing-warmup-seconds", "5",
+        ])
         self.assertEqual(animation.base_port, 24920)
         self.assertEqual(animation.presentation_trace, "auto")
         self.assertEqual(diagnostic.mode, "diagnostic")
@@ -489,6 +493,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(display_dx12.render_backend, "dx12")
         self.assertEqual(networking.base_port, 25000)
         self.assertEqual(benchmark.input_script, "benchmark.json")
+        self.assertEqual(timed_release.client_profile, "release")
+        self.assertEqual(timed_release.frame_timing_seconds, 15.0)
+        self.assertEqual(timed_release.frame_timing_warmup_seconds, 5.0)
 
     def test_removed_high_environment_light_preset_is_rejected(self):
         parser = dev_stack.create_parser()
@@ -526,6 +533,44 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn("--animation-log", command)
             self.assertNotIn("--input-script", command)
             self.assertNotIn("animation_log", config)
+
+    def test_animation_timing_profile_adds_only_compact_bounded_trace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "animation",
+                "window_capture": "off",
+                "client_profile": "release",
+                "frame_timing_seconds": 15.0,
+                "frame_timing_warmup_seconds": 5.0,
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ) as executable_path, mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ) as spawn, mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+            executable_path.assert_called_once_with(
+                "adventuresim-tactical-client", "release"
+            )
+            command = spawn.call_args.args[0]
+            self.assertIn("--frame-timing-log", command)
+            self.assertIn("--frame-timing-seconds", command)
+            self.assertIn("--frame-timing-warmup-seconds", command)
+            self.assertNotIn("--animation-log", command)
+            self.assertNotIn("--input-script", command)
+            self.assertEqual(
+                Path(config["frame_timing_log"]).parent,
+                root,
+            )
 
     def test_diagnostic_profile_waits_for_capture_before_scripted_motion(self):
         with tempfile.TemporaryDirectory() as directory:
