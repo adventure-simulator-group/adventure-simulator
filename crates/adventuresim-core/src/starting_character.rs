@@ -867,13 +867,28 @@ fn starting_activity_profile(
         })
         .map(|item| {
             let definition = crate::item_catalog::definition(&item.item_id);
-            let (shield, balance) = definition.map_or((false, 1.0), |definition| match &definition
-                .kind
-            {
-                crate::item_catalog_schema::ItemKind::Shield { .. } => (true, 1.0),
-                crate::item_catalog_schema::ItemKind::Weapon { balance, .. } => (false, *balance),
-                _ => (false, 1.0),
-            });
+            let (shield, balance) =
+                definition.map_or((false, 1.0), |definition| match &definition.kind {
+                    crate::item_catalog_schema::ItemKind::Shield { .. } => (true, 1.0),
+                    crate::item_catalog_schema::ItemKind::Weapon {
+                        moment_of_inertia_kg_m2,
+                        ..
+                    } => {
+                        let grip_to_tip_m = definition
+                            .equipment
+                            .as_ref()
+                            .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
+                        (
+                            false,
+                            crate::equipment::weapon_balance_from_moment(
+                                *moment_of_inertia_kg_m2,
+                                definition.weight_kg,
+                                grip_to_tip_m,
+                            ),
+                        )
+                    }
+                    _ => (false, 1.0),
+                });
             EquippedCombatItem {
                 weapons: crate::equipment::weapon_skill_distribution_for_item(&item.item_id),
                 shield,

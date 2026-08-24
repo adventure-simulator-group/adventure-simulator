@@ -416,13 +416,15 @@ fn try_start_attack(
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
-    let Ok((reach, ranged, melee, windup_secs, preferred_style)) =
+    let Ok((reach, ranged, melee, windup_secs, recovery_secs, curve, preferred_style)) =
         viewer.get_for_attack(entity, hand).map(|character| {
             (
                 character.weapon_reach(),
                 hand == AttackHand::Main && character.weapon_is_ranged(),
                 character.weapon_is_melee(),
-                character.weapon_windup_secs(),
+                character.weapon_ranged_windup_secs(),
+                attack_recovery_secs(&character, character.weapon_preferred_melee_style(), false),
+                configure_attack_curve(AttackSpec::default(), &character).curve,
                 character.weapon_preferred_melee_style(),
             )
         })
@@ -440,8 +442,15 @@ fn try_start_attack(
         if attacking {
             return;
         }
+        let mut spec = AttackSpec::default();
+        spec.curve = curve;
         if skeleton
-            .begin_attack(AttackSpec::default(), start, start + 19)
+            .begin_attack_timed(
+                spec,
+                start,
+                start + animation_ticks(windup_secs),
+                start + animation_ticks(windup_secs + recovery_secs),
+            )
             .is_err()
         {
             return;
@@ -459,7 +468,7 @@ fn try_start_attack(
         let Some(strike_family) = skeleton.available_strike_family(requested_family) else {
             return;
         };
-        let Some(spec) = (!attacking)
+        let Some(mut spec) = (!attacking)
             .then(|| match hand {
                 AttackHand::Main => skeleton.select_main_attack(strike_family),
                 AttackHand::Offhand => skeleton.select_offhand_attack(strike_family),
@@ -472,7 +481,25 @@ fn try_start_attack(
             });
             return;
         };
-        match skeleton.begin_attack(spec, start, start + 19) {
+        let style = strike_family.melee_style();
+        let Ok((windup_secs, recovery_secs, curve)) =
+            viewer.get_for_attack(entity, hand).map(|character| {
+                (
+                    attack_preparation_secs(&character, style),
+                    attack_recovery_secs(&character, style, spec.continuation),
+                    configure_attack_curve(AttackSpec::default(), &character).curve,
+                )
+            })
+        else {
+            return;
+        };
+        spec.curve = curve;
+        match skeleton.begin_attack_timed(
+            spec,
+            start,
+            start + animation_ticks(windup_secs),
+            start + animation_ticks(windup_secs + recovery_secs),
+        ) {
             Ok(()) => {}
             Err(ActionTransitionError::ActionBusy) => {
                 cmd.entity(entity).insert(BufferedMeleeAttack {
@@ -519,14 +546,34 @@ fn flush_buffered_melee_attacks(
         }) else {
             continue;
         };
-        let Ok((reach, windup_secs)) = viewer
+        let Ok((reach, windup_secs, recovery_secs, curve)) = viewer
             .get_for_attack(entity, buffered.hand)
-            .map(|character| (character.weapon_reach(), character.weapon_windup_secs()))
+            .map(|character| {
+                (
+                    character.weapon_reach(),
+                    attack_preparation_secs(&character, buffered.family.melee_style()),
+                    attack_recovery_secs(
+                        &character,
+                        buffered.family.melee_style(),
+                        spec.continuation,
+                    ),
+                    configure_attack_curve(AttackSpec::default(), &character).curve,
+                )
+            })
         else {
             continue;
         };
         let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        if skeleton.begin_attack(spec, start, start + 19).is_err() {
+        let spec = AttackSpec { curve, ..spec };
+        if skeleton
+            .begin_attack_timed(
+                spec,
+                start,
+                start + animation_ticks(windup_secs),
+                start + animation_ticks(windup_secs + recovery_secs),
+            )
+            .is_err()
+        {
             continue;
         }
         cmd.entity(entity)
@@ -537,6 +584,10 @@ fn flush_buffered_melee_attacks(
             hand: buffered.hand,
         });
     }
+}
+
+fn animation_ticks(seconds: f32) -> u64 {
+    (seconds.max(1.0 / LOCOMOTION_SAMPLE_HZ) * LOCOMOTION_SAMPLE_HZ).round() as u64
 }
 
 fn apply_direct_combat_controls(

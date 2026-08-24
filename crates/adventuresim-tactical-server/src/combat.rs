@@ -80,7 +80,7 @@ pub(crate) struct TacticalConsequenceAccumulator {
 /// is still considered valid. A fresh press gives `input_reflex = 1.0`;
 /// a press older than this window is treated as no response.
 const MAX_REFLEX_WINDOW: Duration = Duration::from_millis(500);
-/// Subtracted from the weapon's authored windup
+/// At most this much is subtracted from the weapon's authored windup
 /// (`PlayerEquipment::weapon_windup_secs`, the same value the client paces
 /// its swing by) to form the server's minimum-windup threshold. The check
 /// must not compare against the exact authored value: `Start` and `Complete`
@@ -91,9 +91,10 @@ const MAX_REFLEX_WINDOW: Duration = Duration::from_millis(500);
 /// a same-machine loopback connection with effectively zero network latency,
 /// where jitter is the *only* source of the gap. The tolerance absorbs
 /// ordinary jitter without meaningfully loosening the windup check.
-const WINDUP_JITTER_TOLERANCE: CombatDuration =
-    CombatDuration::from_duration(Duration::from_millis(50));
-const MELEE_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(300));
+const MAX_WINDUP_JITTER_TOLERANCE_SECS: f32 = 0.025;
+/// Replay guard only. Actual cadence is owned by the replicated attack
+/// schedule and the one-entry client continuation buffer.
+const MELEE_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(80));
 /// Completion must arrive within this bounded ordered-network allowance after
 /// the windup becomes ready; old starts cannot authorize replayed completions.
 const MELEE_WINDUP_NETWORK_ALLOWANCE: CombatDuration =

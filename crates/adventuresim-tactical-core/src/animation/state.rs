@@ -630,7 +630,7 @@ pub struct AttackCurve {
 
 impl Default for AttackCurve {
     fn default() -> Self {
-        Self::from_handling(0.65, 3.0)
+        Self::from_handling(0.3, 3.0)
     }
 }
 
@@ -638,13 +638,18 @@ impl AttackCurve {
     pub const MAX_DRAWBACK: f32 = 0.65;
     pub const MAX_OVERSHOOT: f32 = 0.55;
 
-    /// Produces a readable but controlled curve from authored weapon balance
-    /// (zero to one) and the attacker's effective weapon skill check. Poorly
-    /// balanced weapons and low-skill attacks telegraph and follow through more.
-    pub fn from_handling(balance: f32, skill: f32) -> Self {
-        let balance = finite_clamp(balance, 0.0, 1.0, 0.5);
+    /// Produces a readable but controlled curve from physical weapon inertia
+    /// and the attacker's effective weapon skill check. High-inertia weapons
+    /// and low-skill attacks telegraph and follow through more.
+    pub fn from_handling(moment_of_inertia_kg_m2: f32, skill: f32) -> Self {
+        let inertia = if moment_of_inertia_kg_m2.is_finite() {
+            moment_of_inertia_kg_m2.max(0.0)
+        } else {
+            0.3
+        };
+        let inertia_difficulty = (inertia / (inertia + 0.45)).sqrt();
         let skill = finite_clamp(skill / 5.0, 0.0, 1.0, 0.0);
-        let lack_of_control = 1.0 - (balance * 0.55 + skill * 0.45);
+        let lack_of_control = inertia_difficulty * 0.55 + (1.0 - skill) * 0.45;
         Self {
             tell_fraction: 0.32 + 0.28 * lack_of_control,
             drawback: 0.16 + 0.42 * lack_of_control,

@@ -20,8 +20,8 @@ pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
         ActionState, ActionTransitionError, AnimationEvaluation, AnimationPack,
-        AnimationPackLibrary, AttackAnimation, AttackAnimations, AttackHand, AttackLine,
-        AttackPreparation, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
+        AnimationPackLibrary, AttackAnimation, AttackAnimations, AttackCurve, AttackHand,
+        AttackLine, AttackPreparation, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
         DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec, DownedFacingPose, GroundedPosture,
         HUMANOID_LANDING_PROFILE, JumpAnticipation, LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot,
         LocomotionGait, LocomotionProfile, MeleePreparationInput, PackValidationError, PoseSample,
@@ -34,9 +34,7 @@ pub mod prelude {
         locomotion_profile, ordinary_step_distance, project_skeleton_locomotion, set_weapon_guard,
         supine_get_up_counter_yaw_delta,
     };
-    pub use crate::combat::{
-        Attack, Dodge, HANDS_REACH, HANDS_WINDUP_SECS, Parry, melee_interaction_range,
-    };
+    pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
         EquipmentTopology, EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties,
@@ -59,7 +57,8 @@ pub mod prelude {
     pub use crate::player::{
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
         Stats, TacticalCombatSide, TacticalCombatState, TacticalIncapacitationSources,
-        TacticalPlayerView, TacticalPlayerViewer, default_tactical_character_id,
+        TacticalPlayerView, TacticalPlayerViewer, attack_preparation_secs, attack_recovery_secs,
+        configure_attack_curve, default_tactical_character_id, effective_weapon_handling_skill,
     };
     pub use crate::scene::{
         GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,

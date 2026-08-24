@@ -105,20 +105,14 @@ pub struct WeaponItem {
     pub prefers_stab: bool,
     pub penetration: f32,
     pub reach: f32,
-    pub balance: f32,
+    pub grip_to_tip_m: f32,
+    pub moment_of_inertia_kg_m2: f32,
     pub precise: bool,
     pub melee: bool,
     pub ranged: bool,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
-    /// Real-time seconds between committing to a swing and the hit actually
-    /// landing. The single source of truth for this weapon's windup pacing -
-    /// see `PlayerEquipment::weapon_windup_secs`.
-    pub windup_secs: f32,
-    /// Offhand-specific commitment-to-contact time. Offhand attacks use this
-    /// even when the same item is faster in the main hand.
-    pub offhand_windup_secs: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -530,17 +524,21 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_windup_secs(&self) -> f32 {
-        self.equipped_weapon()
-            .and_then(|item| item.weapon)
-            .map(|weapon| match self.attack_hand {
-                AttackHand::Main => weapon.windup_secs,
-                AttackHand::Offhand => weapon.offhand_windup_secs,
-            })
-            .unwrap_or(match self.attack_hand {
-                AttackHand::Main => crate::combat::HANDS_WINDUP_SECS,
-                AttackHand::Offhand if self.striking_item().is_some() => 0.38,
-                AttackHand::Offhand => 0.24,
-            })
+        self.melee_timing_for(self.weapon_preferred_melee_style())
+            .preparation_secs
+    }
+
+    fn weapon_windup_secs_for(&self, style: MeleeAttackStyle) -> f32 {
+        self.melee_timing_for(style).preparation_secs
+    }
+
+    fn weapon_recovery_secs(&self) -> f32 {
+        self.melee_timing_for(self.weapon_preferred_melee_style())
+            .recovery_secs
+    }
+
+    fn weapon_recovery_secs_for(&self, style: MeleeAttackStyle) -> f32 {
+        self.melee_timing_for(style).recovery_secs
     }
 
     fn weapon_is_precise(&self) -> bool {
@@ -551,10 +549,23 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_balance(&self) -> f32 {
+        match self.striking_item() {
+            Some(item) if item.weapon.is_some() => {
+                let weapon = item.weapon.unwrap();
+                adventuresim_core::equipment::weapon_balance_from_moment(
+                    weapon.moment_of_inertia_kg_m2,
+                    item.properties.weight,
+                    weapon.grip_to_tip_m,
+                )
+            }
+            _ => 0.0,
+        }
+    }
+
+    fn weapon_moment_of_inertia(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
-            .map(|weapon| weapon.balance)
-            .unwrap_or_default()
+            .map_or(0.0, |weapon| weapon.moment_of_inertia_kg_m2)
     }
 
     fn armor_range_of_motion(&self, part: BodyPart) -> f32 {
@@ -609,6 +620,20 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
 
     fn armor_coverage(&self, part: BodyPart) -> f32 {
         self.layered_armor_for(part).coverage
+    }
+}
+
+impl InventoryView<'_, '_, '_> {
+    fn melee_timing_for(
+        &self,
+        style: MeleeAttackStyle,
+    ) -> adventuresim_core::equipment::MeleeAttackTiming {
+        let weapon = self.equipped_weapon().and_then(|item| item.weapon);
+        adventuresim_core::equipment::melee_attack_timing(
+            style,
+            weapon.map_or(0.0, |weapon| weapon.moment_of_inertia_kg_m2),
+            weapon.is_none(),
+        )
     }
 }
 
@@ -687,10 +712,9 @@ mod tests {
         let mut viewer = SystemState::<InventoryViewer>::new(&mut world);
         let inventory = viewer.get(&world).unwrap();
 
-        assert_eq!(
-            inventory.get(owner).weapon_windup_secs(),
-            crate::combat::HANDS_WINDUP_SECS
-        );
+        let unarmed = inventory.get(owner);
+        let cycle = unarmed.weapon_windup_secs() + unarmed.weapon_recovery_secs();
+        assert!((cycle - 0.36).abs() < 1.0e-5);
         assert_eq!(
             inventory.get(owner).weapon_preferred_melee_style(),
             MeleeAttackStyle::Swing
@@ -725,15 +749,14 @@ mod tests {
                     prefers_stab: false,
                     penetration: 0.0,
                     reach: 1.0,
-                    balance: 0.0,
+                    grip_to_tip_m: 1.0,
+                    moment_of_inertia_kg_m2: 0.0,
                     precise: false,
                     melee: true,
                     ranged: false,
                     blunt: false,
                     slash: true,
                     pierce: false,
-                    windup_secs: 0.0,
-                    offhand_windup_secs: 0.34,
                 },
             ))
             .id();

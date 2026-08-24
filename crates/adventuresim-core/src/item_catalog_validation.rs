@@ -265,7 +265,7 @@ fn validate_item(
             "stab_precision",
             "reach_m",
             "penetration",
-            "balance",
+            "moment_of_inertia_kg_m2",
             "precise",
             "melee",
             "ranged",
@@ -398,7 +398,7 @@ fn validate_item(
             "stab_precision",
             "reach_m",
             "penetration",
-            "balance",
+            "moment_of_inertia_kg_m2",
             "precise",
             "melee",
             "ranged",
@@ -967,7 +967,12 @@ fn validate_equipment(
 }
 
 fn validate_weapon(item: &Map<String, Value>, file: &str, path: &str, errors: &mut Vec<String>) {
-    for field in ["accuracy", "reach_m", "penetration", "balance"] {
+    for field in [
+        "accuracy",
+        "reach_m",
+        "penetration",
+        "moment_of_inertia_kg_m2",
+    ] {
         finite_in(item, field, 0.0, 10_000.0, file, path, errors);
     }
     let melee = item.get("melee").and_then(Value::as_bool).unwrap_or(false);
@@ -1486,7 +1491,7 @@ mod tests {
             ("accuracy".into(), json!(1)),
             ("reach_m".into(), json!(1)),
             ("penetration".into(), json!(1)),
-            ("balance".into(), json!(1)),
+            ("moment_of_inertia_kg_m2".into(), json!(1)),
             ("precise".into(), json!(false)),
             ("melee".into(), json!(true)),
             ("ranged".into(), json!(false)),

@@ -1115,8 +1115,8 @@ mod legacy_tests {
 
     #[test]
     fn poor_handling_increases_readable_drawback_and_follow_through() {
-        let controlled = AttackCurve::from_handling(0.9, 5.0);
-        let uncontrolled = AttackCurve::from_handling(0.2, 1.0);
+        let controlled = AttackCurve::from_handling(0.03, 5.0);
+        let uncontrolled = AttackCurve::from_handling(1.2, 1.0);
         assert!(uncontrolled.tell_fraction > controlled.tell_fraction);
         assert!(uncontrolled.coordinate(0.15) < controlled.coordinate(0.15));
         assert!(uncontrolled.coordinate(0.6) > controlled.coordinate(0.6));

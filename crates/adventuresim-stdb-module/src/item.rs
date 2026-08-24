@@ -266,6 +266,10 @@ pub struct Item {
     pub flexibility: f32,
     pub range_of_motion: f32,
     pub precise: bool,
+    /// Rotational inertia around the weapon grip, in kg*m^2.
+    pub moment_of_inertia_kg_m2: f32,
+    /// Derived user-facing radius-of-gyration coefficient. Lower is easier to
+    /// redirect; the authored source of truth is `moment_of_inertia_kg_m2`.
     pub balance: f32,
     pub melee: bool,
     pub ranged: bool,
@@ -477,7 +481,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             accuracy,
             reach_m,
             penetration,
-            balance,
+            moment_of_inertia_kg_m2,
             precise,
             melee,
             ranged,
@@ -495,7 +499,16 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             );
             item.reach = *reach_m;
             item.penetration = *penetration;
-            item.balance = *balance;
+            item.moment_of_inertia_kg_m2 = *moment_of_inertia_kg_m2;
+            let grip_to_tip_m = definition
+                .equipment
+                .as_ref()
+                .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
+            item.balance = adventuresim_core::equipment::weapon_balance_from_moment(
+                *moment_of_inertia_kg_m2,
+                definition.weight_kg,
+                grip_to_tip_m,
+            );
             item.precise = *precise;
             item.melee = *melee;
             item.ranged = *ranged;

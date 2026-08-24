@@ -1,20 +1,7 @@
 use super::*;
 
 const FRONTAL_FLANKING_MAX: f32 = 0.01;
-/// Must land shortly before the attacker's weapon windup (see
-/// `PlayerEquipment::weapon_windup_secs`, 300ms by default - the delay
-/// between an attack's `Start` and its resolution), not just somewhere
-/// under it. `resolve_defender_response` scores a committed
-/// reaction by freshness at the moment of impact
-/// (`input_reflex = 1 - elapsed_since_commit / MAX_REFLEX_WINDOW`, 500ms),
-/// and `Dodge`/`Parry`'s effectiveness scales directly with that (`factor()`
-/// in `adventuresim-core::combat`) - a reaction that commits early in the
-/// window is technically "in time" but has mostly gone stale by the time
-/// the hit actually resolves, and barely reduces the attack roll. Landing
-/// in the last ~50ms before resolution keeps the reflex close to fresh
-/// (`input_reflex` near 1.0) while leaving margin for the windup race's own
-/// jitter.
-const REACTION_DELAY_SECS: std::ops::Range<f32> = 0.20..0.27;
+const ORDINARY_REACTION_DELAY_SECS: std::ops::Range<f32> = 0.20..0.27;
 
 /// Per-bot chance (each out of 1.0) that a reflex defense (see
 /// `try_start_reaction`) resolves to a parry or dodge. Inserted by a reactive
@@ -68,6 +55,7 @@ pub(super) fn on_attack_started(
     event: On<FromClient<MeleeActionRequest>>,
     mut cmd: Commands,
     q_character: Query<(&CharacterLook, &Transform, &TacticalCombatSide)>,
+    viewer: TacticalPlayerViewer,
     q_bots: Query<
         (
             Entity,
@@ -81,9 +69,13 @@ pub(super) fn on_attack_started(
         With<MissionEnemy>,
     >,
 ) {
-    if !matches!(**event, MeleeActionRequest::Start { .. }) {
+    let MeleeActionRequest::Start {
+        strike_family,
+        hand,
+    } = **event
+    else {
         return;
-    }
+    };
     let Some(attacker) = event.client_id.entity() else {
         return;
     };
@@ -110,6 +102,10 @@ pub(super) fn on_attack_started(
         bot_look,
         *defense,
         chances.copied().unwrap_or_default(),
+        viewer
+            .get_for_attack(attacker, hand)
+            .map(|view| attack_preparation_secs(&view, strike_family.melee_style()))
+            .unwrap_or(0.3),
     );
 }
 
@@ -138,6 +134,7 @@ pub(super) fn on_targeted_attack_started(
             defender_look,
             *defense,
             chances.copied().unwrap_or_default(),
+            event.windup.as_secs_f32(),
         );
     }
 }
@@ -169,6 +166,7 @@ pub(super) fn on_targeted_ranged_attack_started(
             defender_look,
             *defense,
             chances.copied().unwrap_or_default(),
+            event.animation_windup.as_secs_f32(),
         );
     }
 }
@@ -180,6 +178,7 @@ pub(super) fn try_start_reaction(
     defender_look: &CharacterLook,
     defense: ReactiveDefenseAi,
     chances: DefenseChances,
+    windup_secs: f32,
 ) {
     let (a2, a1) = attacker_look.yaw.sin_cos();
     let (d2, d1) = defender_look.yaw.sin_cos();
@@ -189,8 +188,15 @@ pub(super) fn try_start_reaction(
     let Some(choice) = roll_defend_choice(chances) else {
         return;
     };
+    let delay = if chances.dodge_chance >= 1.0 && chances.parry_chance <= f64::EPSILON {
+        // The authored test dodger is deliberately anticipatory. Leave enough
+        // of even a fast fist windup for the quickstep's launch phase.
+        (windup_secs - 0.16).clamp(0.02, 0.12)
+    } else {
+        rand::random_range(ORDINARY_REACTION_DELAY_SECS)
+    };
     cmd.entity(defender).insert(PendingBotReaction {
-        timer: Timer::from_seconds(rand::random_range(REACTION_DELAY_SECS), TimerMode::Once),
+        timer: Timer::from_seconds(delay, TimerMode::Once),
         choice,
     });
 }

@@ -324,15 +324,14 @@ mod tests {
             prefers_stab: false,
             penetration: 1.0,
             reach: KATZBALGER_REACH,
-            balance: 0.0,
+            grip_to_tip_m: KATZBALGER_REACH,
+            moment_of_inertia_kg_m2: 0.0,
             precise: false,
             melee: true,
             ranged: false,
             blunt: false,
             slash: true,
             pierce: false,
-            windup_secs: 0.3,
-            offhand_windup_secs: 0.34,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         actor
@@ -365,15 +364,14 @@ mod tests {
             prefers_stab: false,
             penetration: 1.0,
             reach: TEST_WEAPON_REACH,
-            balance: 0.0,
+            grip_to_tip_m: 1.0,
+            moment_of_inertia_kg_m2: 0.0,
             precise: false,
             melee: true,
             ranged: true,
             blunt: false,
             slash: false,
             pierce: true,
-            windup_secs: 0.3,
-            offhand_windup_secs: 0.34,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         let ammo = world
@@ -676,7 +674,7 @@ mod tests {
             Vec3::new(0.0, 0.0, -2.0),
         );
 
-        for _ in 0..7 {
+        for _ in 0..8 {
             app.world_mut()
                 .resource_mut::<Time<()>>()
                 .advance_by(Duration::from_millis(100));

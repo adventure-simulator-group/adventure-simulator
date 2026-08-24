@@ -577,6 +577,9 @@ fn spawn_connected_player(
             | ItemKind::Medication
             | ItemKind::Food => {}
             ItemKind::Weapon => {
+                let grip_to_tip_m = adventuresim_core::item_catalog::definition(&item.item.id)
+                    .and_then(|definition| definition.equipment.as_ref())
+                    .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
                 item_cmd.insert(WeaponItem {
                     skill_weights: [
                         item.item.weapon_skills.polearm,
@@ -595,21 +598,14 @@ fn spawn_connected_player(
                     prefers_stab: item.item.prefers_stab,
                     penetration: item.item.penetration,
                     reach: item.item.reach,
-                    balance: item.item.balance,
+                    grip_to_tip_m,
+                    moment_of_inertia_kg_m2: item.item.moment_of_inertia_kg_m_2,
                     precise: item.item.precise,
                     melee: item.item.melee,
                     ranged: item.item.ranged,
                     blunt: item.item.blunt,
                     slash: item.item.slash,
                     pierce: item.item.pierce,
-                    // The strategic item schema (adventuresim-stdb-module)
-                    // doesn't author a per-weapon windup yet, unlike
-                    // accuracy/reach/balance/etc above - falls back to the
-                    // same default `PlayerEquipment::weapon_windup_secs`
-                    // uses. Extending the schema to author this per-weapon
-                    // is future work, not done here.
-                    windup_secs: 0.3,
-                    offhand_windup_secs: 0.34,
                 });
             }
             ItemKind::Armor | ItemKind::Clothing => {}
@@ -1928,15 +1924,14 @@ mod standalone_join_tests {
                     accuracy: 1.0,
                     penetration: 1.0,
                     reach: 0.8,
-                    balance: 0.0,
+                    grip_to_tip_m: 0.8,
+                    moment_of_inertia_kg_m2: 0.0,
                     precise: false,
                     melee: true,
                     ranged: false,
                     blunt: false,
                     slash: true,
                     pierce: false,
-                    windup_secs: 0.3,
-                    offhand_windup_secs: 0.34,
                     swing_precision: 0.0,
                     stab_precision: 0.0,
                     prefers_stab: false,

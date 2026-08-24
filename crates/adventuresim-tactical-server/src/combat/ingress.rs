@@ -61,6 +61,7 @@ pub(super) fn on_melee_attack_started(
     event: On<MeleeAttackStartedIntent>,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
 ) {
     let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
@@ -78,9 +79,29 @@ pub(super) fn on_melee_attack_started(
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
+    let (spec, recovery) = viewer
+        .get_for_attack(event.attacker, event.hand)
+        .map(|view| {
+            (
+                configure_attack_curve(spec, &view),
+                CombatDuration::from_secs_f32(attack_recovery_secs(
+                    &view,
+                    event.strike_family.melee_style(),
+                    spec.continuation,
+                )),
+            )
+        })
+        .unwrap_or((spec, event.windup));
     let start = animation_tick(&time);
     if skeleton
-        .begin_attack(spec, start, start + duration_ticks(event.windup))
+        .begin_attack_timed(
+            spec,
+            start,
+            start + duration_ticks(event.windup),
+            start
+                .saturating_add(duration_ticks(event.windup))
+                .saturating_add(duration_ticks(recovery)),
+        )
         .is_err()
     {
         return;
@@ -164,7 +185,7 @@ mod roll_tests {
         let (animation_windup, minimum_windup) = player_attack_windups(authored);
 
         assert_eq!(duration_ticks(animation_windup), 19);
-        assert_eq!(duration_ticks(minimum_windup), 16);
+        assert_eq!(duration_ticks(minimum_windup), 18);
     }
 
     #[test]
@@ -308,7 +329,10 @@ mod roll_tests {
 }
 
 fn player_attack_windups(authored: CombatDuration) -> (CombatDuration, CombatDuration) {
-    (authored, authored.saturating_sub(WINDUP_JITTER_TOLERANCE))
+    let tolerance = CombatDuration::from_secs_f32(
+        (authored.as_secs_f32() * 0.1).min(MAX_WINDUP_JITTER_TOLERANCE_SECS),
+    );
+    (authored, authored.saturating_sub(tolerance))
 }
 
 pub(super) fn on_melee_action_request(
@@ -347,18 +371,43 @@ pub(super) fn on_melee_action_request(
                 return;
             };
             // The same authored per-weapon value the client paces its own
-            // swing by, minus a delivery-jitter tolerance - see
-            // `WINDUP_JITTER_TOLERANCE`. Unarmed attackers use the shared
+            // swing by, minus a bounded proportional delivery-jitter
+            // tolerance. Unarmed attackers use the shared
             // authored hands timing; a genuinely viewless attacker still
             // falls back to zero and is rejected by later weapon checks.
             let authored_windup = viewer
                 .get_for_attack(attacker, hand)
-                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .map(|view| {
+                    CombatDuration::from_secs_f32(attack_preparation_secs(
+                        &view,
+                        strike_family.melee_style(),
+                    ))
+                })
                 .unwrap_or_default();
             let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
+            let (spec, recovery) = viewer
+                .get_for_attack(attacker, hand)
+                .map(|view| {
+                    (
+                        configure_attack_curve(spec, &view),
+                        CombatDuration::from_secs_f32(attack_recovery_secs(
+                            &view,
+                            strike_family.melee_style(),
+                            spec.continuation,
+                        )),
+                    )
+                })
+                .unwrap_or((spec, animation_windup));
             let start = animation_tick(&time);
             if skeleton
-                .begin_attack(spec, start, start + duration_ticks(animation_windup))
+                .begin_attack_timed(
+                    spec,
+                    start,
+                    start + duration_ticks(animation_windup),
+                    start
+                        .saturating_add(duration_ticks(animation_windup))
+                        .saturating_add(duration_ticks(recovery)),
+                )
                 .is_err()
             {
                 return;
@@ -415,7 +464,7 @@ pub(super) fn on_ranged_action_request(
             // melee path - see `on_melee_action_request`.
             let authored_windup = viewer
                 .get(attacker)
-                .map(|view| CombatDuration::from_secs_f32(view.weapon_windup_secs()))
+                .map(|view| CombatDuration::from_secs_f32(view.weapon_ranged_windup_secs()))
                 .unwrap_or_default();
             let (animation_windup, minimum_windup) = player_attack_windups(authored_windup);
             cmd.trigger(RangedAttackStartedIntent {
@@ -458,6 +507,7 @@ pub(super) fn on_ranged_attack_started(
     event: On<RangedAttackStartedIntent>,
     mut authorities: Query<&mut RangedAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
 ) {
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
@@ -467,11 +517,27 @@ pub(super) fn on_ranged_attack_started(
         return;
     };
     let start = animation_tick(&time);
+    let (spec, recovery) = viewer
+        .get(event.attacker)
+        .map(|view| {
+            (
+                configure_attack_curve(AttackSpec::default(), &view),
+                CombatDuration::from_secs_f32(attack_recovery_secs(
+                    &view,
+                    view.weapon_preferred_melee_style(),
+                    false,
+                )),
+            )
+        })
+        .unwrap_or((AttackSpec::default(), event.animation_windup));
     if skeleton
-        .begin_attack(
-            AttackSpec::default(),
+        .begin_attack_timed(
+            spec,
             start,
             start + duration_ticks(event.animation_windup),
+            start
+                .saturating_add(duration_ticks(event.animation_windup))
+                .saturating_add(duration_ticks(recovery)),
         )
         .is_err()
     {
