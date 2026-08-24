@@ -17,7 +17,7 @@ function usage() {
 }
 
 export function parseArguments(values) {
-  const options = { joint: "r_weapon" };
+  const options = {};
   for (let index = 0; index < values.length; index += 1) {
     const flag = values[index];
     if (!["--preset", "--skinned", "--joint", "--rig", "--name"].includes(flag)) throw new Error(`unknown argument ${flag}\n${usage()}`);
@@ -26,7 +26,7 @@ export function parseArguments(values) {
     const key = flag.slice(2); options[key] = value;
   }
   if (!options.preset || !options.skinned) throw new Error(usage());
-  if (!new Set(["r_weapon", "l_weapon"]).has(options.joint)) throw new Error("--joint must be r_weapon or l_weapon");
+  if (options.joint !== undefined && !new Set(["r_weapon", "l_weapon"]).has(options.joint)) throw new Error("--joint must be r_weapon or l_weapon");
   if (extname(options.skinned).toLowerCase() !== ".glb") throw new Error("--skinned output must end in .glb");
   return options;
 }
@@ -48,9 +48,11 @@ export async function exportSkinnedPreset(options) {
   const rigPath = options.rig ? resolve(options.rig) : await firstExisting(defaultRigs);
   const outputPath = resolve(options.skinned);
   const meshName = options.name ?? basename(outputPath, extname(outputPath));
+  const shield = validation.resolved.components.find((component) => ["roundShield", "shapedShield"].includes(component.kind));
+  const attachment = options.joint ?? (shield?.mirrored ? "l_weapon" : "r_weapon");
   const glb = buildSkinnedWeaponGlb(await readFile(rigPath), validation.mesh, {
     name: meshName,
-    attachment: options.joint,
+    attachment,
     gripPoint: automaticGripPoint(validation.resolved),
   });
   const parsed = parseGlb(glb);
@@ -64,7 +66,7 @@ export async function exportSkinnedPreset(options) {
     bytes: glb.byteLength,
     triangles: validation.mesh.stats.triangles,
     joints: parsed.document.skins[meshNode.skin].joints.length,
-    attachment: options.joint,
+    attachment,
   };
 }
 

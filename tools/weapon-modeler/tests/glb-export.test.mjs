@@ -61,6 +61,7 @@ test("rejects a rig that does not contain the requested attachment", () => {
 });
 
 test("chooses the modeled grip center and a bounded polearm handhold", () => {
+  assert.deepEqual(automaticGripPoint({ _frames: { "shield.grip": [0.12, -0.04, -0.08] } }), [0.12, -0.04, -0.08]);
   const configured = automaticGripPoint({ gripClearance: 0.05, _frames: { "grip.base": [0, 0.1, 0], "grip.top": [0, 0.3, 0] } });
   assert.ok(Math.abs(configured[1] - 0.25) < 1e-9);
   assert.deepEqual(automaticGripPoint({ _frames: { "grip.center": [0, 0.22, 0] } }), [0, 0.22, 0]);
@@ -69,7 +70,7 @@ test("chooses the modeled grip center and a bounded polearm handhold", () => {
 
 test("CLI accepts a skinned output parameter and validates its attachment", () => {
   assert.deepEqual(parseArguments(["--preset", "landsknecht-longsword", "--skinned", "assets_src/weapons/longsword.glb"]), {
-    preset: "landsknecht-longsword", skinned: "assets_src/weapons/longsword.glb", joint: "r_weapon",
+    preset: "landsknecht-longsword", skinned: "assets_src/weapons/longsword.glb",
   });
   assert.throws(() => parseArguments(["--preset", "landsknecht-longsword", "--skinned", "longsword.obj"]), /must end in \.glb/);
   assert.throws(() => parseArguments(["--preset", "landsknecht-longsword", "--skinned", "longsword.glb", "--joint", "weapon.R"]), /r_weapon or l_weapon/);
