@@ -531,7 +531,7 @@ mod tests {
             },
         };
 
-        app.world_mut().trigger(start.clone());
+        app.world_mut().trigger(start);
         app.world_mut().flush();
         assert!(!app.world().entity(blocker).contains::<PendingBotReaction>());
 

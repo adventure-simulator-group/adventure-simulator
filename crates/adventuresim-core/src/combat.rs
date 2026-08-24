@@ -335,11 +335,9 @@ fn avoided_attack_balance_damage(
     };
     let whole_body_mass = attacker_body.body_weight() + attacker_equip.inventory_weight();
     let resistance = resistance_per_kg * whole_body_mass.max(f32::EPSILON);
-    let committed_impulse = attack_force(attacker_attr, attacker_body, attacker_equip)
-        * accuracy.clamp(0.0, 1.0)
-        * 0.5;
-    (committed_impulse / resistance * response_scale)
-        .clamp(0.0, MAX_AVOIDED_ATTACK_BALANCE_DAMAGE)
+    let committed_impulse =
+        attack_force(attacker_attr, attacker_body, attacker_equip) * accuracy.clamp(0.0, 1.0) * 0.5;
+    (committed_impulse / resistance * response_scale).clamp(0.0, MAX_AVOIDED_ATTACK_BALANCE_DAMAGE)
 }
 
 /// Resolve a ranged attack using the same defense, armor, and damage model as
@@ -947,7 +945,11 @@ mod tests {
                 balance_damage,
                 matchup.expected_imbalance,
             );
-            assert_eq!(physical_contact, matchup.expected_contact, "{}", matchup.label);
+            assert_eq!(
+                physical_contact, matchup.expected_contact,
+                "{}",
+                matchup.label
+            );
         }
     }
 
