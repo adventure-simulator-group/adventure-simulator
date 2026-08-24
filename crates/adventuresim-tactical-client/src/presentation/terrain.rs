@@ -358,7 +358,7 @@ pub(in crate::presentation) fn present_pending_terrain(
 /// relief is evaluated in world space, so snapping changes only the fully
 /// morphed-out perimeter rather than making the surface swim under the player.
 pub(in crate::presentation) fn update_terrain_detail_patch(
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     active: Res<ActiveTacticalScene>,
     scenes: Query<(&SceneTerrain, Option<&SceneGround>, &SceneEnvironment)>,
     mut patches: Query<(

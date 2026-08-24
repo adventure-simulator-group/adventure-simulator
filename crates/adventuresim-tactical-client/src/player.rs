@@ -7,7 +7,9 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 
 use crate::{
-    animation::spawn_fallback_t_pose, camera::CameraAimState, presentation::GrassInteractor,
+    animation::spawn_fallback_t_pose,
+    camera::CameraAimState,
+    presentation::{GrassInteractor, TacticalGameplayCamera},
 };
 
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
@@ -103,7 +105,7 @@ impl AttackState {
 fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
-    camera: Single<Entity, With<Camera3d>>,
+    camera: Single<Entity, With<TacticalGameplayCamera>>,
     query: Query<(&Player, &CharacterId)>,
     local_character: Res<LocalCharacterId>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -203,7 +205,7 @@ fn predict_local_body_facing(
         ),
         With<ClientPlayer>,
     >,
-    cameras: Query<&Transform, (With<Camera3d>, Without<ClientPlayer>)>,
+    cameras: Query<&Transform, (With<TacticalGameplayCamera>, Without<ClientPlayer>)>,
 ) {
     for (camera, skeleton, mut transform, mut facing) in &mut players {
         if skeleton.body().is_downed() || skeleton.is_posture_transitioning() {

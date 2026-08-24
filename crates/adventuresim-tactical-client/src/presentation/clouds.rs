@@ -679,7 +679,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
     celestial: Res<PresentedCelestialLighting>,
     capture: Res<TacticalCloudCaptureOverride>,
     isolation: Res<TacticalCloudBenchmarkIsolation>,
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     mut clouds: Query<(
         &mut TacticalCloudLayer,
         &MeshMaterial3d<TacticalCloudMaterial>,

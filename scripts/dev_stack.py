@@ -2937,10 +2937,7 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument("base_port", type=int, nargs="?", default=24920)
     tactical_play_parser.add_argument(
         "--graphics-preset",
-        choices=(
-            "default", "no-shadows", "no-atmosphere",
-            "no-environment-light", "minimal"
-        ),
+        choices=("default", "no-shadows", "minimal"),
         default="default",
     )
     tactical_play_parser.add_argument(

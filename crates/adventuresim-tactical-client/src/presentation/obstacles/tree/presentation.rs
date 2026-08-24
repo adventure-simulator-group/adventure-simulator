@@ -20,6 +20,7 @@ use super::{
     procedural_woody_branch_mesh, procedural_woody_crown_mesh, procedural_woody_mid_trunk_mesh,
     procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
 };
+use crate::presentation::TacticalGameplayCamera;
 use crate::presentation::{
     ActiveTacticalScene, ActiveVistaSurface, ProceduralEnvironmentAssets, SceneEnvironment,
     obstacle_seed, splitmix64, unit_hash,
@@ -720,7 +721,7 @@ fn ensure_tree_assets_resident(
 
 pub(in crate::presentation) fn stream_tree_lod_children(
     mut commands: Commands,
-    camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
+    camera: Single<(&GlobalTransform, &Projection), With<TacticalGameplayCamera>>,
     lod_override: Res<TreeLodRenderOverride>,
     mut trees: Query<(Entity, &GlobalTransform, &mut StreamedTreePresentation)>,
     mut meshes: ResMut<Assets<Mesh>>,

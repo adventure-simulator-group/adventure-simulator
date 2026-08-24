@@ -32,11 +32,9 @@ lighting over high-precision astronomical coordinates. With the atmosphere
 enabled, this light carries top-of-atmosphere solar energy throughout twilight;
 Bevy's atmosphere-enabled PBR evaluation applies planetary transmittance and
 visible-disc occlusion so below-horizon energy scatters into the sky without
-lighting the ground directly. The no-atmosphere fallback has no such planetary
-occlusion, so its direct illuminance fades in over the first eight degrees
-above the horizon and remains exactly zero below it. The deterministic exposure
-curve transitions continuously from nautical twilight to the moon-conditioned
-night target between -12 and -18 degrees solar altitude.
+lighting the ground directly. The deterministic exposure curve transitions
+continuously from nautical twilight to the moon-conditioned night target
+between -12 and -18 degrees solar altitude.
 
 The Moon uses the strategic layer's canonical lunar phase and illumination.
 Its shader draws the phase terminator across a constant-angular-size sphere,

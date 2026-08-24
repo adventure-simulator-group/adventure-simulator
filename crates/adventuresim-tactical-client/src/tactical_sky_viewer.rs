@@ -10,7 +10,8 @@ use bevy::{
     app::AppExit,
     asset::AssetPlugin,
     camera::Exposure,
-    light::{AtmosphereEnvironmentMapLight, SunDisk},
+    light::SunDisk,
+    pbr::AtmosphereSettings,
     prelude::*,
     render::{
         Render, RenderApp, RenderSystems,
@@ -28,7 +29,7 @@ use crate::{
     SkyView,
     presentation::{
         TacticalCameraSetup, TacticalCloudCaptureOverride, TacticalCloudCaptureProfile,
-        TacticalPresentationPlugin,
+        TacticalGameplayCamera, TacticalPresentationPlugin,
     },
 };
 
@@ -169,10 +170,7 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
     })
     .add_plugins(TacticalPresentationPlugin {
         shadows_enabled: true,
-        atmosphere_enabled: true,
         celestial_enabled: true,
-        environment_light_enabled: true,
-        environment_map_size: 64,
         max_vista_lods: 0,
     })
     .insert_resource(TacticalCloudCaptureOverride(Some(cloud_capture_profile(
@@ -269,7 +267,8 @@ fn sky_view_configuration(view: SkyView) -> SkyViewConfiguration {
 fn setup_view(world: &mut World, view: SkyView) {
     let configuration = sky_view_configuration(view);
     let absolute_minute = configuration.absolute_minute;
-    let mut camera_query = world.query_filtered::<(&Transform, &Projection), With<Camera3d>>();
+    let mut camera_query =
+        world.query_filtered::<(&Transform, &Projection), With<TacticalGameplayCamera>>();
     let (camera_transform, camera_projection) =
         camera_query.single(world).expect("one tactical camera");
     let live_fov_degrees = match camera_projection {
@@ -348,10 +347,11 @@ fn setup_view(world: &mut World, view: SkyView) {
         },
     ));
 
-    // The capture deliberately exercises the atmosphere-generated light too.
+    // The baked path begins with Bevy's physical atmosphere on the camera and
+    // creates a one-shot LightProbe after this PostStartup scene becomes active.
     assert!(
         world
-            .query_filtered::<Entity, (With<Camera3d>, With<AtmosphereEnvironmentMapLight>)>()
+            .query_filtered::<Entity, (With<TacticalGameplayCamera>, With<AtmosphereSettings>)>()
             .single(world)
             .is_ok()
     );
@@ -395,7 +395,7 @@ fn camera_observation_matches(
 fn capture_view(
     mut commands: Commands,
     mut state: ResMut<CaptureState>,
-    camera: Single<(&Exposure, &GlobalTransform, &Projection), With<Camera3d>>,
+    camera: Single<(&Exposure, &GlobalTransform, &Projection), With<TacticalGameplayCamera>>,
     camera_probe: Res<SkyCameraProbe>,
     sunlight: Single<&DirectionalLight, With<crate::presentation::TacticalSunlight>>,
 ) {

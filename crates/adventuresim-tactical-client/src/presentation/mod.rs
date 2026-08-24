@@ -4,6 +4,7 @@
 //! plugin so screenshots cannot drift to a different camera, terrain mesh,
 //! lighting, or post-processing setup.
 
+mod atmosphere;
 mod clouds;
 mod environment;
 mod ground_scatter;
@@ -16,6 +17,7 @@ mod vista;
 mod volumetric;
 mod weather;
 
+use atmosphere::*;
 use clouds::*;
 use environment::*;
 use ground_scatter::*;
@@ -51,7 +53,7 @@ pub(crate) use clouds::{
 };
 #[allow(unused_imports)]
 pub(crate) use environment::{
-    TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
+    TacticalCameraSetup, TacticalGameplayCamera, scene_ambient_light, scene_ibl_visibility_floor,
 };
 #[allow(unused_imports)]
 pub(crate) use ground_scatter::{
@@ -148,10 +150,7 @@ impl ClientStartupTiming {
 #[derive(Debug, Clone, Copy)]
 pub struct TacticalPresentationPlugin {
     pub shadows_enabled: bool,
-    pub atmosphere_enabled: bool,
     pub celestial_enabled: bool,
-    pub environment_light_enabled: bool,
-    pub environment_map_size: u32,
     pub max_vista_lods: usize,
 }
 
@@ -159,10 +158,7 @@ impl Default for TacticalPresentationPlugin {
     fn default() -> Self {
         Self {
             shadows_enabled: true,
-            atmosphere_enabled: true,
             celestial_enabled: true,
-            environment_light_enabled: true,
-            environment_map_size: 64,
             max_vista_lods: 3,
         }
     }
@@ -181,6 +177,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
+            MaterialPlugin::<TacticalSunMaterial>::default(),
             MaterialPlugin::<TacticalStarMaterial>::default(),
             MaterialPlugin::<TacticalCloudMaterial>::default(),
             MaterialPlugin::<TacticalWeatherMaterial>::default(),
@@ -193,10 +190,7 @@ impl Plugin for TacticalPresentationPlugin {
         })
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
-            atmosphere_enabled: self.atmosphere_enabled,
             celestial_enabled: self.celestial_enabled,
-            environment_light_enabled: self.environment_light_enabled,
-            environment_map_size: self.environment_map_size,
             max_vista_lods: self.max_vista_lods,
         })
         .init_resource::<TacticalCameraSetup>()
@@ -228,6 +222,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<TacticalTreeBenchmarkIsolation>()
         .init_resource::<ActiveTacticalScene>()
         .init_resource::<PresentedCelestialLighting>()
+        .init_resource::<FrozenAtmosphereStatus>()
         .init_resource::<AtmosphereIblAmbientHandoff>()
         .init_resource::<TacticalCloudCaptureOverride>()
         .init_resource::<TacticalCloudBenchmarkIsolation>()
@@ -261,6 +256,9 @@ impl Plugin for TacticalPresentationPlugin {
                 keep_celestial_visuals_centered.after(update_presented_celestial_lighting),
                 update_tactical_clouds.after(update_presented_celestial_lighting),
                 update_global_ambient_policy.after(apply_presented_celestial_lighting),
+                freeze_initialized_atmosphere
+                    .after(update_global_ambient_policy)
+                    .after(update_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
                 apply_active_scene_weather
                     .after(refresh_active_tactical_scene)
@@ -277,14 +275,17 @@ impl Plugin for TacticalPresentationPlugin {
         .add_observer(on_scene_obstacle_added)
         .add_observer(on_scene_vista_bundle);
     }
+
+    fn finish(&self, app: &mut App) {
+        // Install this after every plugin has built so the RenderApp and
+        // Bevy's atmosphere extractor exist regardless of plugin order.
+        install_atmosphere_cleanup_backport(app);
+    }
 }
 
 #[derive(Resource, Debug, Clone, Copy)]
 pub(crate) struct TacticalGraphicsSettings {
     pub(crate) shadows_enabled: bool,
-    pub(crate) atmosphere_enabled: bool,
     pub(crate) celestial_enabled: bool,
-    pub(crate) environment_light_enabled: bool,
-    pub(crate) environment_map_size: u32,
     pub(crate) max_vista_lods: usize,
 }
