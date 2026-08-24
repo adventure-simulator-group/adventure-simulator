@@ -216,10 +216,9 @@ fn main() {
     });
     let mut app = App::new();
     app.insert_resource(combat_config);
-    // Registered before any other plugin (in particular, before
-    // `AdventureSimulatorNetPlugins` below) - see `on_client_disconnected`'s
-    // own doc comment for why the ordering here is load-bearing, not
-    // cosmetic.
+    // Registered separately from Aeronet's session-despawn observer. The
+    // reconnect snapshot is owned before either observer's commands apply, so
+    // correctness does not depend on their registration order.
     if !standalone {
         app.add_observer(on_client_disconnected);
     }

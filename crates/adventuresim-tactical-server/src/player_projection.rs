@@ -144,6 +144,87 @@ pub(crate) struct ReconnectSession {
     token: ReconnectToken,
 }
 
+#[derive(Component, Clone)]
+pub(crate) enum DisconnectedProjection {
+    Loading(LoadingPlayer),
+    Projected(Box<ProjectedPlayerSnapshot>),
+}
+
+#[derive(Clone)]
+pub(crate) struct ProjectedPlayerSnapshot {
+    name: Name,
+    player: Player,
+    character_id: CharacterId,
+    bestiary_categories: BestiaryCategories,
+    skills: Skills,
+    limbs: Limbs,
+    attributes: Attributes,
+    stats: Stats,
+    combat_state: TacticalCombatState,
+    equipment_action_state: EquipmentActionState,
+    combat_side: TacticalCombatSide,
+    transform: Transform,
+    look: CharacterLook,
+    movement_intent: AuthoritativeMovementIntent,
+    posture_intent: AuthoritativePostureIntent,
+    pace: MovementPace,
+    velocity: LinearVelocity,
+    skeleton: SkeletonState,
+    melee_authority: MeleeAttackAuthority,
+    ranged_authority: RangedAttackAuthority,
+    collider: Collider,
+    collision_margin: CollisionMargin,
+    controller: CharacterController,
+    accumulated_input: AccumulatedInput,
+}
+
+impl DisconnectedProjection {
+    fn projected(&self) -> bool {
+        matches!(self, Self::Projected(_))
+    }
+
+    fn insert(self, commands: &mut Commands, target: Entity) {
+        match self {
+            Self::Loading(loading) => {
+                commands.entity(target).insert(loading);
+            }
+            Self::Projected(snapshot) => {
+                let snapshot = *snapshot;
+                commands.entity(target).insert((
+                    snapshot.name,
+                    snapshot.player,
+                    snapshot.character_id,
+                    snapshot.bestiary_categories,
+                    snapshot.skills,
+                    snapshot.limbs,
+                    snapshot.attributes,
+                    snapshot.stats,
+                    snapshot.combat_state,
+                    snapshot.equipment_action_state,
+                    snapshot.combat_side,
+                ));
+                commands.entity(target).insert((
+                    snapshot.transform,
+                    snapshot.look,
+                    snapshot.movement_intent,
+                    snapshot.posture_intent,
+                    snapshot.pace,
+                    snapshot.velocity,
+                    snapshot.skeleton,
+                    snapshot.melee_authority,
+                    snapshot.ranged_authority,
+                ));
+                commands.entity(target).insert((
+                    snapshot.collider,
+                    snapshot.collision_margin,
+                    snapshot.controller,
+                    snapshot.accumulated_input,
+                ));
+            }
+        }
+    }
+}
+
 const RECONNECT_GRACE_SECS: f32 = 30.0;
 
 fn tactical_equipment_location(
@@ -659,12 +740,7 @@ pub(crate) fn on_join_request(
     mut state: ResMut<MissionState>,
     loading_players: Query<(), With<LoadingPlayer>>,
     players: Query<(), With<Player>>,
-    mut disconnected_players: Query<(
-        Entity,
-        &mut DisconnectedPlayer,
-        Has<Player>,
-        Has<LoadingPlayer>,
-    )>,
+    mut disconnected_players: Query<(Entity, &mut DisconnectedPlayer, &DisconnectedProjection)>,
     inventory_items: Query<(Entity, &ItemOf)>,
     mut pending_actions: ResMut<PendingEquipmentActions>,
     mut action_sequences: ResMut<LastEquipmentSequence>,
@@ -682,54 +758,17 @@ pub(crate) fn on_join_request(
     let reconnect =
         disconnected_players
             .iter_mut()
-            .find_map(|(entity, mut session, projected, loading)| {
+            .find_map(|(entity, mut session, projection)| {
                 try_claim_reconnect(join.character_id, join.reconnect_token, &mut session)
-                    .then_some((entity, projected, loading))
+                    .then(|| (entity, projection.clone()))
             });
-    if let Some((disconnected, projected, loading)) = reconnect {
+    if let Some((disconnected, projection)) = reconnect {
         let token = fresh_reconnect_token();
+        let projected = projection.projected();
         if projected {
             queue_replication_rebind(&mut commands, client);
         }
-        commands.entity(disconnected).move_components::<(
-            Name,
-            Player,
-            CharacterId,
-            BestiaryCategories,
-            Skills,
-            Limbs,
-            Attributes,
-            Stats,
-            TacticalCombatState,
-            EquipmentActionState,
-            TacticalCombatSide,
-        )>(client);
-        commands.entity(disconnected).move_components::<(
-            Transform,
-            CharacterLook,
-            AuthoritativeMovementIntent,
-            AuthoritativePostureIntent,
-            MovementPace,
-            LinearVelocity,
-            SkeletonState,
-            MeleeAttackAuthority,
-            RangedAttackAuthority,
-        )>(client);
-        commands.entity(disconnected).move_components::<(
-            Collider,
-            CollisionMargin,
-            CharacterController,
-            AccumulatedInput,
-        )>(client);
-        if projected {
-            commands
-                .entity(disconnected)
-                .move_components::<InventoryItems>(client);
-        } else if loading {
-            commands
-                .entity(disconnected)
-                .move_components::<LoadingPlayer>(client);
-        }
+        projection.insert(&mut commands, client);
         commands.entity(client).insert(ReconnectSession {
             character_id: join.character_id,
             token,
@@ -1512,23 +1551,44 @@ pub(crate) fn update_skeleton_locomotion(
 /// registers an observer on this exact same `Disconnected` trigger that
 /// unconditionally despawns `entity` right afterward - see its doc comment:
 /// "Immediately after this, the session will be despawned". Bevy documents
-/// same-event observer ordering as unspecified, and per-observer commands
-/// from a single trigger dispatch are all applied together afterward in
-/// enqueue order - so if that despawn command happened to apply before any
-/// command queued here, every one of them would panic trying to touch an
-/// already-despawned entity (confirmed live: this is exactly what an abrupt
-/// disconnect used to do before this got split onto a fresh entity).
-/// `main()` registers this observer before `AdventureSimulatorNetPlugins` is
-/// added specifically so its commands enqueue - and therefore apply - first.
-/// Moving components onto a brand-new entity here (mirroring the exact
-/// component lists [`on_join_request`]'s reconnect branch already expects to
-/// move back off of), rather than trying to keep `entity` itself alive,
-/// means the grace-period state no longer depends on outliving `aeronet_io`'s
-/// despawn at all - only on running before it, which the registration order
-/// above guarantees.
+/// same-event observer ordering as unspecified. Snapshot every reconnect-owned
+/// component while the source is still queryable, then queue only operations
+/// whose inputs are owned values. Aeronet may therefore apply its source
+/// despawn before or after these commands without invalidating them.
 pub(crate) fn on_client_disconnected(
     disconnected: On<Disconnected>,
     query: Query<&ReconnectSession>,
+    projected_core: Query<(
+        &Name,
+        &Player,
+        &CharacterId,
+        &BestiaryCategories,
+        &Skills,
+        &Limbs,
+        &Attributes,
+        &Stats,
+        &TacticalCombatState,
+        &EquipmentActionState,
+        &TacticalCombatSide,
+    )>,
+    projected_motion: Query<(
+        &Transform,
+        &CharacterLook,
+        &AuthoritativeMovementIntent,
+        &AuthoritativePostureIntent,
+        &MovementPace,
+        &LinearVelocity,
+        &SkeletonState,
+        &MeleeAttackAuthority,
+        &RangedAttackAuthority,
+    )>,
+    projected_physics: Query<(
+        &Collider,
+        &CollisionMargin,
+        &CharacterController,
+        &AccumulatedInput,
+    )>,
+    loading_players: Query<&LoadingPlayer>,
     inventory_items: Query<(Entity, &ItemOf)>,
     mut commands: Commands,
 ) -> Result {
@@ -1536,54 +1596,66 @@ pub(crate) fn on_client_disconnected(
     let Ok(session) = query.get(entity) else {
         return Ok(());
     };
-    let orphan = commands.spawn_empty().id();
-    commands.entity(entity).move_components::<(
-        Name,
-        Player,
-        CharacterId,
-        BestiaryCategories,
-        Skills,
-        Limbs,
-        Attributes,
-        Stats,
-        TacticalCombatState,
-        EquipmentActionState,
-        TacticalCombatSide,
-    )>(orphan);
-    commands.entity(entity).move_components::<(
-        Transform,
-        CharacterLook,
-        AuthoritativeMovementIntent,
-        AuthoritativePostureIntent,
-        MovementPace,
-        LinearVelocity,
-        SkeletonState,
-        MeleeAttackAuthority,
-        RangedAttackAuthority,
-    )>(orphan);
-    commands.entity(entity).move_components::<(
-        Collider,
-        CollisionMargin,
-        CharacterController,
-        AccumulatedInput,
-    )>(orphan);
-    commands
-        .entity(entity)
-        .move_components::<InventoryItems>(orphan);
-    commands
-        .entity(entity)
-        .move_components::<LoadingPlayer>(orphan);
+    let projection = if let (Ok(core), Ok(motion), Ok(physics)) = (
+        projected_core.get(entity),
+        projected_motion.get(entity),
+        projected_physics.get(entity),
+    ) {
+        DisconnectedProjection::Projected(Box::new(ProjectedPlayerSnapshot {
+            name: core.0.clone(),
+            player: core.1.clone(),
+            character_id: *core.2,
+            bestiary_categories: core.3.clone(),
+            skills: core.4.clone(),
+            limbs: core.5.clone(),
+            attributes: core.6.clone(),
+            stats: core.7.clone(),
+            combat_state: core.8.clone(),
+            equipment_action_state: core.9.clone(),
+            combat_side: *core.10,
+            transform: *motion.0,
+            look: motion.1.clone(),
+            movement_intent: *motion.2,
+            posture_intent: *motion.3,
+            pace: *motion.4,
+            velocity: *motion.5,
+            skeleton: motion.6.clone(),
+            melee_authority: motion.7.clone(),
+            ranged_authority: motion.8.clone(),
+            collider: physics.0.clone(),
+            collision_margin: *physics.1,
+            controller: physics.2.clone(),
+            accumulated_input: physics.3.clone(),
+        }))
+    } else if let Ok(loading) = loading_players.get(entity) {
+        DisconnectedProjection::Loading(*loading)
+    } else {
+        warn!(
+            ?entity,
+            "Disconnected reconnect session had no player projection to retain"
+        );
+        return Ok(());
+    };
+    let projected = projection.projected();
+    let orphan = commands
+        .spawn((
+            projection,
+            DisconnectedPlayer {
+                character_id: session.character_id,
+                reconnect_token: session.token,
+                remaining_secs: RECONNECT_GRACE_SECS,
+                claimed: false,
+            },
+        ))
+        .id();
     for (item, owner) in &inventory_items {
         if owner.0 == entity {
             commands.entity(item).insert(ItemOf(orphan));
         }
     }
-    commands.entity(orphan).insert(DisconnectedPlayer {
-        character_id: session.character_id,
-        reconnect_token: session.token,
-        remaining_secs: RECONNECT_GRACE_SECS,
-        claimed: false,
-    });
+    if projected {
+        commands.queue(move |world: &mut World| rebuild_inventory_holding_cache(world, orphan));
+    }
     let character_id = session.character_id.0;
     match &disconnected.reason {
         DisconnectReason::ByUser(reason) => {
@@ -1790,7 +1862,7 @@ pub(crate) fn on_player_added(
     query: Query<(&Player, &CharacterId)>,
 ) -> Result {
     let (player, character_id) = query.get(event.entity)?;
-    commands.entity(event.entity).insert((
+    commands.entity(event.entity).insert_if_new((
         Name::new(format!("Character#{} {}", character_id.0, player.name)),
         Replicated,
         BestiaryCategories::default(),
@@ -2076,23 +2148,29 @@ mod tests {
     use super::{
         AuthoritativeMovementIntent, AuthoritativePostureIntent,
         BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent, DisconnectedPlayer,
-        GROUND_POSTURE_TRANSITION_TICKS, Player, RECONNECT_GRACE_SECS,
-        ROLL_POSTURE_TRANSITION_TICKS, WeaponGuardState, advance_downed_facing_for_camera,
-        advance_posture_transition_facing, apply_posture_action, authoritative_weapon_guard,
-        brake_quickstep_horizontal_velocity, dive_horizontal_velocity,
+        GROUND_POSTURE_TRANSITION_TICKS, MeleeAttackAuthority, Player, RECONNECT_GRACE_SECS,
+        ROLL_POSTURE_TRANSITION_TICKS, RangedAttackAuthority, ReconnectSession, WeaponGuardState,
+        advance_downed_facing_for_camera, advance_posture_transition_facing, apply_posture_action,
+        authoritative_weapon_guard, brake_quickstep_horizontal_velocity, dive_horizontal_velocity,
         downed_tank_controller_input, input, launch_pending_quicksteps, mission_enemy_health_scale,
-        mission_enemy_scale, posture_transition_locks_body_facing, queue_replication_rebind,
-        reconnect_matches, restore_authoritative_movement_intent, sequence_is_newer,
+        mission_enemy_scale, on_client_disconnected, player_collider,
+        posture_transition_locks_body_facing, queue_replication_rebind, reconnect_matches,
+        restore_authoritative_movement_intent, sequence_is_newer,
         tactical_movement_speed_for_guard, try_claim_reconnect, validate_player_input,
     };
-    use adventuresim_tactical_core::physics::TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
-    use adventuresim_tactical_core::prelude::{
-        BodyState, CharacterControllerState, CharacterId, DiveDirection, DodgeSpec,
-        GroundedPosture, LinearVelocity, MeleePreparationInput, MovementPace,
-        PostureTransitionKind, RollDirection, Rotation, SkeletonAction, SkeletonState,
-        TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalCombatConfig, advance_body_facing,
-        controller_yaw, downed_camera_roll_target,
+    use adventuresim_tactical_core::physics::{
+        TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND, tactical_character_controller,
     };
+    use adventuresim_tactical_core::prelude::{
+        Attributes, BestiaryCategories, BodyState, CharacterControllerState, CharacterId,
+        CharacterLook, CollisionMargin, DiveDirection, DodgeSpec, EquipSlot, EquipmentActionState,
+        GroundedPosture, InventoryItems, ItemOf, Limbs, LinearVelocity, MeleePreparationInput,
+        MovementPace, PostureTransitionKind, RollDirection, Rotation, ShieldItem, SkeletonAction,
+        SkeletonState, Skills, Stats, TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalCombatConfig,
+        TacticalCombatSide, TacticalCombatState, advance_body_facing, controller_yaw,
+        downed_camera_roll_target,
+    };
+    use adventuresim_tactical_netcode::aeronet::io::connection::{DisconnectReason, Disconnected};
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
     use adventuresim_tactical_netcode::prelude::{
         JumpCommand, PostureActionRequest, PostureCommand, ReconnectToken,
@@ -2104,6 +2182,109 @@ mod tests {
 
     fn mark_rebind_target(mut commands: Commands, target: Res<RebindTarget>) {
         queue_replication_rebind(&mut commands, target.0);
+    }
+
+    fn despawn_disconnected_session(event: On<Disconnected>, mut commands: Commands) {
+        commands.entity(event.event_target()).try_despawn();
+    }
+
+    #[test]
+    fn disconnect_snapshot_survives_competing_despawn_in_both_observer_orders() {
+        for snapshot_observer_first in [true, false] {
+            let mut app = App::new();
+            if snapshot_observer_first {
+                app.add_observer(on_client_disconnected)
+                    .add_observer(despawn_disconnected_session)
+                    .add_observer(super::on_player_added);
+            } else {
+                app.add_observer(despawn_disconnected_session)
+                    .add_observer(on_client_disconnected)
+                    .add_observer(super::on_player_added);
+            }
+            let session = ReconnectSession {
+                character_id: CharacterId(7),
+                token: ReconnectToken([7; 32]),
+            };
+            let client = app.world_mut().spawn(session).id();
+            app.world_mut().entity_mut(client).insert((
+                Name::new("snapshot-player"),
+                Player::default(),
+                CharacterId(7),
+                BestiaryCategories::default(),
+                Skills::default(),
+                Limbs::default(),
+                Attributes::default(),
+                Stats::default(),
+                TacticalCombatState::default(),
+                EquipmentActionState::default(),
+                TacticalCombatSide::Party,
+            ));
+            app.world_mut().entity_mut(client).insert((
+                Transform::from_xyz(1.0, 2.0, 3.0),
+                CharacterLook::default(),
+                AuthoritativeMovementIntent::default(),
+                AuthoritativePostureIntent::default(),
+                MovementPace::default(),
+                LinearVelocity::ZERO,
+                SkeletonState::default(),
+                MeleeAttackAuthority::default(),
+                RangedAttackAuthority::default(),
+            ));
+            app.world_mut().entity_mut(client).insert((
+                player_collider(),
+                CollisionMargin(0.01),
+                tactical_character_controller(),
+                input::AccumulatedInput::default(),
+            ));
+            let shield = app
+                .world_mut()
+                .spawn((
+                    ItemOf(client),
+                    ShieldItem { block: 1.0 },
+                    EquipSlot::HoldingLeft,
+                ))
+                .id();
+
+            app.world_mut().trigger(Disconnected {
+                entity: client,
+                reason: DisconnectReason::by_peer("test teardown"),
+            });
+            app.update();
+
+            assert!(app.world().get_entity(client).is_err());
+            let mut disconnected = app
+                .world_mut()
+                .query_filtered::<Entity, With<DisconnectedPlayer>>();
+            let orphans = disconnected.iter(app.world()).collect::<Vec<_>>();
+            assert_eq!(orphans.len(), 1);
+            let orphan = orphans[0];
+            assert_eq!(app.world().get::<ItemOf>(shield).unwrap().0, orphan);
+            assert_eq!(
+                app.world()
+                    .get::<InventoryItems>(orphan)
+                    .unwrap()
+                    .holding_shield(),
+                Some(shield)
+            );
+            let projection = app
+                .world()
+                .get::<super::DisconnectedProjection>(orphan)
+                .unwrap()
+                .clone();
+            let rebound = app.world_mut().spawn_empty().id();
+            projection.insert(&mut app.world_mut().commands(), rebound);
+            app.world_mut().flush();
+            assert_eq!(
+                app.world().get::<Transform>(rebound).unwrap().translation,
+                Vec3::new(1.0, 2.0, 3.0)
+            );
+            assert_eq!(
+                app.world().get::<Name>(rebound).unwrap().as_str(),
+                "snapshot-player"
+            );
+            assert!(app.world().get::<MeleeAttackAuthority>(rebound).is_some());
+            assert!(app.world().get::<RangedAttackAuthority>(rebound).is_some());
+        }
     }
 
     #[test]
