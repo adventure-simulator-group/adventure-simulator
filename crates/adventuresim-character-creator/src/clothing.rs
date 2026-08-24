@@ -1,6 +1,6 @@
 //! Fitted placeholder garments generated from catalog-authored anatomical spans.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::item_catalog_schema::{
     EquipmentAnatomicalRegion as Region, EquipmentChannel, EquipmentMaterial, EquipmentPlacement,
@@ -69,6 +69,7 @@ impl GarmentSpecification {
 pub struct ClothingShell {
     pub specification: GarmentSpecification,
     pub positions: Vec<[f32; 3]>,
+    pub normals: Vec<[f32; 3]>,
     pub faces: Vec<[u32; 3]>,
 }
 
@@ -160,6 +161,116 @@ fn right_lower_leg(name: &str) -> bool {
 
 fn squared_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
     (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
+}
+
+const CONCAVITY_RELAXATION_PASSES: usize = 3;
+const CONCAVITY_RELAXATION_STRENGTH: f32 = 0.5;
+
+fn subtract(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn normalized(value: [f32; 3]) -> Option<[f32; 3]> {
+    let length = dot(value, value).sqrt();
+    (length > f32::EPSILON).then(|| [value[0] / length, value[1] / length, value[2] / length])
+}
+
+/// Raises local valleys toward their one-ring average while leaving convex
+/// points and garment openings in place. The source normals define "outward"
+/// for every pass so the relaxation cannot shrink the shell into the body.
+fn relax_concavities(
+    positions: &[[f32; 3]],
+    source_normals: &[[f32; 3]],
+    faces: &[[u32; 3]],
+) -> Vec<[f32; 3]> {
+    let mut neighbors = vec![Vec::new(); positions.len()];
+    let mut edge_counts = HashMap::<(u32, u32), usize>::new();
+    for face in faces {
+        for (a, b) in [(face[0], face[1]), (face[1], face[2]), (face[2], face[0])] {
+            neighbors[a as usize].push(b as usize);
+            neighbors[b as usize].push(a as usize);
+            *edge_counts.entry((a.min(b), a.max(b))).or_default() += 1;
+        }
+    }
+    let boundary_vertices = edge_counts
+        .into_iter()
+        .filter(|(_, count)| *count == 1)
+        .flat_map(|((a, b), _)| [a as usize, b as usize])
+        .collect::<HashSet<_>>();
+    for adjacent in &mut neighbors {
+        adjacent.sort_unstable();
+        adjacent.dedup();
+    }
+
+    let mut relaxed = positions.to_vec();
+    for _ in 0..CONCAVITY_RELAXATION_PASSES {
+        let previous = relaxed.clone();
+        for (vertex, adjacent) in neighbors.iter().enumerate() {
+            if adjacent.is_empty() || boundary_vertices.contains(&vertex) {
+                continue;
+            }
+            let Some(normal) = normalized(source_normals[vertex]) else {
+                continue;
+            };
+            let inverse_count = 1.0 / adjacent.len() as f32;
+            let average = adjacent.iter().fold([0.0; 3], |mut average, neighbor| {
+                for axis in 0..3 {
+                    average[axis] += previous[*neighbor][axis] * inverse_count;
+                }
+                average
+            });
+            let outward_lift = dot(subtract(average, previous[vertex]), normal).max(0.0)
+                * CONCAVITY_RELAXATION_STRENGTH;
+            for axis in 0..3 {
+                relaxed[vertex][axis] = previous[vertex][axis] + normal[axis] * outward_lift;
+            }
+        }
+    }
+    relaxed
+}
+
+fn surface_normals(
+    positions: &[[f32; 3]],
+    source_normals: &[[f32; 3]],
+    faces: &[[u32; 3]],
+) -> Vec<[f32; 3]> {
+    let mut accumulated = vec![[0.0; 3]; positions.len()];
+    for face in faces {
+        let [a, b, c] = face.map(|vertex| positions[vertex as usize]);
+        let face_normal = cross(subtract(b, a), subtract(c, a));
+        for vertex in face {
+            for axis in 0..3 {
+                accumulated[*vertex as usize][axis] += face_normal[axis];
+            }
+        }
+    }
+    accumulated
+        .into_iter()
+        .zip(source_normals)
+        .map(|(normal, fallback)| {
+            normalized(normal)
+                .map(|normal| {
+                    if dot(normal, *fallback) < 0.0 {
+                        [-normal[0], -normal[1], -normal[2]]
+                    } else {
+                        normal
+                    }
+                })
+                .unwrap_or(*fallback)
+        })
+        .collect()
 }
 
 fn chain_coordinate(point: [f32; 3], segments: &[([f32; 3], [f32; 3])]) -> Option<f32> {
@@ -381,9 +492,11 @@ pub fn generate_clothing_shells(
                     .filter_map(|(index, selected)| selected.then_some(index)),
             );
         }
-        let shell_positions = positions
+        let relaxed_positions = relax_concavities(positions, normals, &shell_faces);
+        let shell_normals = surface_normals(&relaxed_positions, normals, &shell_faces);
+        let shell_positions = relaxed_positions
             .iter()
-            .zip(normals)
+            .zip(&shell_normals)
             .map(|(position, normal)| {
                 [
                     position[0] + normal[0] * specification.normal_offset_metres,
@@ -395,6 +508,7 @@ pub fn generate_clothing_shells(
         shells.push(ClothingShell {
             specification: specification.clone(),
             positions: shell_positions,
+            normals: shell_normals,
             faces: shell_faces,
         });
     }
@@ -428,6 +542,52 @@ mod tests {
             ([0.0, 1.0, 0.0], [0.0, 3.0, 0.0]),
         ];
         assert!((chain_coordinate([0.0, 2.0, 0.0], &segments).unwrap() - 2.0 / 3.0).abs() < 1e-6);
+    }
+
+    fn center_fan(center_height: f32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+        (
+            vec![
+                [-1.0, -1.0, 0.0],
+                [1.0, -1.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [-1.0, 1.0, 0.0],
+                [0.0, 0.0, center_height],
+            ],
+            vec![[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]],
+        )
+    }
+
+    #[test]
+    fn concavity_relaxation_raises_a_valley_without_moving_its_opening() {
+        let (positions, faces) = center_fan(-1.0);
+        let normals = vec![[0.0, 0.0, 1.0]; positions.len()];
+
+        let relaxed = relax_concavities(&positions, &normals, &faces);
+
+        assert!(relaxed[4][2] > positions[4][2]);
+        assert_eq!(&relaxed[..4], &positions[..4]);
+    }
+
+    #[test]
+    fn concavity_relaxation_does_not_flatten_a_convex_peak() {
+        let (positions, faces) = center_fan(1.0);
+        let normals = vec![[0.0, 0.0, 1.0]; positions.len()];
+
+        let relaxed = relax_concavities(&positions, &normals, &faces);
+
+        assert_eq!(relaxed, positions);
+    }
+
+    #[test]
+    fn recomputed_surface_normals_are_unit_length() {
+        let (positions, faces) = center_fan(0.25);
+        let fallback = vec![[0.0, 0.0, 1.0]; positions.len()];
+
+        let normals = surface_normals(&positions, &fallback, &faces);
+
+        for normal in normals {
+            assert!((dot(normal, normal) - 1.0).abs() < 1e-6);
+        }
     }
 
     #[test]
