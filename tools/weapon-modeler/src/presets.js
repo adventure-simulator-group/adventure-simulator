@@ -1501,6 +1501,108 @@ reiterPoll.crown = 0.06;
 reiterPoll.neck = 0.026;
 reiterPoll.face = 0.046;
 
+const shieldControl = (label, key, min, max, step, unit = "") => c(label, `components.0.${key}`, min, max, step, unit);
+const shieldChoices = (kind) => [
+  { label: "Fittings", path: "components.0.fittingMode", options: [{ value: "grip", label: "Handle" }, { value: "grip-and-strap", label: "Handle and strap" }] },
+  { label: "Hand", path: "components.0.mirrored", options: [{ value: false, label: "Right" }, { value: true, label: "Left (mirrored)" }] },
+  ...(kind === "shapedShield" ? [
+    { label: "Top", path: "components.0.topShape", options: [{ value: "flat", label: "Flat" }, { value: "rounded", label: "Rounded" }, { value: "singlePeak", label: "Single point" }, { value: "doublePeak", label: "Double point" }] },
+    { label: "Bottom", path: "components.0.bottomShape", options: [{ value: "flat", label: "Flat" }, { value: "rounded", label: "Rounded" }, { value: "point", label: "Point" }] },
+  ] : []),
+];
+const commonShield = (values) => ({
+  thickness: 0.014,
+  rimRadius: 0.007,
+  bossRadius: 0.07,
+  bossHeight: 0.025,
+  fittingMode: "grip-and-strap",
+  fittingAngle: 0,
+  mirrored: true,
+  gripLength: 0.16,
+  gripRadius: 0.011,
+  fittingSpacing: 0.16,
+  fittingClearance: 0.055,
+  strapWidth: 0.035,
+  strapThickness: 0.004,
+  material: "wood",
+  rimMaterial: "darkSteel",
+  bossMaterial: "steel",
+  gripMaterial: "wood",
+  strapMaterial: "darkLeather",
+  ...values,
+});
+const roundShieldPreset = (id, name, values) => ({
+  id,
+  name,
+  family: "Round shield",
+  description: "",
+  definition: { components: [{ kind: "roundShield", id: "shield", label: name, attach: { to: "weapon.root", at: "center" }, ...commonShield(values) }] },
+  controls: [
+    shieldControl("Radius", "radius", 0.18, 0.42, 0.01, "m"),
+    shieldControl("Body thickness", "thickness", 0.008, 0.028, 0.002, "m"),
+    shieldControl("Radial resolution", "radialSegments", 12, 64, 4),
+    shieldControl("Concentric resolution", "rings", 3, 16, 1),
+    shieldControl("Outer curvature", "outerCurve", 0, 0.055, 0.005, "m"),
+    shieldControl("Center curvature", "centerCurve", 0, 0.05, 0.005, "m"),
+    shieldControl("Center radius", "centerRadius", 0.05, 0.14, 0.01, "m"),
+    shieldControl("Rim radius", "rimRadius", 0, 0.012, 0.001, "m"),
+    shieldControl("Boss radius", "bossRadius", 0.04, 0.14, 0.005, "m"),
+    shieldControl("Boss height", "bossHeight", 0, 0.07, 0.005, "m"),
+    shieldControl("Fitting angle", "fittingAngle", 0, 90, 5, "deg"),
+    shieldControl("Fitting spacing", "fittingSpacing", 0.10, 0.20, 0.01, "m"),
+    shieldControl("Handle length", "gripLength", 0.12, 0.20, 0.01, "m"),
+    shieldControl("Handle radius", "gripRadius", 0.008, 0.014, 0.001, "m"),
+    shieldControl("Hand clearance", "fittingClearance", 0.03, 0.08, 0.005, "m"),
+    shieldControl("Strap width", "strapWidth", 0.02, 0.05, 0.005, "m"),
+    shieldControl("Strap thickness", "strapThickness", 0.002, 0.006, 0.001, "m"),
+  ],
+  choiceControls: shieldChoices("roundShield"),
+});
+const shapedShieldPreset = (id, name, values) => ({
+  id,
+  name,
+  family: "Shaped shield",
+  description: "",
+  definition: { components: [{ kind: "shapedShield", id: "shield", label: name, attach: { to: "weapon.root", at: "center" }, sideTaper: 0, cornerRadius: 0, centerCurve: 0, centerWidth: 0.18, centerHeight: 0.4, ...commonShield(values) }] },
+  controls: [
+    shieldControl("Width", "width", 0.42, 0.78, 0.01, "m"),
+    shieldControl("Body height", "height", 0.48, 1.15, 0.01, "m"),
+    shieldControl("Body thickness", "thickness", 0.008, 0.028, 0.002, "m"),
+    shieldControl("Outline resolution", "edgeSegments", 6, 32, 2),
+    shieldControl("Top depth", "topDepth", 0, 0.18, 0.01, "m"),
+    shieldControl("Top roundness", "topRoundness", 0, 1, 0.05),
+    shieldControl("Bottom depth", "bottomDepth", 0, 0.30, 0.01, "m"),
+    shieldControl("Bottom roundness", "bottomRoundness", 0, 1, 0.05),
+    shieldControl("Side taper", "sideTaper", 0, 0.65, 0.05),
+    shieldControl("Corner radius", "cornerRadius", 0, 0.08, 0.005, "m"),
+    shieldControl("Cylindrical curvature", "cylindricalCurve", 0, 0.12, 0.005, "m"),
+    shieldControl("Center bump depth", "centerCurve", 0, 0.06, 0.005, "m"),
+    shieldControl("Center bump width", "centerWidth", 0.08, 0.40, 0.01, "m"),
+    shieldControl("Center bump height", "centerHeight", 0.15, 1.00, 0.05, "m"),
+    shieldControl("Rim radius", "rimRadius", 0, 0.012, 0.001, "m"),
+    shieldControl("Boss radius", "bossRadius", 0.04, 0.14, 0.005, "m"),
+    shieldControl("Boss height", "bossHeight", 0, 0.07, 0.005, "m"),
+    shieldControl("Fitting angle", "fittingAngle", 0, 90, 5, "deg"),
+    shieldControl("Fitting spacing", "fittingSpacing", 0.10, 0.24, 0.01, "m"),
+    shieldControl("Handle length", "gripLength", 0.12, 0.22, 0.01, "m"),
+    shieldControl("Handle radius", "gripRadius", 0.008, 0.014, 0.001, "m"),
+    shieldControl("Hand clearance", "fittingClearance", 0.03, 0.08, 0.005, "m"),
+    shieldControl("Strap width", "strapWidth", 0.02, 0.05, 0.005, "m"),
+    shieldControl("Strap thickness", "strapThickness", 0.002, 0.006, 0.001, "m"),
+  ],
+  choiceControls: shieldChoices("shapedShield"),
+});
+
+PRESETS.push(
+  roundShieldPreset("buckler", "Buckler", { radius: 0.18, thickness: 0.008, rings: 10, radialSegments: 40, outerCurve: 0.005, centerCurve: 0.01, centerRadius: 0.08, rimRadius: 0.006, bossRadius: 0.085, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.13, fittingSpacing: 0.12, material: "steel" }),
+  roundShieldPreset("targe", "Targe", { radius: 0.25, rings: 10, radialSegments: 40, outerCurve: 0.02, centerCurve: 0.015, centerRadius: 0.11, rimRadius: 0.008, bossRadius: 0.065, bossHeight: 0.025 }),
+  roundShieldPreset("round-shield", "Round shield", { radius: 0.31, thickness: 0.018, rings: 12, radialSegments: 48, outerCurve: 0.03, centerCurve: 0.015, centerRadius: 0.13, rimRadius: 0.009, bossRadius: 0.09, bossHeight: 0.035, fittingSpacing: 0.18 }),
+  shapedShieldPreset("heater-shield", "Heater shield", { width: 0.48, height: 0.50, edgeSegments: 16, topShape: "flat", bottomShape: "point", topDepth: 0, bottomDepth: 0.15, topRoundness: 0.25, bottomRoundness: 0.2, sideTaper: 0.1, cornerRadius: 0.01, cylindricalCurve: 0, rimRadius: 0.007, bossRadius: 0.06, bossHeight: 0, fittingSpacing: 0.15 }),
+  shapedShieldPreset("pavise", "Pavise", { width: 0.65, height: 0.95, thickness: 0.02, edgeSegments: 32, topShape: "rounded", bottomShape: "flat", topDepth: 0.10, bottomDepth: 0, topRoundness: 0.85, bottomRoundness: 0.4, sideTaper: 0.05, cornerRadius: 0.025, cylindricalCurve: 0.06, centerCurve: 0.02, centerWidth: 0.22, centerHeight: 0.70, rimRadius: 0.009, bossRadius: 0.075, bossHeight: 0, gripLength: 0.18, fittingSpacing: 0.20 }),
+  shapedShieldPreset("kite-shield", "Kite shield", { width: 0.55, height: 0.72, thickness: 0.018, edgeSegments: 20, topShape: "rounded", bottomShape: "point", topDepth: 0.08, bottomDepth: 0.26, topRoundness: 0.9, bottomRoundness: 0.3, sideTaper: 0.5, cornerRadius: 0.015, cylindricalCurve: 0.04, rimRadius: 0.008, bossRadius: 0.08, bossHeight: 0.035, fittingSpacing: 0.17 }),
+  shapedShieldPreset("roman-tower-shield", "Roman tower shield", { width: 0.65, height: 1.05, thickness: 0.02, edgeSegments: 24, topShape: "flat", bottomShape: "flat", topDepth: 0, bottomDepth: 0, topRoundness: 0, bottomRoundness: 0, sideTaper: 0, cornerRadius: 0.055, cylindricalCurve: 0.11, rimRadius: 0.009, bossRadius: 0.09, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.18, fittingSpacing: 0.20 }),
+);
+
 export const HAFT_MODULES = [
   {
     id: "wooden-polearm",
@@ -1715,6 +1817,7 @@ export function copyPreset(preset) {
     ...preset,
     definition: deepCopy(preset.definition),
     controls: deepCopy(preset.controls),
+    choiceControls: deepCopy(preset.choiceControls ?? []),
   };
 }
 export function getPath(object, path) {

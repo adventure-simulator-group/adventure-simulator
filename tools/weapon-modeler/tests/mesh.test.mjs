@@ -17,7 +17,8 @@ test("every preset produces finite nonempty geometry", () => {
     assert.ok(mesh.positions.every(Number.isFinite), preset.id);
     assert.ok(mesh.normals.every(Number.isFinite), preset.id);
     assert.ok(mesh.stats.triangles > 100, preset.id);
-    assert.ok(mesh.stats.dimensions[1] > 0.45, preset.id);
+    const isShield = preset.definition.components.some((component) => ["roundShield", "shapedShield"].includes(component.kind));
+    assert.ok(mesh.stats.dimensions[1] > (isShield ? 0.3 : 0.45), preset.id);
     assert.ok(mesh.stats.dimensions.every((value) => Number.isFinite(value) && value > 0), preset.id);
     assert.ok(mesh.stats.volume > 0, preset.id);
     for (const control of preset.controls) {
@@ -113,8 +114,8 @@ test("front camera fit contains every preset on portrait and landscape canvases"
   }
 });
 
-test("all twenty-one presets fit the live 1280x720 viewer canvas with margin", () => {
-  assert.equal(PRESETS.length, 21);
+test("all twenty-eight presets fit the live 1280x720 viewer canvas with margin", () => {
+  assert.equal(PRESETS.length, 28);
   const canvasAspect = (1280 - 350) / (720 - 88), fov = 35 * Math.PI / 180;
   for (const preset of PRESETS) {
     const bounds = buildWeapon(preset.definition).stats.bounds, distance = fitDistance(bounds, canvasAspect, fov);

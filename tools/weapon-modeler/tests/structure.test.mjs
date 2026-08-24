@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { effectiveGripRadius, MAX_ROUND_GRIP_RADIUS_M, MAX_SWORD_GRIP_THICKNESS_M, MAX_SWORD_GRIP_WIDTH_M } from "../src/anatomy.js";
-import { prism, resolveDefinition, tubePath, validateWeapon } from "../src/mesh.js";
+import { prism, resolveDefinition, shapedShieldOutline, shieldFittingLayout, tubePath, validateWeapon } from "../src/mesh.js";
 import { HAFT_MODULES, HEAD_ASSEMBLIES, PRESETS, composeWeapon, compositionControls, copyPreset, getPath, setControlValue } from "../src/presets.js";
 
 function randomGenerator(seed) {
@@ -144,6 +144,130 @@ test("every preset control pair survives all four endpoint combinations", () => 
     }
   }
   assert.ok(cases >= 7532, `expected reviewer-scale coverage, got ${cases}`);
+});
+
+test("shield families expose the requested curated and historical skeleton presets", () => {
+  const ids = ["buckler", "targe", "round-shield", "heater-shield", "pavise", "kite-shield", "roman-tower-shield"];
+  assert.deepEqual(PRESETS.filter((preset) => ids.includes(preset.id)).map((preset) => preset.id), ids);
+  for (const id of ids) {
+    const preset = copyPreset(PRESETS.find((candidate) => candidate.id === id));
+    assertValid(preset.definition, preset.controls, id);
+    assert.ok(preset.choiceControls.some((control) => control.path.endsWith("fittingMode")));
+    assert.ok(preset.choiceControls.some((control) => control.path.endsWith("mirrored")));
+  }
+});
+
+test("round shield resolution and concentric curvature independently change geometry", () => {
+  const source = copyPreset(PRESETS.find((preset) => preset.id === "buckler")),
+    baseline = validateWeapon(source.definition, source.controls),
+    body = source.definition.components[0];
+  body.radialSegments += 8;
+  body.rings += 2;
+  const detailed = validateWeapon(source.definition, source.controls);
+  assert.equal(detailed.valid, true, detailed.errors.join(" | "));
+  assert.ok(detailed.mesh.stats.triangles > baseline.mesh.stats.triangles);
+
+  const broad = copyPreset(PRESETS.find((preset) => preset.id === "buckler"));
+  broad.definition.components[0].outerCurve = 0.05;
+  broad.definition.components[0].centerCurve = 0;
+  const centered = copyPreset(PRESETS.find((preset) => preset.id === "buckler"));
+  centered.definition.components[0].outerCurve = 0;
+  centered.definition.components[0].centerCurve = 0.05;
+  const broadMesh = validateWeapon(broad.definition, broad.controls).mesh,
+    centeredMesh = validateWeapon(centered.definition, centered.controls).mesh;
+  assert.notDeepEqual(broadMesh.positions, centeredMesh.positions);
+});
+
+test("shaped shield top and bottom modes remain simple and independently selectable", () => {
+  const source = copyPreset(PRESETS.find((preset) => preset.id === "heater-shield"));
+  for (const topShape of ["flat", "rounded", "singlePeak", "doublePeak"])
+    for (const bottomShape of ["flat", "rounded", "point"]) {
+      const candidate = structuredClone(source.definition);
+      candidate.components[0].topShape = topShape;
+      candidate.components[0].bottomShape = bottomShape;
+      candidate.components[0].topDepth = topShape === "flat" ? 0 : 0.1;
+      candidate.components[0].bottomDepth = bottomShape === "flat" ? 0 : 0.16;
+      assert.ok(shapedShieldOutline(candidate.components[0]).length >= 12);
+      assertValid(candidate, source.controls, `${topShape}/${bottomShape}`);
+    }
+});
+
+test("kite taper and Roman corner radius materially shape their historical silhouettes", () => {
+  const kite = PRESETS.find((preset) => preset.id === "kite-shield").definition.components[0],
+    kiteOutline = shapedShieldOutline(kite),
+    topHalfWidth = Math.abs(kiteOutline[0][0]),
+    bottomHalfWidth = Math.abs(kiteOutline[kite.edgeSegments + 1][0]);
+  assert.ok(bottomHalfWidth < topHalfWidth * 0.55, `${bottomHalfWidth} vs ${topHalfWidth}`);
+
+  const roman = PRESETS.find((preset) => preset.id === "roman-tower-shield").definition.components[0],
+    romanOutline = shapedShieldOutline(roman),
+    topEdgeY = roman.height / 2;
+  assert.ok(romanOutline[0][1] < topEdgeY - roman.cornerRadius * 0.9);
+  assert.ok(romanOutline[Math.floor(roman.edgeSegments / 2)][1] > topEdgeY - 1e-9);
+});
+
+test("pavise center bump is independently adjustable over its cylindrical bow", () => {
+  const source = copyPreset(PRESETS.find((preset) => preset.id === "pavise")),
+    component = source.definition.components[0],
+    curved = validateWeapon(source.definition, source.controls);
+  assert.equal(curved.valid, true, curved.errors.join(" | "));
+  assert.ok(component.centerCurve > 0);
+  for (const label of ["Center bump depth", "Center bump width", "Center bump height"]) assert.ok(source.controls.some((control) => control.label === label), label);
+
+  const withoutBump = structuredClone(source.definition);
+  withoutBump.components[0].centerCurve = 0;
+  const flatCenter = validateWeapon(withoutBump, source.controls);
+  assert.equal(flatCenter.valid, true, flatCenter.errors.join(" | "));
+  assert.notDeepEqual(curved.mesh.positions, flatCenter.mesh.positions);
+
+  const compact = structuredClone(source.definition);
+  compact.components[0].centerWidth = 0.08;
+  compact.components[0].centerHeight = 0.15;
+  const compactResult = validateWeapon(compact, source.controls);
+  assert.equal(compactResult.valid, true, compactResult.errors.join(" | "));
+  assert.notDeepEqual(curved.mesh.positions, compactResult.mesh.positions);
+});
+
+test("shield bosses use a smooth resolution-linked domed profile", () => {
+  for (const id of ["buckler", "targe", "round-shield", "kite-shield", "roman-tower-shield"]) {
+    const result = validateWeapon(PRESETS.find((preset) => preset.id === id).definition, []),
+      boss = result.mesh.parts.find((part) => part.label === "shield boss"),
+      radialLevels = new Set();
+    assert.ok(boss, id);
+    for (let index = 0; index < boss.positions.length; index += 3) {
+      const radius = Math.hypot(boss.positions[index], boss.positions[index + 1]);
+      if (radius > 1e-7) radialLevels.add(radius.toFixed(6));
+    }
+    assert.ok(radialLevels.size >= 6, `${id}: ${radialLevels.size} boss profile rings`);
+  }
+});
+
+test("shield fittings mirror, rotate, remain attached, and never cross the face", () => {
+  const source = copyPreset(PRESETS.find((preset) => preset.id === "round-shield")),
+    component = source.definition.components[0],
+    right = shieldFittingLayout({ ...component, mirrored: false, fittingAngle: 0 }),
+    left = shieldFittingLayout({ ...component, mirrored: true, fittingAngle: 0 }),
+    turned = shieldFittingLayout({ ...component, fittingAngle: 90 });
+  assert.equal(right.gripCenter[0], -left.gripCenter[0]);
+  assert.ok(Math.abs(turned.positionAxis[0]) < 1e-9);
+  assert.ok(Math.abs(turned.positionAxis[1] - 1) < 1e-9);
+  for (const mirrored of [false, true])
+    for (const fittingMode of ["grip", "grip-and-strap"])
+      for (const fittingAngle of [0, 45, 90]) {
+        const candidate = structuredClone(source.definition);
+        Object.assign(candidate.components[0], { mirrored, fittingMode, fittingAngle });
+        const result = validateWeapon(candidate, source.controls);
+        assert.equal(result.valid, true, `${mirrored}/${fittingMode}/${fittingAngle}: ${result.errors.join(" | ")}`);
+        assert.ok(result.resolved._frames["shield.grip"]);
+        assert.ok(result.mesh.parts.some((part) => part.label === "shield handle"));
+        assert.equal(result.mesh.parts.some((part) => part.label === "forearm strap"), fittingMode === "grip-and-strap");
+      }
+  const clipped = structuredClone(source.definition);
+  clipped.components[0].thickness = 0.001;
+  assert.ok(validateWeapon(clipped, []).errors.some((error) => error.includes("clip through the shield face")));
+  const detached = structuredClone(source.definition);
+  detached.components[0].fittingSpacing = 2;
+  assert.ok(validateWeapon(detached, []).errors.some((error) => error.includes("do not fit inside")));
 });
 
 test("Messer grip length drives guard, blade, and Nagel attachment frames", () => {

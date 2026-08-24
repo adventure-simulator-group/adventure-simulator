@@ -46,6 +46,7 @@ aside section, aside details { padding: 21px 22px; border-bottom: 1px solid var(
 .composer-status { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .control-row { display: grid; grid-template-columns: 1fr 72px; gap: 9px 12px; align-items: center; }
 .control-row label { color: #ddd4c6; }
+.control-row > select { min-width: 168px; }
 .control-row input[type="range"] { width: 100%; accent-color: var(--gold); grid-column: 1; }
 .control-row output { grid-column: 2; grid-row: 2; color: var(--gold); font-variant-numeric: tabular-nums; text-align: right; font-size: 11px; }
 dl { display: grid; grid-template-columns: 1fr auto; gap: 8px 18px; margin: 0; font-size: 12px; }

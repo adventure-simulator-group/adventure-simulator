@@ -27,6 +27,8 @@ function rebuild(dirty = false) {
     if (!validation.valid) throw new Error(validation.errors.join(" · "));
     currentValidation = validation;
     const mesh = validation.mesh;
+    const shield = validation.resolved.components.find((component) => ["roundShield", "shapedShield"].includes(component.kind));
+    if (shield) exporter.joint.value = shield.mirrored ? "l_weapon" : "r_weapon";
     renderer.setMesh(mesh);
     const physical = measureMassProperties(mesh, automaticGripPoint(validation.resolved));
     mesh.stats.physical = physical;
@@ -56,6 +58,22 @@ function rebuild(dirty = false) {
 
 function renderControls() {
   elements.controls.replaceChildren();
+  for (const control of active.choiceControls ?? []) {
+    const row = document.createElement("div"); row.className = "control-row";
+    const label = document.createElement("label"); label.textContent = control.label;
+    const input = document.createElement("select");
+    for (const option of control.options) {
+      const element = document.createElement("option"); element.textContent = option.label; element.value = JSON.stringify(option.value); input.append(element);
+    }
+    input.value = JSON.stringify(getControlValue(active.definition, control));
+    input.addEventListener("change", () => {
+      const candidate = JSON.parse(JSON.stringify(active.definition)); setControlValue(candidate, control, JSON.parse(input.value));
+      const validation = validateWeapon(candidate, active.controls);
+      if (!validation.valid) { input.value = JSON.stringify(getControlValue(active.definition, control)); elements["definition-error"].textContent = `Rejected ${control.label}: ${validation.errors.join(" · ")}`; return; }
+      active.definition = candidate; rebuild(true);
+    });
+    row.append(label, input); elements.controls.append(row);
+  }
   for (const control of active.controls) {
     const row = document.createElement("div"); row.className = "control-row";
     const label = document.createElement("label"); label.textContent = control.label;
