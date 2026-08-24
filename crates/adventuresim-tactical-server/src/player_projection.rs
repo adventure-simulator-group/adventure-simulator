@@ -2014,7 +2014,7 @@ mod standalone_join_tests {
 
         let bot_entity = world.entity(bot);
         assert!(bot_entity.contains::<MissionEnemy>());
-        assert!(bot_entity.contains::<OffensiveCombatAi>());
+        assert!(bot_entity.contains::<crate::bot::OffensiveCombatAi>());
         assert_eq!(bot_entity.get::<CharacterId>().unwrap().0, 99);
     }
 }
