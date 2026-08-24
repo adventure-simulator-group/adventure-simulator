@@ -34,6 +34,57 @@ CLIENT_DIR = ROOT / "crates" / "adventuresim-stdb-client" / "src"
 TACTICAL_ENV_FILE = ROOT / ".env.tactical"
 
 
+@dataclass
+class StartupBenchmark:
+    """Bounded phase timings for the supervised tactical launcher."""
+
+    started_at: float
+    events: list[dict[str, object]]
+    output_path: Path | None = None
+
+    @classmethod
+    def start(cls) -> "StartupBenchmark":
+        return cls(time.monotonic(), [])
+
+    def attach(self, output_path: Path) -> None:
+        self.output_path = output_path
+        if output_path.is_symlink():
+            raise ValueError(f"refusing symlink startup benchmark target: {output_path}")
+        with secure_log(output_path) as stream:
+            for event in self.events:
+                stream.write(json.dumps(event, sort_keys=True) + "\n")
+
+    def record(
+        self,
+        phase: str,
+        phase_started_at: float,
+        **details: object,
+    ) -> None:
+        event = {
+            "phase": phase,
+            "duration_seconds": round(time.monotonic() - phase_started_at, 3),
+            "elapsed_seconds": round(time.monotonic() - self.started_at, 3),
+            **details,
+        }
+        self.events.append(event)
+        detail_text = " ".join(
+            f"{key}={value!r}" for key, value in details.items()
+        )
+        print(
+            "[startup] "
+            f"phase={phase!r} duration={event['duration_seconds']:.3f}s "
+            f"elapsed={event['elapsed_seconds']:.3f}s"
+            + (f" {detail_text}" if detail_text else "")
+        )
+        if self.output_path is not None:
+            if self.output_path.is_symlink():
+                raise ValueError(
+                    f"refusing symlink startup benchmark target: {self.output_path}"
+                )
+            with self.output_path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(event, sort_keys=True) + "\n")
+
+
 class ProfileMode(str, Enum):
     """The three shapes an isolated profile can run in."""
 
@@ -578,6 +629,104 @@ def write_console(output: str) -> None:
     sys.stdout.write(safe_output)
 
 
+def file_tree_digest(paths: list[Path], *, relative_to: Path = ROOT) -> str:
+    digest = hashlib.sha256()
+    for path in sorted({path.resolve() for path in paths}, key=lambda item: str(item).lower()):
+        label = path.relative_to(relative_to.resolve()).as_posix().encode("utf-8")
+        digest.update(len(label).to_bytes(4, "big"))
+        digest.update(label)
+        contents = path.read_bytes()
+        digest.update(len(contents).to_bytes(8, "big"))
+        digest.update(contents)
+    return digest.hexdigest()
+
+
+def spacetime_build_identity() -> str:
+    result = run_checked(["spacetime", "--version"])
+    if result.returncode:
+        raise RuntimeError("could not identify the SpacetimeDB build tool")
+    return " ".join(result.stdout.split())
+
+
+def workspace_module_files(
+    root: Path = ROOT,
+    module_dir: Path = MODULE_DIR,
+) -> list[Path]:
+    result = run_checked([
+        "cargo", "metadata", "--format-version", "1", "--no-deps", "--offline",
+    ], root)
+    if result.returncode:
+        raise RuntimeError(f"cargo metadata failed while identifying module inputs:\n{result.stdout}")
+    metadata = json.loads(result.stdout)
+    packages = {package["id"]: package for package in metadata["packages"]}
+    packages_by_root = {
+        Path(package["manifest_path"]).parent.resolve(): package
+        for package in packages.values()
+    }
+    module_manifest = str((module_dir / "Cargo.toml").resolve())
+    module = next(
+        (package for package in packages.values()
+         if str(Path(package["manifest_path"]).resolve()) == module_manifest),
+        None,
+    )
+    if module is None:
+        raise RuntimeError("SpacetimeDB module is absent from cargo metadata")
+    pending = [module["id"]]
+    workspace_ids: set[str] = set()
+    while pending:
+        package_id = pending.pop()
+        if package_id in workspace_ids:
+            continue
+        workspace_ids.add(package_id)
+        for dependency in packages[package_id]["dependencies"]:
+            dependency_path = dependency.get("path")
+            if dependency_path is None:
+                continue
+            dependency_package = packages_by_root.get(Path(dependency_path).resolve())
+            if dependency_package is not None:
+                pending.append(dependency_package["id"])
+
+    inputs = [root / "Cargo.toml", root / "Cargo.lock"]
+    for optional in (root / "rust-toolchain.toml", root / ".cargo" / "config.toml"):
+        if optional.is_file():
+            inputs.append(optional)
+    ignored_parts = {".git", "target", "node_modules", "__pycache__"}
+    for package_id in workspace_ids:
+        package_root = Path(packages[package_id]["manifest_path"]).parent
+        inputs.extend(
+            path for path in package_root.rglob("*")
+            if path.is_file() and not ignored_parts.intersection(path.parts)
+        )
+    return inputs
+
+
+def module_input_digest(
+    root: Path = ROOT,
+    module_dir: Path = MODULE_DIR,
+) -> str:
+    digest = hashlib.sha256()
+    digest.update(spacetime_build_identity().encode("utf-8"))
+    digest.update(file_tree_digest(
+        workspace_module_files(root, module_dir), relative_to=root
+    ).encode("ascii"))
+    return digest.hexdigest()
+
+
+def generated_bindings_digest(client_dir: Path = CLIENT_DIR) -> str:
+    files = sorted(path for path in client_dir.glob("*.rs") if path.name != "lib.rs")
+    return file_tree_digest(files, relative_to=client_dir)
+
+
+def read_json_object(path: Path) -> dict[str, object] | None:
+    if path.is_symlink() or not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def publish(server: str, database: str) -> int:
     command = ["spacetime", "publish", "--server", server, database]
     result = run_checked(command, MODULE_DIR)
@@ -669,7 +818,32 @@ def binding_differences(expected: Path, actual: Path) -> list[str]:
     return differences
 
 
-def verify_bindings() -> int:
+def verify_bindings(
+    *,
+    cache_path: Path | None = None,
+    current_module_digest: str | None = None,
+) -> int:
+    started_at = time.monotonic()
+    current_module_digest = current_module_digest or module_input_digest()
+    current_bindings_digest = generated_bindings_digest()
+    if cache_path is None:
+        state_root = runtime_root()
+        cache_dir = ensure_secure_directory(
+            state_root / worktree_fingerprint(), state_root
+        )
+        cache_path = cache_dir / "verify-bindings-cache.json"
+    expected_cache = {
+        "format": 1,
+        "module_input_digest": current_module_digest,
+        "generated_bindings_digest": current_bindings_digest,
+    }
+    if read_json_object(cache_path) == expected_cache:
+        print("SpacetimeDB client bindings match the cached module schema verification.")
+        print(
+            "[startup] phase='database client binding verification' "
+            f"duration={time.monotonic() - started_at:.3f}s cache=hit"
+        )
+        return 0
     with tempfile.TemporaryDirectory(prefix="adventuresim-bindings-") as temp:
         temp_root = Path(temp)
         generated = temp_root / "src"
@@ -699,7 +873,12 @@ def verify_bindings() -> int:
             print(f"  ... and {len(differences) - 20} more", file=sys.stderr)
         print("Run `just generate-db-client`, review, and commit the generated changes.", file=sys.stderr)
         return 1
+    atomic_write_json(cache_path, expected_cache)
     print("SpacetimeDB client bindings match the current module schema.")
+    print(
+        "[startup] phase='database client binding verification' "
+        f"duration={time.monotonic() - started_at:.3f}s cache=miss"
+    )
     return 0
 
 
@@ -792,6 +971,45 @@ class ResetCapability:
     database: str
     lock: ProfileLock
     listener: dict[str, object]
+
+
+def tactical_profile_identity(
+    values: dict[str, object],
+    current_module_digest: str,
+    bootstrap_token: str,
+) -> dict[str, object]:
+    return {
+        "format": 1,
+        "profile": values["profile"],
+        "worktree_fingerprint": values["worktree_fingerprint"],
+        "database": values["database"],
+        "module_input_digest": current_module_digest,
+        "bootstrap_token_digest": hashlib.sha256(
+            bootstrap_token.encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def tactical_profile_database_is_ready(server: str, database: str) -> bool:
+    result = run_checked([
+        "spacetime", "sql", "--server", server, database,
+        "SELECT id FROM settlement WHERE id = 'riverdale'",
+    ])
+    return result.returncode == 0 and any(
+        line.strip().strip('"') == "riverdale" for line in result.stdout.splitlines()
+    )
+
+
+def tactical_profile_cache_is_valid(
+    state_file: Path,
+    expected_identity: dict[str, object],
+    server: str,
+    database: str,
+) -> bool:
+    return (
+        read_json_object(state_file) == expected_identity
+        and tactical_profile_database_is_ready(server, database)
+    )
 
 
 def reset_publish(capability: ResetCapability) -> int:
@@ -1035,6 +1253,20 @@ def terminate_verified(expected: dict[str, object]) -> None:
         kernel32.CloseHandle(handle)
 
 
+def terminate_verified_or_accept_exit(expected: dict[str, object]) -> None:
+    """Terminate an owned process, accepting a concurrent natural exit."""
+
+    try:
+        terminate_verified(expected)
+    except ValueError:
+        pid = int(expected.get("pid", 0))
+        for _ in range(20):
+            if process_snapshot(pid) is None:
+                return
+            time.sleep(0.025)
+        raise
+
+
 def spawner_identity(profile: str, server: str, database: str, host: str, base_port: int) -> dict[str, object]:
     target = cargo_target_dir()
     dispatcher = target / "debug" / ("adventuresim-tactical-server-dispatcher.exe" if os.name == "nt" else "adventuresim-tactical-server-dispatcher")
@@ -1125,7 +1357,7 @@ def stop_recorded(metadata_file: Path, expected_config: dict[str, object] | None
         raise ValueError("refusing stop: process configuration mismatch")
     process = metadata.get("process", {})
     if process_snapshot(int(process.get("pid", 0))) is not None:
-        terminate_verified(process)
+        terminate_verified_or_accept_exit(process)
     metadata_file.unlink()
 
 
@@ -1137,10 +1369,10 @@ def stop_spacetime(metadata_file: Path, expected_config: dict[str, object]) -> N
         raise ValueError("refusing SpacetimeDB stop: configuration mismatch")
     listener = metadata.get("listener")
     if isinstance(listener, dict) and process_snapshot(int(listener.get("pid", 0))) is not None:
-        terminate_verified(listener)
+        terminate_verified_or_accept_exit(listener)
     launcher = metadata.get("process", {})
     if process_snapshot(int(launcher.get("pid", 0))) is not None:
-        terminate_verified(launcher)
+        terminate_verified_or_accept_exit(launcher)
     metadata_file.unlink()
 
 
@@ -1551,6 +1783,33 @@ def wait_for_tactical_server(
     raise RuntimeError(
         f"tactical readiness timed out during {stage}.\n"
         f"Log: {log_file}\n{log_tail(log_file)}"
+    )
+
+
+def wait_for_tactical_client(
+    process: subprocess.Popen[str],
+    client_log_file: Path,
+    server_log_file: Path,
+) -> None:
+    """Wait until the server receives input from the fully loaded client."""
+
+    for _ in range(600):
+        if process.poll() is not None:
+            raise RuntimeError(
+                f"native client exited before its world was ready.\n"
+                f"Log: {client_log_file}\n{log_tail(client_log_file)}"
+            )
+        try:
+            text = server_log_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        if "first server input received" in text:
+            return
+        time.sleep(0.1)
+    raise RuntimeError(
+        "server did not receive input from the native client within 60 seconds.\n"
+        f"Client log: {client_log_file}\n{log_tail(client_log_file)}\n"
+        f"Server log: {server_log_file}\n{log_tail(server_log_file)}"
     )
 
 
@@ -2171,10 +2430,13 @@ def tactical_play(
     scene_input: str | None = None,
     input_script: str | None = None,
 ) -> int:
+    benchmark = StartupBenchmark.start()
     if input_script and mode is not TacticalPlayMode.DIAGNOSTIC:
         raise ValueError("--input-script is only valid for tactical-play diagnostic")
     launch_client = mode is not TacticalPlayMode.NETWORKING
+    phase_started_at = time.monotonic()
     code = build_tactical_play(launch_client)
+    benchmark.record("native tactical binary build", phase_started_at)
     if code:
         return code
 
@@ -2185,6 +2447,15 @@ def tactical_play(
     run_dir = ensure_secure_directory(profile_dir / "run", state_root)
     data_dir = ensure_secure_directory(profile_dir / "spacetimedb-data", state_root)
     session_id = secrets.token_hex(16)
+    benchmark.attach(run_dir / f"startup-timing-{session_id[:12]}.jsonl")
+    phase_started_at = time.monotonic()
+    current_module_digest = module_input_digest()
+    bootstrap_token = dev_bootstrap_token()
+    profile_identity = tactical_profile_identity(
+        values, current_module_digest, bootstrap_token
+    )
+    profile_state_file = profile_dir / "tactical-profile-state.json"
+    benchmark.record("tactical profile identity", phase_started_at)
     mission_id = f"mission:{mode.value}-{session_id[:12]}"
     # Physical custody deliberately reserves zero as an invalid identity.
     character_id = 1
@@ -2224,28 +2495,56 @@ def tactical_play(
         obs_capture = None
         wrote_env = False
         try:
+            phase_started_at = time.monotonic()
             listener = wait_for_spacetime(
                 stdb, stdb_metadata, stdb_log, int(values["spacetime_port"])
             )
+            benchmark.record("SpacetimeDB process readiness", phase_started_at)
             capability = ResetCapability(
                 profile, base_port, server_url, database, lifecycle, listener
             )
-            bootstrap_token = dev_bootstrap_token()
-            previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
-            os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
-            try:
-                code = reset_publish(capability)
-            finally:
-                if previous_token is None:
-                    os.environ.pop("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN", None)
-                else:
-                    os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = previous_token
-            if code:
-                return code
-            if seed(server_url, database, bootstrap_token):
-                return 1
+            phase_started_at = time.monotonic()
+            profile_cache_hit = tactical_profile_cache_is_valid(
+                profile_state_file, profile_identity, server_url, database
+            )
+            benchmark.record(
+                "persistent tactical profile validation",
+                phase_started_at,
+                cache="hit" if profile_cache_hit else "miss",
+            )
+            if profile_state_file.is_symlink():
+                raise ValueError(
+                    f"refusing symlink tactical profile state: {profile_state_file}"
+                )
+            if not profile_cache_hit:
+                profile_state_file.unlink(missing_ok=True)
+                previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
+                os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
+                phase_started_at = time.monotonic()
+                try:
+                    code = reset_publish(capability)
+                finally:
+                    if previous_token is None:
+                        os.environ.pop("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN", None)
+                    else:
+                        os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = previous_token
+                benchmark.record(
+                    "SpacetimeDB module reset and publish",
+                    phase_started_at,
+                    cache="miss",
+                )
+                if code:
+                    return code
+            else:
+                phase_started_at = time.monotonic()
+                benchmark.record(
+                    "SpacetimeDB module reset and publish",
+                    phase_started_at,
+                    cache="hit",
+                )
 
             tactical_claim = secrets.token_hex(32)
+            phase_started_at = time.monotonic()
             result = run_checked([
                 "spacetime", "call", "--server", server_url, database,
                 "seed_standalone_tactical_mission", bootstrap_token,
@@ -2254,6 +2553,9 @@ def tactical_play(
             if result.returncode:
                 write_console(result.stdout)
                 raise RuntimeError("standalone tactical mission seed failed")
+            benchmark.record("standalone tactical mission seed", phase_started_at)
+            if not profile_cache_hit:
+                atomic_write_json(profile_state_file, profile_identity)
             write_tactical_env_file(
                 url=server_url,
                 database=database,
@@ -2302,12 +2604,23 @@ def tactical_play(
                 server_command, server_metadata, server_log, server_config,
                 environment=environment,
             )
+            phase_started_at = time.monotonic()
             wait_for_tactical_server(
                 server_process, server_metadata, server_log, server_url, database,
                 mission_id, int(values["tactical_port"]),
             )
+            benchmark.record("tactical server readiness", phase_started_at)
             if launch_client:
+                phase_started_at = time.monotonic()
                 client_process = launch_recorded_tactical_client(run_dir, config)
+                benchmark.record("native client process launch", phase_started_at)
+                phase_started_at = time.monotonic()
+                wait_for_tactical_client(
+                    client_process, run_dir / "client.log", server_log
+                )
+                benchmark.record(
+                    "native client interactive readiness", phase_started_at
+                )
                 presentmon_process = launch_presentmon(
                     run_dir,
                     client_process,
@@ -2336,6 +2649,7 @@ def tactical_play(
             print(f"Combat: {'enabled' if combat_scale else 'disabled'}")
             print("Browser client: unavailable in tactical-only mode")
             print(f"Logs: {run_dir}")
+            print(f"Startup timings: {benchmark.output_path}")
             if mode is TacticalPlayMode.DIAGNOSTIC:
                 print("Waiting for the bounded diagnostic client to finish...")
             else:

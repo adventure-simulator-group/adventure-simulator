@@ -593,6 +593,7 @@ fn announce_join(
     client: Single<&AdventureSimulatorClient>,
     credential: Res<ReconnectCredential>,
 ) {
+    info!("[startup] tactical network connected; announcing join");
     let character_id = CharacterId(client.player_id);
     commands.client_trigger(JoinRequest {
         character_id,

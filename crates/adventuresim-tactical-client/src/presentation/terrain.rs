@@ -230,10 +230,12 @@ pub(in crate::presentation) fn present_pending_terrain(
     procedural_assets: Res<ProceduralEnvironmentAssets>,
     vista: Res<ActiveVistaSurface>,
     obstacles: Query<(&SceneObstacle, &Transform)>,
+    mut startup: Option<ResMut<crate::presentation::ClientStartupTiming>>,
 ) {
     let tree_positions = detail_tree_positions(&obstacles);
     let rock_influences = detail_rock_influences(&obstacles);
     let obstacle_signature = detail_obstacle_signature(&tree_positions, &rock_influences);
+    let mut prepared_first_terrain = false;
     for (entity, id, terrain, environment, ground) in &query {
         let legacy_environment;
         let environment = if let Some(environment) = environment {
@@ -328,10 +330,14 @@ pub(in crate::presentation) fn present_pending_terrain(
                 true
             };
         if presented {
+            prepared_first_terrain = true;
             commands
                 .entity(entity)
                 .remove::<PendingTerrainPresentation>();
         }
+    }
+    if prepared_first_terrain && let Some(startup) = startup.as_mut() {
+        startup.mark_terrain_prepared_once();
     }
 }
 

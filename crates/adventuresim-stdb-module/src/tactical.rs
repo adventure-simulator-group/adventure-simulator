@@ -602,6 +602,52 @@ fn leave_mission_for_server(
     Ok(())
 }
 
+/// Retire an interrupted standalone development session before its persistent
+/// profile is reused. The bootstrap capability is checked by the only caller;
+/// keeping the cleanup here lets it share the authoritative mission teardown
+/// primitives without exposing a new reducer.
+pub(crate) fn retire_interrupted_standalone_server_for_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    let servers: Vec<_> = ctx
+        .db
+        .tactical_server_authority()
+        .iter()
+        .filter(|server| server.authorized_party_member_ids.contains(&character_id))
+        .collect();
+    for server in servers {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&server.mission_id)
+            .ok_or("Interrupted tactical server has no mission authority")?;
+        if !mission.case_id.starts_with("case:standalone:") {
+            return Err("Refusing to retire a non-standalone tactical server".into());
+        }
+        fail_bound_mission_attempt(ctx, &server.mission_id)?;
+        let connected: Vec<_> = ctx
+            .db
+            .character()
+            .server()
+            .filter(server.identity)
+            .collect();
+        for character in connected {
+            leave_mission_for_server(ctx, character, server.identity)?;
+        }
+        ctx.db
+            .tactical_server_authority()
+            .identity()
+            .delete(server.identity);
+        log::info!(
+            "Retired interrupted standalone tactical server for mission '{}'",
+            server.mission_id
+        );
+    }
+    Ok(())
+}
+
 /// Request a new [`TacticalServer`] with generated *mission_id* from
 /// the *scene_key* and the current timestamp.
 #[reducer]

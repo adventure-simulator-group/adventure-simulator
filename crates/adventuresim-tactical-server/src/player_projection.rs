@@ -44,6 +44,9 @@ pub(crate) struct LoadingPlayer {
     pub(crate) requested_character: CharacterId,
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct StartupInputObserved;
+
 /// Latest complete movement request accepted from a player. Unlike Ahoy's
 /// per-fixed-loop accumulator, this survives missing unreliable input packets
 /// until an explicit request replaces it.
@@ -651,7 +654,7 @@ fn spawn_connected_player(
     }
     info!(
         temorary = player.character.temporary,
-        "Player {entity:?} is fully loaded"
+        "[startup] Player {entity:?} is fully loaded"
     );
 }
 
@@ -788,7 +791,7 @@ pub(crate) fn on_join_request(
     send_reconnect_capability(&mut commands, join.client_id, join.character_id, token);
     send_scene_vista(&mut commands, join.client_id, &vista);
     info!(
-        "Character {} connected and entered mission, awaiting loading",
+        "[startup] Character {} connected and entered mission, awaiting loading",
         join.character_id.0
     );
     Ok(())
@@ -824,7 +827,7 @@ pub(crate) fn on_join_request_standalone(
         requested_character: join.character_id,
     });
     info!(
-        "Character {} connected, awaiting binding to a dumped character",
+        "[startup] Character {} connected, awaiting binding to a dumped character",
         join.character_id.0
     );
     Ok(())
@@ -833,6 +836,7 @@ pub(crate) fn on_join_request_standalone(
 pub(crate) fn on_player_input(
     input: On<FromClient<PlayerInputRequest>>,
     viewer: TacticalPlayerViewer,
+    mut commands: Commands,
     mut players: Query<
         (
             &mut AccumulatedInput,
@@ -845,6 +849,7 @@ pub(crate) fn on_player_input(
             &mut LinearVelocity,
             &mut Transform,
             &mut Rotation,
+            Has<StartupInputObserved>,
         ),
         With<Player>,
     >,
@@ -876,6 +881,7 @@ pub(crate) fn on_player_input(
         mut velocity,
         mut transform,
         mut physics_rotation,
+        startup_input_observed,
     )) = players.get_mut(entity)
     else {
         return;
@@ -903,7 +909,11 @@ pub(crate) fn on_player_input(
         );
         return;
     }
-    info!(
+    if !startup_input_observed {
+        info!("[startup] first server input received for {entity:?}");
+        commands.entity(entity).insert(StartupInputObserved);
+    }
+    trace!(
         "DEBUG on_player_input entity={entity:?} input.look={:?} validated.yaw={}",
         input.look, validated.yaw
     );
