@@ -32,10 +32,24 @@ impl Default for CharacterRecipe {
             name: "New adventurer".into(),
             identity: vec![0.0; IDENTITY_COUNT],
             expression: vec![0.0; EXPRESSION_COUNT],
-            clothing: vec![ClothingSelection {
-                item_id: "linen_tunic".into(),
-                placement_id: "worn".into(),
-            }],
+            clothing: vec![
+                ClothingSelection {
+                    item_id: "linen_tunic".into(),
+                    placement_id: "worn".into(),
+                },
+                ClothingSelection {
+                    item_id: "linen_breeches".into(),
+                    placement_id: "worn".into(),
+                },
+                ClothingSelection {
+                    item_id: "leather_boot".into(),
+                    placement_id: "left".into(),
+                },
+                ClothingSelection {
+                    item_id: "leather_boot".into(),
+                    placement_id: "right".into(),
+                },
+            ],
         }
     }
 }

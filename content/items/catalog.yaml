@@ -1793,6 +1793,49 @@
       }
     },
     {
+      "id": "linen_breeches",
+      "display_name": "Linen breeches",
+      "weight_kg": 0.5,
+      "exterior_volume_ml": 625,
+      "base_value": 12,
+      "tags": ["clothing"],
+      "presentation": {"icon": "trousers"},
+      "kind": "clothing",
+      "equipment": {
+        "material": "linen",
+        "physical": {"dimensions_m": [0.40, 0.82, 0.20], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.25, 0.0]},
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "left_leg", "channel": "base_clothing"},
+            {"location": "right_leg", "channel": "base_clothing"}
+          ],
+          "protection": ["left_leg", "right_leg"],
+          "surface": [
+            {"regions": ["left_thigh", "left_lower_leg"], "anchor": "proximal", "coverage": 0.94},
+            {"regions": ["right_thigh", "right_lower_leg"], "anchor": "proximal", "coverage": 0.94}
+          ]
+        }],
+        "protection": {
+          "resistance": 2,
+          "padding": 3,
+          "flexibility": 1,
+          "range_of_motion": 0.98
+        }
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 1,
+          "yield_j": 10,
+          "fracture_j": 30,
+          "wear": 0.22,
+          "failure_share": 0.8,
+          "edge_sensitivity": 0,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
       "id": "linen_tunic",
       "display_name": "Linen tunic",
       "weight_kg": 0.6,
@@ -4202,8 +4245,9 @@
       "base_value": 8,
       "tags": ["clothing"],
       "presentation": {"icon": "greaves"},
-      "kind": "simple",
+      "kind": "clothing",
       "equipment": {
+        "material": "vegetable_tanned_leather",
         "physical": {
           "dimensions_m": [0.13, 0.30, 0.11],
           "grip_to_tip_m": 0.0,
@@ -4212,13 +4256,23 @@
         "placements": [
           {
             "id": "left",
-            "occupancy": [{"location": "left_foot", "channel": "base_clothing"}]
+            "occupancy": [{"location": "left_foot", "channel": "base_clothing"}],
+            "protection": ["left_leg"],
+            "surface": [{"regions": ["left_lower_leg"], "anchor": "distal", "coverage": 0.72}]
           },
           {
             "id": "right",
-            "occupancy": [{"location": "right_foot", "channel": "base_clothing"}]
+            "occupancy": [{"location": "right_foot", "channel": "base_clothing"}],
+            "protection": ["right_leg"],
+            "surface": [{"regions": ["right_lower_leg"], "anchor": "distal", "coverage": 0.72}]
           }
-        ]
+        ],
+        "protection": {
+          "resistance": 8,
+          "padding": 5,
+          "flexibility": 0.9,
+          "range_of_motion": 0.96
+        }
       },
       "capabilities": {
         "durability": {

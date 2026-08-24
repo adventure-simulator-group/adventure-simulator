@@ -356,8 +356,8 @@ fn configure_animation_lab_enemies(
     ctx: &ReducerContext,
     hostile_group_id: &str,
 ) -> Result<(), String> {
-    use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
     use crate::item::ItemSlot;
+    use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
 
     const PADDED_BASE: &[(&str, ItemSlot)] = &[
         ("quilted_sleeve", ItemSlot::LeftArm),
@@ -404,6 +404,7 @@ fn configure_animation_lab_enemies(
             }
         }
         crate::character::replace_development_loadout(ctx, character_id, &loadout)?;
+        crate::character::add_and_equip_basic_clothing(ctx, character_id)?;
     }
     Ok(())
 }
