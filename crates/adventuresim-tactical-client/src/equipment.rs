@@ -1897,6 +1897,18 @@ mod tests {
             procedural_equipment_file("leather_belt", None),
             Some("leather_belt--worn.glb")
         );
+        assert_eq!(
+            procedural_equipment_file("linen_breeches", Some("worn")),
+            Some("linen_breeches--worn.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_boot", Some("right")),
+            Some("leather_boot--right.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_boot", None),
+            Some("leather_boot--left.glb")
+        );
         assert_eq!(procedural_equipment_file("arming_sword", None), None);
 
         let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");

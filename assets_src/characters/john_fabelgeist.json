@@ -125,5 +125,14 @@
   "clothing": [{
     "item_id": "linen_tunic",
     "placement_id": "worn"
+  }, {
+    "item_id": "linen_breeches",
+    "placement_id": "worn"
+  }, {
+    "item_id": "leather_boot",
+    "placement_id": "left"
+  }, {
+    "item_id": "leather_boot",
+    "placement_id": "right"
   }]
 }

@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::organization::{Requirement, StartingProfession, catalog};
 use crate::skill::Skill;
 
-pub const GENERATOR_VERSION: u16 = 5;
+pub const GENERATOR_VERSION: u16 = 6;
 pub const YOUNG_ROSTER_SIZE: u8 = 5;
-pub const DEFAULT_CHARACTER_VERSION: u16 = 1;
+pub const DEFAULT_CHARACTER_VERSION: u16 = 2;
 pub const DEFAULT_CHARACTER_NAME: &str = "John Fabelgeist";
 pub const DEFAULT_CHARACTER_AGE_YEARS: u16 = 20;
 
@@ -398,6 +398,15 @@ fn item(id: &str, quantity: u32, equipped: Option<StartingSlot>) -> StartingItem
     }
 }
 
+fn basic_clothing() -> Vec<StartingItem> {
+    vec![
+        item("linen_tunic", 1, Some(StartingSlot::Chest)),
+        item("linen_breeches", 1, Some(StartingSlot::LeftLeg)),
+        item("leather_boot", 1, Some(StartingSlot::LeftFoot)),
+        item("leather_boot", 1, Some(StartingSlot::RightFoot)),
+    ]
+}
+
 /// Canonical fallback used whenever a strategic or tactical caller needs a
 /// complete character but did not select one explicitly.
 ///
@@ -501,22 +510,24 @@ pub fn default_character(identity_seed: &str) -> StartingCharacterSpec {
         skills,
         currency: 100,
         settlement_selector: hash("default-character-settlement", identity_seed, 0),
-        inventory: vec![
-            item("longsword", 1, None),
-            item("rondel_dagger", 1, None),
-            item("morion", 1, Some(StartingSlot::Head)),
-            item("breastplate", 1, Some(StartingSlot::Chest)),
-            item("vambrace", 1, Some(StartingSlot::LeftArm)),
-            item("vambrace", 1, Some(StartingSlot::RightArm)),
-            item("leather_boot", 1, Some(StartingSlot::LeftFoot)),
-            item("leather_boot", 1, Some(StartingSlot::RightFoot)),
-            item("torch", 1, None),
-            item("bandage", 3, None),
-            item("steel_stock", 1, None),
-            item("leather_stock", 1, None),
-            item("brass_stock", 1, None),
-            item("wood_stock", 1, None),
-        ],
+        inventory: {
+            let mut inventory = basic_clothing();
+            inventory.extend([
+                item("longsword", 1, None),
+                item("rondel_dagger", 1, None),
+                item("morion", 1, Some(StartingSlot::Head)),
+                item("breastplate", 1, Some(StartingSlot::Chest)),
+                item("vambrace", 1, Some(StartingSlot::LeftArm)),
+                item("vambrace", 1, Some(StartingSlot::RightArm)),
+                item("torch", 1, None),
+                item("bandage", 3, None),
+                item("steel_stock", 1, None),
+                item("leather_stock", 1, None),
+                item("brass_stock", 1, None),
+                item("wood_stock", 1, None),
+            ]);
+            inventory
+        },
         age_tier: StartingAgeTier::Adult,
         profession: None,
         organization: None,
@@ -617,7 +628,8 @@ pub fn generate(
         ),
     };
     let variation = |domain: &str| 2.0 + (hash(domain, seed, slot) % 17) as f32 / 10.0;
-    let mut inventory = vec![
+    let mut inventory = basic_clothing();
+    inventory.extend([
         item(weapon, 1, Some(weapon_slot)),
         item(
             armor,
@@ -636,7 +648,7 @@ pub fn generate(
             2 + (hash("bandages", seed, slot) % 3) as u32,
             None,
         ),
-    ];
+    ]);
     if defense == "block" {
         inventory.push(item("buckler", 1, Some(StartingSlot::LeftHand)));
     }
@@ -1074,7 +1086,8 @@ fn professional_loadout(
     let armor = |id, slot| item(id, 1, Some(slot));
     let held = |id, slot| item(id, 1, Some(slot));
     let supplies = |bandages| vec![item("torch", 1, None), item("bandage", bandages, None)];
-    let mut inventory = match profession {
+    let mut inventory = basic_clothing();
+    inventory.extend(match profession {
         StartingProfession::Merchant => vec![
             held(
                 if adult { "bauernwehr" } else { "rapier" },
@@ -1235,7 +1248,7 @@ fn professional_loadout(
             item("arrow", if adult { 28 } else { 44 }, None),
             item("utility_knife", 1, None),
         ],
-    };
+    });
     inventory.extend(supplies(match (profession, adult) {
         (StartingProfession::Herbalist, true) => 7,
         (StartingProfession::Herbalist, false) => 12,
@@ -1520,6 +1533,31 @@ mod tests {
             );
         }
         assert_ne!(john.id, default_character("owner-b").id);
+    }
+
+    #[test]
+    fn every_starting_character_has_complete_basic_clothing() {
+        let mut characters = vec![default_character("clothing-test")];
+        for tier in StartingAgeTier::ALL {
+            characters.extend(roster(GENERATOR_VERSION, SEED, tier).unwrap());
+        }
+        for character in characters {
+            for (item_id, slot) in [
+                ("linen_tunic", StartingSlot::Chest),
+                ("linen_breeches", StartingSlot::LeftLeg),
+                ("leather_boot", StartingSlot::LeftFoot),
+                ("leather_boot", StartingSlot::RightFoot),
+            ] {
+                assert!(
+                    character
+                        .inventory
+                        .iter()
+                        .any(|item| { item.item_id == item_id && item.equipped == Some(slot) }),
+                    "{} is missing {item_id} in {slot:?}",
+                    character.name
+                );
+            }
+        }
     }
 
     #[test]

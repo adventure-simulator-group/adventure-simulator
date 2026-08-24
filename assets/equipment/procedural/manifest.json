@@ -105,6 +105,14 @@
       "triangles": 658
     },
     {
+      "coverage": 0.9399999976158142,
+      "file": "linen_breeches--worn.glb",
+      "item_id": "linen_breeches",
+      "material": "linen",
+      "placement_id": "worn",
+      "triangles": 526
+    },
+    {
       "coverage": 0.8999999165534973,
       "file": "linen_tunic--worn.glb",
       "item_id": "linen_tunic",
@@ -263,6 +271,22 @@
       "material": "vegetable_tanned_leather",
       "placement_id": "worn",
       "triangles": 32
+    },
+    {
+      "coverage": 0.7200000286102295,
+      "file": "leather_boot--left.glb",
+      "item_id": "leather_boot",
+      "material": "vegetable_tanned_leather",
+      "placement_id": "left",
+      "triangles": 104
+    },
+    {
+      "coverage": 0.7200000286102295,
+      "file": "leather_boot--right.glb",
+      "item_id": "leather_boot",
+      "material": "vegetable_tanned_leather",
+      "placement_id": "right",
+      "triangles": 104
     }
   ],
   "lod": 4,
