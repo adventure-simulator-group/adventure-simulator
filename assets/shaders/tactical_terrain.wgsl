@@ -261,7 +261,17 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     color = mix(color, sward_target, outside_sward);
 
     let snow_mask = snow * smoothstep(0.3, 0.86, normal.y);
-    color = select(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask >= 0.5);
+    // Accumulation is continuous across slope and coverage. The old binary
+    // threshold exposed the terrain lattice as large square white pixels and
+    // erased all readable relief at the snow line. Reuse the packed physical
+    // height field at low strength so covered ground remains molded rather
+    // than becoming a perfectly flat color plate.
+    color = mix(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask);
+    pbr_input.N = normalize(mix(
+        pbr_input.N,
+        soil_normal,
+        snow_mask * detail_distance_fade * upward_response * 0.24,
+    ));
 
     pbr_input.material.base_color = vec4<f32>(color, 1.0);
     let dry_roughness = select(0.84, 0.9, terrain.detail_patch.x > 0.5);

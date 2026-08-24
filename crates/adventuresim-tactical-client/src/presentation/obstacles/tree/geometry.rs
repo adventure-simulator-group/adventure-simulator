@@ -52,7 +52,10 @@ pub(in crate::presentation) const COMMON_BEECH_PARAMETERS: WoodyPlantParameters 
         height_metres: 16.0,
         crown_radius_metres: 4.6,
         basal_stems: 1,
-        leaves_per_shoot: 8,
+        // Close beech crowns must retain the overlapping two-ranked sprays
+        // that make the species read as a closed canopy before the aggregate
+        // crown takes over. This cost exists only in the short LOD0 band.
+        leaves_per_shoot: 12,
         leaf_length_metres: [0.055, 0.1],
         leaf_width_ratio: [0.48, 0.66],
         petiole_length_metres: [0.008, 0.018],

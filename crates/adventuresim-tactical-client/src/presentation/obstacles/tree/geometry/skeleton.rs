@@ -381,7 +381,7 @@ mod tests {
                 .all(|branch| branch.end.y > branch.start.y)
         );
         let leaves = procedural_woody_plant_leaves(91, &branches, 0.65, COMMON_BEECH_PARAMETERS);
-        assert_eq!(leaves.len(), 4_800);
+        assert_eq!(leaves.len(), 7_200);
         assert!(leaves.iter().all(|leaf| {
             (0.165..=0.301).contains(&leaf.length)
                 && (0.48..=0.66).contains(&(leaf.width / leaf.length))
