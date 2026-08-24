@@ -356,14 +356,15 @@ grace remains a sky-local presentation concern. Terrain materials, Ground
 scatter, weather, colliders, and recipes continue to read their own entity-local
 authoritative scene components.
 
-The production tactical preset uses directional shadow maps, bloom, four-sample
-MSAA, atmosphere IBL, material occlusion, baked tree-card depth, terrain
-normals, and direct celestial lighting for the scene's primary depth cues.
-Controlled benchmarks may explicitly disable shadows or post-processing to
-isolate their cost. Effects unsupported by WebGPU, including Bevy 0.19 SSAO, are
-excluded rather than retained as native-only paths. Review viewers can still
-enable compatible individual lighting costs explicitly for controlled
-diagnostics.
+The production tactical presentation uses one 1024-pixel directional-shadow
+cascade out to 28 m for the active Sun or Moon, four-sample MSAA, atmosphere
+IBL, material occlusion, baked tree-card depth, terrain normals, and direct
+celestial lighting for the scene's primary depth cues. Bloom is not part of the
+production tactical presentation. Controlled benchmarks may explicitly disable
+shadows to isolate their cost. Effects unsupported by WebGPU, including Bevy
+0.19 SSAO, are excluded
+rather than retained as native-only paths. Review viewers use this same shadow
+configuration unless a benchmark explicitly disables shadows.
 
 The immutable world-data canopy coverage continuously controls tree architecture
 without inspecting neighboring entities: low coverage produces a short clear
@@ -477,16 +478,14 @@ added on the back side rather than merely removed from reflected diffuse. This
 does not change leaf topology, alpha coverage, entity count, draw count,
 exposure, or global lighting. Non-colliding grass and understory use
 automatically instanced shared meshes, layered shader wind, and root-to-tip
-shading. Grass cross-fades from a 9,216-blade, fifteen-vertex near-field macro
-patch to a stable 1,600-blade, seven-vertex subset at distance; rejected blades
-are absent from the far mesh rather than collapsed after vertex shading. The
-3.2-metre patch spacing cuts grass render entities by roughly an order of
-magnitude while retaining the original macro-patch footprint at four times the
-authored blade density near the player and camera. The distant mesh retains the
-earlier density because individual blades are subpixel there. The 4x near mesh
-cross-fades to the original far topology over 18--26 metres rather than paying
-four times the vertex cost throughout the former 34--44 metre high-detail
-radius. A deterministic scalar mask derived from the same authoritative
+shading. Grass cross-fades from a 1,024-blade, eleven-vertex near-field macro
+patch to a stable 64-blade, seven-vertex cheap tier at 8--10 metres, then to
+16 broad five-vertex vista tufts at 30--35 metres. Rejected blades are absent
+from the reduced meshes rather than collapsed after vertex shading. The
+3.2-metre patch spacing retains the established overlapping macro-patch
+footprint while the 32-by-32 close grid restricts expensive interaction and
+full foliage shading to the range where individual blades are visible. A
+deterministic scalar mask derived from the same authoritative
 ground-cover contour as the terrain rejects blades on dirt and leaf litter and
 progressively thins the grass-side boundary. Tree crowns guarantee a compact
 litter core at the trunk, then use a deterministic radially tapered litter
@@ -508,7 +507,7 @@ topology, deterministic mixed-age height, independent width, clumping, lean,
 and curvature variation avoids a repeated vertical-curtain silhouette. A shared
 world-space meadow field keeps the full
 authored density within seven metres, then introduces short juvenile pockets and
-irregular occupancy before the 18--26 metre cross-fade. The authoritative
+irregular occupancy before the 8--10 metre cross-fade. The authoritative
 grass-side mask uses a broader nonlinear feather, and surviving boundary blades
 shorten with coverage, so dirt and leaf-litter transitions do not terminate as a
 same-height wall. This composition also derives a stable age cohort from the
@@ -555,10 +554,14 @@ adds no entity, material slot, draw call, gameplay collider, or placement rule.
 The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or tactical
 authority. The immutable environment and weather snapshots control the
-procedural ground material, diagnosed low/middle/high cloud decks, directional
-precipitation particles, fog distance, wind drift, and cloud-attenuated
-sunlight. Falling precipitation is one camera-local indexed quad batch rather
-than one entity per drop or flake. Its WebGPU vertex shader derives
+procedural ground material, diagnosed low/middle/high cloud decks folded into
+one analytic tactical cloud shell, directional precipitation particles, fog
+distance, wind drift, and cloud-attenuated sunlight. The native client bakes
+consecutive directional cloud textures on one background task, removes their
+known wind displacement in the shell shader, and interpolates optical depth
+between them; the benchmark waits for the following bake and freezes this
+pipeline before warm-up. Falling precipitation is one camera-local indexed quad
+batch rather than one entity per drop or flake. Its WebGPU vertex shader derives
 deterministic rain streaks or fluttering snow from the weather snapshot and
 samples a compact copy of the authoritative playable heightfield. Rain adds one
 bounded batch of terrain-conforming impact rings. Rain streaks use two
@@ -574,29 +577,28 @@ functions, fades them through the final 4.5 metres above terrain, and uses the
 existing non-volumetric linear distance fog for unresolved tactical-range rain.
 It uses no volume texture, raymarch, blur pass, or scene-color copy. Intensity
 changes how much of each fixed batch is visible, while the CPU performs no
-per-particle simulation or transform updates.
-The Earth-atmosphere path keeps top-of-atmosphere solar
-source energy available after the Sun crosses the geometric horizon. Bevy's
-atmospheric transmittance and visible-disc calculation then suppress direct
-surface illumination while retaining directional civil and nautical twilight
-scattering. The no-atmosphere fallback retains an explicit zero-below-horizon
-direct-light curve because it has no planetary occlusion. Exposure transitions
-continuously from nautical twilight to the moon-conditioned night target between
--12 and -18 degrees solar altitude; the physical 0.533-degree solar disc, ACES
-tonemapping, natural bloom, and bounded lookup-table atmosphere stay unchanged.
-The filtered 64-pixel atmosphere environment map is the full preset's canonical
-indirect PBR source. `GlobalAmbientLight` provides the complete altitude-aware
-fallback until that map is allocated and a bounded four-frame handoff grace
-elapses, or whenever a preset disables it; afterward only the authored
-moonless/moonlit visibility floor and a bounded 10,500-cd/m2 unresolved
-multi-bounce term remain. Bevy therefore no longer adds the full 30,000-cd/m2
-isotropic daylight approximation on top of directional atmosphere IBL, while
-shaded bark and foliage retain readable outdoor bounce light. Large vista grids
-are deliberately not ordinary replicated ECS components. The server sends each
-accepted client one immutable, ordered `SceneVistaBundle`; the client builds
-seam-sharing LOD rings split into independently frustum-culled mesh chunks
-without inner-area overdraw, colliders, or shadows. Each finer ring geomorphs
-its outermost sample row onto the next coarser height surface, with a
+per-particle simulation or transform updates. The Earth-atmosphere path keeps
+top-of-atmosphere solar source energy available after the Sun crosses the
+geometric horizon. Bevy's atmospheric transmittance and visible-disc calculation
+then suppress direct surface illumination while retaining directional civil and
+nautical twilight scattering. The no-atmosphere fallback retains an explicit
+zero-below-horizon direct-light curve because it has no planetary occlusion.
+Exposure transitions continuously from nautical twilight to the moon-conditioned
+night target between -12 and -18 degrees solar altitude; the physical
+0.533-degree solar disc, ACES tonemapping, and bounded lookup-table atmosphere
+stay unchanged. The filtered 64-pixel atmosphere environment map is the full
+preset's canonical indirect PBR source. `GlobalAmbientLight` provides the
+complete altitude-aware fallback until that map is allocated and a bounded
+four-frame handoff grace elapses, or whenever a preset disables it; afterward
+only the authored moonless/moonlit visibility floor and a bounded 10,500-cd/m2
+unresolved multi-bounce term remain. Bevy therefore no longer adds the full
+30,000-cd/m2 isotropic daylight approximation on top of directional atmosphere
+IBL, while shaded bark and foliage retain readable outdoor bounce light. Large
+vista grids are deliberately not ordinary replicated ECS components. The server
+sends each accepted client one immutable, ordered `SceneVistaBundle`; the client
+builds seam-sharing LOD rings split into independently frustum-culled mesh
+chunks without inner-area overdraw, colliders, or shadows. Each finer ring
+geomorphs its outermost sample row onto the next coarser height surface, with a
 one-fine-cell inward blend; this removes cracks and T-junction wedges without
 adding skirts, overlap, or gameplay geometry. Vista vertices reuse the ordinary
 ground palette in linear color space, preserving regional forest, wetland,

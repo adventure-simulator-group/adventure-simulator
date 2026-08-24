@@ -43,7 +43,9 @@ Its shader draws the phase terminator across a constant-angular-size sphere,
 including a restrained earthshine floor, while a separate cool directional
 light reaches 0.25 lux at full moon. Sun and Moon shadows are mutually selected
 from their altitude and lunar illumination rather than paying for both shadow
-maps at once.
+maps at once. The active light uses one 1024-pixel cascade out to 28 m: enough
+for close tactical contact shadows, without spending shadow work on distant
+scenery.
 
 Stars come from the checked-in naked-eye Hipparcos subset in
 `assets/data/hipparcos-bright-stars.csv`. The renderer submits the catalog as
@@ -61,47 +63,59 @@ python scripts/import_hipparcos_stars.py
 
 ## Procedural clouds
 
-The default tactical presentation renders up to three bounded atmospheric
-decks. Camera-centred hemispheres supply rasterization geometry, but the
-fragment shader intersects each view ray with scene-anchored concentric
-spherical shells. Their deliberately exaggerated local curvature is negligible
-across the playable area but bends distant clouds into the tactical horizon.
-The shells remain stationary; wind and vertical shear advect each procedural
-density field through its layer instead of moving a finite volume past the
-camera.
+The default tactical presentation renders one bounded atmospheric shell.
+Camera-centred hemisphere geometry supplies rasterization directions while the
+fragment shader intersects each view ray with a scene-anchored curved surface.
+The deliberately exaggerated curvature is negligible across the playable area
+but bends distant clouds into the tactical horizon. A filtered, deterministic 2D
+texture supplies one precomputed optical field in one sample. At scene
+initialization, the client integrates the diagnosed cloud decks along every
+direction from a stable eye point at the playable-area centre. The resulting
+native azimuth/elevation dome map gives low elevations dedicated rows and stores
+each ray's final opacity, lighting, sunlight transmission, and local variation.
+Its duplicated 0/2π seam columns keep clamp sampling continuous without repeated
+addressing. The fragment shader samples that exact direction and uses its
+already integrated opacity directly; it must not apply a second grazing-angle
+path correction. There is no per-frame volumetric march, empty-space search, or
+internal shadow ray.
 
-The ray marcher searches empty air in coarse steps, backtracks and switches to
-quarter-sized steps after finding density, and returns to coarse search after
-leaving a cloud. A deterministic per-pixel starting offset prevents coherent
-sampling bands along the curved shell. Short sun-facing shadow probes provide
-internal self-shadowing, while multi-scale edge erosion, bounded trace distance,
-and stronger grazing-angle aerial extinction keep distant layers from forming
-a hard horizon cutoff. Solar chroma follows Sun altitude rather than applying a
-permanent gold cast; dense storm cores converge toward neutral gray-blue
-multiple scattering while low-Sun cloud edges can remain warm. Distinct
-profiles cover cirrus, cirrocumulus, cirrostratus, altocumulus, altostratus,
-nimbostratus, stratocumulus, stratus, cumulus, cumulus congestus, and
-cumulonimbus. The decks can coexist, so high ice cloud need not disappear when
-lower cloud develops.
+The initialization integration evaluates a finite, deterministic 3-D value
+field: broad coverage, domain warp, fine erosion, and underside variation all
+use independently hashed X/Y/Z lattice corners. Normalized deck height is its
+own coordinate, rather than an offset into a 2-D field, so optical depth
+accumulates coherent volume rather than radial extrusion. The field has no
+repeat addressing or periodic noise domain.
+
+The tactical client bakes all authoritative low/middle/high decks into the
+single shell rather than discarding secondary decks. The lowest active deck
+sets the shell surface, while directional integration retains broad weather and
+rain/storm identity at a substantially lower transparent-rendering cost.
+Distinct analytic treatments still cover cirrus, cirrocumulus, cirrostratus,
+altocumulus, altostratus, nimbostratus, stratocumulus, stratus, cumulus,
+cumulus congestus, and cumulonimbus. Solar chroma follows Sun altitude rather
+than applying a permanent gold cast; storm profiles remain neutral gray-blue
+and direct light is reduced. A grazing-angle horizon fade prevents the global
+surface from forming a hard cutoff.
 
 The strategic weather snapshot authoritatively supplies each deck's form,
 coverage, optical density, base, and top. Those layers are diagnosed from
 spatially and temporally correlated humidity, dew point, pressure, wind,
 vertical wind shear, instability, and broad lift fields. Precipitation follows
 only from a sufficiently moist and ascending nimbostratus or cumulonimbus
-state. Wind advects each density field in the authoritative direction; higher
-decks move faster and turn with shear. This is a bounded procedural weather
-model rather than numerical fluid dynamics: the strategic authority evaluates
-the fields from time and location without storing continental atmospheric rows,
-and the tactical client does not mutate them.
+state. Wind changes are represented when the environment changes and causes a
+new deterministic bake. The shell does not scroll indefinitely: that would
+eventually expose an edge or recreate a periodic pattern. This is a bounded
+procedural weather model rather than numerical fluid dynamics: the strategic
+authority evaluates the fields from time and location without storing
+continental atmospheric rows, and the tactical client does not mutate them.
 
 Cloud lighting reuses the production Sun direction, exposure, and weather
 transmission. Cloud amount and optical density attenuate direct sunlight and
-star visibility even when no precipitation reaches the ground. The shader uses
-bounded optical depth, an inexpensive forward-scattering approximation, and
-denser undersides instead of secondary shadow rays. Clouds remain separate from
-the atmosphere-generated environment map; they neither trigger environment-map
-regeneration nor bake their moving shape into image-based lighting.
+star visibility even when no precipitation reaches the ground. The analytic
+surface uses a single forward highlight and texture-shaped underside variation.
+Clouds remain separate from the atmosphere-generated environment map; they
+neither trigger environment-map regeneration nor bake their moving shape into
+image-based lighting.
 
 ## Verification
 
@@ -110,7 +124,7 @@ Use `just tactical-sky-capture` with `sun`, `sun-detail`, `twilight`, `moon`,
 `cloud-overcast`, or `cloud-storm`. Cloud captures use a diagnostics-only
 profile override and a longer warm-up so shader and atmosphere pipelines have
 settled before validation. `sun-detail` remains a clearly labeled 20-degree-FOV
-diagnostic of the unchanged production `SunDisk::EARTH` and natural bloom at
+diagnostic of the unchanged production `SunDisk::EARTH` without bloom at
 low solar altitude;
 it must not be interpreted as gameplay-scale disc size.
 These deterministic native views run the production presentation plugin. The
@@ -120,6 +134,6 @@ Together the views cover horizon colour, exposure, lunar phase, and
 resolution-independent star rendering. Native scene captures disable the
 atmosphere environment map only when the selected graphics preset requests
 that fallback. The production-parity environment review records the observed
-environment map, exposure, and post-processing state, and its twilight gate
+environment map, exposure, and tonemapping state, and its twilight gate
 requires a non-black, chromatically warm sky gradient rather than accepting a
 dark sky over a brighter verification plane.

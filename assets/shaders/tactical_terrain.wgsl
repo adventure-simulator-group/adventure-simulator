@@ -21,6 +21,7 @@ struct TacticalTerrainMaterial {
     cover: vec4<f32>,
     weather: vec4<f32>,
     far_sward: vec4<f32>,
+    lod_sward: vec4<f32>,
     playable_bounds: vec4<f32>,
     detail_patch: vec4<f32>,
     soil_detail: vec4<f32>,
@@ -223,8 +224,18 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Past the geometric LOD, represent the aggregate colour and normal
     // response of a sward directly on the terrain. Frequencies stay low enough
     // to remain stable when minified in a WebGPU browser canvas.
-    let sward_fade = smoothstep(terrain.far_sward.x, terrain.far_sward.y, camera_distance);
-    let sward_amount = sward_fade
+    // Start the dithered ground fill while Near exchanges its full root set
+    // for Far's stable sparse subset. The retained blades preserve their width;
+    // this field replaces only the coverage that left with the other roots.
+    // The terminal fade then completes the same field as Vista blades disappear.
+    let near_to_far_sward = smoothstep(
+        terrain.lod_sward.x,
+        terrain.lod_sward.y,
+        camera_distance,
+    ) * terrain.lod_sward.z;
+    let terminal_sward = smoothstep(terrain.far_sward.x, terrain.far_sward.y, camera_distance);
+    let sward_coverage = mix(near_to_far_sward, 1.0, terminal_sward);
+    let sward_amount = sward_coverage
         * terrain.far_sward.z
         * tall_grass
         * (1.0 - water)

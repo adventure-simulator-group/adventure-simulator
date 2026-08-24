@@ -267,9 +267,6 @@ pub(in crate::presentation) fn setup_tactical_presentation(
             });
         }
     }
-    if settings.bloom_enabled {
-        camera.insert(Bloom::NATURAL);
-    }
 }
 
 pub(super) fn apply_active_environment_fog(
@@ -295,6 +292,41 @@ pub(super) fn apply_active_environment_fog(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::post_process::bloom::Bloom;
+
+    #[test]
+    fn tactical_camera_does_not_install_bloom() {
+        let mut app = App::new();
+        app.init_resource::<Assets<ScatteringMedium>>()
+            .insert_resource(TacticalGraphicsSettings {
+                shadows_enabled: true,
+                atmosphere_enabled: true,
+                celestial_enabled: true,
+                environment_light_enabled: true,
+                environment_map_size: 64,
+                max_vista_lods: 3,
+            })
+            .init_resource::<TacticalCameraSetup>()
+            .add_systems(Startup, setup_tactical_presentation);
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<Camera3d>>()
+                .iter(world)
+                .count(),
+            1
+        );
+        assert_eq!(
+            world
+                .query_filtered::<Entity, (With<Camera3d>, With<Bloom>)>()
+                .iter(world)
+                .count(),
+            0
+        );
+    }
 
     fn environment(precipitation: Precipitation, intensity_bps: u16) -> SceneEnvironment {
         SceneEnvironment {

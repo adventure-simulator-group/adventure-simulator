@@ -45,7 +45,6 @@ EXPECTED_PRESENTATION_REQUEST = {
     "celestial": True,
     "environment_light": True,
     "environment_map_size": 64,
-    "bloom": True,
     "max_vista_lods": 3,
 }
 SOURCE_PATHS = (
@@ -251,7 +250,6 @@ def validated_child_manifest(
             and observed.get("camera_environment_map_size") == [64, 64]
             and observed.get("camera_environment_map_allocated")
             and observed.get("camera_environment_map_intensity") == 1.0
-            and observed.get("camera_bloom")
             and isinstance(observed.get("camera_exposure_ev100"), (int, float))
             and -1.35 <= observed["camera_exposure_ev100"] <= 15.0
             and observed.get("camera_tonemapping") == "AcesFitted"

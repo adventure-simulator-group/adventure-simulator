@@ -153,6 +153,8 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     #[uniform(100)]
     far_sward: Vec4,
     #[uniform(100)]
+    lod_sward: Vec4,
+    #[uniform(100)]
     playable_bounds: Vec4,
     #[uniform(100)]
     detail_patch: Vec4,
@@ -900,16 +902,24 @@ pub(in crate::presentation) fn terrain_material(
                 bps(environment.hilly_bps),
                 bps(environment.weather.wind_speed_bps),
             ),
-            // Beyond the geometric grass range, retain a band-limited sward
-            // response in the terrain material instead of paying for blades
-            // that project to less than a pixel. x/y are the fade interval;
-            // z is environment-dependent coverage and w is reserved.
+            // The final Vista-to-terrain fade retains a band-limited sward
+            // instead of paying for sub-pixel grass. x/y are its distance
+            // interval; z is environment-dependent coverage and w is reserved.
             far_sward: Vec4::new(
                 TERMINAL_SWARD_FADE_START_METRES,
                 TERMINAL_SWARD_FADE_END_METRES,
                 (1.0 - bps(environment.water_bps) * 0.9
                     - bps(environment.weather.snow_cover_bps) * 0.8)
                     .clamp(0.0, 1.0),
+                0.0,
+            ),
+            // Replace Far's removed physical coverage during the Near-to-Far
+            // crossfade. x/y are the shared blade-LOD interval; z is the
+            // stable Far subset's missing projected coverage; w is reserved.
+            lod_sward: Vec4::new(
+                NEAR_TO_FAR_SWARD_FADE_START_METRES,
+                NEAR_TO_FAR_SWARD_FADE_END_METRES,
+                FAR_LOD_GAP_FILL_FRACTION,
                 0.0,
             ),
             // x/y are the authoritative playable half extents. The detail
@@ -1290,6 +1300,11 @@ mod tests {
         assert!(shader.contains("let litter_mapped_normal = normalize("));
         assert!(shader.contains("let sward_color = terrain.grass_color.rgb"));
         assert!(!shader.contains("sward_color = color *"));
+        assert!(shader.contains("let near_to_far_sward = smoothstep("));
+        assert!(shader.contains("terrain.lod_sward.z"));
+        assert!(
+            shader.contains("let sward_coverage = mix(near_to_far_sward, 1.0, terminal_sward)")
+        );
         assert!(shader.contains("sward_dither < sward_amount"));
         assert!(shader.contains("abs(position.x) - terrain.playable_bounds.x"));
         assert!(shader.contains("sward_dither < outside_sward"));
@@ -1308,9 +1323,17 @@ mod tests {
     }
 
     #[test]
-    fn terminal_terrain_sward_starts_when_the_final_grass_lod_fades() {
+    fn terrain_sward_fills_far_lod_gaps_then_completes_with_vista_fade() {
+        let near = grass_lod_visibility(GrassMeshLod::Near);
+        let far = grass_lod_visibility(GrassMeshLod::Far);
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
-        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(
+            near.end_margin,
+            NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES
+        );
+        assert_eq!(far.start_margin, near.end_margin);
+        assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 15.0 / 16.0);
+        assert_eq!(vista.end_margin, 35.0..40.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }

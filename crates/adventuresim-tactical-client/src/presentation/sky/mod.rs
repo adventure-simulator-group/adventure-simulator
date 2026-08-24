@@ -2,13 +2,21 @@
 //! physically based atmosphere.
 
 use super::*;
-use bevy::{camera::visibility::NoFrustumCulling, light::SunDisk};
+use bevy::{
+    camera::visibility::NoFrustumCulling,
+    light::{CascadeShadowConfig, CascadeShadowConfigBuilder, SunDisk},
+};
 
 const MOON_DISTANCE_METRES: f32 = 30_000.0;
 const MOON_ANGULAR_RADIUS_RADIANS: f32 = 0.25_f32.to_radians();
 const STAR_DISTANCE_METRES: f32 = 55_000.0;
 const MOON_SHADER: &str = "shaders/tactical_moon.wgsl";
 const STAR_SHADER: &str = "shaders/tactical_stars.wgsl";
+
+/// One short cascade preserves contact-scale tactical shadows without paying
+/// Bevy's four-cascade, 150 m default for distant scenery.
+pub(in crate::presentation) const TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE: usize = 1024;
+const TACTICAL_DIRECTIONAL_SHADOW_DISTANCE_METRES: f32 = 28.0;
 
 const ATTRIBUTE_STAR_DIRECTION: MeshVertexAttribute =
     MeshVertexAttribute::new("StarDirection", 2_180_001, VertexFormat::Float32x3);
@@ -28,6 +36,16 @@ pub(crate) struct TacticalMoon;
 
 #[derive(Component)]
 pub(crate) struct TacticalStars;
+
+pub(in crate::presentation) fn tactical_directional_shadow_config() -> CascadeShadowConfig {
+    CascadeShadowConfigBuilder {
+        num_cascades: 1,
+        maximum_distance: TACTICAL_DIRECTIONAL_SHADOW_DISTANCE_METRES,
+        overlap_proportion: 0.0,
+        ..default()
+    }
+    .build()
+}
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalMoonMaterial {
@@ -115,6 +133,7 @@ pub(in crate::presentation) fn setup_tactical_sky(
             illuminance: 0.0,
             ..default()
         },
+        tactical_directional_shadow_config(),
     ));
 
     commands.spawn((
@@ -128,6 +147,7 @@ pub(in crate::presentation) fn setup_tactical_sky(
             shadow_maps_enabled: false,
             ..default()
         },
+        tactical_directional_shadow_config(),
     ));
 
     if !settings.celestial_enabled {
@@ -427,6 +447,16 @@ mod ambient_handoff_tests {
     use super::*;
 
     #[test]
+    fn tactical_directional_shadows_use_one_close_compact_cascade() {
+        let config = tactical_directional_shadow_config();
+
+        assert_eq!(TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE, 1024);
+        assert_eq!(config.bounds, vec![28.0]);
+        assert_eq!(config.minimum_distance, 0.1);
+        assert_eq!(config.overlap_proportion, 0.0);
+    }
+
+    #[test]
     fn missing_active_scene_clears_all_celestial_outputs() {
         let mut app = App::new();
         app.init_resource::<Assets<TacticalMoonMaterial>>()
@@ -439,7 +469,6 @@ mod ambient_handoff_tests {
                 celestial_enabled: true,
                 environment_light_enabled: true,
                 environment_map_size: 64,
-                bloom_enabled: true,
                 max_vista_lods: 3,
             })
             .insert_resource(GlobalAmbientLight {

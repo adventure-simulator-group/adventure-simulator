@@ -38,7 +38,8 @@ use weather::*;
 pub(crate) use clouds::TacticalCloudLayer;
 #[allow(unused_imports)]
 pub(crate) use clouds::{
-    TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride, TacticalCloudCaptureProfile,
+    TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride,
+    TacticalCloudCaptureProfile,
 };
 #[allow(unused_imports)]
 pub(crate) use environment::{
@@ -91,12 +92,11 @@ use bevy::{
     core_pipeline::tonemapping::Tonemapping,
     image::ImageSampler,
     light::{
-        Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster,
-        atmosphere::ScatteringMedium, light_consts::lux,
+        Atmosphere, AtmosphereEnvironmentMapLight, DirectionalLightShadowMap, EnvironmentMapLight,
+        NotShadowCaster, atmosphere::ScatteringMedium, light_consts::lux,
     },
     mesh::{Indices, MeshVertexAttribute, PrimitiveTopology},
     pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension},
-    post_process::bloom::Bloom,
     prelude::*,
     render::render_resource::{
         AsBindGroup, Extent3d, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -143,7 +143,6 @@ pub struct TacticalPresentationPlugin {
     pub celestial_enabled: bool,
     pub environment_light_enabled: bool,
     pub environment_map_size: u32,
-    pub bloom_enabled: bool,
     pub max_vista_lods: usize,
 }
 
@@ -155,7 +154,6 @@ impl Default for TacticalPresentationPlugin {
             celestial_enabled: true,
             environment_light_enabled: true,
             environment_map_size: 64,
-            bloom_enabled: true,
             max_vista_lods: 3,
         }
     }
@@ -178,13 +176,18 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalCloudMaterial>::default(),
             MaterialPlugin::<TacticalWeatherMaterial>::default(),
         ))
+        // Tactical play uses one compact close-range cascade for whichever
+        // celestial light is active. Keep the map allocation identical in the
+        // game and all tactical review viewers.
+        .insert_resource(DirectionalLightShadowMap {
+            size: sky::TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE,
+        })
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
             atmosphere_enabled: self.atmosphere_enabled,
             celestial_enabled: self.celestial_enabled,
             environment_light_enabled: self.environment_light_enabled,
             environment_map_size: self.environment_map_size,
-            bloom_enabled: self.bloom_enabled,
             max_vista_lods: self.max_vista_lods,
         })
         .init_resource::<TacticalCameraSetup>()
@@ -274,6 +277,5 @@ pub(crate) struct TacticalGraphicsSettings {
     pub(crate) celestial_enabled: bool,
     pub(crate) environment_light_enabled: bool,
     pub(crate) environment_map_size: u32,
-    pub(crate) bloom_enabled: bool,
     pub(crate) max_vista_lods: usize,
 }
