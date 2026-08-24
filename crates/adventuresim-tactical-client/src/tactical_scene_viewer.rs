@@ -1209,6 +1209,28 @@ fn selected_capture_views(
     if requested.is_empty() {
         return Ok(profile_views.to_vec());
     }
+    if profile == "tree-cold-traversal" {
+        let mut seen = BTreeSet::new();
+        let mut last_requested_index = 0;
+        for slug in requested {
+            if slug == "warmup" {
+                return Err("warmup is implicit and cannot be requested".into());
+            }
+            if !seen.insert(slug.as_str()) {
+                return Err(format!("duplicate requested view {slug}"));
+            }
+            let index = profile_views
+                .iter()
+                .position(|view| view.slug == slug)
+                .ok_or_else(|| format!("unknown requested view {slug}"))?;
+            last_requested_index = last_requested_index.max(index);
+        }
+        // A cold-traversal plate is temporal evidence, not an independent
+        // camera pose. Preserve every preceding approach/retreat frame so a
+        // filtered capture cannot teleport from the distant-card warmup into
+        // an unstreamed near tree and manufacture a floating crown.
+        return Ok(profile_views[..=last_requested_index].to_vec());
+    }
     let mut selected = vec![profile_views[0]];
     let mut seen = BTreeSet::new();
     for slug in requested {
@@ -1351,6 +1373,20 @@ mod capture_lighting_tests {
             selected_capture_views("environment-review", &["tree-lighting-ao".into()]).is_err()
         );
         assert!(selected_capture_views("semantic", &["rock-detail".into()]).is_err());
+    }
+
+    #[test]
+    fn requested_cold_tree_view_preserves_its_temporal_prefix() {
+        let views =
+            selected_capture_views("tree-cold-traversal", &["tree-cold-first-007".into()]).unwrap();
+        assert_eq!(views.first().map(|view| view.slug), Some("warmup"));
+        assert_eq!(
+            views.last().map(|view| view.slug),
+            Some("tree-cold-first-007")
+        );
+        assert_eq!(views.len(), 15);
+        assert!(views.iter().any(|view| view.slug == "tree-cold-first-072"));
+        assert!(views.iter().any(|view| view.slug == "tree-cold-first-010"));
     }
 
     #[test]

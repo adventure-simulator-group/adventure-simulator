@@ -438,8 +438,11 @@ fn understory_scatter_chance(canopy: f32, wetland: f32, cultivation: f32) -> f32
 }
 
 fn grass_scatter_density(canopy: f32, water: f32, cultivation: f32, snow: f32) -> f32 {
-    (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.25, 0.98)
-        * (1.0 - snow * 0.36)
+    // Deep shade and standing water should expose litter, mud, and hummocks;
+    // a quarter-density floor still read as an implausible meadow and made
+    // woodland traversal a wall of overlapping rectangular blade ribbons.
+    (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.08, 0.98)
+        * (1.0 - snow * 1.25).clamp(0.12, 1.0)
 }
 
 pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> (Color, f32) {

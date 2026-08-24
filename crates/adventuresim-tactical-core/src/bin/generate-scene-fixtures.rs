@@ -102,8 +102,8 @@ fn fixtures() -> [Fixture; 13] {
             "snow-covered-ground",
             "snowfield",
             47_107,
-            rolling,
-            dry_open,
+            snowfield,
+            snow_open,
             snow(6_500, 2_500),
         ),
         fixture(
@@ -237,7 +237,12 @@ fn vista(
     environment: fn(f32, f32) -> EnvironmentalSample,
     playable_center_height: f32,
 ) -> VistaSample {
-    let specs = [(0, 250.0, 9), (1, 500.0, 21), (2, 1_000.0, 51)];
+    // The former 250 m first vista tier exposed broad planar facets directly
+    // beyond the 100 m playable field. Keep the same one-kilometre near-vista
+    // reach with a 100 m lattice. A 250 m odd middle grid preserves the same
+    // exact 10 km extent, center datum, and boundary landmarks without showing
+    // 500 m triangular facets across isolated peaks and valley walls.
+    let specs = [(0, 100.0, 21), (1, 250.0, 41), (2, 1_000.0, 51)];
     VistaSample {
         lods: specs
             .into_iter()
@@ -302,11 +307,23 @@ fn dense_woods(_: f32, _: f32) -> EnvironmentalSample {
 fn sparse_woods(_: f32, _: f32) -> EnvironmentalSample {
     sample(TacticalSurface::SparseWoods, 3_500, 300, 0, 0)
 }
-fn saturated(_: f32, _: f32) -> EnvironmentalSample {
-    sample(TacticalSurface::Wetland, 1_000, 9_500, 0, 3_000)
+fn saturated(x: f32, z: f32) -> EnvironmentalSample {
+    // Alternating pools and hummocks give the wetland both visible structure
+    // and enough woody cover to support its required understory community.
+    let basin = ((x / 8.0).sin() * 0.35
+        + (z / 11.0).cos() * 0.28
+        + ((x + z) / 6.0).sin() * 0.22
+        + ((x - z) / 15.0).cos() * 0.15
+        + 1.0)
+        * 0.5;
+    if basin > 0.62 {
+        sample(TacticalSurface::Wetland, 1_400, 9_800, 0, 6_500)
+    } else {
+        sample(TacticalSurface::Wetland, 2_800, 8_800, 0, 1_200)
+    }
 }
 fn cultivated_road(x: f32, _: f32) -> EnvironmentalSample {
-    if x.abs() <= 8.0 {
+    if x.abs() <= 11.0 {
         sample(TacticalSurface::Road, 0, 0, 7_000, 0)
     } else {
         sample(TacticalSurface::Open, 500, 0, 9_000, 0)
@@ -327,16 +344,31 @@ fn rolling(x: f32, z: f32) -> f32 {
     (x / 22.0).sin() * 1.8 + (z / 31.0).cos() * 1.2
 }
 fn hillside(x: f32, z: f32) -> f32 {
-    x * 0.42 + (z / 18.0).sin()
+    x * 0.36 + (z / 18.0).sin() * 1.35 + ((x + z) / 11.0).sin() * 0.45
 }
 fn wetland(x: f32, z: f32) -> f32 {
-    (x / 18.0).sin() * 0.18 + (z / 20.0).cos() * 0.12
+    (x / 18.0).sin() * 0.24 + (z / 20.0).cos() * 0.18 + ((x - z) / 12.0).sin() * 0.11
 }
 fn roadside(x: f32, z: f32) -> f32 {
-    if x.abs() <= 8.0 {
-        -0.15
+    let across = x.abs();
+    if across <= 10.0 {
+        // Shallow camber keeps the route readable without making its centre a
+        // perfectly flat strip.
+        -0.22 + across * 0.012
+    } else if across <= 16.0 {
+        // Bounded drainage ditches distinguish the road edge from the field.
+        -0.34 + (across - 13.0).abs() * 0.035
     } else {
-        (z / 30.0).sin() * 0.4
+        0.16 + (z / 30.0).sin() * 0.4
+    }
+}
+fn snowfield(x: f32, z: f32) -> f32 {
+    rolling(x, z) * 0.62 + (x / 9.0).sin() * (z / 13.0).cos() * 0.34
+}
+fn snow_open(x: f32, z: f32) -> EnvironmentalSample {
+    EnvironmentalSample {
+        hilly_bps: 1_200,
+        ..dry_open(x, z)
     }
 }
 fn valley(x: f32, z: f32) -> f32 {
@@ -353,11 +385,18 @@ fn distant_rolling(x: f32, z: f32) -> f32 {
     (x / 3_000.0).sin() * 45.0 + (z / 4_000.0).cos() * 30.0
 }
 fn distant_valley_ridge(x: f32, z: f32) -> f32 {
-    x.abs() * 0.018 + (z / 5_000.0).sin() * 45.0
+    let valley_walls = (x.abs() * 0.014).min(310.0);
+    let ridge_offset = (z - 4_400.0) / 1_650.0;
+    valley_walls + (-0.5 * ridge_offset * ridge_offset).exp() * 430.0 + (z / 5_000.0).sin() * 38.0
 }
 fn distant_boundary_peak(x: f32, z: f32) -> f32 {
     let distance = ((x - 5_000.0).powi(2) + z.powi(2)).sqrt();
-    (900.0 - distance * 0.18).max(distant_rolling(x, z) - distant_rolling(0.0, 0.0))
+    let summit = (-0.5 * (distance / 1_150.0).powi(2)).exp() * 720.0;
+    let shoulder = (-0.5 * (distance / 2_450.0).powi(2)).exp() * 180.0;
+    let origin_profile = (-0.5_f32 * (5_000.0_f32 / 1_150.0).powi(2)).exp() * 720.0
+        + (-0.5_f32 * (5_000.0_f32 / 2_450.0).powi(2)).exp() * 180.0;
+    let ridge = (summit + shoulder - origin_profile) * 900.0 / (900.0 - origin_profile);
+    ridge.max(distant_rolling(x, z) - distant_rolling(0.0, 0.0))
 }
 
 const fn clear() -> WeatherSnapshot {

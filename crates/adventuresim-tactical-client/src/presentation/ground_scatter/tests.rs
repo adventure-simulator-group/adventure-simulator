@@ -48,8 +48,9 @@ fn understory_density_caps_physical_shrubs_at_the_reduced_global_budget() {
 fn grass_density_favors_open_meadow_and_thins_under_closed_canopy() {
     assert_eq!(grass_scatter_density(0.0, 0.0, 0.0, 0.0), 0.98);
     assert!((grass_scatter_density(0.35, 0.0, 0.0, 0.0) - 0.6475).abs() < 0.000_01);
-    assert_eq!(grass_scatter_density(0.9, 0.0, 0.0, 0.0), 0.25);
-    assert_eq!(grass_scatter_density(0.0, 1.0, 0.0, 0.0), 0.25);
+    assert!((grass_scatter_density(0.9, 0.0, 0.0, 0.0) - 0.125).abs() < 0.000_01);
+    assert!((grass_scatter_density(0.0, 1.0, 0.0, 0.0) - 0.10).abs() < 0.000_01);
+    assert!((grass_scatter_density(0.0, 0.0, 0.0, 0.65) - 0.183_75).abs() < 0.000_01);
 }
 
 #[test]

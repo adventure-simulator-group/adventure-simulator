@@ -585,7 +585,13 @@ fn cloud_vertical_profile(height: f32, kind: u32, noise: f32) -> f32 {
 fn non_periodic_value_noise_3d(position: Vec3, seed: u64) -> f32 {
     let cell = position.floor();
     let fraction = position - cell;
-    let smooth = fraction * fraction * (Vec3::splat(3.0) - fraction * 2.0);
+    // Quintic interpolation makes both first and second derivatives vanish at
+    // lattice boundaries. The cloud field is magnified over kilometres, so
+    // the cubic value-noise shoulder was still legible as broad square cells.
+    let smooth = fraction
+        * fraction
+        * fraction
+        * (fraction * (fraction * 6.0 - Vec3::splat(15.0)) + Vec3::splat(10.0));
     let value = |offset: Vec3| {
         let lattice = cell + offset;
         cloud_noise_hash(
@@ -596,7 +602,9 @@ fn non_periodic_value_noise_3d(position: Vec3, seed: u64) -> f32 {
             / u64::MAX as f32
     };
     let x0 = value(Vec3::ZERO).lerp(value(Vec3::X), smooth.x);
-    let x1 = value(Vec3::Y).lerp(value(Vec3::ONE), smooth.x);
+    // The z=0 upper-X corner is (1, 1, 0). Sampling (1, 1, 1) here coupled
+    // adjacent Z cells and exposed axis-aligned macro blocks in the dome bake.
+    let x1 = value(Vec3::Y).lerp(value(Vec3::X + Vec3::Y), smooth.x);
     let y0 = x0.lerp(x1, smooth.y);
     let x2 = value(Vec3::Z).lerp(value(Vec3::Z + Vec3::X), smooth.x);
     let x3 = value(Vec3::Z + Vec3::Y).lerp(value(Vec3::ONE), smooth.x);

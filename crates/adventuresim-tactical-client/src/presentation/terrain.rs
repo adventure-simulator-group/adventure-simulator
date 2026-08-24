@@ -1351,7 +1351,7 @@ mod tests {
         );
         assert_eq!(far.start_margin, near.end_margin);
         assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 0.75);
-        assert_eq!(vista.end_margin, 35.0..40.0);
+        assert_eq!(vista.end_margin, 42.0..50.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }
