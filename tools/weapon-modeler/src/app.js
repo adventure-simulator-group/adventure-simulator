@@ -1,4 +1,4 @@
-import { validateWeapon } from "./mesh.js";
+import { measureMassProperties, validateWeapon } from "./mesh.js";
 import { automaticGripPoint, buildSkinnedWeaponGlb } from "./glb-export.js";
 import { HAFT_MODULES, HEAD_ASSEMBLIES, PRESETS, composeWeapon, compositionControls, copyPreset, getControlValue, setControlValue } from "./presets.js";
 import { WeaponRenderer } from "./renderer.js";
@@ -28,15 +28,24 @@ function rebuild(dirty = false) {
     currentValidation = validation;
     const mesh = validation.mesh;
     renderer.setMesh(mesh);
+    const physical = measureMassProperties(mesh, automaticGripPoint(validation.resolved));
+    mesh.stats.physical = physical;
+    const pommelMass = physical.components.filter((component) => component.id === "pommel").reduce((sum, component) => sum + component.massKg, 0);
+    const balancePoint = physical.centerOfMassFromGripM * 1_000;
     const [width, length, depth] = mesh.stats.dimensions;
     elements.stats.innerHTML = `
       <dt>Overall length</dt><dd>${length.toFixed(3)} m</dd>
       <dt>Maximum breadth</dt><dd>${width.toFixed(3)} m</dd>
       <dt>Maximum depth</dt><dd>${depth.toFixed(3)} m</dd>
+      <dt>Calculated mass</dt><dd>${physical.massKg.toFixed(2)} kg</dd>
+      <dt>Pommel mass</dt><dd>${pommelMass > 0 ? `${(pommelMass * 1_000).toFixed(0)} g (${((pommelMass / physical.massKg) * 100).toFixed(0)}%)` : "—"}</dd>
+      <dt>Center of mass</dt><dd>${Math.abs(balancePoint).toFixed(0)} mm ${balancePoint >= 0 ? "forward of" : "behind"} grip center</dd>
+      <dt>Moment about grip</dt><dd>${physical.momentOfInertiaKgM2.toFixed(3)} kg·m²</dd>
+      <dt>Handling coefficient</dt><dd>${physical.balance.toFixed(3)} (lower redirects more easily)</dd>
       <dt>Parts</dt><dd>${mesh.stats.partCount}</dd>
       <dt>Triangles</dt><dd>${mesh.stats.triangles.toLocaleString()}</dd>
       <dt>Rough mesh-volume diagnostic</dt><dd>${(mesh.stats.volume * 1e6).toFixed(0)} cm³</dd>`;
-    elements.status.textContent = `${mesh.stats.triangles.toLocaleString()} triangles · ${mesh.stats.partCount} parts`;
+    elements.status.textContent = `${physical.massKg.toFixed(2)} kg · balance ${physical.balance.toFixed(3)} · ${mesh.stats.triangles.toLocaleString()} triangles`;
     elements["dirty-state"].textContent = dirty ? "Modified" : "Preset values";
     elements["definition-error"].textContent = "";
     updateDefinitionText();

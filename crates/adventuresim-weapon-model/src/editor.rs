@@ -31,6 +31,13 @@ pub fn numeric_editor_fields(design: &WeaponDesign) -> Vec<NumericEditorField> {
                 field!("Cylinder", "bottom_scale", 500, 1_500, 25);
                 field!("Cylinder", "top_scale", 500, 1_500, 25);
             }
+            ComponentShape::OvalGrip(_) => {
+                field!("OvalGrip", "length", 80, 500, 5);
+                field!("OvalGrip", "width", 26, 38, 1);
+                field!("OvalGrip", "thickness", 18, 28, 1);
+                field!("OvalGrip", "bottom_scale", 750, 1_000, 25);
+                field!("OvalGrip", "top_scale", 750, 1_000, 25);
+            }
             ComponentShape::Blade(_) => {
                 field!("Blade", "length", 100, 1_800, 5);
                 field!("Blade", "width", 15, 160, 1);

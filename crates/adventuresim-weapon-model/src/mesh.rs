@@ -102,6 +102,21 @@ fn frustum(length: f32, bottom_radius: f32, top_radius: f32, segments: u16) -> R
     mesh
 }
 
+fn elliptical_frustum(
+    length: f32,
+    bottom_half_width: f32,
+    top_half_width: f32,
+    thickness_to_width: f32,
+    segments: u16,
+) -> RawMesh {
+    let mut mesh = frustum(length, bottom_half_width, top_half_width, segments);
+    for position in &mut mesh.positions {
+        position[2] *= thickness_to_width;
+    }
+    mesh.orient_positive();
+    mesh
+}
+
 fn blade(spec: &BladeSpec) -> RawMesh {
     let samples = spec.samples.0 as usize;
     let section_count = match spec.section {
@@ -1354,6 +1369,13 @@ pub fn generate(design: &WeaponDesign) -> Result<GeneratedWeapon, GenerateError>
                 value.radius.meters() * value.top_scale.unit(),
                 value.segments.0,
             ),
+            ComponentShape::OvalGrip(value) => elliptical_frustum(
+                value.length.meters(),
+                value.width.meters() * value.bottom_scale.unit() * 0.5,
+                value.width.meters() * value.top_scale.unit() * 0.5,
+                value.thickness.meters() / value.width.meters(),
+                value.segments.0,
+            ),
             ComponentShape::Blade(value) => blade(value),
             ComponentShape::Guard(value) => guard(value),
             ComponentShape::Mace(value) => mace(value),
@@ -1449,6 +1471,7 @@ pub fn generate(design: &WeaponDesign) -> Result<GeneratedWeapon, GenerateError>
         let part_bounds = bounds(&raw.positions);
         let crease = match &component.shape {
             ComponentShape::Cylinder(_)
+            | ComponentShape::OvalGrip(_)
             | ComponentShape::Socket(_)
             | ComponentShape::Guard(_)
             | ComponentShape::TubePath(_)
