@@ -50,6 +50,7 @@ use crate::{
 
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
 const DEFAULT_SCENE_INPUT: &str = "assets/tactical-scenes/dense-woodland.json";
+const DEFAULT_COMBAT_CONFIG: &str = "content/tactical/combat.yaml";
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
@@ -67,6 +68,9 @@ struct Args {
     /// fixture for standalone tactical development.
     #[arg(long)]
     scene_input: Option<PathBuf>,
+    /// Versioned tactical combat tuning loaded once for this server process.
+    #[arg(long)]
+    combat_config: Option<PathBuf>,
     #[arg(long)]
     required_enemy_kills: u32,
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
@@ -106,6 +110,34 @@ fn default_scene_input_path() -> PathBuf {
         .join(DEFAULT_SCENE_INPUT)
 }
 
+fn default_combat_config_path() -> PathBuf {
+    let working_directory_path = PathBuf::from(DEFAULT_COMBAT_CONFIG);
+    if working_directory_path.is_file() {
+        return working_directory_path;
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(DEFAULT_COMBAT_CONFIG)
+}
+
+fn load_combat_config(path: &std::path::Path) -> Result<TacticalCombatConfig, String> {
+    const MAX_COMBAT_CONFIG_BYTES: u64 = 64 * 1024;
+    let length = std::fs::metadata(path)
+        .map_err(|error| format!("could not inspect {}: {error}", path.display()))?
+        .len();
+    if length == 0 || length > MAX_COMBAT_CONFIG_BYTES {
+        return Err("combat config must contain between 1 byte and 64 KiB".into());
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let config: TacticalCombatConfig = serde_saphyr::from_str(&text)
+        .map_err(|error| format!("{} is not valid YAML: {error}", path.display()))?;
+    config
+        .validate()
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +152,13 @@ mod tests {
             input.source,
             SceneSource::SyntheticFixture("dense-woodland".into())
         );
+    }
+
+    #[test]
+    fn committed_combat_config_matches_canonical_defaults() {
+        let loaded = load_combat_config(&default_combat_config_path())
+            .expect("committed tactical combat config should remain valid");
+        assert_eq!(loaded, TacticalCombatConfig::default());
     }
 }
 
@@ -143,6 +182,24 @@ fn main() {
             std::process::exit(2);
         }
     };
+    let combat_config_path = args
+        .combat_config
+        .clone()
+        .unwrap_or_else(default_combat_config_path);
+    let combat_config = match load_combat_config(&combat_config_path) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("refusing invalid tactical combat config: {error}");
+            std::process::exit(2);
+        }
+    };
+    let combat_config_digest = combat_config
+        .digest()
+        .expect("loaded tactical combat config was validated");
+    eprintln!(
+        "[startup] tactical combat config path={} digest={combat_config_digest}",
+        combat_config_path.display()
+    );
     let scene_vista_bundle = Some(SceneVistaBundle {
         scene_digest: loaded_scene_input
             .digest()
@@ -158,6 +215,7 @@ fn main() {
         lods: loaded_scene_input.vista.lods.clone(),
     });
     let mut app = App::new();
+    app.insert_resource(combat_config);
     // Registered before any other plugin (in particular, before
     // `AdventureSimulatorNetPlugins` below) - see `on_client_disconnected`'s
     // own doc comment for why the ordering here is load-bearing, not

@@ -1,7 +1,7 @@
 use crate::DEFAULT_SERVER_URL;
 use crate::message::{
     JoinRequest, JumpCommand, PlayerInputRequest, PostureActionRequest, PostureCommand,
-    ReconnectCapability, ReconnectToken,
+    ReconnectCapability, ReconnectToken, TacticalCombatConfigSnapshot,
 };
 use adventuresim_tactical_core::prelude::*;
 use aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin};
@@ -9,8 +9,8 @@ use aeronet_websocket::client::{ClientConfig, WebSocketClient, WebSocketClientPl
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 
+#[cfg(test)]
 const SPRINT_HOLD_THRESHOLD_SECONDS: f32 = 0.25;
-const ALTERNATE_ATTACK_HOLD_SECONDS: f32 = 0.2;
 
 #[derive(Default)]
 pub struct AdventureSimulatorClientPlugin;
@@ -18,6 +18,7 @@ pub struct AdventureSimulatorClientPlugin;
 impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WeaponGuardInputState>()
+            .init_resource::<TacticalCombatConfig>()
             .init_resource::<ReconnectCredential>()
             .init_resource::<DirectControlState>()
             .init_resource::<DebugForceAttackTrigger>()
@@ -25,6 +26,7 @@ impl Plugin for AdventureSimulatorClientPlugin {
             .add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
             .add_observer(on_client_added)
             .add_observer(store_reconnect_capability)
+            .add_observer(store_tactical_combat_config)
             .add_systems(OnEnter(ClientState::Connected), announce_join)
             .add_systems(
                 PreUpdate,
@@ -35,6 +37,17 @@ impl Plugin for AdventureSimulatorClientPlugin {
                 (send_player_input,).run_if(in_state(ClientState::Connected)),
             );
     }
+}
+
+fn store_tactical_combat_config(
+    snapshot: On<TacticalCombatConfigSnapshot>,
+    mut config: ResMut<TacticalCombatConfig>,
+) {
+    if let Err(error) = snapshot.0.validate() {
+        error!("ignored invalid tactical combat config received from server: {error}");
+        return;
+    }
+    *config = snapshot.0.clone();
 }
 
 /// Kept in the running client application across transport reconnects. It is
@@ -147,7 +160,17 @@ struct SprintInputState {
 }
 
 impl SprintInputState {
+    #[cfg(test)]
     fn update(&mut self, shift_down: bool, delta_seconds: f32) {
+        self.update_with_threshold(shift_down, delta_seconds, SPRINT_HOLD_THRESHOLD_SECONDS);
+    }
+
+    fn update_with_threshold(
+        &mut self,
+        shift_down: bool,
+        delta_seconds: f32,
+        hold_threshold_seconds: f32,
+    ) {
         // The current frame's delta ends at this sample, so it belongs to a
         // key that was already down. Counting it here includes the release
         // frame without pretending a new press began at the frame's start.
@@ -159,7 +182,7 @@ impl SprintInputState {
             self.active = !self.active;
             self.held_seconds = 0.0;
         } else if !shift_down && self.shift_down {
-            if !self.deactivating_press && self.held_seconds > SPRINT_HOLD_THRESHOLD_SECONDS {
+            if !self.deactivating_press && self.held_seconds > hold_threshold_seconds {
                 self.active = false;
             }
             self.held_seconds = 0.0;
@@ -191,17 +214,24 @@ fn update_direct_control_input(
     mut guard: ResMut<WeaponGuardInputState>,
     mut controls: ResMut<DirectControlState>,
     mut force_attack: ResMut<DebugForceAttackTrigger>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
+    let input_config = &combat_config.client_input;
     if keys.just_pressed(KeyCode::CapsLock) {
         controls.caps_jog = !controls.caps_jog;
     }
     let shift_down = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    controls.sprint.update(shift_down, time.delta_secs());
+    controls.sprint.update_with_threshold(
+        shift_down,
+        time.delta_secs(),
+        input_config.sprint_hold_seconds,
+    );
     let keyboard_direction = Vec2::new(
         (keys.pressed(KeyCode::KeyD) as u8 as f32) - (keys.pressed(KeyCode::KeyA) as u8 as f32),
         (keys.pressed(KeyCode::KeyW) as u8 as f32) - (keys.pressed(KeyCode::KeyS) as u8 as f32),
     );
-    let keyboard_moving = keyboard_direction.length_squared() > 0.01;
+    let keyboard_moving =
+        keyboard_direction.length_squared() > input_config.movement_deadzone.powi(2);
     let gamepad_direction = gamepads
         .iter()
         .map(|gamepad| {
@@ -212,7 +242,8 @@ fn update_direct_control_input(
         })
         .max_by(|left, right| left.length_squared().total_cmp(&right.length_squared()))
         .unwrap_or_default();
-    let gamepad_moving = gamepad_direction.length_squared() > 0.01;
+    let gamepad_moving =
+        gamepad_direction.length_squared() > input_config.movement_deadzone.powi(2);
     let moving = keyboard_moving || gamepad_moving;
     controls.sprint.cancel_latch_when_idle(moving);
     let left_trigger_value = gamepads
@@ -348,13 +379,13 @@ fn update_direct_control_input(
         right_bumper,
         right_bumper_just_pressed,
     );
-    if gamepad_lateral.abs() <= 0.35 || !gamepad_roll_modifier {
+    if gamepad_lateral.abs() <= input_config.roll_deadzone || !gamepad_roll_modifier {
         controls.gamepad_roll_latched = false;
     }
     let gamepad_roll = (downed
         && !gamepad_dive
         && gamepad_roll_modifier
-        && gamepad_lateral.abs() >= 0.7
+        && gamepad_lateral.abs() >= input_config.quickstep_threshold
         && (!controls.gamepad_roll_latched || gamepad_roll_modifier_just_pressed))
         .then(|| lateral_roll_action(gamepad_lateral))
         .flatten();
@@ -365,7 +396,7 @@ fn update_direct_control_input(
         && !keyboard_dive
         && !gamepad_dive
         && ((space_pressed && keyboard_direction.x.abs() <= f32::EPSILON)
-            || (gamepad_roll_modifier && gamepad_lateral.abs() <= 0.35));
+            || (gamepad_roll_modifier && gamepad_lateral.abs() <= input_config.roll_deadzone));
     if let Some(action) = roll_action {
         queue_posture_action(&mut controls, action);
         controls.keyboard_roll_pending = keyboard_roll.is_some();
@@ -399,21 +430,21 @@ fn update_direct_control_input(
         controls.mouse_main_attack_armed && mouse.just_released(MouseButton::Left);
     let mouse_offhand_attack =
         controls.mouse_offhand_attack_armed && mouse.just_released(MouseButton::Middle);
-    let mouse_alternate_attack =
-        mouse_main_attack && controls.mouse_main_attack_seconds > ALTERNATE_ATTACK_HOLD_SECONDS;
+    let mouse_alternate_attack = mouse_main_attack
+        && controls.mouse_main_attack_seconds > input_config.alternate_attack_hold_seconds;
     let controller_attack = left_trigger && right_trigger_just_pressed && !rolling;
     controls.attack_just_pressed =
         mouse_main_attack || mouse_offhand_attack || controller_attack || force_attack.0;
     force_attack.0 = false;
-    controls.alternate_attack =
-        mouse_alternate_attack || (controller_attack && left_trigger_value < 0.95);
+    controls.alternate_attack = mouse_alternate_attack
+        || (controller_attack && left_trigger_value < input_config.aim_trigger_threshold);
     controls.attack_hand = if mouse_offhand_attack {
         AttackHand::Offhand
     } else {
         AttackHand::Main
     };
 
-    let controller_preparation = if left_trigger_value >= 0.95 {
+    let controller_preparation = if left_trigger_value >= input_config.aim_trigger_threshold {
         MeleePreparationInput::Preferred
     } else {
         MeleePreparationInput::Alternate
@@ -421,10 +452,11 @@ fn update_direct_control_input(
     if controls.mouse_offhand_attack_armed && mouse.pressed(MouseButton::Middle) {
         controls.local_preparation_from = MeleePreparationInput::Preferred;
         controls.local_preparation_to = MeleePreparationInput::Offhand;
-        controls.local_preparation_progress =
-            (controls.mouse_offhand_attack_seconds / ALTERNATE_ATTACK_HOLD_SECONDS).clamp(0.0, 1.0);
+        controls.local_preparation_progress = (controls.mouse_offhand_attack_seconds
+            / input_config.alternate_attack_hold_seconds)
+            .clamp(0.0, 1.0);
         controls.melee_preparation =
-            if controls.mouse_offhand_attack_seconds > ALTERNATE_ATTACK_HOLD_SECONDS {
+            if controls.mouse_offhand_attack_seconds > input_config.alternate_attack_hold_seconds {
                 MeleePreparationInput::Offhand
             } else {
                 MeleePreparationInput::Preferred
@@ -432,10 +464,11 @@ fn update_direct_control_input(
     } else if controls.mouse_main_attack_armed && mouse.pressed(MouseButton::Left) {
         controls.local_preparation_from = MeleePreparationInput::Preferred;
         controls.local_preparation_to = MeleePreparationInput::Alternate;
-        controls.local_preparation_progress =
-            (controls.mouse_main_attack_seconds / ALTERNATE_ATTACK_HOLD_SECONDS).clamp(0.0, 1.0);
+        controls.local_preparation_progress = (controls.mouse_main_attack_seconds
+            / input_config.alternate_attack_hold_seconds)
+            .clamp(0.0, 1.0);
         controls.melee_preparation =
-            if controls.mouse_main_attack_seconds > ALTERNATE_ATTACK_HOLD_SECONDS {
+            if controls.mouse_main_attack_seconds > input_config.alternate_attack_hold_seconds {
                 MeleePreparationInput::Alternate
             } else {
                 MeleePreparationInput::Preferred
@@ -682,6 +715,7 @@ mod tests {
         world.insert_resource(ButtonInput::<MouseButton>::default());
         world.insert_resource(WeaponGuardInputState::default());
         world.insert_resource(DirectControlState::default());
+        world.insert_resource(TacticalCombatConfig::default());
         world.insert_resource(DebugForceAttackTrigger::default());
         let mut schedule = Schedule::default();
         schedule.add_systems(update_direct_control_input);

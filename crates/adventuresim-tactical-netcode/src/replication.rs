@@ -7,7 +7,8 @@ use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
     DebugDumpWorldRequest, DebugGameTimeScaleRequest, DefendRequest, EquipmentActionRequest,
     JoinRequest, MeleeActionRequest, PlayerInputRequest, RangedActionRequest, ReconnectCapability,
-    SceneVistaBundle, SuccessfulAttackResponse, TacticalOutcomeResponse,
+    SceneVistaBundle, SuccessfulAttackResponse, TacticalCombatConfigSnapshot,
+    TacticalOutcomeResponse,
 };
 
 #[derive(Default)]
@@ -53,6 +54,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_server_event::<ReconnectCapability>(Channel::Ordered)
             .add_server_event::<SceneVistaBundle>(Channel::Ordered)
+            .add_server_event::<TacticalCombatConfigSnapshot>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
             .add_client_event::<DebugGameTimeScaleRequest>(Channel::Ordered)
             .add_client_event::<DebugDumpWorldRequest>(Channel::Ordered)

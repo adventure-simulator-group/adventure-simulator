@@ -642,28 +642,48 @@ impl AttackCurve {
     /// and the attacker's effective weapon skill check. High-inertia weapons
     /// and low-skill attacks telegraph and follow through more.
     pub fn from_handling(moment_of_inertia_kg_m2: f32, skill: f32) -> Self {
+        Self::from_handling_with_config(
+            moment_of_inertia_kg_m2,
+            skill,
+            &crate::combat_config::TacticalCombatConfig::default()
+                .presentation
+                .attack_curve,
+        )
+    }
+
+    pub fn from_handling_with_config(
+        moment_of_inertia_kg_m2: f32,
+        skill: f32,
+        config: &crate::combat_config::AttackCurveConfig,
+    ) -> Self {
         let inertia = if moment_of_inertia_kg_m2.is_finite() {
             moment_of_inertia_kg_m2.max(0.0)
         } else {
             0.3
         };
-        let inertia_difficulty = (inertia / (inertia + 0.45)).sqrt();
+        let inertia_difficulty = (inertia / (inertia + config.inertia_characteristic)).sqrt();
         let skill = finite_clamp(skill / 5.0, 0.0, 1.0, 0.0);
-        let lack_of_control = inertia_difficulty * 0.55 + (1.0 - skill) * 0.45;
+        let lack_of_control =
+            inertia_difficulty * config.inertia_weight + (1.0 - skill) * config.skill_weight;
         Self {
-            tell_fraction: 0.32 + 0.28 * lack_of_control,
-            drawback: 0.16 + 0.42 * lack_of_control,
-            follow_through_fraction: 0.18 + 0.22 * lack_of_control,
-            overshoot: 0.08 + 0.38 * lack_of_control,
+            tell_fraction: config.tell_base + config.tell_span * lack_of_control,
+            drawback: config.drawback_base + config.drawback_span * lack_of_control,
+            follow_through_fraction: config.follow_through_base
+                + config.follow_through_span * lack_of_control,
+            overshoot: config.overshoot_base + config.overshoot_span * lack_of_control,
         }
-        .normalized()
+        .normalized_with_limits(config.maximum_drawback, config.maximum_overshoot)
     }
 
-    fn normalized(mut self) -> Self {
+    fn normalized(self) -> Self {
+        self.normalized_with_limits(Self::MAX_DRAWBACK, Self::MAX_OVERSHOOT)
+    }
+
+    fn normalized_with_limits(mut self, maximum_drawback: f32, maximum_overshoot: f32) -> Self {
         self.tell_fraction = finite_clamp(self.tell_fraction, 0.15, 0.75, 0.45);
-        self.drawback = finite_clamp(self.drawback, 0.0, Self::MAX_DRAWBACK, 0.3);
+        self.drawback = finite_clamp(self.drawback, 0.0, maximum_drawback, 0.3);
         self.follow_through_fraction = finite_clamp(self.follow_through_fraction, 0.1, 0.65, 0.3);
-        self.overshoot = finite_clamp(self.overshoot, 0.0, Self::MAX_OVERSHOOT, 0.2);
+        self.overshoot = finite_clamp(self.overshoot, 0.0, maximum_overshoot, 0.2);
         self
     }
 
@@ -1807,6 +1827,26 @@ pub fn advance_body_facing(
     weapon_guard: WeaponGuardState,
     delta_seconds: f32,
 ) -> Quat {
+    advance_body_facing_with_speed(
+        current,
+        controller_orientation,
+        linear_velocity,
+        action,
+        weapon_guard,
+        delta_seconds,
+        BODY_TURN_SPEED_RADIANS,
+    )
+}
+
+pub fn advance_body_facing_with_speed(
+    current: Quat,
+    controller_orientation: Quat,
+    linear_velocity: Vec3,
+    action: SkeletonAction,
+    weapon_guard: WeaponGuardState,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
+) -> Quat {
     let current_yaw = body_yaw(current);
     let desired_forward = if weapon_guard == WeaponGuardState::Raised
         || matches!(action, SkeletonAction::Attack | SkeletonAction::Block)
@@ -1828,7 +1868,7 @@ pub fn advance_body_facing(
     if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
         delta = std::f32::consts::PI;
     }
-    let maximum = (BODY_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    let maximum = (turn_speed_radians * delta_seconds.max(0.0)).min(std::f32::consts::PI);
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
 }
 
@@ -1839,6 +1879,20 @@ pub fn advance_downed_body_facing(
     controller_orientation: Quat,
     delta_seconds: f32,
 ) -> Quat {
+    advance_downed_body_facing_with_speed(
+        current,
+        controller_orientation,
+        delta_seconds,
+        DOWNED_TURN_SPEED_RADIANS,
+    )
+}
+
+pub fn advance_downed_body_facing_with_speed(
+    current: Quat,
+    controller_orientation: Quat,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
+) -> Quat {
     let current_yaw = body_yaw(current);
     let desired_forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
     let desired_yaw = desired_forward.x.atan2(desired_forward.z);
@@ -1848,7 +1902,7 @@ pub fn advance_downed_body_facing(
     if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
         delta = std::f32::consts::PI;
     }
-    let maximum = (DOWNED_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    let maximum = (turn_speed_radians * delta_seconds.max(0.0)).min(std::f32::consts::PI);
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
 }
 

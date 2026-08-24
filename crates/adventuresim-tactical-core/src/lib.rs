@@ -8,6 +8,7 @@
 
 pub mod animation;
 pub mod combat;
+pub mod combat_config;
 pub mod inventory;
 pub mod physics;
 pub mod player;
@@ -29,12 +30,14 @@ pub mod prelude {
         RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE, RaisedLocomotionIntent,
         ResolvedPose, RollDirection, SemanticPose, SkeletonAction, SkeletonLocomotionInput,
         SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE, WeaponGuardState,
-        advance_body_facing, advance_downed_body_facing, controller_yaw, dive_landing_facing_delta,
+        advance_body_facing, advance_body_facing_with_speed, advance_downed_body_facing,
+        advance_downed_body_facing_with_speed, controller_yaw, dive_landing_facing_delta,
         downed_camera_roll_target, gait_cycle_phase_delta, gait_support_weights, guard_step_length,
         locomotion_profile, ordinary_step_distance, project_skeleton_locomotion, set_weapon_guard,
         supine_get_up_counter_yaw_delta,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
+    pub use crate::combat_config::*;
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
         EquipmentTopology, EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties,

@@ -3,6 +3,7 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_enhanced_input::prelude::Actions;
 use serde::{Deserialize, Serialize};
 
+use crate::combat_config::AttackCurveConfig;
 use crate::{
     animation::{AttackCurve, AttackHand, AttackSpec},
     inventory::{InventoryView, InventoryViewer},
@@ -620,10 +621,12 @@ pub fn effective_weapon_handling_skill(view: &TacticalPlayerView<'_, '_, '_>) ->
 pub fn configure_attack_curve(
     mut spec: AttackSpec,
     view: &TacticalPlayerView<'_, '_, '_>,
+    config: &AttackCurveConfig,
 ) -> AttackSpec {
-    spec.curve = AttackCurve::from_handling(
+    spec.curve = AttackCurve::from_handling_with_config(
         view.weapon_moment_of_inertia(),
         effective_weapon_handling_skill(view),
+        config,
     );
     spec
 }

@@ -15,7 +15,7 @@ use crate::{
         CombatDuration, CombatSet, DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent,
         RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
     },
-    player_projection::begin_get_up_transition,
+    player_projection::begin_get_up_transition_configured,
 };
 pub use defense::{DefenseChances, ReactiveDefenseAi};
 use defense::{
@@ -54,12 +54,16 @@ pub struct CombatantBehaviorPackages(pub Vec<CombatantBehaviorPackage>);
 
 impl CombatantBehaviorPackages {
     #[must_use]
-    pub fn standard_combat() -> Self {
+    pub fn standard_combat(config: &TacticalCombatConfig) -> Self {
+        let defense = &config.ai.ordinary.defense;
         Self(vec![
             CombatantBehaviorPackage::RecoverToUpright,
             CombatantBehaviorPackage::OffensiveCombat,
             CombatantBehaviorPackage::ReactiveDefense {
-                chances: DefenseChances::default(),
+                chances: DefenseChances {
+                    parry_chance: defense.parry_chance,
+                    dodge_chance: defense.dodge_chance,
+                },
                 requires_facing: true,
             },
         ])
@@ -213,10 +217,11 @@ fn aim_at_nearest_opponent(
 
 fn recover_to_upright(
     mut recovering: Query<(&TacticalCombatState, &mut SkeletonState), With<RecoverToUprightAi>>,
+    config: Res<TacticalCombatConfig>,
 ) {
     for (state, mut skeleton) in &mut recovering {
         if !state.is_incapacitated() && !skeleton.is_posture_transitioning() {
-            begin_get_up_transition(&mut skeleton);
+            begin_get_up_transition_configured(&mut skeleton, &config);
         }
     }
 }
@@ -225,7 +230,8 @@ pub struct BotPlugin;
 
 impl Plugin for BotPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_attack_started)
+        app.init_resource::<TacticalCombatConfig>()
+            .add_observer(on_attack_started)
             .add_observer(on_targeted_attack_started)
             .add_observer(on_targeted_ranged_attack_started)
             .add_systems(
@@ -403,6 +409,7 @@ mod tests {
     fn test_app() -> App {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .init_resource::<RecordedAttacks>()
             .init_resource::<RecordedRangedAttacks>()
             .add_observer(record_attack)
@@ -414,14 +421,17 @@ mod tests {
     #[test]
     fn behavior_packages_compose_runtime_capabilities() {
         let mut app = App::new();
-        app.add_systems(Update, materialize_behavior_packages);
+        app.init_resource::<TacticalCombatConfig>()
+            .add_systems(Update, materialize_behavior_packages);
         let blocker = app
             .world_mut()
             .spawn(CombatantBehaviorPackages::always_block_without_facing())
             .id();
         let standard = app
             .world_mut()
-            .spawn(CombatantBehaviorPackages::standard_combat())
+            .spawn(CombatantBehaviorPackages::standard_combat(
+                &TacticalCombatConfig::default(),
+            ))
             .id();
         let dodger = app
             .world_mut()
@@ -485,6 +495,7 @@ mod tests {
     #[test]
     fn untargeted_windup_only_reacts_on_the_nearest_enemy() {
         let mut app = App::new();
+        app.init_resource::<TacticalCombatConfig>();
         app.add_observer(on_attack_started);
         let attacker = app
             .world_mut()
@@ -545,6 +556,7 @@ mod tests {
     fn completed_bot_reaction_enters_the_shared_block_animation() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .add_observer(on_attack_started)
             .add_observer(crate::combat::apply_defend_intent)
             .add_systems(Update, tick_bot_reactions);
@@ -637,6 +649,7 @@ mod tests {
     #[test]
     fn recovery_package_starts_authored_get_up_without_skipping_upright() {
         let mut app = App::new();
+        app.init_resource::<TacticalCombatConfig>();
         app.add_systems(Update, recover_to_upright);
         let prone = app
             .world_mut()
@@ -841,6 +854,7 @@ mod tests {
     fn ai_duel_stops_incapacitated_combatants() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .init_resource::<RecordedAttacks>()
             .add_observer(record_attack)
             .add_observer(apply_deterministic_test_hit)

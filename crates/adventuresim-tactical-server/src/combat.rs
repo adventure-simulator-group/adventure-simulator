@@ -15,7 +15,7 @@ use adventuresim_tactical_netcode::{
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest, SuccessfulAttackResponse},
 };
 use bevy::prelude::*;
-use std::{collections::HashMap, num::NonZeroU32, time::Duration};
+use std::{collections::HashMap, num::NonZeroU32};
 
 use crate::player_projection::{
     AuthoritativeMovementIntent, AuthoritativePostureIntent, PlayerProjectionSet,
@@ -79,7 +79,6 @@ pub(crate) struct TacticalConsequenceAccumulator {
 /// Maximum window (in seconds) after pressing dodge/parry that the response
 /// is still considered valid. A fresh press gives `input_reflex = 1.0`;
 /// a press older than this window is treated as no response.
-const MAX_REFLEX_WINDOW: Duration = Duration::from_millis(500);
 /// At most this much is subtracted from the weapon's authored windup
 /// (`PlayerEquipment::weapon_windup_secs`, the same value the client paces
 /// its swing by) to form the server's minimum-windup threshold. The check
@@ -91,24 +90,14 @@ const MAX_REFLEX_WINDOW: Duration = Duration::from_millis(500);
 /// a same-machine loopback connection with effectively zero network latency,
 /// where jitter is the *only* source of the gap. The tolerance absorbs
 /// ordinary jitter without meaningfully loosening the windup check.
-const MAX_WINDUP_JITTER_TOLERANCE_SECS: f32 = 0.025;
 /// Replay guard only. Actual cadence is owned by the replicated attack
 /// schedule and the one-entry client continuation buffer.
-const MELEE_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(80));
 /// Completion must arrive within this bounded ordered-network allowance after
 /// the windup becomes ready; old starts cannot authorize replayed completions.
-const MELEE_WINDUP_NETWORK_ALLOWANCE: CombatDuration =
-    CombatDuration::from_duration(Duration::from_secs(1));
 /// Allows bounded movement between the authoritative physics snapshot and an
 /// ordered attack request arriving at the server.
-const MELEE_RANGE_LATENCY_TOLERANCE: f32 = 0.25;
-const RANGED_COOLDOWN: CombatDuration = CombatDuration::from_duration(Duration::from_millis(600));
-const RANGED_NETWORK_ALLOWANCE: CombatDuration =
-    CombatDuration::from_duration(Duration::from_secs(1));
-const RANGED_RANGE_LATENCY_TOLERANCE: f32 = 0.5;
 /// The server owns yaw but not full skeletal/secondary animation. Permit a
 /// small network/input cone while still rejecting targets behind the shooter.
-const RANGED_AIM_CONE_DEGREES: f32 = 20.0;
 
 fn remaining_ammo_after_shot(quantity: NonZeroU32) -> Option<NonZeroU32> {
     NonZeroU32::new(quantity.get() - 1)
@@ -127,12 +116,10 @@ struct ApplyMeleeAttackResult {
     impact_velocity_change: Vec3,
 }
 
-const MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND: f32 = 12.0;
 /// Contact energy describes the local collision, not whole-body kinetic
 /// energy. This transfer scale makes John Fabelgeist's ordinary ~49.5 J punch
 /// move an 80 kg equipped bandit about 0.25 m under the tactical controller's
 /// standard grounded friction.
-const HIT_WHOLE_BODY_VELOCITY_SCALE: f32 = 2.63;
 
 /// Converts combat contact energy into an explicit physical delta-v. Combat
 /// resolution historically calls the energy-like value `contact_force`; this
@@ -144,6 +131,7 @@ fn hit_velocity_change(
     defender_position: Vec3,
     attacker_mass_kg: f32,
     defender_mass_kg: f32,
+    config: &ImpactConfig,
 ) -> (bool, Vec3) {
     let (hits_attacker, contact_energy, mass) = match result {
         AttackResult::ToAttacker { contact_force, .. } => {
@@ -168,8 +156,8 @@ fn hit_velocity_change(
         horizontal
     };
     let direction = Vec3::new(horizontal.x, 0.0, horizontal.y);
-    let speed = ((2.0 * contact_energy / mass.max(1.0)).sqrt() * HIT_WHOLE_BODY_VELOCITY_SCALE)
-        .min(MAX_HIT_VELOCITY_CHANGE_METRES_PER_SECOND);
+    let speed = ((2.0 * contact_energy / mass.max(1.0)).sqrt() * config.whole_body_velocity_scale)
+        .min(config.maximum_velocity_change_metres_per_second);
     (hits_attacker, direction * speed)
 }
 
@@ -198,6 +186,7 @@ struct RangedIntentFacts {
     reported_precision: ReportedPrecision,
     weapon_is_ranged: bool,
     weapon_range: f32,
+    range_latency_tolerance: f32,
     separation: Option<f32>,
     target_in_aim_cone: Option<bool>,
     authority_permits: bool,
@@ -208,13 +197,18 @@ struct RangedIntentFacts {
     target_yaw: Option<f32>,
 }
 
-fn ranged_target_in_aim_cone(yaw: f32, attacker: Vec3, target: Vec3) -> bool {
+fn ranged_target_in_aim_cone(
+    yaw: f32,
+    attacker: Vec3,
+    target: Vec3,
+    half_angle_degrees: f32,
+) -> bool {
     let offset = target.xz() - attacker.xz();
     let Some(direction) = offset.try_normalize() else {
         return false;
     };
     let forward = Vec2::new(-yaw.sin(), -yaw.cos());
-    direction.dot(forward) >= RANGED_AIM_CONE_DEGREES.to_radians().cos()
+    direction.dot(forward) >= half_angle_degrees.to_radians().cos()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -240,6 +234,7 @@ struct MeleeIntentFacts {
     target_incapacitated: Option<bool>,
     reported_precision: ReportedPrecision,
     weapon_reach: f32,
+    range_latency_tolerance: f32,
     separation: f32,
     authority_permits: bool,
     body_part: BodyPart,
@@ -265,6 +260,7 @@ pub(crate) enum CombatSet {
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TacticalConsequenceAccumulator>()
+            .init_resource::<TacticalCombatConfig>()
             .add_observer(on_melee_action_request)
             .add_observer(on_ranged_action_request)
             .add_observer(on_ranged_attack_started)
@@ -293,6 +289,10 @@ mod tests {
 
     use super::*;
     use adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId;
+
+    fn default_impact_config() -> ImpactConfig {
+        TacticalCombatConfig::default().realtime_authority.impact
+    }
 
     #[derive(Resource)]
     struct BatchedCompletions {
@@ -335,6 +335,7 @@ mod tests {
             target_incapacitated: Some(false),
             reported_precision: event.reported_precision,
             weapon_reach: 1.0,
+            range_latency_tolerance: 0.25,
             separation: 1.0,
             authority_permits: authority.permits(event.target, CombatInstant::from_elapsed(&time)),
             body_part: event.body_part,
@@ -350,7 +351,7 @@ mod tests {
             .authorize_attack(
                 validated,
                 CombatInstant::from_elapsed(&time),
-                MELEE_COOLDOWN,
+                CombatDuration::from_secs_f32(0.08),
             )
             .is_some()
         {
@@ -371,6 +372,7 @@ mod tests {
             target_incapacitated: Some(false),
             reported_precision: ReportedPrecision::new(1.0).unwrap(),
             weapon_reach: 0.8,
+            range_latency_tolerance: 0.25,
             separation: 2.0,
             authority_permits: true,
             body_part: BodyPart::Chest,
@@ -392,6 +394,7 @@ mod tests {
             reported_precision: ReportedPrecision::new(1.0).unwrap(),
             weapon_is_ranged: true,
             weapon_range: 120.0,
+            range_latency_tolerance: 0.5,
             separation: Some(30.0),
             target_in_aim_cone: Some(true),
             authority_permits: true,
@@ -546,8 +549,8 @@ mod tests {
     #[test]
     fn ranged_aim_cone_accepts_forward_and_rejects_behind() {
         let origin = Vec3::ZERO;
-        assert!(ranged_target_in_aim_cone(0.0, origin, Vec3::NEG_Z));
-        assert!(!ranged_target_in_aim_cone(0.0, origin, Vec3::Z));
+        assert!(ranged_target_in_aim_cone(0.0, origin, Vec3::NEG_Z, 20.0));
+        assert!(!ranged_target_in_aim_cone(0.0, origin, Vec3::Z, 20.0));
 
         let mut world = World::new();
         let valid = valid_ranged_facts(&mut world);
@@ -850,6 +853,7 @@ mod tests {
     fn batched_completions_consume_one_windup_once() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .init_resource::<AcceptedCompletions>()
             .add_observer(on_melee_action_request)
             .add_observer(apply_if_authorized);
@@ -888,8 +892,14 @@ mod tests {
             contact_force: 140.0,
             armor_contact: false,
         };
-        let (hits_attacker, velocity_change) =
-            hit_velocity_change(result, Vec3::ZERO, Vec3::new(0.0, 0.0, 2.0), 70.0, 70.0);
+        let (hits_attacker, velocity_change) = hit_velocity_change(
+            result,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, 2.0),
+            70.0,
+            70.0,
+            &default_impact_config(),
+        );
         assert!(!hits_attacker);
         assert!((velocity_change.length() - 5.26).abs() < 1.0e-4);
         assert!(velocity_change.z > 0.0);
@@ -926,7 +936,14 @@ mod tests {
             contact_force: 49.4667,
             armor_contact: false,
         };
-        let (_, velocity_change) = hit_velocity_change(result, Vec3::ZERO, Vec3::Z, 80.0, 80.0);
+        let (_, velocity_change) = hit_velocity_change(
+            result,
+            Vec3::ZERO,
+            Vec3::Z,
+            80.0,
+            80.0,
+            &default_impact_config(),
+        );
         let stopping_distance = default_ground_stopping_distance(velocity_change.xz().length());
 
         assert!(
@@ -942,8 +959,14 @@ mod tests {
             contact_force: 40.0,
             physical_contact: true,
         };
-        let (hits_attacker, velocity_change) =
-            hit_velocity_change(result, Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), 80.0, 60.0);
+        let (hits_attacker, velocity_change) = hit_velocity_change(
+            result,
+            Vec3::ZERO,
+            Vec3::new(1.0, 0.0, 0.0),
+            80.0,
+            60.0,
+            &default_impact_config(),
+        );
         assert!(hits_attacker);
         assert!(velocity_change.x < 0.0);
     }
