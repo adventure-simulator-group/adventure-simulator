@@ -1813,11 +1813,16 @@ fn raised_guard_release_scenario_with_lead(
     name: &'static str,
     lead_foot: LeadFoot,
 ) -> Vec<PlannedFrame> {
+    let release_frame = (guard_step_length(2.0) * 0.75 * SAMPLE_HZ).round() as usize;
     (0..=64)
         .map(|scenario_frame| PlannedFrame {
             scenario: name,
             scenario_frame,
-            speed: if scenario_frame <= 20 { 2.0 } else { 0.0 },
+            speed: if scenario_frame <= release_frame {
+                2.0
+            } else {
+                0.0
+            },
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             local_direction: Vec2::NEG_Y,
             camera_yaw: 0.0,
@@ -5870,10 +5875,13 @@ mod tests {
         };
 
         let release = replay("raised-guard-release-at-peak");
+        let release_frame = (guard_step_length(2.0) * 0.75 * SAMPLE_HZ).round() as usize;
         assert!(
             release
                 .iter()
-                .any(|(frame, phase, intent)| *frame > 20 && *phase > 0.5 && intent.is_moving())
+                .any(|(frame, phase, intent)| *frame > release_frame
+                    && *phase > 0.5
+                    && intent.is_moving())
         );
         assert!(!release.last().unwrap().2.is_moving());
         assert_eq!(release.last().unwrap().1, 0.0);
@@ -5890,7 +5898,10 @@ mod tests {
             .1;
         assert_eq!(changed.0, 16);
         let phase_delta = (changed.1 - previous_phase).rem_euclid(1.0);
-        assert!((0.0..0.1).contains(&phase_delta));
+        let expected_lateral_delta =
+            2.0 / SAMPLE_HZ / (guard_contact_travel_distance(0.840_348, Vec2::X) * 2.0);
+        assert!(phase_delta > 0.0);
+        assert!((phase_delta - expected_lateral_delta).abs() < 0.001);
     }
 
     #[test]

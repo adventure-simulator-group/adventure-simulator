@@ -127,17 +127,14 @@ pub(in crate::animation) fn apply(
                         step: GuardStepState::Stationary {
                             left,
                             right,
-                            // The leading foot receives the landing load; free
-                            // the trailing foot first so it cannot be dragged
-                            // beyond leg reach while the root decelerates.
-                            next: opposite_guard_foot(select_initial_guard_swing(
-                                left,
-                                right,
-                                skeleton.world_velocity,
-                                skeleton.lead_foot,
-                            )),
+                            // Resume with the foot opposite the authoritative
+                            // landing support so guard propulsion and the
+                            // rendered plant share the same contact identity.
+                            next: opposite_guard_foot(skeleton.contact_foot),
                         },
                         step_sequence: 0,
+                        contact_sequence: skeleton.contact_sequence,
+                        awaiting_contact_handoff: false,
                         evaluation_tick: None,
                         left_support_weight: 1.0,
                         right_support_weight: 1.0,

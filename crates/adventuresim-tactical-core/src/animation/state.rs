@@ -1930,6 +1930,16 @@ pub fn downed_camera_roll_target(body_rotation: Quat, controller_orientation: Qu
 /// Bone evaluation remains client-only; this is the shared server seam that
 /// keeps deterministic captures on the same stride and posture rules.
 pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: SkeletonLocomotionInput) {
+    project_skeleton_locomotion_with_intent(skeleton, input, None);
+}
+
+/// Server projection variant that preserves held movement intent while the
+/// physical motor temporarily brakes to zero between guard contacts.
+pub fn project_skeleton_locomotion_with_intent(
+    skeleton: &mut SkeletonState,
+    input: SkeletonLocomotionInput,
+    requested_local_direction: Option<Vec2>,
+) {
     let linear_velocity = if input.linear_velocity.is_finite() {
         input.linear_velocity
     } else {
@@ -1997,7 +2007,12 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     };
     if skeleton.weapon_guard() == WeaponGuardState::Raised && skeleton.posture() == Posture::Upright
     {
-        let handoffs = advance_raised_locomotion_intent(skeleton, local_velocity, delta_seconds);
+        let handoffs = advance_raised_locomotion_intent(
+            skeleton,
+            local_velocity,
+            requested_local_direction,
+            delta_seconds,
+        );
         advance_contact_identity(skeleton, handoffs, None);
     } else {
         skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
@@ -2045,6 +2060,7 @@ pub(super) fn opposite_foot(foot: LeadFoot) -> LeadFoot {
 fn advance_raised_locomotion_intent(
     skeleton: &mut SkeletonState,
     observed_local_velocity: Vec3,
+    requested_local_direction: Option<Vec2>,
     delta_seconds: f32,
 ) -> u32 {
     let intent = skeleton.raised_locomotion();
@@ -2055,29 +2071,56 @@ fn advance_raised_locomotion_intent(
             observed_speed,
         )
     });
+    let requested = requested_local_direction
+        .filter(|direction| direction.is_finite() && direction.length_squared() > f32::EPSILON)
+        .map(|direction| direction.normalize());
     if !intent.is_moving() {
-        let Some(observed) = observed else {
+        let Some(opening) = observed.or_else(|| {
+            requested.map(|direction| RaisedLocomotionIntent::moving(direction, 0.051))
+        }) else {
             skeleton.gait_phase = 0.0;
             skeleton.set_raised_locomotion(intent);
             return 0;
         };
-        skeleton.set_raised_locomotion(observed);
+        skeleton.set_raised_locomotion(opening);
         skeleton.gait_phase = 0.0;
+        // A close guard starts by sending the foot leading the requested
+        // movement direction outward. The opposite foot supplies the initial
+        // support; backward movement deliberately inverts the authored lead.
+        skeleton.contact_foot = opposite_foot(guard_movement_front_foot(
+            skeleton.lead_foot,
+            opening.local_direction(),
+        ));
+        skeleton.contact_sequence = skeleton.contact_sequence.wrapping_add(1);
     }
 
-    let moving = observed.unwrap_or(intent);
+    let moving = observed.unwrap_or_else(|| {
+        requested.map_or(intent, |direction| {
+            RaisedLocomotionIntent::moving(direction, intent.speed().max(0.051))
+        })
+    });
     skeleton.set_raised_locomotion(moving);
     let speed = moving.speed();
     let phase = skeleton.gait_phase.rem_euclid(1.0);
+    let step_distance = guard_contact_travel_distance(
+        REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES,
+        moving.local_direction(),
+    );
+    let movement_front = guard_movement_front_foot(skeleton.lead_foot, moving.local_direction());
+    let phase_speed = if skeleton.contact_foot == movement_front {
+        speed
+    } else {
+        speed.max(step_distance / GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS)
+    };
     let profile = LocomotionProfile {
-        step_distance: guard_step_length(speed),
+        step_distance,
         ..RAISED_GUARD_LOCOMOTION_PROFILE
     };
-    let next_phase = phase + gait_cycle_phase_delta(profile, speed, delta_seconds.max(0.0));
+    let next_phase = phase + gait_cycle_phase_delta(profile, phase_speed, delta_seconds.max(0.0));
     let handoffs = ((next_phase * 2.0).floor() - (phase * 2.0).floor()).max(0.0) as u32;
     let crossed_handoff = handoffs > 0;
 
-    if observed.is_none() && crossed_handoff {
+    if observed.is_none() && requested.is_none() && crossed_handoff {
         skeleton.gait_phase = if phase < 0.5 { 0.5 } else { 0.0 };
         skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
         return handoffs;
@@ -2087,8 +2130,82 @@ fn advance_raised_locomotion_intent(
     handoffs
 }
 
-/// Ground distance covered by one procedural combat-stance step. Raised
-/// movement uses compact shuffles rather than ordinary walking strides.
-pub fn guard_step_length(speed: f32) -> f32 {
-    (0.26 + speed.max(0.0) * 0.06).clamp(0.28, 0.42)
+// Measured hip-knee-ankle chain of the current humanoid rig. The animation
+// client uses its live rig measurement; this is the server-side fallback until
+// anatomical dimensions become part of character state.
+const REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES: f32 = 0.840_348;
+/// Prevents loss of propulsion from stretching an unsupported opening step
+/// into a multi-second feedback loop at movement startup.
+pub const GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS: f32 = 0.35;
+
+/// Ground distance covered by one procedural combat-stance contact interval.
+pub fn guard_step_length(_speed: f32) -> f32 {
+    guard_contact_travel_distance(REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES, Vec2::NEG_Y)
+}
+
+/// Anatomical foot leading a close-guard shuffle in local controller space.
+/// Forward local velocity is -Y; backward therefore swaps the authored lead.
+/// A predominantly lateral shuffle uses the foot on the movement side.
+pub fn guard_movement_front_foot(lead: LeadFoot, local_direction: Vec2) -> LeadFoot {
+    let direction = local_direction.normalize_or_zero();
+    if direction == Vec2::ZERO || direction.y.abs() >= direction.x.abs() {
+        if direction.y > 0.0 {
+            opposite_foot(lead)
+        } else {
+            lead
+        }
+    } else if direction.x < 0.0 {
+        LeadFoot::Left
+    } else {
+        LeadFoot::Right
+    }
+}
+
+/// Maximum lateral open stance. A shuffle cannot use the one-yard
+/// longitudinal span without leaving the planted foot far behind the COM.
+pub fn guard_maximum_lateral_foot_separation(leg_length_metres: f32) -> f32 {
+    leg_length_metres.max(0.0) * 0.55
+}
+
+/// Direction-specific open stance, blended continuously for diagonals.
+pub fn guard_open_foot_separation(leg_length_metres: f32, local_direction: Vec2) -> f32 {
+    let direction = local_direction.normalize_or_zero();
+    let longitudinal = direction.y.abs();
+    guard_maximum_lateral_foot_separation(leg_length_metres).lerp(
+        guard_maximum_foot_separation(leg_length_metres),
+        longitudinal,
+    )
+}
+
+/// Direction-specific closed stance. Lateral shuffles retain normal
+/// anatomical width; the three-inch contract applies along the guard's
+/// longitudinal axis.
+pub fn guard_closed_foot_separation(leg_length_metres: f32, local_direction: Vec2) -> f32 {
+    let direction = local_direction.normalize_or_zero();
+    let longitudinal = direction.y.abs();
+    (leg_length_metres.max(0.0) * 0.25).lerp(
+        guard_rear_contact_separation(leg_length_metres),
+        longitudinal,
+    )
+}
+
+/// COM travel between centered open and closed contacts.
+pub fn guard_contact_travel_distance(leg_length_metres: f32, local_direction: Vec2) -> f32 {
+    (guard_open_foot_separation(leg_length_metres, local_direction)
+        - guard_closed_foot_separation(leg_length_metres, local_direction))
+    .max(0.0)
+        * 0.5
+}
+
+/// Maximum fore-aft guard stance immediately before the following foot lifts.
+/// The ratio maps a 0.851688 m average-male thigh-plus-shank chain at 5'11" to
+/// the requested one-yard stance, then scales directly with the actual rig.
+pub fn guard_maximum_foot_separation(leg_length_metres: f32) -> f32 {
+    leg_length_metres.max(0.0) * 1.073_632_5
+}
+
+/// Maximum fore-aft separation when the rear foot returns beside the front
+/// foot. This maps the same 5'11" reference leg to the requested three inches.
+pub fn guard_rear_contact_separation(leg_length_metres: f32) -> f32 {
+    leg_length_metres.max(0.0) * 0.089_469_37
 }

@@ -694,14 +694,24 @@ mod legacy_tests {
             delta_seconds,
             tick: 1,
         };
-        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.095));
+        let quarter_step_seconds = guard_step_length(2.0) * 0.25;
+        project_skeleton_locomotion(
+            &mut state,
+            input(Vec3::NEG_Z * 2.0, quarter_step_seconds),
+        );
         assert!(state.raised_locomotion().is_moving());
         assert!((state.gait_phase - 0.25).abs() < 0.001);
 
-        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.08));
+        project_skeleton_locomotion(
+            &mut state,
+            input(Vec3::ZERO, quarter_step_seconds * 0.8),
+        );
         assert!(state.raised_locomotion().is_moving());
         assert_eq!(state.raised_locomotion().local_direction(), Vec2::NEG_Y);
-        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.02));
+        project_skeleton_locomotion(
+            &mut state,
+            input(Vec3::ZERO, quarter_step_seconds * 0.2),
+        );
         assert!(!state.raised_locomotion().is_moving());
         assert_eq!(state.gait_phase, 0.5);
     }
@@ -721,11 +731,15 @@ mod legacy_tests {
         project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.05));
         assert_eq!(state.raised_locomotion().local_direction(), Vec2::NEG_Y);
         let phase_after_turn = state.gait_phase;
+        let contacts_after_turn = state.contact_sequence;
 
-        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.15));
+        project_skeleton_locomotion(
+            &mut state,
+            input(Vec3::NEG_Z * 2.0, guard_step_length(2.0) * 0.5),
+        );
         assert_eq!(state.raised_locomotion().local_direction(), Vec2::NEG_Y);
-        assert!(state.gait_phase > phase_after_turn);
-        assert!(state.gait_phase > 0.5);
+        assert!((state.gait_phase - phase_after_turn).rem_euclid(1.0) > 0.0);
+        assert!(state.contact_sequence > contacts_after_turn);
         assert_eq!(state.lead_foot, LeadFoot::Left);
     }
 
@@ -763,7 +777,60 @@ mod legacy_tests {
         project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0));
         let fast_delta = state.gait_phase - slow_delta;
         assert_eq!(state.raised_locomotion().speed(), 2.0);
-        assert!(fast_delta > slow_delta * 5.0);
+        assert!(
+            (slow_delta - 0.05 / (GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS * 2.0)).abs()
+                < 0.0001
+        );
+        assert!(fast_delta > slow_delta);
+    }
+
+    #[test]
+    fn raised_guard_movement_front_foot_follows_direction() {
+        let lead = LeadFoot::Left;
+        assert_eq!(guard_movement_front_foot(lead, Vec2::NEG_Y), lead);
+        assert_eq!(
+            guard_movement_front_foot(lead, Vec2::Y),
+            LeadFoot::Right
+        );
+        assert_eq!(
+            guard_movement_front_foot(lead, Vec2::NEG_X),
+            LeadFoot::Left
+        );
+        assert_eq!(
+            guard_movement_front_foot(lead, Vec2::X),
+            LeadFoot::Right
+        );
+        assert!(
+            guard_contact_travel_distance(0.840_348, Vec2::X)
+                < guard_contact_travel_distance(0.840_348, Vec2::NEG_Y)
+        );
+    }
+
+    #[test]
+    fn held_guard_input_survives_zero_velocity_until_front_contact() {
+        let mut state = SkeletonState::default();
+        set_weapon_guard(&mut state, WeaponGuardState::Raised);
+        let input = |velocity, tick, delta_seconds| SkeletonLocomotionInput {
+            orientation: Quat::IDENTITY,
+            linear_velocity: velocity,
+            grounded: true,
+            delta_seconds,
+            tick,
+        };
+        project_skeleton_locomotion_with_intent(
+            &mut state,
+            input(Vec3::NEG_Z * 0.1, 1, 0.05),
+            Some(Vec2::NEG_Y),
+        );
+        assert_eq!(state.contact_foot, LeadFoot::Right);
+
+        project_skeleton_locomotion_with_intent(
+            &mut state,
+            input(Vec3::ZERO, 2, GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS),
+            Some(Vec2::NEG_Y),
+        );
+        assert!(state.raised_locomotion().is_moving());
+        assert_eq!(state.contact_foot, state.lead_foot);
     }
 
     #[test]
@@ -776,12 +843,14 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                // At 2 m/s a full two-step cycle is 0.38 seconds.
+                // Cover one full two-step cycle after acquiring the initial
+                // rear-foot support for the lead-foot opening step.
                 delta_seconds: guard_step_length(2.0) * 2.0 / 2.0,
                 tick: 1,
             },
         );
-        assert_eq!(state.contact_sequence, 2);
+        assert_eq!(state.contact_sequence, 3);
+        assert_eq!(state.contact_foot, opposite_foot(state.lead_foot));
         assert!(state.gait_phase < 0.0001);
     }
 

@@ -1408,6 +1408,7 @@ pub(crate) fn update_skeleton_locomotion(
             &MovementPace,
             &AuthoritativePostureIntent,
             &QuickstepPush,
+            &AccumulatedInput,
         ),
         With<Player>,
     >,
@@ -1422,6 +1423,7 @@ pub(crate) fn update_skeleton_locomotion(
         pace,
         posture,
         quickstep_push,
+        accumulated_input,
     ) in &mut players
     {
         if combat_state.is_incapacitated() {
@@ -1468,7 +1470,7 @@ pub(crate) fn update_skeleton_locomotion(
                 std::f32::consts::PI / combat_config.presentation.body_turn_seconds_per_half_turn,
             );
         }
-        project_skeleton_locomotion(
+        project_skeleton_locomotion_with_intent(
             &mut skeleton,
             SkeletonLocomotionInput {
                 orientation: controller.orientation,
@@ -1477,6 +1479,9 @@ pub(crate) fn update_skeleton_locomotion(
                 delta_seconds: time.delta_secs(),
                 tick,
             },
+            accumulated_input
+                .last_movement
+                .map(|movement| Vec2::new(movement.x, -movement.y)),
         );
         let previous_transition = skeleton.posture_transition();
         skeleton.advance_posture_transition(tick);

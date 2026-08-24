@@ -470,11 +470,15 @@ pub(super) fn apply_pose_mirroring(
 
 const HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND: f32 = 0.4;
 const LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND: f32 = 0.8;
+const GUARD_HIP_DROP_TRANSITION_METRES_PER_SECOND: f32 = 0.8;
 const NORMALIZATION_TRANSITION_PER_SECOND: f32 = 8.0;
 // The upright lowered-guard humanoid_unarmed root/pelvis rotations lift its
 // pelvis by about 33 mm at passing even after local Y is normalized. This is a
 // measured state-and-pack calibration, not a safe assumption elsewhere.
 const AUTHORED_ORDINARY_PASSING_RISE_METRES: f32 = 0.033;
+// Current humanoid calibration: moving in the compact guard stance lowers the
+// hips by roughly ten centimetres while the IK-owned feet remain planted.
+const RAISED_GUARD_MOVING_HIP_DROP_METRES: f32 = 0.10;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct LocomotionHeightState {
@@ -483,6 +487,7 @@ pub(crate) struct LocomotionHeightState {
     authored_rise_compensation: f32,
     displayed_wave: f32,
     wave_transition_offset: f32,
+    guard_hip_drop: f32,
     normalization_weight: f32,
     pub(crate) landing_compression: f32,
     landing_compression_target: f32,
@@ -564,6 +569,19 @@ fn locomotion_normalization_target(skeleton: &SkeletonState) -> f32 {
         && skeleton.animation_speed() > 0.05) as u8 as f32
 }
 
+fn raised_guard_moving_hip_drop(skeleton: &SkeletonState) -> f32 {
+    if !skeleton.is_grounded()
+        || skeleton.is_posture_transitioning()
+        || skeleton.action_kind() != SkeletonAction::None
+        || skeleton.posture() != Posture::Upright
+        || skeleton.weapon_guard() != WeaponGuardState::Raised
+        || !skeleton.raised_locomotion().is_moving()
+    {
+        return 0.0;
+    }
+    RAISED_GUARD_MOVING_HIP_DROP_METRES * smoothstep(0.05, 0.75, skeleton.animation_speed())
+}
+
 fn advance_towards(current: f32, target: f32, maximum_delta: f32) -> f32 {
     current + (target - current).clamp(-maximum_delta.max(0.0), maximum_delta.max(0.0))
 }
@@ -603,12 +621,14 @@ pub(super) fn stabilize_locomotion_torso(
     for (owner, skeleton, state) in &mut owners {
         let target_wave = locomotion_height_wave(skeleton);
         let target_authored_compensation = authored_height_compensation(skeleton);
+        let target_guard_hip_drop = raised_guard_moving_hip_drop(skeleton);
         let target_normalization = locomotion_normalization_target(skeleton);
         let mut next = state.as_deref().copied().unwrap_or_default();
         if !next.initialized {
             next.initialized = true;
             next.amplitude = target_wave;
             next.authored_rise_compensation = target_authored_compensation;
+            next.guard_hip_drop = target_guard_hip_drop;
             next.normalization_weight = target_normalization;
             next.last_guard = Some(skeleton.weapon_guard());
             next.last_posture = Some(skeleton.posture());
@@ -638,6 +658,11 @@ pub(super) fn stabilize_locomotion_torso(
             next.authored_rise_compensation,
             target_authored_compensation,
             HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND * delta_seconds,
+        );
+        next.guard_hip_drop = advance_towards(
+            next.guard_hip_drop,
+            target_guard_hip_drop,
+            GUARD_HIP_DROP_TRANSITION_METRES_PER_SECOND * delta_seconds,
         );
         let retained_normalization =
             target_normalization.max((next.amplitude.abs() > 0.001) as u8 as f32);
@@ -742,6 +767,7 @@ pub(super) fn stabilize_locomotion_torso(
         };
         if height.normalization_weight <= f32::EPSILON
             && height.amplitude <= f32::EPSILON
+            && height.guard_hip_drop <= f32::EPSILON
             && height.landing_compression <= f32::EPSILON
         {
             continue;
@@ -765,7 +791,7 @@ pub(super) fn stabilize_locomotion_torso(
                 normalized_translation.y = bind.local.translation.y + height.displayed_wave;
             }
             BoneRole::Pelvis => {
-                normalized_translation.y = bind.local.translation.y;
+                normalized_translation.y = bind.local.translation.y - height.guard_hip_drop;
             }
             _ => {}
         }
@@ -1385,6 +1411,25 @@ mod legacy_tests {
     }
 
     #[test]
+    fn moving_raised_guard_lowers_the_hips_by_ten_centimetres() {
+        let moving = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z * 2.0)
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
+        assert!(
+            (raised_guard_moving_hip_drop(&moving) - RAISED_GUARD_MOVING_HIP_DROP_METRES).abs()
+                < 0.0001
+        );
+
+        let planted = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        assert_eq!(raised_guard_moving_hip_drop(&planted), 0.0);
+        assert_eq!(
+            raised_guard_moving_hip_drop(&moving.with_body_state(BodyState::Airborne)),
+            0.0
+        );
+    }
+
+    #[test]
     fn body_response_and_landing_compression_are_bounded() {
         let steady_run = body_response_target(Vec3::Z * 5.5, Vec3::ZERO, 1.0);
         let forward = body_response_target(Vec3::Z * 5.5, Vec3::Z * 12.0, 1.0);
@@ -1544,22 +1589,20 @@ mod legacy_tests {
 
     #[test]
     fn raised_guard_movement_reports_exactly_one_procedural_support_foot() {
-        for phase in [0.0, 0.25, 0.5, 0.75] {
-            let support_for = |lead| {
-                let skeleton = SkeletonState::default()
-                    .with_lead_foot(lead)
-                    .with_gait_phase(phase)
-                    .with_local_velocity(Vec3::NEG_Z * 2.0)
-                    .with_weapon_guard(WeaponGuardState::Raised)
-                    .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
-                locomotion_support_weights(&skeleton)
-            };
-            let (left, right) = support_for(LeadFoot::Left);
-            assert_eq!(left + right, 1.0);
+        for contact in [LeadFoot::Left, LeadFoot::Right] {
+            let mut skeleton = SkeletonState::default()
+                .with_local_velocity(Vec3::NEG_Z * 2.0)
+                .with_weapon_guard(WeaponGuardState::Raised)
+                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
+            skeleton.contact_foot = contact;
+            let support = locomotion_support_weights(&skeleton);
+            assert_eq!(support.0 + support.1, 1.0);
             assert_eq!(
-                (left, right),
-                support_for(LeadFoot::Right),
-                "replicated attack lead cannot select visual support"
+                support,
+                match contact {
+                    LeadFoot::Left => (1.0, 0.0),
+                    LeadFoot::Right => (0.0, 1.0),
+                }
             );
         }
         let idle = SkeletonState::default()
@@ -1705,10 +1748,11 @@ mod legacy_tests {
     }
 
     #[test]
-    fn analog_guard_speed_scales_step_reach_without_unbounded_strides() {
-        assert!(guard_step_length(1.0) < guard_step_length(2.0));
-        assert_eq!(guard_step_length(0.0), 0.28);
-        assert_eq!(guard_step_length(100.0), 0.42);
+    fn guard_stride_scales_with_leg_length_from_the_five_eleven_reference() {
+        let reference_leg_length = 1.8034 * 0.860 / 1.821;
+        assert!(guard_maximum_foot_separation(0.75) < guard_maximum_foot_separation(0.90));
+        assert!((guard_maximum_foot_separation(reference_leg_length) - 0.9144).abs() < 0.0001);
+        assert!((guard_rear_contact_separation(reference_leg_length) - 0.0762).abs() < 0.0001);
     }
 
     #[test]
