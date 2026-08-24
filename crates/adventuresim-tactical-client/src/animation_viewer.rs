@@ -3743,9 +3743,7 @@ fn scenario_requires_strict_terrain_toe_clearance(scenario: &str) -> bool {
 }
 
 fn planted_drift_limit(scenario: &str) -> f32 {
-    if scenario.starts_with("raised-guard") {
-        0.01
-    } else if scenario == "terrain-steady-run-5.5" {
+    if scenario.starts_with("raised-guard") || scenario == "terrain-steady-run-5.5" {
         0.01
     } else {
         0.035
