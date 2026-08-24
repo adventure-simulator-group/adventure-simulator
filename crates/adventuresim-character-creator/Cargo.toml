@@ -14,6 +14,7 @@ burn = { git = "https://github.com/tracel-ai/burn", rev = "b1502de8b396e7c575981
     "wgpu",
 ] }
 fabelgeist-mhr = { path = "../fabelgeist-mhr" }
+adventuresim-world-schema = { path = "../adventuresim-world-schema" }
 clap = { version = "4.5", features = ["derive", "env"] }
 rand = "0.9"
 serde = { version = "1", features = ["derive"] }

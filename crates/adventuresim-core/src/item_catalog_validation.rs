@@ -412,14 +412,13 @@ fn validate_item(
             }
         }
     }
+    if item.contains_key("coverage") {
+        errors.push(format!(
+            "{file}: {path}.coverage: derived from equipment placement surface spans"
+        ));
+    }
     if kind != "armor" {
-        for field in [
-            "coverage",
-            "resistance",
-            "padding",
-            "flexibility",
-            "range_of_motion",
-        ] {
+        for field in ["resistance", "padding", "flexibility", "range_of_motion"] {
             if item.contains_key(field) {
                 errors.push(format!(
                     "{file}: {path}.{field}: field is only valid for armor"
@@ -436,7 +435,7 @@ fn validate_item(
         finite_in(item, "block", f64::EPSILON, 10_000.0, file, &path, errors);
     }
     if kind == "armor" {
-        for field in ["coverage", "flexibility", "range_of_motion"] {
+        for field in ["flexibility", "range_of_motion"] {
             finite_in(item, field, 0.0, 1.0, file, &path, errors);
         }
         for field in ["resistance", "padding"] {
@@ -566,6 +565,7 @@ fn validate_equipment(
         equipment,
         &[
             "physical",
+            "material",
             "attachment_tags",
             "placements",
             "protection",
@@ -575,6 +575,28 @@ fn validate_equipment(
         &path,
         errors,
     );
+    let material = equipment.get("material").and_then(Value::as_str);
+    let valid_materials = [
+        "polished_steel",
+        "rough_steel",
+        "oxidized_steel",
+        "mail_steel",
+        "vegetable_tanned_leather",
+        "linen",
+        "wool",
+        "quilted_textile",
+    ];
+    if matches!(item_kind, "armor" | "clothing") {
+        if material.is_none_or(|material| !valid_materials.contains(&material)) {
+            errors.push(format!(
+                "{file}: {path}.material: armor and clothing require a procedural PBR material"
+            ));
+        }
+    } else if material.is_some() {
+        errors.push(format!(
+            "{file}: {path}.material: only armor and clothing may define a procedural PBR material"
+        ));
+    }
     match equipment.get("physical").and_then(Value::as_object) {
         Some(physical) => {
             reject_unknown(
@@ -674,7 +696,7 @@ fn validate_equipment(
                 let placement_path = format!("{path}.placements.{index}");
                 reject_unknown(
                     placement,
-                    &["id", "occupancy", "parents", "protection"],
+                    &["id", "occupancy", "parents", "protection", "surface"],
                     file,
                     &placement_path,
                     errors,
@@ -821,6 +843,14 @@ fn validate_equipment(
                         "{file}: {placement_path}.protection: non-armor protection requires equipment.protection stats"
                     ));
                 }
+                validate_equipment_surface(
+                    placement.get("surface"),
+                    file,
+                    &placement_path,
+                    item_kind,
+                    &protected,
+                    errors,
+                );
             }
         }
         _ => errors.push(format!(
@@ -844,26 +874,16 @@ fn validate_equipment(
         }
         reject_unknown(
             protection,
-            &[
-                "coverage",
-                "resistance",
-                "padding",
-                "flexibility",
-                "range_of_motion",
-            ],
+            &["resistance", "padding", "flexibility", "range_of_motion"],
             file,
             &format!("{path}.protection"),
             errors,
         );
-        finite_in(
-            protection,
-            "coverage",
-            0.0,
-            1.0,
-            file,
-            &format!("{path}.protection"),
-            errors,
-        );
+        if protection.contains_key("coverage") {
+            errors.push(format!(
+                "{file}: {path}.protection.coverage: derived from equipment placement surface spans"
+            ));
+        }
         for field in ["flexibility", "range_of_motion"] {
             if !protection.contains_key(field) {
                 continue;
@@ -964,6 +984,145 @@ fn validate_equipment(
             }
         }
     }
+}
+
+fn validate_equipment_surface(
+    value: Option<&Value>,
+    file: &str,
+    placement_path: &str,
+    item_kind: &str,
+    protected: &BTreeSet<&str>,
+    errors: &mut Vec<String>,
+) {
+    let path = format!("{placement_path}.surface");
+    let required = matches!(item_kind, "armor" | "clothing");
+    let Some(spans) = value.and_then(Value::as_array) else {
+        if required {
+            errors.push(format!(
+                "{file}: {path}: armor and clothing require non-empty anatomical surface spans"
+            ));
+        }
+        return;
+    };
+    if spans.is_empty() {
+        if required {
+            errors.push(format!(
+                "{file}: {path}: armor and clothing require non-empty anatomical surface spans"
+            ));
+        }
+        return;
+    }
+    if !required {
+        errors.push(format!(
+            "{file}: {path}: only armor and clothing may define anatomical surface spans"
+        ));
+    }
+    let valid_regions = [
+        "head",
+        "neck",
+        "chest",
+        "stomach",
+        "left_upper_arm",
+        "left_forearm",
+        "right_upper_arm",
+        "right_forearm",
+        "left_thigh",
+        "left_lower_leg",
+        "right_thigh",
+        "right_lower_leg",
+    ];
+    for (index, span) in spans.iter().enumerate() {
+        let span_path = format!("{path}.{index}");
+        let Some(span) = span.as_object() else {
+            errors.push(format!("{file}: {span_path}: must be an object"));
+            continue;
+        };
+        reject_unknown(
+            span,
+            &["regions", "anchor", "coverage"],
+            file,
+            &span_path,
+            errors,
+        );
+        let regions = span
+            .get("regions")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if regions.is_empty()
+            || regions.iter().any(|region| {
+                !region
+                    .as_str()
+                    .is_some_and(|name| valid_regions.contains(&name))
+            })
+        {
+            errors.push(format!(
+                "{file}: {span_path}.regions: expected a non-empty anatomical region chain"
+            ));
+            continue;
+        }
+        let region_names = regions.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+        if region_names
+            .windows(2)
+            .any(|pair| !contiguous_regions(pair[0], pair[1]))
+        {
+            errors.push(format!(
+                "{file}: {span_path}.regions: regions must form a proximal-to-distal contiguous chain"
+            ));
+        }
+        for region in &region_names {
+            let body_part = anatomical_body_part(region);
+            if !protected.contains(body_part) {
+                errors.push(format!(
+                    "{file}: {span_path}.regions: {region:?} is outside placement protection {protected:?}"
+                ));
+            }
+        }
+        if !span
+            .get("anchor")
+            .and_then(Value::as_str)
+            .is_some_and(|anchor| matches!(anchor, "proximal" | "distal" | "center"))
+        {
+            errors.push(format!(
+                "{file}: {span_path}.anchor: expected proximal, distal, or center"
+            ));
+        }
+        finite_in(
+            span,
+            "coverage",
+            f64::EPSILON,
+            1.0,
+            file,
+            &span_path,
+            errors,
+        );
+    }
+}
+
+fn anatomical_body_part(region: &str) -> &str {
+    match region {
+        "head" | "neck" => "head",
+        "chest" => "chest",
+        "stomach" => "stomach",
+        "left_upper_arm" | "left_forearm" => "left_arm",
+        "right_upper_arm" | "right_forearm" => "right_arm",
+        "left_thigh" | "left_lower_leg" => "left_leg",
+        "right_thigh" | "right_lower_leg" => "right_leg",
+        _ => "",
+    }
+}
+
+fn contiguous_regions(proximal: &str, distal: &str) -> bool {
+    matches!(
+        (proximal, distal),
+        ("stomach", "chest")
+            | ("chest", "neck")
+            | ("neck", "head")
+            | ("left_upper_arm", "left_forearm")
+            | ("right_upper_arm", "right_forearm")
+            | ("left_thigh", "left_lower_leg")
+            | ("right_thigh", "right_lower_leg")
+    )
 }
 
 fn validate_weapon(item: &Map<String, Value>, file: &str, path: &str, errors: &mut Vec<String>) {
@@ -1617,6 +1776,7 @@ mod tests {
             (
                 "equipment".into(),
                 json!({
+                    "material": "quilted_textile",
                     "physical": {
                         "dimensions_m": [0.3, 0.6, 0.1],
                         "grip_to_tip_m": 0.0,
@@ -1626,15 +1786,25 @@ mod tests {
                         {
                             "id": "left",
                             "occupancy": [{"location": "left_arm", "channel": "base_clothing"}],
-                            "protection": ["left_arm"]
+                            "protection": ["left_arm"],
+                            "surface": [{
+                                "regions": ["left_upper_arm", "left_forearm"],
+                                "anchor": "proximal",
+                                "coverage": 0.8
+                            }]
                         },
                         {
                             "id": "right",
                             "occupancy": [{"location": "right_arm", "channel": "base_clothing"}],
-                            "protection": ["right_arm"]
+                            "protection": ["right_arm"],
+                            "surface": [{
+                                "regions": ["right_upper_arm", "right_forearm"],
+                                "anchor": "proximal",
+                                "coverage": 0.8
+                            }]
                         }
                     ],
-                    "protection": {"coverage": 0.8, "padding": 2.0, "resistance": 1.0}
+                    "protection": {"padding": 2.0, "resistance": 1.0}
                 }),
             ),
         ]);

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 3,
   "name": "John Fabelgeist",
   "identity": [
     -0.7,
@@ -121,5 +121,9 @@
     0.0,
     0.0,
     0.0
-  ]
+  ],
+  "clothing": [{
+    "item_id": "linen_tunic",
+    "placement_id": "worn"
+  }]
 }

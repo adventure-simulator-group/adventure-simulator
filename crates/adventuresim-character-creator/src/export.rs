@@ -27,6 +27,16 @@ pub struct RiggedMesh<'a> {
     pub global_joint_states: &'a [[f32; 8]],
 }
 
+pub struct RiggedShell<'a> {
+    pub name: &'a str,
+    pub positions: &'a [[f32; 3]],
+    pub faces: &'a [[u32; 3]],
+    /// Artist-facing sRGB color. glTF factors are converted to linear RGB.
+    pub base_color: [f32; 4],
+    pub metallic: f32,
+    pub roughness: f32,
+}
+
 #[derive(Default)]
 struct BufferBuilder {
     bytes: Vec<u8>,
@@ -144,7 +154,7 @@ fn append_attachment(
     });
 }
 
-fn validate(mesh: &RiggedMesh<'_>) -> Result<()> {
+fn validate(mesh: &RiggedMesh<'_>, shells: &[RiggedShell<'_>]) -> Result<()> {
     let vertices = mesh.positions.len();
     if vertices == 0 || mesh.normals.len() != vertices {
         bail!("positions and normals must contain the same non-zero vertex count");
@@ -191,7 +201,67 @@ fn validate(mesh: &RiggedMesh<'_>) -> Result<()> {
             bail!("vertex {vertex} skin weights sum to {sum}, not 1");
         }
     }
+    for shell in shells {
+        if shell.name.trim().is_empty() {
+            bail!("clothing shell name cannot be empty");
+        }
+        if shell.positions.len() != vertices || shell.faces.is_empty() {
+            bail!(
+                "clothing shell '{}' must have the body vertex count and at least one face",
+                shell.name
+            );
+        }
+        if shell
+            .faces
+            .iter()
+            .flatten()
+            .any(|index| *index as usize >= vertices)
+        {
+            bail!(
+                "clothing shell '{}' references a missing vertex",
+                shell.name
+            );
+        }
+        if shell
+            .positions
+            .iter()
+            .flatten()
+            .any(|value| !value.is_finite())
+            || !shell.metallic.is_finite()
+            || !shell.roughness.is_finite()
+            || shell.base_color.iter().any(|value| !value.is_finite())
+        {
+            bail!(
+                "clothing shell '{}' contains a non-finite value",
+                shell.name
+            );
+        }
+    }
     Ok(())
+}
+
+fn position_bounds(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
+    positions.iter().fold(
+        ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
+        |(mut minimum, mut maximum), position| {
+            for axis in 0..3 {
+                minimum[axis] = minimum[axis].min(position[axis]);
+                maximum[axis] = maximum[axis].max(position[axis]);
+            }
+            (minimum, maximum)
+        },
+    )
+}
+
+fn linear_base_color([red, green, blue, alpha]: [f32; 4]) -> [f32; 4] {
+    fn channel(value: f32) -> f32 {
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    [channel(red), channel(green), channel(blue), alpha]
 }
 
 /// Writes a self-contained, zero-animation GLB suitable for Cascadeur and the
@@ -202,8 +272,9 @@ pub fn export_rigged_glb(
     recipe_version: u8,
     lod: u8,
     mesh: &RiggedMesh<'_>,
+    shells: &[RiggedShell<'_>],
 ) -> Result<()> {
-    validate(mesh)?;
+    validate(mesh, shells)?;
     let mut buffer = BufferBuilder::default();
     let positions = buffer.push(
         &f32_bytes(mesh.positions.iter().flatten().copied()),
@@ -249,6 +320,20 @@ pub fn export_rigged_glb(
         &u32_bytes(mesh.faces.iter().flatten().copied()),
         Some(34_963),
     );
+    let shell_views = shells
+        .iter()
+        .map(|shell| {
+            let positions = buffer.push(
+                &f32_bytes(shell.positions.iter().flatten().copied()),
+                Some(34_962),
+            );
+            let indices = buffer.push(
+                &u32_bytes(shell.faces.iter().flatten().copied()),
+                Some(34_963),
+            );
+            (positions, indices)
+        })
+        .collect::<Vec<_>>();
 
     let mut globals = mesh
         .global_joint_states
@@ -301,16 +386,7 @@ pub fn export_rigged_glb(
         None,
     );
 
-    let (minimum, maximum) = mesh.positions.iter().fold(
-        ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
-        |(mut minimum, mut maximum), position| {
-            for axis in 0..3 {
-                minimum[axis] = minimum[axis].min(position[axis]);
-                maximum[axis] = maximum[axis].max(position[axis]);
-            }
-            (minimum, maximum)
-        },
-    );
+    let (minimum, maximum) = position_bounds(mesh.positions);
 
     let mut accessors = Vec::new();
     let mut accessor =
@@ -348,6 +424,63 @@ pub fn export_rigged_glb(
         "MAT4",
         None,
     );
+    let mut primitives = Vec::new();
+    let mut material_values = Vec::new();
+    if !mesh.faces.is_empty() {
+        primitives.push(json!({
+            "attributes": {
+                "POSITION": position_accessor,
+                "NORMAL": normal_accessor,
+                "JOINTS_0": joints_0_accessor,
+                "WEIGHTS_0": weights_0_accessor,
+                "JOINTS_1": joints_1_accessor,
+                "WEIGHTS_1": weights_1_accessor,
+            },
+            "indices": index_accessor,
+            "material": 0,
+        }));
+        material_values.push(json!({
+            "name": "Skin",
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [0.64, 0.39, 0.30, 1.0],
+                "metallicFactor": 0.0,
+                "roughnessFactor": 0.52,
+            }
+        }));
+    }
+    for (shell, (position_view, index_view)) in shells.iter().zip(shell_views) {
+        let (minimum, maximum) = position_bounds(shell.positions);
+        let shell_position_accessor = accessor(
+            position_view,
+            5_126,
+            shell.positions.len(),
+            "VEC3",
+            Some((minimum, maximum)),
+        );
+        let shell_index_accessor =
+            accessor(index_view, 5_125, shell.faces.len() * 3, "SCALAR", None);
+        let material = material_values.len();
+        primitives.push(json!({
+            "attributes": {
+                "POSITION": shell_position_accessor,
+                "NORMAL": normal_accessor,
+                "JOINTS_0": joints_0_accessor,
+                "WEIGHTS_0": weights_0_accessor,
+                "JOINTS_1": joints_1_accessor,
+                "WEIGHTS_1": weights_1_accessor,
+            },
+            "indices": shell_index_accessor,
+            "material": material,
+        }));
+        material_values.push(json!({
+            "name": shell.name,
+            "pbrMetallicRoughness": {
+                "baseColorFactor": linear_base_color(shell.base_color),
+                "metallicFactor": shell.metallic,
+                "roughnessFactor": shell.roughness,
+            }
+        }));
+    }
 
     let mut children = vec![Vec::<usize>::new(); joint_names.len()];
     let mut roots = Vec::new();
@@ -399,27 +532,9 @@ pub fn export_rigged_glb(
         "nodes": nodes,
         "meshes": [{
             "name": character_name,
-            "primitives": [{
-                "attributes": {
-                    "POSITION": position_accessor,
-                    "NORMAL": normal_accessor,
-                    "JOINTS_0": joints_0_accessor,
-                    "WEIGHTS_0": weights_0_accessor,
-                    "JOINTS_1": joints_1_accessor,
-                    "WEIGHTS_1": weights_1_accessor,
-                },
-                "indices": index_accessor,
-                "material": 0,
-            }]
+            "primitives": primitives,
         }],
-        "materials": [{
-            "name": "Skin",
-            "pbrMetallicRoughness": {
-                "baseColorFactor": [0.64, 0.39, 0.30, 1.0],
-                "metallicFactor": 0.0,
-                "roughnessFactor": 0.52,
-            }
-        }],
+        "materials": material_values,
         "skins": [{
             "name": "MHR",
             "inverseBindMatrices": inverse_bind_accessor,
@@ -435,6 +550,7 @@ pub fn export_rigged_glb(
                 "recipe_version": recipe_version,
                 "mhr_release": "v1.0.1",
                 "lod": lod,
+                "placeholder_clothing": shells.iter().map(|shell| shell.name).collect::<Vec<_>>(),
             },
             "adventuresim_rig": {
                 "family": "mhr",
@@ -554,6 +670,7 @@ mod tests {
                 joint_parents: &joint_parents,
                 global_joint_states: &global_joint_states,
             },
+            &[],
         )
         .unwrap();
         let bytes = fs::read(&path).unwrap();
@@ -626,7 +743,65 @@ mod tests {
                 joint_parents: &joint_parents,
                 global_joint_states: &global_joint_states,
             },
+            &[],
         );
         assert!(result.unwrap_err().to_string().contains("skin weights sum"));
+    }
+
+    #[test]
+    fn exports_clothing_as_a_separately_materialed_skinned_primitive() {
+        let directory = std::env::temp_dir().join(format!(
+            "fabelgeist-mhr-clothing-export-{}",
+            std::process::id()
+        ));
+        let path = directory.join("character.glb");
+        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let shell_positions = [[0.0, 0.0, 0.01], [1.0, 0.0, 0.01], [0.0, 1.0, 0.01]];
+        let normals = [[0.0, 0.0, 1.0]; 3];
+        let faces = [[0, 1, 2]];
+        let joint_indices = [[0; 8]; 3];
+        let joint_weights = [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; 3];
+        let (joint_names, joint_parents, global_joint_states) = attachment_test_skeleton();
+        let shell = RiggedShell {
+            name: "Tunic",
+            positions: &shell_positions,
+            faces: &faces,
+            base_color: [0.1, 0.2, 0.3, 1.0],
+            metallic: 0.0,
+            roughness: 0.9,
+        };
+        export_rigged_glb(
+            &path,
+            "Test",
+            2,
+            1,
+            &RiggedMesh {
+                positions: &positions,
+                normals: &normals,
+                faces: &faces,
+                joint_indices: &joint_indices,
+                joint_weights: &joint_weights,
+                joint_names: &joint_names,
+                joint_parents: &joint_parents,
+                global_joint_states: &global_joint_states,
+            },
+            &[shell],
+        )
+        .unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let document = read_document(&bytes);
+        let parsed = gltf::Gltf::from_slice(&bytes).unwrap();
+        assert_eq!(parsed.meshes().next().unwrap().primitives().count(), 2);
+        assert_eq!(document["materials"][1]["name"], "Tunic");
+        let red = document["materials"][1]["pbrMetallicRoughness"]["baseColorFactor"][0]
+            .as_f64()
+            .unwrap();
+        assert!((red - 0.010_022_8).abs() < 1e-6);
+        assert_eq!(document["meshes"][0]["primitives"][1]["material"], 1);
+        assert_eq!(
+            document["meshes"][0]["primitives"][1]["attributes"]["JOINTS_1"],
+            document["meshes"][0]["primitives"][0]["attributes"]["JOINTS_1"]
+        );
+        let _ = fs::remove_dir_all(directory);
     }
 }

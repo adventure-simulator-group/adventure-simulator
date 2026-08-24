@@ -30,6 +30,50 @@ pub fn catalog() -> &'static [ItemDefinition] {
                 .drain(..)
                 .flat_map(|document| document.items)
                 .collect();
+            for item in &mut items {
+                let Some(equipment) = &item.equipment else {
+                    continue;
+                };
+                let placement_coverages = equipment
+                    .placements
+                    .iter()
+                    .filter_map(|placement| {
+                        let regions = placement
+                            .surface
+                            .iter()
+                            .map(|span| span.regions.len())
+                            .sum::<usize>();
+                        (regions > 0).then(|| {
+                            placement
+                                .surface
+                                .iter()
+                                .map(|span| span.coverage * span.regions.len() as f32)
+                                .sum::<f32>()
+                                / regions as f32
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if placement_coverages.is_empty() {
+                    continue;
+                }
+                let coverage =
+                    placement_coverages.iter().sum::<f32>() / placement_coverages.len() as f32;
+                match &mut item.kind {
+                    ItemKind::Armor {
+                        coverage: authored, ..
+                    } => *authored = coverage,
+                    ItemKind::Clothing => {
+                        if let Some(protection) = item
+                            .equipment
+                            .as_mut()
+                            .and_then(|equipment| equipment.protection.as_mut())
+                        {
+                            protection.coverage = coverage;
+                        }
+                    }
+                    _ => {}
+                }
+            }
             items.sort_by(|a, b| a.id.cmp(&b.id));
             items
         })
