@@ -15,6 +15,7 @@ use bevy::{
 };
 
 use super::*;
+use crate::presentation::TacticalGameplayCamera;
 
 const SAMPLE_HZ: f32 = 30.0;
 const SAMPLE_DT: f32 = 1.0 / SAMPLE_HZ;
@@ -264,7 +265,7 @@ pub(super) fn update_pose_buffers(
     procedural_clock: Res<ProceduralAnimationClock>,
     catalog: Res<AnimationPackCatalog>,
     clips: Res<Assets<AnimationClip>>,
-    cameras: Query<(&GlobalTransform, &Frustum), With<Camera3d>>,
+    cameras: Query<(&GlobalTransform, &Frustum), With<TacticalGameplayCamera>>,
     owners: Query<(
         Entity,
         &PresentedSkeleton,

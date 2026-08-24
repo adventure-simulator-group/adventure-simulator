@@ -263,10 +263,8 @@ preferred-attack control once and then observes neutral input for
 capture supervisor release movement only after recording is ready. Add
 `--exit-after-script` for bounded unattended captures.
 
-The gameplay camera runs with bloom disabled and fixed four-sample MSAA. For
-matched performance diagnostics, pass `graphics_preset=no-shadows` or
-`no-atmosphere` to disable one remaining cost independently. `minimal` omits
-the remaining optional presentation features:
+The gameplay camera runs with bloom disabled and fixed four-sample MSAA.
+`minimal` omits the remaining optional presentation features:
 
 ```powershell
 just tactical-play diagnostic 24920 no-shadows
@@ -274,7 +272,6 @@ just tactical-play diagnostic 24920 minimal
 ```
 
 The normal client uses a 64×64 generated atmosphere environment map.
-`no-environment-light` keeps the rendered atmosphere but omits that lighting.
 
 The same presets are available on the native client through
 `--graphics-preset`.

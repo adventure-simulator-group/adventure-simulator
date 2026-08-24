@@ -581,8 +581,7 @@ per-particle simulation or transform updates. The Earth-atmosphere path keeps
 top-of-atmosphere solar source energy available after the Sun crosses the
 geometric horizon. Bevy's atmospheric transmittance and visible-disc calculation
 then suppress direct surface illumination while retaining directional civil and
-nautical twilight scattering. The no-atmosphere fallback retains an explicit
-zero-below-horizon direct-light curve because it has no planetary occlusion.
+nautical twilight scattering.
 Exposure transitions continuously from nautical twilight to the moon-conditioned
 night target between -12 and -18 degrees solar altitude; the physical
 0.533-degree solar disc, ACES tonemapping, and bounded lookup-table atmosphere

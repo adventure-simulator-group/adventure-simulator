@@ -38,7 +38,7 @@ use crate::animation::{
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
     player::{LocalCharacterId, PlayerPlugin},
-    presentation::TacticalPresentationPlugin,
+    presentation::{TacticalGameplayCamera, TacticalPresentationPlugin},
 };
 
 const SAMPLE_HZ: f32 = LOCOMOTION_SAMPLE_HZ;
@@ -2109,7 +2109,7 @@ fn drive_sequence(
 fn position_capture_camera(
     sequence: Res<CaptureSequence>,
     subjects: Query<(&Transform, &PresentedSkeleton), With<CaptureSubject>>,
-    mut cameras: Query<&mut Transform, (With<Camera3d>, Without<CaptureSubject>)>,
+    mut cameras: Query<&mut Transform, (With<TacticalGameplayCamera>, Without<CaptureSubject>)>,
     mut labels: Query<(&mut Text, &mut Visibility), With<CaptureLabel>>,
 ) {
     let (Ok((subject, skeleton)), Ok(mut camera)) = (subjects.single(), cameras.single_mut())

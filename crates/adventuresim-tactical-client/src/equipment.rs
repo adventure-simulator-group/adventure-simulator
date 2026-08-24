@@ -26,6 +26,7 @@ use crate::{
         authored_bind_global,
     },
     player::ClientPlayer,
+    presentation::TacticalGameplayCamera,
 };
 
 const PICKUP_RANGE_M: f32 = 2.0;
@@ -229,7 +230,7 @@ fn update_grab_input(
     topologies: Query<(Entity, &ItemOf, &EquipmentTopology, &ItemProperties)>,
     properties: Query<&ItemProperties>,
     action_states: Query<&EquipmentActionState>,
-    cameras: Query<&GlobalTransform, With<Camera3d>>,
+    cameras: Query<&GlobalTransform, With<TacticalGameplayCamera>>,
     scene_items: Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
     spatial: SpatialQuery,
     mut session: ResMut<GrabSession>,
@@ -334,7 +335,7 @@ fn update_grab_input(
 
 fn auto_aim_scene_item(
     actor: &GlobalTransform,
-    cameras: &Query<&GlobalTransform, With<Camera3d>>,
+    cameras: &Query<&GlobalTransform, With<TacticalGameplayCamera>>,
     scene_items: &Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
     spatial: &SpatialQuery,
 ) -> Option<Entity> {

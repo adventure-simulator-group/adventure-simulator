@@ -57,13 +57,13 @@ use crate::presentation::{
     PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
     PlayableTreeMidTrunk, PlayableTreeTrunk, PresentedTree, ProceduralEnvironmentAssets,
     ProceduralRockVisual, TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation,
-    TacticalCloudLayer, TacticalGraphicsSettings, TacticalPresentationPlugin,
-    TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation, TacticalTreeLeafCardMaterial,
-    TerrainDetailPatch, TerrainMaterialPresentation, TerrainTriangleCount,
-    TreeAssetResidencyDiagnostics, TreeImpostorProvenance, TreeLeafRepresentation,
-    TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
-    VistaTerrain, VistaTerrainMesh, VistaTreePresentation, WeatherParticle, oak_bark_material,
-    oak_leaf_material, oak_review_terminal_specimen, terrain_heightmap_image,
+    TacticalCloudLayer, TacticalGameplayCamera, TacticalGraphicsSettings,
+    TacticalPresentationPlugin, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
+    TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
+    TerrainTriangleCount, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
+    TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
+    TreeTrunkLod, VistaTerrain, VistaTerrainMesh, VistaTreePresentation, WeatherParticle,
+    oak_bark_material, oak_leaf_material, oak_review_terminal_specimen, terrain_heightmap_image,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -902,7 +902,7 @@ fn capture_terrain_wireframe(
             &mut GlobalTransform,
             &mut Projection,
         ),
-        With<Camera3d>,
+        With<TacticalGameplayCamera>,
     >,
     mut meshes_with_visibility: Query<
         (
@@ -1078,7 +1078,7 @@ fn capture_terrain_wireframe(
 /// cannot masquerade as renderer work on sub-refresh-rate frame budgets.
 fn redirect_performance_camera_offscreen(
     mut commands: Commands,
-    camera: Single<Entity, With<Camera3d>>,
+    camera: Single<Entity, With<TacticalGameplayCamera>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let image = Image::new_target_texture(
@@ -1103,10 +1103,10 @@ fn capture_presentation_plugin() -> TacticalPresentationPlugin {
 fn feature_state(settings: &TacticalGraphicsSettings) -> PresentationFeatureState {
     PresentationFeatureState {
         shadows: settings.shadows_enabled,
-        atmosphere: settings.atmosphere_enabled,
+        atmosphere: true,
         celestial: settings.celestial_enabled,
-        environment_light: settings.environment_light_enabled,
-        environment_map_size: settings.environment_map_size,
+        environment_light: true,
+        environment_map_size: 64,
         max_vista_lods: settings.max_vista_lods,
     }
 }
@@ -1115,10 +1115,10 @@ fn requested_feature_state() -> PresentationFeatureState {
     let requested = TacticalPresentationPlugin::default();
     PresentationFeatureState {
         shadows: requested.shadows_enabled,
-        atmosphere: requested.atmosphere_enabled,
+        atmosphere: true,
         celestial: requested.celestial_enabled,
-        environment_light: requested.environment_light_enabled,
-        environment_map_size: requested.environment_map_size,
+        environment_light: true,
+        environment_map_size: 64,
         max_vista_lods: requested.max_vista_lods,
     }
 }
@@ -2167,7 +2167,10 @@ fn benchmark_leaf_representations(
     capture: Option<Res<CaptureState>>,
     time: Res<Time<Real>>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
-    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut camera: Single<
+        (&mut Transform, &mut GlobalTransform, &mut Projection),
+        With<TacticalGameplayCamera>,
+    >,
     leaf_meshes: Query<(&TreeLeafTriangleCount, &TreeLeafRepresentation)>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -2258,7 +2261,10 @@ fn benchmark_tree_lighting(
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     leaf_entities: Query<Entity, With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
-    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut camera: Single<
+        (&mut Transform, &mut GlobalTransform, &mut Projection),
+        With<TacticalGameplayCamera>,
+    >,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(state), Some(capture)) = (state.as_deref_mut(), capture.as_deref()) else {
@@ -2346,7 +2352,10 @@ fn benchmark_scene_performance(
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut tree_isolation: ResMut<TacticalTreeBenchmarkIsolation>,
     mut cloud_isolation: ResMut<TacticalCloudBenchmarkIsolation>,
-    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut camera: Single<
+        (&mut Transform, &mut GlobalTransform, &mut Projection),
+        With<TacticalGameplayCamera>,
+    >,
     mut visibility_layers: ParamSet<(
         Query<
             (Entity, &mut Visibility),
@@ -3148,7 +3157,7 @@ fn capture_views(
             &Exposure,
             &Tonemapping,
         ),
-        With<Camera3d>,
+        With<TacticalGameplayCamera>,
     >,
     lighting: LightingObservationParams,
     mut overlays: Query<&mut Visibility, (With<CaptureOverlay>, Without<VistaTerrain>)>,

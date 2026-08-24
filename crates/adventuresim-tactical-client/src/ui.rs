@@ -33,6 +33,7 @@ use crate::{
     animation::{BoneRole, HumanoidRig},
     camera::CameraAimState,
     player::{AttackState, ClientPlayer},
+    presentation::TacticalGameplayCamera,
 };
 
 pub struct UiPlugin;
@@ -123,7 +124,7 @@ fn draw_incapacitation_wheel(
         (With<Player>, Without<ClientPlayer>),
     >,
     bone_transforms: Query<&GlobalTransform, Without<Player>>,
-    camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    camera: Single<(&Camera, &GlobalTransform), With<TacticalGameplayCamera>>,
     viewer: TacticalPlayerViewer,
 ) -> Result {
     let (entity, state, limbs) = player.into_inner();

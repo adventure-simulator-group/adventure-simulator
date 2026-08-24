@@ -497,6 +497,23 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(timed_release.frame_timing_seconds, 15.0)
         self.assertEqual(timed_release.frame_timing_warmup_seconds, 5.0)
 
+    def test_removed_atmosphere_presets_are_rejected(self):
+        parser = dev_stack.create_parser()
+        removed = (
+            "no-atmosphere",
+            "no-environment-light",
+            "frozen-atmosphere-no-ibl",
+            "frozen-atmosphere-no-sky",
+            "frozen-atmosphere-no-consumers",
+            "dynamic-atmosphere",
+        )
+        for preset in removed:
+            with self.subTest(preset=preset):
+                with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    parser.parse_args([
+                        "tactical-play", "animation", "--graphics-preset", preset
+                    ])
+
     def test_removed_high_environment_light_preset_is_rejected(self):
         parser = dev_stack.create_parser()
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

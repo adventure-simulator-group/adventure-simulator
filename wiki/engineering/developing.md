@@ -688,11 +688,10 @@ selects `auto-vsync`, `auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or
 wgpu's render backend. For example,
 `just tactical-play diagnostic 25020 default off auto-vsync required display dx12`
 records a deterministic DX12 Display Capture without requiring PresentMon. Pass
-a fourth argument of `no-shadows`, `no-atmosphere`, or `minimal` to
+a fourth argument of `no-shadows` or `minimal` to
 compare GPU-oriented rendering presets; four-sample MSAA remains fixed across
 tactical presets. The normal client uses a 64×64 generated atmosphere
-environment map. Use `no-environment-light` to omit it while retaining the
-visible sky.
+environment map.
 
 This builds the native tactical server and client before creating a mission,
 starts a worktree-isolated SpacetimeDB instance, publishes and seeds it, starts

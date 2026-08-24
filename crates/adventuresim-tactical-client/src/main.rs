@@ -121,8 +121,6 @@ enum GraphicsPreset {
     #[default]
     Default,
     NoShadows,
-    NoAtmosphere,
-    NoEnvironmentLight,
     Minimal,
 }
 
@@ -130,13 +128,7 @@ impl GraphicsPreset {
     fn presentation(self) -> presentation::TacticalPresentationPlugin {
         presentation::TacticalPresentationPlugin {
             shadows_enabled: !matches!(self, Self::NoShadows | Self::Minimal),
-            atmosphere_enabled: !matches!(self, Self::NoAtmosphere | Self::Minimal),
             celestial_enabled: !matches!(self, Self::Minimal),
-            environment_light_enabled: !matches!(
-                self,
-                Self::NoAtmosphere | Self::NoEnvironmentLight | Self::Minimal
-            ),
-            environment_map_size: 64,
             max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
         }
     }
@@ -515,31 +507,19 @@ mod graphics_preset_tests {
     }
 
     #[test]
-    fn individual_presets_disable_only_the_requested_effect() {
-        let no_atmosphere = GraphicsPreset::NoAtmosphere.presentation();
-        assert!(no_atmosphere.shadows_enabled);
-        assert!(!no_atmosphere.atmosphere_enabled);
-        assert!(!no_atmosphere.environment_light_enabled);
+    fn no_shadows_disables_only_shadows() {
+        let preset = GraphicsPreset::NoShadows.presentation();
+        assert!(!preset.shadows_enabled);
+        assert!(preset.celestial_enabled);
+        assert_eq!(preset.max_vista_lods, 3);
     }
 
     #[test]
-    fn minimal_disables_every_optional_gpu_effect() {
+    fn minimal_reduces_non_atmosphere_presentation() {
         let minimal = GraphicsPreset::Minimal.presentation();
         assert!(!minimal.shadows_enabled);
-        assert!(!minimal.atmosphere_enabled);
-        assert!(!minimal.environment_light_enabled);
-    }
-
-    #[test]
-    fn environment_presets_preserve_the_atmosphere_sky() {
-        let disabled = GraphicsPreset::NoEnvironmentLight.presentation();
-        assert!(disabled.atmosphere_enabled);
-        assert!(!disabled.environment_light_enabled);
-
-        let normal = GraphicsPreset::Default.presentation();
-        assert!(normal.atmosphere_enabled);
-        assert!(normal.environment_light_enabled);
-        assert_eq!(normal.environment_map_size, 64);
+        assert!(!minimal.celestial_enabled);
+        assert_eq!(minimal.max_vista_lods, 1);
     }
 
     #[test]
