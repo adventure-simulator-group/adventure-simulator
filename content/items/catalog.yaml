@@ -218,14 +218,16 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.24, 0.22, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.08, 0.0]},
+      "equipment": {
+        "material": "quilted_textile",
+        "physical": {"dimensions_m": [0.24, 0.22, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.08, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "head", "channel": "padding"}],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["head"], "anchor": "distal", "coverage": 0.15}]
         }]
       },
-      "coverage": 0.15,
       "resistance": 20,
       "padding": 35,
       "flexibility": 0.4,
@@ -257,14 +259,16 @@
       },
       "kind": "armor",
       "slot": "chest",
-      "equipment": {"physical": {"dimensions_m": [0.44, 0.52, 0.20], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
+      "equipment": {
+        "material": "quilted_textile",
+        "physical": {"dimensions_m": [0.44, 0.52, 0.20], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "chest", "channel": "padding"}],
-          "protection": ["chest"]
+          "protection": ["chest"],
+          "surface": [{"regions": ["chest"], "anchor": "center", "coverage": 0.6}]
         }]
       },
-      "coverage": 0.6,
       "resistance": 60,
       "padding": 45,
       "flexibility": 0.3,
@@ -374,7 +378,9 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.28, 0.34, 0.26], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.28, 0.34, 0.26], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [
@@ -382,10 +388,10 @@
             {"location": "face", "channel": "rigid_armor"},
             {"location": "neck", "channel": "rigid_armor"}
           ],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["neck", "head"], "anchor": "distal", "coverage": 0.75}]
         }]
       },
-      "coverage": 0.75,
       "resistance": 95,
       "padding": 30,
       "flexibility": 0.15,
@@ -526,14 +532,16 @@
       },
       "kind": "armor",
       "slot": "chest",
-      "equipment": {"physical": {"dimensions_m": [0.44, 0.50, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.10, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.44, 0.50, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.10, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
-          "protection": ["chest"]
+          "protection": ["chest"],
+          "surface": [{"regions": ["chest"], "anchor": "center", "coverage": 0.85}]
         }]
       },
-      "coverage": 0.85,
       "resistance": 120,
       "padding": 45,
       "flexibility": 0.05,
@@ -565,14 +573,16 @@
       },
       "kind": "armor",
       "slot": "chest",
-      "equipment": {"physical": {"dimensions_m": [0.46, 0.58, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
+      "equipment": {
+        "material": "vegetable_tanned_leather",
+        "physical": {"dimensions_m": [0.46, 0.58, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
-          "protection": ["chest"]
+          "protection": ["chest"],
+          "surface": [{"regions": ["chest"], "anchor": "center", "coverage": 0.8}]
         }]
       },
-      "coverage": 0.8,
       "resistance": 100,
       "padding": 40,
       "flexibility": 0.4,
@@ -633,17 +643,19 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.30, 0.32, 0.28], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.09, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.30, 0.32, 0.28], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.09, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [
             {"location": "head", "channel": "rigid_armor"},
             {"location": "neck", "channel": "rigid_armor"}
           ],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["neck", "head"], "anchor": "distal", "coverage": 0.75}]
         }]
       },
-      "coverage": 0.75,
       "resistance": 100,
       "padding": 30,
       "flexibility": 0.2,
@@ -724,7 +736,9 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.30, 0.35, 0.28], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.30, 0.35, 0.28], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [
@@ -732,10 +746,10 @@
             {"location": "face", "channel": "rigid_armor"},
             {"location": "neck", "channel": "rigid_armor"}
           ],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["neck", "head"], "anchor": "distal", "coverage": 0.9}]
         }]
       },
-      "coverage": 0.9,
       "resistance": 110,
       "padding": 35,
       "flexibility": 0.15,
@@ -916,14 +930,16 @@
       },
       "kind": "armor",
       "slot": "chest",
-      "equipment": {"physical": {"dimensions_m": [0.46, 0.58, 0.24], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.46, 0.58, 0.24], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
-          "protection": ["chest"]
+          "protection": ["chest"],
+          "surface": [{"regions": ["chest"], "anchor": "center", "coverage": 0.9}]
         }]
       },
-      "coverage": 0.9,
       "resistance": 120,
       "padding": 50,
       "flexibility": 0.08,
@@ -985,14 +1001,16 @@
       },
       "kind": "armor",
       "slot": "stomach",
-      "equipment": {"physical": {"dimensions_m": [0.44, 0.34, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.10, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.44, 0.34, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.10, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "stomach", "channel": "rigid_armor"}],
-          "protection": ["stomach"]
+          "protection": ["stomach"],
+          "surface": [{"regions": ["stomach"], "anchor": "distal", "coverage": 0.7}]
         }]
       },
-      "coverage": 0.7,
       "resistance": 95,
       "padding": 35,
       "flexibility": 0.2,
@@ -1104,21 +1122,24 @@
       },
       "kind": "armor",
       "slot": "any_leg",
-      "equipment": {"physical": {"dimensions_m": [0.18, 0.44, 0.16], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.18, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.18, 0.44, 0.16], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.18, 0.0]},
         "placements": [
           {
             "id": "left",
             "occupancy": [{"location": "left_leg", "channel": "rigid_armor"}],
-            "protection": ["left_leg"]
+            "protection": ["left_leg"],
+            "surface": [{"regions": ["left_lower_leg"], "anchor": "distal", "coverage": 0.65}]
           },
           {
             "id": "right",
             "occupancy": [{"location": "right_leg", "channel": "rigid_armor"}],
-            "protection": ["right_leg"]
+            "protection": ["right_leg"],
+            "surface": [{"regions": ["right_lower_leg"], "anchor": "distal", "coverage": 0.65}]
           }
         ]
       },
-      "coverage": 0.65,
       "resistance": 95,
       "padding": 25,
       "flexibility": 0.15,
@@ -1535,14 +1556,16 @@
       },
       "kind": "armor",
       "slot": "chest",
-      "equipment": {"physical": {"dimensions_m": [0.46, 0.60, 0.24], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.14, 0.0]},
+      "equipment": {
+        "material": "vegetable_tanned_leather",
+        "physical": {"dimensions_m": [0.46, 0.60, 0.24], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.14, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
-          "protection": ["chest"]
+          "protection": ["chest"],
+          "surface": [{"regions": ["chest"], "anchor": "center", "coverage": 0.7}]
         }]
       },
-      "coverage": 0.7,
       "resistance": 85,
       "padding": 35,
       "flexibility": 0.45,
@@ -1621,14 +1644,16 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.36, 0.22, 0.36], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.06, 0.0]},
+      "equipment": {
+        "material": "rough_steel",
+        "physical": {"dimensions_m": [0.36, 0.22, 0.36], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.06, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "head", "channel": "rigid_armor"}],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["head"], "anchor": "distal", "coverage": 0.6}]
         }]
       },
-      "coverage": 0.6,
       "resistance": 90,
       "padding": 25,
       "flexibility": 0.2,
@@ -1781,7 +1806,9 @@
         "icon": "shirt"
       },
       "kind": "clothing",
-      "equipment": {"physical": {"dimensions_m": [0.46, 0.65, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.14, 0.0]},
+      "equipment": {
+        "material": "linen",
+        "physical": {"dimensions_m": [0.46, 0.65, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.14, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [
@@ -1790,10 +1817,10 @@
             {"location": "left_arm", "channel": "base_clothing"},
             {"location": "right_arm", "channel": "base_clothing"}
           ],
-          "protection": ["chest", "stomach", "left_arm", "right_arm"]
+          "protection": ["chest", "stomach", "left_arm", "right_arm"],
+          "surface": [{"regions": ["stomach", "chest"], "anchor": "center", "coverage": 0.9}, {"regions": ["left_upper_arm", "left_forearm"], "anchor": "proximal", "coverage": 0.9}, {"regions": ["right_upper_arm", "right_forearm"], "anchor": "proximal", "coverage": 0.9}]
         }],
         "protection": {
-          "coverage": 0.9,
           "resistance": 2,
           "padding": 4,
           "flexibility": 1,
@@ -1930,21 +1957,24 @@
       },
       "kind": "armor",
       "slot": "any_leg",
-      "equipment": {"physical": {"dimensions_m": [0.20, 0.58, 0.16], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.23, 0.0]},
+      "equipment": {
+        "material": "mail_steel",
+        "physical": {"dimensions_m": [0.20, 0.58, 0.16], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.23, 0.0]},
         "placements": [
           {
             "id": "left",
             "occupancy": [{"location": "left_leg", "channel": "flexible_armor"}],
-            "protection": ["left_leg"]
+            "protection": ["left_leg"],
+            "surface": [{"regions": ["left_thigh", "left_lower_leg"], "anchor": "proximal", "coverage": 0.65}]
           },
           {
             "id": "right",
             "occupancy": [{"location": "right_leg", "channel": "flexible_armor"}],
-            "protection": ["right_leg"]
+            "protection": ["right_leg"],
+            "surface": [{"regions": ["right_thigh", "right_lower_leg"], "anchor": "proximal", "coverage": 0.65}]
           }
         ]
       },
-      "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
       "flexibility": 0.8,
@@ -1976,17 +2006,19 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.27, 0.34, 0.25], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
+      "equipment": {
+        "material": "mail_steel",
+        "physical": {"dimensions_m": [0.27, 0.34, 0.25], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [
             {"location": "head", "channel": "flexible_armor"},
             {"location": "neck", "channel": "flexible_armor"}
           ],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["neck", "head"], "anchor": "distal", "coverage": 0.65}]
         }]
       },
-      "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
       "flexibility": 0.8,
@@ -2018,14 +2050,16 @@
       },
       "kind": "armor",
       "slot": "chest",
-      "equipment": {"physical": {"dimensions_m": [0.46, 0.62, 0.20], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.14, 0.0]},
+      "equipment": {
+        "material": "mail_steel",
+        "physical": {"dimensions_m": [0.46, 0.62, 0.20], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.14, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "chest", "channel": "flexible_armor"}],
-          "protection": ["chest"]
+          "protection": ["chest"],
+          "surface": [{"regions": ["chest"], "anchor": "center", "coverage": 0.75}]
         }]
       },
-      "coverage": 0.75,
       "resistance": 70,
       "padding": 35,
       "flexibility": 0.8,
@@ -2057,14 +2091,16 @@
       },
       "kind": "armor",
       "slot": "stomach",
-      "equipment": {"physical": {"dimensions_m": [0.42, 0.38, 0.20], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
+      "equipment": {
+        "material": "mail_steel",
+        "physical": {"dimensions_m": [0.42, 0.38, 0.20], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "stomach", "channel": "flexible_armor"}],
-          "protection": ["stomach"]
+          "protection": ["stomach"],
+          "surface": [{"regions": ["stomach"], "anchor": "distal", "coverage": 0.65}]
         }]
       },
-      "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
       "flexibility": 0.8,
@@ -2096,21 +2132,24 @@
       },
       "kind": "armor",
       "slot": "any_arm",
-      "equipment": {"physical": {"dimensions_m": [0.18, 0.48, 0.16], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.19, 0.0]},
+      "equipment": {
+        "material": "mail_steel",
+        "physical": {"dimensions_m": [0.18, 0.48, 0.16], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.19, 0.0]},
         "placements": [
           {
             "id": "left",
             "occupancy": [{"location": "left_arm", "channel": "flexible_armor"}],
-            "protection": ["left_arm"]
+            "protection": ["left_arm"],
+            "surface": [{"regions": ["left_upper_arm", "left_forearm"], "anchor": "proximal", "coverage": 0.65}]
           },
           {
             "id": "right",
             "occupancy": [{"location": "right_arm", "channel": "flexible_armor"}],
-            "protection": ["right_arm"]
+            "protection": ["right_arm"],
+            "surface": [{"regions": ["right_upper_arm", "right_forearm"], "anchor": "proximal", "coverage": 0.65}]
           }
         ]
       },
-      "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
       "flexibility": 0.8,
@@ -2180,6 +2219,7 @@
       "kind": "armor",
       "slot": "head",
       "equipment": {
+        "material": "polished_steel",
         "physical": {
           "dimensions_m": [0.34, 0.36, 0.30],
           "grip_to_tip_m": 0.0,
@@ -2188,10 +2228,10 @@
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "head", "channel": "rigid_armor"}],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["head"], "anchor": "distal", "coverage": 0.65}]
         }]
       },
-      "coverage": 0.65,
       "resistance": 95,
       "padding": 25,
       "flexibility": 0.2,
@@ -2458,21 +2498,24 @@
       },
       "kind": "armor",
       "slot": "any_leg",
-      "equipment": {"physical": {"dimensions_m": [0.20, 0.55, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.22, 0.0]},
+      "equipment": {
+        "material": "quilted_textile",
+        "physical": {"dimensions_m": [0.20, 0.55, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.22, 0.0]},
         "placements": [
           {
             "id": "left",
             "occupancy": [{"location": "left_leg", "channel": "padding"}],
-            "protection": ["left_leg"]
+            "protection": ["left_leg"],
+            "surface": [{"regions": ["left_thigh", "left_lower_leg"], "anchor": "proximal", "coverage": 0.45}]
           },
           {
             "id": "right",
             "occupancy": [{"location": "right_leg", "channel": "padding"}],
-            "protection": ["right_leg"]
+            "protection": ["right_leg"],
+            "surface": [{"regions": ["right_thigh", "right_lower_leg"], "anchor": "proximal", "coverage": 0.45}]
           }
         ]
       },
-      "coverage": 0.45,
       "resistance": 50,
       "padding": 40,
       "flexibility": 0.35,
@@ -2504,14 +2547,16 @@
       },
       "kind": "armor",
       "slot": "stomach",
-      "equipment": {"physical": {"dimensions_m": [0.44, 0.40, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
+      "equipment": {
+        "material": "quilted_textile",
+        "physical": {"dimensions_m": [0.44, 0.40, 0.22], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "stomach", "channel": "padding"}],
-          "protection": ["stomach"]
+          "protection": ["stomach"],
+          "surface": [{"regions": ["stomach"], "anchor": "distal", "coverage": 0.45}]
         }]
       },
-      "coverage": 0.45,
       "resistance": 50,
       "padding": 40,
       "flexibility": 0.35,
@@ -2607,21 +2652,24 @@
       },
       "kind": "armor",
       "slot": "any_arm",
-      "equipment": {"physical": {"dimensions_m": [0.20, 0.50, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.20, 0.0]},
+      "equipment": {
+        "material": "quilted_textile",
+        "physical": {"dimensions_m": [0.20, 0.50, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.20, 0.0]},
         "placements": [
           {
             "id": "left",
             "occupancy": [{"location": "left_arm", "channel": "padding"}],
-            "protection": ["left_arm"]
+            "protection": ["left_arm"],
+            "surface": [{"regions": ["left_upper_arm", "left_forearm"], "anchor": "proximal", "coverage": 0.45}]
           },
           {
             "id": "right",
             "occupancy": [{"location": "right_arm", "channel": "padding"}],
-            "protection": ["right_arm"]
+            "protection": ["right_arm"],
+            "surface": [{"regions": ["right_upper_arm", "right_forearm"], "anchor": "proximal", "coverage": 0.45}]
           }
         ]
       },
-      "coverage": 0.45,
       "resistance": 50,
       "padding": 40,
       "flexibility": 0.35,
@@ -3042,17 +3090,19 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.30, 0.30, 0.28], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.08, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.30, 0.30, 0.28], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.08, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [
             {"location": "head", "channel": "rigid_armor"},
             {"location": "neck", "channel": "rigid_armor"}
           ],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["neck", "head"], "anchor": "distal", "coverage": 0.8}]
         }]
       },
-      "coverage": 0.8,
       "resistance": 100,
       "padding": 30,
       "flexibility": 0.2,
@@ -3371,14 +3421,16 @@
       },
       "kind": "armor",
       "slot": "stomach",
-      "equipment": {"physical": {"dimensions_m": [0.42, 0.40, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.42, 0.40, 0.18], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, 0.12, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [{"location": "stomach", "channel": "rigid_armor"}],
-          "protection": ["stomach"]
+          "protection": ["stomach"],
+          "surface": [{"regions": ["stomach"], "anchor": "distal", "coverage": 0.75}]
         }]
       },
-      "coverage": 0.75,
       "resistance": 100,
       "padding": 35,
       "flexibility": 0.18,
@@ -3523,21 +3575,24 @@
       },
       "kind": "armor",
       "slot": "any_arm",
-      "equipment": {"physical": {"dimensions_m": [0.17, 0.32, 0.14], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.13, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.17, 0.32, 0.14], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.13, 0.0]},
         "placements": [
           {
             "id": "left",
             "occupancy": [{"location": "left_arm", "channel": "rigid_armor"}],
-            "protection": ["left_arm"]
+            "protection": ["left_arm"],
+            "surface": [{"regions": ["left_forearm"], "anchor": "distal", "coverage": 0.65}]
           },
           {
             "id": "right",
             "occupancy": [{"location": "right_arm", "channel": "rigid_armor"}],
-            "protection": ["right_arm"]
+            "protection": ["right_arm"],
+            "surface": [{"regions": ["right_forearm"], "anchor": "distal", "coverage": 0.65}]
           }
         ]
       },
-      "coverage": 0.65,
       "resistance": 95,
       "padding": 25,
       "flexibility": 0.15,
@@ -3604,7 +3659,9 @@
       },
       "kind": "armor",
       "slot": "head",
-      "equipment": {"physical": {"dimensions_m": [0.31, 0.34, 0.29], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
+      "equipment": {
+        "material": "polished_steel",
+        "physical": {"dimensions_m": [0.31, 0.34, 0.29], "grip_to_tip_m": 0.0, "anchor_offset_m": [0.0, -0.10, 0.0]},
         "placements": [{
           "id": "worn",
           "occupancy": [
@@ -3612,10 +3669,10 @@
             {"location": "face", "channel": "rigid_armor"},
             {"location": "neck", "channel": "rigid_armor"}
           ],
-          "protection": ["head"]
+          "protection": ["head"],
+          "surface": [{"regions": ["neck", "head"], "anchor": "distal", "coverage": 0.9}]
         }]
       },
-      "coverage": 0.9,
       "resistance": 105,
       "padding": 35,
       "flexibility": 0.15,

@@ -119,6 +119,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "adventuresim-character-creator"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-world-schema",
  "anyhow",
  "bevy",
  "bevy_egui",
@@ -129,6 +130,13 @@ dependencies = [
  "rand 0.9.5",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "adventuresim-world-schema"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

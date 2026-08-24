@@ -1,0 +1,263 @@
+{
+  "assets": [
+    {
+      "coverage": 0.15000000596046448,
+      "file": "arming_cap--worn.glb",
+      "item_id": "arming_cap",
+      "material": "quilted_textile",
+      "placement_id": "worn",
+      "triangles": 74
+    },
+    {
+      "coverage": 0.6000000238418579,
+      "file": "arming_doublet--worn.glb",
+      "item_id": "arming_doublet",
+      "material": "quilted_textile",
+      "placement_id": "worn",
+      "triangles": 246
+    },
+    {
+      "coverage": 0.75,
+      "file": "barbute--worn.glb",
+      "item_id": "barbute",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 990
+    },
+    {
+      "coverage": 0.8500000238418579,
+      "file": "breastplate--worn.glb",
+      "item_id": "breastplate",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 376
+    },
+    {
+      "coverage": 0.800000011920929,
+      "file": "brigandine--worn.glb",
+      "item_id": "brigandine",
+      "material": "vegetable_tanned_leather",
+      "placement_id": "worn",
+      "triangles": 358
+    },
+    {
+      "coverage": 0.75,
+      "file": "burgonet--worn.glb",
+      "item_id": "burgonet",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 990
+    },
+    {
+      "coverage": 0.8999999761581421,
+      "file": "close_helmet--worn.glb",
+      "item_id": "close_helmet",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 1058
+    },
+    {
+      "coverage": 0.8999999761581421,
+      "file": "cuirass--worn.glb",
+      "item_id": "cuirass",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 394
+    },
+    {
+      "coverage": 0.699999988079071,
+      "file": "fauld--worn.glb",
+      "item_id": "fauld",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 126
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "greave--left.glb",
+      "item_id": "greave",
+      "material": "polished_steel",
+      "placement_id": "left",
+      "triangles": 104
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "greave--right.glb",
+      "item_id": "greave",
+      "material": "polished_steel",
+      "placement_id": "right",
+      "triangles": 104
+    },
+    {
+      "coverage": 0.699999988079071,
+      "file": "jack_of_plates--worn.glb",
+      "item_id": "jack_of_plates",
+      "material": "vegetable_tanned_leather",
+      "placement_id": "worn",
+      "triangles": 324
+    },
+    {
+      "coverage": 0.6000000238418579,
+      "file": "kettle_hat--worn.glb",
+      "item_id": "kettle_hat",
+      "material": "rough_steel",
+      "placement_id": "worn",
+      "triangles": 658
+    },
+    {
+      "coverage": 0.8999999165534973,
+      "file": "linen_tunic--worn.glb",
+      "item_id": "linen_tunic",
+      "material": "linen",
+      "placement_id": "worn",
+      "triangles": 856
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "mail_chausses--left.glb",
+      "item_id": "mail_chausses",
+      "material": "mail_steel",
+      "placement_id": "left",
+      "triangles": 210
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "mail_chausses--right.glb",
+      "item_id": "mail_chausses",
+      "material": "mail_steel",
+      "placement_id": "right",
+      "triangles": 210
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "mail_coif--worn.glb",
+      "item_id": "mail_coif",
+      "material": "mail_steel",
+      "placement_id": "worn",
+      "triangles": 956
+    },
+    {
+      "coverage": 0.75,
+      "file": "mail_shirt--worn.glb",
+      "item_id": "mail_shirt",
+      "material": "mail_steel",
+      "placement_id": "worn",
+      "triangles": 334
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "mail_skirt--worn.glb",
+      "item_id": "mail_skirt",
+      "material": "mail_steel",
+      "placement_id": "worn",
+      "triangles": 104
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "mail_sleeve--left.glb",
+      "item_id": "mail_sleeve",
+      "material": "mail_steel",
+      "placement_id": "left",
+      "triangles": 194
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "mail_sleeve--right.glb",
+      "item_id": "mail_sleeve",
+      "material": "mail_steel",
+      "placement_id": "right",
+      "triangles": 194
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "morion--worn.glb",
+      "item_id": "morion",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 716
+    },
+    {
+      "coverage": 0.44999998807907104,
+      "file": "padded_chausses--left.glb",
+      "item_id": "padded_chausses",
+      "material": "quilted_textile",
+      "placement_id": "left",
+      "triangles": 154
+    },
+    {
+      "coverage": 0.44999998807907104,
+      "file": "padded_chausses--right.glb",
+      "item_id": "padded_chausses",
+      "material": "quilted_textile",
+      "placement_id": "right",
+      "triangles": 154
+    },
+    {
+      "coverage": 0.44999998807907104,
+      "file": "padded_skirt--worn.glb",
+      "item_id": "padded_skirt",
+      "material": "quilted_textile",
+      "placement_id": "worn",
+      "triangles": 100
+    },
+    {
+      "coverage": 0.44999998807907104,
+      "file": "quilted_sleeve--left.glb",
+      "item_id": "quilted_sleeve",
+      "material": "quilted_textile",
+      "placement_id": "left",
+      "triangles": 138
+    },
+    {
+      "coverage": 0.44999998807907104,
+      "file": "quilted_sleeve--right.glb",
+      "item_id": "quilted_sleeve",
+      "material": "quilted_textile",
+      "placement_id": "right",
+      "triangles": 138
+    },
+    {
+      "coverage": 0.800000011920929,
+      "file": "sallet--worn.glb",
+      "item_id": "sallet",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 1022
+    },
+    {
+      "coverage": 0.75,
+      "file": "tassets--worn.glb",
+      "item_id": "tassets",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 134
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "vambrace--left.glb",
+      "item_id": "vambrace",
+      "material": "polished_steel",
+      "placement_id": "left",
+      "triangles": 110
+    },
+    {
+      "coverage": 0.6499999761581421,
+      "file": "vambrace--right.glb",
+      "item_id": "vambrace",
+      "material": "polished_steel",
+      "placement_id": "right",
+      "triangles": 110
+    },
+    {
+      "coverage": 0.8999999761581421,
+      "file": "visored_sallet--worn.glb",
+      "item_id": "visored_sallet",
+      "material": "polished_steel",
+      "placement_id": "worn",
+      "triangles": 1058
+    }
+  ],
+  "lod": 4,
+  "mhr_release": "v1.0.1",
+  "schema_version": 1
+}
