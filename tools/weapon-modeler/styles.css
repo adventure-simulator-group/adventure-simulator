@@ -21,7 +21,7 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: v
 .header-actions { display: flex; align-items: end; gap: 12px; }
 label { color: var(--muted); font-size: 12px; display: grid; gap: 5px; }
 select, button, textarea, input { font: inherit; }
-select, button { color: #eee8dc; border: 1px solid #574b3a; background: #272119; border-radius: 4px; padding: 8px 10px; }
+select, button, input[type="text"] { color: #eee8dc; border: 1px solid #574b3a; background: #272119; border-radius: 4px; padding: 8px 10px; }
 button:hover { border-color: var(--gold); cursor: pointer; }
 .workspace { min-height: 0; display: grid; grid-template-columns: minmax(600px, 1fr) 350px; }
 .viewport-shell { min-height: 640px; position: relative; overflow: hidden; }
@@ -41,6 +41,8 @@ aside section, aside details { padding: 21px 22px; border-bottom: 1px solid var(
 .controls { display: grid; gap: 13px; }
 .composer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .composer-grid button { grid-column: 1 / -1; }
+.export-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.export-grid button { grid-column: 1 / -1; }
 .composer-status { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .control-row { display: grid; grid-template-columns: 1fr 72px; gap: 9px 12px; align-items: center; }
 .control-row label { color: #ddd4c6; }

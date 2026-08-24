@@ -57,6 +57,15 @@
             <h3>Generated result</h3>
             <dl id="stats"></dl>
           </section>
+          <section class="export-section">
+            <h3>Animator GLB</h3>
+            <div class="export-grid">
+              <label>File name<input id="export-name" type="text" value="weapon" /></label>
+              <label>Skeleton joint<select id="export-joint"><option value="r_weapon">r_weapon</option><option value="l_weapon">l_weapon</option></select></label>
+              <button id="export-glb" type="button">Export skinned GLB</button>
+            </div>
+            <p id="export-status" class="composer-status">assets_src/weapons/weapon.glb</p>
+          </section>
           <details>
             <summary>Weapon definition</summary>
             <textarea id="definition" spellcheck="false"></textarea>

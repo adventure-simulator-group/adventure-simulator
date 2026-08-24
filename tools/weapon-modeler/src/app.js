@@ -1,11 +1,14 @@
 import { validateWeapon } from "./mesh.js";
+import { automaticGripPoint, buildSkinnedWeaponGlb } from "./glb-export.js";
 import { HAFT_MODULES, HEAD_ASSEMBLIES, PRESETS, composeWeapon, compositionControls, copyPreset, getControlValue, setControlValue } from "./presets.js";
 import { WeaponRenderer } from "./renderer.js";
 
 const elements = Object.fromEntries(["preset", "reset", "family", "name", "description", "controls", "stats", "status", "definition", "apply-definition", "definition-error", "dirty-state", "viewport"].map((id) => [id, document.getElementById(id)]));
 const renderer = new WeaponRenderer(elements.viewport);
 let active;
+let currentValidation;
 const composer = { haft: document.getElementById("composer-haft"), head: document.getElementById("composer-head"), build: document.getElementById("compose-weapon"), status: document.getElementById("composer-status") };
+const exporter = { name: document.getElementById("export-name"), joint: document.getElementById("export-joint"), button: document.getElementById("export-glb"), status: document.getElementById("export-status") };
 
 document.querySelectorAll("[data-pose]").forEach((button) => button.addEventListener("click", () => renderer.setView(button.dataset.pose)));
 document.querySelectorAll("[data-focus]").forEach((button) => button.addEventListener("click", () => renderer.setView("front", button.dataset.focus)));
@@ -22,6 +25,7 @@ function rebuild(dirty = false) {
   try {
     const validation = validateWeapon(active.definition, active.controls);
     if (!validation.valid) throw new Error(validation.errors.join(" · "));
+    currentValidation = validation;
     const mesh = validation.mesh;
     renderer.setMesh(mesh);
     const [width, length, depth] = mesh.stats.dimensions;
@@ -64,6 +68,39 @@ function select(id) {
   elements.preset.value = active.id; elements.family.textContent = active.family; elements.name.textContent = active.name; elements.description.textContent = active.description;
   renderControls(); rebuild(false);
 }
+
+function exportFileName() {
+  const stem = exporter.name.value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!stem) throw new Error("Enter a file name");
+  exporter.name.value = stem;
+  return `${stem}.glb`;
+}
+
+exporter.button.addEventListener("click", async () => {
+  exporter.button.disabled = true;
+  try {
+    if (!currentValidation?.valid) throw new Error("Weapon must be valid before export");
+    exporter.status.textContent = "Loading character skeleton…";
+    const response = await fetch("/api/rig");
+    if (!response.ok) throw new Error((await response.json()).error ?? `Could not load rig (${response.status})`);
+    const rigPath = response.headers.get("X-Fabelgeist-Rig-Path") ?? "character creator rig";
+    const fileName = exportFileName();
+    const glb = buildSkinnedWeaponGlb(await response.arrayBuffer(), currentValidation.mesh, {
+      name: exporter.name.value,
+      attachment: exporter.joint.value,
+      gripPoint: automaticGripPoint(currentValidation.resolved),
+    });
+    exporter.status.textContent = "Writing skinned GLB…";
+    const saved = await fetch(`/api/export?name=${encodeURIComponent(fileName)}`, { method: "POST", headers: { "Content-Type": "model/gltf-binary" }, body: glb });
+    const result = await saved.json();
+    if (!saved.ok) throw new Error(result.error ?? `Could not save export (${saved.status})`);
+    exporter.status.textContent = `${result.path} · ${exporter.joint.value} · ${rigPath}`;
+  } catch (error) {
+    exporter.status.textContent = `Export failed: ${error.message}`;
+  } finally {
+    exporter.button.disabled = false;
+  }
+});
 
 elements.preset.addEventListener("change", () => select(elements.preset.value));
 elements.reset.addEventListener("click", () => select(active.id));
