@@ -47,7 +47,7 @@ impl GrassMaterialHandles {
 
 /// Selects the material contract used by every grass distance tier.  Keeping
 /// this on the entity makes scene diagnostics prove that only the close field
-/// retains player-responsive, fully lit foliage.
+/// retains player-responsive curved-ribbon reconstruction.
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::presentation) enum GrassMaterialPath {
     FullInteractive,
@@ -308,7 +308,7 @@ pub(super) fn spawn(
             let eligibility_world_z = (z as f32 + jitter_z * 0.24) * GRASS_PATCH_SPACING;
             let world_x = (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
             let world_z = (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
-            let Some(transform) = grass_patch_placement(
+            let Some(mut transform) = grass_patch_placement(
                 terrain,
                 ground,
                 Vec2::new(eligibility_world_x, eligibility_world_z),
@@ -316,6 +316,7 @@ pub(super) fn spawn(
             ) else {
                 continue;
             };
+            transform.rotation *= grass_patch_yaw(hash);
             let Some(topology) = grass_patch_topology(ground, Vec2::new(world_x, world_z)) else {
                 continue;
             };
@@ -362,9 +363,10 @@ pub(super) fn spawn(
                 (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
                 (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
             );
-            let Some(transform) = grass_patch_placement(terrain, ground, centre, centre) else {
+            let Some(mut transform) = grass_patch_placement(terrain, ground, centre, centre) else {
                 continue;
             };
+            transform.rotation *= grass_patch_yaw(hash);
             let Some(topology) = grass_patch_topology(ground, centre) else {
                 continue;
             };
@@ -395,13 +397,15 @@ const GRASS_PATCH_GRID_SIDE: usize = 32;
 pub(in crate::presentation) const GRASS_PATCH_SPACING: f32 = 3.2;
 const GRASS_BLADE_SPACING: f32 = 3.51 / (GRASS_PATCH_GRID_SIDE - 1) as f32;
 // Keep neighbouring near-flat macro patches inside the blade footprint even
-// when their deterministic centre jitter diverges in opposite directions.
-const GRASS_PATCH_JITTER_FRACTION: f32 = 0.04;
-// Far and Vista are evenly distributed subsets of Near. Retaining exact Near
-// roots keeps mask thresholds, pigment, and deterministic community selection
-// continuous during the existing LOD crossfades.
-const GRASS_FAR_GRID_COORDINATES: [usize; 8] = [0, 4, 9, 13, 18, 22, 27, 31];
-const GRASS_VISTA_GRID_COORDINATES: [usize; 4] = [0, 10, 21, 31];
+// when their deterministic centre jitter diverges in opposite directions. This
+// is just below the 3.51 / 3.2 overlap limit.
+const GRASS_PATCH_JITTER_FRACTION: f32 = 0.09;
+// Far and Vista retain one deterministic Near root per square stratum. The
+// hashed root within each stratum prevents the reduced meshes from exposing a
+// Cartesian row pattern, while the strata preserve uniform coverage and exact
+// Near-root correspondence through the LOD crossfade.
+const GRASS_FAR_STRATUM_SIDE: usize = 4;
+const GRASS_VISTA_STRATUM_SIDE: usize = 8;
 // Bevy 0.19's render-mesh slab allocator was stable with these allocation
 // footprints. Keep the old per-LOD vertex-buffer size while the index buffer
 // references only the reduced physical sward.
@@ -416,12 +420,16 @@ pub(in crate::presentation) const VISTA_GRASS_PATCH_SPACING: f32 = 6.4;
 /// neither representation can expose a bare circular band.
 pub(in crate::presentation) const NEAR_TO_FAR_SWARD_FADE_START_METRES: f32 = 8.0;
 pub(in crate::presentation) const NEAR_TO_FAR_SWARD_FADE_END_METRES: f32 = 10.0;
-/// Far retains an evenly spaced 8-by-8 subset of Near's 32-by-32 roots. The
-/// terrain replaces only this discarded projected coverage until the terminal
-/// Vista-to-terrain handoff takes over.
-pub(in crate::presentation) const FAR_LOD_GAP_FILL_FRACTION: f32 = 1.0
-    - (GRASS_FAR_GRID_COORDINATES.len() * GRASS_FAR_GRID_COORDINATES.len()) as f32
-        / (GRASS_PATCH_GRID_SIDE * GRASS_PATCH_GRID_SIDE) as f32;
+// The reduced Lambert path is calibrated against a matched full-PBR capture
+// after both paths share the same normal bias. It retains the cheap fragment
+// contract while matching the shadow-aware tier's observed daylight luminance.
+const REDUCED_GRASS_LIGHTING_SCALE: f32 = 0.58;
+/// Far retains an evenly spaced 8-by-8 subset of Near's 32-by-32 roots. Dense
+/// Near ribbons overlap heavily in screen space, so removed root count
+/// overstates the optical coverage that the terrain must replace. This
+/// calibrated fraction leaves the unchanged wide Far survivors carrying part
+/// of the sward instead of double-darkening the transition with solid ground.
+pub(in crate::presentation) const FAR_LOD_GAP_FILL_FRACTION: f32 = 0.75;
 /// The final physical-grass fade overlaps the terrain's band-limited sward.
 /// Keeping these bounds here makes the playable and vista lattices share the
 /// same terminal representation contract.
@@ -457,12 +465,17 @@ pub(super) fn grass_material(
         ground_mask_transform: Vec4::new(1.0 / ground.width(), 1.0 / ground.depth(), 0.5, 0.5),
         ground_mask: Some(ground_mask),
         // A uniform material selector lets an entire Far/Vista draw bypass
-        // player interaction, camera-facing reconstruction, and full PBR.
+        // player interaction and camera-facing curved-ribbon reconstruction.
+        // `quality.z` independently selects reduced fragment lighting.
         quality: Vec4::new(
             if lod == GrassMeshLod::Near { 0.0 } else { 1.0 },
             mask_mode.shader_flag(),
-            0.0,
-            0.0,
+            if lod == GrassMeshLod::Near { 0.0 } else { 1.0 },
+            if lod == GrassMeshLod::Near {
+                1.0
+            } else {
+                REDUCED_GRASS_LIGHTING_SCALE
+            },
         ),
         ..material
     }
@@ -479,10 +492,16 @@ pub(in crate::presentation) fn vista_grass_material(
     material.shading.y = grass_dryness;
     material.shading.w = if lod == GrassMeshLod::Near { 1.0 } else { 0.0 };
     material.quality.x = if lod == GrassMeshLod::Near { 0.0 } else { 1.0 };
+    material.quality.z = if lod == GrassMeshLod::Near { 0.0 } else { 1.0 };
+    material.quality.w = if lod == GrassMeshLod::Near {
+        1.0
+    } else {
+        REDUCED_GRASS_LIGHTING_SCALE
+    };
     material.shape = match lod {
         // The close exterior field keeps the full interactive representation.
         // Far/Vista retain this authored footprint while their material's
-        // quality selector uses the cheap wind and Lambert path.
+        // quality selector uses the reduced wind and vertex path.
         GrassMeshLod::Near | GrassMeshLod::Far => {
             Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(1.0))
         }
@@ -562,6 +581,10 @@ fn grass_patch_transform(terrain: &SceneTerrain, world_x: f32, world_z: f32) -> 
     )
 }
 
+fn grass_patch_yaw(hash: u64) -> Quat {
+    Quat::from_rotation_y(unit_hash(splitmix64(hash ^ 0x2f76_b694)) * core::f32::consts::TAU)
+}
+
 fn grass_patch_placement(
     terrain: &SceneTerrain,
     ground: &SceneGround,
@@ -596,7 +619,10 @@ impl GrassMeshLod {
             } else {
                 1.0
             };
-        blade_spacing * (GRASS_PATCH_GRID_SIDE - 1) as f32 * 0.5
+        // Patches receive arbitrary yaw, so the conservative axis-aligned mask
+        // footprint is the square mesh's circumradius rather than its unrotated
+        // half-width.
+        blade_spacing * (GRASS_PATCH_GRID_SIDE - 1) as f32 * 0.5 * core::f32::consts::SQRT_2
     }
 
     fn row_heights(self) -> &'static [f32] {
@@ -613,23 +639,42 @@ impl GrassMeshLod {
     }
 
     fn blade_grid_indices(self, grass_density: f32) -> impl Iterator<Item = usize> {
-        let coordinates: &[usize] = match self {
-            Self::Near => &[],
-            Self::Far => &GRASS_FAR_GRID_COORDINATES,
-            Self::Vista => &GRASS_VISTA_GRID_COORDINATES,
-        };
         (0..GRASS_PATCH_GRID_SIDE * GRASS_PATCH_GRID_SIDE).filter(move |index| {
-            let selected_for_lod = if coordinates.is_empty() {
-                true
-            } else {
-                let row = index / GRASS_PATCH_GRID_SIDE;
-                let column = index % GRASS_PATCH_GRID_SIDE;
-                coordinates.contains(&row) && coordinates.contains(&column)
-            };
+            let row = index / GRASS_PATCH_GRID_SIDE;
+            let column = index % GRASS_PATCH_GRID_SIDE;
+            let selected_for_lod = self.selects_grid_root(row, column);
             selected_for_lod
                 && (grass_density >= 1.0
                     || unit_hash(splitmix64(*index as u64 ^ 0x24e8_51c6_9a37_b40d)) < grass_density)
         })
+    }
+
+    fn selects_grid_root(self, row: usize, column: usize) -> bool {
+        let (stratum_side, salt) = match self {
+            Self::Near => return true,
+            Self::Far => (GRASS_FAR_STRATUM_SIDE, 0x6661_725f_726f_6f74),
+            Self::Vista => (GRASS_VISTA_STRATUM_SIDE, 0x7669_7374_726f_6f74),
+        };
+        let strata_per_side = GRASS_PATCH_GRID_SIDE / stratum_side;
+        let stratum_row = row / stratum_side;
+        let stratum_column = column / stratum_side;
+        let stratum = stratum_row * strata_per_side + stratum_column;
+        let hash = splitmix64(stratum as u64 ^ salt);
+        let selected_row = if stratum_row == 0 {
+            0
+        } else if stratum_row + 1 == strata_per_side {
+            GRASS_PATCH_GRID_SIDE - 1
+        } else {
+            stratum_row * stratum_side + (hash as usize % stratum_side)
+        };
+        let selected_column = if stratum_column == 0 {
+            0
+        } else if stratum_column + 1 == strata_per_side {
+            GRASS_PATCH_GRID_SIDE - 1
+        } else {
+            stratum_column * stratum_side + (splitmix64(hash) as usize % stratum_side)
+        };
+        row == selected_row && column == selected_column
     }
 
     fn blade_count(self, grass_density: f32) -> usize {
@@ -1560,7 +1605,7 @@ mod tests {
         assert_eq!(GrassMeshLod::Near.blade_count(1.0), 1_024);
         assert_eq!(GrassMeshLod::Far.blade_count(1.0), 64);
         assert_eq!(GrassMeshLod::Vista.blade_count(1.0), 16);
-        assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 15.0 / 16.0);
+        assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 0.75);
         assert_eq!(near_positions.len(), 75_308);
         let near_blade_positions = &near_positions[..1_024 * 11];
         assert_eq!(far_positions.len(), 256 * 7);
@@ -1704,6 +1749,56 @@ mod tests {
         assert_eq!(vista_roots.len(), vista.count_vertices());
         assert!(vista_roots.iter().any(|root| root[0] < -1.7));
         assert!(vista_roots.iter().any(|root| root[0] > 1.7));
+    }
+
+    #[test]
+    fn reduced_lods_use_stratified_irregular_roots() {
+        for (lod, stratum_side, cartesian_row_count) in [
+            (GrassMeshLod::Far, GRASS_FAR_STRATUM_SIDE, 8),
+            (GrassMeshLod::Vista, GRASS_VISTA_STRATUM_SIDE, 4),
+        ] {
+            let indices = lod.blade_grid_indices(1.0).collect::<Vec<_>>();
+            let rows = indices
+                .iter()
+                .map(|index| index / GRASS_PATCH_GRID_SIDE)
+                .collect::<BTreeSet<_>>();
+            let columns = indices
+                .iter()
+                .map(|index| index % GRASS_PATCH_GRID_SIDE)
+                .collect::<BTreeSet<_>>();
+            assert!(rows.len() > cartesian_row_count);
+            assert!(columns.len() > cartesian_row_count);
+
+            let strata_per_side = GRASS_PATCH_GRID_SIDE / stratum_side;
+            for stratum_row in 0..strata_per_side {
+                for stratum_column in 0..strata_per_side {
+                    let retained = indices
+                        .iter()
+                        .filter(|index| {
+                            let row = *index / GRASS_PATCH_GRID_SIDE;
+                            let column = *index % GRASS_PATCH_GRID_SIDE;
+                            row / stratum_side == stratum_row
+                                && column / stratum_side == stratum_column
+                        })
+                        .count();
+                    assert_eq!(retained, 1);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn patch_yaw_is_deterministic_and_breaks_lattice_alignment() {
+        let first = grass_patch_yaw(1);
+        assert_eq!(first, grass_patch_yaw(1));
+        let distinct_rotations = (1..=16)
+            .map(grass_patch_yaw)
+            .map(|rotation| {
+                let [x, y, z, w] = rotation.to_array();
+                [x.to_bits(), y.to_bits(), z.to_bits(), w.to_bits()]
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(distinct_rotations.len(), 16);
     }
 
     #[test]
@@ -1974,7 +2069,7 @@ mod tests {
         assert!(!shader.contains("visibility_range_dither(in.position"));
         assert!(shader.contains("vec4<f32>(root_world, 1.0)"));
         assert!(shader.contains("0.60,"));
-        assert!(shader.contains("foliage.shading.w > 0.5"));
+        assert!(shader.contains("foliage.shape.x > 0.5"));
 
         let near = grass_patch_mesh(
             Color::WHITE,
@@ -2036,6 +2131,17 @@ mod tests {
                 if lod == GrassMeshLod::Near { 0.0 } else { 1.0 }
             );
             assert_eq!(interior.quality.x, boundary.quality.x);
+            assert_eq!(boundary.quality.z, boundary.quality.x);
+            assert_eq!(interior.quality.z, boundary.quality.z);
+            assert_eq!(
+                boundary.quality.w,
+                if lod == GrassMeshLod::Near {
+                    1.0
+                } else {
+                    REDUCED_GRASS_LIGHTING_SCALE
+                }
+            );
+            assert_eq!(interior.quality.w, boundary.quality.w);
             assert_eq!(boundary.alpha_mode(), AlphaMode::AlphaToCoverage);
             assert_eq!(interior.alpha_mode(), AlphaMode::AlphaToCoverage);
         }
@@ -2071,15 +2177,16 @@ mod tests {
             .nth(1)
             .expect("foliage fragment");
         let cheap_fragment_start = fragment
-            .find("if foliage.quality.x > 0.5 {")
+            .find("if foliage.quality.z > 0.5 {")
             .expect("cheap fragment selector");
         let full_fragment_start = fragment
-            .find("let height_fraction")
+            .rfind("let height_fraction")
             .expect("full fragment path");
         let cheap_fragment = &fragment[cheap_fragment_start..full_fragment_start];
         assert!(cheap_fragment.contains("main_pass_post_lighting_processing"));
         assert!(!cheap_fragment.contains("apply_pbr_lighting"));
         assert!(!cheap_fragment.contains("diffuse_transmission"));
+        assert!(fragment.contains("foliage.shape.x > 0.5"));
     }
 
     #[test]

@@ -19,13 +19,15 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     var color = pbr_input.material.base_color.rgb;
     let slope = smoothstep(0.18, 0.62, 1.0 - abs(terrain_normal.y));
 
-    // Distant blades become one hard-selected aggregate color instead of
-    // subpixel geometry or textured surface detail.
+    // Distant blades become a continuous aggregate while retaining a little
+    // of the regional substrate color and low-amplitude spatial variation.
+    // This avoids both subpixel geometry and a flat, hard-selected field.
     let sward = sward_coverage * (1.0 - slope * 0.82);
     let sward_color = vista.grass_color.rgb;
     let sward_cell = floor(in.world_position.xz * 0.5);
     let sward_dither = fract(sin(dot(sward_cell, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-    color = select(color, sward_color, sward_dither < sward);
+    let sward_target = mix(color, sward_color * mix(0.92, 1.08, sward_dither), 0.88);
+    color = mix(color, sward_target, sward);
 
     // Exposed regional slopes use the same kind of solid molded-material
     // palette region as playable terrain, without triplanar albedo sampling.

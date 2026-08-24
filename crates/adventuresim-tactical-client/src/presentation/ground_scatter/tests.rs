@@ -59,7 +59,7 @@ fn terminal_grass_pigment_compensates_for_foliage_optical_darkening() {
     let terminal = grass_terminal_pigment(&environment)
         .to_linear()
         .to_f32_array();
-    for (channel, expected) in [0.22, 0.25, 0.05].into_iter().enumerate() {
+    for (channel, expected) in [0.34, 0.38, 0.18].into_iter().enumerate() {
         assert!((terminal[channel] / blade[channel] - expected).abs() < 0.000_01);
     }
 }

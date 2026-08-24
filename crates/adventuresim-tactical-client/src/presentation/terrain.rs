@@ -1305,9 +1305,9 @@ mod tests {
         assert!(
             shader.contains("let sward_coverage = mix(near_to_far_sward, 1.0, terminal_sward)")
         );
-        assert!(shader.contains("sward_dither < sward_amount"));
+        assert!(shader.contains("color = mix(color, sward_target, sward_amount)"));
         assert!(shader.contains("abs(position.x) - terrain.playable_bounds.x"));
-        assert!(shader.contains("sward_dither < outside_sward"));
+        assert!(shader.contains("color = mix(color, sward_target, outside_sward)"));
         assert!(shader.contains("terrain.detail_patch.x > 0.5"));
         assert!(shader.contains("discard"));
         assert!(!shader.contains("sward_amount >= 0.5"));
@@ -1332,7 +1332,7 @@ mod tests {
             NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES
         );
         assert_eq!(far.start_margin, near.end_margin);
-        assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 15.0 / 16.0);
+        assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 0.75);
         assert_eq!(vista.end_margin, 35.0..40.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);

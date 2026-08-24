@@ -107,9 +107,15 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
         out.world_position = world_position;
         out.position = position_world_to_clip(world_position.xyz);
-        out.world_normal = normalize(mesh_functions::mesh_normal_local_to_world(
+        var cheap_world_normal = normalize(mesh_functions::mesh_normal_local_to_world(
             vertex.normal,
             vertex.instance_index,
+        ));
+        cheap_world_normal.y = abs(cheap_world_normal.y);
+        out.world_normal = normalize(mix(
+            cheap_world_normal,
+            vec3<f32>(0.0, 1.0, 0.0),
+            foliage.shading.z,
         ));
         out.uv = vertex.uv;
 #ifdef VERTEX_UVS_B
@@ -401,23 +407,43 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         discard;
     }
 #endif
-    if foliage.quality.x > 0.5 {
+    if foliage.quality.z > 0.5 {
         // A two-sided Lambert response is adequate once individual blades are
         // below close-reading distance. It replaces diffuse transmission,
         // specular BRDF evaluation, and the full clustered PBR lighting path.
         var normal = select(-in.world_normal, in.world_normal, is_front);
-        normal.y = abs(normal.y) + 0.22;
+        normal.y = abs(normal.y);
         normal = normalize(normal);
-        let direct = (0.34 + 0.66 * max(dot(normal, normalize(foliage.lighting.xyz)), 0.0))
+        let light_response = clamp(
+            (dot(normal, normalize(foliage.lighting.xyz)) + 0.24) / 1.24,
+            0.0,
+            1.0,
+        );
+        let direct = (0.30 + 0.70 * light_response)
             * foliage.lighting.w
             * (1.0 - foliage.ambient.w);
         let irradiance = foliage.ambient.rgb * foliage.ambient.w + vec3<f32>(direct);
+        let height_fraction = clamp(in.uv.y, 0.0, 1.0);
+        let root_self_shadow = mix(
+            foliage.shading.x,
+            1.0,
+            pow(height_fraction, 0.72),
+        );
+        let centre_distance = abs(in.uv.x - 0.5) * 2.0;
+        let centre_rib = mix(0.84, 1.0, smoothstep(0.12, 0.72, centre_distance));
         var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
         pbr_input.material.flags = STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
         var out: FragmentOutput;
         out.color = main_pass_post_lighting_processing(
             pbr_input,
-            vec4<f32>(in.color.rgb * irradiance, lod_coverage),
+            vec4<f32>(
+                in.color.rgb
+                    * irradiance
+                    * root_self_shadow
+                    * centre_rib
+                    * foliage.quality.w,
+                lod_coverage,
+            ),
         );
         return out;
     }
@@ -450,7 +476,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     pbr_input.material.perceptual_roughness = select(
         0.86,
         0.60,
-        foliage.shading.w > 0.5,
+        foliage.shape.x > 0.5,
     );
     pbr_input.material.metallic = 0.0;
     pbr_input.material.reflectance = vec3<f32>(0.16);

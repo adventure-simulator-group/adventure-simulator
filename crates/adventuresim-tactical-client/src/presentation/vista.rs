@@ -1518,7 +1518,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vista_ground_uses_solid_palette_colors_and_geometry_normals() {
+    fn vista_ground_uses_continuous_palette_colors_and_geometry_normals() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_vista.wgsl"
@@ -1527,7 +1527,7 @@ mod tests {
         assert!(!shader.contains("textureSample"));
         assert!(!shader.contains("composed_normal"));
         assert!(shader.contains("let sward_color = vista.grass_color.rgb"));
-        assert!(shader.contains("sward_dither < sward"));
+        assert!(shader.contains("color = mix(color, sward_target, sward)"));
         assert!(!shader.contains("sward_color = color *"));
         assert!(shader.contains("let molded_rock = vec3<f32>(0.31, 0.30, 0.275)"));
     }

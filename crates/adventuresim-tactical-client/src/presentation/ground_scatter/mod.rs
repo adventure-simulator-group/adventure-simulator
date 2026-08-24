@@ -121,8 +121,9 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // reserved future shaping control. Understory cards retain the older
         // crossed-plane deformation path.
         shape: Vec4::ZERO,
-        // Far and vista grass set `quality.x` to select the cheap path before
-        // any interactive ribbon reconstruction or full PBR work begins.
+        // Far and vista grass set `quality.x` to select reduced vertex work
+        // before any interactive curved-ribbon reconstruction begins. Fragment
+        // lighting is selected independently through `quality.z`.
         quality: Vec4::ZERO,
         lighting: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
         ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
@@ -473,9 +474,9 @@ pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> 
 pub(in crate::presentation) fn grass_terminal_pigment(environment: &SceneEnvironment) -> Color {
     let linear = grass_pigment(environment).0.to_linear().to_f32_array();
     Color::LinearRgba(LinearRgba::new(
-        linear[0] * 0.22,
-        linear[1] * 0.25,
-        linear[2] * 0.05,
+        linear[0] * 0.34,
+        linear[1] * 0.38,
+        linear[2] * 0.18,
         1.0,
     ))
 }

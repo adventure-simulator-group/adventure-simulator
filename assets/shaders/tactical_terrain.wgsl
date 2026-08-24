@@ -241,11 +241,13 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         * (1.0 - water)
         * (1.0 - slope * 0.72);
     let sward_color = terrain.grass_color.rgb;
-    // A stable world-space screen-door transition preserves discrete molded
-    // colors while avoiding a circular hard band around the camera.
+    // Retain low-amplitude world-space variation without hard-selecting one
+    // flat terminal color. Continuous optical coverage avoids a visible ring
+    // as geometry hands the sward to the terrain.
     let sward_cell = floor(position.xz * 2.0);
     let sward_dither = fract(sin(dot(sward_cell, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-    color = select(color, sward_color, sward_dither < sward_amount);
+    let sward_target = sward_color * mix(0.92, 1.08, sward_dither);
+    color = mix(color, sward_target, sward_amount);
 
     // The camera-local detail mesh can cross the gameplay rectangle. Keep the
     // representation distance-driven while handing its clamped playable
@@ -256,7 +258,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         abs(position.z) - terrain.playable_bounds.y,
     );
     let outside_sward = smoothstep(0.0, terrain.playable_bounds.z, outside_distance);
-    color = select(color, sward_color, sward_dither < outside_sward);
+    color = mix(color, sward_target, outside_sward);
 
     let snow_mask = snow * smoothstep(0.3, 0.86, normal.y);
     color = select(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask >= 0.5);
