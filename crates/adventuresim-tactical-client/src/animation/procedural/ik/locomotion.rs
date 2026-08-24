@@ -15,8 +15,7 @@ pub(super) fn owns(skeleton: &SkeletonState) -> bool {
         && !skeleton.is_posture_transitioning()
         && skeleton.posture() == Posture::Upright
         && skeleton.action_kind() == SkeletonAction::None
-        && (skeleton.weapon_guard() == WeaponGuardState::Lowered
-            || skeleton.guarded_sprint_locomotion())
+        && skeleton.weapon_guard() == WeaponGuardState::Lowered
 }
 
 /// Overgrowth-style ordinary locomotion IK: semantic evaluation supplies the
@@ -301,7 +300,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ordinary_ownership_selects_guarded_sprint_but_excludes_guard_steps_and_actions() {
+    fn ordinary_ownership_excludes_all_raised_guard_and_actions() {
         let ordinary = SkeletonState::default();
         assert!(owns(&ordinary));
 
@@ -309,7 +308,7 @@ mod tests {
         assert!(!owns(&guard_step));
 
         let guarded_sprint = guard_step.with_guarded_sprint_locomotion(true);
-        assert!(owns(&guarded_sprint));
+        assert!(!owns(&guarded_sprint));
 
         let mut attacking = ordinary.clone();
         attacking.begin_attack(AttackSpec::default(), 0, 1).unwrap();

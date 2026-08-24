@@ -127,15 +127,10 @@ pub(in crate::animation) fn apply(
                         step: GuardStepState::Stationary {
                             left,
                             right,
-                            // Resume with the foot opposite the authoritative
-                            // landing support so guard propulsion and the
-                            // rendered plant share the same contact identity.
+                            // This is only a one-frame visual bridge; the
+                            // authoritative guard plan replaces it afterward.
                             next: opposite_guard_foot(skeleton.contact_foot),
                         },
-                        step_sequence: 0,
-                        contact_sequence: skeleton.contact_sequence,
-                        awaiting_contact_handoff: false,
-                        evaluation_tick: None,
                         left_support_weight: 1.0,
                         right_support_weight: 1.0,
                         left_solve_target: Some(left),

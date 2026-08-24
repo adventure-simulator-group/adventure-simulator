@@ -7,7 +7,7 @@ use bevy_ahoy::{
 };
 
 use crate::{
-    animation::{LOCOMOTION_SAMPLE_HZ, SkeletonState, WeaponGuardState, guard_movement_front_foot},
+    animation::{LOCOMOTION_SAMPLE_HZ, SkeletonState, WeaponGuardState},
     player::TacticalPlayerViewer,
 };
 
@@ -44,7 +44,6 @@ const MINIMUM_ORDINARY_TURN_RADIUS_METRES: f32 = 0.25;
 // A trailing-leg guard contact does not actively brake at the motor's full
 // stopping force, but it now uses most of that reserve so movement-direction
 // momentum falls promptly while the leading foot is airborne.
-const RAISED_GUARD_COAST_BRAKING_FORCE_SCALE: f32 = 0.70;
 
 /// Authored ordinary-run reference speed and fallback for entities without
 /// character attributes, in metres per second.
@@ -656,17 +655,7 @@ fn apply_character_motor(
                 turn_radius,
                 time.delta_secs(),
             );
-            if raised_guard_drive_is_supported(skeleton, movement) {
-                candidate
-            } else {
-                suppress_unsupported_drive_acceleration(
-                    horizontal,
-                    candidate,
-                    desired_direction.xz(),
-                    braking_force / mass_kg * RAISED_GUARD_COAST_BRAKING_FORCE_SCALE,
-                    time.delta_secs(),
-                )
-            }
+            candidate
         } else {
             approach_velocity(
                 horizontal,
@@ -678,46 +667,6 @@ fn apply_character_motor(
         velocity.x = next.x;
         velocity.z = next.y;
     }
-}
-
-/// Raised-guard propulsion comes from the foot leading the requested motion. A
-/// planted stance may initiate movement with both feet down; once the gait is
-/// moving, the replicated contact identity is the physical support contract.
-fn raised_guard_drive_is_supported(skeleton: Option<&SkeletonState>, requested: Vec2) -> bool {
-    if requested.length_squared() <= f32::EPSILON {
-        return true;
-    }
-    let Some(skeleton) = skeleton else {
-        return true;
-    };
-    let local_velocity_direction = Vec2::new(requested.x, -requested.y);
-    let movement_front = guard_movement_front_foot(skeleton.lead_foot, local_velocity_direction);
-    skeleton.weapon_guard() != WeaponGuardState::Raised
-        || !skeleton.raised_locomotion().is_moving()
-        || skeleton.contact_foot == movement_front
-}
-
-/// Removes only the candidate's newly-created forward velocity, preserving
-/// existing momentum and perpendicular steering. The remaining positive
-/// forward component then decays under the ordinary strength/traction-bounded
-/// braking force instead of being kinematically clamped.
-fn suppress_unsupported_drive_acceleration(
-    current: Vec2,
-    candidate: Vec2,
-    forward: Vec2,
-    braking_acceleration: f32,
-    delta_seconds: f32,
-) -> Vec2 {
-    let forward = forward.normalize_or_zero();
-    if forward == Vec2::ZERO || delta_seconds <= 0.0 {
-        return current;
-    }
-    let current_forward = current.dot(forward);
-    let candidate_forward = candidate.dot(forward);
-    let mut next = candidate - forward * (candidate_forward - current_forward).max(0.0);
-    let retained_forward = next.dot(forward).max(0.0);
-    next -= forward * retained_forward.min(braking_acceleration.max(0.0) * delta_seconds);
-    next
 }
 
 fn character_motor_force_limits(
@@ -880,69 +829,6 @@ fn approach_velocity(current: Vec2, target: Vec2, acceleration: f32, delta_secon
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn raised_guard_drive_uses_the_movement_front_foot() {
-        let mut moving = SkeletonState::default()
-            .with_weapon_guard(WeaponGuardState::Raised)
-            .with_lead_foot(crate::animation::LeadFoot::Left)
-            .with_raised_locomotion(crate::animation::RaisedLocomotionIntent::moving(
-                Vec2::NEG_Y,
-                2.0,
-            ));
-        moving.contact_foot = crate::animation::LeadFoot::Left;
-        assert!(raised_guard_drive_is_supported(Some(&moving), Vec2::Y));
-
-        moving.contact_foot = crate::animation::LeadFoot::Right;
-        assert!(!raised_guard_drive_is_supported(Some(&moving), Vec2::Y));
-        assert!(raised_guard_drive_is_supported(Some(&moving), Vec2::NEG_Y));
-        assert!(raised_guard_drive_is_supported(Some(&moving), Vec2::X));
-        assert!(!raised_guard_drive_is_supported(Some(&moving), Vec2::NEG_X));
-
-        let planted = SkeletonState::default()
-            .with_weapon_guard(WeaponGuardState::Raised)
-            .with_lead_foot(crate::animation::LeadFoot::Left);
-        assert!(raised_guard_drive_is_supported(Some(&planted), Vec2::Y));
-    }
-
-    #[test]
-    fn unsupported_guard_drive_preserves_lateral_momentum_and_brakes_forward() {
-        let current = Vec2::new(1.5, 3.0);
-        let candidate = Vec2::new(2.0, 3.5);
-        let coast_braking_acceleration = 8.0 * RAISED_GUARD_COAST_BRAKING_FORCE_SCALE;
-        let next = suppress_unsupported_drive_acceleration(
-            current,
-            candidate,
-            Vec2::Y,
-            coast_braking_acceleration,
-            1.0 / LOCOMOTION_SAMPLE_HZ,
-        );
-
-        assert_eq!(next.x, candidate.x);
-        assert!(next.y < current.y);
-        assert!(RAISED_GUARD_COAST_BRAKING_FORCE_SCALE > 0.5);
-        assert!(
-            (next.y - (current.y - coast_braking_acceleration / LOCOMOTION_SAMPLE_HZ)).abs()
-                < 1.0e-6
-        );
-    }
-
-    #[test]
-    fn unsupported_lateral_guard_drive_decelerates_the_requested_axis() {
-        let current = Vec2::new(2.0, 0.0);
-        let candidate = Vec2::new(2.5, 0.35);
-        let braking_acceleration = 8.0 * RAISED_GUARD_COAST_BRAKING_FORCE_SCALE;
-        let next = suppress_unsupported_drive_acceleration(
-            current,
-            candidate,
-            Vec2::X,
-            braking_acceleration,
-            1.0 / LOCOMOTION_SAMPLE_HZ,
-        );
-
-        assert!(next.x < current.x);
-        assert_eq!(next.y, candidate.y);
-    }
 
     #[test]
     fn movement_speed_preserves_stick_magnitude_and_caps_diagonals() {

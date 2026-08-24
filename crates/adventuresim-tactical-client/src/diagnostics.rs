@@ -41,6 +41,11 @@ enum ScriptCommand {
         direction: MoveDirection,
         input_speed: f32,
         duration_seconds: f32,
+        /// Optional attack edge emitted while movement remains held. This is
+        /// intentionally part of the move command so diagnostics exercise the
+        /// real locomotion-to-attack ownership seam instead of stopping first.
+        #[serde(default)]
+        attack_at_seconds: Option<f32>,
     },
     Dive {
         direction: MoveDirection,
@@ -357,6 +362,7 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
             ScriptCommand::Move {
                 input_speed,
                 duration_seconds,
+                attack_at_seconds: _,
                 ..
             } if !(0.0..=1.0).contains(input_speed)
                 || !duration_seconds.is_finite()
@@ -365,6 +371,18 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
                 return Err(
                     "move input_speed must be 0..=1 and duration_seconds must be positive"
                         .to_owned(),
+                );
+            }
+            ScriptCommand::Move {
+                duration_seconds,
+                attack_at_seconds: Some(attack_at_seconds),
+                ..
+            } if !attack_at_seconds.is_finite()
+                || *attack_at_seconds < 0.0
+                || *attack_at_seconds >= *duration_seconds =>
+            {
+                return Err(
+                    "move attack_at_seconds must be finite and within the move duration".to_owned(),
                 );
             }
             ScriptCommand::Dive {
@@ -515,12 +533,22 @@ fn drive_scripted_input(
         if command_start && matches!(&command, ScriptCommand::Attack { .. }) {
             force_attack.0 = true;
         }
+        let previous_command_elapsed = script.command_elapsed;
         script.command_elapsed += delta;
+        let move_attack_due = matches!(
+            &command,
+            ScriptCommand::Move {
+                attack_at_seconds: Some(attack_at_seconds),
+                ..
+            } if previous_command_elapsed <= *attack_at_seconds
+                && script.command_elapsed > *attack_at_seconds
+        );
         let (kind, duration, movement, posture) = match command {
             ScriptCommand::Move {
                 direction,
                 input_speed,
                 duration_seconds,
+                attack_at_seconds: _,
             } => (
                 "move",
                 duration_seconds,
@@ -562,6 +590,9 @@ fn drive_scripted_input(
             | ScriptCommand::Screenshot { .. }
             | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
+        if move_attack_due {
+            force_attack.0 = true;
+        }
         let request = PlayerInputRequest {
             simulation_tick: 0,
             movement,
@@ -630,6 +661,24 @@ mod tests {
     fn invalid_analogue_speed_is_rejected() {
         let script: InputScript = serde_json::from_str(
             r#"{"commands":[{"type":"move","input_speed":1.1,"duration_seconds":2.0}]}"#,
+        )
+        .unwrap();
+        assert!(validate_script(&script).is_err());
+    }
+
+    #[test]
+    fn move_can_trigger_an_attack_without_releasing_directional_input() {
+        let script: InputScript = serde_json::from_str(
+            r#"{"commands":[{"type":"move","direction":"right","input_speed":1.0,"duration_seconds":2.0,"attack_at_seconds":1.0}]}"#,
+        )
+        .unwrap();
+        assert!(validate_script(&script).is_ok());
+    }
+
+    #[test]
+    fn move_attack_must_occur_strictly_within_the_command() {
+        let script: InputScript = serde_json::from_str(
+            r#"{"commands":[{"type":"move","input_speed":1.0,"duration_seconds":2.0,"attack_at_seconds":2.0}]}"#,
         )
         .unwrap();
         assert!(validate_script(&script).is_err());

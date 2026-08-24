@@ -177,6 +177,193 @@ impl RaisedLocomotionIntent {
     }
 }
 
+/// Server-authored planar contact positions for raised-guard footwork. Values
+/// are stored in the controller's local X/Z frame and advected against body
+/// motion, so a planted virtual foot remains fixed while the root travels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GuardContacts {
+    left: Vec2,
+    right: Vec2,
+}
+
+impl GuardContacts {
+    pub fn left(self) -> Vec2 {
+        self.left
+    }
+
+    pub fn right(self) -> Vec2 {
+        self.right
+    }
+
+    fn advected(self, local_displacement: Vec2) -> Self {
+        Self {
+            left: self.left - local_displacement,
+            right: self.right - local_displacement,
+        }
+    }
+
+    fn with_contact(self, foot: LeadFoot, position: Vec2) -> Self {
+        match foot {
+            LeadFoot::Left => Self {
+                left: position,
+                ..self
+            },
+            LeadFoot::Right => Self {
+                right: position,
+                ..self
+            },
+        }
+    }
+
+    fn normalized(self) -> Self {
+        let finite = |value: Vec2, fallback: Vec2| {
+            if value.is_finite() { value } else { fallback }
+        };
+        Self {
+            left: finite(self.left, Vec2::new(-GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0)),
+            right: finite(self.right, Vec2::new(GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0)),
+        }
+    }
+}
+
+impl Default for GuardContacts {
+    fn default() -> Self {
+        Self {
+            left: Vec2::new(-GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0),
+            right: Vec2::new(GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0),
+        }
+    }
+}
+
+/// One complete, authoritative raised-guard swing. Contact timing and landing
+/// placement are a single plan; presentation may interpolate within it but may
+/// not postpone its contact tick.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GuardStepPlan {
+    contacts: GuardContacts,
+    swing_foot: LeadFoot,
+    swing_start: Vec2,
+    landing: Vec2,
+    start_tick: u64,
+    contact_tick: u64,
+}
+
+impl GuardStepPlan {
+    pub fn contacts(self) -> GuardContacts {
+        self.contacts
+    }
+
+    pub fn swing_foot(self) -> LeadFoot {
+        self.swing_foot
+    }
+
+    pub fn swing_start(self) -> Vec2 {
+        self.swing_start
+    }
+
+    pub fn landing(self) -> Vec2 {
+        self.landing
+    }
+
+    pub fn start_tick(self) -> u64 {
+        self.start_tick
+    }
+
+    pub fn contact_tick(self) -> u64 {
+        self.contact_tick
+    }
+
+    pub fn progress(self, tick: u64) -> f32 {
+        let duration = self.contact_tick.saturating_sub(self.start_tick).max(1);
+        tick.saturating_sub(self.start_tick) as f32 / duration as f32
+    }
+
+    pub fn direction(self) -> Vec2 {
+        (self.landing - self.swing_start).normalize_or_zero()
+    }
+
+    fn advected(mut self, local_displacement: Vec2) -> Self {
+        self.contacts = self.contacts.advected(local_displacement);
+        self.swing_start -= local_displacement;
+        self.landing -= local_displacement;
+        self
+    }
+
+    fn normalized(mut self) -> Self {
+        self.contacts = self.contacts.normalized();
+        if !self.swing_start.is_finite() {
+            self.swing_start = match self.swing_foot {
+                LeadFoot::Left => self.contacts.left,
+                LeadFoot::Right => self.contacts.right,
+            };
+        }
+        if !self.landing.is_finite() {
+            self.landing = self.swing_start;
+        }
+        self.contact_tick = self.contact_tick.max(self.start_tick.saturating_add(1));
+        self
+    }
+}
+
+/// The complete authoritative topology for raised-guard contacts. A step can
+/// never exist without a support contact, landing, and mandatory contact tick.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GuardFootworkPlan {
+    #[default]
+    Uninitialized,
+    Planted {
+        contacts: GuardContacts,
+        next_swing: LeadFoot,
+    },
+    Stepping(GuardStepPlan),
+}
+
+impl GuardFootworkPlan {
+    pub fn contacts(self) -> Option<GuardContacts> {
+        match self {
+            Self::Uninitialized => None,
+            Self::Planted { contacts, .. } => Some(contacts),
+            Self::Stepping(step) => Some(step.contacts),
+        }
+    }
+
+    pub fn step(self) -> Option<GuardStepPlan> {
+        match self {
+            Self::Stepping(step) => Some(step),
+            Self::Uninitialized | Self::Planted { .. } => None,
+        }
+    }
+
+    pub fn next_swing(self) -> Option<LeadFoot> {
+        match self {
+            Self::Planted { next_swing, .. } => Some(next_swing),
+            Self::Stepping(step) => Some(opposite_foot(step.swing_foot)),
+            Self::Uninitialized => None,
+        }
+    }
+
+    fn normalized(self) -> Self {
+        match self {
+            Self::Uninitialized => Self::Uninitialized,
+            Self::Planted {
+                contacts,
+                next_swing,
+            } => Self::Planted {
+                contacts: contacts.normalized(),
+                next_swing,
+            },
+            Self::Stepping(step) => Self::Stepping(step.normalized()),
+        }
+    }
+}
+
+const GUARD_DEFAULT_HALF_WIDTH_METRES: f32 = 0.15;
+pub const GUARD_CONTACT_MARGIN_METRES: f32 = 0.08;
+const GUARD_MINIMUM_STEP_SECONDS: f32 = 0.10;
+const GUARD_MAXIMUM_STEP_SECONDS: f32 = 0.32;
+const GUARD_PLANNING_REACH_METRES: f32 = 0.80;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum SkeletonAction {
     #[default]
@@ -1000,6 +1187,7 @@ pub struct SkeletonState {
     pub world_acceleration: Vec3,
     pub contact_sequence: u64,
     pub contact_foot: LeadFoot,
+    raised_footwork: GuardFootworkPlan,
     pub landing_sequence: u64,
     pub landing_impact_speed: f32,
     pub lead_foot: LeadFoot,
@@ -1025,6 +1213,8 @@ struct SkeletonStateWire {
     world_acceleration: Vec3,
     contact_sequence: u64,
     contact_foot: LeadFoot,
+    #[serde(default)]
+    raised_footwork: GuardFootworkPlan,
     landing_sequence: u64,
     landing_impact_speed: f32,
     lead_foot: LeadFoot,
@@ -1060,6 +1250,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
             world_acceleration: finite(wire.world_acceleration),
             contact_sequence: wire.contact_sequence,
             contact_foot: wire.contact_foot,
+            raised_footwork: wire.raised_footwork.normalized(),
             landing_sequence: wire.landing_sequence,
             landing_impact_speed: if wire.landing_impact_speed.is_finite() {
                 wire.landing_impact_speed.max(0.0)
@@ -1098,6 +1289,7 @@ impl Default for SkeletonState {
             world_acceleration: Vec3::ZERO,
             contact_sequence: 0,
             contact_foot: LeadFoot::Left,
+            raised_footwork: GuardFootworkPlan::default(),
             landing_sequence: 0,
             landing_impact_speed: 0.0,
             lead_foot: LeadFoot::Left,
@@ -1127,11 +1319,13 @@ pub fn set_weapon_guard(skeleton: &mut SkeletonState, weapon_guard: WeaponGuardS
             skeleton.stance = StanceState::Raised {
                 locomotion: RaisedLocomotionIntent::default(),
             };
+            skeleton.raised_footwork = GuardFootworkPlan::default();
         }
         (StanceState::Lowered, WeaponGuardState::Raised) => {}
         (StanceState::Raised { .. }, WeaponGuardState::Lowered) => {
             skeleton.stance = StanceState::Lowered;
             skeleton.guarded_sprint_locomotion = false;
+            skeleton.raised_footwork = GuardFootworkPlan::default();
         }
     }
 }
@@ -1196,6 +1390,7 @@ impl SkeletonState {
         }
         if body.is_downed() {
             self.stance = StanceState::Lowered;
+            self.raised_footwork = GuardFootworkPlan::default();
             self.action = ActionState::default();
         } else if body != BodyState::Grounded(GroundedPosture::Upright)
             && let StanceState::Raised { locomotion } = self.stance
@@ -1204,6 +1399,7 @@ impl SkeletonState {
             self.stance = StanceState::Raised {
                 locomotion: RaisedLocomotionIntent::planted(),
             };
+            self.raised_footwork = GuardFootworkPlan::default();
         }
     }
     pub fn with_weapon_guard(mut self, guard: WeaponGuardState) -> Self {
@@ -1239,6 +1435,9 @@ impl SkeletonState {
             StanceState::Lowered => RaisedLocomotionIntent::default(),
             StanceState::Raised { locomotion } => locomotion,
         }
+    }
+    pub fn raised_footwork(&self) -> GuardFootworkPlan {
+        self.raised_footwork
     }
     fn set_raised_locomotion(&mut self, locomotion: RaisedLocomotionIntent) {
         if matches!(self.stance, StanceState::Raised { .. }) {
@@ -1303,6 +1502,7 @@ impl SkeletonState {
             return false;
         }
         self.stance = StanceState::Lowered;
+        self.raised_footwork = GuardFootworkPlan::default();
         self.jump_anticipation = JumpAnticipation::Inactive;
         self.guarded_sprint_locomotion = false;
         self.action = ActionState::default();
@@ -2007,13 +2207,8 @@ pub fn project_skeleton_locomotion_with_intent(
     };
     if skeleton.weapon_guard() == WeaponGuardState::Raised && skeleton.posture() == Posture::Upright
     {
-        let handoffs = advance_raised_locomotion_intent(
-            skeleton,
-            local_velocity,
-            requested_local_direction,
-            delta_seconds,
-        );
-        advance_contact_identity(skeleton, handoffs, None);
+        advance_raised_locomotion_intent(skeleton, local_velocity, requested_local_direction);
+        advance_guard_footwork(skeleton, delta_seconds, input.tick);
     } else {
         skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
         if input.grounded && ground_speed > 0.05 {
@@ -2061,8 +2256,7 @@ fn advance_raised_locomotion_intent(
     skeleton: &mut SkeletonState,
     observed_local_velocity: Vec3,
     requested_local_direction: Option<Vec2>,
-    delta_seconds: f32,
-) -> u32 {
+) {
     let intent = skeleton.raised_locomotion();
     let observed_speed = observed_local_velocity.xz().length();
     let observed = (observed_speed > 0.05).then(|| {
@@ -2074,60 +2268,150 @@ fn advance_raised_locomotion_intent(
     let requested = requested_local_direction
         .filter(|direction| direction.is_finite() && direction.length_squared() > f32::EPSILON)
         .map(|direction| direction.normalize());
-    if !intent.is_moving() {
-        let Some(opening) = observed.or_else(|| {
-            requested.map(|direction| RaisedLocomotionIntent::moving(direction, 0.051))
-        }) else {
-            skeleton.gait_phase = 0.0;
-            skeleton.set_raised_locomotion(intent);
-            return 0;
-        };
-        skeleton.set_raised_locomotion(opening);
-        skeleton.gait_phase = 0.0;
-        // A close guard starts by sending the foot leading the requested
-        // movement direction outward. The opposite foot supplies the initial
-        // support; backward movement deliberately inverts the authored lead.
-        skeleton.contact_foot = opposite_foot(guard_movement_front_foot(
-            skeleton.lead_foot,
-            opening.local_direction(),
-        ));
-        skeleton.contact_sequence = skeleton.contact_sequence.wrapping_add(1);
-    }
-
-    let moving = observed.unwrap_or_else(|| {
-        requested.map_or(intent, |direction| {
-            RaisedLocomotionIntent::moving(direction, intent.speed().max(0.051))
-        })
+    let moving = observed.or_else(|| {
+        requested
+            .map(|direction| RaisedLocomotionIntent::moving(direction, intent.speed().max(0.051)))
     });
-    skeleton.set_raised_locomotion(moving);
-    let speed = moving.speed();
-    let phase = skeleton.gait_phase.rem_euclid(1.0);
-    let step_distance = guard_contact_travel_distance(
-        REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES,
-        moving.local_direction(),
-    );
-    let movement_front = guard_movement_front_foot(skeleton.lead_foot, moving.local_direction());
-    let phase_speed = if skeleton.contact_foot == movement_front {
-        speed
-    } else {
-        speed.max(step_distance / GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS)
-    };
-    let profile = LocomotionProfile {
-        step_distance,
-        ..RAISED_GUARD_LOCOMOTION_PROFILE
-    };
-    let next_phase = phase + gait_cycle_phase_delta(profile, phase_speed, delta_seconds.max(0.0));
-    let handoffs = ((next_phase * 2.0).floor() - (phase * 2.0).floor()).max(0.0) as u32;
-    let crossed_handoff = handoffs > 0;
+    skeleton.set_raised_locomotion(match moving {
+        Some(moving) => moving,
+        None if skeleton.raised_footwork.step().is_some() => intent,
+        None => RaisedLocomotionIntent::planted(),
+    });
+}
 
-    if observed.is_none() && requested.is_none() && crossed_handoff {
-        skeleton.gait_phase = if phase < 0.5 { 0.5 } else { 0.0 };
-        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
-        return handoffs;
+fn advance_guard_footwork(skeleton: &mut SkeletonState, delta_seconds: f32, tick: u64) {
+    let displacement = skeleton.local_velocity.xz() * delta_seconds.max(0.0);
+    let physical_velocity = skeleton.local_velocity.xz();
+    let physical_speed = physical_velocity.length();
+    let physical_direction = physical_velocity.normalize_or_zero();
+    let mut plan = match skeleton.raised_footwork {
+        GuardFootworkPlan::Uninitialized => GuardFootworkPlan::Planted {
+            contacts: GuardContacts::default(),
+            next_swing: guard_movement_front_foot(
+                skeleton.lead_foot,
+                skeleton.raised_locomotion().local_direction(),
+            ),
+        },
+        GuardFootworkPlan::Planted {
+            contacts,
+            next_swing,
+        } => GuardFootworkPlan::Planted {
+            contacts: contacts.advected(displacement),
+            next_swing,
+        },
+        GuardFootworkPlan::Stepping(step) => {
+            GuardFootworkPlan::Stepping(step.advected(displacement))
+        }
+    };
+
+    if let GuardFootworkPlan::Stepping(mut step) = plan {
+        let direction = if physical_direction == Vec2::ZERO {
+            step.direction()
+        } else {
+            physical_direction
+        };
+        let leading_contact = step
+            .contacts
+            .left
+            .dot(direction)
+            .max(step.contacts.right.dot(direction));
+        let contact_due = tick >= step.contact_tick || leading_contact <= 0.0;
+        if contact_due {
+            if step.landing.dot(direction) < GUARD_CONTACT_MARGIN_METRES {
+                step.landing +=
+                    direction * (GUARD_CONTACT_MARGIN_METRES - step.landing.dot(direction));
+            }
+            let contacts = step.contacts.with_contact(step.swing_foot, step.landing);
+            skeleton.contact_foot = step.swing_foot;
+            skeleton.contact_sequence = skeleton.contact_sequence.wrapping_add(1);
+            plan = GuardFootworkPlan::Planted {
+                contacts,
+                next_swing: opposite_foot(step.swing_foot),
+            };
+        }
     }
 
-    skeleton.gait_phase = next_phase.rem_euclid(1.0);
-    handoffs
+    if let GuardFootworkPlan::Planted {
+        contacts,
+        next_swing,
+    } = plan
+        && physical_speed > 0.05
+    {
+        plan = GuardFootworkPlan::Stepping(plan_guard_step(
+            contacts,
+            next_swing,
+            physical_velocity,
+            tick,
+        ));
+        skeleton.contact_foot = opposite_foot(next_swing);
+    }
+
+    skeleton.gait_phase = match plan {
+        GuardFootworkPlan::Stepping(step) => {
+            let progress = step.progress(tick).clamp(0.0, 1.0);
+            match step.swing_foot {
+                LeadFoot::Left => (0.5 + 0.5 * progress).rem_euclid(1.0),
+                LeadFoot::Right => 0.5 * progress,
+            }
+        }
+        GuardFootworkPlan::Uninitialized | GuardFootworkPlan::Planted { .. } => {
+            match skeleton.contact_foot {
+                LeadFoot::Left => 0.0,
+                LeadFoot::Right => 0.5,
+            }
+        }
+    };
+    skeleton.raised_footwork = plan;
+}
+
+fn plan_guard_step(
+    contacts: GuardContacts,
+    swing_foot: LeadFoot,
+    local_velocity: Vec2,
+    start_tick: u64,
+) -> GuardStepPlan {
+    let speed = local_velocity.length().max(0.05);
+    let direction = local_velocity.normalize_or_zero();
+    let available_reach = GUARD_PLANNING_REACH_METRES - GUARD_CONTACT_MARGIN_METRES;
+    let reach_seconds = available_reach / speed;
+    let leading_contact = contacts
+        .left
+        .dot(direction)
+        .max(contacts.right.dot(direction));
+    let support_seconds = if leading_contact > 0.0 {
+        leading_contact / speed
+    } else {
+        1.0 / LOCOMOTION_SAMPLE_HZ
+    };
+    let duration_seconds = reach_seconds
+        .min(support_seconds)
+        .clamp(GUARD_MINIMUM_STEP_SECONDS, GUARD_MAXIMUM_STEP_SECONDS);
+    let duration_ticks = (duration_seconds * LOCOMOTION_SAMPLE_HZ).ceil().max(1.0) as u64;
+    let forward = (speed * duration_ticks as f32 / LOCOMOTION_SAMPLE_HZ
+        + GUARD_CONTACT_MARGIN_METRES)
+        .min(GUARD_PLANNING_REACH_METRES);
+    let side = match swing_foot {
+        LeadFoot::Left => -GUARD_DEFAULT_HALF_WIDTH_METRES,
+        LeadFoot::Right => GUARD_DEFAULT_HALF_WIDTH_METRES,
+    };
+    let mut landing = direction * forward + Vec2::X * side;
+    let along_shortfall = forward - landing.dot(direction);
+    if along_shortfall > 0.0 {
+        landing += direction * along_shortfall;
+    }
+    landing = landing.clamp_length_max(GUARD_PLANNING_REACH_METRES);
+    let swing_start = match swing_foot {
+        LeadFoot::Left => contacts.left,
+        LeadFoot::Right => contacts.right,
+    };
+    GuardStepPlan {
+        contacts,
+        swing_foot,
+        swing_start,
+        landing,
+        start_tick,
+        contact_tick: start_tick.saturating_add(duration_ticks),
+    }
 }
 
 // Measured hip-knee-ankle chain of the current humanoid rig. The animation

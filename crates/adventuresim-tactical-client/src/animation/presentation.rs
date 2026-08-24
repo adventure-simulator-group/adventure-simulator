@@ -59,14 +59,34 @@ pub(super) fn can_predict_locomotion(
     previous: &SkeletonState,
     authoritative: &SkeletonState,
 ) -> bool {
+    let action_is_predictable = authoritative.action_kind() == SkeletonAction::None
+        || (authoritative.weapon_guard() == WeaponGuardState::Raised
+            && authoritative.action_kind() == SkeletonAction::Attack);
     authoritative.is_surface_supported()
-        && authoritative.action_kind() == SkeletonAction::None
+        && action_is_predictable
         && authoritative.animation_speed() > 0.05
         && previous.posture() == authoritative.posture()
         && previous.weapon_guard() == authoritative.weapon_guard()
         && previous.action_kind() == authoritative.action_kind()
         && previous.is_surface_supported() == authoritative.is_surface_supported()
         && previous.animation_pack == authoritative.animation_pack
+        && previous.contact_sequence == authoritative.contact_sequence
+        && same_guard_step(previous, authoritative)
+}
+
+fn same_guard_step(previous: &SkeletonState, authoritative: &SkeletonState) -> bool {
+    match (
+        previous.raised_footwork().step(),
+        authoritative.raised_footwork().step(),
+    ) {
+        (Some(previous), Some(authoritative)) => {
+            previous.swing_foot() == authoritative.swing_foot()
+                && previous.start_tick() == authoritative.start_tick()
+                && previous.contact_tick() == authoritative.contact_tick()
+        }
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 pub(super) fn advance_presented_skeleton(
@@ -97,9 +117,15 @@ pub(super) fn advance_presented_skeleton(
             .world_velocity
             .lerp(authoritative.world_velocity, response);
 
-        let speed = presentation_phase_speed(&next);
-        let prediction_delta =
-            gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds);
+        let prediction_delta = if next.weapon_guard() == WeaponGuardState::Raised
+            && let Some(step) = next.raised_footwork().step()
+        {
+            let duration_ticks = step.contact_tick().saturating_sub(step.start_tick()).max(1);
+            delta_seconds * LOCOMOTION_SAMPLE_HZ * 0.5 / duration_ticks as f32
+        } else {
+            let speed = presentation_phase_speed(&next);
+            gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds)
+        };
         let predicted = (previous.gait_phase + prediction_delta).rem_euclid(1.0);
         presented.last_phase_prediction_delta = prediction_delta;
         let error = circular_phase_delta(predicted, authoritative.gait_phase);

@@ -77,11 +77,6 @@ impl AnimationEvaluation {
             && let PostureTransitionKind::DiveToDowned { direction } = transition.kind()
         {
             dive_lower_body_samples(state.lead_foot, direction, transition.phase())
-        } else if state.guarded_sprint_locomotion()
-            && state.raised_locomotion().is_moving()
-            && speed > 0.05
-        {
-            locomotion_samples(speed, gait_phase)
         } else {
             Vec::new()
         };

@@ -2153,13 +2153,11 @@ mod tests {
     use adventuresim_tactical_core::prelude::{
         Attributes, BestiaryCategories, BodyState, CharacterControllerState, CharacterId,
         CharacterLook, CharacterMotionSnapshot, CollisionMargin, DiveDirection, DodgeSpec,
-        EquipSlot, EquipmentActionState,
-        GroundedPosture, InventoryItems, ItemOf, Limbs, LinearVelocity, MeleePreparationInput,
-        MovementPace, PostureTransitionKind, QuickstepPush, RollDirection, Rotation, ShieldItem,
-        SkeletonAction,
-        SkeletonState, Skills, Stats, TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalCombatConfig,
-        TacticalCombatSide, TacticalCombatState, advance_body_facing, controller_yaw,
-        downed_camera_roll_target,
+        EquipSlot, EquipmentActionState, GroundedPosture, InventoryItems, ItemOf, Limbs,
+        LinearVelocity, MeleePreparationInput, MovementPace, PostureTransitionKind, QuickstepPush,
+        RollDirection, Rotation, ShieldItem, SkeletonAction, SkeletonState, Skills, Stats,
+        TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalCombatConfig, TacticalCombatSide,
+        TacticalCombatState, advance_body_facing, controller_yaw, downed_camera_roll_target,
     };
     use adventuresim_tactical_netcode::aeronet::io::connection::{DisconnectReason, Disconnected};
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
