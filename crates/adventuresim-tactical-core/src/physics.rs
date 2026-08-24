@@ -928,6 +928,23 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_lateral_guard_drive_decelerates_the_requested_axis() {
+        let current = Vec2::new(2.0, 0.0);
+        let candidate = Vec2::new(2.5, 0.35);
+        let braking_acceleration = 8.0 * RAISED_GUARD_COAST_BRAKING_FORCE_SCALE;
+        let next = suppress_unsupported_drive_acceleration(
+            current,
+            candidate,
+            Vec2::X,
+            braking_acceleration,
+            1.0 / LOCOMOTION_SAMPLE_HZ,
+        );
+
+        assert!(next.x < current.x);
+        assert_eq!(next.y, candidate.y);
+    }
+
+    #[test]
     fn movement_speed_preserves_stick_magnitude_and_caps_diagonals() {
         for (guard, cap) in [
             (

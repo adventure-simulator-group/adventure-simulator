@@ -801,9 +801,12 @@ mod legacy_tests {
             LeadFoot::Right
         );
         assert!(
-            guard_contact_travel_distance(0.840_348, Vec2::X)
-                < guard_contact_travel_distance(0.840_348, Vec2::NEG_Y)
+            (guard_maximum_lateral_foot_separation(0.840_348)
+                - guard_maximum_foot_separation(0.840_348))
+            .abs()
+                < 0.0001
         );
+        assert!(guard_contact_travel_distance(0.840_348, Vec2::X) > 0.34);
     }
 
     #[test]

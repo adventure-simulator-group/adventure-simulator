@@ -1515,6 +1515,23 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 footwork.step = advance_guard_step(footwork.step, state_delta_seconds);
             }
 
+            // Resolve a completed landing before considering the next swing.
+            // Doing this after target selection inserted a stationary frame at
+            // every contact while the server-owned gait clock kept advancing.
+            // The accumulated phase error eventually forced the new swing to
+            // its endpoint at a contact handoff. Settling first lets the next
+            // foot leave on this same sample whenever authority has accepted
+            // the previous contact.
+            if let Some((left, right, foot)) = completed_guard_step(footwork.step) {
+                footwork.step_sequence = footwork.step_sequence.wrapping_add(1);
+                footwork.awaiting_contact_handoff = observed_moving && !contact_handoff;
+                footwork.step = GuardStepState::Stationary {
+                    left,
+                    right,
+                    next: opposite_guard_foot(foot),
+                };
+            }
+
             let local_direction = skeleton.raised_locomotion().local_direction();
             let movement_front = guard_movement_front_foot(skeleton.lead_foot, local_direction);
             let movement_front_supported = skeleton.contact_foot == movement_front;
@@ -1646,7 +1663,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
 
             let mut left_target;
             let mut right_target;
-            let mut completed_swing = None;
             match footwork.step {
                 GuardStepState::Uninitialized => unreachable!("guard state was initialized above"),
                 GuardStepState::Stationary { left, right, .. } => {
@@ -1659,7 +1675,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 } => {
                     left_target = guard_swing_target(left);
                     right_target = right_support;
-                    completed_swing = (left.progress >= 1.0).then_some(LeadFoot::Left);
                 }
                 GuardStepState::RightSwing {
                     left_support,
@@ -1667,21 +1682,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 } => {
                     left_target = left_support;
                     right_target = guard_swing_target(right);
-                    completed_swing = (right.progress >= 1.0).then_some(LeadFoot::Right);
                 }
-            }
-            if let Some(foot) = completed_swing {
-                // Contact-state progression cannot be conditional on the
-                // current analytic solve. Otherwise one unreachable rendered
-                // sample pins progress at 1.0 forever and structurally turns
-                // both feet into sliding authored FK.
-                footwork.step_sequence = footwork.step_sequence.wrapping_add(1);
-                footwork.awaiting_contact_handoff = observed_moving && !contact_handoff;
-                footwork.step = GuardStepState::Stationary {
-                    left: left_target,
-                    right: right_target,
-                    next: opposite_guard_foot(foot),
-                };
             }
 
             let Some(validated) = validate_guard_frame_targets(
@@ -5738,6 +5739,20 @@ fn finish_guard_step(step: GuardStepState) -> GuardStepState {
     }
 }
 
+fn completed_guard_step(step: GuardStepState) -> Option<(Vec3, Vec3, LeadFoot)> {
+    match step {
+        GuardStepState::LeftSwing {
+            right_support,
+            left,
+        } if left.progress >= 1.0 => Some((left.end, right_support, LeadFoot::Left)),
+        GuardStepState::RightSwing {
+            left_support,
+            right,
+        } if right.progress >= 1.0 => Some((left_support, right.end, LeadFoot::Right)),
+        _ => None,
+    }
+}
+
 fn guard_swing_target(swing: GuardSwing) -> Vec3 {
     let progress = smootherstep01(swing.progress);
     let mut target = swing.start.lerp(swing.end, progress);
@@ -5757,9 +5772,10 @@ struct GuardLegGeometry {
     maximum_reach: f32,
 }
 
-/// A finite raised-guard IK request. The airborne target may be shortened for
-/// reach, but the support target is immutable and each leg solves independently.
-/// One exhausted leg therefore cannot cancel the other leg's swing.
+/// A finite raised-guard IK request. A temporarily unreachable airborne target
+/// is lifted inside the leg's reach without changing its horizontal swing
+/// trajectory. The support target remains immutable and each leg solves
+/// independently, so one exhausted leg cannot cancel the other leg's swing.
 #[derive(Debug, Clone, Copy)]
 struct ValidatedGuardTargets {
     targets: GuardTargetRequest,
@@ -5793,25 +5809,14 @@ fn validate_guard_frame_targets(
     {
         return None;
     }
-    let reserve = |foot| {
-        if swing_foot == Some(foot) { 0.04 } else { 0.0 }
-    };
     let targets = GuardTargetRequest {
         left: if swing_foot == Some(LeadFoot::Left) {
-            constrain_target_to_reach(
-                requested.left,
-                geometry[0].hip,
-                (geometry[0].maximum_reach - reserve(LeadFoot::Left)).max(0.0),
-            )
+            constrain_guard_swing_to_reach(requested.left, geometry[0])
         } else {
             requested.left
         },
         right: if swing_foot == Some(LeadFoot::Right) {
-            constrain_target_to_reach(
-                requested.right,
-                geometry[1].hip,
-                (geometry[1].maximum_reach - reserve(LeadFoot::Right)).max(0.0),
-            )
+            constrain_guard_swing_to_reach(requested.right, geometry[1])
         } else {
             requested.right
         },
@@ -5820,6 +5825,34 @@ fn validate_guard_frame_targets(
         targets,
         adjusted_for_reach: targets.left != requested.left || targets.right != requested.right,
     })
+}
+
+/// Keeps the horizontal swing path monotonic even when the current hip has not
+/// yet travelled close enough to reach a ground-level sample. Radial projection
+/// shortens XZ as well as Y, which makes an ankle pause and then catch up near
+/// contact. Lifting the airborne sample spends the available reach vertically
+/// and lets it descend naturally as the hip approaches. Only a target whose
+/// horizontal offset alone exceeds the whole leg falls back to radial clamping.
+fn constrain_guard_swing_to_reach(target: Vec3, geometry: GuardLegGeometry) -> Vec3 {
+    let maximum_reach = geometry.maximum_reach.max(0.0);
+    let offset = target - geometry.hip;
+    let horizontal_distance_squared = offset.x * offset.x + offset.z * offset.z;
+    let reach_squared = maximum_reach * maximum_reach;
+    if horizontal_distance_squared > reach_squared {
+        return constrain_target_to_reach(target, geometry.hip, maximum_reach);
+    }
+
+    let vertical_reach = (reach_squared - horizontal_distance_squared)
+        .max(0.0)
+        .sqrt();
+    Vec3::new(
+        target.x,
+        target.y.clamp(
+            geometry.hip.y - vertical_reach,
+            geometry.hip.y + vertical_reach,
+        ),
+        target.z,
+    )
 }
 
 fn anatomical_side(rig_rotation: Quat, rig_origin: Vec3, hip: Vec3, left: bool) -> f32 {
@@ -6222,7 +6255,7 @@ mod slope_cache_tests {
     }
 
     #[test]
-    fn guard_target_validation_shortens_reachable_motion_without_resetting_the_stance() {
+    fn guard_target_validation_preserves_horizontal_swing_while_lifting_for_reach() {
         let (geometry, authored) = guard_test_geometry();
         let requested = GuardTargetRequest {
             left: Vec3::new(-0.15, -0.8, 0.8),
@@ -6233,9 +6266,10 @@ mod slope_cache_tests {
             .expect("a finite overextension can be shortened in place");
 
         assert!(validated.adjusted_for_reach());
-        assert_ne!(validated.left(), authored.left);
+        assert_eq!(validated.left().xz(), requested.left.xz());
+        assert!(validated.left().y > requested.left.y);
         assert_eq!(validated.right(), authored.right);
-        assert!(validated.left().distance(geometry[0].hip) <= 0.9601);
+        assert!(validated.left().distance(geometry[0].hip) <= 1.0001);
     }
 
     #[test]
@@ -6377,8 +6411,21 @@ mod slope_cache_tests {
         );
     }
 
+    fn contact_span_contains_projected_com(
+        projected_com: Vec3,
+        left: Vec3,
+        right: Vec3,
+        travel: Vec3,
+    ) -> bool {
+        let axis = travel.normalize_or_zero();
+        let com = projected_com.dot(axis);
+        let left = left.dot(axis);
+        let right = right.dot(axis);
+        (left.min(right) - 0.0001..=left.max(right) + 0.0001).contains(&com)
+    }
+
     #[test]
-    fn lateral_and_backward_contacts_center_on_the_projected_com() {
+    fn lateral_and_backward_contacts_keep_projected_com_between_the_feet() {
         let leg_length = 0.840_348;
         let lateral_travel = Vec3::NEG_X;
         let lateral_separation = guard_maximum_lateral_foot_separation(leg_length);
@@ -6400,6 +6447,12 @@ mod slope_cache_tests {
         );
         assert!(((left + right_support) * 0.5 - lateral_com).length() < 0.0001);
         assert!((left - right_support).length() <= lateral_separation + 0.0001);
+        assert!(contact_span_contains_projected_com(
+            lateral_com,
+            left,
+            right_support,
+            lateral_travel,
+        ));
 
         let backward_travel = Vec3::Z;
         let left_support = Vec3::new(-0.15, 0.0, 0.0);
@@ -6422,6 +6475,12 @@ mod slope_cache_tests {
         assert!(
             (((right + left_support) * 0.5 - backward_com).dot(backward_travel)).abs() < 0.0001
         );
+        assert!(contact_span_contains_projected_com(
+            backward_com,
+            left_support,
+            right,
+            backward_travel,
+        ));
     }
 
     #[test]
@@ -6431,6 +6490,23 @@ mod slope_cache_tests {
         assert_eq!(smootherstep01(1.0), 1.0);
         assert!(smootherstep01(epsilon) < epsilon * epsilon);
         assert!(1.0 - smootherstep01(1.0 - epsilon) < epsilon * epsilon);
+    }
+
+    #[test]
+    fn completed_guard_step_exposes_contact_before_the_next_swing_is_selected() {
+        let left_end = Vec3::new(-0.2, 0.0, -0.8);
+        let right_support = Vec3::new(0.2, 0.0, 0.1);
+        let completed = completed_guard_step(GuardStepState::LeftSwing {
+            right_support,
+            left: GuardSwing {
+                start: Vec3::new(-0.2, 0.0, 0.0),
+                end: left_end,
+                progress: 1.0,
+                progress_per_second: 4.0,
+            },
+        });
+
+        assert_eq!(completed, Some((left_end, right_support, LeadFoot::Left)));
     }
 
     #[test]

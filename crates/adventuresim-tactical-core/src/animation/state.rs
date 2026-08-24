@@ -2161,10 +2161,11 @@ pub fn guard_movement_front_foot(lead: LeadFoot, local_direction: Vec2) -> LeadF
     }
 }
 
-/// Maximum lateral open stance. A shuffle cannot use the one-yard
-/// longitudinal span without leaving the planted foot far behind the COM.
+/// Maximum lateral open stance. Like the longitudinal opening, this is the
+/// leg-length-scaled one-yard reference stance: the moving-side foot reaches
+/// outward while the support foot remains behind the projected COM.
 pub fn guard_maximum_lateral_foot_separation(leg_length_metres: f32) -> f32 {
-    leg_length_metres.max(0.0) * 0.55
+    guard_maximum_foot_separation(leg_length_metres)
 }
 
 /// Direction-specific open stance, blended continuously for diagonals.
