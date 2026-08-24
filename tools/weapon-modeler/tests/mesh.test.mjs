@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { billHeadCurveSpans, billHeadOutline, buildWeapon, figureEightGuard, glaiveOutline, glaiveSpineCurveSpans, knuckleBow, maceFlangeOutline, measureMassProperties, sampleAdaptiveCurve, sampleCubicBezier, signedVolume, triangulatePolygon, tubePath, tubeRadialSegments } from "../src/mesh.js";
+import { billHeadCurveSpans, billHeadOutline, buildWeapon, figureEightGuard, glaiveOutline, glaiveSpineCurveSpans, knuckleBow, maceFlangeOutline, measureMassProperties, sampleAdaptiveCurve, sampleCubicBezier, signedVolume, triangulatePolygon, tubePath, tubeRadialSegments, validateWeapon } from "../src/mesh.js";
 import { automaticGripPoint } from "../src/glb-export.js";
 import { HEAD_KINDS, PRESETS, copyPreset, getPath, setControlValue, setPath } from "../src/presets.js";
 import { fitDistance, projectedFit } from "../src/renderer.js";
@@ -46,6 +46,25 @@ test("mesh mass distribution derives realistic pommel mass and handling", () => 
   const changed = measureMassProperties(changedMesh, automaticGripPoint(changedMesh.resolvedDefinition));
   assert.ok(changed.centerOfMassFromGripM < baseline.centerOfMassFromGripM);
   assert.ok(changed.balance < baseline.balance);
+});
+
+test("sword presets expose a hand-center clearance below the guard", () => {
+  const swords = PRESETS.filter((preset) => preset.definition.gripClearance !== undefined);
+  assert.ok(swords.length >= 8);
+  for (const source of swords) {
+    const preset = copyPreset(source);
+    const control = preset.controls.find((candidate) => candidate.path === "gripClearance");
+    assert.ok(control, source.id);
+    assert.equal(preset.definition.gripClearance, 0.05, source.id);
+    const mesh = buildWeapon(preset.definition);
+    const point = automaticGripPoint(mesh.resolvedDefinition);
+    const top = mesh.resolvedDefinition._frames["grip.top"];
+    assert.ok(Math.abs(Math.hypot(...point.map((value, axis) => value - top[axis])) - 0.05) < 1e-9, source.id);
+  }
+
+  const invalid = copyPreset(swords[0]);
+  invalid.definition.gripClearance = 0.5;
+  assert.ok(validateWeapon(invalid.definition, invalid.controls).errors.some((error) => error.includes("within the modeled grip")));
 });
 
 test("preset parameters can be independently copied and changed", () => {

@@ -125,6 +125,12 @@ function appendAccessor(document, bufferView, componentType, count, type, bounds
 
 export function automaticGripPoint(resolvedDefinition) {
   const frames = resolvedDefinition?._frames ?? {};
+  if (Number.isFinite(resolvedDefinition?.gripClearance) && frames["grip.base"] && frames["grip.top"]) {
+    const base = frames["grip.base"], top = frames["grip.top"];
+    const direction = base.map((value, axis) => value - top[axis]);
+    const length = Math.hypot(...direction);
+    return top.map((value, axis) => value + direction[axis] * (resolvedDefinition.gripClearance / length));
+  }
   if (frames["grip.center"]) return [...frames["grip.center"]];
   const bottom = frames["shaft.bottom"], top = frames["shaft.top"];
   if (bottom && top) {

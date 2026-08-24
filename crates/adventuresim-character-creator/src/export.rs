@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result, bail};
-use fabelgeist_mhr::math::Transform;
+use fabelgeist_mhr::math::{Transform, quat_from_matrix, quat_normalize};
 use serde_json::{Value, json};
 
 const GLB_MAGIC: &[u8; 4] = b"glTF";
@@ -14,6 +14,25 @@ const BIN_CHUNK: u32 = 0x004E_4942;
 pub const LEFT_WEAPON_JOINT: &str = "l_weapon";
 pub const RIGHT_WEAPON_JOINT: &str = "r_weapon";
 pub const FIRST_PERSON_CAMERA_JOINT: &str = "c_camera";
+
+const PALMAR_SOCKET_CLEARANCE_METERS: f64 = 0.002;
+const RAY_INTERSECTION_EPSILON: f64 = 1e-9;
+// Socket-local correction authored against assets_src/grip.glb. Keeping this
+// on the bone makes every weapon share the same hand-relative default pose.
+const WEAPON_SOCKET_CALIBRATION: Transform = Transform {
+    translation: [
+        -0.012158611279745317,
+        -0.0014950778497500217,
+        0.0023301551882869073,
+    ],
+    rotation: [
+        -0.04224712194103828,
+        0.1219730997753762,
+        0.06256993654774025,
+        0.9896578937487928,
+    ],
+    scale: 1.0,
+};
 
 pub struct RiggedMesh<'a> {
     pub positions: &'a [[f32; 3]],
@@ -126,22 +145,164 @@ fn between(a: Transform, b: Transform, amount: f64) -> [f64; 3] {
     ]
 }
 
+fn subtract(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn length(vector: [f64; 3]) -> f64 {
+    dot(vector, vector).sqrt()
+}
+
+fn normalize(vector: [f64; 3], side: &str, description: &str) -> Result<[f64; 3]> {
+    let length = length(vector);
+    if !length.is_finite() || length < 1e-9 {
+        bail!("MHR {side} hand landmarks do not define a stable {description}");
+    }
+    Ok(vector.map(|component| component / length))
+}
+
+fn ray_triangle_distance(
+    origin: [f64; 3],
+    direction: [f64; 3],
+    a: [f64; 3],
+    b: [f64; 3],
+    c: [f64; 3],
+) -> Option<f64> {
+    let edge_ab = subtract(b, a);
+    let edge_ac = subtract(c, a);
+    let perpendicular = cross(direction, edge_ac);
+    let determinant = dot(edge_ab, perpendicular);
+    if determinant.abs() < RAY_INTERSECTION_EPSILON {
+        return None;
+    }
+
+    let inverse_determinant = determinant.recip();
+    let from_a = subtract(origin, a);
+    let u = inverse_determinant * dot(from_a, perpendicular);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+
+    let cross_from_a = cross(from_a, edge_ab);
+    let v = inverse_determinant * dot(direction, cross_from_a);
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+
+    let distance = inverse_determinant * dot(edge_ac, cross_from_a);
+    (distance > RAY_INTERSECTION_EPSILON).then_some(distance)
+}
+
+fn palmar_surface_distance(
+    mesh: &RiggedMesh<'_>,
+    side: &str,
+    palm_center: [f64; 3],
+    palmar_normal: [f64; 3],
+    maximum_distance: f64,
+) -> Result<f64> {
+    let position = |index: u32| mesh.positions[index as usize].map(f64::from);
+    mesh.faces
+        .iter()
+        .filter_map(|face| {
+            ray_triangle_distance(
+                palm_center,
+                palmar_normal,
+                position(face[0]),
+                position(face[1]),
+                position(face[2]),
+            )
+        })
+        .filter(|distance| *distance <= maximum_distance)
+        .reduce(f64::min)
+        .with_context(|| format!("MHR {side} palm mesh has no surface beneath the socket"))
+}
+
+fn weapon_attachment(
+    mesh: &RiggedMesh<'_>,
+    side: &str,
+    wrist: Transform,
+    middle: Transform,
+    index: Transform,
+    ring: Transform,
+    thumb: [Transform; 2],
+) -> Result<Transform> {
+    let palm_length = normalize(
+        subtract(middle.translation, wrist.translation),
+        side,
+        "palm length",
+    )?;
+    let palm_width = subtract(index.translation, ring.translation);
+    let palm_width_length = length(palm_width);
+    let mut palmar_normal = normalize(cross(palm_length, palm_width), side, "palm plane")?;
+    let knuckle_center = [
+        (index.translation[0] + middle.translation[0] + ring.translation[0]) / 3.0,
+        (index.translation[1] + middle.translation[1] + ring.translation[1]) / 3.0,
+        (index.translation[2] + middle.translation[2] + ring.translation[2]) / 3.0,
+    ];
+    let palm_center = [
+        (wrist.translation[0] + knuckle_center[0]) * 0.5,
+        (wrist.translation[1] + knuckle_center[1]) * 0.5,
+        (wrist.translation[2] + knuckle_center[2]) * 0.5,
+    ];
+
+    // The thumb base disambiguates the palmar side of the skeletal hand plane
+    // on both mirrored hands. Offset the socket to that side rather than
+    // leaving it embedded halfway through the palm.
+    if dot(palmar_normal, subtract(thumb[0].translation, palm_center)) < 0.0 {
+        palmar_normal = palmar_normal.map(|component| -component);
+    }
+    // The weapon's +Y axis is the palm-width axis: exactly perpendicular to
+    // the wrist-to-fingers direction. The thumb landmark only chooses which of
+    // the two possible width directions is outward for each mirrored hand.
+    let mut weapon_y = normalize(cross(palmar_normal, palm_length), side, "palm width")?;
+    if dot(weapon_y, subtract(thumb[1].translation, palm_center)) < 0.0 {
+        weapon_y = weapon_y.map(|component| -component);
+    }
+    let weapon_z = palmar_normal;
+    let weapon_x = normalize(cross(weapon_y, weapon_z), side, "weapon frame")?;
+    let rotation = quat_normalize(quat_from_matrix([
+        [weapon_x[0], weapon_y[0], weapon_z[0]],
+        [weapon_x[1], weapon_y[1], weapon_z[1]],
+        [weapon_x[2], weapon_y[2], weapon_z[2]],
+    ]));
+    let depth = palmar_surface_distance(mesh, side, palm_center, palmar_normal, palm_width_length)?
+        + PALMAR_SOCKET_CLEARANCE_METERS;
+
+    let surface_socket = Transform {
+        translation: [
+            palm_center[0] + palmar_normal[0] * depth,
+            palm_center[1] + palmar_normal[1] * depth,
+            palm_center[2] + palmar_normal[2] * depth,
+        ],
+        rotation,
+        scale: wrist.scale,
+    };
+    Ok(surface_socket.compose(&WEAPON_SOCKET_CALIBRATION))
+}
+
 fn append_attachment(
     names: &mut Vec<String>,
     parents: &mut Vec<i32>,
     globals: &mut Vec<Transform>,
     name: &str,
     parent: usize,
-    translation: [f64; 3],
+    transform: Transform,
 ) {
-    let parent_state = globals[parent];
     names.push(name.to_owned());
     parents.push(parent as i32);
-    globals.push(Transform {
-        translation,
-        rotation: parent_state.rotation,
-        scale: parent_state.scale,
-    });
+    globals.push(transform);
 }
 
 fn validate(mesh: &RiggedMesh<'_>) -> Result<()> {
@@ -260,21 +421,50 @@ pub fn export_rigged_glb(
     let mut joint_parents = mesh.joint_parents.to_vec();
     let left_wrist = landmark(mesh, "l_wrist")?;
     let left_middle = landmark(mesh, "l_middle1")?;
+    let left_index = landmark(mesh, "l_index1")?;
+    let left_ring = landmark(mesh, "l_ring1")?;
+    let left_thumb_base = landmark(mesh, "l_thumb0")?;
+    let left_thumb = landmark(mesh, "l_thumb1")?;
     let right_wrist = landmark(mesh, "r_wrist")?;
     let right_middle = landmark(mesh, "r_middle1")?;
+    let right_index = landmark(mesh, "r_index1")?;
+    let right_ring = landmark(mesh, "r_ring1")?;
+    let right_thumb_base = landmark(mesh, "r_thumb0")?;
+    let right_thumb = landmark(mesh, "r_thumb1")?;
     let head = landmark(mesh, "c_head")?;
     let left_eye = landmark(mesh, "l_eye")?;
     let right_eye = landmark(mesh, "r_eye")?;
-    let left_grip_position = between(globals[left_wrist], globals[left_middle], 0.5);
-    let right_grip_position = between(globals[right_wrist], globals[right_middle], 0.5);
+    let left_grip = weapon_attachment(
+        mesh,
+        "left",
+        globals[left_wrist],
+        globals[left_middle],
+        globals[left_index],
+        globals[left_ring],
+        [globals[left_thumb_base], globals[left_thumb]],
+    )?;
+    let right_grip = weapon_attachment(
+        mesh,
+        "right",
+        globals[right_wrist],
+        globals[right_middle],
+        globals[right_index],
+        globals[right_ring],
+        [globals[right_thumb_base], globals[right_thumb]],
+    )?;
     let camera_position = between(globals[left_eye], globals[right_eye], 0.5);
+    let camera = Transform {
+        translation: camera_position,
+        rotation: globals[head].rotation,
+        scale: globals[head].scale,
+    };
     append_attachment(
         &mut joint_names,
         &mut joint_parents,
         &mut globals,
         LEFT_WEAPON_JOINT,
         left_wrist,
-        left_grip_position,
+        left_grip,
     );
     append_attachment(
         &mut joint_names,
@@ -282,7 +472,7 @@ pub fn export_rigged_glb(
         &mut globals,
         RIGHT_WEAPON_JOINT,
         right_wrist,
-        right_grip_position,
+        right_grip,
     );
     append_attachment(
         &mut joint_names,
@@ -290,7 +480,7 @@ pub fn export_rigged_glb(
         &mut globals,
         FIRST_PERSON_CAMERA_JOINT,
         head,
-        camera_position,
+        camera,
     );
     let inverse_bind_matrices = buffer.push(
         &f32_bytes(
@@ -492,15 +682,23 @@ mod tests {
             "body_world",
             "l_wrist",
             "l_middle1",
+            "l_index1",
+            "l_ring1",
+            "l_thumb0",
+            "l_thumb1",
             "r_wrist",
             "r_middle1",
+            "r_index1",
+            "r_ring1",
+            "r_thumb0",
+            "r_thumb1",
             "c_head",
             "l_eye",
             "r_eye",
         ]
         .map(str::to_owned)
         .to_vec();
-        let parents = vec![-1, 0, 1, 0, 3, 0, 5, 5];
+        let parents = vec![-1, 0, 1, 1, 1, 1, 5, 0, 7, 7, 7, 7, 11, 0, 13, 13];
         let transform = |translation: [f32; 3]| {
             [
                 translation[0],
@@ -517,8 +715,16 @@ mod tests {
             transform([0.0, 0.0, 0.0]),
             transform([-0.5, 1.0, 0.0]),
             transform([-0.5, 1.0, 0.2]),
+            transform([-0.45, 1.0, 0.2]),
+            transform([-0.55, 1.0, 0.2]),
+            transform([-0.44, 0.98, 0.06]),
+            transform([-0.4, 0.98, 0.08]),
             transform([0.5, 1.0, 0.0]),
             transform([0.5, 1.0, 0.2]),
+            transform([0.45, 1.0, 0.2]),
+            transform([0.55, 1.0, 0.2]),
+            transform([0.44, 0.98, 0.06]),
+            transform([0.4, 0.98, 0.08]),
             transform([0.0, 1.5, 0.0]),
             transform([-0.03, 1.6, -0.08]),
             transform([0.03, 1.6, -0.08]),
@@ -531,8 +737,8 @@ mod tests {
         let directory =
             std::env::temp_dir().join(format!("fabelgeist-mhr-export-{}", std::process::id()));
         let path = directory.join("character.glb");
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-        let normals = [[0.0, 0.0, 1.0]; 3];
+        let positions = [[-2.0, 0.98, -1.0], [2.0, 0.98, -1.0], [0.0, 0.98, 2.0]];
+        let normals = [[0.0, -1.0, 0.0]; 3];
         let faces = [[0, 1, 2]];
         let joint_indices = [[0, 0, 0, 0, 0, 0, 0, 0]; 3];
         let joint_weights = [[
@@ -562,7 +768,7 @@ mod tests {
         assert_eq!(&bytes[..4], GLB_MAGIC);
         assert_eq!(parsed.skins().count(), 1);
         assert_eq!(parsed.meshes().count(), 1);
-        assert_eq!(document["skins"][0]["joints"].as_array().unwrap().len(), 11);
+        assert_eq!(document["skins"][0]["joints"].as_array().unwrap().len(), 19);
         let nodes = document["nodes"].as_array().unwrap();
         let index_of = |name: &str| nodes.iter().position(|node| node["name"] == name).unwrap();
         let left_weapon = index_of(LEFT_WEAPON_JOINT);
@@ -586,11 +792,46 @@ mod tests {
                 .unwrap()
                 .contains(&json!(camera))
         );
-        for attachment in [left_weapon, right_weapon] {
+        for (attachment, thumb_sign) in [(left_weapon, 1.0), (right_weapon, -1.0)] {
             let translation = nodes[attachment]["translation"].as_array().unwrap();
-            assert!(translation[0].as_f64().unwrap().abs() < 1e-6);
-            assert!(translation[1].as_f64().unwrap().abs() < 1e-6);
-            assert!((translation[2].as_f64().unwrap() - 0.1).abs() < 1e-6);
+            let rotation = nodes[attachment]["rotation"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|component| component.as_f64().unwrap())
+                .collect::<Vec<_>>();
+            let rotation: [f64; 4] = rotation.try_into().unwrap();
+            let weapon_y = [thumb_sign, 0.0, 0.0];
+            let weapon_z = [0.0, -1.0, 0.0];
+            let weapon_x = cross(weapon_y, weapon_z);
+            let surface_rotation = quat_normalize(quat_from_matrix([
+                [weapon_x[0], weapon_y[0], weapon_z[0]],
+                [weapon_x[1], weapon_y[1], weapon_z[1]],
+                [weapon_x[2], weapon_y[2], weapon_z[2]],
+            ]));
+            let wrist_translation = [-thumb_sign * 0.5, 1.0, 0.0];
+            let expected_global = Transform {
+                translation: [wrist_translation[0], 0.978, 0.1],
+                rotation: surface_rotation,
+                scale: 1.0,
+            }
+            .compose(&WEAPON_SOCKET_CALIBRATION);
+            let expected_local = Transform {
+                translation: wrist_translation,
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: 1.0,
+            }
+            .inverse()
+            .compose(&expected_global);
+            for (actual, expected) in translation.iter().zip(expected_local.translation) {
+                assert!((actual.as_f64().unwrap() - expected).abs() < 1e-6);
+            }
+            let rotation_alignment = rotation
+                .iter()
+                .zip(expected_local.rotation)
+                .map(|(actual, expected)| actual * expected)
+                .sum::<f64>();
+            assert!(rotation_alignment.abs() > 1.0 - 1e-6);
         }
         assert_eq!(
             document["meshes"][0]["primitives"][0]["attributes"]["JOINTS_1"],
