@@ -520,6 +520,19 @@ pub struct Party {
     /// the night window centered on midnight.
     #[default(false)]
     pub travel_at_night: bool,
+    /// Leader-selected journey-local time of day at departure. Journey elapsed
+    /// time advances from this value, while the canonical calendar date and
+    /// lunar phase remain frozen until the party reaches a settlement.
+    #[default(480u16)]
+    pub journey_start_minute_of_day: u16,
+    /// Canonical instant at which the current wilderness excursion began.
+    /// Its calendar date and lunar phase remain fixed until settlement return.
+    #[default(None::<u64>)]
+    pub wilderness_canonical_anchor_minute: Option<u64>,
+    /// Total subjective party time since the current wilderness excursion
+    /// began. This survives individual legs, camps, redirects, and case sites.
+    #[default(0u64)]
+    pub wilderness_elapsed_minutes: u64,
     /// Automatic camps clear every living member's carried fatigue. A fixed
     /// duration preserves the leader's deliberate shorter or longer override.
     #[default(CampDurationMode::Auto)]
@@ -632,8 +645,9 @@ pub struct PartyJourney {
     /// reconstruction from the party's current absolute time.
     #[default(0u8)]
     pub plan_version: u8,
-    /// Additive v2 itinerary coordinates. Legacy minute fields above remain
-    /// route-movement coordinates for compatibility.
+    /// Journey-local minute at the beginning of this leg, represented on the
+    /// excursion's frozen canonical day. `completed_elapsed_minutes` remains
+    /// the monotonic progress coordinate for this leg.
     #[default(0u64)]
     pub departure_minute: u64,
     #[default(0u64)]

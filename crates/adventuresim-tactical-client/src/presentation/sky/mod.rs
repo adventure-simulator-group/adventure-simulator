@@ -245,8 +245,9 @@ pub(in crate::presentation) struct PresentedCelestialLighting {
 
 impl CelestialLightingSnapshot {
     fn from_environment(scene: Entity, environment: &SceneEnvironment) -> Self {
-        let celestial = celestial_directions(
+        let celestial = celestial_directions_with_phase(
             environment.absolute_minute,
+            environment.lunar_phase_minute,
             environment.latitude_microdegrees,
             environment.longitude_microdegrees,
         );

@@ -19,6 +19,7 @@ pub fn build_imported_scene(
     latitude_e7: i32,
     longitude_e7: i32,
     absolute_minute: u64,
+    lunar_phase_minute: u64,
 ) -> Result<TacticalSceneInput, String> {
     let latitude = f64::from(latitude_e7) / 10_000_000.0;
     let longitude = f64::from(longitude_e7) / 10_000_000.0;
@@ -78,6 +79,7 @@ pub fn build_imported_scene(
         latitude_microdegrees: latitude_e7 / 10,
         longitude_microdegrees: longitude_e7 / 10,
         absolute_minute,
+        lunar_phase_minute,
         absolute_elevation_metres: center.elevation_m,
         playable,
         vista,

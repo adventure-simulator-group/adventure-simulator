@@ -520,7 +520,7 @@ mod departure_invariant_tests {
     }
 
     #[test]
-    fn zero_minute_terminal_is_settled_before_survivors_retry() {
+fn zero_minute_terminal_is_settled_before_survivors_retry() {
         let first_prefixes = [12, 0];
         let first = common_movement_prefix(12, first_prefixes);
         assert_eq!(first, 0);
@@ -550,6 +550,9 @@ mod departure_invariant_tests {
             camp_fatigue_percent: 50,
             walking_minutes_per_day: 480,
             travel_at_night: false,
+            journey_start_minute_of_day: 480,
+            wilderness_canonical_anchor_minute: Some(10_000),
+            wilderness_elapsed_minutes: 0,
             camp_duration_mode: CampDurationMode::Auto,
             fixed_camp_minutes: 0,
             camp_destination: Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
@@ -640,4 +643,35 @@ mod departure_invariant_tests {
         );
         assert_eq!(source.matches("else {\n        return Ok(());\n    };").count(), 2);
     }
+}
+
+#[test]
+fn journey_local_time_wraps_without_advancing_the_frozen_date() {
+    let journey = PartyJourney {
+        party_id: "party".into(),
+        gateway_bucket: 0,
+        origin: JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+            id: "origin".into(),
+            name: "Origin".into(),
+        }),
+        destination: JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+            id: "destination".into(),
+            name: "Destination".into(),
+        }),
+        total_minutes: 60,
+        completed_minutes: 0,
+        camp_stop_minutes: Vec::new(),
+        forecast_camp_stop_minutes: Vec::new(),
+        fatigue_percent: 0,
+        plan_version: 1,
+        departure_minute: 10 * 1_440 + 1_380,
+        total_elapsed_minutes: 60,
+        completed_elapsed_minutes: 0,
+        walking_minutes_per_day: 480,
+        travel_at_night: false,
+        camp_duration_mode: CampDurationMode::Fixed,
+        fixed_camp_minutes: 960,
+    };
+    assert_eq!(journey_local_minute(&journey, 120), 10 * 1_440 + 60);
+    assert_eq!(journey_local_minute(&journey, 90 * 1_440 + 120), 10 * 1_440 + 60);
 }

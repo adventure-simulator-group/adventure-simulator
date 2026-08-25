@@ -3,6 +3,7 @@ pub(super) struct TravelConfigurationForm {
     walking_hours: f32,
     #[serde(default)]
     travel_at_night: bool,
+    journey_start_time: String,
 }
 
 pub(super) async fn update_travel_configuration(
@@ -31,6 +32,19 @@ pub(super) async fn save_travel_configuration(
         return Redirect::to("/characters").into_response();
     };
     let walking_minutes = (form.walking_hours.clamp(0.0, 24.0) * 60.0).round() as u16;
+    let Some((hours, minutes)) = form.journey_start_time.split_once(':') else {
+        return (StatusCode::BAD_REQUEST, "Journey start time must use HH:MM").into_response();
+    };
+    let Ok(hours) = hours.parse::<u16>() else {
+        return (StatusCode::BAD_REQUEST, "Journey start time must use HH:MM").into_response();
+    };
+    let Ok(minutes) = minutes.parse::<u16>() else {
+        return (StatusCode::BAD_REQUEST, "Journey start time must use HH:MM").into_response();
+    };
+    if hours >= 24 || minutes >= 60 {
+        return (StatusCode::BAD_REQUEST, "Journey start time is outside one day").into_response();
+    }
+    let journey_start_minute_of_day = hours * 60 + minutes;
     match state
         .db
         .call(
@@ -39,6 +53,7 @@ pub(super) async fn save_travel_configuration(
                 json!(character_id),
                 json!(walking_minutes),
                 json!(form.travel_at_night),
+                json!(journey_start_minute_of_day),
                 json!(false),
                 json!((24 * 60_u16).saturating_sub(walking_minutes)),
             ],
@@ -808,18 +823,7 @@ pub(super) async fn rest_at_camp(
         )
         .await
     {
-        Ok(()) => {
-            if form.advance_development_clock {
-                let _ = state
-                    .db
-                    .call(
-                        "sync_development_clock_to_character",
-                        &[json!(character_id)],
-                    )
-                    .await;
-            }
-            Redirect::to("/camp").into_response()
-        }
+        Ok(()) => Redirect::to("/camp").into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }

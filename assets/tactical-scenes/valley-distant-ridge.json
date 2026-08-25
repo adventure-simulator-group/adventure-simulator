@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "generation_version": 9,
   "seed": 47109,
   "scene_key": "valley",
@@ -10,6 +10,7 @@
   "latitude_microdegrees": 53500000,
   "longitude_microdegrees": 10000000,
   "absolute_minute": 340440,
+  "lunar_phase_minute": 340440,
   "absolute_elevation_metres": 42,
   "playable": {
     "width": 9,

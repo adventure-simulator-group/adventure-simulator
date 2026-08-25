@@ -192,6 +192,7 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
         latitude_microdegrees: 53_500_000,
         longitude_microdegrees: 10_000_000,
         absolute_minute: fixture.weather.interval_start_minute,
+        lunar_phase_minute: fixture.weather.interval_start_minute,
         absolute_elevation_metres: 42,
         playable: grid(9, 9, 12.5, fixture.terrain, fixture.environment),
         vista: vista(

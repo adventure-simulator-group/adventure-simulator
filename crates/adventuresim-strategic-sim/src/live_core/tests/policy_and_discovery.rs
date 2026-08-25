@@ -126,7 +126,7 @@ fn insufficient_settlement_resources_defer_to_installed_labor_without_free_servi
     let install = activity.find("install_activity_schedule").unwrap();
     let venue = activity.find("settlement_activity_venue").unwrap();
     let deferred = activity.find("format_deferred_activity_detail").unwrap();
-    let rest = activity.find("rest_at_settlement_hours_then").unwrap();
+    let rest = activity.find("rest_at_settlement_then").unwrap();
     assert!(install < venue);
     assert!(venue < deferred);
     assert!(deferred < rest);
@@ -137,7 +137,7 @@ fn insufficient_settlement_resources_defer_to_installed_labor_without_free_servi
         .expect("no-venue deferral branch");
     assert!(no_venue.contains("format_deferred_activity_detail"));
     assert!(no_venue.contains("continue;"));
-    assert!(!no_venue.contains("rest_at_settlement_hours_then"));
+    assert!(!no_venue.contains("rest_at_settlement_then"));
     assert!(source.contains("outcome=deferred;reason=insufficient_visible_resources"));
 
     let loop_source = source
@@ -224,7 +224,7 @@ fn activity_schedule_is_installed_before_the_logged_rest_attempt() {
         .find("install_activity_schedule")
         .expect("authoritative schedule installation");
     let rest = block
-        .find("rest_at_settlement_hours_then")
+        .find("rest_at_settlement_then")
         .expect("authoritative activity rest");
     assert!(install < rest);
 }
@@ -244,7 +244,7 @@ fn settlement_activity_stops_when_an_incident_relocates_the_party() {
     let first_medical = activity.find("ensure_medically_safe(agent)").unwrap();
     assert!(member_loop < first_location_check && first_location_check < first_medical);
 
-    let activity_rest = activity.find("rest_at_settlement_hours_then").unwrap();
+    let activity_rest = activity.find("rest_at_settlement_then").unwrap();
     let post_rest_location_check = activity[activity_rest..]
         .find("party_is_still_at_original_settlement")
         .map(|offset| activity_rest + offset)
