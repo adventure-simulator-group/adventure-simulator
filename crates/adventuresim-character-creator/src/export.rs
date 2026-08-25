@@ -248,8 +248,10 @@ fn ray_triangle_hit(
 }
 
 fn attachment_region_joint(name: &str) -> bool {
-    matches!(name, "root" | "c_spine0" | "c_spine1" | "l_upleg" | "r_upleg")
-        || name.starts_with("l_upleg_twist")
+    matches!(
+        name,
+        "root" | "c_spine0" | "c_spine1" | "l_upleg" | "r_upleg"
+    ) || name.starts_with("l_upleg_twist")
         || name.starts_with("r_upleg_twist")
 }
 
@@ -276,12 +278,10 @@ fn uv_barycentric(point: [f64; 2], a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Opt
     if determinant.abs() <= RAY_INTERSECTION_EPSILON {
         return None;
     }
-    let first = ((b[1] - c[1]) * (point[0] - c[0])
-        + (c[0] - b[0]) * (point[1] - c[1]))
-        / determinant;
-    let second = ((c[1] - a[1]) * (point[0] - c[0])
-        + (a[0] - c[0]) * (point[1] - c[1]))
-        / determinant;
+    let first =
+        ((b[1] - c[1]) * (point[0] - c[0]) + (c[0] - b[0]) * (point[1] - c[1])) / determinant;
+    let second =
+        ((c[1] - a[1]) * (point[0] - c[0]) + (a[0] - c[0]) * (point[1] - c[1])) / determinant;
     let third = 1.0 - first - second;
     const UV_EDGE_EPSILON: f64 = 1e-6;
     [first, second, third]
@@ -292,9 +292,7 @@ fn uv_barycentric(point: [f64; 2], a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Opt
 
 fn interpolate3(values: [[f64; 3]; 3], weights: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|axis| {
-        values[0][axis] * weights[0]
-            + values[1][axis] * weights[1]
-            + values[2][axis] * weights[2]
+        values[0][axis] * weights[0] + values[1][axis] * weights[1] + values[2][axis] * weights[2]
     })
 }
 
@@ -364,7 +362,8 @@ pub fn fitted_equipment_socket_from_uv(
         .enumerate()
         .filter(|(_, (face, _))| selected_faces.contains(&face_key(*face)))
         .filter_map(|(face_index, (face, uv_face))| {
-            let uv_triangle = uv_face.map(|index| layout.texcoords.get(index as usize).copied())
+            let uv_triangle = uv_face
+                .map(|index| layout.texcoords.get(index as usize).copied())
                 .into_iter()
                 .collect::<Option<Vec<_>>>()?;
             let barycentric = uv_barycentric(
@@ -389,7 +388,14 @@ pub fn fitted_equipment_socket_from_uv(
             )
             .ok()?;
             let alignment = dot(normal, expected_outward);
-            (alignment > 0.25).then_some((alignment, attachment_weight, face_index, face, barycentric, normal))
+            (alignment > 0.25).then_some((
+                alignment,
+                attachment_weight,
+                face_index,
+                face,
+                barycentric,
+                normal,
+            ))
         })
         .max_by(|left, right| {
             left.0
@@ -488,8 +494,11 @@ pub fn bootstrap_equipment_surface_uv(
                     + weights[1] as f64 * u
                     + weights[2] as f64 * v;
                 maximum_attachment_weight = maximum_attachment_weight.max(weight);
-                (weight >= EQUIPMENT_SOCKET_WEIGHT_THRESHOLD as f64)
-                    .then_some((distance, face, [1.0 - u - v, u, v]))
+                (weight >= EQUIPMENT_SOCKET_WEIGHT_THRESHOLD as f64).then_some((
+                    distance,
+                    face,
+                    [1.0 - u - v, u, v],
+                ))
             })
             .max_by(|left, right| left.0.total_cmp(&right.0));
         if let Some((_, face, barycentric)) = candidate {
@@ -1547,12 +1556,11 @@ mod tests {
         );
         assert_eq!(document["skins"][0]["joints"].as_array().unwrap().len(), 2);
         assert_eq!(
-            document["extras"]["adventuresim_equipment"]["attachment_sockets"][0]
-                ["attachment_point_id"],
+            document["extras"]["adventuresim_equipment"]["attachment_sockets"][0]["attachment_point_id"],
             "left"
         );
-        let exported_surface = &document["extras"]["adventuresim_equipment"]
-            ["attachment_sockets"][0]["surface_uv"];
+        let exported_surface =
+            &document["extras"]["adventuresim_equipment"]["attachment_sockets"][0]["surface_uv"];
         assert_eq!(exported_surface["domain"], MHR_ANATOMICAL_UV_DOMAIN);
         for (actual, expected) in exported_surface["uv"]
             .as_array()
@@ -1568,14 +1576,18 @@ mod tests {
             .position(|node| node["name"] == format!("{EQUIPMENT_SOCKET_NODE_PREFIX}left"))
             .expect("exported pelvis-local socket node");
         assert_eq!(nodes[socket_node]["translation"], json!([-0.25, 0.75, 0.0]));
-        assert!(nodes[1]["children"]
-            .as_array()
-            .unwrap()
-            .contains(&json!(socket_node)));
-        assert!(!document["scenes"][0]["nodes"]
-            .as_array()
-            .unwrap()
-            .contains(&json!(socket_node)));
+        assert!(
+            nodes[1]["children"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(socket_node))
+        );
+        assert!(
+            !document["scenes"][0]["nodes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(socket_node))
+        );
         assert_eq!(
             document["extras"]["adventuresim_rig"]["attachments"],
             json!([])
@@ -1706,9 +1718,8 @@ mod tests {
         // in the tactical character frame.
         assert!(-resolved_tangent[1] > 0.0);
         assert!(-resolved_tangent[2] > 0.0);
-        let bootstrapped =
-            bootstrap_equipment_surface_uv(&mesh, &shell, &layout, [-1.0, 0.0, 0.0])
-                .expect("legacy ray should bootstrap the same UV anchor");
+        let bootstrapped = bootstrap_equipment_surface_uv(&mesh, &shell, &layout, [-1.0, 0.0, 0.0])
+            .expect("legacy ray should bootstrap the same UV anchor");
         assert!((bootstrapped[0] - 0.5).abs() < 1e-6);
         assert!((bootstrapped[1] - 0.5).abs() < 1e-6);
 

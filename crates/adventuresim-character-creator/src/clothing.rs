@@ -303,9 +303,7 @@ fn outward_wound_faces(
             ];
             let area_squared = dot(face_normal, face_normal);
             if !area_squared.is_finite() {
-                return Some(Err(format!(
-                    "{name} contains a non-finite face: {face:?}"
-                )));
+                return Some(Err(format!("{name} contains a non-finite face: {face:?}")));
             }
             if area_squared <= f32::EPSILON.powi(2) {
                 return None;
@@ -314,11 +312,7 @@ fn outward_wound_faces(
                 .iter()
                 .map(|vertex| normals[*vertex as usize])
                 .fold([0.0; 3], |sum, normal| {
-                    [
-                        sum[0] + normal[0],
-                        sum[1] + normal[1],
-                        sum[2] + normal[2],
-                    ]
+                    [sum[0] + normal[0], sum[1] + normal[1], sum[2] + normal[2]]
                 });
             let orientation = face_normal[0] * reference_normal[0]
                 + face_normal[1] * reference_normal[1]
@@ -496,10 +490,10 @@ pub fn generate_clothing_shells(
             let waist_cross_section = if span.regions.contains(&Region::Stomach) {
                 Some(
                     joint_names
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, name)| waist_surface_joint(name).then_some(index))
-                    .collect::<HashSet<_>>(),
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, name)| waist_surface_joint(name).then_some(index))
+                        .collect::<HashSet<_>>(),
                 )
             } else {
                 None
@@ -523,13 +517,7 @@ pub fn generate_clothing_shells(
             .enumerate()
             .map(|(vertex, position)| {
                 span_masks.iter().any(
-                    |(
-                        selected_joints,
-                        segments,
-                        (minimum, maximum),
-                        (start, end),
-                        _,
-                    )| {
+                    |(selected_joints, segments, (minimum, maximum), (start, end), _)| {
                         let weight = joint_indices[vertex]
                             .iter()
                             .zip(&joint_weights[vertex])
