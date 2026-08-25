@@ -396,6 +396,10 @@ pub(super) fn spawn(
 const GRASS_PATCH_GRID_SIDE: usize = 32;
 pub(in crate::presentation) const GRASS_PATCH_SPACING: f32 = 3.2;
 const GRASS_BLADE_SPACING: f32 = 3.51 / (GRASS_PATCH_GRID_SIDE - 1) as f32;
+// Deliberately stylized for third-person readability: the former 19 mm body
+// became too thin once centreline lean stopped being misread as shader width.
+// Taper still converges to one zero-width terminal vertex.
+const GRASS_BLADE_WIDTH_METRES: f32 = 0.076;
 // Keep neighbouring near-flat macro patches inside the blade footprint even
 // when their deterministic centre jitter diverges in opposite directions. This
 // is just below the 3.51 / 3.2 overlap limit.
@@ -746,8 +750,8 @@ pub(in crate::presentation) fn grass_patch_mesh(
             let jitter_z = (unit_hash(splitmix64(hash)) - 0.5) * blade_spacing * 0.46;
             let clump_vigor = 0.5 + 0.5 * (row as f32 * 0.31 + column as f32 * 0.17 + 0.8).sin();
             let height_scale =
-                (0.34 + unit_hash(splitmix64(hash ^ 0x52a9_f131)) * 0.60 + clump_vigor * 0.26)
-                    .clamp(0.34, 1.20);
+                (0.50 + unit_hash(splitmix64(hash ^ 0x52a9_f131)) * 0.62 + clump_vigor * 0.20)
+                    .clamp(0.50, 1.30);
             let width_scale = 0.62 + unit_hash(splitmix64(hash ^ 0x91e2_57a4)) * 0.76;
             let base_x = (column as f32 - centre) * blade_spacing;
             let base_z = (row as f32 - centre) * blade_spacing;
@@ -776,10 +780,10 @@ pub(in crate::presentation) fn grass_patch_mesh(
             }
         })
         .collect::<Vec<_>>();
-    // Gameplay-scale grass needs a tapered, separated silhouette. The former
-    // 26 mm by 82 cm shared ribbon became a wall of rectangular columns from
-    // the third-person camera before species scaling was even applied.
-    let mut mesh = grass_ribbon_patch_mesh(0.019, 0.72, color, lod, &blades);
+    // The shared ribbon stays tall enough to read as meadow grass from the
+    // third-person camera. Species width and the softer taper keep individual
+    // blades separated without turning the sward into short triangular cards.
+    let mut mesh = grass_ribbon_patch_mesh(GRASS_BLADE_WIDTH_METRES, 0.82, color, lod, &blades);
     let rendered_vertices = mesh.count_vertices();
     pad_grass_vertex_allocation(
         &mut mesh,
@@ -954,20 +958,6 @@ impl GrassSpecies {
         }
     }
 
-    fn shoulder_scale(self, height_fraction: f32) -> f32 {
-        if height_fraction < 0.76 {
-            return 1.0;
-        }
-        match self {
-            // Dense, lumpy cocksfoot panicles remain conspicuous at the last
-            // paired ribbon row, while open panicles stay optically lighter.
-            Self::Cocksfoot => 1.75,
-            Self::FalseOatGrass | Self::TuftedHairGrass => 1.16,
-            Self::CommonBent => 0.82,
-            Self::RedFescue | Self::YorkshireFog => 1.0,
-        }
-    }
-
     fn pigment_scale(self) -> [f32; 3] {
         match self {
             Self::FalseOatGrass => [1.02, 1.0, 0.84],
@@ -1023,7 +1013,7 @@ fn grass_ribbon_patch_mesh(
         let lean_metres = height
             * height_scale
             * species.height_scale()
-            * (0.035 + unit_hash(splitmix64(hash ^ 0x626c_6164_655f_6c65)) * 0.16);
+            * (0.008 + unit_hash(splitmix64(hash ^ 0x626c_6164_655f_6c65)) * 0.027);
         // Healthy blades share their species pigment. Senescent tips retain a
         // hard straw region, while blade separation comes from the material's
         // specular response rather than randomized albedo.
@@ -1040,8 +1030,7 @@ fn grass_ribbon_patch_mesh(
         let base = positions.len() as u32;
 
         for &height_fraction in rows {
-            let taper =
-                (1.0 - height_fraction).powf(0.96) * species.shoulder_scale(height_fraction);
+            let taper = (1.0 - height_fraction).powf(0.72);
             let side = half_width * taper;
             let centre = root
                 + Vec3::Y * height * height_scale * species.height_scale() * height_fraction
@@ -1091,11 +1080,11 @@ fn grass_ribbon_patch_mesh(
         let tip = base + (vertices_per_blade - 1) as u32;
         indices.extend_from_slice(&[shoulder, shoulder + 1, tip]);
 
-        // Seed heads are a sparse Near-only diagnostic. Far/Vista retain the
-        // same optical mass with the ribbon shoulder, while close cocksfoot
-        // reads as compact offset clusters and oat/bent/hair-grass as open
-        // panicles. Only about one shoot in eight bears one, keeping the cost
-        // bounded and avoiding sub-pixel triangles at distance.
+        // Seed heads are sparse Near-only geometry. Close cocksfoot reads as
+        // compact offset clusters and oat/bent/hair-grass as open panicles;
+        // ordinary ribbons remain smoothly pointed at every LOD. Only about
+        // one shoot in eight bears a seed head, keeping the cost bounded and
+        // avoiding sub-pixel triangles at distance.
         let branch_count = species.inflorescence_branch_count();
         if lod == GrassMeshLod::Near
             && branch_count > 0
@@ -1430,10 +1419,6 @@ mod tests {
             lean.attribute(Mesh::ATTRIBUTE_POSITION)
         );
         assert!(GrassSpecies::RedFescue.width_scale() < GrassSpecies::FalseOatGrass.width_scale());
-        assert!(
-            GrassSpecies::Cocksfoot.shoulder_scale(0.9)
-                > GrassSpecies::FalseOatGrass.shoulder_scale(0.9)
-        );
         assert_eq!(GrassSpecies::RedFescue.inflorescence_branch_count(), 0);
         assert!(
             GrassSpecies::CommonBent.inflorescence_branch_count()
@@ -1442,8 +1427,47 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_blade_bodies_use_the_exact_four_times_authored_width() {
+        assert_eq!(GRASS_BLADE_WIDTH_METRES, 0.019 * 4.0);
+        for species in [
+            GrassSpecies::FalseOatGrass,
+            GrassSpecies::Cocksfoot,
+            GrassSpecies::RedFescue,
+            GrassSpecies::CommonBent,
+            GrassSpecies::TuftedHairGrass,
+            GrassSpecies::YorkshireFog,
+        ] {
+            let mesh = grass_ribbon_patch_mesh(
+                GRASS_BLADE_WIDTH_METRES,
+                0.82,
+                Color::WHITE,
+                GrassMeshLod::Far,
+                &[GrassBlade {
+                    offset_x: 0.0,
+                    offset_z: 0.0,
+                    height_scale: 1.0,
+                    width_scale: 1.0,
+                    seed: 0,
+                    species,
+                }],
+            );
+            let positions = mesh
+                .attribute(Mesh::ATTRIBUTE_POSITION)
+                .and_then(VertexAttributeValues::as_float3)
+                .expect("ordinary blades should retain authored positions");
+            let base_width =
+                Vec3::from_array(positions[0]).distance(Vec3::from_array(positions[1]));
+            assert!(
+                (base_width - GRASS_BLADE_WIDTH_METRES * species.width_scale()).abs()
+                    < f32::EPSILON * 8.0,
+                "{species:?} must apply its width scale to the exact 76 mm body"
+            );
+        }
+    }
+
+    #[test]
     fn near_seed_heads_are_crossed_clusters_with_rigid_attachment_metadata() {
-        let mesh = (0..4_096)
+        let flowering_seed = (0..4_096)
             .find_map(|seed| {
                 let mesh = grass_ribbon_patch_mesh(
                     0.026,
@@ -1459,9 +1483,26 @@ mod tests {
                         species: GrassSpecies::Cocksfoot,
                     }],
                 );
-                (mesh.count_vertices() > 11).then_some(mesh)
+                (mesh.count_vertices() > 11).then_some(seed)
             })
             .expect("the bounded seed search should find a flowering cocksfoot shoot");
+        let flowering_mesh = |species| {
+            grass_ribbon_patch_mesh(
+                0.026,
+                0.82,
+                Color::WHITE,
+                GrassMeshLod::Near,
+                &[GrassBlade {
+                    offset_x: 0.0,
+                    offset_z: 0.0,
+                    height_scale: 1.0,
+                    width_scale: 1.0,
+                    seed: flowering_seed,
+                    species,
+                }],
+            )
+        };
+        let mesh = flowering_mesh(GrassSpecies::Cocksfoot);
 
         let positions = mesh
             .attribute(Mesh::ATTRIBUTE_POSITION)
@@ -1483,6 +1524,120 @@ mod tests {
             "the nearest seed head must contain authored lateral branches"
         );
         assert_eq!(seed_head_positions.len() % 4, 0);
+
+        let oat = flowering_mesh(GrassSpecies::FalseOatGrass);
+        let oat_positions = oat
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .expect("open oat-grass panicles should retain authored positions");
+        let lateral_extent = |positions: &[[f32; 3]]| {
+            positions[11..]
+                .iter()
+                .map(|position| Vec2::new(position[0], position[2]).length())
+                .fold(0.0_f32, f32::max)
+        };
+        assert!(
+            lateral_extent(positions) < lateral_extent(oat_positions),
+            "cocksfoot seed heads must remain more compact than open panicles"
+        );
+    }
+
+    #[test]
+    fn ordinary_blade_ribbons_reconstruct_to_pointed_nondegenerate_tips() {
+        let species = [
+            GrassSpecies::FalseOatGrass,
+            GrassSpecies::Cocksfoot,
+            GrassSpecies::RedFescue,
+            GrassSpecies::CommonBent,
+            GrassSpecies::TuftedHairGrass,
+            GrassSpecies::YorkshireFog,
+        ];
+
+        for lod in [GrassMeshLod::Near, GrassMeshLod::Far, GrassMeshLod::Vista] {
+            for species in species {
+                let mesh = grass_ribbon_patch_mesh(
+                    0.026,
+                    0.82,
+                    Color::WHITE,
+                    lod,
+                    &[GrassBlade {
+                        offset_x: 0.0,
+                        offset_z: 0.0,
+                        height_scale: 1.0,
+                        width_scale: 1.0,
+                        seed: 0,
+                        species,
+                    }],
+                );
+                let positions = mesh
+                    .attribute(Mesh::ATTRIBUTE_POSITION)
+                    .and_then(VertexAttributeValues::as_float3)
+                    .expect("ordinary blades should retain authored positions");
+                let normals = mesh
+                    .attribute(Mesh::ATTRIBUTE_NORMAL)
+                    .and_then(VertexAttributeValues::as_float3)
+                    .expect("ordinary blades should retain authored normals");
+                let Some(VertexAttributeValues::Float32x2(uvs)) =
+                    mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+                else {
+                    panic!("ordinary blades should retain side and height metadata");
+                };
+                let paired_rows = lod.row_heights().len();
+                let widths = positions[..paired_rows * 2]
+                    .chunks_exact(2)
+                    .map(|row| Vec3::from_array(row[0]).distance(Vec3::from_array(row[1])))
+                    .collect::<Vec<_>>();
+                assert!(
+                    widths.windows(2).all(|pair| pair[1] < pair[0]),
+                    "{species:?} {lod:?} ordinary blade must narrow at every row"
+                );
+                let tip_index = paired_rows * 2;
+                let shoulder = tip_index - 2;
+                assert!(
+                    uvs[tip_index] == [0.5, 1.0],
+                    "the shared tip must carry the centre-vertex UV contract"
+                );
+                let indices = mesh.indices().unwrap().iter().collect::<Vec<_>>();
+                let ordinary_index_count = ((paired_rows - 1) * 2 + 1) * 3;
+                assert_eq!(
+                    &indices[ordinary_index_count - 3..ordinary_index_count],
+                    &[shoulder as usize, shoulder + 1, tip_index],
+                    "the final primitive must be one shoulder-to-tip triangle"
+                );
+
+                let normal = Vec3::from_array(normals[0]);
+                let local_side = Vec2::new(-normal.z, normal.x).normalize();
+                let reconstruct = |index: usize| {
+                    let authored = Vec3::from_array(positions[index]);
+                    let authored_half_width =
+                        Vec2::new(authored.x, authored.z).dot(local_side).abs();
+                    let half_width = if (uvs[index][0] - 0.5).abs() < 0.001 {
+                        0.0
+                    } else {
+                        authored_half_width
+                    };
+                    let signed_side = if uvs[index][0] >= 0.5 { 1.0 } else { -1.0 };
+                    Vec3::new(
+                        local_side.x * half_width * signed_side,
+                        authored.y,
+                        local_side.y * half_width * signed_side,
+                    )
+                };
+                let left = reconstruct(shoulder);
+                let right = reconstruct(shoulder + 1);
+                let tip = reconstruct(tip_index);
+                assert!(
+                    Vec2::new(positions[tip_index][0], positions[tip_index][2]).length() > 0.0,
+                    "the fixture must exercise an authored centreline lean"
+                );
+                assert_eq!(Vec2::new(tip.x, tip.z), Vec2::ZERO);
+                let terminal_area = (right - left).cross(tip - left).length() * 0.5;
+                assert!(
+                    terminal_area > 0.00001,
+                    "{species:?} {lod:?} reconstructed terminal triangle must remain visible"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1711,14 +1866,32 @@ mod tests {
             .copied()
             .fold(f32::NEG_INFINITY, f32::max);
         assert!(
-            minimum_height < 0.52,
-            "short blades should break the curtain silhouette"
+            minimum_height > 0.25,
+            "even the shortest species must remain legible as grass"
         );
         assert!(
-            maximum_height > 0.95,
+            minimum_height < 0.60,
+            "short blades should still break the curtain silhouette"
+        );
+        assert!(
+            maximum_height > 1.20,
             "mature blades should remain visibly taller"
         );
         assert!(maximum_height - minimum_height > 0.45);
+
+        for (blade, roots) in near_blade_positions
+            .chunks_exact(11)
+            .zip(near_blade_roots.chunks_exact(11))
+        {
+            let tip = Vec3::from_array(blade[10]);
+            let root = Vec3::new(roots[0][0], 0.0, roots[0][1]);
+            let displacement = tip - root;
+            let horizontal_displacement = Vec2::new(displacement.x, displacement.z).length();
+            assert!(
+                horizontal_displacement / tip.y <= 0.0351,
+                "authored blade silhouettes must remain predominantly upright"
+            );
+        }
 
         let blade_widths = near_blade_positions
             .chunks_exact(11)
@@ -2081,9 +2254,13 @@ mod tests {
         assert!(shader.contains("let edge_growth = mix(0.26, 1.0"));
         assert!(!shader.contains("let tip_age"));
         assert!(shader.contains("* mix(1.0, 0.94, mature_age)"));
-        assert!(shader.contains("lean_amount + 0.012 * mature_age"));
+        assert!(shader.contains("lean_amount + 0.004 * mature_age"));
         assert!(shader.contains("let is_inflorescence = vertex.uv.y < 0.0"));
         assert!(shader.contains("let bent_offset = rotate_between"));
+        assert!(shader.contains("let authored_half_width = abs(dot("));
+        assert!(shader.contains("let is_centre_vertex = abs(vertex.uv.x - 0.5) < 0.001"));
+        assert!(shader.contains("0.0,\n                is_centre_vertex,"));
+        assert!(!shader.contains("let half_width = length(position.xz - root_local.xz)"));
         assert!(shader.contains("abs(f32(in.visibility_range_dither)) / 16.0"));
         assert!(!shader.contains("visibility_range_dither(in.position"));
         assert!(shader.contains("vec4<f32>(root_world, 1.0)"));
