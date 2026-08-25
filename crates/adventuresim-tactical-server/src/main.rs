@@ -579,6 +579,7 @@ mod debug_dump_world_tests {
             no_timeout: true,
             brp_port: None,
             world_dump,
+            combat_config: None,
         }
     }
 
