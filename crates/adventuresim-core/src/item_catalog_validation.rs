@@ -932,6 +932,7 @@ fn validate_equipment(
                     "order",
                     "locations",
                     "accepts_tags",
+                    "tangent_direction",
                 ],
                 file,
                 &format!("{path}.attachment_points.{index}"),
@@ -982,6 +983,22 @@ fn validate_equipment(
                         ));
                     }
                 }
+            }
+            if point.get("tangent_direction").is_some_and(|direction| {
+                direction.as_array().is_none_or(|values| {
+                    if values.len() != 3 {
+                        return true;
+                    }
+                    let components = values.iter().map(Value::as_f64).collect::<Option<Vec<_>>>();
+                    components.is_none_or(|components| {
+                        components.iter().any(|value| !value.is_finite())
+                            || components.iter().map(|value| value * value).sum::<f64>() <= 1e-12
+                    })
+                })
+            }) {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}.tangent_direction: expected three finite components with non-zero length"
+                ));
             }
         }
     }

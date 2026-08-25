@@ -42,6 +42,7 @@ const PICKUP_RANGE_M: f32 = 2.0;
 const INVALID_FLASH_SECS: f32 = 0.18;
 const TACTICAL_WEAPON_ICON_SIZE: u16 = 64;
 const TACTICAL_WEAPON_ICON_SUPERSAMPLING: u8 = 4;
+const EQUIPMENT_SOCKET_NODE_PREFIX: &str = "equipment_socket_";
 const EQUIPMENT_ICON_SLUGS: [&str; 56] = [
     "ancient-sword",
     "arm-bandage",
@@ -274,6 +275,9 @@ struct ProceduralEquipmentPart {
     inverse_bindposes: Handle<SkinnedMeshInverseBindposes>,
     joint_names: Vec<String>,
 }
+
+#[derive(Component, Default)]
+struct EquipmentAttachmentSockets(BTreeMap<String, Transform>);
 
 fn held_item(
     actor: Entity,
@@ -1358,6 +1362,7 @@ fn spawn_item_placeholders(
                 commands.entity(root).despawn();
             }
         }
+        commands.entity(item).remove::<EquipmentAttachmentSockets>();
         let mut root_commands = commands.spawn((
             Name::new("Tactical item placeholder"),
             ItemPlaceholder(item),
@@ -1536,6 +1541,22 @@ fn resolve_procedural_equipment_models(
         else {
             continue;
         };
+        let Some(attachment_sockets) = gltf
+            .named_nodes
+            .iter()
+            .filter_map(|(name, node)| {
+                name.strip_prefix(EQUIPMENT_SOCKET_NODE_PREFIX)
+                    .map(|attachment_point_id| (attachment_point_id, node))
+            })
+            .map(|(attachment_point_id, node)| {
+                gltf_nodes
+                    .get(node)
+                    .map(|node| (attachment_point_id.to_owned(), node.transform))
+            })
+            .collect::<Option<BTreeMap<_, _>>>()
+        else {
+            continue;
+        };
         let Some(material) = primitive.material.as_ref() else {
             mark_procedural_equipment_failed(
                 &mut commands,
@@ -1586,6 +1607,9 @@ fn resolve_procedural_equipment_models(
             },
             OutlineMode::FloodFlat,
         ));
+        commands
+            .entity(placeholder.0)
+            .insert(EquipmentAttachmentSockets(attachment_sockets));
         for (fallback, item) in &fallbacks {
             if item.0 == placeholder.0 {
                 commands.entity(fallback).despawn();
@@ -1674,6 +1698,10 @@ fn bind_space_attachment_correction(
     .reparented_to(&bind)
 }
 
+fn bind_space_equipment_socket_correction(bind: GlobalTransform, socket: Transform) -> Transform {
+    GlobalTransform::from(socket).reparented_to(&bind)
+}
+
 fn equipment_bind_correction(
     role: BoneRole,
     rig: &HumanoidRig,
@@ -1720,7 +1748,10 @@ fn update_item_placeholders(
         ),
         Without<ItemPlaceholder>,
     >,
-    topologies: Query<&EquipmentTopology, Without<ItemPlaceholder>>,
+    topologies: Query<
+        (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+        Without<ItemPlaceholder>,
+    >,
     rigs: Query<&HumanoidRig, With<Player>>,
     bind_nodes: Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
     mut placeholders: Query<(
@@ -1788,7 +1819,16 @@ fn update_item_placeholders(
             let rig = rigs.get(owner.0).ok()?;
             let role = equipment_location_bone(resolve_character_location(topology, &topologies)?);
             let bone = rig.get(&role).copied()?;
-            Some((bone, equipment_bind_correction(role, rig, &bind_nodes)?))
+            let correction = if let Some(socket) =
+                resolve_equipment_attachment_socket(topology, &topologies)
+            {
+                let bind =
+                    authored_bind_global(bone, bind_nodes.get(bone).ok()?.0.owner, &bind_nodes)?;
+                bind_space_equipment_socket_correction(bind, socket)
+            } else {
+                equipment_bind_correction(role, rig, &bind_nodes)?
+            };
+            Some((bone, correction))
         }) {
             if parent.is_none_or(|parent| parent.parent() != bone) {
                 commands.entity(entity).insert(ChildOf(bone));
@@ -1805,7 +1845,10 @@ fn update_item_placeholders(
 
 fn resolve_character_location(
     topology: &EquipmentTopology,
-    topologies: &Query<&EquipmentTopology, Without<ItemPlaceholder>>,
+    topologies: &Query<
+        (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+        Without<ItemPlaceholder>,
+    >,
 ) -> Option<EquipmentLocation> {
     let mut topology = topology;
     let mut visited = std::collections::BTreeSet::new();
@@ -1831,7 +1874,40 @@ fn resolve_character_location(
         if !visited.insert(parent) {
             return None;
         }
-        topology = topologies.get(parent).ok()?;
+        topology = topologies.get(parent).ok()?.0;
+    }
+    None
+}
+
+fn resolve_equipment_attachment_socket(
+    topology: &EquipmentTopology,
+    topologies: &Query<
+        (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+        Without<ItemPlaceholder>,
+    >,
+) -> Option<Transform> {
+    let mut topology = topology;
+    let mut visited = std::collections::BTreeSet::new();
+    for _ in 0..32 {
+        let (parent, attachment_point_id) =
+            topology
+                .occupancies
+                .iter()
+                .find_map(|occupancy| match &occupancy.anchor {
+                    TacticalEquipmentAnchor::ItemAttachment {
+                        parent,
+                        attachment_point_id,
+                    } => Some((*parent, attachment_point_id.as_str())),
+                    TacticalEquipmentAnchor::CharacterLocation(_) => None,
+                })?;
+        if !visited.insert(parent) {
+            return None;
+        }
+        let (parent_topology, sockets) = topologies.get(parent).ok()?;
+        if let Some(socket) = sockets.and_then(|sockets| sockets.0.get(attachment_point_id)) {
+            return Some(*socket);
+        }
+        topology = parent_topology;
     }
     None
 }
@@ -2547,6 +2623,25 @@ mod tests {
     }
 
     #[test]
+    fn equipment_socket_correction_preserves_authored_model_space_frame() {
+        let bind = GlobalTransform::from(Transform {
+            translation: Vec3::new(0.04, 0.92, -0.03),
+            rotation: Quat::from_euler(EulerRot::XYZ, 0.2, -0.3, 0.4),
+            scale: Vec3::ONE,
+        });
+        let socket = Transform {
+            translation: Vec3::new(-0.31, 1.02, -0.06),
+            rotation: Quat::from_euler(EulerRot::XYZ, -0.61, 0.0, 0.2),
+            scale: Vec3::ONE,
+        };
+        let correction = bind_space_equipment_socket_correction(bind, socket);
+        let resolved = bind.mul_transform(correction);
+
+        assert!(resolved.translation().abs_diff_eq(socket.translation, 1e-5));
+        assert!(resolved.rotation().dot(socket.rotation).abs() > 1.0 - 1e-5);
+    }
+
+    #[test]
     fn limb_placeholders_use_semantic_joint_axes_not_local_mhr_y() {
         assert_eq!(
             semantic_attachment_axis(BoneRole::UpperArmLeft),
@@ -2576,13 +2671,17 @@ mod tests {
         }
 
         let mut world = World::new();
+        let socket = Transform::from_translation(Vec3::new(-0.31, 1.02, -0.04));
         let belt = world
-            .spawn(EquipmentTopology {
-                placement_id: Some("worn".into()),
-                occupancies: vec![occupancy(TacticalEquipmentAnchor::CharacterLocation(
-                    EquipmentLocation::LeftBelt,
-                ))],
-            })
+            .spawn((
+                EquipmentTopology {
+                    placement_id: Some("worn".into()),
+                    occupancies: vec![occupancy(TacticalEquipmentAnchor::CharacterLocation(
+                        EquipmentLocation::LeftBelt,
+                    ))],
+                },
+                EquipmentAttachmentSockets(BTreeMap::from([("mount".into(), socket)])),
+            ))
             .id();
         let sheath = world
             .spawn(EquipmentTopology {
@@ -2605,12 +2704,20 @@ mod tests {
 
         let location = world
             .run_system_once(
-                move |topologies: Query<&EquipmentTopology, Without<ItemPlaceholder>>| {
-                    resolve_character_location(topologies.get(weapon).unwrap(), &topologies)
+                move |topologies: Query<
+                    (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+                    Without<ItemPlaceholder>,
+                >| {
+                    let topology = topologies.get(weapon).unwrap().0;
+                    (
+                        resolve_character_location(topology, &topologies),
+                        resolve_equipment_attachment_socket(topology, &topologies),
+                    )
                 },
             )
             .unwrap();
-        assert_eq!(location, Some(EquipmentLocation::LeftBelt));
+        assert_eq!(location.0, Some(EquipmentLocation::LeftBelt));
+        assert_eq!(location.1, Some(socket));
     }
 
     #[test]

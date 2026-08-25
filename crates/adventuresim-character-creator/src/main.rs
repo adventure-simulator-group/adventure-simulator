@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use adventuresim_character_creator::{
     CharacterRecipe, ClothingSelection, IdentityGroup,
     clothing::{GarmentSpecification, generate_clothing_shells},
-    export::{RiggedMesh, RiggedShell, export_rigged_glb},
-    item_catalog_schema::{ItemCatalogDocument, ItemDefinition},
+    export::{RiggedMesh, RiggedShell, RiggedSocket, export_rigged_glb, fitted_equipment_socket},
+    item_catalog_schema::{EquipmentLocation, ItemCatalogDocument, ItemDefinition},
 };
 use anyhow::{Context, Result};
 use bevy::{
@@ -499,6 +499,16 @@ fn placement_coverage(
         / region_count as f32
 }
 
+fn belt_mount_outward(location: EquipmentLocation) -> Option<[f64; 3]> {
+    Some(match location {
+        EquipmentLocation::LeftBelt => [-1.0, 0.0, 0.0],
+        EquipmentLocation::RightBelt => [1.0, 0.0, 0.0],
+        EquipmentLocation::FrontBelt => [0.0, 0.0, -1.0],
+        EquipmentLocation::BackBelt => [0.0, 0.0, 1.0],
+        _ => return None,
+    })
+}
+
 fn generate_equipment_assets(
     output: &std::path::Path,
     model: &BodyModel,
@@ -547,23 +557,55 @@ fn generate_equipment_assets(
                 metallic: shell.specification.metallic,
                 roughness: shell.specification.roughness,
             };
+            let rigged_mesh = RiggedMesh {
+                positions: &generated.positions,
+                normals: &generated.normals,
+                faces: &character.mesh.faces,
+                export_body: false,
+                joint_indices: &character.skin_weights.index,
+                joint_weights: &character.skin_weights.weight,
+                joint_names: &character.skeleton.names,
+                joint_parents: &character.skeleton.parents,
+                global_joint_states: &generated.global_joint_states,
+            };
+            let sockets = equipment
+                .attachment_points
+                .iter()
+                .filter(|point| point.tangent_direction.is_some())
+                .map(|point| {
+                    let tangent = point.tangent_direction.expect("filtered tangent");
+                    let outward = point
+                        .locations
+                        .iter()
+                        .copied()
+                        .find_map(belt_mount_outward)
+                        .with_context(|| {
+                            format!(
+                                "item {} attachment point {} has a tangent but no belt location",
+                                item.id, point.id
+                            )
+                        })?;
+                    fitted_equipment_socket(&rigged_mesh, &rigged_shell, outward, tangent)
+                        .with_context(|| {
+                            format!(
+                                "could not fit item {} attachment point {}",
+                                item.id, point.id
+                            )
+                        })
+                        .map(|transform| RiggedSocket {
+                            attachment_point_id: &point.id,
+                            transform,
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?;
             export_rigged_glb(
                 &path,
                 &item.id,
                 recipe.version,
                 model.lod,
-                &RiggedMesh {
-                    positions: &generated.positions,
-                    normals: &generated.normals,
-                    faces: &character.mesh.faces,
-                    export_body: false,
-                    joint_indices: &character.skin_weights.index,
-                    joint_weights: &character.skin_weights.weight,
-                    joint_names: &character.skeleton.names,
-                    joint_parents: &character.skeleton.parents,
-                    global_joint_states: &generated.global_joint_states,
-                },
+                &rigged_mesh,
                 &[rigged_shell],
+                &sockets,
             )?;
             generated_files.insert(file_name.clone());
             assets.push(serde_json::json!({
@@ -874,6 +916,7 @@ fn export_character(
             global_joint_states: &generated.global_joint_states,
         },
         &shells,
+        &[],
     )
 }
 

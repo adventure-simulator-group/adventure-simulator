@@ -7,6 +7,8 @@ use crate::item_catalog_schema::{
     SurfaceAnchor,
 };
 
+const WAIST_CROSS_SECTION_WEIGHT_THRESHOLD: f32 = 0.01;
+
 #[derive(Debug, Clone)]
 pub struct GarmentSpecification {
     pub name: String,
@@ -159,6 +161,14 @@ fn right_lower_leg(name: &str) -> bool {
     name == "r_lowleg" || name.starts_with("r_lowleg_twist")
 }
 
+fn waist_surface_joint(name: &str) -> bool {
+    matches!(
+        name,
+        "root" | "c_spine0" | "c_spine1" | "l_upleg" | "r_upleg"
+    ) || name.starts_with("l_upleg_twist")
+        || name.starts_with("r_upleg_twist")
+}
+
 fn squared_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
     (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
 }
@@ -271,6 +281,79 @@ fn surface_normals(
                 .unwrap_or(*fallback)
         })
         .collect()
+}
+
+fn outward_wound_faces(
+    name: &str,
+    faces: &[[u32; 3]],
+    positions: &[[f32; 3]],
+    normals: &[[f32; 3]],
+) -> Result<Vec<[u32; 3]>, String> {
+    faces
+        .iter()
+        .copied()
+        .filter_map(|mut face| {
+            let [a, b, c] = face.map(|vertex| positions[vertex as usize]);
+            let edge_ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let edge_ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let face_normal = [
+                edge_ab[1] * edge_ac[2] - edge_ab[2] * edge_ac[1],
+                edge_ab[2] * edge_ac[0] - edge_ab[0] * edge_ac[2],
+                edge_ab[0] * edge_ac[1] - edge_ab[1] * edge_ac[0],
+            ];
+            let area_squared = dot(face_normal, face_normal);
+            if !area_squared.is_finite() {
+                return Some(Err(format!(
+                    "{name} contains a non-finite face: {face:?}"
+                )));
+            }
+            if area_squared <= f32::EPSILON.powi(2) {
+                return None;
+            }
+            let reference_normal = face
+                .iter()
+                .map(|vertex| normals[*vertex as usize])
+                .fold([0.0; 3], |sum, normal| {
+                    [
+                        sum[0] + normal[0],
+                        sum[1] + normal[1],
+                        sum[2] + normal[2],
+                    ]
+                });
+            let orientation = face_normal[0] * reference_normal[0]
+                + face_normal[1] * reference_normal[1]
+                + face_normal[2] * reference_normal[2];
+            if !orientation.is_finite() || orientation.abs() <= f32::EPSILON {
+                return Some(Err(format!(
+                    "{name} contains a face whose winding cannot be established: {face:?}"
+                )));
+            }
+            if orientation < 0.0 {
+                face.swap(1, 2);
+            }
+            Some(Ok(face))
+        })
+        .collect()
+}
+
+fn weld_split_vertex_positions(source: &[[f32; 3]], shell: &mut [[f32; 3]]) {
+    let mut groups = HashMap::<[i64; 3], Vec<usize>>::new();
+    for (index, position) in source.iter().enumerate() {
+        let key = position.map(|component| (component as f64 * 1_000_000.0).round() as i64);
+        groups.entry(key).or_default().push(index);
+    }
+    for group in groups.values().filter(|group| group.len() > 1) {
+        let sum = group.iter().fold([0.0_f64; 3], |mut sum, vertex| {
+            for axis in 0..3 {
+                sum[axis] += shell[*vertex][axis] as f64;
+            }
+            sum
+        });
+        let average = sum.map(|component| (component / group.len() as f64) as f32);
+        for vertex in group {
+            shell[*vertex] = average;
+        }
+    }
 }
 
 fn chain_coordinate(point: [f32; 3], segments: &[([f32; 3], [f32; 3])]) -> Option<f32> {
@@ -409,11 +492,24 @@ pub fn generate_clothing_shells(
                     )
                 })
                 .ok_or_else(|| format!("{} selected no weighted vertices", specification.name))?;
+            let interval = anchor_interval(span.anchor, span.coverage);
+            let waist_cross_section = if span.regions.contains(&Region::Stomach) {
+                Some(
+                    joint_names
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, name)| waist_surface_joint(name).then_some(index))
+                    .collect::<HashSet<_>>(),
+                )
+            } else {
+                None
+            };
             span_masks.push((
                 selected_joints,
                 segments,
                 coordinate_bounds,
-                anchor_interval(span.anchor, span.coverage),
+                interval,
+                waist_cross_section,
             ));
         }
         if span_masks.is_empty() {
@@ -427,7 +523,13 @@ pub fn generate_clothing_shells(
             .enumerate()
             .map(|(vertex, position)| {
                 span_masks.iter().any(
-                    |(selected_joints, segments, (minimum, maximum), (start, end))| {
+                    |(
+                        selected_joints,
+                        segments,
+                        (minimum, maximum),
+                        (start, end),
+                        _,
+                    )| {
                         let weight = joint_indices[vertex]
                             .iter()
                             .zip(&joint_weights[vertex])
@@ -475,13 +577,55 @@ pub fn generate_clothing_shells(
                 break;
             }
         }
-        let shell_faces = faces
+        let waist_joints = span_masks
+            .iter()
+            .filter_map(|mask| mask.4.as_ref())
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>();
+        if !waist_joints.is_empty() {
+            let selected_y_bounds = faces
+                .iter()
+                .zip(&selected_faces)
+                .filter(|(_, selected)| **selected)
+                .flat_map(|(face, _)| face.iter())
+                .map(|vertex| positions[*vertex as usize][1])
+                .fold(None::<(f32, f32)>, |bounds, y| {
+                    Some(bounds.map_or((y, y), |(minimum, maximum)| {
+                        (minimum.min(y), maximum.max(y))
+                    }))
+                })
+                .ok_or_else(|| format!("{} selected no waist vertices", specification.name))?;
+            let cross_section_covered = positions
+                .iter()
+                .enumerate()
+                .map(|(vertex, position)| {
+                    let weight = joint_indices[vertex]
+                        .iter()
+                        .zip(&joint_weights[vertex])
+                        .filter(|(joint, _)| waist_joints.contains(&(**joint as usize)))
+                        .map(|(_, weight)| *weight)
+                        .sum::<f32>();
+                    weight > WAIST_CROSS_SECTION_WEIGHT_THRESHOLD
+                        && position[1] >= selected_y_bounds.0
+                        && position[1] <= selected_y_bounds.1
+                })
+                .collect::<Vec<_>>();
+            for (index, face) in faces.iter().enumerate() {
+                selected_faces[index] |= face
+                    .iter()
+                    .filter(|vertex| cross_section_covered[**vertex as usize])
+                    .count()
+                    >= 2;
+            }
+        }
+        let selected_shell_faces = faces
             .iter()
             .copied()
             .zip(&selected_faces)
             .filter_map(|(face, selected)| selected.then_some(face))
             .collect::<Vec<_>>();
-        if shell_faces.is_empty() {
+        if selected_shell_faces.is_empty() {
             return Err(format!("{} selected no MHR triangles", specification.name));
         }
         if specification.occludes_body {
@@ -492,9 +636,9 @@ pub fn generate_clothing_shells(
                     .filter_map(|(index, selected)| selected.then_some(index)),
             );
         }
-        let relaxed_positions = relax_concavities(positions, normals, &shell_faces);
-        let shell_normals = surface_normals(&relaxed_positions, normals, &shell_faces);
-        let shell_positions = relaxed_positions
+        let relaxed_positions = relax_concavities(positions, normals, &selected_shell_faces);
+        let shell_normals = surface_normals(&relaxed_positions, normals, &selected_shell_faces);
+        let mut shell_positions = relaxed_positions
             .iter()
             .zip(&shell_normals)
             .map(|(position, normal)| {
@@ -504,7 +648,14 @@ pub fn generate_clothing_shells(
                     position[2] + normal[2] * specification.normal_offset_metres,
                 ]
             })
-            .collect();
+            .collect::<Vec<_>>();
+        weld_split_vertex_positions(positions, &mut shell_positions);
+        let shell_faces = outward_wound_faces(
+            &specification.name,
+            &selected_shell_faces,
+            &shell_positions,
+            normals,
+        )?;
         shells.push(ClothingShell {
             specification: specification.clone(),
             positions: shell_positions,
@@ -588,6 +739,35 @@ mod tests {
         for normal in normals {
             assert!((dot(normal, normal) - 1.0).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn garment_faces_are_wound_to_match_authored_normals() {
+        let positions = [[-1.0, -1.0, 0.0], [0.0, 1.0, 0.0], [1.0, -1.0, 0.0]];
+        let normals = [[0.0, 0.0, 1.0]; 3];
+
+        assert_eq!(
+            outward_wound_faces("test garment", &[[0, 1, 2]], &positions, &normals)
+                .expect("reversed face should be repaired"),
+            vec![[0, 2, 1]]
+        );
+        assert_eq!(
+            outward_wound_faces("test garment", &[[0, 0, 0]], &positions, &normals)
+                .expect("zero-area faces should be removed"),
+            Vec::<[u32; 3]>::new()
+        );
+    }
+
+    #[test]
+    fn offset_garment_positions_weld_split_source_vertices() {
+        let source = [[0.0, 1.0, 2.0], [0.0, 1.0, 2.0], [1.0, 1.0, 2.0]];
+        let mut shell = [[-0.01, 1.0, 2.0], [0.01, 1.0, 2.0], [1.0, 1.0, 2.0]];
+
+        weld_split_vertex_positions(&source, &mut shell);
+
+        assert_eq!(shell[0], [0.0, 1.0, 2.0]);
+        assert_eq!(shell[1], shell[0]);
+        assert_eq!(shell[2], [1.0, 1.0, 2.0]);
     }
 
     #[test]

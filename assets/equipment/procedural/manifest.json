@@ -70,7 +70,7 @@
       "item_id": "fauld",
       "material": "polished_steel",
       "placement_id": "worn",
-      "triangles": 126
+      "triangles": 192
     },
     {
       "coverage": 0.6499999761581421,
@@ -118,7 +118,7 @@
       "item_id": "linen_tunic",
       "material": "linen",
       "placement_id": "worn",
-      "triangles": 856
+      "triangles": 892
     },
     {
       "coverage": 0.6499999761581421,
@@ -158,7 +158,7 @@
       "item_id": "mail_skirt",
       "material": "mail_steel",
       "placement_id": "worn",
-      "triangles": 104
+      "triangles": 164
     },
     {
       "coverage": 0.6499999761581421,
@@ -206,7 +206,7 @@
       "item_id": "padded_skirt",
       "material": "quilted_textile",
       "placement_id": "worn",
-      "triangles": 100
+      "triangles": 160
     },
     {
       "coverage": 0.44999998807907104,
@@ -238,7 +238,7 @@
       "item_id": "tassets",
       "material": "polished_steel",
       "placement_id": "worn",
-      "triangles": 134
+      "triangles": 192
     },
     {
       "coverage": 0.6499999761581421,
@@ -270,7 +270,7 @@
       "item_id": "leather_belt",
       "material": "vegetable_tanned_leather",
       "placement_id": "worn",
-      "triangles": 32
+      "triangles": 160
     },
     {
       "coverage": 0.7200000286102295,
