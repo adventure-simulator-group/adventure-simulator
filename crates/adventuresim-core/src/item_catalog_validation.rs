@@ -932,6 +932,7 @@ fn validate_equipment(
                     "order",
                     "locations",
                     "accepts_tags",
+                    "surface_uv",
                     "tangent_direction",
                 ],
                 file,
@@ -984,6 +985,37 @@ fn validate_equipment(
                     }
                 }
             }
+            if point.get("surface_uv").is_some_and(|surface| {
+                let Some(surface) = surface.as_object() else {
+                    return true;
+                };
+                if surface
+                    .keys()
+                    .any(|field| !matches!(field.as_str(), "domain" | "uv"))
+                    || surface.len() != 2
+                    || !surface
+                        .get("domain")
+                        .and_then(Value::as_str)
+                        .is_some_and(valid_id)
+                {
+                    return true;
+                }
+                surface
+                    .get("uv")
+                    .and_then(Value::as_array)
+                    .is_none_or(|values| {
+                        values.len() != 2
+                            || values.iter().any(|value| {
+                                value.as_f64().is_none_or(|value| {
+                                    !value.is_finite() || !(0.0..=1.0).contains(&value)
+                                })
+                            })
+                    })
+            }) {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}.surface_uv: expected {{domain, uv}} with a valid domain and two finite components in 0..=1"
+                ));
+            }
             if point.get("tangent_direction").is_some_and(|direction| {
                 direction.as_array().is_none_or(|values| {
                     if values.len() != 3 {
@@ -998,6 +1030,11 @@ fn validate_equipment(
             }) {
                 errors.push(format!(
                     "{file}: {path}.attachment_points.{index}.tangent_direction: expected three finite components with non-zero length"
+                ));
+            }
+            if point.get("surface_uv").is_some() != point.get("tangent_direction").is_some() {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}: surface_uv and tangent_direction must be authored together"
                 ));
             }
         }
@@ -1868,6 +1905,14 @@ mod tests {
                         "anchor": "center",
                         "coverage": 0.18
                     }]
+                }],
+                "attachment_points": [{
+                    "id": "left",
+                    "channel": "mount",
+                    "capacity": 1,
+                    "locations": ["left_belt"],
+                    "surface_uv": {"domain": "mhr_body_v1", "uv": [0.37, 0.71]},
+                    "tangent_direction": [0.0, -0.82, -0.57]
                 }]
             }),
         );
@@ -1888,6 +1933,31 @@ mod tests {
         let belt = &compiled.items[0];
         assert!(belt.equipment.as_ref().is_some_and(|equipment| {
             equipment.material.is_some() && !equipment.placements[0].surface.is_empty()
+        }));
+        let point = &belt.equipment.as_ref().unwrap().attachment_points[0];
+        assert_eq!(
+            point
+                .surface_uv
+                .as_ref()
+                .map(|surface| surface.domain.as_str()),
+            Some("mhr_body_v1")
+        );
+
+        let mut unpaired = equipment_value;
+        unpaired["attachment_points"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("tangent_direction");
+        errors.clear();
+        validate_equipment(
+            &unpaired,
+            "equipment.yaml",
+            "items.0",
+            "simple",
+            &mut errors,
+        );
+        assert!(errors.iter().any(|error| {
+            error.contains("surface_uv and tangent_direction must be authored together")
         }));
     }
 

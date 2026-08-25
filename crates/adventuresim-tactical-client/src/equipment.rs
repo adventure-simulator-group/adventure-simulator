@@ -1698,10 +1698,6 @@ fn bind_space_attachment_correction(
     .reparented_to(&bind)
 }
 
-fn bind_space_equipment_socket_correction(bind: GlobalTransform, socket: Transform) -> Transform {
-    GlobalTransform::from(socket).reparented_to(&bind)
-}
-
 fn equipment_bind_correction(
     role: BoneRole,
     rig: &HumanoidRig,
@@ -1819,15 +1815,14 @@ fn update_item_placeholders(
             let rig = rigs.get(owner.0).ok()?;
             let role = equipment_location_bone(resolve_character_location(topology, &topologies)?);
             let bone = rig.get(&role).copied()?;
-            let correction = if let Some(socket) =
-                resolve_equipment_attachment_socket(topology, &topologies)
-            {
-                let bind =
-                    authored_bind_global(bone, bind_nodes.get(bone).ok()?.0.owner, &bind_nodes)?;
-                bind_space_equipment_socket_correction(bind, socket)
-            } else {
-                equipment_bind_correction(role, rig, &bind_nodes)?
-            };
+            let correction =
+                if let Some(socket) = resolve_equipment_attachment_socket(topology, &topologies) {
+                    // Generated attachment sockets are authored pelvis-local, so
+                    // they can be consumed directly as children of the pelvis.
+                    socket
+                } else {
+                    equipment_bind_correction(role, rig, &bind_nodes)?
+                };
             Some((bone, correction))
         }) {
             if parent.is_none_or(|parent| parent.parent() != bone) {
@@ -2620,25 +2615,6 @@ mod tests {
                 .0
                 .abs_diff_eq(Vec3::ONE, 1e-5)
         );
-    }
-
-    #[test]
-    fn equipment_socket_correction_preserves_authored_model_space_frame() {
-        let bind = GlobalTransform::from(Transform {
-            translation: Vec3::new(0.04, 0.92, -0.03),
-            rotation: Quat::from_euler(EulerRot::XYZ, 0.2, -0.3, 0.4),
-            scale: Vec3::ONE,
-        });
-        let socket = Transform {
-            translation: Vec3::new(-0.31, 1.02, -0.06),
-            rotation: Quat::from_euler(EulerRot::XYZ, -0.61, 0.0, 0.2),
-            scale: Vec3::ONE,
-        };
-        let correction = bind_space_equipment_socket_correction(bind, socket);
-        let resolved = bind.mul_transform(correction);
-
-        assert!(resolved.translation().abs_diff_eq(socket.translation, 1e-5));
-        assert!(resolved.rotation().dot(socket.rotation).abs() > 1.0 - 1e-5);
     }
 
     #[test]

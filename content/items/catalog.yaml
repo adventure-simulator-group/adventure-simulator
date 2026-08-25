@@ -4229,10 +4229,10 @@
           "surface": [{"regions": ["stomach"], "anchor": "center", "coverage": 0.18}]
         }],
         "attachment_points": [
-          {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "locations": ["left_belt"], "accepts_tags": ["sheath", "bag"], "tangent_direction": [0.0, -0.819152, 0.573576]},
-          {"id": "right", "channel": "mount", "capacity": 1, "order": 1, "locations": ["right_belt"], "accepts_tags": ["sheath", "bag"], "tangent_direction": [0.0, -0.819152, 0.573576]},
-          {"id": "front", "channel": "mount", "capacity": 1, "order": 2, "locations": ["front_belt"], "accepts_tags": ["bag"], "tangent_direction": [0.0, 1.0, 0.0]},
-          {"id": "back", "channel": "mount", "capacity": 1, "order": 3, "locations": ["back_belt"], "accepts_tags": ["bag"], "tangent_direction": [0.0, 1.0, 0.0]}
+          {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "locations": ["left_belt"], "accepts_tags": ["sheath", "bag"], "surface_uv": {"domain": "mhr_body_v1", "uv": [0.376270294, 0.709542990]}, "tangent_direction": [0.0, -0.819152, -0.573576]},
+          {"id": "right", "channel": "mount", "capacity": 1, "order": 1, "locations": ["right_belt"], "accepts_tags": ["sheath", "bag"], "surface_uv": {"domain": "mhr_body_v1", "uv": [0.125683650, 0.709542990]}, "tangent_direction": [0.0, -0.819152, -0.573576]},
+          {"id": "front", "channel": "mount", "capacity": 1, "order": 2, "locations": ["front_belt"], "accepts_tags": ["bag"], "surface_uv": {"domain": "mhr_body_v1", "uv": [0.002930095, 0.707243860]}, "tangent_direction": [0.0, 1.0, 0.0]},
+          {"id": "back", "channel": "mount", "capacity": 1, "order": 3, "locations": ["back_belt"], "accepts_tags": ["bag"], "surface_uv": {"domain": "mhr_body_v1", "uv": [0.250950813, 0.704910517]}, "tangent_direction": [0.0, 1.0, 0.0]}
         ]
       },
       "kind": "simple"
