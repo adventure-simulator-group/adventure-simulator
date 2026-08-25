@@ -145,8 +145,12 @@ struct LightingObservationParams<'w, 's> {
     presented_tree_names: Query<'w, 's, &'static Name, With<PresentedTree>>,
     terrain: Query<'w, 's, &'static SceneTerrain>,
     litter_anchors: Query<'w, 's, &'static GroundLitterCaptureAnchors>,
-    obstacle_transforms:
-        Query<'w, 's, (&'static SceneObstacle, &'static GlobalTransform), Without<Camera3d>>,
+    obstacle_transforms: Query<
+        'w,
+        's,
+        (&'static SceneObstacle, &'static GlobalTransform),
+        (Without<Camera3d>, Without<TacticalGameplayCamera>),
+    >,
     vista_trees: Query<
         'w,
         's,
@@ -160,6 +164,7 @@ struct LightingObservationParams<'w, 's> {
             With<VistaTreePresentation>,
             Without<SceneObstacle>,
             Without<Camera3d>,
+            Without<TacticalGameplayCamera>,
         ),
     >,
 }
@@ -3166,6 +3171,7 @@ fn capture_views(
         (
             With<TreeReviewBackdrop>,
             Without<Camera3d>,
+            Without<TacticalGameplayCamera>,
             Without<CaptureOverlay>,
             Without<VistaTerrain>,
         ),
@@ -3181,7 +3187,7 @@ fn capture_views(
             &VisibilityRange,
             &ViewVisibility,
         ),
-        Without<Camera3d>,
+        (Without<Camera3d>, Without<TacticalGameplayCamera>),
     >,
     tree_bakes: Query<&TreeImpostorProvenance>,
     foliage: Query<&GroundScatterLayer>,
@@ -3202,7 +3208,10 @@ fn capture_views(
                 With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
             )>,
         >,
-        Query<(Entity, &GroundScatterLayer, &GlobalTransform, &Name), Without<Camera3d>>,
+        Query<
+            (Entity, &GroundScatterLayer, &GlobalTransform, &Name),
+            (Without<Camera3d>, Without<TacticalGameplayCamera>),
+        >,
         Query<(), With<WeatherParticle>>,
         Query<
             &mut Visibility,
@@ -4107,6 +4116,7 @@ fn largest_visible_vista_tree(
             With<VistaTreePresentation>,
             Without<SceneObstacle>,
             Without<Camera3d>,
+            Without<TacticalGameplayCamera>,
         ),
     >,
     camera: Vec3,

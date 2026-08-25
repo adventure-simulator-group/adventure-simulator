@@ -208,8 +208,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         fract(blade_threshold * 1.37 + 0.17) - 0.5,
         fract(blade_threshold * 2.11 + 0.63) - 0.5,
     ) + vec2<f32>(0.0001, 0.0));
-    let lean_amount = (0.025 + 0.030 * lean_variation) * foliage.shading.w;
-    let natural_lean = lean_direction * (lean_amount + 0.012 * mature_age);
+    let lean_amount = (0.008 + 0.010 * lean_variation) * foliage.shading.w;
+    let natural_lean = lean_direction * (lean_amount + 0.004 * mature_age);
     let wind_offset = (
         wind_direction * primary_wave * gust
         + wind_cross * flutter * 0.18
@@ -329,9 +329,20 @@ fn vertex(vertex: Vertex) -> VertexOutput {
                 camera_side,
                 edge_on * foliage.shape.y,
             ));
-            let half_width = length(position.xz - root_local.xz)
-                * side_scale
-                * width_compensation;
+            // Recover only authored displacement along the ribbon side. The
+            // perpendicular component is centreline lean, not blade width.
+            // Shared centre vertices use u=0.5 and must reconstruct to zero
+            // width so the terminal triangle cannot collapse onto a shoulder.
+            let authored_half_width = abs(dot(
+                position.xz - root_local.xz,
+                local_side,
+            ));
+            let is_centre_vertex = abs(vertex.uv.x - 0.5) < 0.001;
+            let half_width = select(
+                authored_half_width * side_scale * width_compensation,
+                0.0,
+                is_centre_vertex,
+            );
             let signed_side = select(-1.0, 1.0, vertex.uv.x >= 0.5);
             let side_offset = visible_side * half_width * signed_side;
             world_position = vec4<f32>(
