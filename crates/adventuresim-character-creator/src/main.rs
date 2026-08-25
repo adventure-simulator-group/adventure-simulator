@@ -3,8 +3,11 @@ use std::path::PathBuf;
 use adventuresim_character_creator::{
     CharacterRecipe, ClothingSelection, IdentityGroup,
     clothing::{GarmentSpecification, generate_clothing_shells},
-    export::{RiggedMesh, RiggedShell, export_rigged_glb},
-    item_catalog_schema::{ItemCatalogDocument, ItemDefinition},
+    export::{
+        MHR_ANATOMICAL_UV_DOMAIN, RiggedMesh, RiggedShell, RiggedSocket, SurfaceUvLayout,
+        export_rigged_glb, fitted_equipment_socket_from_uv,
+    },
+    item_catalog_schema::{EquipmentLocation, ItemCatalogDocument, ItemDefinition},
 };
 use anyhow::{Context, Result};
 use bevy::{
@@ -499,6 +502,34 @@ fn placement_coverage(
         / region_count as f32
 }
 
+fn belt_mount_outward(location: EquipmentLocation) -> Option<[f64; 3]> {
+    Some(match location {
+        // MHR uses positive model-space X for the character's anatomical left.
+        EquipmentLocation::LeftBelt => [1.0, 0.0, 0.0],
+        EquipmentLocation::RightBelt => [-1.0, 0.0, 0.0],
+        EquipmentLocation::FrontBelt => [0.0, 0.0, -1.0],
+        EquipmentLocation::BackBelt => [0.0, 0.0, 1.0],
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod belt_mount_tests {
+    use super::*;
+
+    #[test]
+    fn belt_sides_follow_mhr_anatomical_x() {
+        assert_eq!(
+            belt_mount_outward(EquipmentLocation::LeftBelt),
+            Some([1.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            belt_mount_outward(EquipmentLocation::RightBelt),
+            Some([-1.0, 0.0, 0.0])
+        );
+    }
+}
+
 fn generate_equipment_assets(
     output: &std::path::Path,
     model: &BodyModel,
@@ -547,23 +578,83 @@ fn generate_equipment_assets(
                 metallic: shell.specification.metallic,
                 roughness: shell.specification.roughness,
             };
+            let rigged_mesh = RiggedMesh {
+                positions: &generated.positions,
+                normals: &generated.normals,
+                faces: &character.mesh.faces,
+                export_body: false,
+                joint_indices: &character.skin_weights.index,
+                joint_weights: &character.skin_weights.weight,
+                joint_names: &character.skeleton.names,
+                joint_parents: &character.skeleton.parents,
+                global_joint_states: &generated.global_joint_states,
+            };
+            let surface_uv_layout = SurfaceUvLayout {
+                domain: MHR_ANATOMICAL_UV_DOMAIN,
+                texcoords: &character.mesh.texcoords,
+                texcoord_faces: &character.mesh.texcoord_faces,
+            };
+            let sockets = equipment
+                .attachment_points
+                .iter()
+                .filter(|point| point.tangent_direction.is_some())
+                .map(|point| {
+                    let tangent = point.tangent_direction.expect("filtered tangent");
+                    let outward = point
+                        .locations
+                        .iter()
+                        .copied()
+                        .find_map(belt_mount_outward)
+                        .with_context(|| {
+                            format!(
+                                "item {} attachment point {} has a tangent but no belt location",
+                                item.id, point.id
+                            )
+                        })?;
+                    let surface = point.surface_uv.as_ref().with_context(|| {
+                        format!(
+                            "item {} attachment point {} has a tangent but no anatomical surface UV",
+                            item.id, point.id
+                        )
+                    })?;
+                    if surface.domain != surface_uv_layout.domain {
+                        anyhow::bail!(
+                            "item {} attachment point {} uses unsupported anatomical UV domain {}",
+                            item.id,
+                            point.id,
+                            surface.domain
+                        );
+                    }
+                    fitted_equipment_socket_from_uv(
+                        &rigged_mesh,
+                        &rigged_shell,
+                        &surface_uv_layout,
+                        surface.uv,
+                        outward,
+                        tangent,
+                    )
+                        .with_context(|| {
+                            format!(
+                                "could not fit item {} attachment point {}",
+                                item.id, point.id
+                            )
+                        })
+                        .map(|transform| RiggedSocket {
+                            attachment_point_id: &point.id,
+                            surface_uv_domain: &surface.domain,
+                            surface_uv: surface.uv,
+                            transform,
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?;
             export_rigged_glb(
                 &path,
                 &item.id,
                 recipe.version,
                 model.lod,
-                &RiggedMesh {
-                    positions: &generated.positions,
-                    normals: &generated.normals,
-                    faces: &character.mesh.faces,
-                    export_body: false,
-                    joint_indices: &character.skin_weights.index,
-                    joint_weights: &character.skin_weights.weight,
-                    joint_names: &character.skeleton.names,
-                    joint_parents: &character.skeleton.parents,
-                    global_joint_states: &generated.global_joint_states,
-                },
+                &rigged_mesh,
                 &[rigged_shell],
+                &sockets,
             )?;
             generated_files.insert(file_name.clone());
             assets.push(serde_json::json!({
@@ -874,6 +965,7 @@ fn export_character(
             global_joint_states: &generated.global_joint_states,
         },
         &shells,
+        &[],
     )
 }
 

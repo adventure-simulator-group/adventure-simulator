@@ -1611,7 +1611,7 @@ pub(crate) fn on_client_disconnected(
             attributes: core.6.clone(),
             stats: core.7.clone(),
             combat_state: core.8.clone(),
-            equipment_action_state: core.9.clone(),
+            equipment_action_state: *core.9,
             combat_side: *core.10,
             transform: *motion.0,
             look: motion.1.clone(),

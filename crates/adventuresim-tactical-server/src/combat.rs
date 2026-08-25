@@ -76,29 +76,6 @@ pub(crate) struct TacticalConsequenceAccumulator {
     pub equipment_contacts: Vec<AccumulatedEquipmentContact>,
 }
 
-/// Maximum window (in seconds) after pressing dodge/parry that the response
-/// is still considered valid. A fresh press gives `input_reflex = 1.0`;
-/// a press older than this window is treated as no response.
-/// At most this much is subtracted from the weapon's authored windup
-/// (`PlayerEquipment::weapon_windup_secs`, the same value the client paces
-/// its swing by) to form the server's minimum-windup threshold. The check
-/// must not compare against the exact authored value: `Start` and `Complete`
-/// are two independent messages that each pick up their own small,
-/// uncorrelated delivery jitter (OS/socket scheduling, not just raw network
-/// latency), so an attack the client genuinely timed correctly can measure
-/// as a few milliseconds short server-side - confirmed live, repeatedly, on
-/// a same-machine loopback connection with effectively zero network latency,
-/// where jitter is the *only* source of the gap. The tolerance absorbs
-/// ordinary jitter without meaningfully loosening the windup check.
-/// Replay guard only. Actual cadence is owned by the replicated attack
-/// schedule and the one-entry client continuation buffer.
-/// Completion must arrive within this bounded ordered-network allowance after
-/// the windup becomes ready; old starts cannot authorize replayed completions.
-/// Allows bounded movement between the authoritative physics snapshot and an
-/// ordered attack request arriving at the server.
-/// The server owns yaw but not full skeletal/secondary animation. Permit a
-/// small network/input cone while still rejecting targets behind the shooter.
-
 fn remaining_ammo_after_shot(quantity: NonZeroU32) -> Option<NonZeroU32> {
     NonZeroU32::new(quantity.get() - 1)
 }
@@ -120,7 +97,6 @@ struct ApplyMeleeAttackResult {
 /// energy. This transfer scale makes John Fabelgeist's ordinary ~49.5 J punch
 /// move an 80 kg equipped bandit about 0.25 m under the tactical controller's
 /// standard grounded friction.
-
 /// Converts combat contact energy into an explicit physical delta-v. Combat
 /// resolution historically calls the energy-like value `contact_force`; this
 /// seam prevents those joules from being mistaken for either newtons or an

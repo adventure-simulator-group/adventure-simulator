@@ -205,7 +205,7 @@ pub struct ParentRequirement {
     pub order: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttachmentPointDefinition {
     pub id: String,
@@ -221,6 +221,25 @@ pub struct AttachmentPointDefinition {
     /// child's attachment tag must match.
     #[serde(default)]
     pub accepts_tags: Vec<String>,
+    /// Optional canonical anatomical-surface coordinate used to resolve this
+    /// point independently on every generated mesh LOD.
+    #[serde(default)]
+    pub surface_uv: Option<SurfaceUvCoordinate>,
+    /// Optional anatomical tangent for presentation sockets generated on the
+    /// parent item's fitted surface. Local +Y (grip toward weapon tip) on an
+    /// attached item follows this direction; gameplay topology does not depend
+    /// on it. Surface coordinates and tangents are authored together.
+    #[serde(default)]
+    pub tangent_direction: Option<[f32; 3]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceUvCoordinate {
+    /// Versioned canonical surface parameterization shared by compatible LODs.
+    pub domain: String,
+    /// Coordinate in that domain's non-overlapping anatomical UV atlas.
+    pub uv: [f32; 2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

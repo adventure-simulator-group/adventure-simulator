@@ -14,8 +14,12 @@ const BIN_CHUNK: u32 = 0x004E_4942;
 pub const LEFT_WEAPON_JOINT: &str = "l_weapon";
 pub const RIGHT_WEAPON_JOINT: &str = "r_weapon";
 pub const FIRST_PERSON_CAMERA_JOINT: &str = "c_camera";
+pub const EQUIPMENT_SOCKET_NODE_PREFIX: &str = "equipment_socket_";
+pub const MHR_ANATOMICAL_UV_DOMAIN: &str = "mhr_body_v1";
 
 const PALMAR_SOCKET_CLEARANCE_METERS: f64 = 0.002;
+const EQUIPMENT_SOCKET_CLEARANCE_METERS: f64 = 0.003;
+const EQUIPMENT_SOCKET_WEIGHT_THRESHOLD: f32 = 0.35;
 const RAY_INTERSECTION_EPSILON: f64 = 1e-9;
 // Socket-local correction authored against assets_src/grip.glb. Keeping this
 // on the bone makes every weapon share the same hand-relative default pose.
@@ -58,6 +62,20 @@ pub struct RiggedShell<'a> {
     pub base_color: [f32; 4],
     pub metallic: f32,
     pub roughness: f32,
+}
+
+pub struct RiggedSocket<'a> {
+    pub attachment_point_id: &'a str,
+    pub surface_uv_domain: &'a str,
+    pub surface_uv: [f32; 2],
+    /// Pelvis-local transform in the generated character's neutral pose.
+    pub transform: Transform,
+}
+
+pub struct SurfaceUvLayout<'a> {
+    pub domain: &'a str,
+    pub texcoords: &'a [[f32; 2]],
+    pub texcoord_faces: &'a [[u32; 3]],
 }
 
 #[derive(Default)]
@@ -194,6 +212,16 @@ fn ray_triangle_distance(
     b: [f64; 3],
     c: [f64; 3],
 ) -> Option<f64> {
+    ray_triangle_hit(origin, direction, a, b, c).map(|(distance, _, _)| distance)
+}
+
+fn ray_triangle_hit(
+    origin: [f64; 3],
+    direction: [f64; 3],
+    a: [f64; 3],
+    b: [f64; 3],
+    c: [f64; 3],
+) -> Option<(f64, f64, f64)> {
     let edge_ab = subtract(b, a);
     let edge_ac = subtract(c, a);
     let perpendicular = cross(direction, edge_ac);
@@ -216,7 +244,296 @@ fn ray_triangle_distance(
     }
 
     let distance = inverse_determinant * dot(edge_ac, cross_from_a);
-    (distance > RAY_INTERSECTION_EPSILON).then_some(distance)
+    (distance > RAY_INTERSECTION_EPSILON).then_some((distance, u, v))
+}
+
+fn attachment_region_joint(name: &str) -> bool {
+    matches!(
+        name,
+        "root" | "c_spine0" | "c_spine1" | "l_upleg" | "r_upleg"
+    ) || name.starts_with("l_upleg_twist")
+        || name.starts_with("r_upleg_twist")
+}
+
+fn attachment_region_weight(mesh: &RiggedMesh<'_>, vertex: usize) -> f32 {
+    mesh.joint_indices[vertex]
+        .iter()
+        .zip(mesh.joint_weights[vertex])
+        .filter(|(joint, _)| {
+            mesh.joint_names
+                .get(**joint as usize)
+                .is_some_and(|name| attachment_region_joint(name))
+        })
+        .map(|(_, weight)| weight)
+        .sum()
+}
+
+fn face_key(mut face: [u32; 3]) -> [u32; 3] {
+    face.sort_unstable();
+    face
+}
+
+fn uv_barycentric(point: [f64; 2], a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<[f64; 3]> {
+    let determinant = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+    if determinant.abs() <= RAY_INTERSECTION_EPSILON {
+        return None;
+    }
+    let first =
+        ((b[1] - c[1]) * (point[0] - c[0]) + (c[0] - b[0]) * (point[1] - c[1])) / determinant;
+    let second =
+        ((c[1] - a[1]) * (point[0] - c[0]) + (a[0] - c[0]) * (point[1] - c[1])) / determinant;
+    let third = 1.0 - first - second;
+    const UV_EDGE_EPSILON: f64 = 1e-6;
+    [first, second, third]
+        .iter()
+        .all(|weight| *weight >= -UV_EDGE_EPSILON && *weight <= 1.0 + UV_EDGE_EPSILON)
+        .then_some([first, second, third])
+}
+
+fn interpolate3(values: [[f64; 3]; 3], weights: [f64; 3]) -> [f64; 3] {
+    std::array::from_fn(|axis| {
+        values[0][axis] * weights[0] + values[1][axis] * weights[1] + values[2][axis] * weights[2]
+    })
+}
+
+fn equipment_surface_socket(
+    mesh: &RiggedMesh<'_>,
+    translation: [f64; 3],
+    normal: [f64; 3],
+    tangent: [f32; 3],
+) -> Result<Transform> {
+    let pelvis = landmark(mesh, "root")?;
+    let pelvis_transform = state(mesh.global_joint_states[pelvis]);
+    let direction = normalize(normal, "equipment", "surface normal")?;
+    let translation = std::array::from_fn(|axis| {
+        translation[axis] + direction[axis] * EQUIPMENT_SOCKET_CLEARANCE_METERS
+    });
+    let mut local_y = tangent.map(f64::from);
+    let tangent_normal_component = dot(local_y, direction);
+    for axis in 0..3 {
+        local_y[axis] -= direction[axis] * tangent_normal_component;
+    }
+    let local_y = normalize(local_y, "equipment", "authored socket tangent")?;
+    let local_z = direction;
+    let local_x = normalize(cross(local_y, local_z), "equipment", "socket frame")?;
+    let rotation = quat_normalize(quat_from_matrix([
+        [local_x[0], local_y[0], local_z[0]],
+        [local_x[1], local_y[1], local_z[1]],
+        [local_x[2], local_y[2], local_z[2]],
+    ]));
+    let model_space_socket = Transform {
+        translation,
+        rotation,
+        scale: 1.0,
+    };
+    Ok(pelvis_transform.inverse().compose(&model_space_socket))
+}
+
+/// Resolves one canonical anatomical UV coordinate against this LOD's body
+/// atlas and its fitted garment shell, then constructs a pelvis-local socket.
+pub fn fitted_equipment_socket_from_uv(
+    mesh: &RiggedMesh<'_>,
+    shell: &RiggedShell<'_>,
+    layout: &SurfaceUvLayout<'_>,
+    uv: [f32; 2],
+    outward: [f64; 3],
+    tangent: [f32; 3],
+) -> Result<Transform> {
+    if layout.domain != MHR_ANATOMICAL_UV_DOMAIN {
+        bail!("unsupported anatomical UV domain {}", layout.domain);
+    }
+    if layout.texcoord_faces.len() != mesh.faces.len() {
+        bail!("anatomical UV faces do not match the MHR body topology");
+    }
+    let selected_faces = shell
+        .faces
+        .iter()
+        .copied()
+        .map(face_key)
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected_outward = normalize(outward, "equipment", "expected outward direction")?;
+    let point = uv.map(f64::from);
+    let mut maximum_attachment_weight = 0.0_f64;
+    let candidate = mesh
+        .faces
+        .iter()
+        .copied()
+        .zip(layout.texcoord_faces.iter().copied())
+        .enumerate()
+        .filter(|(_, (face, _))| selected_faces.contains(&face_key(*face)))
+        .filter_map(|(face_index, (face, uv_face))| {
+            let uv_triangle = uv_face
+                .map(|index| layout.texcoords.get(index as usize).copied())
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
+            let barycentric = uv_barycentric(
+                point,
+                uv_triangle[0].map(f64::from),
+                uv_triangle[1].map(f64::from),
+                uv_triangle[2].map(f64::from),
+            )?;
+            let weights = face.map(|vertex| attachment_region_weight(mesh, vertex as usize) as f64);
+            let attachment_weight = weights[0] * barycentric[0]
+                + weights[1] * barycentric[1]
+                + weights[2] * barycentric[2];
+            maximum_attachment_weight = maximum_attachment_weight.max(attachment_weight);
+            if attachment_weight < EQUIPMENT_SOCKET_WEIGHT_THRESHOLD as f64 {
+                return None;
+            }
+            let normals = face.map(|vertex| shell.normals[vertex as usize].map(f64::from));
+            let normal = normalize(
+                interpolate3(normals, barycentric),
+                "equipment",
+                "interpolated UV surface normal",
+            )
+            .ok()?;
+            let alignment = dot(normal, expected_outward);
+            (alignment > 0.25).then_some((
+                alignment,
+                attachment_weight,
+                face_index,
+                face,
+                barycentric,
+                normal,
+            ))
+        })
+        .max_by(|left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+                .then_with(|| right.2.cmp(&left.2))
+        });
+    let Some((_, _, _, face, barycentric, normal)) = candidate else {
+        bail!(
+            "anatomical UV {:?} in domain {} did not resolve on fitted shell {} (maximum attachment weight {:.3})",
+            uv,
+            layout.domain,
+            shell.name,
+            maximum_attachment_weight,
+        );
+    };
+    let positions = face.map(|vertex| shell.positions[vertex as usize].map(f64::from));
+    equipment_surface_socket(mesh, interpolate3(positions, barycentric), normal, tangent)
+}
+
+/// Authoring utility that converts the previous outward-ray convention into a
+/// canonical anatomical UV coordinate. Routine asset generation resolves the
+/// stored UV and does not call this function.
+pub fn bootstrap_equipment_surface_uv(
+    mesh: &RiggedMesh<'_>,
+    shell: &RiggedShell<'_>,
+    layout: &SurfaceUvLayout<'_>,
+    outward: [f64; 3],
+) -> Result<[f32; 2]> {
+    if layout.texcoord_faces.len() != mesh.faces.len() {
+        bail!("anatomical UV faces do not match the MHR body topology");
+    }
+    let body_faces = mesh
+        .faces
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, face)| (face_key(face), index))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let selected_vertices = shell
+        .faces
+        .iter()
+        .flat_map(|face| face.iter().copied())
+        .map(|vertex| vertex as usize)
+        .collect::<std::collections::BTreeSet<_>>();
+    let (minimum, maximum) = selected_vertices.iter().fold(
+        ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]),
+        |(mut minimum, mut maximum), vertex| {
+            for axis in 0..3 {
+                let coordinate = shell.positions[*vertex][axis] as f64;
+                minimum[axis] = minimum[axis].min(coordinate);
+                maximum[axis] = maximum[axis].max(coordinate);
+            }
+            (minimum, maximum)
+        },
+    );
+    let minimum_y = minimum[1];
+    let maximum_y = maximum[1];
+    if !minimum_y.is_finite() || maximum_y <= minimum_y {
+        bail!("fitted equipment shell has no usable vertical surface extent");
+    }
+
+    let direction = normalize(outward, "equipment", "outward ray")?;
+    let position = |index: u32| shell.positions[index as usize].map(f64::from);
+    let mut surface_uv = None;
+    let mut intersection_count = 0_usize;
+    let mut outward_intersection_count = 0_usize;
+    let mut maximum_attachment_weight = 0.0_f64;
+    // Prefer the belt centre, with nearby height samples providing
+    // deterministic recovery when the centre lies exactly on a triangle edge.
+    for height_fraction in [0.5_f64, 0.4, 0.6, 0.3, 0.7] {
+        let origin = [
+            (minimum[0] + maximum[0]) * 0.5,
+            minimum_y + (maximum_y - minimum_y) * height_fraction,
+            (minimum[2] + maximum[2]) * 0.5,
+        ];
+        let candidate = shell
+            .faces
+            .iter()
+            .copied()
+            .filter_map(|face| {
+                let a = position(face[0]);
+                let b = position(face[1]);
+                let c = position(face[2]);
+                let face_normal = cross(subtract(b, a), subtract(c, a));
+                let (distance, u, v) = ray_triangle_hit(origin, direction, a, b, c)?;
+                intersection_count += 1;
+                // From an interior origin, an outward-facing exit is a
+                // rendering back-face: its normal points with the ray.
+                if dot(face_normal, direction) <= RAY_INTERSECTION_EPSILON {
+                    return None;
+                }
+                outward_intersection_count += 1;
+                let weights = face.map(|vertex| attachment_region_weight(mesh, vertex as usize));
+                let weight = weights[0] as f64 * (1.0 - u - v)
+                    + weights[1] as f64 * u
+                    + weights[2] as f64 * v;
+                maximum_attachment_weight = maximum_attachment_weight.max(weight);
+                (weight >= EQUIPMENT_SOCKET_WEIGHT_THRESHOLD as f64).then_some((
+                    distance,
+                    face,
+                    [1.0 - u - v, u, v],
+                ))
+            })
+            .max_by(|left, right| left.0.total_cmp(&right.0));
+        if let Some((_, face, barycentric)) = candidate {
+            let body_face_index = body_faces
+                .get(&face_key(face))
+                .copied()
+                .context("fitted shell face is absent from the MHR body topology")?;
+            let body_face = mesh.faces[body_face_index];
+            let uv_face = layout.texcoord_faces[body_face_index];
+            let mut resolved = [0.0_f64; 2];
+            for (shell_corner, vertex) in face.into_iter().enumerate() {
+                let body_corner = body_face
+                    .iter()
+                    .position(|candidate| *candidate == vertex)
+                    .context("fitted shell face does not preserve body vertices")?;
+                let texcoord = layout
+                    .texcoords
+                    .get(uv_face[body_corner] as usize)
+                    .context("MHR UV face references a missing coordinate")?;
+                for axis in 0..2 {
+                    resolved[axis] += barycentric[shell_corner] * texcoord[axis] as f64;
+                }
+            }
+            surface_uv = Some(resolved.map(|component| component as f32));
+            break;
+        }
+    }
+    surface_uv.with_context(|| {
+        format!(
+            "fitted equipment shell has no eligible outward surface for UV bootstrapping ({} intersections, {} outward, maximum attachment weight {:.3}); shell bounds {minimum:?}..{maximum:?}",
+            intersection_count,
+            outward_intersection_count,
+            maximum_attachment_weight,
+        )
+    })
 }
 
 fn palmar_surface_distance(
@@ -319,7 +636,11 @@ fn append_attachment(
     globals.push(transform);
 }
 
-fn validate(mesh: &RiggedMesh<'_>, shells: &[RiggedShell<'_>]) -> Result<()> {
+fn validate(
+    mesh: &RiggedMesh<'_>,
+    shells: &[RiggedShell<'_>],
+    sockets: &[RiggedSocket<'_>],
+) -> Result<()> {
     let vertices = mesh.positions.len();
     if vertices == 0 || mesh.normals.len() != vertices {
         bail!("positions and normals must contain the same non-zero vertex count");
@@ -410,6 +731,29 @@ fn validate(mesh: &RiggedMesh<'_>, shells: &[RiggedShell<'_>]) -> Result<()> {
             );
         }
     }
+    let mut socket_ids = std::collections::BTreeSet::new();
+    for socket in sockets {
+        let state = socket.transform.to_skel_state();
+        if socket.attachment_point_id.trim().is_empty()
+            || !socket_ids.insert(socket.attachment_point_id)
+        {
+            bail!("equipment socket attachment-point IDs must be non-empty and unique");
+        }
+        if state.iter().any(|value| !value.is_finite()) {
+            bail!(
+                "equipment socket '{}' contains a non-finite transform",
+                socket.attachment_point_id
+            );
+        }
+        if socket.surface_uv_domain.trim().is_empty()
+            || socket.surface_uv.iter().any(|value| !value.is_finite())
+        {
+            bail!(
+                "equipment socket '{}' has an invalid anatomical surface UV",
+                socket.attachment_point_id
+            );
+        }
+    }
     Ok(())
 }
 
@@ -446,8 +790,9 @@ pub fn export_rigged_glb(
     lod: u8,
     mesh: &RiggedMesh<'_>,
     shells: &[RiggedShell<'_>],
+    sockets: &[RiggedSocket<'_>],
 ) -> Result<()> {
-    validate(mesh, shells)?;
+    validate(mesh, shells, sockets)?;
     let mut buffer = BufferBuilder::default();
     let positions = buffer.push(
         &f32_bytes(mesh.positions.iter().flatten().copied()),
@@ -707,7 +1052,7 @@ pub fn export_rigged_glb(
             children[parent as usize].push(joint);
         }
     }
-    let mut nodes = Vec::with_capacity(joint_names.len() + 2);
+    let mut nodes = Vec::with_capacity(joint_names.len() + 2 + sockets.len());
     for joint in 0..joint_names.len() {
         let local = if joint_parents[joint] < 0 {
             globals[joint]
@@ -735,16 +1080,94 @@ pub fn export_rigged_glb(
     nodes.push(json!({"name": "Skeleton", "children": roots}));
     let mesh_node = nodes.len();
     nodes.push(json!({"name": character_name, "mesh": 0, "skin": 0}));
-
     let skeleton_root = mesh
         .joint_parents
         .iter()
         .position(|parent| *parent < 0)
         .context("MHR skeleton has no root")?;
+    let socket_parent = if sockets.is_empty() {
+        None
+    } else {
+        Some(
+            mesh.joint_names
+                .iter()
+                .position(|name| name == "root")
+                .context("MHR skeleton has no anatomical pelvis joint")?,
+        )
+    };
+    let socket_nodes = sockets
+        .iter()
+        .map(|socket| {
+            let node = nodes.len();
+            let state = socket.transform.to_skel_state();
+            nodes.push(json!({
+                "name": format!("{EQUIPMENT_SOCKET_NODE_PREFIX}{}", socket.attachment_point_id),
+                "translation": [state[0], state[1], state[2]],
+                "rotation": [state[3], state[4], state[5], state[6]],
+                "scale": [state[7], state[7], state[7]],
+                "extras": {
+                    "adventuresim_equipment_socket": {
+                        "attachment_point_id": socket.attachment_point_id,
+                        "space": "pelvis_local",
+                        "surface_uv": {
+                            "domain": socket.surface_uv_domain,
+                            "uv": socket.surface_uv
+                        },
+                        "tangent_axis": "+Y",
+                        "normal_axis": "+Z"
+                    }
+                }
+            }));
+            node
+        })
+        .collect::<Vec<_>>();
+    if let Some(socket_parent) = socket_parent {
+        let root_children = nodes[socket_parent]
+            .as_object_mut()
+            .context("MHR anatomical pelvis node is not an object")?
+            .entry("children")
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .context("MHR anatomical pelvis children are not an array")?;
+        root_children.extend(socket_nodes.iter().copied().map(Value::from));
+    }
+    let scene_nodes = vec![skeleton_node, mesh_node];
+    let mut extras = json!({
+        "adventuresim_character": {
+            "name": character_name,
+            "recipe_version": recipe_version,
+            "mhr_release": "v1.0.1",
+            "lod": lod,
+            "placeholder_clothing": shells.iter().map(|shell| shell.name).collect::<Vec<_>>(),
+        },
+        "adventuresim_rig": {
+            "family": "mhr",
+            "neutral_pose": "T-pose",
+            "units": "metres",
+            "up_axis": "+Y",
+            "forward_axis": "-Z",
+            "attachments": attachments,
+        },
+    });
+    if !sockets.is_empty() {
+        extras["adventuresim_equipment"] = json!({
+            "attachment_sockets": sockets.iter().map(|socket| json!({
+                "attachment_point_id": socket.attachment_point_id,
+                "node": format!("{EQUIPMENT_SOCKET_NODE_PREFIX}{}", socket.attachment_point_id),
+                "space": "pelvis_local",
+                "surface_uv": {
+                    "domain": socket.surface_uv_domain,
+                    "uv": socket.surface_uv
+                },
+                "tangent_axis": "+Y",
+                "normal_axis": "+Z"
+            })).collect::<Vec<_>>(),
+        });
+    }
     let document = json!({
         "asset": {"version": "2.0", "generator": "Fabelgeist MHR character creator"},
         "scene": 0,
-        "scenes": [{"name": "Character", "nodes": [skeleton_node, mesh_node]}],
+        "scenes": [{"name": "Character", "nodes": scene_nodes}],
         "nodes": nodes,
         "meshes": [{
             "name": character_name,
@@ -760,23 +1183,7 @@ pub fn export_rigged_glb(
         "accessors": accessors,
         "bufferViews": buffer.views,
         "buffers": [{"byteLength": buffer.bytes.len()}],
-        "extras": {
-            "adventuresim_character": {
-                "name": character_name,
-                "recipe_version": recipe_version,
-                "mhr_release": "v1.0.1",
-                "lod": lod,
-                "placeholder_clothing": shells.iter().map(|shell| shell.name).collect::<Vec<_>>(),
-            },
-            "adventuresim_rig": {
-                "family": "mhr",
-                "neutral_pose": "T-pose",
-                "units": "metres",
-                "up_axis": "+Y",
-                "forward_axis": "-Z",
-                "attachments": attachments,
-            }
-        }
+        "extras": extras
     });
 
     let mut json_bytes = serde_json::to_vec(&document)?;
@@ -900,6 +1307,7 @@ mod tests {
                 global_joint_states: &global_joint_states,
             },
             &[],
+            &[],
         )
         .unwrap();
         let bytes = fs::read(&path).unwrap();
@@ -1009,6 +1417,7 @@ mod tests {
                 global_joint_states: &global_joint_states,
             },
             &[],
+            &[],
         );
         assert!(result.unwrap_err().to_string().contains("skin weights sum"));
     }
@@ -1053,6 +1462,7 @@ mod tests {
                 global_joint_states: &global_joint_states,
             },
             &[shell],
+            &[],
         )
         .unwrap();
         let bytes = fs::read(&path).unwrap();
@@ -1085,11 +1495,14 @@ mod tests {
         let path = directory.join("belt.glb");
         let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         let normals = [[0.0, 0.0, 1.0]; 3];
-        let joint_indices = [[0; 8]; 3];
+        let joint_indices = [[1; 8]; 3];
         let joint_weights = [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; 3];
-        let joint_names = ["root".to_owned()];
-        let joint_parents = [-1];
-        let global_joint_states = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]];
+        let joint_names = ["body_world".to_owned(), "root".to_owned()];
+        let joint_parents = [-1, 0];
+        let global_joint_states = [
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+        ];
         let shell_faces = [[0, 1, 2]];
         let shell = RiggedShell {
             name: "Leather belt",
@@ -1099,6 +1512,16 @@ mod tests {
             base_color: [0.5, 0.35, 0.23, 1.0],
             metallic: 0.0,
             roughness: 0.58,
+        };
+        let socket = RiggedSocket {
+            attachment_point_id: "left",
+            surface_uv_domain: MHR_ANATOMICAL_UV_DOMAIN,
+            surface_uv: [0.37, 0.71],
+            transform: Transform {
+                translation: [-0.25, 0.75, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: 1.0,
+            },
         };
 
         export_rigged_glb(
@@ -1118,6 +1541,7 @@ mod tests {
                 global_joint_states: &global_joint_states,
             },
             &[shell],
+            &[socket],
         )
         .unwrap();
 
@@ -1130,11 +1554,196 @@ mod tests {
                 .len(),
             1
         );
-        assert_eq!(document["skins"][0]["joints"].as_array().unwrap().len(), 1);
+        assert_eq!(document["skins"][0]["joints"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            document["extras"]["adventuresim_equipment"]["attachment_sockets"][0]["attachment_point_id"],
+            "left"
+        );
+        let exported_surface =
+            &document["extras"]["adventuresim_equipment"]["attachment_sockets"][0]["surface_uv"];
+        assert_eq!(exported_surface["domain"], MHR_ANATOMICAL_UV_DOMAIN);
+        for (actual, expected) in exported_surface["uv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip([0.37, 0.71])
+        {
+            assert!((actual.as_f64().unwrap() - expected).abs() < 1e-6);
+        }
+        let nodes = document["nodes"].as_array().unwrap();
+        let socket_node = nodes
+            .iter()
+            .position(|node| node["name"] == format!("{EQUIPMENT_SOCKET_NODE_PREFIX}left"))
+            .expect("exported pelvis-local socket node");
+        assert_eq!(nodes[socket_node]["translation"], json!([-0.25, 0.75, 0.0]));
+        assert!(
+            nodes[1]["children"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(socket_node))
+        );
+        assert!(
+            !document["scenes"][0]["nodes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(socket_node))
+        );
         assert_eq!(
             document["extras"]["adventuresim_rig"]["attachments"],
             json!([])
         );
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn fitted_socket_resolves_uv_per_lod_and_bootstrap_recovers_the_anchor() {
+        let positions = [
+            [-2.0, 0.0, -1.0],
+            [-2.0, 2.0, -1.0],
+            [-2.0, 2.0, 1.0],
+            [-2.0, 0.0, 1.0],
+            [2.0, 0.0, -1.0],
+            [2.0, 2.0, -1.0],
+            [2.0, 2.0, 1.0],
+            [2.0, 0.0, 1.0],
+            // A farther low hand-like surface must not steal the hip socket.
+            [-4.0, 0.0, -1.0],
+            [-4.0, 2.0, 1.0],
+            [-4.0, 2.0, -1.0],
+            [-4.0, 0.0, 1.0],
+        ];
+        let faces = [
+            [0, 2, 1],
+            [0, 3, 2],
+            [4, 5, 6],
+            [4, 6, 7],
+            [0, 1, 5],
+            [0, 5, 4],
+            [3, 7, 6],
+            [3, 6, 2],
+            [8, 9, 10],
+            [8, 11, 9],
+        ];
+        let normals = [
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+        ];
+        let texcoords = [
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [1.0, 0.0],
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [1.0, 0.0],
+            [0.0, 0.0],
+            [1.0, 1.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+        ];
+        let mut joint_indices = [[0; 8]; 12];
+        for indices in &mut joint_indices[8..] {
+            indices[0] = 1;
+        }
+        let joint_weights = [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; 12];
+        let joint_names = ["root".to_owned(), "l_wrist".to_owned()];
+        let joint_parents = [-1, 0];
+        let global_joint_states = [
+            [0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+            [-4.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+        ];
+        let mesh = RiggedMesh {
+            positions: &positions,
+            normals: &normals,
+            faces: &faces,
+            export_body: false,
+            joint_indices: &joint_indices,
+            joint_weights: &joint_weights,
+            joint_names: &joint_names,
+            joint_parents: &joint_parents,
+            global_joint_states: &global_joint_states,
+        };
+        let shell = RiggedShell {
+            name: "Belt",
+            positions: &positions,
+            normals: &normals,
+            faces: &faces,
+            base_color: [0.5, 0.3, 0.2, 1.0],
+            metallic: 0.0,
+            roughness: 0.8,
+        };
+        let layout = SurfaceUvLayout {
+            domain: MHR_ANATOMICAL_UV_DOMAIN,
+            texcoords: &texcoords,
+            texcoord_faces: &faces,
+        };
+        let tangent = [
+            0.0,
+            -35.0_f32.to_radians().cos(),
+            -35.0_f32.to_radians().sin(),
+        ];
+
+        let socket = fitted_equipment_socket_from_uv(
+            &mesh,
+            &shell,
+            &layout,
+            [0.5, 0.5],
+            [-1.0, 0.0, 0.0],
+            tangent,
+        )
+        .expect("weighted left hip UV should resolve");
+        assert!((socket.translation[0] + 2.003).abs() < 1e-6);
+        assert!((socket.translation[1] - 0.5).abs() < 1e-6);
+        let tangent_tip = socket.compose(&Transform {
+            translation: [0.0, 1.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: 1.0,
+        });
+        let resolved_tangent = subtract(tangent_tip.translation, socket.translation);
+        for (actual, expected) in resolved_tangent.into_iter().zip(tangent.map(f64::from)) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        // The opposite end of the same axis is the hilt: forward (+Z) and up
+        // in the tactical character frame.
+        assert!(-resolved_tangent[1] > 0.0);
+        assert!(-resolved_tangent[2] > 0.0);
+        let bootstrapped = bootstrap_equipment_surface_uv(&mesh, &shell, &layout, [-1.0, 0.0, 0.0])
+            .expect("legacy ray should bootstrap the same UV anchor");
+        assert!((bootstrapped[0] - 0.5).abs() < 1e-6);
+        assert!((bootstrapped[1] - 0.5).abs() < 1e-6);
+
+        let open_shell = RiggedShell {
+            name: "Invalid open belt",
+            positions: &positions,
+            normals: &normals,
+            faces: &faces[..4],
+            base_color: [0.5, 0.3, 0.2, 1.0],
+            metallic: 0.0,
+            roughness: 0.8,
+        };
+        assert!(
+            fitted_equipment_socket_from_uv(
+                &mesh,
+                &open_shell,
+                &layout,
+                [0.5, 0.5],
+                [0.0, 0.0, -1.0],
+                [0.0, 1.0, 0.0],
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("did not resolve on fitted shell")
+        );
     }
 }
