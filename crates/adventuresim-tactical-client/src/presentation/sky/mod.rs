@@ -97,6 +97,26 @@ impl Material for TacticalStarMaterial {
     }
 }
 
+/// Cascade configuration from the graphics preset; `None` keeps the engine
+/// default (four cascades to its default reach), which capture tooling
+/// relies on for golden stability. Gameplay presets trade distant contact
+/// shadows for fewer, denser cascades.
+fn preset_cascade_config(
+    settings: &TacticalGraphicsSettings,
+) -> Option<bevy::light::CascadeShadowConfig> {
+    if settings.shadow_cascade_count == 0 && settings.shadow_maximum_distance <= 0.0 {
+        return None;
+    }
+    let mut builder = bevy::light::CascadeShadowConfigBuilder::default();
+    if settings.shadow_cascade_count > 0 {
+        builder.num_cascades = settings.shadow_cascade_count;
+    }
+    if settings.shadow_maximum_distance > 0.0 {
+        builder.maximum_distance = settings.shadow_maximum_distance;
+    }
+    Some(builder.build())
+}
+
 pub(in crate::presentation) fn setup_tactical_sky(
     mut commands: Commands,
     settings: Res<TacticalGraphicsSettings>,
@@ -105,7 +125,7 @@ pub(in crate::presentation) fn setup_tactical_sky(
     mut moon_materials: ResMut<Assets<TacticalMoonMaterial>>,
     mut star_materials: ResMut<Assets<TacticalStarMaterial>>,
 ) {
-    commands.spawn((
+    let mut sunlight = commands.spawn((
         Name::new("Tactical sunlight"),
         TacticalSunlight,
         SunDisk::EARTH,
@@ -116,8 +136,11 @@ pub(in crate::presentation) fn setup_tactical_sky(
             ..default()
         },
     ));
+    if let Some(cascades) = preset_cascade_config(&settings) {
+        sunlight.insert(cascades);
+    }
 
-    commands.spawn((
+    let mut moonlight = commands.spawn((
         Name::new("Tactical moonlight"),
         TacticalMoonlight,
         SunDisk::OFF,
@@ -129,6 +152,9 @@ pub(in crate::presentation) fn setup_tactical_sky(
             ..default()
         },
     ));
+    if let Some(cascades) = preset_cascade_config(&settings) {
+        moonlight.insert(cascades);
+    }
 
     if !settings.celestial_enabled {
         return;
@@ -277,7 +303,7 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
         (&mut DirectionalLight, &mut Transform),
         (With<TacticalMoonlight>, Without<TacticalSunlight>),
     >,
-    camera: Single<&mut Exposure, With<Camera3d>>,
+    camera: Single<&mut Exposure, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut moon: Query<
         (&MeshMaterial3d<TacticalMoonMaterial>, &mut Visibility),
@@ -383,7 +409,10 @@ pub(crate) struct AtmosphereIblAmbientHandoff {
 pub(super) fn update_global_ambient_policy(
     settings: Res<TacticalGraphicsSettings>,
     celestial: Res<PresentedCelestialLighting>,
-    camera_environment: Single<Option<&EnvironmentMapLight>, With<Camera3d>>,
+    camera_environment: Single<
+        Option<&EnvironmentMapLight>,
+        (With<Camera3d>, Without<TacticalCloudOffscreenCamera>),
+    >,
     mut handoff: ResMut<AtmosphereIblAmbientHandoff>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
@@ -441,6 +470,13 @@ mod ambient_handoff_tests {
                 environment_map_size: 64,
                 bloom_enabled: true,
                 max_vista_lods: 3,
+                grass_density_scale: 1.0,
+                grass_range_scale: 1.0,
+                cloud_quality_scale: 1.0,
+                cloud_resolution_scale: 1.0,
+                msaa_samples: 4,
+                shadow_cascade_count: 0,
+                shadow_maximum_distance: 0.0,
             })
             .insert_resource(GlobalAmbientLight {
                 brightness: 42.0,
@@ -586,7 +622,7 @@ fn selected_solar_illuminance(
 }
 
 pub(in crate::presentation) fn keep_celestial_visuals_centered(
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    camera: Single<&GlobalTransform, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     celestial: Res<PresentedCelestialLighting>,
     mut moon: Query<&mut Transform, With<TacticalMoon>>,
 ) {

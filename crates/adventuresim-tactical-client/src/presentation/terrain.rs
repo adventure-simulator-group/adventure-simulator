@@ -133,6 +133,25 @@ pub(crate) struct TerrainDetailPatch {
     obstacle_signature: u64,
 }
 
+/// One cached grid vertex, keyed by its absolute world cell. `base_height` and
+/// `raw_relief` are pure functions of world position (not the window centre),
+/// so they survive a scroll; only the centre-relative morph is reapplied.
+#[derive(Clone, Copy, Default)]
+struct DetailPatchCell {
+    base_height: f32,
+    has_height: bool,
+    raw_relief: f32,
+}
+
+/// Persistent scroll cache for the detail patch. As the window follows the
+/// camera it recomputes only the newly-exposed cells instead of the whole
+/// 26k-vertex grid, reusing every cell the previous window already evaluated.
+#[derive(Component, Default)]
+pub(crate) struct TerrainDetailPatchCache {
+    origin_cell: IVec2,
+    cells: Vec<DetailPatchCell>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DetailRockInfluence {
     centre: Vec2,
@@ -222,6 +241,7 @@ pub(in crate::presentation) fn present_pending_terrain(
             &ScenePresentationOf,
             &MeshMaterial3d<TacticalTerrainMaterial>,
             &mut TerrainDetailPatch,
+            &mut TerrainDetailPatchCache,
             &Mesh3d,
         ),
         With<TerrainDetailPatch>,
@@ -245,11 +265,14 @@ pub(in crate::presentation) fn present_pending_terrain(
             &legacy_environment
         };
         let presented =
-            if let (Some((_, handle)), Some((_, detail_handle, mut patch, mesh_handle))) = (
+            if let (
+                Some((_, handle)),
+                Some((_, detail_handle, mut patch, mut cache, mesh_handle)),
+            ) = (
                 presentations.iter().find(|(source, _)| source.0 == entity),
                 detail_presentations
                     .iter_mut()
-                    .find(|(source, _, _, _)| source.0 == entity),
+                    .find(|(source, _, _, _, _)| source.0 == entity),
             ) {
                 if materials.get(&handle.0).is_some() && materials.get(&detail_handle.0).is_some() {
                     let material = terrain_material(
@@ -269,6 +292,9 @@ pub(in crate::presentation) fn present_pending_terrain(
                         .get_mut(&detail_handle.0)
                         .expect("checked detail terrain material") = detail_material;
                     if let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) {
+                        // Obstacles or the vista surface may have changed, so
+                        // the cached relief is stale - rebuild every cell.
+                        cache.cells.clear();
                         *mesh = terrain_detail_patch_mesh(
                             terrain,
                             ground,
@@ -277,6 +303,7 @@ pub(in crate::presentation) fn present_pending_terrain(
                             patch.centre,
                             &tree_positions,
                             &rock_influences,
+                            &mut cache,
                         );
                         patch.vista_revision = vista.revision();
                         patch.obstacle_signature = obstacle_signature;
@@ -307,6 +334,17 @@ pub(in crate::presentation) fn present_pending_terrain(
                     MeshMaterial3d(material.clone()),
                 ));
                 let centre = Vec2::ZERO;
+                let mut cache = TerrainDetailPatchCache::default();
+                let detail_mesh = terrain_detail_patch_mesh(
+                    terrain,
+                    ground,
+                    environment,
+                    &vista,
+                    centre,
+                    &tree_positions,
+                    &rock_influences,
+                    &mut cache,
+                );
                 commands.spawn((
                     Name::new(format!("{} camera-local terrain detail patch", id.0)),
                     ScenePresentationOf(entity),
@@ -315,16 +353,9 @@ pub(in crate::presentation) fn present_pending_terrain(
                         vista_revision: vista.revision(),
                         obstacle_signature,
                     },
+                    cache,
                     NotShadowCaster,
-                    Mesh3d(meshes.add(terrain_detail_patch_mesh(
-                        terrain,
-                        ground,
-                        environment,
-                        &vista,
-                        centre,
-                        &tree_positions,
-                        &rock_influences,
-                    ))),
+                    Mesh3d(meshes.add(detail_mesh)),
                     MeshMaterial3d(detail_material),
                 ));
                 true
@@ -341,10 +372,15 @@ pub(in crate::presentation) fn present_pending_terrain(
 /// relief is evaluated in world space, so snapping changes only the fully
 /// morphed-out perimeter rather than making the surface swim under the player.
 pub(in crate::presentation) fn update_terrain_detail_patch(
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    camera: Single<&GlobalTransform, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     active: Res<ActiveTacticalScene>,
     scenes: Query<(&SceneTerrain, Option<&SceneGround>, &SceneEnvironment)>,
-    mut patches: Query<(&ScenePresentationOf, &mut TerrainDetailPatch, &Mesh3d)>,
+    mut patches: Query<(
+        &ScenePresentationOf,
+        &mut TerrainDetailPatch,
+        &mut TerrainDetailPatchCache,
+        &Mesh3d,
+    )>,
     obstacles: Query<(&SceneObstacle, &Transform)>,
     vista: Res<ActiveVistaSurface>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -355,10 +391,11 @@ pub(in crate::presentation) fn update_terrain_detail_patch(
     let tree_positions = detail_tree_positions(&obstacles);
     let rock_influences = detail_rock_influences(&obstacles);
     let obstacle_signature = detail_obstacle_signature(&tree_positions, &rock_influences);
-    for (source, mut patch, mesh_handle) in &mut patches {
+    for (source, mut patch, mut cache, mesh_handle) in &mut patches {
+        let surface_changed = patch.vista_revision != vista.revision()
+            || patch.obstacle_signature != obstacle_signature;
         if active.entity.is_some_and(|entity| entity != source.0)
-            || (patch.vista_revision == vista.revision()
-                && patch.obstacle_signature == obstacle_signature
+            || (!surface_changed
                 && patch.centre.distance_squared(desired_centre)
                     < DETAIL_PATCH_SNAP_METRES * DETAIL_PATCH_SNAP_METRES * 0.25)
         {
@@ -370,6 +407,11 @@ pub(in crate::presentation) fn update_terrain_detail_patch(
         let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) else {
             continue;
         };
+        // A pure camera scroll reuses the cache; only stale relief (changed
+        // obstacles or vista surface) forces a full recompute.
+        if surface_changed {
+            cache.cells.clear();
+        }
         *mesh = terrain_detail_patch_mesh(
             terrain,
             ground,
@@ -378,6 +420,7 @@ pub(in crate::presentation) fn update_terrain_detail_patch(
             desired_centre,
             &tree_positions,
             &rock_influences,
+            &mut cache,
         );
         patch.centre = desired_centre;
         patch.vista_revision = vista.revision();
@@ -458,45 +501,87 @@ fn terrain_detail_patch_mesh(
     centre: Vec2,
     tree_positions: &[Vec2],
     rock_influences: &[DetailRockInfluence],
+    cache: &mut TerrainDetailPatchCache,
 ) -> Mesh {
     let diameter_steps =
         (DETAIL_PATCH_RADIUS_METRES * 2.0 / DETAIL_PATCH_SPACING_METRES).round() as usize;
     let width = diameter_steps + 1;
     let minimum = centre - Vec2::splat(DETAIL_PATCH_RADIUS_METRES);
     let seed = stable_text_seed(&environment.scene_digest) ^ 0x7465_7272_6169_6e64;
-    let mut positions = Vec::with_capacity(width * width);
-    let mut uvs = Vec::with_capacity(width * width);
-    let mut valid = Vec::with_capacity(width * width);
 
+    // Each vertex lives on an absolute world grid snapped to the vertex spacing
+    // (the camera snap is a whole multiple of it). A cell's world point is a
+    // pure function of its integer coordinate, so `base_height` and the
+    // expensive `raw_relief` (noise, drainage, per-obstacle influence) depend
+    // only on that point - never on the window centre. As the window scrolls
+    // with the camera we reuse every cell the previous window already computed
+    // and evaluate only the newly-exposed strip, instead of recomputing all
+    // ~26k vertices' relief every metre travelled. The centre-relative morph
+    // and the world-space vertex positions are reassembled cheaply each build.
+    let cell_point = |cell: IVec2| {
+        Vec2::new(cell.x as f32, cell.y as f32) * DETAIL_PATCH_SPACING_METRES
+    };
+    let origin = IVec2::new(
+        (minimum.x / DETAIL_PATCH_SPACING_METRES).round() as i32,
+        (minimum.y / DETAIL_PATCH_SPACING_METRES).round() as i32,
+    );
+    let previous = core::mem::take(&mut cache.cells);
+    let previous_origin = cache.origin_cell;
+    let previous_valid = previous.len() == width * width;
+    let mut cells = vec![DetailPatchCell::default(); width * width];
     for z in 0..width {
         for x in 0..width {
-            let point = minimum + Vec2::new(x as f32, z as f32) * DETAIL_PATCH_SPACING_METRES;
+            let slot = z * width + x;
+            let cell = origin + IVec2::new(x as i32, z as i32);
+            if previous_valid {
+                let offset = cell - previous_origin;
+                if offset.x >= 0
+                    && offset.x < width as i32
+                    && offset.y >= 0
+                    && offset.y < width as i32
+                {
+                    cells[slot] = previous[offset.y as usize * width + offset.x as usize];
+                    continue;
+                }
+            }
+            let point = cell_point(cell);
             let base_height = vista.presented_height_at(&environment.scene_digest, terrain, point);
-            let radius = point.distance(centre);
+            cells[slot] = DetailPatchCell {
+                base_height: base_height.unwrap_or_default(),
+                has_height: base_height.is_some(),
+                raw_relief: base_height.map_or(0.0, |_| {
+                    terrain_surface_relief(
+                        seed,
+                        point,
+                        terrain,
+                        ground,
+                        environment,
+                        vista,
+                        tree_positions,
+                        rock_influences,
+                    )
+                }),
+            };
+        }
+    }
+
+    let mut positions = Vec::with_capacity(width * width);
+    let mut uvs = Vec::with_capacity(width * width);
+    for z in 0..width {
+        for x in 0..width {
+            let cell = cells[z * width + x];
+            let point = cell_point(origin + IVec2::new(x as i32, z as i32));
             let morph = 1.0
                 - terrain_smoothstep(
                     DETAIL_PATCH_MORPH_START_METRES,
                     DETAIL_PATCH_RADIUS_METRES - DETAIL_PATCH_SPACING_METRES * 1.5,
-                    radius,
+                    point.distance(centre),
                 );
-            let relief = base_height.map_or(0.0, |_| {
-                terrain_surface_relief(
-                    seed,
-                    point,
-                    terrain,
-                    ground,
-                    environment,
-                    vista,
-                    tree_positions,
-                    rock_influences,
-                ) * morph
-            });
-            positions.push([point.x, base_height.unwrap_or_default() + relief, point.y]);
+            positions.push([point.x, cell.base_height + cell.raw_relief * morph, point.y]);
             uvs.push([
                 (point.x / terrain.width() + 0.5).clamp(0.0, 1.0),
                 (point.y / terrain.depth() + 0.5).clamp(0.0, 1.0),
             ]);
-            valid.push(base_height.is_some());
         }
     }
 
@@ -509,7 +594,11 @@ fn terrain_detail_patch_mesh(
                 continue;
             }
             let i = z * width + x;
-            if !valid[i] || !valid[i + 1] || !valid[i + width] || !valid[i + width + 1] {
+            if !cells[i].has_height
+                || !cells[i + 1].has_height
+                || !cells[i + width].has_height
+                || !cells[i + width + 1].has_height
+            {
                 continue;
             }
             let i = i as u32;
@@ -523,6 +612,9 @@ fn terrain_detail_patch_mesh(
             ]);
         }
     }
+
+    cache.cells = cells;
+    cache.origin_cell = origin;
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
@@ -1124,6 +1216,10 @@ pub(super) fn grass_cover_mask_pixels(ground: &SceneGround, seed: u64) -> (u32, 
     (width, height, mask)
 }
 
+#[cfg_attr(
+    all(feature = "instanced-grass", not(target_family = "wasm")),
+    allow(dead_code, reason = "legacy patch renderer remains the wasm grass path")
+)]
 pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
     let (width, height, mask) = grass_cover_mask_pixels(ground, seed);
     let mut image = Image::new(
@@ -1430,10 +1526,26 @@ mod tests {
         let terrain = SceneTerrain::new(64, 64, 1.0, |point| point.x * 0.01 + point.y * 0.02);
         let environment = legacy_scene_environment(&SceneId("detail-patch".into()));
         let vista = ActiveVistaSurface::default();
-        let first =
-            terrain_detail_patch_mesh(&terrain, None, &environment, &vista, Vec2::ZERO, &[], &[]);
-        let repeated =
-            terrain_detail_patch_mesh(&terrain, None, &environment, &vista, Vec2::ZERO, &[], &[]);
+        let first = terrain_detail_patch_mesh(
+            &terrain,
+            None,
+            &environment,
+            &vista,
+            Vec2::ZERO,
+            &[],
+            &[],
+            &mut TerrainDetailPatchCache::default(),
+        );
+        let repeated = terrain_detail_patch_mesh(
+            &terrain,
+            None,
+            &environment,
+            &vista,
+            Vec2::ZERO,
+            &[],
+            &[],
+            &mut TerrainDetailPatchCache::default(),
+        );
         let positions = match first.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
             VertexAttributeValues::Float32x3(values) => values,
             other => panic!("unexpected positions {other:?}"),
@@ -1489,6 +1601,40 @@ mod tests {
             let expected = terrain.height_at(point).unwrap();
             assert!((position[1] - expected).abs() < 0.000_01);
         }
+    }
+
+    #[test]
+    fn scrolled_detail_patch_cache_matches_a_full_rebuild() {
+        let terrain = SceneTerrain::new(64, 64, 1.0, |point| point.x * 0.01 + point.y * 0.02);
+        let environment = legacy_scene_environment(&SceneId("detail-scroll".into()));
+        let vista = ActiveVistaSurface::default();
+        let build = |centre: Vec2, cache: &mut TerrainDetailPatchCache| {
+            terrain_detail_patch_mesh(
+                &terrain, None, &environment, &vista, centre, &[], &[], cache,
+            )
+        };
+        let positions = |mesh: &Mesh| match mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
+            VertexAttributeValues::Float32x3(values) => values.clone(),
+            other => panic!("unexpected positions {other:?}"),
+        };
+
+        // Prime a cache at the origin, then scroll it a few snap steps. The
+        // window overlaps the primed one, so most cells are reused from cache.
+        let mut scrolled_cache = TerrainDetailPatchCache::default();
+        build(Vec2::ZERO, &mut scrolled_cache);
+        let scrolled = build(Vec2::new(2.0, 1.0), &mut scrolled_cache);
+
+        // A pristine cache recomputes every cell at the destination centre.
+        let fresh = build(Vec2::new(2.0, 1.0), &mut TerrainDetailPatchCache::default());
+
+        // Reusing cached cells must be byte-identical to a full recompute:
+        // base height and raw relief are pure functions of the world cell, so
+        // a scroll can never drift from the naive per-frame rebuild.
+        assert_eq!(positions(&scrolled), positions(&fresh));
+        assert_eq!(
+            scrolled.indices().unwrap().len(),
+            fresh.indices().unwrap().len()
+        );
     }
 
     #[test]

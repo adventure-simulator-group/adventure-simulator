@@ -304,7 +304,8 @@ impl Plugin for TacticalAnimationPlugin {
                 PostUpdate,
                 procedural::refresh_raised_support_after_propagation
                     .after(TransformSystems::Propagate),
-            );
+            )
+            .add_systems(Update, super::diagnostics::report_system_spikes);
     }
 }
 

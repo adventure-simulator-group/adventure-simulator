@@ -486,7 +486,16 @@ authored blade density near the player and camera. The distant mesh retains the
 earlier density because individual blades are subpixel there. The 4x near mesh
 cross-fades to the original far topology over 18--26 metres rather than paying
 four times the vertex cost throughout the former 34--44 metre high-detail
-radius. A deterministic scalar mask derived from the same authoritative
+radius. On native builds (`instanced-grass` feature, on by default) this playable
+sward renders through `bevy_eidolon` GPU instancing instead of macro-patch
+entities: each placement cell emits per-tuft instances grouped into
+tier-by-species batches, a compute pass frustum- and range-culls individual
+tufts into indirect draws, the placement-time ground-cover sample rides in each
+instance's seed byte instead of a mask texture, and wind runs from shader
+globals so no material asset is touched per frame. Cell eligibility, shoot
+totals per cell, and the tier cross-fade distances are identical to the legacy
+renderer, which remains compiled for the browser until the WebGPU
+indirect-draw fallback lands. A deterministic scalar mask derived from the same authoritative
 ground-cover contour as the terrain rejects blades on dirt and leaf litter and
 progressively thins the grass-side boundary. Tree crowns guarantee a compact
 litter core at the trunk, then use a deterministic radially tapered litter

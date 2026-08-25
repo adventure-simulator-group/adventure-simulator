@@ -1,7 +1,8 @@
 #import bevy_pbr::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
-    mesh_view_bindings::view,
+    mesh_view_bindings::{view, lights},
+    shadows,
 }
 #ifdef PREPASS_PIPELINE
 #import bevy_pbr::{
@@ -9,10 +10,7 @@
     pbr_deferred_functions::deferred_output,
 }
 #else
-#import bevy_pbr::{
-    forward_io::{VertexOutput, FragmentOutput},
-    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-}
+#import bevy_pbr::forward_io::{VertexOutput, FragmentOutput}
 #endif
 
 struct TacticalTerrainMaterial {
@@ -263,9 +261,40 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 #ifdef PREPASS_PIPELINE
     return deferred_output(in, pbr_input);
 #else
+    // Matte soil (roughness 0.55-1.0, no metal) gains nothing from full PBR's
+    // image-based lighting and specular. Shade it with the same fast model as
+    // the foliage: flat ambient scaled by the accumulated soil/litter AO, plus
+    // one clamped cascade fetch per directional light. Fog is negligible here
+    // (linear start 30 km; the vista terrain is a separate material), and the
+    // camera's ACES pass still tonemaps this output, matching the foliage.
     var out: FragmentOutput;
-    out.color = apply_pbr_lighting(pbr_input);
-    out.color = main_pass_post_lighting_processing(pbr_input, out.color);
+    let albedo = pbr_input.material.base_color.rgb;
+    let N = pbr_input.N;
+    let ambient_occlusion = pbr_input.diffuse_occlusion;
+    var lit = albedo * lights.ambient_color.rgb * ambient_occlusion;
+    let view_z = dot(vec4<f32>(
+        view.view_from_world[0].z,
+        view.view_from_world[1].z,
+        view.view_from_world[2].z,
+        view.view_from_world[3].z,
+    ), in.world_position);
+    for (var light_index = 0u; light_index < lights.n_directional_lights; light_index += 1u) {
+        let light = lights.directional_lights[light_index];
+        let n_dot_l = saturate(dot(N, light.direction_to_light));
+        let shadow = clamp(
+            shadows::fetch_directional_shadow(
+                light_index,
+                in.world_position,
+                N,
+                view_z,
+                in.position.xy,
+            ),
+            0.12,
+            1.0,
+        );
+        lit += albedo * light.color.rgb * (n_dot_l * shadow * 0.3183099);
+    }
+    out.color = vec4<f32>(lit * view.exposure, 1.0);
     return out;
 #endif
 }

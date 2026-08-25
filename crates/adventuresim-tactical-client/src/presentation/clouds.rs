@@ -1,8 +1,15 @@
 //! Bounded procedural cloud shells for the grounded tactical camera.
 
 use super::*;
+use bevy::{
+    camera::{ClearColorConfig, RenderTarget, visibility::RenderLayers},
+    render::render_resource::{TextureDescriptor, TextureUsages},
+};
 
 const CLOUD_SHADER: &str = "shaders/tactical_clouds.wgsl";
+const CLOUD_COMPOSITE_SHADER: &str = "shaders/tactical_cloud_composite.wgsl";
+/// Render layer reserved for the offscreen volumetric cloud pass.
+const CLOUD_OFFSCREEN_LAYER: usize = 2;
 const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
 /// Deliberately smaller than Earth's radius so cloud decks bend into the
 /// tactical horizon within the renderer's bounded trace distance.
@@ -50,6 +57,15 @@ pub(in crate::presentation) struct TacticalCloudMaterial {
     /// Fixed scene anchor X/Z, curvature radius, aerial extinction.
     #[uniform(5)]
     geometry: Vec4,
+    /// Tiling 3D value-noise field (RGB = broad fbm, warp A, warp B), baked
+    /// once at startup. At reduced march quality the shader samples this
+    /// with hardware trilinear filtering instead of evaluating ~10 ALU
+    /// noise octaves per density sample - the technique volumetric-cloud
+    /// renderers like Horizon Zero Dawn (and bevy-volumetric-clouds) use.
+    /// The full-quality reference march keeps the ALU path for goldens.
+    #[texture(6, dimension = "3d")]
+    #[sampler(7)]
+    noise: Handle<Image>,
 }
 
 impl Material for TacticalCloudMaterial {
@@ -77,6 +93,54 @@ impl Material for TacticalCloudMaterial {
     ) -> Result<(), SpecializedMeshPipelineError> {
         // The camera remains inside this shell. Disabling culling also avoids
         // depending on a second inside-out mesh asset in the browser bundle.
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
+/// Marks the reduced-resolution camera that renders the volumetric shells
+/// offscreen. Gameplay systems that assume one `Camera3d` must exclude it.
+#[derive(Component)]
+pub(crate) struct TacticalCloudOffscreenCamera;
+
+/// Camera-following dome that samples the offscreen cloud target back into
+/// the main view, so terrain and trees keep occluding clouds through the
+/// ordinary depth test.
+#[derive(Component)]
+pub(in crate::presentation) struct TacticalCloudComposite;
+
+#[derive(Resource)]
+pub(in crate::presentation) struct TacticalCloudOffscreenTarget {
+    image: Handle<Image>,
+    resolution_scale: f32,
+}
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(in crate::presentation) struct TacticalCloudCompositeMaterial {
+    #[texture(0)]
+    #[sampler(1)]
+    source: Handle<Image>,
+}
+
+impl Material for TacticalCloudCompositeMaterial {
+    fn fragment_shader() -> ShaderRef {
+        CLOUD_COMPOSITE_SHADER.into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        // The offscreen pass already blends the shells premultiplied over a
+        // transparent clear, so one premultiplied composite is equivalent to
+        // the legacy in-view shell blending.
+        AlphaMode::Premultiplied
+    }
+
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // The camera remains inside the composite dome.
         descriptor.primitive.cull_mode = None;
         Ok(())
     }
@@ -194,10 +258,30 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
+    mut composite_materials: ResMut<Assets<TacticalCloudCompositeMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    settings: Res<TacticalGraphicsSettings>,
+    cameras: Query<(Entity, &Projection, &Camera), With<Camera3d>>,
 ) {
+    // The volumetric march can render at a reduced offscreen resolution and
+    // composite through one dome; clouds are soft enough that the bilinear
+    // upsample is close to invisible while the fragment cost drops with the
+    // resolution squared. The legacy in-view path (1.0) stays authoritative
+    // for capture tooling.
+    let offscreen = if settings.cloud_resolution_scale < 0.999 {
+        cameras
+            .iter()
+            .next()
+            .map(|(camera, projection, main)| {
+                (camera, projection.clone(), main.physical_target_size())
+            })
+    } else {
+        None
+    };
     let mesh = meshes.add(cloud_hemisphere_mesh());
+    let noise = images.add(cloud_noise_image());
     for slot in 0..3 {
-        commands.spawn((
+        let mut shell = commands.spawn((
             Name::new(format!("Procedural tactical cloud deck {slot}")),
             TacticalCloudLayer { slot },
             NoFrustumCulling,
@@ -211,9 +295,225 @@ pub(in crate::presentation) fn setup_tactical_clouds(
                 motion: Vec4::new(0.0, 0.0, 1.0, 1.0),
                 spectral: Vec4::ONE,
                 geometry: cloud_shell_geometry(),
+                noise: noise.clone(),
             })),
             Transform::default(),
         ));
+        if offscreen.is_some() {
+            shell.insert(RenderLayers::layer(CLOUD_OFFSCREEN_LAYER));
+        }
+    }
+    let Some((camera, projection, target_size)) = offscreen else {
+        return;
+    };
+    let resolution_scale = settings.cloud_resolution_scale.clamp(0.25, 1.0);
+    // The camera's computed target size is often not known yet during
+    // startup; the per-frame update system re-sizes the image on the first
+    // frame where it is.
+    let size = cloud_offscreen_size(target_size.unwrap_or(UVec2::new(960, 540)), resolution_scale);
+    let image = images.add(cloud_offscreen_image(size));
+    commands.insert_resource(TacticalCloudOffscreenTarget {
+        image: image.clone(),
+        resolution_scale,
+    });
+    commands.spawn((
+        Name::new("Tactical cloud composite dome"),
+        TacticalCloudComposite,
+        NoFrustumCulling,
+        NotShadowCaster,
+        Mesh3d(mesh),
+        MeshMaterial3d(composite_materials.add(TacticalCloudCompositeMaterial {
+            source: image.clone(),
+        })),
+        Transform::default(),
+    ));
+    commands.entity(camera).with_children(|children| {
+        children.spawn((
+            Name::new("Tactical cloud offscreen camera"),
+            TacticalCloudOffscreenCamera,
+            Camera3d::default(),
+            Camera {
+                // Render before the main camera consumes the target.
+                order: -1,
+                clear_color: ClearColorConfig::Custom(Color::NONE),
+                ..default()
+            },
+            RenderTarget::Image(image.into()),
+            projection,
+            // The main pass tonemaps the composited result exactly once,
+            // like the legacy in-view shells.
+            Tonemapping::None,
+            Msaa::Off,
+            RenderLayers::layer(CLOUD_OFFSCREEN_LAYER),
+            Transform::IDENTITY,
+        ));
+    });
+}
+
+/// Side length of the tiling cloud-noise volume.
+const CLOUD_NOISE_TEXELS: usize = 96;
+/// Noise-domain units spanned by one texture period. Kept in sync with
+/// `CLOUD_NOISE_PERIOD` in `tactical_clouds.wgsl`.
+const CLOUD_NOISE_PERIOD: f32 = 8.0;
+
+/// Deterministically bakes the tiling value-noise volume the reduced-quality
+/// cloud march samples instead of evaluating noise octaves in ALU.
+fn cloud_noise_image() -> Image {
+    let broad8 = cloud_noise_lattice(8, 0x636c_6f75);
+    let broad16 = cloud_noise_lattice(16, 0x6e6f_6973);
+    let broad32 = cloud_noise_lattice(32, 0x6265_7673);
+    let warp_a = cloud_noise_lattice(8, 0x7761_7270);
+    let warp_b = cloud_noise_lattice(8, 0x6472_6966);
+
+    let n = CLOUD_NOISE_TEXELS;
+    let texel_units = CLOUD_NOISE_PERIOD / n as f32;
+    let mut data = vec![0u8; n * n * n * 4];
+    for z in 0..n {
+        for y in 0..n {
+            for x in 0..n {
+                let p = Vec3::new(x as f32, y as f32, z as f32) * texel_units;
+                // Three wrapped octaves stand in for the shader's four
+                // unwrapped ones; the dropped highest octave is below the
+                // texel Nyquist limit anyway, and the weights are
+                // renormalised to preserve overall amplitude.
+                let broad = 0.559 * cloud_lattice_noise(&broad8, 8, p)
+                    + 0.290 * cloud_lattice_noise(&broad16, 16, p * 2.0)
+                    + 0.151 * cloud_lattice_noise(&broad32, 32, p * 4.0);
+                let index = ((z * n + y) * n + x) * 4;
+                data[index] = (broad.clamp(0.0, 1.0) * 255.0) as u8;
+                data[index + 1] =
+                    (cloud_lattice_noise(&warp_a, 8, p).clamp(0.0, 1.0) * 255.0) as u8;
+                data[index + 2] =
+                    (cloud_lattice_noise(&warp_b, 8, p).clamp(0.0, 1.0) * 255.0) as u8;
+                data[index + 3] = 255;
+            }
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width: n as u32,
+            height: n as u32,
+            depth_or_array_layers: n as u32,
+        },
+        TextureDimension::D3,
+        data,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
+        label: Some("tactical_cloud_noise_sampler".to_owned()),
+        address_mode_u: bevy::image::ImageAddressMode::Repeat,
+        address_mode_v: bevy::image::ImageAddressMode::Repeat,
+        address_mode_w: bevy::image::ImageAddressMode::Repeat,
+        mag_filter: bevy::image::ImageFilterMode::Linear,
+        min_filter: bevy::image::ImageFilterMode::Linear,
+        ..default()
+    });
+    image
+}
+
+/// A wrapped cubic lattice of deterministic unit hashes.
+fn cloud_noise_lattice(period: usize, salt: u64) -> Vec<f32> {
+    let mut values = vec![0.0f32; period * period * period];
+    for z in 0..period {
+        for y in 0..period {
+            for x in 0..period {
+                let key = (x as u64)
+                    | ((y as u64) << 16)
+                    | ((z as u64) << 32)
+                    | (salt << 48 ^ salt);
+                values[(z * period + y) * period + x] =
+                    (splitmix64(key) >> 40) as f32 / 16_777_216.0;
+            }
+        }
+    }
+    values
+}
+
+/// Smooth trilinear value noise over a wrapped lattice, matching the blend
+/// curve of `value_noise_3d` in the cloud shader.
+fn cloud_lattice_noise(values: &[f32], period: usize, position: Vec3) -> f32 {
+    let cell = position.floor();
+    let local = position - cell;
+    let blend = local * local * (Vec3::splat(3.0) - 2.0 * local);
+    let corner = |dx: i32, dy: i32, dz: i32| -> f32 {
+        let wrap = |v: f32, offset: i32| {
+            ((v as i32 + offset).rem_euclid(period as i32)) as usize
+        };
+        values[(wrap(cell.z, dz) * period + wrap(cell.y, dy)) * period + wrap(cell.x, dx)]
+    };
+    let z0 = (corner(0, 0, 0) * (1.0 - blend.x) + corner(1, 0, 0) * blend.x)
+        * (1.0 - blend.y)
+        + (corner(0, 1, 0) * (1.0 - blend.x) + corner(1, 1, 0) * blend.x) * blend.y;
+    let z1 = (corner(0, 0, 1) * (1.0 - blend.x) + corner(1, 0, 1) * blend.x)
+        * (1.0 - blend.y)
+        + (corner(0, 1, 1) * (1.0 - blend.x) + corner(1, 1, 1) * blend.x) * blend.y;
+    z0 * (1.0 - blend.z) + z1 * blend.z
+}
+
+fn cloud_offscreen_size(target_size: UVec2, resolution_scale: f32) -> Extent3d {
+    Extent3d {
+        width: ((target_size.x as f32 * resolution_scale) as u32).max(1),
+        height: ((target_size.y as f32 * resolution_scale) as u32).max(1),
+        depth_or_array_layers: 1,
+    }
+}
+
+fn cloud_offscreen_image(size: Extent3d) -> Image {
+    let mut image = Image::default();
+    image.texture_descriptor = TextureDescriptor {
+        label: Some("tactical_cloud_offscreen_target"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        // Preserves the scene-referred radiance range until the composite,
+        // matching what the shells previously wrote into the main pass.
+        format: TextureFormat::Rgba16Float,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    };
+    image.resize(size);
+    image
+}
+
+/// Keeps the offscreen target matched to the window and the offscreen
+/// camera's projection matched to the gameplay camera.
+pub(in crate::presentation) fn update_tactical_cloud_offscreen_target(
+    target: Option<Res<TacticalCloudOffscreenTarget>>,
+    mut images: ResMut<Assets<Image>>,
+    main_camera: Query<&Camera, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
+    main_projection: Query<
+        &Projection,
+        (
+            With<Camera3d>,
+            Without<TacticalCloudOffscreenCamera>,
+            Changed<Projection>,
+        ),
+    >,
+    mut offscreen_projection: Query<&mut Projection, With<TacticalCloudOffscreenCamera>>,
+) {
+    let Some(target) = target else {
+        return;
+    };
+    if let Some(target_size) = main_camera
+        .iter()
+        .next()
+        .and_then(Camera::physical_target_size)
+    {
+        let desired = cloud_offscreen_size(target_size, target.resolution_scale);
+        let stale = images
+            .get(&target.image)
+            .is_some_and(|image| image.texture_descriptor.size != desired);
+        if stale && let Some(mut image) = images.get_mut(&target.image) {
+            image.resize(desired);
+        }
+    }
+    if let (Some(main), Some(mut offscreen)) = (
+        main_projection.iter().next(),
+        offscreen_projection.iter_mut().next(),
+    ) {
+        *offscreen = main.clone();
     }
 }
 
@@ -286,15 +586,23 @@ pub(in crate::presentation) fn update_tactical_clouds(
     environments: Query<&SceneEnvironment>,
     celestial: Res<PresentedCelestialLighting>,
     capture: Res<TacticalCloudCaptureOverride>,
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    settings: Res<super::TacticalGraphicsSettings>,
+    camera: Single<&GlobalTransform, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     mut clouds: Query<(
         &TacticalCloudLayer,
         &MeshMaterial3d<TacticalCloudMaterial>,
         &mut Transform,
         &mut Visibility,
     )>,
+    mut composites: Query<
+        &mut Transform,
+        (With<TacticalCloudComposite>, Without<TacticalCloudLayer>),
+    >,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
 ) {
+    for mut transform in &mut composites {
+        transform.translation = camera.translation();
+    }
     let Some(environment) = active
         .entity
         .and_then(|entity| environments.get(entity).ok())
@@ -360,7 +668,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
             daylight,
             celestial.weather_transmission,
         );
-        material.spectral = solar_color.extend(1.0);
+        material.spectral = solar_color.extend(settings.cloud_quality_scale.clamp(0.35, 1.0));
         material.geometry = cloud_shell_geometry();
         *visibility = Visibility::Inherited;
     }

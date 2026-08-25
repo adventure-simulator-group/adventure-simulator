@@ -239,7 +239,13 @@ pub(super) fn update_pose_buffers(
     procedural_clock: Res<ProceduralAnimationClock>,
     catalog: Res<AnimationPackCatalog>,
     clips: Res<Assets<AnimationClip>>,
-    cameras: Query<(&GlobalTransform, &Frustum), With<Camera3d>>,
+    cameras: Query<
+        (&GlobalTransform, &Frustum),
+        (
+            With<Camera3d>,
+            Without<crate::presentation::TacticalCloudOffscreenCamera>,
+        ),
+    >,
     owners: Query<(
         Entity,
         &PresentedSkeleton,
@@ -258,6 +264,7 @@ pub(super) fn update_pose_buffers(
     mut bank: ResMut<BakedClipBank>,
     mut metrics: ResMut<PoseBufferMetrics>,
 ) {
+    let _spike = crate::animation::diagnostics::SpikeGuard::new("update_pose_buffers");
     let camera = cameras.iter().next();
     metrics.culled_character_count = 0;
 
@@ -443,6 +450,7 @@ pub(super) fn apply_pose_buffers(
     mut rigs: Query<&mut PoseBufferRig>,
     mut transforms: Query<&mut Transform, Without<PoseBufferRig>>,
 ) {
+    let _spike = crate::animation::diagnostics::SpikeGuard::new("apply_pose_buffers");
     for mut rig in &mut rigs {
         if !rig.active || rig.frozen {
             continue;

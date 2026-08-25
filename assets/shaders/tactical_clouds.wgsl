@@ -19,6 +19,24 @@ var<uniform> cloud_spectral: vec4<f32>;
 /// Fixed scene anchor X/Z, shell curvature radius, aerial extinction.
 @group(#{MATERIAL_BIND_GROUP}) @binding(5)
 var<uniform> cloud_geometry: vec4<f32>;
+/// Tiling baked value-noise volume: R = broad fbm, G/B = warp noises.
+@group(#{MATERIAL_BIND_GROUP}) @binding(6)
+var cloud_noise_texture: texture_3d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(7)
+var cloud_noise_sampler: sampler;
+
+/// Noise-domain units per texture period; matches CLOUD_NOISE_PERIOD in
+/// `presentation/clouds.rs`.
+const CLOUD_NOISE_PERIOD: f32 = 8.0;
+
+fn baked_noise(position: vec3<f32>) -> vec3<f32> {
+    return textureSampleLevel(
+        cloud_noise_texture,
+        cloud_noise_sampler,
+        position / CLOUD_NOISE_PERIOD,
+        0.0,
+    ).rgb;
+}
 
 fn hash13(position: vec3<f32>) -> f32 {
     var p = fract(position * 0.1031);
@@ -147,14 +165,28 @@ fn sample_density(world_position: vec3<f32>) -> f32 {
         coordinate.x *= 0.58;
         coordinate.z *= 0.58;
     }
-    let warp = vec3<f32>(
-        value_noise_3d(coordinate * 0.37 + vec3<f32>(2.1, 7.3, 11.7)) - 0.5,
-        0.0,
-        value_noise_3d(coordinate * 0.37 + vec3<f32>(17.9, 3.1, 5.7)) - 0.5,
-    );
-    coordinate += warp * 0.85;
-    let broad = fbm(coordinate * vec3<f32>(0.82, 0.62, 0.82));
-    let detail = fbm(coordinate * 3.35 + vec3<f32>(9.7, 1.3, 4.1));
+    // At reduced quality (never in the full-quality reference march, which
+    // stays bit-exact for goldens), density noise comes from the baked
+    // tiling volume: three hardware-filtered fetches replace ten ALU
+    // value-noise evaluations per sample.
+    let fast_noise = cloud_spectral.w < 0.999;
+    var broad: f32;
+    var detail: f32;
+    if fast_noise {
+        let warp_sample = baked_noise(coordinate * 0.37);
+        coordinate += vec3<f32>(warp_sample.g - 0.5, 0.0, warp_sample.b - 0.5) * 0.85;
+        broad = baked_noise(coordinate * vec3<f32>(0.82, 0.62, 0.82)).r;
+        detail = baked_noise(coordinate * 3.35 + vec3<f32>(9.7, 1.3, 4.1)).r;
+    } else {
+        let warp = vec3<f32>(
+            value_noise_3d(coordinate * 0.37 + vec3<f32>(2.1, 7.3, 11.7)) - 0.5,
+            0.0,
+            value_noise_3d(coordinate * 0.37 + vec3<f32>(17.9, 3.1, 5.7)) - 0.5,
+        );
+        coordinate += warp * 0.85;
+        broad = fbm(coordinate * vec3<f32>(0.82, 0.62, 0.82));
+        detail = fbm(coordinate * 3.35 + vec3<f32>(9.7, 1.3, 4.1));
+    }
     let profile = cloud_profile(height, cloud_shape.z, broad);
     var threshold = 0.78 - cloud_shape.x * 0.34;
     if kind == 4u || kind == 6u || kind == 7u || kind == 9u {
@@ -194,6 +226,24 @@ fn sunlight_transmittance(position: vec3<f32>, sun_direction: vec3<f32>) -> f32 
         optical_depth += sample_density(sample_position) * distance * 0.00052;
         distance *= 1.72;
     }
+    return exp(-min(optical_depth, 6.0));
+}
+
+// Homogeneous-deck estimate of the marched sun transmittance: the remaining
+// slant path to the shell top, extinguished at the local sampled density.
+// Only sheet cloud kinds take this path, where the density field is close
+// enough to uniform that the three-sample reference march adds nothing.
+fn sheet_sunlight_transmittance(
+    position: vec3<f32>,
+    sun_direction: vec3<f32>,
+    density: f32,
+) -> f32 {
+    let height_in_shell = altitude_in_shell(position) - cloud_layer.x;
+    let remaining = max(cloud_layer.y - height_in_shell, 0.0);
+    // Clamp the slant reach to the marched version's furthest sample so a
+    // grazing sun cannot over-darken thick nimbostratus decks.
+    let slant = min(remaining / max(sun_direction.y, 0.18), 2385.0);
+    let optical_depth = density * slant * 0.00052;
     return exp(-min(optical_depth, 6.0));
 }
 
@@ -265,8 +315,22 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // and integrate in quarter-sized steps until the ray is clear again.
     // Pixel-stable jitter prevents the curved shell from resolving into
     // coherent marching bands without requiring more samples everywhere.
-    let coarse_step = (trace_end - trace_start) / 40.0;
-    let fine_step = coarse_step * 0.25;
+    // March budget scale in spectral.w: gameplay presets trade sample count
+    // for frame rate; capture tooling keeps the full 40-step reference march.
+    let march_quality = clamp(cloud_spectral.w, 0.35, 1.0);
+    let kind = u32(cloud_shape.z + 0.5);
+    let storminess = select(0.0, 1.0, kind == 3u || kind == 7u);
+    let sheet_cloud = kind == 4u || kind == 6u || kind == 7u || kind == 9u;
+    // Dense sheet decks are near-homogeneous, and exponential extinction
+    // integrates accurately over large steps in homogeneous media, so their
+    // march budget contracts smoothly with coverage. Restricted to reduced
+    // quality so the full-quality reference march stays bit-exact for
+    // capture goldens.
+    let sheet_fast = sheet_cloud && march_quality < 0.999;
+    let sheet_contraction =
+        1.0 - select(0.0, 0.68, sheet_fast) * smoothstep(0.45, 0.75, cloud_shape.x);
+    let coarse_step = (trace_end - trace_start) / (40.0 * march_quality * sheet_contraction);
+    let fine_step = coarse_step * select(0.25, 0.5, sheet_fast);
     let ray_jitter = hash13(vec3<f32>(floor(in.position.xy), cloud_shape.w));
     var step_length = coarse_step;
     var distance = trace_start + coarse_step * ray_jitter;
@@ -277,8 +341,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var radiance = vec3<f32>(0.0);
     let sun_direction = normalize(cloud_lighting.xyz);
     let forward_phase = min(henyey_greenstein(dot(ray_direction, sun_direction), 0.55), 4.0);
-    let kind = u32(cloud_shape.z + 0.5);
-    let storminess = select(0.0, 1.0, kind == 3u || kind == 7u);
     let sun_color = cloud_spectral.xyz;
     let horizon_haze = 1.0 - smoothstep(0.02, 0.22, ray_direction.y);
     let aerial_extinction = cloud_geometry.w * mix(0.65, 4.5, horizon_haze);
@@ -310,7 +372,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 0.0,
                 1.0,
             );
-            let sun_visibility = sunlight_transmittance(position, sun_direction);
+            var sun_visibility: f32;
+            if sheet_fast {
+                sun_visibility = sheet_sunlight_transmittance(position, sun_direction, density);
+            } else {
+                sun_visibility = sunlight_transmittance(position, sun_direction);
+            }
             let powder = 1.0 - exp(-density * 2.4);
             let clear_ambient = mix(
                 vec3<f32>(0.30, 0.36, 0.43),
@@ -328,7 +395,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let ambient_color = mix(clear_ambient, neutral_storm_ambient, storminess * 0.88)
                 * mix(0.52, 1.0, sqrt(sun_visibility))
                 * (1.0 - density * (0.12 + storminess * 0.16));
-            let sheet_cloud = kind == 4u || kind == 6u || kind == 7u || kind == 9u;
             let underside_variation = value_noise_3d(vec3<f32>(
                 position.x * 0.00034 + cloud_shape.w * 0.017,
                 cloud_shape.w * 0.009,

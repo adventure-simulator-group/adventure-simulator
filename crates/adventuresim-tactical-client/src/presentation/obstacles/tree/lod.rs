@@ -29,7 +29,13 @@ pub(crate) struct TreeLodRenderOverride {
 }
 
 pub(in crate::presentation) fn update_tree_projected_lod_ranges(
-    cameras: Query<(&Camera, &Projection), With<Camera3d>>,
+    cameras: Query<
+        (&Camera, &Projection),
+        (
+            With<Camera3d>,
+            Without<crate::presentation::TacticalCloudOffscreenCamera>,
+        ),
+    >,
     lod_override: Res<TreeLodRenderOverride>,
     mut lods: Query<(
         &TreeLod,

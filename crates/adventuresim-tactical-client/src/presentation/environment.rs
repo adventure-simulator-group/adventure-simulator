@@ -201,10 +201,16 @@ fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-fn tactical_msaa() -> Msaa {
-    // Fixed-function 4x hardware resolve is supported by the WebGPU path and
-    // is particularly valuable for thin grass and branch silhouettes.
-    Msaa::Sample4
+fn tactical_msaa(samples: u8) -> Msaa {
+    // Fixed-function hardware resolve is supported by the WebGPU path and
+    // is particularly valuable for thin grass and branch silhouettes; the
+    // sample count is a preset lever because coverage bandwidth at QHD
+    // scales with it.
+    match samples {
+        0 | 1 => Msaa::Off,
+        2 => Msaa::Sample2,
+        _ => Msaa::Sample4,
+    }
 }
 
 #[derive(Resource, Clone, Copy)]
@@ -256,7 +262,7 @@ pub(in crate::presentation) fn setup_tactical_presentation(
             },
             ..default()
         },
-        tactical_msaa(),
+        tactical_msaa(settings.msaa_samples),
     ));
     if settings.atmosphere_enabled {
         camera.insert(AtmosphereSettings::default());
@@ -336,7 +342,10 @@ mod tests {
 
     #[test]
     fn gameplay_uses_four_sample_webgpu_hardware_msaa() {
-        assert_eq!(tactical_msaa(), Msaa::Sample4);
+        // Capture tooling keeps the 4x reference; presets may lower it.
+        assert_eq!(tactical_msaa(4), Msaa::Sample4);
+        assert_eq!(tactical_msaa(2), Msaa::Sample2);
+        assert_eq!(tactical_msaa(1), Msaa::Off);
     }
 
     #[test]

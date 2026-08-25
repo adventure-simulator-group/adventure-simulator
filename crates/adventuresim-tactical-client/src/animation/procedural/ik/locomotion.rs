@@ -35,6 +35,7 @@ pub(in crate::animation) fn apply(
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
     mut commands: Commands,
 ) {
+    let _spike = crate::animation::diagnostics::SpikeGuard::new("apply_ordinary_locomotion_ik");
     let terrain = terrain.single().ok();
     for (owner, rig) in &rigs {
         let Ok((skeleton, playback)) = owners.get(owner) else {

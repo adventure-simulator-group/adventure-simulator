@@ -7,7 +7,9 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 
 use crate::{
-    animation::spawn_fallback_t_pose, camera::CameraAimState, presentation::GrassInteractor,
+    animation::spawn_fallback_t_pose,
+    camera::CameraAimState,
+    presentation::{GrassInteractor, TacticalCloudOffscreenCamera},
 };
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
@@ -159,7 +161,7 @@ impl AttackState {
 fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
-    camera: Single<Entity, With<Camera3d>>,
+    camera: Single<Entity, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     query: Query<(&Player, &CharacterId)>,
     local_character: Res<LocalCharacterId>,
     mut meshes: ResMut<Assets<Mesh>>,

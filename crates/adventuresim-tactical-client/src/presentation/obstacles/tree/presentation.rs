@@ -613,7 +613,13 @@ fn ensure_tree_assets_resident(
 
 pub(in crate::presentation) fn stream_tree_lod_children(
     mut commands: Commands,
-    camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
+    camera: Single<
+        (&GlobalTransform, &Projection),
+        (
+            With<Camera3d>,
+            Without<crate::presentation::TacticalCloudOffscreenCamera>,
+        ),
+    >,
     lod_override: Res<TreeLodRenderOverride>,
     mut trees: Query<(Entity, &GlobalTransform, &mut StreamedTreePresentation)>,
     mut meshes: ResMut<Assets<Mesh>>,

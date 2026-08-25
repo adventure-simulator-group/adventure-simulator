@@ -151,7 +151,10 @@ eliminating the rejected blades before vertex shading. Internal blade spacing
 matches the former one-metre patch, so the larger footprint cuts grass render
 entities by roughly an order of magnitude without reducing near-field density.
 Canopy, water, cultivation, and snow select stable blades within the shared mesh
-rather than opening macro-patch-sized holes. Both representations evaluate the
+rather than opening macro-patch-sized holes. On native builds the playable sward
+renders through GPU instancing (`bevy_eidolon`): the same placement rules emit
+per-tuft instances that a compute pass culls per instance, while the browser
+client keeps the macro-patch renderer. Both representations evaluate the
 same authored lean, layered spatial wind, and player displacement curve, and an
 edge-on ribbon turns partially toward the view so it retains useful screen width
 without becoming a full billboard. Grass placement is not clipped to the

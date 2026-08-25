@@ -50,7 +50,8 @@ use crate::camera::CameraRigConfig;
 use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
     GroundScatterLayer, LooseStonePebblePatch, PresentedTree, ProceduralEnvironmentAssets,
-    ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
+    ProceduralRockVisual, TacticalCloudOffscreenCamera, TacticalGraphicsSettings,
+    TacticalPresentationPlugin,
     TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial, TerrainDetailPatch,
     TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
     TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
@@ -750,7 +751,7 @@ pub(crate) fn run(
 /// cannot masquerade as renderer work on sub-refresh-rate frame budgets.
 fn redirect_performance_camera_offscreen(
     mut commands: Commands,
-    camera: Single<Entity, With<Camera3d>>,
+    camera: Single<Entity, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let image = Image::new_target_texture(
@@ -771,6 +772,21 @@ fn capture_presentation_plugin() -> TacticalPresentationPlugin {
     }
     if std::env::var_os("TACTICAL_BENCH_DISABLE_POST_PROCESSING").is_some() {
         plugin.bloom_enabled = false;
+    }
+    // Cost-scaling overrides so the performance benchmark can measure the
+    // gameplay-preset configuration instead of only the 1.0 reference.
+    let scale_override = |name: &str| std::env::var(name).ok()?.parse::<f32>().ok();
+    if let Some(scale) = scale_override("TACTICAL_BENCH_GRASS_DENSITY_SCALE") {
+        plugin.grass_density_scale = scale;
+    }
+    if let Some(scale) = scale_override("TACTICAL_BENCH_GRASS_RANGE_SCALE") {
+        plugin.grass_range_scale = scale;
+    }
+    if let Some(scale) = scale_override("TACTICAL_BENCH_CLOUD_QUALITY_SCALE") {
+        plugin.cloud_quality_scale = scale;
+    }
+    if let Some(scale) = scale_override("TACTICAL_BENCH_CLOUD_RESOLUTION_SCALE") {
+        plugin.cloud_resolution_scale = scale;
     }
     plugin
 }
@@ -1812,7 +1828,10 @@ fn benchmark_leaf_representations(
     capture: Option<Res<CaptureState>>,
     time: Res<Time<Real>>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
-    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut camera: Single<
+        (&mut Transform, &mut GlobalTransform, &mut Projection),
+        (With<Camera3d>, Without<TacticalCloudOffscreenCamera>),
+    >,
     leaf_meshes: Query<(&TreeLeafTriangleCount, &TreeLeafRepresentation)>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -1903,7 +1922,10 @@ fn benchmark_tree_lighting(
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     leaf_entities: Query<Entity, With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
-    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut camera: Single<
+        (&mut Transform, &mut GlobalTransform, &mut Projection),
+        (With<Camera3d>, Without<TacticalCloudOffscreenCamera>),
+    >,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(state), Some(capture)) = (state.as_deref_mut(), capture.as_deref()) else {
@@ -1990,7 +2012,10 @@ fn benchmark_scene_performance(
     tree_asset_residency: Res<TreeAssetResidencyDiagnostics>,
     mut commands: Commands,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
-    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut camera: Single<
+        (&mut Transform, &mut GlobalTransform, &mut Projection),
+        (With<Camera3d>, Without<TacticalCloudOffscreenCamera>),
+    >,
     mut visibility_layers: ParamSet<(
         Query<
             (Entity, &mut Visibility),
@@ -2545,7 +2570,7 @@ fn capture_views(
             &Exposure,
             &Tonemapping,
         ),
-        With<Camera3d>,
+        (With<Camera3d>, Without<TacticalCloudOffscreenCamera>),
     >,
     lighting: LightingObservationParams,
     mut overlays: Query<&mut Visibility, (With<CaptureOverlay>, Without<VistaTerrain>)>,

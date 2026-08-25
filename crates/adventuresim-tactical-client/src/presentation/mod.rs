@@ -35,7 +35,9 @@ use weather::*;
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
-pub(crate) use clouds::{TacticalCloudCaptureOverride, TacticalCloudCaptureProfile};
+pub(crate) use clouds::{
+    TacticalCloudCaptureOverride, TacticalCloudCaptureProfile, TacticalCloudOffscreenCamera,
+};
 #[allow(unused_imports)]
 pub(crate) use environment::{
     TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
@@ -105,6 +107,33 @@ pub struct TacticalPresentationPlugin {
     pub environment_map_size: u32,
     pub bloom_enabled: bool,
     pub max_vista_lods: usize,
+    /// Scales the per-tuft shoot density of the instanced sward; presets use
+    /// it to trade meadow fullness against vertex throughput on weak GPUs.
+    pub grass_density_scale: f32,
+    /// Uniformly contracts the instanced grass LOD fade bands. Near-tier
+    /// vertex cost scales with the band radius squared, so this is the
+    /// primary grass frame-rate lever; 1.0 reproduces the legacy reach.
+    pub grass_range_scale: f32,
+    /// Scales the volumetric cloud ray-march sample budget (clamped to
+    /// 0.35..=1.0 in the shader). The march burns a near-constant ~20 ms per
+    /// frame at QHD reference quality, so gameplay presets lower it; 1.0
+    /// keeps the full-fidelity march for capture tooling.
+    pub cloud_quality_scale: f32,
+    /// Resolution fraction for the offscreen volumetric cloud pass (clamped
+    /// to 0.25..=1.0). Below 1.0 the shells render into a reduced target and
+    /// composite through one dome, cutting march cost with the square of the
+    /// scale; 1.0 keeps the legacy full-resolution in-view path.
+    pub cloud_resolution_scale: f32,
+    /// MSAA sample count for the gameplay camera (1, 2, or 4). Coverage
+    /// bandwidth at QHD scales with it; AlphaToCoverage foliage keeps
+    /// working at 2, and at 1 the cutout falls back to hard discards.
+    pub msaa_samples: u8,
+    /// Directional shadow cascade count; 0 keeps the engine default (4).
+    pub shadow_cascade_count: usize,
+    /// Directional shadow reach in metres; 0.0 keeps the engine default.
+    /// Cascade texel density rises as this shrinks, so gameplay presets can
+    /// trade distant contact shadows for cheaper, sharper near ones.
+    pub shadow_maximum_distance: f32,
 }
 
 impl Default for TacticalPresentationPlugin {
@@ -117,17 +146,30 @@ impl Default for TacticalPresentationPlugin {
             environment_map_size: 64,
             bloom_enabled: true,
             max_vista_lods: 3,
+            grass_density_scale: 1.0,
+            grass_range_scale: 1.0,
+            cloud_quality_scale: 1.0,
+            cloud_resolution_scale: 1.0,
+            msaa_samples: 4,
+            shadow_cascade_count: 0,
+            shadow_maximum_distance: 0.0,
         }
     }
 }
 
 impl Plugin for TacticalPresentationPlugin {
     fn build(&self, app: &mut App) {
+        // GPU-instanced grass renders through bevy_eidolon on native builds;
+        // the browser bundle keeps the legacy patch renderer until the wasm
+        // indirect-draw fallback lands.
+        #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+        app.add_plugins(ground_scatter::InstancedGrassPlugin);
         app.add_plugins((
             MaterialPlugin::<TacticalTerrainMaterial>::default(),
             MaterialPlugin::<TacticalVistaMaterial>::default(),
             MaterialPlugin::<TacticalRockMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
+            MaterialPlugin::<TacticalPebbleMaterial>::default(),
             MaterialPlugin::<TacticalPebbleBillboardMaterial>::default(),
             MaterialPlugin::<TacticalTreeBarkMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
@@ -135,6 +177,7 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalMoonMaterial>::default(),
             MaterialPlugin::<TacticalStarMaterial>::default(),
             MaterialPlugin::<TacticalCloudMaterial>::default(),
+            MaterialPlugin::<TacticalCloudCompositeMaterial>::default(),
             MaterialPlugin::<TacticalWeatherMaterial>::default(),
         ))
         .insert_resource(TacticalGraphicsSettings {
@@ -145,6 +188,13 @@ impl Plugin for TacticalPresentationPlugin {
             environment_map_size: self.environment_map_size,
             bloom_enabled: self.bloom_enabled,
             max_vista_lods: self.max_vista_lods,
+            grass_density_scale: self.grass_density_scale,
+            grass_range_scale: self.grass_range_scale,
+            cloud_quality_scale: self.cloud_quality_scale,
+            cloud_resolution_scale: self.cloud_resolution_scale,
+            msaa_samples: self.msaa_samples,
+            shadow_cascade_count: self.shadow_cascade_count,
+            shadow_maximum_distance: self.shadow_maximum_distance,
         })
         .init_resource::<TacticalCameraSetup>()
         // The sky observer preserves this low, cool floor at night and restores
@@ -181,7 +231,6 @@ impl Plugin for TacticalPresentationPlugin {
             Update,
             (
                 update_grass_interaction,
-                update_tree_leaf_wind,
                 (
                     present_pending_terrain,
                     update_terrain_detail_patch,
@@ -205,6 +254,7 @@ impl Plugin for TacticalPresentationPlugin {
                     .chain(),
                 keep_celestial_visuals_centered.after(update_presented_celestial_lighting),
                 update_tactical_clouds.after(update_presented_celestial_lighting),
+                update_tactical_cloud_offscreen_target,
                 update_global_ambient_policy.after(apply_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
                 apply_active_scene_weather
@@ -233,4 +283,11 @@ pub(crate) struct TacticalGraphicsSettings {
     pub(crate) environment_map_size: u32,
     pub(crate) bloom_enabled: bool,
     pub(crate) max_vista_lods: usize,
+    pub(crate) grass_density_scale: f32,
+    pub(crate) grass_range_scale: f32,
+    pub(crate) cloud_quality_scale: f32,
+    pub(crate) cloud_resolution_scale: f32,
+    pub(crate) msaa_samples: u8,
+    pub(crate) shadow_cascade_count: usize,
+    pub(crate) shadow_maximum_distance: f32,
 }

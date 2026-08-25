@@ -23,6 +23,7 @@ use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
 use crate::{
     animation::{BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig},
     player::ClientPlayer,
+    presentation::TacticalCloudOffscreenCamera,
 };
 
 const PICKUP_RANGE_M: f32 = 2.0;
@@ -226,7 +227,7 @@ fn update_grab_input(
     topologies: Query<(Entity, &ItemOf, &EquipmentTopology, &ItemProperties)>,
     properties: Query<&ItemProperties>,
     action_states: Query<&EquipmentActionState>,
-    cameras: Query<&GlobalTransform, With<Camera3d>>,
+    cameras: Query<&GlobalTransform, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     scene_items: Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
     spatial: SpatialQuery,
     mut session: ResMut<GrabSession>,
@@ -331,7 +332,7 @@ fn update_grab_input(
 
 fn auto_aim_scene_item(
     actor: &GlobalTransform,
-    cameras: &Query<&GlobalTransform, With<Camera3d>>,
+    cameras: &Query<&GlobalTransform, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
     scene_items: &Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
     spatial: &SpatialQuery,
 ) -> Option<Entity> {

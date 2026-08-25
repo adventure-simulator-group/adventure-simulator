@@ -189,6 +189,7 @@ dependencies = [
  "adventuresim-weapon-model",
  "bevy",
  "bevy_egui",
+ "bevy_eidolon",
  "bevy_flair",
  "bevy_mod_outline",
  "clap",
@@ -1573,6 +1574,35 @@ dependencies = [
  "web-sys",
  "wgpu-types",
  "winit",
+]
+
+[[package]]
+name = "bevy_eidolon"
+version = "0.5.0"
+source = "git+https://github.com/barsoosayque/bevy_eidolon?branch=fix-cull-plugin#195b8c50e17a8024a5b4976c7933ff0d1c782da2"
+dependencies = [
+ "bevy_app",
+ "bevy_asset",
+ "bevy_camera",
+ "bevy_color",
+ "bevy_core_pipeline",
+ "bevy_derive",
+ "bevy_ecs",
+ "bevy_light",
+ "bevy_math",
+ "bevy_mesh",
+ "bevy_pbr",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_render",
+ "bevy_shader",
+ "bevy_transform",
+ "bevy_utils",
+ "bitflags 2.13.1",
+ "bytemuck",
+ "derive_more 2.1.1",
+ "offset-allocator",
+ "tracing",
 ]
 
 [[package]]

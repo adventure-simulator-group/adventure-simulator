@@ -35,6 +35,7 @@ pub(in crate::animation) fn apply_locomotion_body_response(
         Without<PresentedSkeleton>,
     >,
 ) {
+    let _spike = crate::animation::diagnostics::SpikeGuard::new("apply_locomotion_body_response");
     let mut responses = BTreeMap::new();
     for (owner, skeleton, owner_transform, state) in &mut owners {
         let mut next = state.as_deref().copied().unwrap_or_default();
