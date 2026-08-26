@@ -198,7 +198,7 @@ pub(super) fn spawn(
             position: Vec3::new(world_x, height, world_z),
             scale,
             rotation: yaw,
-            seed: (splitmix64(hash ^ 0x7368_7275_62) & 0xffff_ffff) as u32,
+            seed: (splitmix64(hash ^ 0x73_68_72_75_62) & 0xffff_ffff) as u32,
             ..Default::default()
         });
     }

@@ -556,7 +556,7 @@ fn scatter_cell_tufts(
                         index: batch.len() as u32,
                         batch_id: 0,
                         seed: u32::from(coverage)
-                            | ((splitmix64(tuft_hash ^ 0x736565_64) as u32) << 8),
+                            | ((splitmix64(tuft_hash ^ 0x7365_6564) as u32) << 8),
                     });
                     emitted += 1;
                 }
