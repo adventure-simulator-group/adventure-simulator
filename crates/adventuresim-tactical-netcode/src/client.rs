@@ -328,7 +328,7 @@ fn update_direct_control_input(
     let space_pressed = keys.pressed(KeyCode::Space);
     let space_just_pressed = keys.just_pressed(KeyCode::Space);
     let space_just_released = keys.just_released(KeyCode::Space);
-    let keyboard_dive_chord = shift_down && alt_pressed && keyboard_moving && !downed;
+    let keyboard_dive_chord = alt_pressed && keyboard_moving && !downed;
     if !keyboard_dive_chord {
         controls.keyboard_dive_latched = false;
     }
@@ -933,18 +933,11 @@ mod tests {
     }
 
     #[test]
-    fn lateral_press_does_not_consume_posture_release() {
+    fn movement_held_before_left_alt_dives_and_consumes_posture_release() {
         let (mut world, mut schedule) = input_fixture();
         world
             .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::AltLeft);
-        schedule.run(&mut world);
-
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::AltLeft);
-            keys.press(KeyCode::KeyA);
-        }
+            .press(KeyCode::KeyA);
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
@@ -954,15 +947,32 @@ mod tests {
         {
             let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
             keys.clear_just_pressed(KeyCode::KeyA);
-            keys.release(KeyCode::AltLeft);
+            keys.press(KeyCode::AltLeft);
         }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
             PostureCommand {
                 sequence: 1,
-                action: Some(PostureActionRequest::Toggle),
+                action: Some(PostureActionRequest::Dive {
+                    animation_direction: DiveDirection::Forward,
+                    travel_direction: DiveDirection::Left,
+                }),
             }
+        );
+
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::AltLeft);
+            keys.release(KeyCode::AltLeft);
+        }
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .resource::<DirectControlState>()
+                .posture_command
+                .sequence,
+            1
         );
     }
 
@@ -1355,53 +1365,57 @@ mod tests {
     }
 
     #[test]
-    fn completing_shift_left_alt_movement_chord_dives_without_space() {
-        let (mut world, mut schedule) = input_fixture();
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ShiftLeft);
-            keys.press(KeyCode::AltLeft);
-        }
-
-        schedule.run(&mut world);
-        assert_eq!(
-            world.resource::<DirectControlState>().posture_command,
-            PostureCommand::default()
-        );
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::ShiftLeft);
-            keys.clear_just_pressed(KeyCode::AltLeft);
-            keys.press(KeyCode::KeyD);
-        }
-        schedule.run(&mut world);
-        assert_eq!(
-            world.resource::<DirectControlState>().posture_command,
-            PostureCommand {
-                sequence: 1,
-                action: Some(PostureActionRequest::Dive {
-                    animation_direction: DiveDirection::Forward,
-                    travel_direction: DiveDirection::Right,
-                }),
-            }
-        );
-        assert_eq!(
-            world.resource::<DirectControlState>().jump_command,
-            JumpCommand::default()
-        );
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::KeyD);
-            keys.release(KeyCode::AltLeft);
-        }
-        schedule.run(&mut world);
-        assert_eq!(
+    fn left_alt_and_each_wasd_key_dive_without_sprint_or_space() {
+        for (key, travel_direction) in [
+            (KeyCode::KeyW, DiveDirection::Forward),
+            (KeyCode::KeyA, DiveDirection::Left),
+            (KeyCode::KeyS, DiveDirection::Backward),
+            (KeyCode::KeyD, DiveDirection::Right),
+        ] {
+            let (mut world, mut schedule) = input_fixture();
             world
-                .resource::<DirectControlState>()
-                .posture_command
-                .sequence,
-            1
-        );
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::AltLeft);
+
+            schedule.run(&mut world);
+            assert_eq!(
+                world.resource::<DirectControlState>().posture_command,
+                PostureCommand::default()
+            );
+            {
+                let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+                keys.clear_just_pressed(KeyCode::AltLeft);
+                keys.press(key);
+            }
+            schedule.run(&mut world);
+            assert_eq!(
+                world.resource::<DirectControlState>().posture_command,
+                PostureCommand {
+                    sequence: 1,
+                    action: Some(PostureActionRequest::Dive {
+                        animation_direction: DiveDirection::Forward,
+                        travel_direction,
+                    }),
+                }
+            );
+            assert_eq!(
+                world.resource::<DirectControlState>().jump_command,
+                JumpCommand::default()
+            );
+            {
+                let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+                keys.clear_just_pressed(key);
+                keys.release(KeyCode::AltLeft);
+            }
+            schedule.run(&mut world);
+            assert_eq!(
+                world
+                    .resource::<DirectControlState>()
+                    .posture_command
+                    .sequence,
+                1
+            );
+        }
     }
 
     #[test]
@@ -1412,7 +1426,6 @@ mod tests {
             .press(MouseButton::Right);
         {
             let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ShiftLeft);
             keys.press(KeyCode::AltLeft);
             keys.press(KeyCode::KeyD);
         }
@@ -1429,7 +1442,6 @@ mod tests {
         );
         {
             let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::ShiftLeft);
             keys.clear_just_pressed(KeyCode::AltLeft);
             keys.clear_just_pressed(KeyCode::KeyD);
         }
