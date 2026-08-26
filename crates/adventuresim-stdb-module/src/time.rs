@@ -2529,7 +2529,7 @@ fn inn_stay_cost(requested_minutes: u64) -> Result<u64, String> {
 
 fn validate_settlement_rest_minutes(requested_minutes: u64) -> Result<(), String> {
     if (MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes)
-        && requested_minutes % MINUTES_PER_DAY == 0
+        && requested_minutes.is_multiple_of(MINUTES_PER_DAY)
     {
         Ok(())
     } else {

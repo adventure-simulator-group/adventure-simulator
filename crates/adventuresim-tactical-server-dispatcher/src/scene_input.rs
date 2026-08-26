@@ -280,6 +280,7 @@ mod tests {
             505_000_000,
             105_000_000,
             123_456,
+            123_456,
         )
         .expect("known coordinate should produce a tactical scene");
 

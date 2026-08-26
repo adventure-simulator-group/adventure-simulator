@@ -909,6 +909,7 @@ mod tests {
             latitude_microdegrees: 0,
             longitude_microdegrees: 0,
             absolute_minute: 0,
+            lunar_phase_minute: 0,
             absolute_elevation_metres: 0,
             weather: WeatherSnapshot {
                 rules_version: WEATHER_RULES_VERSION,

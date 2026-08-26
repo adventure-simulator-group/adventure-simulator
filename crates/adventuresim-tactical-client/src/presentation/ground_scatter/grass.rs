@@ -1468,7 +1468,7 @@ mod tests {
     #[test]
     fn near_seed_heads_are_crossed_clusters_with_rigid_attachment_metadata() {
         let flowering_seed = (0..4_096)
-            .find_map(|seed| {
+            .find(|seed| {
                 let mesh = grass_ribbon_patch_mesh(
                     0.026,
                     0.82,
@@ -1479,11 +1479,11 @@ mod tests {
                         offset_z: 0.0,
                         height_scale: 1.0,
                         width_scale: 1.0,
-                        seed,
+                        seed: *seed,
                         species: GrassSpecies::Cocksfoot,
                     }],
                 );
-                (mesh.count_vertices() > 11).then_some(seed)
+                mesh.count_vertices() > 11
             })
             .expect("the bounded seed search should find a flowering cocksfoot shoot");
         let flowering_mesh = |species| {
