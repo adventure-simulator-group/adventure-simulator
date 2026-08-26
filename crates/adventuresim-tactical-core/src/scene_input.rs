@@ -480,7 +480,7 @@ fn build_scene_ground(
                     ^ ((sample_x as u64) << 16)
                     ^ sample_z as u64;
                 let litter_roll =
-                    (splitmix64(coordinate ^ 0x1eaf_1177_e2) % 10_000) as f32 / 10_000.0;
+                    (splitmix64(coordinate ^ 0x001e_af11_77e2) % 10_000) as f32 / 10_000.0;
                 if distance <= TREE_DENSE_LEAF_LITTER_RADIUS_METRES
                     || litter_roll < tree_leaf_litter_probability(distance)
                 {
@@ -1068,10 +1068,13 @@ mod tests {
         let input = TacticalSceneInput::load(&path).unwrap();
         let regional = &input.vista.lods[1];
         let horizon = &input.vista.lods[2];
+        let peak_column = |lod: &VistaLod| {
+            usize::from(lod.width / 2) + (5_000.0 / lod.spacing_metres).round() as usize
+        };
         let regional_peak = regional.heights_metres
-            [usize::from(regional.depth / 2) * usize::from(regional.width) + 20];
+            [usize::from(regional.depth / 2) * usize::from(regional.width) + peak_column(regional)];
         let horizon_peak = horizon.heights_metres
-            [usize::from(horizon.depth / 2) * usize::from(horizon.width) + 30];
+            [usize::from(horizon.depth / 2) * usize::from(horizon.width) + peak_column(horizon)];
         assert!(regional_peak >= 899.0);
         assert!((regional_peak - horizon_peak).abs() < 0.001);
     }

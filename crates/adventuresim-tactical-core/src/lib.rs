@@ -8,6 +8,7 @@
 
 pub mod animation;
 pub mod combat;
+pub mod combat_config;
 pub mod inventory;
 pub mod physics;
 pub mod player;
@@ -19,21 +20,24 @@ pub use avian3d;
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
-        ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackAnimation,
-        AttackAnimations, AttackLine, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
-        CROUCH_LOCOMOTION_PROFILE, DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec,
-        DownedFacingPose, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
-        LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile,
-        PackValidationError, PoseSample, PoseSampling, Posture, PostureTransitionKind,
-        PostureTransitionState, RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE,
-        RaisedLocomotionIntent, ResolvedPose, RollDirection, SemanticPose, SkeletonAction,
-        SkeletonLocomotionInput, SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE,
-        WeaponGuardState, advance_body_facing, advance_downed_body_facing, controller_yaw,
-        dive_landing_facing_delta, downed_camera_roll_target, gait_cycle_phase_delta,
-        gait_support_weights, guard_step_length, locomotion_profile, ordinary_step_distance,
-        project_skeleton_locomotion, set_weapon_guard, supine_get_up_counter_yaw_delta,
+        ActionState, ActionTransitionError, AnimationEvaluation, AnimationPack,
+        AnimationPackLibrary, AttackAnimation, AttackAnimations, AttackCurve, AttackHand,
+        AttackLine, AttackPreparation, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
+        DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec, DownedFacingPose, GroundedPosture,
+        HUMANOID_LANDING_PROFILE, JumpAnticipation, LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot,
+        LocomotionGait, LocomotionProfile, MeleePreparationInput, PackValidationError, PoseSample,
+        PoseSampling, Posture, PostureTransitionKind, PostureTransitionState,
+        RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE, RaisedLocomotionIntent,
+        ResolvedPose, RollDirection, SemanticPose, SkeletonAction, SkeletonLocomotionInput,
+        SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE, WeaponGuardState,
+        advance_body_facing, advance_body_facing_with_speed, advance_downed_body_facing,
+        advance_downed_body_facing_with_speed, controller_yaw, dive_landing_facing_delta,
+        downed_camera_roll_target, gait_cycle_phase_delta, gait_support_weights, guard_step_length,
+        locomotion_profile, ordinary_step_distance, project_skeleton_locomotion, set_weapon_guard,
+        supine_get_up_counter_yaw_delta,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
+    pub use crate::combat_config::*;
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
         EquipmentTopology, EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties,
@@ -55,8 +59,9 @@ pub mod prelude {
     };
     pub use crate::player::{
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
-        Stats, TacticalCombatState, TacticalIncapacitationSources, TacticalPlayerView,
-        TacticalPlayerViewer, default_tactical_character_id,
+        Stats, TacticalCombatSide, TacticalCombatState, TacticalIncapacitationSources,
+        TacticalPlayerView, TacticalPlayerViewer, attack_preparation_secs, attack_recovery_secs,
+        configure_attack_curve, default_tactical_character_id, effective_weapon_handling_skill,
     };
     pub use crate::scene::{
         GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,

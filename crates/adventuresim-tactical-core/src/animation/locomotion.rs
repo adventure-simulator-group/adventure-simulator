@@ -7,7 +7,7 @@ pub enum LocomotionGait {
     #[default]
     Walk,
     Run,
-    Crouch,
+    Downed,
     RaisedGuard,
 }
 
@@ -66,15 +66,6 @@ pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     flight_apex_metres: 0.12,
     landing: HUMANOID_LANDING_PROFILE,
 };
-pub const CROUCH_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::Crouch,
-    reference_speed: 1.5,
-    step_distance: 1.14,
-    support_phase_radius: 0.30,
-    bounce_metres: 0.025,
-    flight_apex_metres: 0.0,
-    landing: HUMANOID_LANDING_PROFILE,
-};
 pub const RAISED_GUARD_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     gait: LocomotionGait::RaisedGuard,
     reference_speed: 2.0,
@@ -85,7 +76,7 @@ pub const RAISED_GUARD_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile
     landing: HUMANOID_LANDING_PROFILE,
 };
 pub const PRONE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::Crouch,
+    gait: LocomotionGait::Downed,
     reference_speed: 1.0,
     // The authored contact hand and knee retract about 0.50 m and 0.69 m
     // respectively over a half-cycle. A 0.60 m contact step balances their
@@ -98,7 +89,7 @@ pub const PRONE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     landing: HUMANOID_LANDING_PROFILE,
 };
 pub const SUPINE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::Crouch,
+    gait: LocomotionGait::Downed,
     reference_speed: 0.8,
     step_distance: 1.028,
     support_phase_radius: 0.30,
@@ -113,9 +104,6 @@ pub fn locomotion_profile(state: &SkeletonState) -> LocomotionProfile {
         BodyState::Prone => return PRONE_LOCOMOTION_PROFILE,
         BodyState::Supine => return SUPINE_LOCOMOTION_PROFILE,
         _ => {}
-    }
-    if state.posture() == Posture::Crouched {
-        return CROUCH_LOCOMOTION_PROFILE;
     }
     if state.weapon_guard() == WeaponGuardState::Raised {
         return LocomotionProfile {

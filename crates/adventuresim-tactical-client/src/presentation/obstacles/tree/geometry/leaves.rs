@@ -20,6 +20,10 @@ pub(in crate::presentation) struct TreeLeaf {
     pub(in crate::presentation) primary_group: u8,
     pub(in crate::presentation) secondary_group: u16,
     pub(in crate::presentation) shoot_id: u16,
+    /// Stable ordinal within the source shoot. This is deliberately stored on
+    /// the leaf rather than inferred from a mesh-building iteration order so
+    /// representation LODs can make deterministic per-leaf choices.
+    pub(in crate::presentation) leaf_ordinal: u8,
     pub(in crate::presentation) shade: f32,
     /// Rotation accumulated from the base to the tip of the blade. Real oak
     /// leaves rarely present as perfectly planar cards, even in still air.
@@ -109,6 +113,7 @@ pub(in crate::presentation) fn procedural_oak_leaves(
                 primary_group: shoot.primary_group,
                 secondary_group: shoot.secondary_group,
                 shoot_id: shoot_index as u16,
+                leaf_ordinal: leaf_index as u8,
                 shade,
                 torsion: (unit_hash(leaf_seed ^ 13) - 0.5) * 0.42,
             });
@@ -209,6 +214,7 @@ fn procedural_beech_leaves(
                 primary_group: shoot.primary_group,
                 secondary_group: shoot.secondary_group,
                 shoot_id: shoot_index as u16,
+                leaf_ordinal: leaf_index as u8,
                 shade: 0.7 + unit_hash(leaf_seed ^ 10) * 0.2,
                 torsion: (unit_hash(leaf_seed ^ 11) - 0.5) * 0.18,
             });
@@ -284,6 +290,7 @@ fn procedural_multistem_shrub_leaves(
                 primary_group: shoot.primary_group,
                 secondary_group: shoot.secondary_group,
                 shoot_id: shoot_index as u16,
+                leaf_ordinal: leaf_index as u8,
                 shade: 0.68 + unit_hash(leaf_seed ^ 6) * 0.24,
                 torsion: (unit_hash(leaf_seed ^ 7) - 0.5) * 0.28,
             });
@@ -315,6 +322,19 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]
 }
 
 pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    procedural_woody_leaf_card_mesh_scaled(leaves, 1.0)
+}
+
+/// Builds the terminal shrub representation from one deterministic ordinal
+/// lane per shoot. The cards grow into overlapping leaf clusters, so this is
+/// substantially cheaper than retaining a card for every source leaf while
+/// keeping the outline of each shrub species recognisable at distance.
+pub(in crate::presentation) fn procedural_woody_sparse_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    let sparse_leaves = sparse_woody_far_card_leaves(leaves);
+    procedural_woody_leaf_card_mesh_scaled(&sparse_leaves, 1.9)
+}
+
+fn procedural_woody_leaf_card_mesh_scaled(leaves: &[TreeLeaf], coverage_scale: f32) -> Mesh {
     let mut positions = Vec::with_capacity(leaves.len() * 4);
     let mut normals = Vec::with_capacity(leaves.len() * 4);
     let mut uvs = Vec::with_capacity(leaves.len() * 4);
@@ -326,9 +346,9 @@ pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLea
         // obliquely. Enlarge about the fixed petiole (not the card centre) so
         // the intermediate LOD preserves crown coverage without swimming at
         // its biological attachment.
-        const COVERAGE_SCALE: f32 = 1.24;
-        let scaled_width = width * COVERAGE_SCALE;
-        let scaled_height = height * COVERAGE_SCALE;
+        const CARD_COVERAGE_SCALE: f32 = 1.24;
+        let scaled_width = width * CARD_COVERAGE_SCALE * coverage_scale;
+        let scaled_height = height * CARD_COVERAGE_SCALE * coverage_scale;
         center += leaf.up * (scaled_height - height) * 0.5;
         let right = leaf.right * scaled_width * 0.5;
         let up = leaf.up * scaled_height * 0.5;
@@ -360,6 +380,34 @@ pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLea
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.insert_indices(Indices::U32(indices));
     mesh
+}
+
+/// Selects one stable ordinal lane from every source shoot. Sorting the
+/// retained leaves makes the resulting mesh byte-for-byte deterministic even
+/// if the source generator changes its iteration order.
+fn sparse_woody_far_card_leaves(leaves: &[TreeLeaf]) -> Vec<TreeLeaf> {
+    let mut retained = leaves
+        .iter()
+        .filter(|leaf| sparse_woody_far_card_retained(**leaf))
+        .copied()
+        .collect::<Vec<_>>();
+    retained.sort_unstable_by_key(|leaf| {
+        (
+            leaf.primary_group,
+            leaf.secondary_group,
+            leaf.shoot_id,
+            leaf.leaf_ordinal,
+        )
+    });
+    retained
+}
+
+fn sparse_woody_far_card_retained(leaf: TreeLeaf) -> bool {
+    let shoot_key = u64::from(leaf.primary_group)
+        | (u64::from(leaf.secondary_group) << 8)
+        | (u64::from(leaf.shoot_id) << 24);
+    let retained_ordinal_lane = splitmix64(shoot_key ^ 0x74a3_2f9b_d817_c56e) as u8 & 3;
+    leaf.leaf_ordinal & 3 == retained_ordinal_lane
 }
 
 /// The near leaf is a small cambered grid: the geometry retains fold, cupping,
@@ -460,12 +508,43 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_group_mesh(
     leaves: &[TreeLeaf],
     primary_group: u8,
 ) -> Mesh {
-    let group_leaves = leaves
+    let group_leaves = detailed_flat_card_group_leaves(leaves, primary_group);
+    procedural_woody_leaf_card_mesh(&group_leaves)
+}
+
+/// Returns the deterministic 75% subset used exclusively by streamed
+/// playable-tree flat cards. Each shoot omits one of its four ordinal lanes;
+/// the omitted lane is salted by stable source identity, keeping the crown
+/// distributed when source vectors are reordered. Cambered leaves and baked
+/// aggregate canopy cards deliberately retain the full source set.
+pub(in crate::presentation) fn detailed_flat_card_group_leaves(
+    leaves: &[TreeLeaf],
+    primary_group: u8,
+) -> Vec<TreeLeaf> {
+    let mut retained = leaves
         .iter()
-        .filter(|leaf| leaf.primary_group == primary_group)
+        .filter(|leaf| {
+            leaf.primary_group == primary_group && detailed_flat_card_leaf_retained(**leaf)
+        })
         .copied()
         .collect::<Vec<_>>();
-    procedural_woody_leaf_card_mesh(&group_leaves)
+    retained.sort_unstable_by_key(|leaf| {
+        (
+            leaf.primary_group,
+            leaf.secondary_group,
+            leaf.shoot_id,
+            leaf.leaf_ordinal,
+        )
+    });
+    retained
+}
+
+fn detailed_flat_card_leaf_retained(leaf: TreeLeaf) -> bool {
+    let shoot_key = u64::from(leaf.primary_group)
+        | (u64::from(leaf.secondary_group) << 8)
+        | (u64::from(leaf.shoot_id) << 24);
+    let omitted_ordinal_lane = splitmix64(shoot_key ^ 0x8f4d_6b29_13ce_57a1) as u8 & 3;
+    leaf.leaf_ordinal & 3 != omitted_ordinal_lane
 }
 
 pub(in crate::presentation) fn procedural_oak_textured_leaf_group_mesh(
@@ -651,6 +730,65 @@ mod tests {
             mesh.indices().expect("leaf cards are indexed").len(),
             leaves.len() * 6
         );
+    }
+
+    #[test]
+    fn detailed_flat_cards_keep_a_stable_balanced_three_quarters_per_cluster() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let source_count = leaves.len();
+        let mut retained_count = 0;
+
+        for primary_group in 0..TREE_PRIMARY_GROUP_COUNT {
+            let source = leaves
+                .iter()
+                .filter(|leaf| leaf.primary_group == primary_group)
+                .count();
+            let retained = detailed_flat_card_group_leaves(&leaves, primary_group);
+            let repeated = detailed_flat_card_group_leaves(&leaves, primary_group);
+            let reordered = leaves.iter().rev().copied().collect::<Vec<_>>();
+            let reordered_retained = detailed_flat_card_group_leaves(&reordered, primary_group);
+            assert_eq!(retained.len(), source * 3 / 4);
+            assert_eq!(retained.len(), repeated.len());
+            assert!(
+                retained
+                    .iter()
+                    .zip(repeated.iter())
+                    .all(|(left, right)| left.shoot_id == right.shoot_id
+                        && left.leaf_ordinal == right.leaf_ordinal)
+            );
+            assert!(
+                retained
+                    .iter()
+                    .zip(reordered_retained.iter())
+                    .all(|(left, right)| left.shoot_id == right.shoot_id
+                        && left.leaf_ordinal == right.leaf_ordinal)
+            );
+            let mesh = procedural_oak_leaf_card_group_mesh(&leaves, primary_group);
+            assert_eq!(mesh.count_vertices(), retained.len() * 4);
+            assert_eq!(
+                mesh.indices().expect("flat cards are indexed").len(),
+                retained.len() * 6
+            );
+            assert!(
+                mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+                    .and_then(|attribute| attribute.as_float3())
+                    .expect("flat cards have positions")
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite())
+            );
+            assert!(
+                mesh.indices()
+                    .expect("flat cards are indexed")
+                    .iter()
+                    .all(|index| (index as usize) < mesh.count_vertices())
+            );
+            retained_count += retained.len();
+        }
+
+        assert_eq!(source_count, 50_784);
+        assert_eq!(retained_count, 38_088);
     }
 
     #[test]

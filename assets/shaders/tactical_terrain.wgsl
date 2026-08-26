@@ -19,6 +19,7 @@ struct TacticalTerrainMaterial {
     cover: vec4<f32>,
     weather: vec4<f32>,
     far_sward: vec4<f32>,
+    lod_sward: vec4<f32>,
     playable_bounds: vec4<f32>,
     detail_patch: vec4<f32>,
     soil_detail: vec4<f32>,
@@ -77,7 +78,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // The camera-local mesh contains signed residual height. Remove the
     // coarse surface only where that patch is guaranteed to cover it, or the
     // old surface would depth-occlude every drainage channel and wheel rut.
-    // A 1.5 m overlap remains before the circular patch edge, where relief is
+    // A 2 m overlap remains before the circular patch edge, where relief is
     // already morphed almost completely back to the authoritative surface.
     if terrain.detail_patch.x > 0.5
         && distance(position.xz, view.lod_view_world_position.xz) < terrain.detail_patch.y {
@@ -221,18 +222,30 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Past the geometric LOD, represent the aggregate colour and normal
     // response of a sward directly on the terrain. Frequencies stay low enough
     // to remain stable when minified in a WebGPU browser canvas.
-    let sward_fade = smoothstep(terrain.far_sward.x, terrain.far_sward.y, camera_distance);
-    let sward_amount = sward_fade
+    // Start the dithered ground fill while Near exchanges its full root set
+    // for Far's stable sparse subset. The retained blades preserve their width;
+    // this field replaces only the coverage that left with the other roots.
+    // The terminal fade then completes the same field as Vista blades disappear.
+    let near_to_far_sward = smoothstep(
+        terrain.lod_sward.x,
+        terrain.lod_sward.y,
+        camera_distance,
+    ) * terrain.lod_sward.z;
+    let terminal_sward = smoothstep(terrain.far_sward.x, terrain.far_sward.y, camera_distance);
+    let sward_coverage = mix(near_to_far_sward, 1.0, terminal_sward);
+    let sward_amount = sward_coverage
         * terrain.far_sward.z
         * tall_grass
         * (1.0 - water)
         * (1.0 - slope * 0.72);
     let sward_color = terrain.grass_color.rgb;
-    // A stable world-space screen-door transition preserves discrete molded
-    // colors while avoiding a circular hard band around the camera.
+    // Retain low-amplitude world-space variation without hard-selecting one
+    // flat terminal color. Continuous optical coverage avoids a visible ring
+    // as geometry hands the sward to the terrain.
     let sward_cell = floor(position.xz * 2.0);
     let sward_dither = fract(sin(dot(sward_cell, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-    color = select(color, sward_color, sward_dither < sward_amount);
+    let sward_target = sward_color * mix(0.92, 1.08, sward_dither);
+    color = mix(color, sward_target, sward_amount);
 
     // The camera-local detail mesh can cross the gameplay rectangle. Keep the
     // representation distance-driven while handing its clamped playable
@@ -243,10 +256,20 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         abs(position.z) - terrain.playable_bounds.y,
     );
     let outside_sward = smoothstep(0.0, terrain.playable_bounds.z, outside_distance);
-    color = select(color, sward_color, sward_dither < outside_sward);
+    color = mix(color, sward_target, outside_sward);
 
     let snow_mask = snow * smoothstep(0.3, 0.86, normal.y);
-    color = select(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask >= 0.5);
+    // Accumulation is continuous across slope and coverage. The old binary
+    // threshold exposed the terrain lattice as large square white pixels and
+    // erased all readable relief at the snow line. Reuse the packed physical
+    // height field at low strength so covered ground remains molded rather
+    // than becoming a perfectly flat color plate.
+    color = mix(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask);
+    pbr_input.N = normalize(mix(
+        pbr_input.N,
+        soil_normal,
+        snow_mask * detail_distance_fade * upward_response * 0.24,
+    ));
 
     pbr_input.material.base_color = vec4<f32>(color, 1.0);
     let dry_roughness = select(0.84, 0.9, terrain.detail_patch.x > 0.5);

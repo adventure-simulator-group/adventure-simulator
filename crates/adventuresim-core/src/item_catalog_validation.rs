@@ -265,7 +265,7 @@ fn validate_item(
             "stab_precision",
             "reach_m",
             "penetration",
-            "balance",
+            "moment_of_inertia_kg_m2",
             "precise",
             "melee",
             "ranged",
@@ -398,7 +398,7 @@ fn validate_item(
             "stab_precision",
             "reach_m",
             "penetration",
-            "balance",
+            "moment_of_inertia_kg_m2",
             "precise",
             "melee",
             "ranged",
@@ -412,14 +412,13 @@ fn validate_item(
             }
         }
     }
+    if item.contains_key("coverage") {
+        errors.push(format!(
+            "{file}: {path}.coverage: derived from equipment placement surface spans"
+        ));
+    }
     if kind != "armor" {
-        for field in [
-            "coverage",
-            "resistance",
-            "padding",
-            "flexibility",
-            "range_of_motion",
-        ] {
+        for field in ["resistance", "padding", "flexibility", "range_of_motion"] {
             if item.contains_key(field) {
                 errors.push(format!(
                     "{file}: {path}.{field}: field is only valid for armor"
@@ -436,7 +435,7 @@ fn validate_item(
         finite_in(item, "block", f64::EPSILON, 10_000.0, file, &path, errors);
     }
     if kind == "armor" {
-        for field in ["coverage", "flexibility", "range_of_motion"] {
+        for field in ["flexibility", "range_of_motion"] {
             finite_in(item, field, 0.0, 1.0, file, &path, errors);
         }
         for field in ["resistance", "padding"] {
@@ -566,6 +565,7 @@ fn validate_equipment(
         equipment,
         &[
             "physical",
+            "material",
             "attachment_tags",
             "placements",
             "protection",
@@ -575,6 +575,28 @@ fn validate_equipment(
         &path,
         errors,
     );
+    let material = equipment.get("material").and_then(Value::as_str);
+    let valid_materials = [
+        "polished_steel",
+        "rough_steel",
+        "oxidized_steel",
+        "mail_steel",
+        "vegetable_tanned_leather",
+        "linen",
+        "wool",
+        "quilted_textile",
+    ];
+    if matches!(item_kind, "armor" | "clothing") {
+        if material.is_none_or(|material| !valid_materials.contains(&material)) {
+            errors.push(format!(
+                "{file}: {path}.material: armor and clothing require a procedural PBR material"
+            ));
+        }
+    } else if material.is_some_and(|material| !valid_materials.contains(&material)) {
+        errors.push(format!(
+            "{file}: {path}.material: unknown procedural PBR material"
+        ));
+    }
     match equipment.get("physical").and_then(Value::as_object) {
         Some(physical) => {
             reject_unknown(
@@ -674,7 +696,7 @@ fn validate_equipment(
                 let placement_path = format!("{path}.placements.{index}");
                 reject_unknown(
                     placement,
-                    &["id", "occupancy", "parents", "protection"],
+                    &["id", "occupancy", "parents", "protection", "surface"],
                     file,
                     &placement_path,
                     errors,
@@ -821,6 +843,15 @@ fn validate_equipment(
                         "{file}: {placement_path}.protection: non-armor protection requires equipment.protection stats"
                     ));
                 }
+                validate_equipment_surface(
+                    placement.get("surface"),
+                    file,
+                    &placement_path,
+                    item_kind,
+                    material.is_some(),
+                    &protected,
+                    errors,
+                );
             }
         }
         _ => errors.push(format!(
@@ -844,26 +875,16 @@ fn validate_equipment(
         }
         reject_unknown(
             protection,
-            &[
-                "coverage",
-                "resistance",
-                "padding",
-                "flexibility",
-                "range_of_motion",
-            ],
+            &["resistance", "padding", "flexibility", "range_of_motion"],
             file,
             &format!("{path}.protection"),
             errors,
         );
-        finite_in(
-            protection,
-            "coverage",
-            0.0,
-            1.0,
-            file,
-            &format!("{path}.protection"),
-            errors,
-        );
+        if protection.contains_key("coverage") {
+            errors.push(format!(
+                "{file}: {path}.protection.coverage: derived from equipment placement surface spans"
+            ));
+        }
         for field in ["flexibility", "range_of_motion"] {
             if !protection.contains_key(field) {
                 continue;
@@ -911,6 +932,8 @@ fn validate_equipment(
                     "order",
                     "locations",
                     "accepts_tags",
+                    "surface_uv",
+                    "tangent_direction",
                 ],
                 file,
                 &format!("{path}.attachment_points.{index}"),
@@ -962,12 +985,209 @@ fn validate_equipment(
                     }
                 }
             }
+            if point.get("surface_uv").is_some_and(|surface| {
+                let Some(surface) = surface.as_object() else {
+                    return true;
+                };
+                if surface
+                    .keys()
+                    .any(|field| !matches!(field.as_str(), "domain" | "uv"))
+                    || surface.len() != 2
+                    || !surface
+                        .get("domain")
+                        .and_then(Value::as_str)
+                        .is_some_and(valid_id)
+                {
+                    return true;
+                }
+                surface
+                    .get("uv")
+                    .and_then(Value::as_array)
+                    .is_none_or(|values| {
+                        values.len() != 2
+                            || values.iter().any(|value| {
+                                value.as_f64().is_none_or(|value| {
+                                    !value.is_finite() || !(0.0..=1.0).contains(&value)
+                                })
+                            })
+                    })
+            }) {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}.surface_uv: expected {{domain, uv}} with a valid domain and two finite components in 0..=1"
+                ));
+            }
+            if point.get("tangent_direction").is_some_and(|direction| {
+                direction.as_array().is_none_or(|values| {
+                    if values.len() != 3 {
+                        return true;
+                    }
+                    let components = values.iter().map(Value::as_f64).collect::<Option<Vec<_>>>();
+                    components.is_none_or(|components| {
+                        components.iter().any(|value| !value.is_finite())
+                            || components.iter().map(|value| value * value).sum::<f64>() <= 1e-12
+                    })
+                })
+            }) {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}.tangent_direction: expected three finite components with non-zero length"
+                ));
+            }
+            if point.get("surface_uv").is_some() != point.get("tangent_direction").is_some() {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}: surface_uv and tangent_direction must be authored together"
+                ));
+            }
         }
     }
 }
 
+fn validate_equipment_surface(
+    value: Option<&Value>,
+    file: &str,
+    placement_path: &str,
+    item_kind: &str,
+    has_material: bool,
+    protected: &BTreeSet<&str>,
+    errors: &mut Vec<String>,
+) {
+    let path = format!("{placement_path}.surface");
+    let required = matches!(item_kind, "armor" | "clothing");
+    let Some(spans) = value.and_then(Value::as_array) else {
+        if required {
+            errors.push(format!(
+                "{file}: {path}: armor and clothing require non-empty anatomical surface spans"
+            ));
+        }
+        return;
+    };
+    if spans.is_empty() {
+        if required {
+            errors.push(format!(
+                "{file}: {path}: armor and clothing require non-empty anatomical surface spans"
+            ));
+        }
+        return;
+    }
+    if !has_material {
+        errors.push(format!(
+            "{file}: {path}: anatomical surface spans require a procedural PBR material"
+        ));
+    }
+    let valid_regions = [
+        "head",
+        "neck",
+        "chest",
+        "stomach",
+        "left_upper_arm",
+        "left_forearm",
+        "right_upper_arm",
+        "right_forearm",
+        "left_thigh",
+        "left_lower_leg",
+        "right_thigh",
+        "right_lower_leg",
+    ];
+    for (index, span) in spans.iter().enumerate() {
+        let span_path = format!("{path}.{index}");
+        let Some(span) = span.as_object() else {
+            errors.push(format!("{file}: {span_path}: must be an object"));
+            continue;
+        };
+        reject_unknown(
+            span,
+            &["regions", "anchor", "coverage"],
+            file,
+            &span_path,
+            errors,
+        );
+        let regions = span
+            .get("regions")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if regions.is_empty()
+            || regions.iter().any(|region| {
+                !region
+                    .as_str()
+                    .is_some_and(|name| valid_regions.contains(&name))
+            })
+        {
+            errors.push(format!(
+                "{file}: {span_path}.regions: expected a non-empty anatomical region chain"
+            ));
+            continue;
+        }
+        let region_names = regions.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+        if region_names
+            .windows(2)
+            .any(|pair| !contiguous_regions(pair[0], pair[1]))
+        {
+            errors.push(format!(
+                "{file}: {span_path}.regions: regions must form a proximal-to-distal contiguous chain"
+            ));
+        }
+        for region in &region_names {
+            let body_part = anatomical_body_part(region);
+            if !protected.is_empty() && !protected.contains(body_part) {
+                errors.push(format!(
+                    "{file}: {span_path}.regions: {region:?} is outside placement protection {protected:?}"
+                ));
+            }
+        }
+        if !span
+            .get("anchor")
+            .and_then(Value::as_str)
+            .is_some_and(|anchor| matches!(anchor, "proximal" | "distal" | "center"))
+        {
+            errors.push(format!(
+                "{file}: {span_path}.anchor: expected proximal, distal, or center"
+            ));
+        }
+        finite_in(
+            span,
+            "coverage",
+            f64::EPSILON,
+            1.0,
+            file,
+            &span_path,
+            errors,
+        );
+    }
+}
+
+fn anatomical_body_part(region: &str) -> &str {
+    match region {
+        "head" | "neck" => "head",
+        "chest" => "chest",
+        "stomach" => "stomach",
+        "left_upper_arm" | "left_forearm" => "left_arm",
+        "right_upper_arm" | "right_forearm" => "right_arm",
+        "left_thigh" | "left_lower_leg" => "left_leg",
+        "right_thigh" | "right_lower_leg" => "right_leg",
+        _ => "",
+    }
+}
+
+fn contiguous_regions(proximal: &str, distal: &str) -> bool {
+    matches!(
+        (proximal, distal),
+        ("stomach", "chest")
+            | ("chest", "neck")
+            | ("neck", "head")
+            | ("left_upper_arm", "left_forearm")
+            | ("right_upper_arm", "right_forearm")
+            | ("left_thigh", "left_lower_leg")
+            | ("right_thigh", "right_lower_leg")
+    )
+}
+
 fn validate_weapon(item: &Map<String, Value>, file: &str, path: &str, errors: &mut Vec<String>) {
-    for field in ["accuracy", "reach_m", "penetration", "balance"] {
+    for field in [
+        "accuracy",
+        "reach_m",
+        "penetration",
+        "moment_of_inertia_kg_m2",
+    ] {
         finite_in(item, field, 0.0, 10_000.0, file, path, errors);
     }
     let melee = item.get("melee").and_then(Value::as_bool).unwrap_or(false);
@@ -1486,7 +1706,7 @@ mod tests {
             ("accuracy".into(), json!(1)),
             ("reach_m".into(), json!(1)),
             ("penetration".into(), json!(1)),
-            ("balance".into(), json!(1)),
+            ("moment_of_inertia_kg_m2".into(), json!(1)),
             ("precise".into(), json!(false)),
             ("melee".into(), json!(true)),
             ("ranged".into(), json!(false)),
@@ -1612,6 +1832,7 @@ mod tests {
             (
                 "equipment".into(),
                 json!({
+                    "material": "quilted_textile",
                     "physical": {
                         "dimensions_m": [0.3, 0.6, 0.1],
                         "grip_to_tip_m": 0.0,
@@ -1621,15 +1842,25 @@ mod tests {
                         {
                             "id": "left",
                             "occupancy": [{"location": "left_arm", "channel": "base_clothing"}],
-                            "protection": ["left_arm"]
+                            "protection": ["left_arm"],
+                            "surface": [{
+                                "regions": ["left_upper_arm", "left_forearm"],
+                                "anchor": "proximal",
+                                "coverage": 0.8
+                            }]
                         },
                         {
                             "id": "right",
                             "occupancy": [{"location": "right_arm", "channel": "base_clothing"}],
-                            "protection": ["right_arm"]
+                            "protection": ["right_arm"],
+                            "surface": [{
+                                "regions": ["right_upper_arm", "right_forearm"],
+                                "anchor": "proximal",
+                                "coverage": 0.8
+                            }]
                         }
                     ],
-                    "protection": {"coverage": 0.8, "padding": 2.0, "resistance": 1.0}
+                    "protection": {"padding": 2.0, "resistance": 1.0}
                 }),
             ),
         ]);
@@ -1652,6 +1883,82 @@ mod tests {
             equipment.placements[0].occupancy[0].location,
             crate::item_catalog_schema::EquipmentLocation::LeftArm
         );
+    }
+
+    #[test]
+    fn fitted_accessory_may_author_a_surface_without_protection() {
+        let mut item = valid_item("fitted_belt");
+        item.as_object_mut().unwrap().insert(
+            "equipment".into(),
+            json!({
+                "material": "vegetable_tanned_leather",
+                "physical": {
+                    "dimensions_m": [0.42, 0.10, 0.24],
+                    "grip_to_tip_m": 0.0,
+                    "anchor_offset_m": [0.0, 0.0, 0.0]
+                },
+                "placements": [{
+                    "id": "worn",
+                    "occupancy": [{"location": "left_belt", "channel": "accessory"}],
+                    "surface": [{
+                        "regions": ["stomach"],
+                        "anchor": "center",
+                        "coverage": 0.18
+                    }]
+                }],
+                "attachment_points": [{
+                    "id": "left",
+                    "channel": "mount",
+                    "capacity": 1,
+                    "locations": ["left_belt"],
+                    "surface_uv": {"domain": "mhr_body_v1", "uv": [0.37, 0.71]},
+                    "tangent_direction": [0.0, -0.82, -0.57]
+                }]
+            }),
+        );
+
+        let equipment_value = item["equipment"].clone();
+        let mut errors = Vec::new();
+        validate_equipment(
+            &equipment_value,
+            "equipment.yaml",
+            "items.0",
+            "simple",
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:#?}");
+        let documents = [document(vec![item])];
+        let compiled: crate::item_catalog_schema::ItemCatalogDocument =
+            serde_json::from_value(documents[0].clone()).expect("typed catalog");
+        let belt = &compiled.items[0];
+        assert!(belt.equipment.as_ref().is_some_and(|equipment| {
+            equipment.material.is_some() && !equipment.placements[0].surface.is_empty()
+        }));
+        let point = &belt.equipment.as_ref().unwrap().attachment_points[0];
+        assert_eq!(
+            point
+                .surface_uv
+                .as_ref()
+                .map(|surface| surface.domain.as_str()),
+            Some("mhr_body_v1")
+        );
+
+        let mut unpaired = equipment_value;
+        unpaired["attachment_points"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("tangent_direction");
+        errors.clear();
+        validate_equipment(
+            &unpaired,
+            "equipment.yaml",
+            "items.0",
+            "simple",
+            &mut errors,
+        );
+        assert!(errors.iter().any(|error| {
+            error.contains("surface_uv and tangent_direction must be authored together")
+        }));
     }
 
     #[test]

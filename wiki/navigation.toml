@@ -4,7 +4,7 @@ excluded = []
 [[item]]
 kind = "page"
 title = "Introduction"
-path = "../README.md"
+path = "index.md"
 bullet = false
 
 [[item]]
@@ -81,6 +81,11 @@ path = "engineering/puzzle-lab.md"
 kind = "page"
 title = "Tactical automated testing"
 path = "engineering/tactical-testing.md"
+
+[[item]]
+kind = "page"
+title = "Animation testing"
+path = "engineering/animation-testing.md"
 
 [[item]]
 kind = "part"

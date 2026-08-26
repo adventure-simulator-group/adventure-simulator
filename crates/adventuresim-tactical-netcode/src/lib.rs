@@ -21,8 +21,8 @@ pub mod prelude {
         DebugDumpWorldRequest, DebugGameTimeScaleRequest, DefendRequest, EquipmentAction,
         EquipmentActionRequest, EquipmentHand, JoinRequest, JumpCommand, MeleeActionRequest,
         PlayerInputRequest, PostureActionRequest, PostureCommand, RangedActionRequest,
-        ReconnectCapability, ReconnectToken, SceneVistaBundle, TacticalOutcome,
-        TacticalOutcomeResponse,
+        ReconnectCapability, ReconnectToken, SceneVistaBundle, TacticalCombatConfigSnapshot,
+        TacticalOutcome, TacticalOutcomeResponse,
     };
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;

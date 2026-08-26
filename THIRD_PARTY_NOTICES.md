@@ -1,5 +1,20 @@
 # Third-party notices
 
+## Meta Momentum Human Rig
+
+The character authoring pipeline uses Meta's Momentum Human Rig (MHR) v1.0.1.
+Its FBX rigs, model definition, and pose-corrective tensors are downloaded from
+the official release into an ignored local cache and are not included in this
+repository. Deliberately exported character meshes, skeleton data, and other
+artifacts derived from MHR remain subject to the upstream Apache License 2.0
+notice requirements.
+
+- Project and source: <https://github.com/facebookresearch/MHR>
+- Pinned release: <https://github.com/facebookresearch/MHR/releases/tag/v1.0.1>
+- License: <https://github.com/facebookresearch/MHR/blob/main/LICENSE>
+- Release archive SHA-256:
+  `e4f4f205cd87c0fa106577ba1de4fc763e4eb197c924461d2ef7e6944e9d6b94`
+
 ## Hipparcos star catalogue
 
 The tactical sky includes a magnitude-limited derivative of the Hipparcos

@@ -124,9 +124,12 @@ pub(super) fn on_scene_vista_bundle(
         let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
         for (chunk, mesh) in meshes_for_lod.into_iter().enumerate() {
             presented_chunk_count += 1;
+            let triangle_count = mesh_triangle_count(&mesh);
             commands.spawn((
                 Name::new(format!("Tactical vista LOD {} chunk {chunk}", lod.level)),
                 VistaTerrain(lod.level),
+                VistaTerrainMesh(lod.level),
+                TerrainTriangleCount(triangle_count),
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(material.clone()),
@@ -215,8 +218,16 @@ fn spawn_near_vista_scatter(
     // continue across it, so crossing the boundary cannot introduce an LOD
     // edge or replace blank space with a close representation.
     for grass_lod in [GrassMeshLod::Near, GrassMeshLod::Far] {
-        let community_meshes = GrassCommunity::ALL
-            .map(|community| meshes.add(grass_patch_mesh(grass_color, grass_lod, 1.0, community)));
+        let community_meshes = GrassCommunity::ALL.map(|community| {
+            GrassTopology::ALL.map(|topology| {
+                meshes.add(grass_patch_mesh(
+                    grass_color,
+                    grass_lod,
+                    topology.density(),
+                    community,
+                ))
+            })
+        });
         let material = foliage_materials.add(vista_grass_material(
             wind_scale,
             grass_dryness,
@@ -230,6 +241,7 @@ fn spawn_near_vista_scatter(
             coarser_lod,
             playable_half_extent,
             playable_terrain,
+            playable_ground,
             grass_seed,
             grass_seed,
             GRASS_PATCH_SPACING,
@@ -242,12 +254,14 @@ fn spawn_near_vista_scatter(
     }
 
     let vista_meshes = GrassCommunity::ALL.map(|community| {
-        meshes.add(grass_patch_mesh(
-            grass_color,
-            GrassMeshLod::Vista,
-            1.0,
-            community,
-        ))
+        GrassTopology::ALL.map(|topology| {
+            meshes.add(grass_patch_mesh(
+                grass_color,
+                GrassMeshLod::Vista,
+                topology.density(),
+                community,
+            ))
+        })
     });
     let vista_material = foliage_materials.add(vista_grass_material(
         wind_scale,
@@ -262,6 +276,7 @@ fn spawn_near_vista_scatter(
         coarser_lod,
         playable_half_extent,
         playable_terrain,
+        playable_ground,
         grass_seed ^ 0x7669_7374_615f_6c6f,
         grass_seed,
         VISTA_GRASS_PATCH_SPACING,
@@ -398,13 +413,50 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn vista_allows_grass_patch(lod: &VistaLod, centre: Vec2, half_extent: f32) -> bool {
-    [-1.0, 0.0, 1.0].into_iter().any(|z| {
-        [-1.0, 0.0, 1.0].into_iter().any(|x| {
-            sample_vista_environment(lod, centre + Vec2::new(x, z) * half_extent)
-                .is_some_and(|sample| vista_sward_coverage(sample) > 0.0)
-        })
-    })
+fn vista_grass_patch_topology(
+    lod: &VistaLod,
+    playable_half_extent: Vec2,
+    playable_ground: &SceneGround,
+    centre: Vec2,
+    half_extent: f32,
+) -> Option<GrassTopology> {
+    let mut total = 0.0;
+    let mut samples = 0;
+    for z in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+        for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let point = centre + Vec2::new(x, z) * half_extent;
+            total +=
+                stitched_vista_topology_coverage(lod, playable_half_extent, playable_ground, point);
+            samples += 1;
+        }
+    }
+    GrassTopology::for_local_coverage(total / samples as f32)
+}
+
+fn stitched_vista_topology_coverage(
+    lod: &VistaLod,
+    playable_half_extent: Vec2,
+    playable_ground: &SceneGround,
+    point: Vec2,
+) -> f32 {
+    let boundary = point.clamp(-playable_half_extent, playable_half_extent);
+    let playable_coverage = playable_ground
+        .ground_at(boundary)
+        .filter(|sample| sample.cover == GroundCover::TallGrass)
+        .map_or(0.0, |sample| f32::from(sample.cover_density_bps) / 10_000.0);
+    let outside = (point.abs() - playable_half_extent)
+        .max(Vec2::ZERO)
+        .max_element();
+    if outside <= 0.0 {
+        return playable_coverage;
+    }
+    let vista_coverage = sample_vista_environment(lod, point)
+        .map(vista_sward_coverage)
+        .unwrap_or(0.0);
+    playable_coverage.lerp(
+        vista_coverage,
+        smoothstep01(outside / VISTA_GRASS_BOUNDARY_STITCH_METRES),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -414,11 +466,12 @@ fn spawn_vista_grass_lattice(
     coarser_lod: Option<&VistaLod>,
     playable_half_extent: Vec2,
     playable_terrain: &SceneTerrain,
+    playable_ground: &SceneGround,
     seed: u64,
     community_seed: u64,
     spacing: f32,
     outer_collar: f32,
-    meshes: &[Handle<Mesh>; 3],
+    meshes: &[[Handle<Mesh>; GrassTopology::COUNT]; 3],
     profile: GrassCommunityProfile,
     material: &Handle<TacticalFoliageMaterial>,
     visibility: VisibilityRange,
@@ -442,11 +495,18 @@ fn spawn_vista_grass_lattice(
             let Some(sample) = sample_vista_environment(lod, point) else {
                 continue;
             };
-            if !vista_allows_grass_patch(lod, point, spacing * 0.58) {
+            let Some(topology) = vista_grass_patch_topology(
+                lod,
+                playable_half_extent,
+                playable_ground,
+                point,
+                spacing * 0.58,
+            ) else {
                 continue;
-            }
+            };
             let local_profile = profile.localized(sample);
-            let mesh = &meshes[grass_community_at(point, community_seed, local_profile) as usize];
+            let mesh = &meshes[grass_community_at(point, community_seed, local_profile) as usize]
+                [topology.index()];
             let Some(transform) = vista_scatter_transform(
                 lod,
                 coarser_lod,
@@ -1424,6 +1484,11 @@ fn clear_vista_weather() -> WeatherSnapshot {
 #[allow(dead_code)]
 pub(crate) struct VistaTerrain(pub(crate) u8);
 
+/// A terrain-surface chunk, excluding vista grass, rocks, and tree cards that
+/// also carry [`VistaTerrain`] for broad visibility isolation.
+#[derive(Component)]
+pub(crate) struct VistaTerrainMesh(pub(crate) u8);
+
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalVistaExtension {
     #[uniform(100)]
@@ -1473,7 +1538,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vista_ground_uses_solid_palette_colors_and_geometry_normals() {
+    fn vista_ground_uses_continuous_palette_colors_and_geometry_normals() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_vista.wgsl"
@@ -1482,7 +1547,7 @@ mod tests {
         assert!(!shader.contains("textureSample"));
         assert!(!shader.contains("composed_normal"));
         assert!(shader.contains("let sward_color = vista.grass_color.rgb"));
-        assert!(shader.contains("sward_dither < sward"));
+        assert!(shader.contains("color = mix(color, sward_target, sward)"));
         assert!(!shader.contains("sward_color = color *"));
         assert!(shader.contains("let molded_rock = vec3<f32>(0.31, 0.30, 0.275)"));
     }
@@ -1492,6 +1557,17 @@ mod tests {
         let pigment = Color::srgb_u8(91, 126, 47);
         let material = vista_material(clear_vista_weather(), pigment);
         assert_eq!(material.extension.grass_color, color_vec4(pigment));
+    }
+
+    #[test]
+    fn vista_grass_reuses_the_playable_terminal_sward_handoff() {
+        // `spawn_near_vista_scatter` uses this same range for its globally
+        // aligned lattice, so the playable-to-vista seam cannot extend the
+        // physical-grass budget beyond the terrain handoff.
+        let vista = grass_lod_visibility(GrassMeshLod::Vista);
+        assert_eq!(vista.end_margin, 42.0..50.0);
+        assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
+        assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }
 
     #[test]

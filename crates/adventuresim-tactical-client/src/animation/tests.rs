@@ -27,7 +27,9 @@ mod legacy_tests {
             .with_weapon_guard(WeaponGuardState::Raised)
             .with_local_velocity(Vec3::NEG_Z * 3.0)
             .with_world_velocity(Vec3::NEG_Z * 3.0);
-        skeleton.begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20);
+        skeleton
+            .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
+            .unwrap();
         skeleton.advance_action(15);
         let before = serde_json::to_vec(&skeleton).unwrap();
         let presented = PresentedSkeleton::new(skeleton, None);
@@ -47,7 +49,9 @@ mod legacy_tests {
             let mut skeleton = SkeletonState::default()
                 .with_weapon_guard(WeaponGuardState::Raised)
                 .with_lead_foot(LeadFoot::Left);
-            skeleton.begin_attack(AttackSpec::default(), 10, 20);
+            skeleton
+                .begin_attack(AttackSpec::default(), 10, 20)
+                .unwrap();
             skeleton.advance_action(tick);
             let presented = PresentedSkeleton::new(skeleton.clone(), None);
             let legacy = AnimationEvaluation::from_skeleton(&skeleton);
@@ -114,7 +118,6 @@ mod legacy_tests {
                     orientation: Quat::IDENTITY,
                     linear_velocity: Vec3::NEG_Z * 5.5,
                     grounded: true,
-                    crouching: false,
                     delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                     tick,
                 },
@@ -151,7 +154,6 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: velocity,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick: 1,
             },
@@ -316,8 +318,8 @@ mod legacy_tests {
                 "required pose {required:?} did not resolve"
             );
         }
-        // The 28 required semantics collapse to 25 authored variants when
-        // each supported whole-body mirror pair is represented once.
+        // The 19 required semantics collapse to 18 independently resolvable
+        // variants when the supported whole-body mirror pair appears once.
         let authored_variants = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -325,7 +327,7 @@ mod legacy_tests {
                     .is_none_or(|counterpart| pose.as_str() < counterpart.as_str())
             })
             .count();
-        assert_eq!(authored_variants, 25);
+        assert_eq!(authored_variants, 18);
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -341,47 +343,33 @@ mod legacy_tests {
             root.poses[&SemanticPose::AttackThrust],
             PoseAnchor {
                 motion: "thrust".to_owned(),
-                frame: 0,
+                frame: 4,
             }
         );
-        assert_eq!(
-            root.poses[&SemanticPose::DuckBackward],
-            PoseAnchor {
-                motion: "duck_backward".to_owned(),
-                frame: 0,
-            }
-        );
-        assert_eq!(
-            root.poses[&SemanticPose::DuckForward],
-            PoseAnchor {
-                motion: "duck_forward".to_owned(),
-                frame: 0,
-            }
-        );
-        assert_eq!(root.motions["duck_forward"].last_frame, 0);
         assert_eq!(
             root.poses[&SemanticPose::DiveForward],
             PoseAnchor {
-                motion: "dive_forward".to_owned(),
+                motion: "dive".to_owned(),
                 frame: 0,
             }
         );
-        assert_eq!(
-            SemanticPose::DiveRight.mirrored_counterpart(),
-            Some(SemanticPose::DiveLeft)
-        );
         for pose in [
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
-            SemanticPose::Guard,
+            SemanticPose::DiveBackward,
+            SemanticPose::DiveLeft,
+            SemanticPose::DiveRight,
         ] {
-            let anchor = &root.poses[&pose];
-            assert_eq!(anchor.frame, 0);
-            assert_eq!(root.motions[&anchor.motion].last_frame, 0);
+            assert_eq!(root.poses[&pose].motion, "dive");
         }
+        assert_eq!(SemanticPose::DiveRight.mirrored_counterpart(), None);
+        assert_eq!(root.poses[&SemanticPose::GuardSwing].frame, 0);
+        assert_eq!(root.poses[&SemanticPose::GuardThrust].frame, 0);
+        assert_eq!(root.poses[&SemanticPose::AttackOffhand].frame, 0);
+        assert_eq!(root.motions["swing"].last_frame, 12);
+        assert_eq!(root.motions["swing"].required_last_frame, 4);
+        assert_eq!(root.motions["thrust"].last_frame, 12);
+        assert_eq!(root.motions["thrust"].required_last_frame, 4);
+        assert_eq!(root.motions["offhand"].last_frame, 4);
+        assert_eq!(root.motions["offhand"].required_last_frame, 0);
     }
 
     #[test]
@@ -498,9 +486,10 @@ mod legacy_tests {
     }
 
     #[test]
-    fn attack_entry_blends_guard_and_contact_motions() {
+    fn attack_entry_blends_frame_zero_guard_and_contact_in_one_motion() {
         let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([SemanticPose::Guard, SemanticPose::AttackThrust]);
+        let runtime =
+            runtime_with_available([SemanticPose::GuardThrust, SemanticPose::AttackThrust]);
         let mut weighted = Vec::new();
         append_resolved_sample(
             &mut weighted,
@@ -508,7 +497,7 @@ mod legacy_tests {
             &catalog,
             HUMANOID_UNARMED_PACK,
             PoseSample {
-                pose: SemanticPose::Guard,
+                pose: SemanticPose::GuardThrust,
                 sampling: PoseSampling::Span {
                     end: SemanticPose::AttackThrust,
                     progress: 0.5,
@@ -518,26 +507,26 @@ mod legacy_tests {
             },
         );
         assert_eq!(weighted.len(), 2);
-        assert!(
-            weighted
-                .iter()
-                .all(|sample| sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001)
-        );
-        let guard = runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "guard".to_owned())]
-            .handle
-            .id();
-        let contact = runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "thrust".to_owned())]
+        let thrust = runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "thrust".to_owned())]
             .handle
             .id();
         assert!(
             weighted
                 .iter()
-                .any(|sample| sample.clip.handle.id() == guard)
+                .all(|sample| sample.clip.handle.id() == thrust)
         );
         assert!(
             weighted
                 .iter()
-                .any(|sample| sample.clip.handle.id() == contact)
+                .any(|sample| sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001)
+        );
+        assert!(
+            weighted
+                .iter()
+                .any(
+                    |sample| (sample.time_seconds - 4.0 / ANIMATION_FPS).abs() < 0.0001
+                        && (sample.weight - 0.5).abs() < 0.0001
+                )
         );
     }
 
@@ -582,8 +571,8 @@ mod legacy_tests {
         let owner = world.spawn_empty().id();
         let rig = world.spawn(AnimationRigScene(owner)).id();
         let skeleton = world.spawn(Name::new("Skeleton")).id();
-        let root = world.spawn(Name::new("root")).id();
-        let pelvis = world.spawn(Name::new("pelvis")).id();
+        let root = world.spawn(Name::new("body_world")).id();
+        let pelvis = world.spawn(Name::new("root")).id();
         world.entity_mut(rig).add_child(skeleton);
         world.entity_mut(skeleton).add_child(root);
         world.entity_mut(root).add_child(pelvis);
@@ -602,8 +591,8 @@ mod legacy_tests {
             Some(&AnimationTargetId::from_names(
                 [
                     Name::new("Skeleton"),
-                    Name::new("root"),
-                    Name::new("pelvis")
+                    Name::new("body_world"),
+                    Name::new("root")
                 ]
                 .iter()
             ))
@@ -615,26 +604,29 @@ mod legacy_tests {
     }
 
     #[test]
-    fn composite_mask_keeps_root_pelvis_and_legs_out_of_the_upper_body() {
+    fn composite_mask_keeps_mhr_world_pelvis_and_legs_out_of_the_upper_body() {
         for lower in [
             "Skeleton",
+            "body_world",
             "root",
-            "pelvis",
-            "thigh.L",
-            "thigh_twist.R",
-            "shin.L",
-            "foot.R",
-            "toe.L",
+            "l_upleg",
+            "r_upleg_twist3_proc",
+            "l_lowleg",
+            "r_foot",
+            "l_talocrural",
+            "r_subtalar",
+            "l_transversetarsal",
+            "l_ball",
         ] {
             assert!(is_lower_body_animation_target(lower), "{lower}");
         }
         for upper in [
-            "stomach_01",
-            "stomach_02",
-            "chest",
-            "clavicle.L",
-            "upper_arm.R",
-            "head",
+            "c_spine0",
+            "c_spine2",
+            "c_spine3",
+            "l_clavicle",
+            "r_uparm",
+            "c_head",
         ] {
             assert!(!is_lower_body_animation_target(upper), "{upper}");
         }
@@ -673,8 +665,8 @@ mod legacy_tests {
         let pelvis = AnimationTargetId::from_names(
             [
                 Name::new("Skeleton"),
+                Name::new("body_world"),
                 Name::new("root"),
-                Name::new("pelvis"),
             ]
             .iter(),
         );
@@ -775,6 +767,7 @@ mod legacy_tests {
             owner: Entity::PLACEHOLDER,
             primary_hand: HandSide::Right,
             secondary_grip_local: None,
+            socket_bind_correction: Transform::IDENTITY,
         };
         assert_eq!(constraint.primary_hand, HandSide::Right);
     }

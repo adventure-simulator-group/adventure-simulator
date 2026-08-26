@@ -141,7 +141,9 @@
     const buttons = evidence.map((item) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "scene-interactable scene-interactable--evidence physical-evidence-portrait";
+      // Keep evidence counters visually and semantically aligned with the
+      // circular counterparty portrait controls used elsewhere in the scene.
+      button.className = "party-portrait settlement-npc-portrait physical-evidence-portrait scene-interactable scene-interactable--evidence";
       button.dataset.evidenceId = item.id;
       button.setAttribute("aria-label", `Inspect ${item.label}`);
       button.setAttribute("aria-pressed", "false");

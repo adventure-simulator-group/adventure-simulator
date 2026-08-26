@@ -33,6 +33,7 @@ pub(super) struct PackCatalog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct MotionSource {
     pub(super) path: String,
+    pub(super) required_last_frame: u16,
     pub(super) last_frame: u16,
 }
 
@@ -82,10 +83,15 @@ impl PackBuilder {
     }
 
     pub(super) fn motion(&mut self, id: &str, last_frame: u16) {
+        self.variable_motion(id, last_frame, last_frame);
+    }
+
+    pub(super) fn variable_motion(&mut self, id: &str, required_last_frame: u16, last_frame: u16) {
         self.pack.motions.insert(
             id.to_owned(),
             MotionSource {
                 path: format!("{}/{id}.glb", self.path_prefix),
+                required_last_frame,
                 last_frame,
             },
         );
@@ -149,13 +155,7 @@ impl AnimationPackCatalog {
             None,
             "animations/biped/unarmed",
         );
-        for pose in [
-            "idle_relaxed",
-            "crouch_idle",
-            "guard",
-            "prone_idle",
-            "supine_idle",
-        ] {
+        for pose in ["idle_relaxed", "prone_idle", "supine_idle"] {
             builder.motion(pose, 0);
             builder.pose(
                 pose,
@@ -193,27 +193,14 @@ impl AnimationPackCatalog {
         builder.motion("run_mirrored", 64);
         builder.motion("prone_crawl_mirrored", 0);
         builder.motion("supine_scamper_mirrored", 0);
-        for (motion, pose) in [
-            ("duck_forward", "duck_forward"),
-            ("duck_backward", "duck_backward"),
-            ("duck_left", "duck_left"),
-            ("duck_right", "duck_right"),
+        builder.motion("dive", 0);
+        for pose in [
+            SemanticPose::DiveForward,
+            SemanticPose::DiveBackward,
+            SemanticPose::DiveLeft,
+            SemanticPose::DiveRight,
         ] {
-            builder.motion(motion, 0);
-            builder.pose(
-                motion,
-                0,
-                SemanticPose::from_str(pose).expect("typed catalog pose"),
-            )?;
-        }
-        for (motion, pose) in [
-            ("dive_forward", SemanticPose::DiveForward),
-            ("dive_backward", SemanticPose::DiveBackward),
-            ("dive_left", SemanticPose::DiveLeft),
-            ("dive_right", SemanticPose::DiveRight),
-        ] {
-            builder.motion(motion, 0);
-            builder.pose(motion, 0, pose)?;
+            builder.pose("dive", 0, pose)?;
         }
         for (motion, pose) in [
             ("airborne_center", SemanticPose::AirborneCenter),
@@ -222,24 +209,28 @@ impl AnimationPackCatalog {
             builder.motion(motion, 0);
             builder.pose(motion, 0, pose)?;
         }
-        for (motion, pose) in [
-            ("swing", SemanticPose::AttackSwing),
-            ("swing_follow", SemanticPose::AttackSwingFollow),
-            ("thrust", SemanticPose::AttackThrust),
+        builder.variable_motion("swing", 4, 12);
+        for (frame, pose) in [
+            (0, SemanticPose::GuardSwing),
+            (4, SemanticPose::AttackSwing),
+            (8, SemanticPose::RecoverSwing),
+            (12, SemanticPose::ContinueSwing),
         ] {
-            builder.motion(motion, 0);
-            builder.pose(motion, 0, pose)?;
+            builder.pose("swing", frame, pose)?;
         }
-        for motion in ["block_cut_left", "block_cut_right", "block_thrust"] {
-            builder.motion(motion, 14);
-            builder.pose(
-                motion,
-                6,
-                SemanticPose::from_str(motion).expect("typed block pose"),
-            )?;
-            builder.reference(motion, 0, "guard")?;
-            builder.reference(motion, 14, "guard")?;
+        builder.variable_motion("thrust", 4, 12);
+        for (frame, pose) in [
+            (0, SemanticPose::GuardThrust),
+            (4, SemanticPose::AttackThrust),
+            (8, SemanticPose::RecoverThrust),
+            (12, SemanticPose::ContinueThrust),
+        ] {
+            builder.pose("thrust", frame, pose)?;
         }
+        builder.variable_motion("offhand", 0, 4);
+        builder.pose("offhand", 0, SemanticPose::GuardOffhand)?;
+        builder.pose("offhand", 0, SemanticPose::AttackOffhand)?;
+        builder.pose("offhand", 4, SemanticPose::AttackOffhandPrepared)?;
         for (motion, pose) in [
             ("prone_transition", "prone_transition"),
             ("prone_supine_roll_left", "prone_supine_roll_left"),
@@ -343,7 +334,9 @@ pub(crate) fn validate_editor_asset_root(
         .with_local_velocity(Vec3::NEG_Z * 2.0)
         .with_world_velocity(Vec3::NEG_Z * 2.0);
     let mut raised_attack = SkeletonState::default();
-    raised_attack.begin_attack(AttackSpec::default(), 10, 20);
+    raised_attack
+        .begin_attack(AttackSpec::default(), 10, 20)
+        .expect("catalog fixture starts from idle");
     raised_attack.advance_action(20);
 
     let mut route_resolutions = Vec::new();

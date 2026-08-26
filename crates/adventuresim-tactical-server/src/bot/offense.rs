@@ -2,14 +2,6 @@ use bevy::ecs::entity::MapEntities;
 
 use super::*;
 
-const AI_HIT_PRECISION: f32 = 1.0;
-const AI_BODY_PART: BodyPart = BodyPart::Chest;
-const AI_WINDUP_SECS: f32 = 0.5;
-const AI_COOLDOWN_SECS: f32 = 1.0;
-const AI_RANGED_MIN_STANDOFF: f32 = 1.5;
-const AI_RANGED_MAX_STANDOFF: f32 = 12.0;
-const AI_RANGED_STANDOFF_SLOP: f32 = 0.5;
-
 /// Enables server-owned offensive control, preferring ranged fire while a
 /// usable ranged weapon and arrows are available and otherwise using melee.
 #[derive(Component, Debug, Reflect, MapEntities)]
@@ -94,7 +86,9 @@ pub(super) fn drive_offensive_combat_ai(
         &TacticalCombatState,
         &SkeletonState,
     )>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
+    let config = &combat_config.ai.ordinary.offense;
     for (entity, transform, side, mut look, mut input, mut controller, state, skeleton) in &mut ai {
         if state.is_incapacitated() {
             input.last_movement = None;
@@ -159,24 +153,29 @@ pub(super) fn drive_offensive_combat_ai(
 
         match &mut controller.phase {
             OffensiveCombatPhase::Pursuing if use_ranged => {
-                let standoff = (weapon_reach * 0.5)
-                    .clamp(AI_RANGED_MIN_STANDOFF, AI_RANGED_MAX_STANDOFF)
+                let standoff = (weapon_reach * config.ranged_reach_fraction)
+                    .clamp(
+                        config.ranged_standoff_min_metres,
+                        config.ranged_standoff_max_metres,
+                    )
                     .min(weapon_reach);
-                if distance > weapon_reach || distance > standoff + AI_RANGED_STANDOFF_SLOP {
+                if distance > weapon_reach
+                    || distance > standoff + config.ranged_standoff_slop_metres
+                {
                     input.last_movement = Some(Vec2::Y);
-                } else if distance + AI_RANGED_STANDOFF_SLOP < standoff {
+                } else if distance + config.ranged_standoff_slop_metres < standoff {
                     input.last_movement = Some(-Vec2::Y);
                 } else {
                     input.last_movement = None;
+                    let windup = CombatDuration::from_secs_f32(config.windup_seconds);
                     cmd.trigger(RangedAttackStartedIntent {
                         attacker: entity,
                         target: Some(target),
-                        windup: CombatDuration::from_duration(std::time::Duration::from_millis(
-                            500,
-                        )),
+                        animation_windup: windup,
+                        minimum_windup: windup,
                     });
                     controller.phase = OffensiveCombatPhase::RangedWindup(Timer::from_seconds(
-                        AI_WINDUP_SECS,
+                        config.windup_seconds,
                         TimerMode::Once,
                     ));
                 }
@@ -191,11 +190,12 @@ pub(super) fn drive_offensive_combat_ai(
                 cmd.trigger(MeleeAttackStartedIntent {
                     attacker: entity,
                     target,
-                    windup: CombatDuration::from_duration(std::time::Duration::from_millis(500)),
+                    windup: CombatDuration::from_secs_f32(config.windup_seconds),
                     strike_family,
+                    hand: AttackHand::Main,
                 });
                 controller.phase = OffensiveCombatPhase::MeleeWindup {
-                    timer: Timer::from_seconds(AI_WINDUP_SECS, TimerMode::Once),
+                    timer: Timer::from_seconds(config.windup_seconds, TimerMode::Once),
                     strike_family,
                 };
             }
@@ -212,13 +212,14 @@ pub(super) fn drive_offensive_combat_ai(
                     cmd.trigger(MeleeAttackIntent {
                         attacker: entity,
                         target,
-                        body_part: AI_BODY_PART,
-                        reported_precision: ReportedPrecision::new(AI_HIT_PRECISION)
+                        body_part: config.target_body_part,
+                        reported_precision: ReportedPrecision::new(config.hit_precision)
                             .expect("AI precision is finite"),
                         strike_family: *strike_family,
+                        hand: AttackHand::Main,
                     });
                     controller.phase = OffensiveCombatPhase::Cooldown(Timer::from_seconds(
-                        AI_COOLDOWN_SECS,
+                        config.cooldown_seconds,
                         TimerMode::Once,
                     ));
                 }
@@ -230,12 +231,12 @@ pub(super) fn drive_offensive_combat_ai(
                     cmd.trigger(RangedAttackIntent {
                         attacker: entity,
                         target: Some(target),
-                        body_part: AI_BODY_PART,
-                        reported_precision: ReportedPrecision::new(AI_HIT_PRECISION)
+                        body_part: config.target_body_part,
+                        reported_precision: ReportedPrecision::new(config.hit_precision)
                             .expect("AI precision is finite"),
                     });
                     controller.phase = OffensiveCombatPhase::Cooldown(Timer::from_seconds(
-                        AI_COOLDOWN_SECS,
+                        config.cooldown_seconds,
                         TimerMode::Once,
                     ));
                 }

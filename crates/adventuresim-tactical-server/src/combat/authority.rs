@@ -4,8 +4,8 @@ use adventuresim_tactical_core::prelude::{BodyPart, melee_interaction_range};
 use bevy::prelude::*;
 
 use super::{
-    MELEE_RANGE_LATENCY_TOLERANCE, MeleeIntentFacts, MeleeIntentRejection,
-    RANGED_RANGE_LATENCY_TOLERANCE, RangedIntentFacts, RangedIntentRejection, TacticalCombatSide,
+    MeleeIntentFacts, MeleeIntentRejection, RangedIntentFacts, RangedIntentRejection,
+    TacticalCombatSide,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -25,6 +25,7 @@ impl CombatInstant {
 pub(crate) struct CombatDuration(Duration);
 
 impl CombatDuration {
+    #[cfg(test)]
     pub(crate) const fn from_duration(duration: Duration) -> Self {
         Self(duration)
     }
@@ -174,14 +175,14 @@ impl AuthorizedRangedShot {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ObservedMeleeWindup {
     target: Option<Entity>,
     ready_at: CombatInstant,
     expires_at: CombatInstant,
 }
 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub(crate) struct MeleeAttackAuthority {
     windup: Option<ObservedMeleeWindup>,
     cooldown_until: CombatInstant,
@@ -237,13 +238,13 @@ impl MeleeAttackAuthority {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ObservedRangedWindup {
     ready_at: CombatInstant,
     expires_at: CombatInstant,
 }
 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub(crate) struct RangedAttackAuthority {
     windup: Option<ObservedRangedWindup>,
     cooldown_until: CombatInstant,
@@ -348,7 +349,7 @@ pub(super) fn validate_ranged_intent(
             return Err(RangedIntentRejection::Incapacitated);
         }
         if !facts.separation.is_some_and(|distance| {
-            distance.is_finite() && distance <= facts.weapon_range + RANGED_RANGE_LATENCY_TOLERANCE
+            distance.is_finite() && distance <= facts.weapon_range + facts.range_latency_tolerance
         }) {
             return Err(RangedIntentRejection::OutOfRange);
         }
@@ -403,7 +404,7 @@ pub(super) fn validate_melee_intent_cheap(
     }
     if !facts.separation.is_finite()
         || facts.separation
-            > melee_interaction_range(facts.weapon_reach) + MELEE_RANGE_LATENCY_TOLERANCE
+            > melee_interaction_range(facts.weapon_reach) + facts.range_latency_tolerance
     {
         return Err(MeleeIntentRejection::OutOfRange);
     }

@@ -1,17 +1,15 @@
 use std::{collections::BTreeMap, num::NonZeroU32};
 
+use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
-use adventuresim_tactical_core::physics::{
-    TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND, TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND,
-};
 use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{DisconnectReason, Disconnected},
     bevy_replicon::prelude::{FromClient, Replicated, SendTargets, ServerTriggerExt, ToClients},
     prelude::{
         JoinRequest, JumpCommand, PlayerInputRequest, PostureActionRequest, PostureCommand,
-        ReconnectCapability, ReconnectToken,
+        ReconnectCapability, ReconnectToken, TacticalCombatConfigSnapshot,
     },
 };
 use bevy::prelude::*;
@@ -19,7 +17,7 @@ use bevy::time::Stopwatch;
 
 use crate::{
     Args, SceneVistaBundleResource,
-    bot::{DefenseChances, MissionEnemy, OffensiveCombatAi},
+    bot::{CombatantBehaviorPackages, MissionEnemy},
     combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
     equipment::{
         LastEquipmentSequence, PendingEquipmentActions, purge_equipment_lifecycle,
@@ -43,6 +41,9 @@ pub(crate) struct LoadingPlayer {
     pub(crate) requested_character: CharacterId,
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct StartupInputObserved;
+
 /// Latest complete movement request accepted from a player. Unlike Ahoy's
 /// per-fixed-loop accumulator, this survives missing unreliable input packets
 /// until an explicit request replaces it.
@@ -51,7 +52,6 @@ pub(crate) struct AuthoritativeMovementIntent(pub(crate) Option<Vec2>);
 
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct AuthoritativePostureIntent {
-    crouch: bool,
     facing: CameraFacingIntent,
     last_jump_sequence: u32,
     last_command_sequence: u32,
@@ -81,17 +81,12 @@ impl CameraFacingIntent {
     }
 }
 
+#[cfg(test)]
 const GROUND_POSTURE_TRANSITION_TICKS: u64 = 51;
+#[cfg(test)]
 const ROLL_POSTURE_TRANSITION_TICKS: u64 = GROUND_POSTURE_TRANSITION_TICKS.div_ceil(2);
-// Five authored frames at 30 FPS, rounded up to the 64 Hz fixed simulation.
-const DIVE_POSTURE_TRANSITION_TICKS: u64 = 20;
+#[cfg(test)]
 const BACKWARD_DIVE_POSTURE_TRANSITION_TICKS: u64 = 32;
-const QUICKSTEP_PREPARATION_TICKS: u64 = 5;
-const QUICKSTEP_CONTACT_TICKS: u64 = 20;
-/// Stops a 5 m/s quickstep in about 250 ms and 0.6 m after contact. This is
-/// long enough to read between replicated transform samples while remaining a
-/// compact, actively braced recovery rather than an unbounded slide.
-const QUICKSTEP_LANDING_BRAKE_METRES_PER_SECOND_SQUARED: f32 = 20.0;
 
 /// Durable inventory provenance retained only on the authoritative server.
 #[derive(Component, Debug, Clone, Copy)]
@@ -147,6 +142,87 @@ pub(crate) struct DisconnectedPlayer {
 pub(crate) struct ReconnectSession {
     character_id: CharacterId,
     token: ReconnectToken,
+}
+
+#[derive(Component, Clone)]
+pub(crate) enum DisconnectedProjection {
+    Loading(LoadingPlayer),
+    Projected(Box<ProjectedPlayerSnapshot>),
+}
+
+#[derive(Clone)]
+pub(crate) struct ProjectedPlayerSnapshot {
+    name: Name,
+    player: Player,
+    character_id: CharacterId,
+    bestiary_categories: BestiaryCategories,
+    skills: Skills,
+    limbs: Limbs,
+    attributes: Attributes,
+    stats: Stats,
+    combat_state: TacticalCombatState,
+    equipment_action_state: EquipmentActionState,
+    combat_side: TacticalCombatSide,
+    transform: Transform,
+    look: CharacterLook,
+    movement_intent: AuthoritativeMovementIntent,
+    posture_intent: AuthoritativePostureIntent,
+    pace: MovementPace,
+    velocity: LinearVelocity,
+    skeleton: SkeletonState,
+    melee_authority: MeleeAttackAuthority,
+    ranged_authority: RangedAttackAuthority,
+    collider: Collider,
+    collision_margin: CollisionMargin,
+    controller: CharacterController,
+    accumulated_input: AccumulatedInput,
+}
+
+impl DisconnectedProjection {
+    fn projected(&self) -> bool {
+        matches!(self, Self::Projected(_))
+    }
+
+    fn insert(self, commands: &mut Commands, target: Entity) {
+        match self {
+            Self::Loading(loading) => {
+                commands.entity(target).insert(loading);
+            }
+            Self::Projected(snapshot) => {
+                let snapshot = *snapshot;
+                commands.entity(target).insert((
+                    snapshot.name,
+                    snapshot.player,
+                    snapshot.character_id,
+                    snapshot.bestiary_categories,
+                    snapshot.skills,
+                    snapshot.limbs,
+                    snapshot.attributes,
+                    snapshot.stats,
+                    snapshot.combat_state,
+                    snapshot.equipment_action_state,
+                    snapshot.combat_side,
+                ));
+                commands.entity(target).insert((
+                    snapshot.transform,
+                    snapshot.look,
+                    snapshot.movement_intent,
+                    snapshot.posture_intent,
+                    snapshot.pace,
+                    snapshot.velocity,
+                    snapshot.skeleton,
+                    snapshot.melee_authority,
+                    snapshot.ranged_authority,
+                ));
+                commands.entity(target).insert((
+                    snapshot.collider,
+                    snapshot.collision_margin,
+                    snapshot.controller,
+                    snapshot.accumulated_input,
+                ));
+            }
+        }
+    }
 }
 
 const RECONNECT_GRACE_SECS: f32 = 30.0;
@@ -208,14 +284,17 @@ pub(crate) fn spawn_connected_players(
     mut cmd: Commands,
     q_loading: Query<(Entity, &LoadingPlayer)>,
     q_scene: Query<&SceneTerrain>,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     for player in conn.take_connected_players() {
         spawn_connected_player(
             &player,
             args.enemy_combat_scale_bps,
+            args.animation_behavior_lab,
             &mut cmd,
             &q_loading,
             &q_scene,
+            &combat_config,
         );
     }
 }
@@ -223,16 +302,37 @@ pub(crate) fn spawn_connected_players(
 fn spawn_connected_player(
     player: &ConnectedPlayer,
     enemy_combat_scale_bps: u32,
+    animation_behavior_lab: bool,
     cmd: &mut Commands,
     q_loading: &Query<(Entity, &LoadingPlayer)>,
     q_scene: &Query<&SceneTerrain>,
+    combat_config: &TacticalCombatConfig,
 ) {
     let entity = if player.mission_side == TacticalMissionSide::Enemy {
-        let mut enemy = cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy));
-        if enemy_combat_scale_bps > 0 {
-            enemy.insert((OffensiveCombatAi::default(), DefenseChances::default()));
-        }
-        enemy.id()
+        let packages = if animation_behavior_lab {
+            match AnimationLabEnemyRole::from_name(&player.character.name) {
+                Some(AnimationLabEnemyRole::ShieldBlocker) => {
+                    CombatantBehaviorPackages::always_block_without_facing()
+                }
+                Some(AnimationLabEnemyRole::Dodger) => CombatantBehaviorPackages::always_dodge(),
+                Some(AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::DemiLancer) => {
+                    CombatantBehaviorPackages::passive()
+                }
+                None => {
+                    warn!(
+                        name = player.character.name,
+                        "Animation lab enemy has no recognized behavior role; leaving passive"
+                    );
+                    CombatantBehaviorPackages::passive()
+                }
+            }
+        } else if enemy_combat_scale_bps > 0 {
+            CombatantBehaviorPackages::standard_combat(combat_config)
+        } else {
+            CombatantBehaviorPackages::passive()
+        };
+        cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy, packages))
+            .id()
     } else {
         let Some((entity, _)) = q_loading
             .iter()
@@ -556,6 +656,9 @@ fn spawn_connected_player(
             | ItemKind::Medication
             | ItemKind::Food => {}
             ItemKind::Weapon => {
+                let grip_to_tip_m = adventuresim_core::item_catalog::definition(&item.item.id)
+                    .and_then(|definition| definition.equipment.as_ref())
+                    .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
                 item_cmd.insert(WeaponItem {
                     skill_weights: [
                         item.item.weapon_skills.polearm,
@@ -574,20 +677,14 @@ fn spawn_connected_player(
                     prefers_stab: item.item.prefers_stab,
                     penetration: item.item.penetration,
                     reach: item.item.reach,
-                    balance: item.item.balance,
+                    grip_to_tip_m,
+                    moment_of_inertia_kg_m2: item.item.moment_of_inertia_kg_m_2,
                     precise: item.item.precise,
                     melee: item.item.melee,
                     ranged: item.item.ranged,
                     blunt: item.item.blunt,
                     slash: item.item.slash,
                     pierce: item.item.pierce,
-                    // The strategic item schema (adventuresim-stdb-module)
-                    // doesn't author a per-weapon windup yet, unlike
-                    // accuracy/reach/balance/etc above - falls back to the
-                    // same default `PlayerEquipment::weapon_windup_secs`
-                    // uses. Extending the schema to author this per-weapon
-                    // is future work, not done here.
-                    windup_secs: 0.3,
                 });
             }
             ItemKind::Armor | ItemKind::Clothing => {}
@@ -633,7 +730,7 @@ fn spawn_connected_player(
     }
     info!(
         temorary = player.character.temporary,
-        "Player {entity:?} is fully loaded"
+        "[startup] Player {entity:?} is fully loaded"
     );
 }
 
@@ -643,18 +740,14 @@ pub(crate) fn on_join_request(
     mut state: ResMut<MissionState>,
     loading_players: Query<(), With<LoadingPlayer>>,
     players: Query<(), With<Player>>,
-    mut disconnected_players: Query<(
-        Entity,
-        &mut DisconnectedPlayer,
-        Has<Player>,
-        Has<LoadingPlayer>,
-    )>,
+    mut disconnected_players: Query<(Entity, &mut DisconnectedPlayer, &DisconnectedProjection)>,
     inventory_items: Query<(Entity, &ItemOf)>,
     mut pending_actions: ResMut<PendingEquipmentActions>,
     mut action_sequences: ResMut<LastEquipmentSequence>,
     conn: Res<SpacetimeDb>,
     ready: Res<SpacetimeDbReady>,
     vista: Res<SceneVistaBundleResource>,
+    combat_config: Res<TacticalCombatConfig>,
 ) -> Result {
     let Some(client) = join.client_id.entity() else {
         return Ok(());
@@ -665,60 +758,24 @@ pub(crate) fn on_join_request(
     let reconnect =
         disconnected_players
             .iter_mut()
-            .find_map(|(entity, mut session, projected, loading)| {
+            .find_map(|(entity, mut session, projection)| {
                 try_claim_reconnect(join.character_id, join.reconnect_token, &mut session)
-                    .then_some((entity, projected, loading))
+                    .then(|| (entity, projection.clone()))
             });
-    if let Some((disconnected, projected, loading)) = reconnect {
+    if let Some((disconnected, projection)) = reconnect {
         let token = fresh_reconnect_token();
+        let projected = projection.projected();
         if projected {
             queue_replication_rebind(&mut commands, client);
         }
-        commands.entity(disconnected).move_components::<(
-            Name,
-            Player,
-            CharacterId,
-            BestiaryCategories,
-            Skills,
-            Limbs,
-            Attributes,
-            Stats,
-            TacticalCombatState,
-            EquipmentActionState,
-            TacticalCombatSide,
-        )>(client);
-        commands.entity(disconnected).move_components::<(
-            Transform,
-            CharacterLook,
-            AuthoritativeMovementIntent,
-            AuthoritativePostureIntent,
-            MovementPace,
-            LinearVelocity,
-            SkeletonState,
-            MeleeAttackAuthority,
-            RangedAttackAuthority,
-        )>(client);
-        commands.entity(disconnected).move_components::<(
-            Collider,
-            CollisionMargin,
-            CharacterController,
-            AccumulatedInput,
-        )>(client);
-        if projected {
-            commands
-                .entity(disconnected)
-                .move_components::<InventoryItems>(client);
-        } else if loading {
-            commands
-                .entity(disconnected)
-                .move_components::<LoadingPlayer>(client);
-        }
+        projection.insert(&mut commands, client);
         commands.entity(client).insert(ReconnectSession {
             character_id: join.character_id,
             token,
         });
         send_reconnect_capability(&mut commands, join.client_id, join.character_id, token);
         send_scene_vista(&mut commands, join.client_id, &vista);
+        send_combat_config(&mut commands, join.client_id, &combat_config);
         reconnect_equipment_lifecycle(
             disconnected,
             client,
@@ -769,8 +826,9 @@ pub(crate) fn on_join_request(
     ));
     send_reconnect_capability(&mut commands, join.client_id, join.character_id, token);
     send_scene_vista(&mut commands, join.client_id, &vista);
+    send_combat_config(&mut commands, join.client_id, &combat_config);
     info!(
-        "Character {} connected and entered mission, awaiting loading",
+        "[startup] Character {} connected and entered mission, awaiting loading",
         join.character_id.0
     );
     Ok(())
@@ -806,7 +864,7 @@ pub(crate) fn on_join_request_standalone(
         requested_character: join.character_id,
     });
     info!(
-        "Character {} connected, awaiting binding to a dumped character",
+        "[startup] Character {} connected, awaiting binding to a dumped character",
         join.character_id.0
     );
     Ok(())
@@ -814,6 +872,8 @@ pub(crate) fn on_join_request_standalone(
 
 pub(crate) fn on_player_input(
     input: On<FromClient<PlayerInputRequest>>,
+    viewer: TacticalPlayerViewer,
+    mut commands: Commands,
     mut players: Query<
         (
             &mut AccumulatedInput,
@@ -826,20 +886,22 @@ pub(crate) fn on_player_input(
             &mut LinearVelocity,
             &mut Transform,
             &mut Rotation,
+            Has<StartupInputObserved>,
         ),
         With<Player>,
     >,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     let Some(validated) = validate_player_input(
         input.look,
         input.movement,
         input.jump,
-        input.crouch,
         input.jump_charge,
         input.downed_align,
         input.posture,
         input.pace,
         input.weapon_guard,
+        input.melee_preparation,
     ) else {
         return;
     };
@@ -857,6 +919,7 @@ pub(crate) fn on_player_input(
         mut velocity,
         mut transform,
         mut physics_rotation,
+        startup_input_observed,
     )) = players.get_mut(entity)
     else {
         return;
@@ -875,7 +938,6 @@ pub(crate) fn on_player_input(
         movement_intent.0 = None;
         accumulated_input.jumped = None;
         accumulated_input.crouched = false;
-        posture_intent.crouch = false;
         posture_intent.facing = CameraFacingIntent::Free;
         posture_intent.quickstep_launch_tick = None;
         skeleton.set_jump_anticipation(false);
@@ -885,7 +947,11 @@ pub(crate) fn on_player_input(
         );
         return;
     }
-    info!(
+    if !startup_input_observed {
+        info!("[startup] first server input received for {entity:?}");
+        commands.entity(entity).insert(StartupInputObserved);
+    }
+    trace!(
         "DEBUG on_player_input entity={entity:?} input.look={:?} validated.yaw={}",
         input.look, validated.yaw
     );
@@ -898,8 +964,12 @@ pub(crate) fn on_player_input(
     ) {
         posture_intent.last_command_sequence = validated.posture.sequence;
         if let Some(action) = validated.posture.action
-            && let Some(direction) =
-                apply_posture_action(action, &mut skeleton, &mut accumulated_input)
+            && let Some(direction) = apply_posture_action(
+                action,
+                &mut skeleton,
+                &mut accumulated_input,
+                &combat_config,
+            )
         {
             // The authored direction and physical launch are both relative to
             // this accepted camera frame. Commit the root before transition
@@ -907,15 +977,17 @@ pub(crate) fn on_player_input(
             let launch_rotation = dive_launch_root_rotation(Quat::from_rotation_y(look.yaw));
             transform.rotation = launch_rotation;
             physics_rotation.0 = launch_rotation;
-            let horizontal = dive_horizontal_velocity(look.yaw, direction);
+            let horizontal = dive_horizontal_velocity(
+                look.yaw,
+                direction,
+                combat_config.movement.speeds_metres_per_second.dive,
+            );
             velocity.x = horizontal.x;
             velocity.z = horizontal.z;
         }
     }
-    accumulated_input.crouched =
-        validated.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
+    accumulated_input.crouched = skeleton.body().is_downed() || skeleton.is_posture_transitioning();
     movement_intent.0 = validated.movement;
-    posture_intent.crouch = validated.crouch;
     posture_intent.facing =
         CameraFacingIntent::from_input(validated.weapon_guard, validated.downed_align);
     skeleton.set_jump_anticipation(validated.jump_charge);
@@ -924,6 +996,28 @@ pub(crate) fn on_player_input(
         &mut skeleton,
         authoritative_weapon_guard(validated.weapon_guard, false),
     );
+    if validated.weapon_guard == WeaponGuardState::Raised
+        && let Ok(view) = viewer.get(entity)
+    {
+        let preferred = StrikeFamily::from_melee_style(view.weapon_preferred_melee_style());
+        let requested = match validated.melee_preparation {
+            MeleePreparationInput::Preferred => preferred,
+            MeleePreparationInput::Alternate => preferred.alternate(),
+            MeleePreparationInput::Offhand => preferred,
+        };
+        let preparation = if validated.melee_preparation == MeleePreparationInput::Offhand
+            && skeleton.attack_animations.offhand_preparation
+        {
+            AttackPreparation::offhand()
+        } else {
+            AttackPreparation::main(
+                skeleton
+                    .available_strike_family(requested)
+                    .unwrap_or(preferred),
+            )
+        };
+        skeleton.set_attack_preparation(preparation);
+    }
     if jump_requested
         && !skeleton.is_posture_transitioning()
         && matches!(skeleton.body(), BodyState::Grounded(_))
@@ -933,13 +1027,12 @@ pub(crate) fn on_player_input(
                 if validated.weapon_guard == WeaponGuardState::Raised
                     && skeleton.body() == BodyState::Grounded(GroundedPosture::Upright) =>
             {
-                let start = skeleton.locomotion_sample_tick;
-                skeleton.begin_dodge(
-                    DodgeSpec { direction },
-                    start,
-                    start + QUICKSTEP_CONTACT_TICKS,
+                begin_authoritative_quickstep(
+                    &mut skeleton,
+                    &mut posture_intent,
+                    direction,
+                    &combat_config,
                 );
-                posture_intent.quickstep_launch_tick = Some(start + QUICKSTEP_PREPARATION_TICKS);
                 false
             }
             Some(_) => false,
@@ -949,6 +1042,37 @@ pub(crate) fn on_player_input(
             accumulated_input.jumped = Some(Stopwatch::new());
         }
     }
+}
+
+pub(crate) fn begin_authoritative_quickstep(
+    skeleton: &mut SkeletonState,
+    posture_intent: &mut AuthoritativePostureIntent,
+    direction: Vec2,
+    config: &TacticalCombatConfig,
+) -> bool {
+    if skeleton.weapon_guard() != WeaponGuardState::Raised
+        || skeleton.body() != BodyState::Grounded(GroundedPosture::Upright)
+    {
+        return false;
+    }
+    let start = skeleton.locomotion_sample_tick;
+    let Some(spec) = DodgeSpec::quickstep(direction) else {
+        return false;
+    };
+    if skeleton
+        .begin_dodge(
+            spec,
+            start,
+            start + combat_seconds_to_ticks(config.movement.maneuvers.quickstep_contact_seconds),
+        )
+        .is_err()
+    {
+        return false;
+    }
+    posture_intent.quickstep_launch_tick = Some(
+        start + combat_seconds_to_ticks(config.movement.maneuvers.quickstep_preparation_seconds),
+    );
+    true
 }
 
 fn sequence_is_newer(candidate: u32, previous: u32) -> bool {
@@ -962,24 +1086,24 @@ struct ValidatedPlayerInput {
     yaw: f32,
     pitch: f32,
     jump: JumpCommand,
-    crouch: bool,
     jump_charge: bool,
     downed_align: bool,
     posture: PostureCommand,
     pace: MovementPace,
     weapon_guard: WeaponGuardState,
+    melee_preparation: MeleePreparationInput,
 }
 
 fn validate_player_input(
     look: Vec2,
     movement: Option<Vec2>,
     jump: JumpCommand,
-    crouch: bool,
     jump_charge: bool,
     downed_align: bool,
     posture: PostureCommand,
     pace: MovementPace,
     weapon_guard: WeaponGuardState,
+    melee_preparation: MeleePreparationInput,
 ) -> Option<ValidatedPlayerInput> {
     if !look.is_finite()
         || movement.is_some_and(|movement| !movement.is_finite())
@@ -1002,12 +1126,12 @@ fn validate_player_input(
             - std::f32::consts::PI,
         pitch: look.y.clamp(-1.5, 1.5),
         jump,
-        crouch,
         jump_charge,
         downed_align,
         posture,
         pace,
         weapon_guard,
+        melee_preparation,
     })
 }
 
@@ -1015,15 +1139,20 @@ fn apply_posture_action(
     action: PostureActionRequest,
     skeleton: &mut SkeletonState,
     accumulated_input: &mut AccumulatedInput,
+    config: &TacticalCombatConfig,
 ) -> Option<DiveDirection> {
+    if action == PostureActionRequest::Toggle && skeleton.body().is_downed() {
+        begin_get_up_transition_configured(skeleton, config);
+        return None;
+    }
     let tick = skeleton.locomotion_sample_tick;
     let mut dive_travel_direction = None;
     let transition = match action {
         PostureActionRequest::Toggle => match skeleton.body() {
             BodyState::Grounded(_) => Some(PostureTransitionKind::UprightToProne),
-            BodyState::Prone => Some(PostureTransitionKind::ProneToUpright),
-            BodyState::Supine => Some(PostureTransitionKind::SupineToUpright),
-            BodyState::Airborne | BodyState::Ragdolled => None,
+            BodyState::Prone | BodyState::Supine | BodyState::Airborne | BodyState::Ragdolled => {
+                None
+            }
         },
         PostureActionRequest::RollLeft => roll_transition(skeleton.body(), RollDirection::Left),
         PostureActionRequest::RollRight => roll_transition(skeleton.body(), RollDirection::Right),
@@ -1043,11 +1172,15 @@ fn apply_posture_action(
     let duration = match transition {
         PostureTransitionKind::DiveToDowned {
             direction: DiveDirection::Backward,
-        } => BACKWARD_DIVE_POSTURE_TRANSITION_TICKS,
-        PostureTransitionKind::DiveToDowned { .. } => DIVE_POSTURE_TRANSITION_TICKS,
+        } => combat_seconds_to_ticks(config.movement.maneuvers.backward_dive_seconds),
+        PostureTransitionKind::DiveToDowned { .. } => {
+            combat_seconds_to_ticks(config.movement.maneuvers.dive_seconds)
+        }
         PostureTransitionKind::ProneToSupine { .. }
-        | PostureTransitionKind::SupineToProne { .. } => ROLL_POSTURE_TRANSITION_TICKS,
-        _ => GROUND_POSTURE_TRANSITION_TICKS,
+        | PostureTransitionKind::SupineToProne { .. } => {
+            combat_seconds_to_ticks(config.movement.maneuvers.roll_seconds)
+        }
+        _ => combat_seconds_to_ticks(config.movement.maneuvers.get_up_seconds),
     };
     if !skeleton.begin_posture_transition(transition, tick, duration) {
         return None;
@@ -1059,14 +1192,34 @@ fn apply_posture_action(
     None
 }
 
-fn dive_horizontal_velocity(yaw: f32, direction: DiveDirection) -> Vec3 {
+pub(crate) fn begin_get_up_transition_configured(
+    skeleton: &mut SkeletonState,
+    config: &TacticalCombatConfig,
+) -> bool {
+    let transition = match skeleton.body() {
+        BodyState::Prone => PostureTransitionKind::ProneToUpright,
+        BodyState::Supine => PostureTransitionKind::SupineToUpright,
+        _ => return false,
+    };
+    skeleton.begin_posture_transition(
+        transition,
+        skeleton.locomotion_sample_tick,
+        combat_seconds_to_ticks(config.movement.maneuvers.get_up_seconds),
+    )
+}
+
+fn dive_horizontal_velocity(yaw: f32, direction: DiveDirection, speed: f32) -> Vec3 {
     let local = match direction {
         DiveDirection::Forward => Vec3::NEG_Z,
         DiveDirection::Backward => Vec3::Z,
         DiveDirection::Left => Vec3::NEG_X,
         DiveDirection::Right => Vec3::X,
     };
-    Quat::from_rotation_y(yaw) * local * TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND
+    Quat::from_rotation_y(yaw) * local * speed
+}
+
+fn combat_seconds_to_ticks(seconds: f32) -> u64 {
+    (seconds * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64
 }
 
 fn roll_transition(body: BodyState, direction: RollDirection) -> Option<PostureTransitionKind> {
@@ -1093,6 +1246,7 @@ fn downed_tank_controller_input(
     body: BodyState,
     body_orientation: Quat,
     controller_orientation: Quat,
+    lateral_speed_scale: f32,
 ) -> Vec2 {
     let longitudinal_scale = if body == BodyState::Supine && movement.y < 0.0 {
         0.5
@@ -1100,7 +1254,7 @@ fn downed_tank_controller_input(
         1.0
     };
     let body_local = Vec3::new(
-        -movement.x * TACTICAL_PRONE_LATERAL_SPEED_SCALE,
+        -movement.x * lateral_speed_scale,
         0.0,
         movement.y * longitudinal_scale,
     );
@@ -1147,6 +1301,7 @@ pub(crate) fn restore_authoritative_movement_intent(
         ),
         With<Player>,
     >,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     for (movement_intent, skeleton, posture, controller, transform, mut accumulated_input) in
         &mut players
@@ -1172,13 +1327,14 @@ pub(crate) fn restore_authoritative_movement_intent(
                 skeleton.body(),
                 transform.rotation,
                 controller.orientation,
+                combat_config.movement.prone_lateral_speed_scale,
             ));
         }
         if skeleton.body() == BodyState::Prone && posture.facing == CameraFacingIntent::Aim {
             accumulated_input.last_movement = None;
         }
         accumulated_input.crouched =
-            posture.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
+            skeleton.body().is_downed() || skeleton.is_posture_transitioning();
         let roll_motion = skeleton.downed_lateral_motion();
         if roll_motion.abs() > f32::EPSILON {
             accumulated_input.last_movement = match (controller, transform) {
@@ -1206,6 +1362,7 @@ pub(crate) fn launch_pending_quicksteps(
         ),
         With<Player>,
     >,
+    combat_config: Res<TacticalCombatConfig>,
 ) {
     for (skeleton, mut posture, mut input, controller, mut velocity) in &mut players {
         let Some(launch_tick) = posture.quickstep_launch_tick else {
@@ -1217,8 +1374,9 @@ pub(crate) fn launch_pending_quicksteps(
             let direction = skeleton.action_direction();
             let world_direction =
                 controller_yaw(controller.orientation) * Vec3::new(direction.x, 0.0, -direction.y);
-            velocity.x = world_direction.x * TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
-            velocity.z = world_direction.z * TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
+            let speed = combat_config.movement.speeds_metres_per_second.quickstep;
+            velocity.x = world_direction.x * speed;
+            velocity.z = world_direction.z * speed;
             input.jumped = Some(Stopwatch::new());
             posture.quickstep_launch_tick = None;
             posture.quickstep_landing_braking = false;
@@ -1231,6 +1389,7 @@ pub(crate) fn launch_pending_quicksteps(
 /// already resumed, rather than snapping velocity to zero at contact.
 pub(crate) fn brake_quickstep_landing(
     time: Res<Time<Fixed>>,
+    combat_config: Res<TacticalCombatConfig>,
     mut players: Query<
         (
             &SkeletonState,
@@ -1248,6 +1407,9 @@ pub(crate) fn brake_quickstep_landing(
             time.delta_secs(),
             &mut posture,
             &mut velocity,
+            combat_config
+                .movement
+                .quickstep_landing_brake_metres_per_second_squared,
         );
     }
 }
@@ -1258,6 +1420,7 @@ fn brake_quickstep_horizontal_velocity(
     delta_seconds: f32,
     posture: &mut AuthoritativePostureIntent,
     velocity: &mut LinearVelocity,
+    brake_metres_per_second_squared: f32,
 ) {
     if skeleton.action_kind() == SkeletonAction::Dodge
         && skeleton.action_direction() != Vec2::ZERO
@@ -1276,9 +1439,7 @@ fn brake_quickstep_horizontal_velocity(
 
     let horizontal = velocity.xz();
     let speed = horizontal.length();
-    let next_speed = (speed
-        - QUICKSTEP_LANDING_BRAKE_METRES_PER_SECOND_SQUARED * delta_seconds.max(0.0))
-    .max(0.0);
+    let next_speed = (speed - brake_metres_per_second_squared * delta_seconds.max(0.0)).max(0.0);
     if speed <= f32::EPSILON || next_speed <= f32::EPSILON {
         velocity.x = 0.0;
         velocity.z = 0.0;
@@ -1294,6 +1455,7 @@ fn brake_quickstep_horizontal_velocity(
 /// state replicated to every client. It deliberately never evaluates bones.
 pub(crate) fn update_skeleton_locomotion(
     time: Res<Time<Fixed>>,
+    combat_config: Res<TacticalCombatConfig>,
     mut players: Query<
         (
             &CharacterControllerState,
@@ -1329,13 +1491,16 @@ pub(crate) fn update_skeleton_locomotion(
             // Authored transitions own their direction relative to a fixed
             // root until a roll or get-up has reached its endpoint.
             skeleton.set_downed_turning(false);
-        } else if skeleton.body().is_downed() && !skeleton.is_posture_transitioning() {
+        } else if matches!(skeleton.body(), BodyState::Prone | BodyState::Supine)
+            && !skeleton.is_posture_transitioning()
+        {
             let target = downed_camera_roll_target(transform.rotation, controller.orientation);
             if posture.facing == CameraFacingIntent::DownedAlign {
-                let next = advance_downed_body_facing(
+                let next = advance_downed_body_facing_with_speed(
                     transform.rotation,
                     controller.orientation,
                     time.delta_secs(),
+                    combat_config.presentation.downed_turn_radians_per_second,
                 );
                 skeleton.set_downed_turning(transform.rotation.angle_between(next) > 1.0e-5);
                 transform.rotation = next;
@@ -1345,19 +1510,19 @@ pub(crate) fn update_skeleton_locomotion(
                     &mut skeleton,
                     posture.facing,
                     target,
-                    time.delta_secs() * LOCOMOTION_SAMPLE_HZ
-                        / GROUND_POSTURE_TRANSITION_TICKS as f32,
+                    time.delta_secs() / combat_config.movement.maneuvers.get_up_seconds,
                 );
             }
-        } else {
+        } else if skeleton.body() != BodyState::Ragdolled {
             skeleton.set_downed_turning(false);
-            transform.rotation = advance_body_facing(
+            transform.rotation = advance_body_facing_with_speed(
                 transform.rotation,
                 controller.orientation,
                 velocity.0,
                 skeleton.action_kind(),
                 skeleton.weapon_guard(),
                 time.delta_secs(),
+                std::f32::consts::PI / combat_config.presentation.body_turn_seconds_per_half_turn,
             );
         }
         project_skeleton_locomotion(
@@ -1366,7 +1531,6 @@ pub(crate) fn update_skeleton_locomotion(
                 orientation: controller.orientation,
                 linear_velocity: velocity.0,
                 grounded: controller.grounded.is_some(),
-                crouching: controller.crouching,
                 delta_seconds: time.delta_secs(),
                 tick,
             },
@@ -1387,23 +1551,44 @@ pub(crate) fn update_skeleton_locomotion(
 /// registers an observer on this exact same `Disconnected` trigger that
 /// unconditionally despawns `entity` right afterward - see its doc comment:
 /// "Immediately after this, the session will be despawned". Bevy documents
-/// same-event observer ordering as unspecified, and per-observer commands
-/// from a single trigger dispatch are all applied together afterward in
-/// enqueue order - so if that despawn command happened to apply before any
-/// command queued here, every one of them would panic trying to touch an
-/// already-despawned entity (confirmed live: this is exactly what an abrupt
-/// disconnect used to do before this got split onto a fresh entity).
-/// `main()` registers this observer before `AdventureSimulatorNetPlugins` is
-/// added specifically so its commands enqueue - and therefore apply - first.
-/// Moving components onto a brand-new entity here (mirroring the exact
-/// component lists [`on_join_request`]'s reconnect branch already expects to
-/// move back off of), rather than trying to keep `entity` itself alive,
-/// means the grace-period state no longer depends on outliving `aeronet_io`'s
-/// despawn at all - only on running before it, which the registration order
-/// above guarantees.
+/// same-event observer ordering as unspecified. Snapshot every reconnect-owned
+/// component while the source is still queryable, then queue only operations
+/// whose inputs are owned values. Aeronet may therefore apply its source
+/// despawn before or after these commands without invalidating them.
 pub(crate) fn on_client_disconnected(
     disconnected: On<Disconnected>,
     query: Query<&ReconnectSession>,
+    projected_core: Query<(
+        &Name,
+        &Player,
+        &CharacterId,
+        &BestiaryCategories,
+        &Skills,
+        &Limbs,
+        &Attributes,
+        &Stats,
+        &TacticalCombatState,
+        &EquipmentActionState,
+        &TacticalCombatSide,
+    )>,
+    projected_motion: Query<(
+        &Transform,
+        &CharacterLook,
+        &AuthoritativeMovementIntent,
+        &AuthoritativePostureIntent,
+        &MovementPace,
+        &LinearVelocity,
+        &SkeletonState,
+        &MeleeAttackAuthority,
+        &RangedAttackAuthority,
+    )>,
+    projected_physics: Query<(
+        &Collider,
+        &CollisionMargin,
+        &CharacterController,
+        &AccumulatedInput,
+    )>,
+    loading_players: Query<&LoadingPlayer>,
     inventory_items: Query<(Entity, &ItemOf)>,
     mut commands: Commands,
 ) -> Result {
@@ -1411,54 +1596,66 @@ pub(crate) fn on_client_disconnected(
     let Ok(session) = query.get(entity) else {
         return Ok(());
     };
-    let orphan = commands.spawn_empty().id();
-    commands.entity(entity).move_components::<(
-        Name,
-        Player,
-        CharacterId,
-        BestiaryCategories,
-        Skills,
-        Limbs,
-        Attributes,
-        Stats,
-        TacticalCombatState,
-        EquipmentActionState,
-        TacticalCombatSide,
-    )>(orphan);
-    commands.entity(entity).move_components::<(
-        Transform,
-        CharacterLook,
-        AuthoritativeMovementIntent,
-        AuthoritativePostureIntent,
-        MovementPace,
-        LinearVelocity,
-        SkeletonState,
-        MeleeAttackAuthority,
-        RangedAttackAuthority,
-    )>(orphan);
-    commands.entity(entity).move_components::<(
-        Collider,
-        CollisionMargin,
-        CharacterController,
-        AccumulatedInput,
-    )>(orphan);
-    commands
-        .entity(entity)
-        .move_components::<InventoryItems>(orphan);
-    commands
-        .entity(entity)
-        .move_components::<LoadingPlayer>(orphan);
+    let projection = if let (Ok(core), Ok(motion), Ok(physics)) = (
+        projected_core.get(entity),
+        projected_motion.get(entity),
+        projected_physics.get(entity),
+    ) {
+        DisconnectedProjection::Projected(Box::new(ProjectedPlayerSnapshot {
+            name: core.0.clone(),
+            player: core.1.clone(),
+            character_id: *core.2,
+            bestiary_categories: core.3.clone(),
+            skills: core.4.clone(),
+            limbs: core.5.clone(),
+            attributes: core.6.clone(),
+            stats: core.7.clone(),
+            combat_state: core.8.clone(),
+            equipment_action_state: *core.9,
+            combat_side: *core.10,
+            transform: *motion.0,
+            look: motion.1.clone(),
+            movement_intent: *motion.2,
+            posture_intent: *motion.3,
+            pace: *motion.4,
+            velocity: *motion.5,
+            skeleton: motion.6.clone(),
+            melee_authority: motion.7.clone(),
+            ranged_authority: motion.8.clone(),
+            collider: physics.0.clone(),
+            collision_margin: *physics.1,
+            controller: physics.2.clone(),
+            accumulated_input: physics.3.clone(),
+        }))
+    } else if let Ok(loading) = loading_players.get(entity) {
+        DisconnectedProjection::Loading(*loading)
+    } else {
+        warn!(
+            ?entity,
+            "Disconnected reconnect session had no player projection to retain"
+        );
+        return Ok(());
+    };
+    let projected = projection.projected();
+    let orphan = commands
+        .spawn((
+            projection,
+            DisconnectedPlayer {
+                character_id: session.character_id,
+                reconnect_token: session.token,
+                remaining_secs: RECONNECT_GRACE_SECS,
+                claimed: false,
+            },
+        ))
+        .id();
     for (item, owner) in &inventory_items {
         if owner.0 == entity {
             commands.entity(item).insert(ItemOf(orphan));
         }
     }
-    commands.entity(orphan).insert(DisconnectedPlayer {
-        character_id: session.character_id,
-        reconnect_token: session.token,
-        remaining_secs: RECONNECT_GRACE_SECS,
-        claimed: false,
-    });
+    if projected {
+        commands.queue(move |world: &mut World| rebuild_inventory_holding_cache(world, orphan));
+    }
     let character_id = session.character_id.0;
     match &disconnected.reason {
         DisconnectReason::ByUser(reason) => {
@@ -1562,6 +1759,17 @@ fn send_scene_vista(
     }
 }
 
+fn send_combat_config(
+    commands: &mut Commands,
+    client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId,
+    config: &TacticalCombatConfig,
+) {
+    commands.server_trigger(ToClients {
+        targets: SendTargets::Single(client_id),
+        message: TacticalCombatConfigSnapshot(config.clone()),
+    });
+}
+
 fn queue_replication_rebind(commands: &mut Commands, client: Entity) {
     commands.entity(client).insert(Replicated);
 }
@@ -1616,8 +1824,8 @@ fn advance_posture_transition_facing(
     previous_transition: Option<PostureTransitionState>,
     current_transition: Option<PostureTransitionState>,
 ) {
-    // Directional dives transfer their authored yaw to the root during
-    // landing. Supine get-up applies an inverse half-turn that cancels the
+    // Directional dives transfer the downed contact pose's yaw to the root
+    // during landing. Supine get-up applies an inverse half-turn that cancels the
     // authored pose's implicit convention change in world space. Prone get-up
     // receives neither correction.
     let rotation = (transform.rotation
@@ -1654,7 +1862,7 @@ pub(crate) fn on_player_added(
     query: Query<(&Player, &CharacterId)>,
 ) -> Result {
     let (player, character_id) = query.get(event.entity)?;
-    commands.entity(event.entity).insert((
+    commands.entity(event.entity).insert_if_new((
         Name::new(format!("Character#{} {}", character_id.0, player.name)),
         Replicated,
         BestiaryCategories::default(),
@@ -1825,7 +2033,7 @@ mod standalone_join_tests {
                 CharacterId(99),
                 MissionEnemy,
                 TacticalCombatSide::Enemy,
-                OffensiveCombatAi::default(),
+                crate::bot::OffensiveCombatAi::default(),
             ))
             .id();
 
@@ -1850,14 +2058,14 @@ mod standalone_join_tests {
                     accuracy: 1.0,
                     penetration: 1.0,
                     reach: 0.8,
-                    balance: 0.0,
+                    grip_to_tip_m: 0.8,
+                    moment_of_inertia_kg_m2: 0.0,
                     precise: false,
                     melee: true,
                     ranged: false,
                     blunt: false,
                     slash: true,
                     pierce: false,
-                    windup_secs: 0.3,
                     swing_precision: 0.0,
                     stab_precision: 0.0,
                     prefers_stab: false,
@@ -1930,7 +2138,7 @@ mod standalone_join_tests {
 
         let bot_entity = world.entity(bot);
         assert!(bot_entity.contains::<MissionEnemy>());
-        assert!(bot_entity.contains::<OffensiveCombatAi>());
+        assert!(bot_entity.contains::<crate::bot::OffensiveCombatAi>());
         assert_eq!(bot_entity.get::<CharacterId>().unwrap().0, 99);
     }
 }
@@ -1940,22 +2148,29 @@ mod tests {
     use super::{
         AuthoritativeMovementIntent, AuthoritativePostureIntent,
         BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent, DisconnectedPlayer,
-        GROUND_POSTURE_TRANSITION_TICKS, Player, RECONNECT_GRACE_SECS,
-        ROLL_POSTURE_TRANSITION_TICKS, TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND,
-        WeaponGuardState, advance_downed_facing_for_camera, advance_posture_transition_facing,
-        apply_posture_action, authoritative_weapon_guard, brake_quickstep_horizontal_velocity,
-        dive_horizontal_velocity, downed_tank_controller_input, input, launch_pending_quicksteps,
-        mission_enemy_health_scale, mission_enemy_scale, posture_transition_locks_body_facing,
-        queue_replication_rebind, reconnect_matches, restore_authoritative_movement_intent,
-        sequence_is_newer, tactical_movement_speed_for_guard, try_claim_reconnect,
-        validate_player_input,
+        GROUND_POSTURE_TRANSITION_TICKS, MeleeAttackAuthority, Player, RECONNECT_GRACE_SECS,
+        ROLL_POSTURE_TRANSITION_TICKS, RangedAttackAuthority, ReconnectSession, WeaponGuardState,
+        advance_downed_facing_for_camera, advance_posture_transition_facing, apply_posture_action,
+        authoritative_weapon_guard, brake_quickstep_horizontal_velocity, dive_horizontal_velocity,
+        downed_tank_controller_input, input, launch_pending_quicksteps, mission_enemy_health_scale,
+        mission_enemy_scale, on_client_disconnected, player_collider,
+        posture_transition_locks_body_facing, queue_replication_rebind, reconnect_matches,
+        restore_authoritative_movement_intent, sequence_is_newer,
+        tactical_movement_speed_for_guard, try_claim_reconnect, validate_player_input,
+    };
+    use adventuresim_tactical_core::physics::{
+        TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND, tactical_character_controller,
     };
     use adventuresim_tactical_core::prelude::{
-        BodyState, CharacterControllerState, CharacterId, DiveDirection, DodgeSpec,
-        GroundedPosture, LinearVelocity, MovementPace, PostureTransitionKind, RollDirection,
-        Rotation, SkeletonAction, SkeletonState, TACTICAL_PRONE_LATERAL_SPEED_SCALE,
-        advance_body_facing, controller_yaw, downed_camera_roll_target,
+        Attributes, BestiaryCategories, BodyState, CharacterControllerState, CharacterId,
+        CharacterLook, CollisionMargin, DiveDirection, DodgeSpec, EquipSlot, EquipmentActionState,
+        GroundedPosture, InventoryItems, ItemOf, Limbs, LinearVelocity, MeleePreparationInput,
+        MovementPace, PostureTransitionKind, RollDirection, Rotation, ShieldItem, SkeletonAction,
+        SkeletonState, Skills, Stats, TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalCombatConfig,
+        TacticalCombatSide, TacticalCombatState, advance_body_facing, controller_yaw,
+        downed_camera_roll_target,
     };
+    use adventuresim_tactical_netcode::aeronet::io::connection::{DisconnectReason, Disconnected};
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
     use adventuresim_tactical_netcode::prelude::{
         JumpCommand, PostureActionRequest, PostureCommand, ReconnectToken,
@@ -1967,6 +2182,109 @@ mod tests {
 
     fn mark_rebind_target(mut commands: Commands, target: Res<RebindTarget>) {
         queue_replication_rebind(&mut commands, target.0);
+    }
+
+    fn despawn_disconnected_session(event: On<Disconnected>, mut commands: Commands) {
+        commands.entity(event.event_target()).try_despawn();
+    }
+
+    #[test]
+    fn disconnect_snapshot_survives_competing_despawn_in_both_observer_orders() {
+        for snapshot_observer_first in [true, false] {
+            let mut app = App::new();
+            if snapshot_observer_first {
+                app.add_observer(on_client_disconnected)
+                    .add_observer(despawn_disconnected_session)
+                    .add_observer(super::on_player_added);
+            } else {
+                app.add_observer(despawn_disconnected_session)
+                    .add_observer(on_client_disconnected)
+                    .add_observer(super::on_player_added);
+            }
+            let session = ReconnectSession {
+                character_id: CharacterId(7),
+                token: ReconnectToken([7; 32]),
+            };
+            let client = app.world_mut().spawn(session).id();
+            app.world_mut().entity_mut(client).insert((
+                Name::new("snapshot-player"),
+                Player::default(),
+                CharacterId(7),
+                BestiaryCategories::default(),
+                Skills::default(),
+                Limbs::default(),
+                Attributes::default(),
+                Stats::default(),
+                TacticalCombatState::default(),
+                EquipmentActionState::default(),
+                TacticalCombatSide::Party,
+            ));
+            app.world_mut().entity_mut(client).insert((
+                Transform::from_xyz(1.0, 2.0, 3.0),
+                CharacterLook::default(),
+                AuthoritativeMovementIntent::default(),
+                AuthoritativePostureIntent::default(),
+                MovementPace::default(),
+                LinearVelocity::ZERO,
+                SkeletonState::default(),
+                MeleeAttackAuthority::default(),
+                RangedAttackAuthority::default(),
+            ));
+            app.world_mut().entity_mut(client).insert((
+                player_collider(),
+                CollisionMargin(0.01),
+                tactical_character_controller(),
+                input::AccumulatedInput::default(),
+            ));
+            let shield = app
+                .world_mut()
+                .spawn((
+                    ItemOf(client),
+                    ShieldItem { block: 1.0 },
+                    EquipSlot::HoldingLeft,
+                ))
+                .id();
+
+            app.world_mut().trigger(Disconnected {
+                entity: client,
+                reason: DisconnectReason::by_peer("test teardown"),
+            });
+            app.update();
+
+            assert!(app.world().get_entity(client).is_err());
+            let mut disconnected = app
+                .world_mut()
+                .query_filtered::<Entity, With<DisconnectedPlayer>>();
+            let orphans = disconnected.iter(app.world()).collect::<Vec<_>>();
+            assert_eq!(orphans.len(), 1);
+            let orphan = orphans[0];
+            assert_eq!(app.world().get::<ItemOf>(shield).unwrap().0, orphan);
+            assert_eq!(
+                app.world()
+                    .get::<InventoryItems>(orphan)
+                    .unwrap()
+                    .holding_shield(),
+                Some(shield)
+            );
+            let projection = app
+                .world()
+                .get::<super::DisconnectedProjection>(orphan)
+                .unwrap()
+                .clone();
+            let rebound = app.world_mut().spawn_empty().id();
+            projection.insert(&mut app.world_mut().commands(), rebound);
+            app.world_mut().flush();
+            assert_eq!(
+                app.world().get::<Transform>(rebound).unwrap().translation,
+                Vec3::new(1.0, 2.0, 3.0)
+            );
+            assert_eq!(
+                app.world().get::<Name>(rebound).unwrap().as_str(),
+                "snapshot-player"
+            );
+            assert!(app.world().get::<MeleeAttackAuthority>(rebound).is_some());
+            assert!(app.world().get::<RangedAttackAuthority>(rebound).is_some());
+        }
     }
 
     #[test]
@@ -2101,10 +2419,10 @@ mod tests {
                 },
                 false,
                 false,
-                false,
                 PostureCommand::default(),
                 MovementPace::Sprint,
                 WeaponGuardState::Raised,
+                MeleePreparationInput::Preferred,
             ) {
                 controller_input = (
                     Vec2::new(validated.yaw, validated.pitch),
@@ -2142,12 +2460,12 @@ mod tests {
                 sequence: 7,
                 ..default()
             },
-            false,
             true,
             true,
             PostureCommand::default(),
             MovementPace::Sprint,
             WeaponGuardState::Raised,
+            MeleePreparationInput::Preferred,
         )
         .unwrap();
         assert!((validated.yaw - 0.25).abs() < 0.0001);
@@ -2171,10 +2489,10 @@ mod tests {
             },
             false,
             false,
-            false,
             PostureCommand::default(),
             MovementPace::Walk,
             WeaponGuardState::Raised,
+            MeleePreparationInput::Preferred,
         )
         .unwrap();
         assert_eq!(validated.jump.quickstep, Some(Vec2::new(0.8, -0.6)));
@@ -2188,10 +2506,10 @@ mod tests {
                 },
                 false,
                 false,
-                false,
                 PostureCommand::default(),
                 MovementPace::Walk,
                 WeaponGuardState::Raised,
+                MeleePreparationInput::Preferred,
             )
             .is_none()
         );
@@ -2240,7 +2558,7 @@ mod tests {
 
         skeleton.transition_body(BodyState::Airborne);
         skeleton.advance_posture_transition(1);
-        skeleton.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        skeleton.transition_body(BodyState::Grounded(GroundedPosture::Upright));
         skeleton.advance_posture_transition(2);
         let previous = skeleton.posture_transition();
         skeleton.advance_posture_transition(BACKWARD_DIVE_POSTURE_TRANSITION_TICKS + 2);
@@ -2343,7 +2661,13 @@ mod tests {
     fn toggle_roll_and_supine_release_use_authoritative_transition_sequence() {
         let mut skeleton = SkeletonState::default();
         let mut input = input::AccumulatedInput::default();
-        let _ = apply_posture_action(PostureActionRequest::Toggle, &mut skeleton, &mut input);
+        let config = TacticalCombatConfig::default();
+        let _ = apply_posture_action(
+            PostureActionRequest::Toggle,
+            &mut skeleton,
+            &mut input,
+            &config,
+        );
         assert_eq!(
             skeleton.posture_transition().unwrap().kind(),
             PostureTransitionKind::UprightToProne
@@ -2351,7 +2675,12 @@ mod tests {
         skeleton.advance_posture_transition(GROUND_POSTURE_TRANSITION_TICKS);
         assert_eq!(skeleton.body(), BodyState::Prone);
 
-        let _ = apply_posture_action(PostureActionRequest::RollLeft, &mut skeleton, &mut input);
+        let _ = apply_posture_action(
+            PostureActionRequest::RollLeft,
+            &mut skeleton,
+            &mut input,
+            &config,
+        );
         assert_eq!(
             skeleton.posture_transition().unwrap().kind(),
             PostureTransitionKind::ProneToSupine {
@@ -2365,7 +2694,12 @@ mod tests {
         skeleton.advance_posture_transition(ROLL_POSTURE_TRANSITION_TICKS);
         assert_eq!(skeleton.body(), BodyState::Supine);
 
-        let _ = apply_posture_action(PostureActionRequest::Toggle, &mut skeleton, &mut input);
+        let _ = apply_posture_action(
+            PostureActionRequest::Toggle,
+            &mut skeleton,
+            &mut input,
+            &config,
+        );
         assert_eq!(
             skeleton.posture_transition().unwrap().kind(),
             PostureTransitionKind::SupineToUpright
@@ -2396,6 +2730,7 @@ mod tests {
     fn dive_preserves_requested_direction_and_starts_airborne_motion() {
         let mut skeleton = SkeletonState::default();
         let mut input = input::AccumulatedInput::default();
+        let config = TacticalCombatConfig::default();
         let launched = apply_posture_action(
             PostureActionRequest::Dive {
                 animation_direction: DiveDirection::Forward,
@@ -2403,6 +2738,7 @@ mod tests {
             },
             &mut skeleton,
             &mut input,
+            &config,
         );
         assert_eq!(launched, Some(DiveDirection::Backward));
         assert_eq!(
@@ -2417,6 +2753,7 @@ mod tests {
     #[test]
     fn movement_intent_survives_missing_unreliable_packets_until_explicit_stop() {
         let mut world = World::new();
+        world.insert_resource(TacticalCombatConfig::default());
         let player = world
             .spawn((
                 Player::default(),
@@ -2467,10 +2804,13 @@ mod tests {
     #[test]
     fn pending_quickstep_launches_only_after_the_procedural_load() {
         let mut skeleton = SkeletonState::default();
-        skeleton.begin_dodge(DodgeSpec { direction: Vec2::Y }, 0, 20);
+        skeleton
+            .begin_dodge(DodgeSpec::quickstep(Vec2::Y).unwrap(), 0, 20)
+            .unwrap();
         skeleton.advance_action(4);
         skeleton.locomotion_sample_tick = 4;
         let mut world = World::new();
+        world.insert_resource(TacticalCombatConfig::default());
         let player = world
             .spawn((
                 Player::default(),
@@ -2524,7 +2864,9 @@ mod tests {
     #[test]
     fn quickstep_brakes_horizontal_velocity_over_multiple_grounded_ticks() {
         let mut skeleton = SkeletonState::default();
-        skeleton.begin_dodge(DodgeSpec { direction: Vec2::X }, 0, 20);
+        skeleton
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 20)
+            .unwrap();
         skeleton.advance_action(10);
         skeleton.transition_body(BodyState::Airborne);
         let mut velocity = LinearVelocity(Vec3::new(5.0, -1.0, 0.0));
@@ -2536,6 +2878,7 @@ mod tests {
             1.0 / 64.0,
             &mut posture,
             &mut velocity,
+            20.0,
         );
 
         assert!(velocity.xz().length() < initial_horizontal_speed);
@@ -2550,6 +2893,7 @@ mod tests {
                 1.0 / 64.0,
                 &mut posture,
                 &mut velocity,
+                20.0,
             );
         }
         assert!(velocity.xz().length() > 0.0);
@@ -2561,6 +2905,7 @@ mod tests {
                 1.0 / 64.0,
                 &mut posture,
                 &mut velocity,
+                20.0,
             );
         }
         assert_eq!(velocity.xz(), Vec2::ZERO);
@@ -2578,17 +2923,32 @@ mod tests {
                 (Vec2::X, Vec3::NEG_X * TACTICAL_PRONE_LATERAL_SPEED_SCALE),
                 (-Vec2::X, Vec3::X * TACTICAL_PRONE_LATERAL_SPEED_SCALE),
             ] {
-                let resolved =
-                    downed_tank_controller_input(input, BodyState::Prone, body, controller);
+                let resolved = downed_tank_controller_input(
+                    input,
+                    BodyState::Prone,
+                    body,
+                    controller,
+                    TACTICAL_PRONE_LATERAL_SPEED_SCALE,
+                );
                 let resolved_world =
                     controller_yaw(controller) * Vec3::new(resolved.x, 0.0, -resolved.y);
                 let expected_world = controller_yaw(body) * expected_body_local;
                 assert!(resolved_world.abs_diff_eq(expected_world, 0.0001));
             }
-            let supine_head =
-                downed_tank_controller_input(Vec2::Y, BodyState::Supine, body, controller);
-            let supine_feet =
-                downed_tank_controller_input(-Vec2::Y, BodyState::Supine, body, controller);
+            let supine_head = downed_tank_controller_input(
+                Vec2::Y,
+                BodyState::Supine,
+                body,
+                controller,
+                TACTICAL_PRONE_LATERAL_SPEED_SCALE,
+            );
+            let supine_feet = downed_tank_controller_input(
+                -Vec2::Y,
+                BodyState::Supine,
+                body,
+                controller,
+                TACTICAL_PRONE_LATERAL_SPEED_SCALE,
+            );
             assert!((supine_head.length() - 1.0).abs() < 0.0001);
             assert!((supine_feet.length() - 0.5).abs() < 0.0001);
         }
@@ -2597,6 +2957,7 @@ mod tests {
     #[test]
     fn aiming_while_prone_suppresses_normal_movement() {
         let mut world = World::new();
+        world.insert_resource(TacticalCombatConfig::default());
         let player = world
             .spawn((
                 Player::default(),
@@ -2636,6 +2997,7 @@ mod tests {
             GROUND_POSTURE_TRANSITION_TICKS,
         ));
         let mut world = World::new();
+        world.insert_resource(TacticalCombatConfig::default());
         let player = world
             .spawn((
                 Player::default(),
@@ -2713,10 +3075,10 @@ mod tests {
     #[test]
     fn dive_launch_velocity_follows_the_requested_camera_relative_direction() {
         let yaw = std::f32::consts::FRAC_PI_2;
-        assert!(dive_horizontal_velocity(yaw, DiveDirection::Forward).x < -6.9);
-        assert!(dive_horizontal_velocity(yaw, DiveDirection::Backward).x > 6.9);
-        assert!(dive_horizontal_velocity(0.0, DiveDirection::Left).x < -6.9);
-        assert!(dive_horizontal_velocity(0.0, DiveDirection::Right).x > 6.9);
+        assert!(dive_horizontal_velocity(yaw, DiveDirection::Forward, 7.0).x < -6.9);
+        assert!(dive_horizontal_velocity(yaw, DiveDirection::Backward, 7.0).x > 6.9);
+        assert!(dive_horizontal_velocity(0.0, DiveDirection::Left, 7.0).x < -6.9);
+        assert!(dive_horizontal_velocity(0.0, DiveDirection::Right, 7.0).x > 6.9);
     }
 
     #[test]
@@ -2739,7 +3101,7 @@ mod tests {
 
             skeleton.transition_body(BodyState::Airborne);
             skeleton.advance_posture_transition(1);
-            skeleton.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+            skeleton.transition_body(BodyState::Grounded(GroundedPosture::Upright));
             skeleton.advance_posture_transition(2);
 
             let previous = skeleton.posture_transition();

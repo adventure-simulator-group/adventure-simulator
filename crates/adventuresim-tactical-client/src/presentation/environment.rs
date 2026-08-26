@@ -47,24 +47,8 @@ pub(in crate::presentation) fn refresh_active_tactical_scene(
     active.entity = selected;
 }
 
-pub(super) fn scene_sunlight_illuminance(
-    environment: &SceneEnvironment,
-    sun_altitude_degrees: f32,
-) -> f32 {
-    let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
-    let precipitation_transmission = match environment.weather.precipitation {
-        Precipitation::Clear => 1.0,
-        Precipitation::Rain => 0.62 - intensity * 0.27,
-        Precipitation::Snow => 0.72 - intensity * 0.22,
-    };
-    let transmission = cloud_solar_transmission(environment.weather) * precipitation_transmission;
-    let altitude = (sun_altitude_degrees / 8.0).clamp(0.0, 1.0);
-    let altitude_transmission = altitude * altitude * (3.0 - 2.0 * altitude);
-    lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0) * altitude_transmission
-}
-
-/// Solar source energy presented to Bevy's atmosphere. Unlike direct fallback
-/// lighting, this must remain available while the Sun is below the horizon so
+/// Solar source energy presented to Bevy's atmosphere. This remains available
+/// while the Sun is below the horizon so
 /// the atmosphere can scatter civil and nautical twilight. Bevy's atmosphere
 /// transmittance and visible-disc calculation prevent this source from lighting
 /// ground surfaces from below the planet horizon.
@@ -220,6 +204,11 @@ pub(crate) struct TacticalCameraSetup {
     pub(crate) vertical_fov_degrees: f32,
 }
 
+/// Identifies the one interactive tactical camera. Initialization-only
+/// atmosphere face cameras deliberately omit this marker.
+#[derive(Component)]
+pub(crate) struct TacticalGameplayCamera;
+
 impl Default for TacticalCameraSetup {
     fn default() -> Self {
         Self {
@@ -244,6 +233,7 @@ pub(in crate::presentation) fn setup_tactical_presentation(
 
     let mut camera = commands.spawn((
         Name::new("Tactical gameplay camera"),
+        TacticalGameplayCamera,
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection {
             fov: camera_setup.vertical_fov_degrees.to_radians(),
@@ -265,13 +255,15 @@ pub(in crate::presentation) fn setup_tactical_presentation(
         tactical_msaa(settings.msaa_samples),
     ));
     if settings.atmosphere_enabled {
+        // Only declare the atmosphere here. The generated environment map is
+        // baked once and frozen into a static Skybox + EnvironmentMapLight by
+        // the atmosphere bake system (`presentation::atmosphere`), which owns
+        // the `AtmosphereEnvironmentMapLight` on its own one-shot bake probe.
+        // Inserting it on the camera as well left the view carrying both an
+        // atmosphere and an environment-map bind group, which no longer matched
+        // the specialized opaque-mesh pipelines and aborted rendering with a
+        // DrawIndirect bind-group validation error.
         camera.insert(AtmosphereSettings::default());
-        if settings.environment_light_enabled {
-            camera.insert(AtmosphereEnvironmentMapLight {
-                size: UVec2::splat(settings.environment_map_size),
-                ..default()
-            });
-        }
     }
     if settings.bloom_enabled {
         camera.insert(Bloom::NATURAL);
@@ -281,7 +273,7 @@ pub(in crate::presentation) fn setup_tactical_presentation(
 pub(super) fn apply_active_environment_fog(
     active: Res<ActiveTacticalScene>,
     environments: Query<Ref<SceneEnvironment>>,
-    mut fog: Single<&mut DistanceFog, With<Camera3d>>,
+    mut fog: Single<&mut DistanceFog, With<TacticalGameplayCamera>>,
 ) {
     let Some(entity) = active.entity else {
         if active.is_changed() {
@@ -301,6 +293,49 @@ pub(super) fn apply_active_environment_fog(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::post_process::bloom::Bloom;
+
+    #[test]
+    fn tactical_camera_does_not_install_bloom() {
+        let mut app = App::new();
+        app.init_resource::<Assets<ScatteringMedium>>()
+            .insert_resource(TacticalGraphicsSettings {
+                shadows_enabled: true,
+                atmosphere_enabled: true,
+                celestial_enabled: true,
+                environment_light_enabled: true,
+                environment_map_size: 64,
+                bloom_enabled: false,
+                max_vista_lods: 3,
+                grass_density_scale: 1.0,
+                grass_range_scale: 1.0,
+                cloud_quality_scale: 1.0,
+                cloud_resolution_scale: 1.0,
+                msaa_samples: 4,
+                shadow_cascade_count: 0,
+                shadow_maximum_distance: 0.0,
+            })
+            .init_resource::<TacticalCameraSetup>()
+            .add_systems(Startup, setup_tactical_presentation);
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<Camera3d>>()
+                .iter(world)
+                .count(),
+            1
+        );
+        assert_eq!(
+            world
+                .query_filtered::<Entity, (With<Camera3d>, With<Bloom>)>()
+                .iter(world)
+                .count(),
+            0
+        );
+    }
 
     fn environment(precipitation: Precipitation, intensity_bps: u16) -> SceneEnvironment {
         SceneEnvironment {
@@ -332,34 +367,11 @@ mod tests {
     }
 
     #[test]
-    fn daylight_precipitation_dims_but_never_extinguishes_sunlight() {
-        let clear = scene_sunlight_illuminance(&environment(Precipitation::Clear, 0), 30.0);
-        let rain = scene_sunlight_illuminance(&environment(Precipitation::Rain, 10_000), 30.0);
-        let snow = scene_sunlight_illuminance(&environment(Precipitation::Snow, 10_000), 30.0);
-        assert!(rain < snow && snow < clear);
-        assert!(rain >= lux::RAW_SUNLIGHT * 0.25);
-    }
-
-    #[test]
     fn gameplay_uses_four_sample_webgpu_hardware_msaa() {
         // Capture tooling keeps the 4x reference; presets may lower it.
         assert_eq!(tactical_msaa(4), Msaa::Sample4);
         assert_eq!(tactical_msaa(2), Msaa::Sample2);
         assert_eq!(tactical_msaa(1), Msaa::Off);
-    }
-
-    #[test]
-    fn direct_sunlight_never_shines_upward_from_below_the_horizon() {
-        let clear = environment(Precipitation::Clear, 0);
-        assert_eq!(scene_sunlight_illuminance(&clear, -45.0), 0.0);
-        assert_eq!(scene_sunlight_illuminance(&clear, -0.01), 0.0);
-        assert_eq!(scene_sunlight_illuminance(&clear, 0.0), 0.0);
-
-        let low = scene_sunlight_illuminance(&clear, 2.0);
-        let risen = scene_sunlight_illuminance(&clear, 6.0);
-        let daylight = scene_sunlight_illuminance(&clear, 8.0);
-        assert!(0.0 < low && low < risen && risen < daylight);
-        assert_eq!(daylight, lux::RAW_SUNLIGHT);
     }
 
     #[test]
@@ -431,7 +443,8 @@ mod tests {
         assert!(fog_end(&saturated) < 5_000.0);
         assert!(fog_end(&saturated) < fog_end(&clear));
         assert!(
-            scene_sunlight_illuminance(&saturated, 30.0) < scene_sunlight_illuminance(&clear, 30.0)
+            scene_atmosphere_solar_illuminance(&saturated)
+                < scene_atmosphere_solar_illuminance(&clear)
         );
     }
 

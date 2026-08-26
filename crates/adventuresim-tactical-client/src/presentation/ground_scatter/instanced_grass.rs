@@ -294,15 +294,17 @@ fn tufts_per_cell_side(lod: GrassMeshLod) -> i32 {
 fn tier_visibility_range(lod: GrassMeshLod, range_scale: f32) -> Vec4 {
     let scale = range_scale.clamp(0.35, 1.0);
     (match lod {
-        // The legacy 0-26 m near band splits into a full-detail field and a
-        // slimmer edge ring; the ring covers ~80% of the band's area, so
-        // most near verts move to the nine-vertex 6x6 mesh.
-        GrassMeshLod::Near => Vec4::new(0.0, 0.001, 8.0, 10.0),
-        GrassMeshLod::NearEdge => Vec4::new(8.0, 10.0, 18.0, 26.0),
-        GrassMeshLod::Far => Vec4::new(18.0, 26.0, 62.0, 76.0),
+        // #560's legacy near band (0..14 m) splits into a full-detail field and
+        // a slimmer edge ring; the ring covers most of the band's area, so most
+        // near verts move to the nine-vertex 6x6 mesh. The instanced tiers
+        // reproduce the legacy `grass_lod_visibility` bands so the native and
+        // wasm swards fade out at the same distances (~50 m terminal).
+        GrassMeshLod::Near => Vec4::new(0.0, 0.001, 4.0, 6.0),
+        GrassMeshLod::NearEdge => Vec4::new(4.0, 6.0, 7.0, 14.0),
+        GrassMeshLod::Far => Vec4::new(7.0, 14.0, 36.0, 44.0),
         // The vista fade-in shares the far tier's fade-out endpoints so the
         // complementary crossfade partition hands off exactly.
-        GrassMeshLod::Vista => Vec4::new(62.0, 76.0, 124.0, 140.0),
+        GrassMeshLod::Vista => Vec4::new(34.0, 42.0, 42.0, 50.0),
     }) * scale
 }
 

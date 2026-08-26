@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is a simplified version of [`DefenderResponse`] that omits
 /// `input_reflex` — the server computes reflex from timestamp delta.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Event, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Event, Serialize, Deserialize)]
 pub enum DefendRequest {
-    Dodge,
+    Dodge { direction: Vec2 },
     Roll,
     Parry,
 }
@@ -43,18 +43,23 @@ pub struct SceneVistaBundle {
     pub lods: Vec<VistaLod>,
 }
 
+/// Canonical tuning selected by the tactical server for this process lifetime.
+/// Clients consume this snapshot instead of loading an independent local file.
+#[derive(Debug, Clone, Event, Serialize, Deserialize)]
+pub struct TacticalCombatConfigSnapshot(pub TacticalCombatConfig);
+
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
 #[reflect(Default)]
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: JumpCommand,
-    pub crouch: bool,
     pub jump_charge: bool,
     pub downed_align: bool,
     pub posture: PostureCommand,
     pub pace: MovementPace,
     pub weapon_guard: WeaponGuardState,
+    pub melee_preparation: MeleePreparationInput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,6 +264,7 @@ mod equipment_action_mapping_tests {
 pub enum MeleeActionRequest {
     Start {
         strike_family: StrikeFamily,
+        hand: AttackHand,
     },
     Complete {
         #[entities]
@@ -292,6 +298,12 @@ pub struct SuccessfulAttackResponse {
     pub result: AttackResult,
     pub flanking: f32,
     pub defender_response: DefenderResponse,
+    /// Entity whose controller received `impact_velocity_change`.
+    #[entities]
+    pub impact_recipient: Entity,
+    /// Server-applied change in world-space linear velocity, in metres per
+    /// second. Presentation consumes the identical value for secondary motion.
+    pub impact_velocity_change: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

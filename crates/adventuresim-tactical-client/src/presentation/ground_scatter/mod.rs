@@ -21,7 +21,7 @@ use super::obstacles::tree::{
     blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
     procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
     procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
-    procedural_woody_plant_skeleton,
+    procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
 #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
 use super::grass_cover_mask_image;
@@ -48,13 +48,15 @@ pub(in crate::presentation) use instanced_understory::{
     TacticalShrubBarkInstancedMaterial, TacticalShrubLeafInstancedMaterial,
 };
 
-#[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
-use grass::grass_material;
 pub(in crate::presentation) use grass::{
-    GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod,
-    VISTA_GRASS_PATCH_SPACING, grass_community_at, grass_lod_visibility, grass_patch_mesh,
-    vista_grass_material,
+    FAR_LOD_GAP_FILL_FRACTION, GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile,
+    GrassMeshLod, GrassTopology, NEAR_TO_FAR_SWARD_FADE_END_METRES,
+    NEAR_TO_FAR_SWARD_FADE_START_METRES, TERMINAL_SWARD_FADE_END_METRES,
+    TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING, grass_community_at,
+    grass_lod_visibility, grass_patch_mesh, vista_grass_material,
 };
+#[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+use grass::{GrassGroundMaskMode, GrassMaterialHandles, grass_material};
 use litter::{
     DRY_LEAF_MESH_VARIANTS, TWIG_MESH_VARIANTS, dry_leaf_patch_mesh, forest_floor_leaf_material,
     twig_patch_mesh,
@@ -77,10 +79,24 @@ pub(crate) struct GroundLitterCaptureAnchors {
     pub(crate) pairs: Vec<GroundLitterCapturePair>,
 }
 
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct GroundLitterDiagnostics {
+    pub(crate) dry_leaf_patch_instances: usize,
+    pub(crate) physical_dry_leaf_count: usize,
+}
+
 #[derive(Default)]
 pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,
     cambered_leaves: Option<Handle<Mesh>>,
+    minimal_leaf_cards: Option<Handle<Mesh>>,
+    // Full-coverage leaf cards consumed only by the instanced shrub renderer,
+    // which draws its own leaf-card representation tier. The legacy patch
+    // renderer uses `minimal_leaf_cards`, so this field is dead on wasm/legacy.
+    #[cfg_attr(
+        any(not(feature = "instanced-grass"), target_family = "wasm"),
+        allow(dead_code, reason = "instanced shrub renderer is native-only")
+    )]
     leaf_cards: Option<Handle<Mesh>>,
     bark: Option<Handle<StandardMaterial>>,
     leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
@@ -109,7 +125,7 @@ pub(in crate::presentation) struct GroundFoliagePresentationCache {
     dry_leaf_meshes: Option<Vec<Handle<Mesh>>>,
     twig_meshes: Option<Vec<Handle<Mesh>>>,
     woodland_plant_meshes: Option<Vec<Handle<Mesh>>>,
-    twig_material: Option<Handle<TacticalFoliageMaterial>>,
+    twig_material: Option<Handle<StandardMaterial>>,
     woodland_plant_material: Option<Handle<TacticalFoliageMaterial>>,
 }
 
@@ -129,6 +145,12 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // reserved future shaping control. Understory cards retain the older
         // crossed-plane deformation path.
         shape: Vec4::ZERO,
+        // Far and vista grass set `quality.x` to select reduced vertex work
+        // before any interactive curved-ribbon reconstruction begins. Fragment
+        // lighting is selected independently through `quality.z`.
+        quality: Vec4::ZERO,
+        lighting: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
+        ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
         ground_mask_transform: Vec4::ZERO,
         ground_mask: None,
     }
@@ -203,6 +225,7 @@ pub(super) fn update_celestial_material_lighting(
     mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut pebble_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
     mut written: Local<Option<(Vec4, Vec4)>>,
+    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
 ) {
     if !celestial.is_changed() {
         return;
@@ -242,6 +265,14 @@ pub(super) fn update_celestial_material_lighting(
     for (_, material) in pebble_materials.iter_mut() {
         material.lighting = lighting;
         material.ambient = ambient;
+    }
+    for (_, material) in foliage_materials.iter_mut() {
+        if material.quality.x > 0.5 {
+            material.lighting = direction.extend(celestial.material_light_factor);
+            material.ambient = celestial
+                .ambient_color
+                .extend(celestial.material_ambient_response);
+        }
     }
 }
 
@@ -290,61 +321,18 @@ pub(super) fn spawn_ground_foliage(
     // the eidolon renderer is compiled in; only the legacy patch renderer
     // builds macro-patch meshes, masks, and foliage materials here.
     #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
-    let (grass_community_meshes, grass_near_material, grass_far_material, grass_vista_material) = {
-        let (grass_color, grass_dryness) = grass_pigment(environment);
-        let grass_community_meshes = GrassCommunity::ALL.map(|community| grass::CommunityMeshes {
-            near: meshes.add(grass_patch_mesh(
+    let (grass_color, grass_dryness) = grass_pigment(environment);
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+    let grass_community_meshes = GrassCommunity::ALL.map(|community| {
+        grass::CommunityMeshes::new(|lod, topology| {
+            meshes.add(grass_patch_mesh(
                 grass_color,
-                GrassMeshLod::Near,
-                grass_density,
+                lod,
+                grass_density * topology.density(),
                 community,
-            )),
-            far: meshes.add(grass_patch_mesh(
-                grass_color,
-                GrassMeshLod::Far,
-                grass_density,
-                community,
-            )),
-            vista: meshes.add(grass_patch_mesh(
-                grass_color,
-                GrassMeshLod::Vista,
-                grass_density,
-                community,
-            )),
-        });
-        let grass_wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
-        let grass_mask = images.add(grass_cover_mask_image(
-            ground,
-            stable_text_seed(&environment.scene_digest),
-        ));
-        (
-            grass_community_meshes,
-            materials.add(grass_material(
-                grass_wind_scale,
-                GrassMeshLod::Near,
-                grass_density,
-                grass_dryness,
-                grass_mask.clone(),
-                ground,
-            )),
-            materials.add(grass_material(
-                grass_wind_scale,
-                GrassMeshLod::Far,
-                grass_density,
-                grass_dryness,
-                grass_mask.clone(),
-                ground,
-            )),
-            materials.add(grass_material(
-                grass_wind_scale,
-                GrassMeshLod::Vista,
-                grass_density,
-                grass_dryness,
-                grass_mask,
-                ground,
-            )),
-        )
-    };
+            ))
+        })
+    });
     ensure_understory_presentations(
         meshes,
         standard_materials,
@@ -352,6 +340,76 @@ pub(super) fn spawn_ground_foliage(
         understory_cache,
         procedural_assets,
     );
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+    let grass_wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+    let grass_mask = images.add(grass_cover_mask_image(
+        ground,
+        stable_text_seed(&environment.scene_digest),
+    ));
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+    let grass_near_materials = GrassMaterialHandles {
+        boundary: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Near,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Boundary,
+        )),
+        interior: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Near,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Interior,
+        )),
+    };
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+    let grass_far_materials = GrassMaterialHandles {
+        boundary: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Far,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Boundary,
+        )),
+        interior: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Far,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Interior,
+        )),
+    };
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+    let grass_vista_materials = GrassMaterialHandles {
+        boundary: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Vista,
+            grass_density,
+            grass_dryness,
+            grass_mask.clone(),
+            ground,
+            GrassGroundMaskMode::Boundary,
+        )),
+        interior: materials.add(grass_material(
+            grass_wind_scale,
+            GrassMeshLod::Vista,
+            grass_density,
+            grass_dryness,
+            grass_mask,
+            ground,
+            GrassGroundMaskMode::Interior,
+        )),
+    };
     let dry_leaf_meshes = ground_foliage_cache
         .dry_leaf_meshes
         .get_or_insert_with(|| {
@@ -382,7 +440,7 @@ pub(super) fn spawn_ground_foliage(
         .clone();
     let twig_material = ground_foliage_cache
         .twig_material
-        .get_or_insert_with(|| materials.add(foliage_material(0.0, false)))
+        .get_or_insert_with(|| standard_materials.add(litter::static_twig_material()))
         .clone();
     let woodland_plant_material = ground_foliage_cache
         .woodland_plant_material
@@ -405,9 +463,9 @@ pub(super) fn spawn_ground_foliage(
         GrassCommunityProfile::from_environment(environment),
         &grass::Assets {
             community_meshes: grass_community_meshes,
-            near_material: grass_near_material,
-            far_material: grass_far_material,
-            vista_material: grass_vista_material,
+            near_materials: grass_near_materials,
+            far_materials: grass_far_materials,
+            vista_materials: grass_vista_materials,
         },
     );
 
@@ -470,12 +528,18 @@ pub(super) fn spawn_ground_foliage(
 }
 
 fn understory_scatter_chance(canopy: f32, wetland: f32, cultivation: f32) -> f32 {
-    (canopy * 0.52 + wetland * 0.3 + cultivation * 0.08).clamp(0.0, 0.24)
+    // This is intentionally about 70% below the original physical-shrub
+    // occupancy. Community multipliers retain dense, readable clumps rather
+    // than turning the reduced population into evenly spaced specimens.
+    (canopy * 0.156 + wetland * 0.09 + cultivation * 0.024).clamp(0.0, 0.075)
 }
 
 fn grass_scatter_density(canopy: f32, water: f32, cultivation: f32, snow: f32) -> f32 {
-    (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.25, 0.98)
-        * (1.0 - snow * 0.36)
+    // Deep shade and standing water should expose litter, mud, and hummocks;
+    // a quarter-density floor still read as an implausible meadow and made
+    // woodland traversal a wall of overlapping rectangular blade ribbons.
+    (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.08, 0.98)
+        * (1.0 - snow * 1.25).clamp(0.12, 1.0)
 }
 
 pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> (Color, f32) {
@@ -510,9 +574,9 @@ pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> 
 pub(in crate::presentation) fn grass_terminal_pigment(environment: &SceneEnvironment) -> Color {
     let linear = grass_pigment(environment).0.to_linear().to_f32_array();
     Color::LinearRgba(LinearRgba::new(
-        linear[0] * 0.22,
-        linear[1] * 0.25,
-        linear[2] * 0.05,
+        linear[0] * 0.34,
+        linear[1] * 0.38,
+        linear[2] * 0.18,
         1.0,
     ))
 }
@@ -614,7 +678,7 @@ fn ensure_understory_presentations(
     let species = [
         (
             &mut cache.hazel,
-            0xc0a1_5a2e_11_u64,
+            0x00c0_a15a_2e11_u64,
             COMMON_HAZEL_PARAMETERS,
             COMMON_HAZEL_BARK,
             Color::srgb_u8(118, 104, 78),
@@ -622,7 +686,7 @@ fn ensure_understory_presentations(
         ),
         (
             &mut cache.blackthorn,
-            0xb1ac_7a0e_31_u64,
+            0x00b1_ac7a_0e31_u64,
             BLACKTHORN_PARAMETERS,
             BLACKTHORN_BARK,
             Color::srgb_u8(61, 52, 44),
@@ -630,7 +694,7 @@ fn ensure_understory_presentations(
         ),
         (
             &mut cache.hawthorn,
-            0xa7a7_4a0e_51_u64,
+            0x00a7_a74a_0e51_u64,
             COMMON_HAWTHORN_PARAMETERS,
             COMMON_HAWTHORN_BARK,
             Color::srgb_u8(91, 76, 60),
@@ -642,6 +706,12 @@ fn ensure_understory_presentations(
         let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, parameters);
         cache.branches = Some(meshes.add(procedural_woody_branch_mesh(&branches, 3, bark)));
         cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
+        // A single minimal card tier replaces the former full-card and far
+        // sparse-card tiers. It carries the close shrub silhouette only until
+        // the terrain and distant canopy can take over.
+        cache.minimal_leaf_cards =
+            Some(meshes.add(procedural_woody_sparse_leaf_card_mesh(&leaves)));
+        // Full-coverage cards for the instanced shrub renderer's leaf-card tier.
         cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
         cache.bark = Some(materials.add(StandardMaterial {
             base_color: bark_color,
@@ -664,6 +734,12 @@ pub(in crate::presentation) struct TacticalFoliageMaterial {
     shading: Vec4,
     #[uniform(0)]
     shape: Vec4,
+    #[uniform(0)]
+    quality: Vec4,
+    #[uniform(0)]
+    lighting: Vec4,
+    #[uniform(0)]
+    ambient: Vec4,
     #[uniform(0)]
     ground_mask_transform: Vec4,
     #[texture(1)]

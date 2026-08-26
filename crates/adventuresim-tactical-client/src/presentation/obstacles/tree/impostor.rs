@@ -7,11 +7,17 @@ use raster::*;
 use super::super::super::*;
 use super::geometry::*;
 
-pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 14;
+pub(in crate::presentation) const TREE_IMPOSTOR_BAKE_VERSION: u32 = 16;
 pub(in crate::presentation) const TREE_IMPOSTOR_RENDER_METHOD: &str =
     "deterministic software triangle render with species-calibrated crown coverage";
+/// Per-LOD atlas tiles, from near aggregate cards through the whole-tree
+/// billboard. Keeping these in one table makes the residency budget explicit
+/// and avoids changing card topology or raster coverage to save texture memory.
+const TREE_IMPOSTOR_TILE_SIZES: [u32; 4] = [64, 112, 160, 256];
 const WHOLE_TREE_RUNTIME_WIDTH_SCALE: f32 = 1.0;
 const WHOLE_TREE_BAKE_EXPOSURE: f32 = 0.91;
+pub(in crate::presentation) const TREE_LEAF_HANDOFF_START: f32 = 1.5;
+pub(in crate::presentation) const TREE_LEAF_HANDOFF_END: f32 = 2.5;
 
 #[derive(Component, Clone, Debug)]
 pub(crate) struct TreeImpostorProvenance {
@@ -102,8 +108,10 @@ pub(in crate::presentation) const BEECH_TREE_BAKE_STYLE: TreeBakeStyle = TreeBak
     // Beech uses sparse eight-leaf spray proxies. Retaining multiple smaller
     // representatives per spray preserves its tall, continuous crown instead
     // of enlarging a few horizontal leaves into disconnected shelves.
-    aggregate_leaf_strides: [2, 3, 4, 4],
-    aggregate_leaf_scales: [1.05, 1.90, 2.25, 2.45],
+    aggregate_leaf_strides: [3, 4, 5, 6],
+    // Match the sparse, vertically open source crown instead of inflating a
+    // small retained sample into a dark solid mass at the 6-8 m handoff.
+    aggregate_leaf_scales: [0.82, 1.32, 1.62, 1.84],
     lod1_world_vertical: false,
     lod1_runtime_width_scale: 1.0,
 };
@@ -136,16 +144,20 @@ pub(in crate::presentation) struct TreeBakeCard {
     width: f32,
     height: f32,
     primary_mask: u8,
-    secondary_group: Option<u16>,
+    /// LOD1 cards group a contiguous run of secondary limbs from one primary
+    /// crown sector. The production group IDs deliberately leave room between
+    /// sectors, so the range never spills into a neighbouring sector.
+    secondary_group_range: Option<(u16, u16)>,
     source_group: u16,
     minimum_branch_depth: u8,
 }
 
 impl TreeBakeCard {
     fn includes_branch(self, branch: &TreeBranchSegment) -> bool {
-        match (self.secondary_group, self.primary_mask) {
-            (Some(group), _) => {
-                branch.secondary_group == group && branch.depth >= self.minimum_branch_depth
+        match (self.secondary_group_range, self.primary_mask) {
+            (Some((first, last)), _) => {
+                (first..=last).contains(&branch.secondary_group)
+                    && branch.depth >= self.minimum_branch_depth
             }
             (None, mask) if mask != 0 => {
                 branch.primary_group < 8
@@ -157,8 +169,8 @@ impl TreeBakeCard {
     }
 
     fn includes_leaf(self, leaf: &TreeLeaf) -> bool {
-        match (self.secondary_group, self.primary_mask) {
-            (Some(group), _) => leaf.secondary_group == group,
+        match (self.secondary_group_range, self.primary_mask) {
+            (Some((first, last)), _) => (first..=last).contains(&leaf.secondary_group),
             (None, mask) if mask != 0 => mask & (1 << leaf.primary_group) != 0,
             (None, _) => true,
         }
@@ -187,13 +199,13 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
 ) -> TreeLodBake {
     let started = web_time::Instant::now();
     let cards = tree_bake_cards_with_style(seed, branches, leaves, lod, style);
-    let tile_size = match lod {
-        1 => 96,
-        2 => 144,
-        3 => 192,
-        4 => 320,
-        _ => unreachable!("only aggregate tree LODs are baked"),
-    };
+    let tile_size = TREE_IMPOSTOR_TILE_SIZES
+        .get(
+            lod.checked_sub(1)
+                .expect("only aggregate tree LODs are baked") as usize,
+        )
+        .copied()
+        .expect("only aggregate tree LODs are baked");
     let columns = (cards.len() as f32).sqrt().ceil() as u32;
     let rows = (cards.len() as u32).div_ceil(columns);
     let atlas_width = columns * tile_size;
@@ -439,57 +451,63 @@ fn tree_bake_cards_with_style(
     let mut cards = Vec::new();
     match lod {
         1 => {
-            let mut secondary_groups = branches
-                .iter()
-                .filter(|branch| branch.depth == 2)
-                .map(|branch| branch.secondary_group)
-                .collect::<Vec<_>>();
-            secondary_groups.sort_unstable();
-            secondary_groups.dedup();
-            for group in secondary_groups {
-                let axis = branches
-                    .iter()
-                    .find(|branch| {
-                        branch.depth == 2 && branch.secondary_group == group && branch.is_limb_tip
-                    })
-                    .map(|branch| (branch.end - branch.start).normalize())
-                    .unwrap_or(Vec3::Y);
-                // All aggregate tiers inherit the source primary-sector
-                // orientation. This prevents each LOD from rotating the same
-                // crown mass into a visibly different silhouette at handoff.
-                let (card_up, frame_right, rotation_axis) = if style.lod1_world_vertical {
-                    let horizontal_axis = Vec3::new(axis.x, 0.0, axis.z).normalize_or_zero();
-                    let frame_right = if horizontal_axis.length_squared() > 0.25 {
-                        horizontal_axis
+            // LOD1 used to create two cards for every secondary limb. An oak
+            // therefore baked roughly 210 cards, repeating a great deal of
+            // overlapping foliage just as the player leaves detailed range.
+            // Keep the same primary crown sectors but partition each into two
+            // contiguous limb runs. Secondary limbs are generated in scaffold
+            // order, making each run a stable local crown mass rather than a
+            // random sampling of opposing sides of the tree. Two perpendicular
+            // cards for each run preserve broad crown occupancy from an
+            // oblique approach, producing four cards per primary sector.
+            for primary_group in 0..TREE_PRIMARY_GROUP_COUNT {
+                for (subcluster, secondary_group_range) in
+                    lod1_macro_cluster_ranges(branches, primary_group)
+                        .into_iter()
+                        .enumerate()
+                {
+                    let axis =
+                        lod1_macro_cluster_axis(branches, primary_group, secondary_group_range);
+                    // All aggregate tiers inherit the source primary-sector
+                    // orientation. This prevents each LOD from rotating the same
+                    // crown mass into a visibly different silhouette at handoff.
+                    let (card_up, frame_right, rotation_axis) = if style.lod1_world_vertical {
+                        let horizontal_axis = Vec3::new(axis.x, 0.0, axis.z).normalize_or_zero();
+                        let frame_right = if horizontal_axis.length_squared() > 0.25 {
+                            horizontal_axis
+                        } else {
+                            Vec3::X
+                        };
+                        (Vec3::Y, frame_right, Vec3::Y)
                     } else {
-                        Vec3::X
+                        let frame_reference = if axis.y.abs() < 0.9 { Vec3::Y } else { Vec3::X };
+                        (axis, axis.cross(frame_reference).normalize(), axis)
                     };
-                    (Vec3::Y, frame_right, Vec3::Y)
-                } else {
-                    let frame_reference = if axis.y.abs() < 0.9 { Vec3::Y } else { Vec3::X };
-                    (axis, axis.cross(frame_reference).normalize(), axis)
-                };
-                let phase =
-                    unit_hash(splitmix64(seed ^ u64::from(group))) * core::f32::consts::FRAC_PI_2;
-                // Two perpendicular views preserve the shoot's spatial
-                // extent from any approach. A third view repeated the same
-                // foliage once more at the first aggregate handoff, closing
-                // oak's airy gaps and turning beech sprays into a dense mass.
-                for facing in 0..2 {
-                    let right = bevy::math::Quat::from_axis_angle(
-                        rotation_axis,
-                        phase + facing as f32 * core::f32::consts::FRAC_PI_2,
-                    ) * frame_right;
-                    cards.push(fit_tree_bake_card(
-                        branches,
-                        leaves,
-                        right,
-                        card_up,
-                        0,
-                        Some(group),
-                        group * 2 + facing,
-                        3,
-                    ));
+                    let subcluster_key = u16::from(primary_group)
+                        * LOD1_MACRO_SUBCLUSTERS_PER_PRIMARY as u16
+                        + subcluster as u16;
+                    let phase = unit_hash(splitmix64(seed ^ u64::from(subcluster_key)))
+                        * core::f32::consts::FRAC_PI_2;
+                    for facing in 0..LOD1_CARD_FACINGS_PER_SUBCLUSTER {
+                        let source_group = u16::from(primary_group)
+                            * LOD1_MACRO_CARDS_PER_PRIMARY as u16
+                            + subcluster as u16 * LOD1_CARD_FACINGS_PER_SUBCLUSTER as u16
+                            + facing as u16;
+                        let right = bevy::math::Quat::from_axis_angle(
+                            rotation_axis,
+                            phase + facing as f32 * core::f32::consts::FRAC_PI_2,
+                        ) * frame_right;
+                        cards.push(fit_tree_bake_card(
+                            branches,
+                            leaves,
+                            right,
+                            card_up,
+                            1 << primary_group,
+                            Some(secondary_group_range),
+                            source_group,
+                            3,
+                        ));
+                    }
                 }
             }
         }
@@ -558,7 +576,7 @@ fn tree_bake_cards_with_style(
                     width,
                     height,
                     primary_mask: 0,
-                    secondary_group: None,
+                    secondary_group_range: None,
                     source_group: view,
                     minimum_branch_depth: 0,
                 });
@@ -567,6 +585,59 @@ fn tree_bake_cards_with_style(
         _ => unreachable!("tree LOD is bounded"),
     }
     cards
+}
+
+const LOD1_MACRO_SUBCLUSTERS_PER_PRIMARY: usize = 2;
+const LOD1_CARD_FACINGS_PER_SUBCLUSTER: usize = 2;
+const LOD1_MACRO_CARDS_PER_PRIMARY: usize =
+    LOD1_MACRO_SUBCLUSTERS_PER_PRIMARY * LOD1_CARD_FACINGS_PER_SUBCLUSTER;
+
+/// Divides one primary crown sector into deterministic, similarly sized
+/// secondary-limb runs. A malformed or intentionally sparse morphology can
+/// use fewer than two runs, but the mature playable-tree recipes supply both
+/// in each of their seven primary sectors.
+fn lod1_macro_cluster_ranges(branches: &[TreeBranchSegment], primary_group: u8) -> Vec<(u16, u16)> {
+    let mut groups = branches
+        .iter()
+        .filter(|branch| branch.depth == 2 && branch.primary_group == primary_group)
+        .map(|branch| branch.secondary_group)
+        .collect::<Vec<_>>();
+    groups.sort_unstable();
+    groups.dedup();
+
+    let cluster_count = groups.len().min(LOD1_MACRO_SUBCLUSTERS_PER_PRIMARY);
+    (0..cluster_count)
+        .map(|subcluster| {
+            let first = subcluster * groups.len() / cluster_count;
+            let last = (subcluster + 1) * groups.len() / cluster_count - 1;
+            (groups[first], groups[last])
+        })
+        .collect()
+}
+
+fn lod1_macro_cluster_axis(
+    branches: &[TreeBranchSegment],
+    primary_group: u8,
+    secondary_group_range: (u16, u16),
+) -> Vec3 {
+    let (first, last) = secondary_group_range;
+    let axis = branches
+        .iter()
+        .filter(|branch| {
+            branch.depth == 2
+                && branch.primary_group == primary_group
+                && (first..=last).contains(&branch.secondary_group)
+        })
+        .map(|branch| {
+            let direction = branch.end - branch.start;
+            direction.normalize_or_zero() * direction.length()
+        })
+        .sum::<Vec3>();
+    if axis.length_squared() > 0.01 {
+        axis.normalize()
+    } else {
+        crown_group_right(branches, primary_group)
+    }
 }
 
 fn crown_group_right(branches: &[TreeBranchSegment], group: u8) -> Vec3 {
@@ -597,7 +668,7 @@ pub(in crate::presentation) fn fit_tree_bake_card(
     right: Vec3,
     up: Vec3,
     primary_mask: u8,
-    secondary_group: Option<u16>,
+    secondary_group_range: Option<(u16, u16)>,
     source_group: u16,
     minimum_branch_depth: u8,
 ) -> TreeBakeCard {
@@ -615,7 +686,7 @@ pub(in crate::presentation) fn fit_tree_bake_card(
         width: 1.0,
         height: 1.0,
         primary_mask,
-        secondary_group,
+        secondary_group_range,
         source_group,
         minimum_branch_depth,
     };
@@ -660,7 +731,7 @@ pub(in crate::presentation) fn fit_tree_bake_card(
         width: max.x - min.x,
         height: max.y - min.y,
         primary_mask,
-        secondary_group,
+        secondary_group_range,
         source_group,
         minimum_branch_depth,
     }
@@ -744,7 +815,10 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
         handoff.end..(handoff.end + width)
     };
     let (start, end) = match lod {
-        0 => (0.0..0.0, transition(0)),
+        // Keep detailed clusters opaque while LOD1 dithers in, then retire
+        // them over a trailing band. Complementary fading exposed a bare-tree
+        // frame around seven metres on a cold first approach.
+        0 => (0.0..0.0, delayed_transition_out(0)),
         // Keep the outgoing aggregate fully visible while the next one
         // dithers in, then fade it out over an equally wide trailing band.
         // The baked silhouettes are not pixel-identical, so exact
@@ -773,7 +847,8 @@ pub(in crate::presentation) fn tree_leaf_visibility(
     cluster_radius: f32,
 ) -> VisibilityRange {
     let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
-    let leaf_transition = (3.5 * focal_scale * cluster_scale)..(5.0 * focal_scale * cluster_scale);
+    let leaf_transition = (TREE_LEAF_HANDOFF_START * focal_scale * cluster_scale)
+        ..(TREE_LEAF_HANDOFF_END * focal_scale * cluster_scale);
     let aggregate_transition =
         tree_projected_lod_visibility(0, focal_scale, cluster_radius).end_margin;
     let (start_margin, end_margin) = match representation {
@@ -787,10 +862,43 @@ pub(in crate::presentation) fn tree_leaf_visibility(
     }
 }
 
+pub(in crate::presentation) const TREE_TRUNK_HANDOFF_START: f32 = 12.0;
+pub(in crate::presentation) const TREE_TRUNK_HANDOFF_END: f32 = 16.0;
+
+/// Default close trunk/root range before projected-size adjustment.
 pub(in crate::presentation) fn tree_trunk_visibility() -> VisibilityRange {
+    tree_projected_trunk_visibility(false, 1.0)
+}
+
+/// Default low-poly mid-trunk range before projected-size adjustment.
+pub(in crate::presentation) fn tree_mid_trunk_visibility() -> VisibilityRange {
+    tree_projected_trunk_visibility(true, 1.0)
+}
+
+/// Keeps the two live trunk representations on the same obstacle-origin
+/// distance metric. The mid trunk enters over 12..16 metres; the detailed root
+/// mesh retires over the trailing 16..20 metre band. Mid then persists through
+/// the existing LOD3-to-billboard tail.
+pub(in crate::presentation) fn tree_projected_trunk_visibility(
+    mid_distance: bool,
+    focal_scale: f32,
+) -> VisibilityRange {
+    let handoff = (TREE_TRUNK_HANDOFF_START * focal_scale)..(TREE_TRUNK_HANDOFF_END * focal_scale);
+    let handoff_width = handoff.end - handoff.start;
     VisibilityRange {
-        start_margin: 0.0..0.0,
-        end_margin: 50.0..60.0,
+        start_margin: if mid_distance {
+            handoff.clone()
+        } else {
+            0.0..0.0
+        },
+        end_margin: if mid_distance {
+            tree_projected_lod_visibility(3, focal_scale, 3.5).end_margin
+        } else {
+            // Do not complement-dither two non-identical trunk meshes. Keep
+            // the detailed bole opaque while Mid enters, then retire it over
+            // a trailing band so the supporting trunk cannot vanish.
+            handoff.end..(handoff.end + handoff_width)
+        },
         use_aabb: false,
     }
 }
@@ -891,10 +999,39 @@ mod tests {
     }
 
     #[test]
+    fn reduced_impostor_tiles_pin_dimensions_and_residency_budget() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let bakes = (1..=4)
+            .map(|lod| bake_tree_lod(42, &branches, &leaves, lod))
+            .collect::<Vec<_>>();
+
+        assert_eq!(TREE_IMPOSTOR_TILE_SIZES, [64, 112, 160, 256]);
+        assert_eq!(
+            bakes
+                .iter()
+                .map(|bake| (bake.provenance.atlas_width, bake.provenance.atlas_height))
+                .collect::<Vec<_>>(),
+            [(384, 320), (448, 448), (640, 640), (768, 768)]
+        );
+        let atlas_bytes = bakes
+            .iter()
+            .map(|bake| bake.image.data.as_ref().expect("rgba8 atlas").len())
+            .collect::<Vec<_>>();
+        assert_eq!(atlas_bytes, [491_520, 802_816, 1_638_400, 2_359_296]);
+        assert_eq!(atlas_bytes.iter().sum::<usize>(), 5_292_032);
+
+        // The prior 96/144/192/320 px tile budget for this unchanged card
+        // layout was 8,478,720 bytes. This preserves the raster/card inputs
+        // while cutting representative full-suite residency by 37.6%.
+        assert_eq!(8_478_720 - atlas_bytes.iter().sum::<usize>(), 3_186_688);
+    }
+
+    #[test]
     fn tree_lods_collapse_one_botanical_order_at_a_time() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
-        let expected_cards = [210, 14, 14, 8];
+        let expected_cards = [28, 14, 14, 8];
         for (index, expected) in expected_cards.into_iter().enumerate() {
             assert_eq!(
                 tree_bake_cards(42, &branches, &leaves, index as u8 + 1).len(),
@@ -906,6 +1043,32 @@ mod tests {
             .map(|depth| procedural_tree_branch_mesh(&branches, depth).count_vertices())
             .collect::<Vec<_>>();
         assert!(branch_vertices.windows(2).all(|pair| pair[0] > pair[1]));
+    }
+
+    #[test]
+    fn lod1_macro_cluster_cards_are_bounded_vertex_light_and_deterministic() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let first = bake_tree_lod(42, &branches, &leaves, 1);
+        let second = bake_tree_lod(42, &branches, &leaves, 1);
+
+        assert_eq!(first.provenance.records.len(), 28);
+        assert_eq!(first.mesh.count_vertices(), 112);
+        assert_eq!(
+            first
+                .provenance
+                .records
+                .iter()
+                .map(|record| record.source_group)
+                .collect::<Vec<_>>(),
+            (0..28).collect::<Vec<_>>()
+        );
+        assert!(first.provenance.records.iter().all(|record| {
+            record.source_leaf_count > 0
+                && record.source_branch_count > 0
+                && record.opaque_pixel_count > 0
+        }));
+        assert_eq!(first.image.data, second.image.data);
     }
 
     #[test]
@@ -940,24 +1103,42 @@ mod tests {
         let cambered_leaf = tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5);
         let alpha_leaf = tree_leaf_visibility(TreeLeafRepresentation::AlphaCard, 1.0, 3.5);
         assert_eq!(cambered_leaf.end_margin, alpha_leaf.start_margin);
-        assert_eq!(alpha_leaf.end_margin, tree_lod_visibility(1).start_margin);
+        assert_eq!(alpha_leaf.end_margin, tree_lod_visibility(0).end_margin);
+        assert_eq!(tree_lod_visibility(1).start_margin, 6.0..8.0);
         for lod in 0..4 {
             let current = tree_lod_visibility(lod);
             let next = tree_lod_visibility(lod + 1);
-            if lod == 0 {
-                assert_eq!(current.end_margin, next.start_margin);
-            } else {
-                assert_eq!(current.end_margin.start, next.start_margin.end);
-                assert!(current.end_margin.end > next.start_margin.end);
-            }
+            assert_eq!(current.end_margin.start, next.start_margin.end);
+            assert!(current.end_margin.end > next.start_margin.end);
             assert!(!current.is_abrupt());
+        }
+    }
+
+    #[test]
+    fn leaf_handoff_scales_with_projection_and_cluster_radius_without_a_gap() {
+        for (focal_scale, cluster_radius) in [(0.55, 1.8), (1.0, 3.5), (2.4, 6.0)] {
+            let cambered_leaf = tree_leaf_visibility(
+                TreeLeafRepresentation::TexturedMesh,
+                focal_scale,
+                cluster_radius,
+            );
+            let alpha_leaf = tree_leaf_visibility(
+                TreeLeafRepresentation::AlphaCard,
+                focal_scale,
+                cluster_radius,
+            );
+            assert_eq!(cambered_leaf.end_margin, alpha_leaf.start_margin);
+            let ratio = cambered_leaf.end_margin.end / cambered_leaf.end_margin.start;
+            let expected_ratio = TREE_LEAF_HANDOFF_END / TREE_LEAF_HANDOFF_START;
+            assert!((ratio - expected_ratio).abs() < 1e-5);
+            assert!(!cambered_leaf.is_abrupt() && !alpha_leaf.is_abrupt());
         }
     }
 
     #[test]
     fn production_tree_lod_ranges_handoff_before_detail_is_subpixel() {
         let expected = [
-            (0.0..0.0, 6.0..8.0),
+            (0.0..0.0, 8.0..10.0),
             (6.0..8.0, 16.0..20.0),
             (12.0..16.0, 32.0..40.0),
             (24.0..32.0, 60.0..70.0),
@@ -970,9 +1151,27 @@ mod tests {
         }
         assert_eq!(
             tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5).end_margin,
-            3.5..5.0
+            1.5..2.5
         );
-        assert_eq!(tree_trunk_visibility().end_margin, 50.0..60.0);
+        assert_eq!(tree_trunk_visibility().end_margin, 16.0..20.0);
+        assert_eq!(tree_mid_trunk_visibility().start_margin, 12.0..16.0);
+        assert_eq!(tree_mid_trunk_visibility().end_margin, 60.0..70.0);
+    }
+
+    #[test]
+    fn trunk_tiers_overlap_without_a_gap_at_every_projected_scale() {
+        for focal_scale in [0.55, 1.0, 2.4] {
+            let detailed = tree_projected_trunk_visibility(false, focal_scale);
+            let mid = tree_projected_trunk_visibility(true, focal_scale);
+            assert_eq!(detailed.start_margin, 0.0..0.0);
+            assert_eq!(detailed.end_margin.start, mid.start_margin.end);
+            assert!(detailed.end_margin.end > mid.start_margin.end);
+            assert_eq!(
+                mid.end_margin,
+                tree_projected_lod_visibility(3, focal_scale, 3.5).end_margin
+            );
+            assert!(!detailed.use_aabb && !mid.use_aabb);
+        }
     }
 
     #[test]
@@ -982,11 +1181,8 @@ mod tests {
                 for lod in 0..4 {
                     let current = tree_projected_lod_visibility(lod, focal_scale, radius);
                     let next = tree_projected_lod_visibility(lod + 1, focal_scale, radius);
-                    if lod == 0 {
-                        assert_eq!(current.end_margin, next.start_margin);
-                    } else {
-                        assert_eq!(current.end_margin.start, next.start_margin.end);
-                    }
+                    assert_eq!(current.end_margin.start, next.start_margin.end);
+                    assert!(current.end_margin.end > next.start_margin.end);
                     assert!(!current.use_aabb && !next.use_aabb);
                 }
             }

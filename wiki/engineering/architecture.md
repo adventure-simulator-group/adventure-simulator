@@ -356,14 +356,15 @@ grace remains a sky-local presentation concern. Terrain materials, Ground
 scatter, weather, colliders, and recipes continue to read their own entity-local
 authoritative scene components.
 
-The production tactical preset uses directional shadow maps, bloom, four-sample
-MSAA, atmosphere IBL, material occlusion, baked tree-card depth, terrain
-normals, and direct celestial lighting for the scene's primary depth cues.
-Controlled benchmarks may explicitly disable shadows or post-processing to
-isolate their cost. Effects unsupported by WebGPU, including Bevy 0.19 SSAO, are
-excluded rather than retained as native-only paths. Review viewers can still
-enable compatible individual lighting costs explicitly for controlled
-diagnostics.
+The production tactical presentation uses one 1024-pixel directional-shadow
+cascade out to 28 m for the active Sun or Moon, four-sample MSAA, atmosphere
+IBL, material occlusion, baked tree-card depth, terrain normals, and direct
+celestial lighting for the scene's primary depth cues. Bloom is not part of the
+production tactical presentation. Controlled benchmarks may explicitly disable
+shadows to isolate their cost. Effects unsupported by WebGPU, including Bevy
+0.19 SSAO, are excluded
+rather than retained as native-only paths. Review viewers use this same shadow
+configuration unless a benchmark explicitly disables shadows.
 
 The immutable world-data canopy coverage continuously controls tree architecture
 without inspecting neighboring entities: low coverage produces a short clear
@@ -517,7 +518,7 @@ topology, deterministic mixed-age height, independent width, clumping, lean,
 and curvature variation avoids a repeated vertical-curtain silhouette. A shared
 world-space meadow field keeps the full
 authored density within seven metres, then introduces short juvenile pockets and
-irregular occupancy before the 18--26 metre cross-fade. The authoritative
+irregular occupancy before the 8--10 metre cross-fade. The authoritative
 grass-side mask uses a broader nonlinear feather, and surviving boundary blades
 shorten with coverage, so dirt and leaf-litter transitions do not terminate as a
 same-height wall. This composition also derives a stable age cohort from the
@@ -541,14 +542,14 @@ standard mesh path supplies WebGPU-compatible GPU preprocessing, culling, and
 indirect batches when the adapter supports them, with its normal fallback on
 more limited browser devices. Forest-floor scatter retains its authoritative
 leaf-litter placement and patch composition. Nearby patches are merged
-deterministically into 64-metre render batches, collapsing tens of thousands of
-dry-leaf and twig entities while preserving the four leaf variants, three twig
-variants, two materials, and authored transforms. Detailed leaves now end at 35
+deterministically into 24-metre render batches, collapsing many dry-leaf and
+twig entities while preserving the four leaf variants, three twig variants,
+two materials, and authored transforms. Detailed leaves now end at 35
 metres, while subpixel twigs end at 24 metres: the current visibility
 architecture cannot substitute a cheaper mesh without an extra entity/draw, and
 rendering alpha-tested cambered plates to 72 metres was not worth that overdraw.
-Each 24-leaf shared patch uses deterministic nine-vertex cambered, gently
-tilted, curled oak plates arranged into four loose, shallow layers plus
+Each 56-leaf shared patch uses deterministic nine-vertex cambered, gently
+tilted, curled oak plates arranged into several loose, shallow layers plus
 scattered singles;
   every plate is seated by its lowest vertex slightly below the local patch
   plane and has a bounded lift so it cannot become an upright card. A dry-oak
@@ -557,17 +558,21 @@ scattered singles;
 leaf plates with the production oak morphology, front/back albedo, normal and AO
 maps, and a dedicated dry PBR response with zero canopy AO, low transmission,
 higher roughness, and lower thickness; fallen-leaf wind is disabled. Each
-nine-twig shared patch uses bowed four-ring, five-to-six-sided segments with
+eight-twig shared patch uses bowed four-ring, five-to-six-sided segments with
 buried contact points, near-zero tapered tips, and at most two deterministic
 short forks. Litter entities remain `NotShadowCaster`, and the geometry change
 adds no entity, material slot, draw call, gameplay collider, or placement rule.
 The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or tactical
 authority. The immutable environment and weather snapshots control the
-procedural ground material, diagnosed low/middle/high cloud decks, directional
-precipitation particles, fog distance, wind drift, and cloud-attenuated
-sunlight. Falling precipitation is one camera-local indexed quad batch rather
-than one entity per drop or flake. Its WebGPU vertex shader derives
+procedural ground material, diagnosed low/middle/high cloud decks folded into
+one analytic tactical cloud shell, directional precipitation particles, fog
+distance, wind drift, and cloud-attenuated sunlight. The native client bakes
+consecutive directional cloud textures on one background task, removes their
+known wind displacement in the shell shader, and interpolates optical depth
+between them; the benchmark waits for the following bake and freezes this
+pipeline before warm-up. Falling precipitation is one camera-local indexed quad
+batch rather than one entity per drop or flake. Its WebGPU vertex shader derives
 deterministic rain streaks or fluttering snow from the weather snapshot and
 samples a compact copy of the authoritative playable heightfield. Rain adds one
 bounded batch of terrain-conforming impact rings. Rain streaks use two
@@ -583,29 +588,27 @@ functions, fades them through the final 4.5 metres above terrain, and uses the
 existing non-volumetric linear distance fog for unresolved tactical-range rain.
 It uses no volume texture, raymarch, blur pass, or scene-color copy. Intensity
 changes how much of each fixed batch is visible, while the CPU performs no
-per-particle simulation or transform updates.
-The Earth-atmosphere path keeps top-of-atmosphere solar
-source energy available after the Sun crosses the geometric horizon. Bevy's
-atmospheric transmittance and visible-disc calculation then suppress direct
-surface illumination while retaining directional civil and nautical twilight
-scattering. The no-atmosphere fallback retains an explicit zero-below-horizon
-direct-light curve because it has no planetary occlusion. Exposure transitions
-continuously from nautical twilight to the moon-conditioned night target between
--12 and -18 degrees solar altitude; the physical 0.533-degree solar disc, ACES
-tonemapping, natural bloom, and bounded lookup-table atmosphere stay unchanged.
-The filtered 64-pixel atmosphere environment map is the full preset's canonical
-indirect PBR source. `GlobalAmbientLight` provides the complete altitude-aware
-fallback until that map is allocated and a bounded four-frame handoff grace
-elapses, or whenever a preset disables it; afterward only the authored
-moonless/moonlit visibility floor and a bounded 10,500-cd/m2 unresolved
-multi-bounce term remain. Bevy therefore no longer adds the full 30,000-cd/m2
-isotropic daylight approximation on top of directional atmosphere IBL, while
-shaded bark and foliage retain readable outdoor bounce light. Large vista grids
-are deliberately not ordinary replicated ECS components. The server sends each
-accepted client one immutable, ordered `SceneVistaBundle`; the client builds
-seam-sharing LOD rings split into independently frustum-culled mesh chunks
-without inner-area overdraw, colliders, or shadows. Each finer ring geomorphs
-its outermost sample row onto the next coarser height surface, with a
+per-particle simulation or transform updates. The Earth-atmosphere path keeps
+top-of-atmosphere solar source energy available after the Sun crosses the
+geometric horizon. Bevy's atmospheric transmittance and visible-disc calculation
+then suppress direct surface illumination while retaining directional civil and
+nautical twilight scattering.
+Exposure transitions continuously from nautical twilight to the moon-conditioned
+night target between -12 and -18 degrees solar altitude; the physical
+0.533-degree solar disc, ACES tonemapping, and bounded lookup-table atmosphere
+stay unchanged. The filtered 64-pixel atmosphere environment map is the full
+preset's canonical indirect PBR source. `GlobalAmbientLight` provides the
+complete altitude-aware fallback until that map is allocated and a bounded
+four-frame handoff grace elapses, or whenever a preset disables it; afterward
+only the authored moonless/moonlit visibility floor and a bounded 10,500-cd/m2
+unresolved multi-bounce term remain. Bevy therefore no longer adds the full
+30,000-cd/m2 isotropic daylight approximation on top of directional atmosphere
+IBL, while shaded bark and foliage retain readable outdoor bounce light. Large
+vista grids are deliberately not ordinary replicated ECS components. The server
+sends each accepted client one immutable, ordered `SceneVistaBundle`; the client
+builds seam-sharing LOD rings split into independently frustum-culled mesh
+chunks without inner-area overdraw, colliders, or shadows. Each finer ring
+geomorphs its outermost sample row onto the next coarser height surface, with a
 one-fine-cell inward blend; this removes cracks and T-junction wedges without
 adding skirts, overlap, or gameplay geometry. Vista vertices reuse the ordinary
 ground palette in linear color space, preserving regional forest, wetland,
@@ -708,43 +711,57 @@ always name a target, and ranged completion distinguishes a miss from a targeted
 hit. Raw finite precision becomes `ReportedPrecision` without clamping or
 geometric reconstruction, and duration-backed authority types gate mutation.
 Accepted results mutate replicated limb health plus transient blood loss and
-imbalance. Shared autoresolve rules derive pain, blood-loss, and imbalance
-incapacitation and recover balance over time. Tactical enrollment projects
-authoritative body weight, current/maximum blood, and strategic condition
-contributions. It preserves the source values for fear, fatigue, hunger, thirst,
-and temperature so the client can present the same segmented condition language
-as the strategic UI; the same shared derivation as autoresolve excludes pain and
-blood from starting incapacitation before recomputing them live. Actors
-currently over the threshold stop moving, attacking, defending, and
-participating in offensive AI target selection; imbalance-only incapacitation
-can recover. The numeric incapacitation value is the sole stored readiness
-authority; active, staggered, and incapacitated status are mechanically derived
-from it rather than synchronized through a second boolean or ECS marker.
+imbalance. Contact energy also becomes a mass-normalized world-space velocity
+change on the struck character controller. The ordered response carries that
+same velocity change and recipient so client secondary motion responds to the
+server-applied impact rather than reconstructing it. Shared autoresolve rules
+derive pain, blood-loss, and imbalance incapacitation and recover balance over
+time. Tactical enrollment projects authoritative body weight, current/maximum
+blood, and strategic condition contributions. It preserves the source values for
+fear, fatigue, hunger, thirst, and temperature so the client can present the
+same segmented condition language as the strategic UI; the same shared
+derivation as autoresolve excludes pain and blood from starting incapacitation
+before recomputing them live. Actors currently over the threshold stop moving,
+attacking, defending, and participating in offensive AI target selection;
+imbalance-only incapacitation can recover. The numeric incapacitation value is
+the sole stored readiness authority; active, staggered, and incapacitated status
+are mechanically derived from it rather than synchronized through a second
+boolean or ECS marker.
 
-These per-tick effects remain in memory only. A mission enemy's first transition
-into incapacitation counts as its defeat; recovery and later incapacitation do
-not count it again. Once all required enemies are defeated, the tactical server
-immediately reports `Defeated`. Once every loaded Party combatant is
-incapacitated, it immediately reports `Failed`; simultaneous defeat also fails
-deterministically. Strategic authority binds the expected living Party count
-into the request and active server records, and the trusted dispatcher passes it
-to the child. Resolution waits until every expected adventurer has loaded at
-least once, no player is still loading, and all required enemies have loaded.
-Enrollment is then sealed. Once enrollment has begun, an empty Party has a
-ten-second reconnection grace before `Failed`, including when every client
-disconnects before the seal. A timeout-disabled development server where nobody
-ever joins remains available. Terminal submission retries a frozen result after
-synchronous errors no more than once per second, before reevaluating combat
-predicates. Queueing is not commitment: only an `end_tactical_server_then`
-callback confirming reducer acceptance latches the result and broadcasts the
-authoritative Victory/Defeat presentation event, keeps the transport alive for a
-bounded three-second display window, and then exits. The delay is strictly
-post-commit: it cannot defer strategic authority or create a second outcome. A
-configured timeout remains a bounded `Failed` fallback. Enrollment and terminal
-progress are private lifecycle enums. A resolution and its bounded receipt form
-one frozen value whose retry time, acknowledgement deadline, transport failure,
-committed presentation, and finished state exist only in their applicable
-variants.
+At exactly one hundred percent incapacitation, the tactical server hands the
+replicated root from the kinematic character controller to an Avian dynamic
+body. This coarse root is the network authority for translation, rotation, and
+velocity; clients construct a terrain-colliding articulated ragdoll around it
+without replicating individual bones. If incapacitation later falls below the
+threshold, the server classifies prone versus supine from the pelvis-facing
+direction, restores an upright yaw and the character controller, and leaves the
+ordinary lower-body animation system to resume foot placement.
+
+These per-tick effects remain in memory only. Incapacitated combatants remain
+spawned and may recover; there is no corpse fade or server-side removal. The
+tactical server reports `Defeated` only while all required loaded enemies are
+incapacitated simultaneously for three continuous seconds. It reports `Failed`
+only after every loaded Party combatant has remained incapacitated for three
+continuous seconds. Recovery resets only that side's hold timer; if both timers
+mature together, failure wins deterministically. Strategic authority binds the
+expected living Party count into the request and active server records, and the
+trusted dispatcher passes it to the child. Resolution waits until every expected
+adventurer has loaded at least once, no player is still loading, and all
+required enemies have loaded. Enrollment is then sealed. Once enrollment has
+begun, an empty Party has a ten-second reconnection grace before `Failed`,
+including when every client disconnects before the seal. A timeout-disabled
+development server where nobody ever joins remains available. Terminal
+submission retries a frozen result after synchronous errors no more than once
+per second, before reevaluating combat predicates. Queueing is not commitment:
+only an `end_tactical_server_then` callback confirming reducer acceptance
+latches the result and broadcasts the authoritative Victory/Defeat presentation
+event, keeps the transport alive for a bounded three-second display window, and
+then exits. The delay is strictly post-commit: it cannot defer strategic
+authority or create a second outcome. A configured timeout remains a bounded
+`Failed` fallback. Enrollment and terminal progress are private lifecycle enums.
+A resolution and its bounded receipt form one frozen value whose retry time,
+acknowledgement deadline, transport failure, committed presentation, and
+finished state exist only in their applicable variants.
 
 The terminal call carries a bounded authenticated consequence receipt frozen
 with the resolution. It contains only Party character IDs, applied (clamped)

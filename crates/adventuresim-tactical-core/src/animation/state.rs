@@ -4,7 +4,6 @@ use super::*;
 pub enum Posture {
     #[default]
     Upright,
-    Crouched,
     Airborne,
     Prone,
     Supine,
@@ -32,12 +31,10 @@ impl Default for BodyState {
 pub enum GroundedPosture {
     #[default]
     Upright,
-    Crouched,
 }
 
-/// Presentation-only anticipation for a release-triggered jump. This is kept
-/// separate from `GroundedPosture::Crouched`: charging a jump must not select
-/// crouched locomotion or change the authoritative movement speed.
+/// Presentation-only anticipation for a release-triggered jump. Charging a
+/// jump does not change authoritative posture or movement speed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JumpAnticipation {
     #[default]
@@ -52,7 +49,6 @@ impl BodyState {
     pub fn posture(self) -> Posture {
         match self {
             Self::Grounded(GroundedPosture::Upright) => Posture::Upright,
-            Self::Grounded(GroundedPosture::Crouched) => Posture::Crouched,
             Self::Airborne => Posture::Airborne,
             Self::Prone => Posture::Prone,
             Self::Supine => Posture::Supine,
@@ -93,10 +89,9 @@ pub enum StanceState {
 }
 
 /// Compact authoritative input for client-side raised-guard foot placement.
-/// Speed follows the controller continuously so acceleration changes cadence
-/// during the current step. Ordinary turns wait for the next foot handoff;
-/// material opposite-direction reversals perform an immediate safe semantic
-/// handoff so the support side agrees with the already-reversed gameplay root.
+/// The authority replicates only observed motion. Exact visual plants, swing
+/// ownership, and progress are client presentation state, as in Overgrowth's
+/// velocity-driven foot stance.
 /// This invariant-bearing type intentionally does not implement Bevy reflection;
 /// reflected field mutation would bypass its validated constructors.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -105,15 +100,8 @@ pub struct RaisedLocomotionIntent(RaisedLocomotionKind);
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum RaisedLocomotionKind {
-    Planted {
-        step_sequence: u32,
-    },
-    Moving {
-        local_direction: Vec2,
-        speed: f32,
-        swing_foot: LeadFoot,
-        step_sequence: u32,
-    },
+    Planted,
+    Moving { local_direction: Vec2, speed: f32 },
 }
 
 #[derive(Deserialize)]
@@ -126,49 +114,40 @@ impl<'de> Deserialize<'de> for RaisedLocomotionIntent {
     {
         let RaisedLocomotionWire(value) = RaisedLocomotionWire::deserialize(deserializer)?;
         Ok(match value {
-            RaisedLocomotionKind::Planted { step_sequence } => Self::planted(step_sequence),
+            RaisedLocomotionKind::Planted => Self::planted(),
             RaisedLocomotionKind::Moving {
                 local_direction,
                 speed,
-                swing_foot,
-                step_sequence,
-            } => Self::moving(local_direction, speed, swing_foot, step_sequence),
+            } => Self::moving(local_direction, speed),
         })
     }
 }
 
 impl Default for RaisedLocomotionIntent {
     fn default() -> Self {
-        Self::planted(0)
+        Self::planted()
     }
 }
 
 impl RaisedLocomotionIntent {
-    pub fn planted(step_sequence: u32) -> Self {
-        Self(RaisedLocomotionKind::Planted { step_sequence })
+    pub fn planted() -> Self {
+        Self(RaisedLocomotionKind::Planted)
     }
 
     /// Creates validated moving intent. Invalid or effectively stationary
     /// input becomes planted while retaining its handoff identity.
-    pub fn moving(
-        local_direction: Vec2,
-        speed: f32,
-        swing_foot: LeadFoot,
-        step_sequence: u32,
-    ) -> Self {
+    pub fn moving(local_direction: Vec2, speed: f32) -> Self {
         let direction = local_direction.normalize_or_zero();
         if !local_direction.is_finite()
             || !speed.is_finite()
             || direction == Vec2::ZERO
             || speed <= 0.05
         {
-            return Self::planted(step_sequence);
+            return Self::planted();
         }
         Self(RaisedLocomotionKind::Moving {
             local_direction: direction,
             speed,
-            swing_foot,
-            step_sequence,
         })
     }
 
@@ -181,28 +160,14 @@ impl RaisedLocomotionIntent {
             RaisedLocomotionKind::Moving {
                 local_direction, ..
             } => local_direction,
-            RaisedLocomotionKind::Planted { .. } => Vec2::ZERO,
+            RaisedLocomotionKind::Planted => Vec2::ZERO,
         }
     }
 
     pub fn speed(self) -> f32 {
         match self.0 {
             RaisedLocomotionKind::Moving { speed, .. } => speed,
-            RaisedLocomotionKind::Planted { .. } => 0.0,
-        }
-    }
-
-    pub fn swing_foot(self) -> Option<LeadFoot> {
-        match self.0 {
-            RaisedLocomotionKind::Moving { swing_foot, .. } => Some(swing_foot),
-            RaisedLocomotionKind::Planted { .. } => None,
-        }
-    }
-
-    pub fn step_sequence(self) -> u32 {
-        match self.0 {
-            RaisedLocomotionKind::Planted { step_sequence }
-            | RaisedLocomotionKind::Moving { step_sequence, .. } => step_sequence,
+            RaisedLocomotionKind::Planted => 0.0,
         }
     }
 
@@ -400,8 +365,8 @@ impl PostureTransitionState {
         self.phase
     }
 
-    /// Returns the authored dive recovery progress after terrain contact.
-    /// The first half of a dive is duck-to-airborne and remains fixed at its
+    /// Returns the dive recovery progress after terrain contact.
+    /// The first half of a dive is guard-to-airborne and remains fixed at its
     /// airborne endpoint until impact; only the second half transfers the
     /// directional pose into its canonical downed contact pose.
     pub fn dive_recovery(self) -> Option<(DiveDirection, f32)> {
@@ -412,10 +377,10 @@ impl PostureTransitionState {
     }
 }
 
-/// Incremental root-yaw handoff that cancels the authored dive pose's return
-/// to canonical forward during landing recovery. Applying this after each
-/// posture-transition advance keeps the character's world-space head-to-feet
-/// direction fixed from contact through the final downed pose.
+/// Incremental root-yaw handoff for the directional downed contact pose.
+/// Applying this after each posture-transition advance keeps the character's
+/// world-space head-to-feet direction fixed from contact through the final
+/// downed pose.
 pub fn dive_landing_facing_delta(
     previous: Option<PostureTransitionState>,
     current: Option<PostureTransitionState>,
@@ -431,11 +396,11 @@ pub fn dive_landing_facing_delta(
         .map_or(1.0, |(_, progress)| progress);
     let total_yaw = match direction {
         DiveDirection::Forward => 0.0,
-        // The authored backward-dive-to-supine span resolves its ambiguous
-        // half turn through positive yaw. Transfer the root through the
-        // equivalent negative branch so the two rotations cancel instead of
-        // composing into a visible full flip.
-        DiveDirection::Backward => -std::f32::consts::PI,
+        // The canonical backward dive-to-supine contact span resolves its
+        // ambiguous half turn through negative yaw. Transfer the root through
+        // the equivalent positive branch so the two rotations cancel instead
+        // of composing into a visible full flip.
+        DiveDirection::Backward => std::f32::consts::PI,
         DiveDirection::Left => std::f32::consts::FRAC_PI_2,
         DiveDirection::Right => -std::f32::consts::FRAC_PI_2,
     };
@@ -475,20 +440,33 @@ pub fn supine_get_up_counter_yaw_delta(
 struct ActionTimeline {
     start_tick: u64,
     preparation_ticks: u64,
+    recovery_ticks: u64,
     phase: f32,
 }
 
 impl ActionTimeline {
     fn new(start_tick: u64, contact_tick: u64) -> Self {
+        let preparation_ticks = contact_tick.saturating_sub(start_tick).max(1);
+        Self {
+            start_tick,
+            preparation_ticks,
+            recovery_ticks: preparation_ticks,
+            phase: 0.0,
+        }
+    }
+
+    fn with_recovery(start_tick: u64, contact_tick: u64, end_tick: u64) -> Self {
         Self {
             start_tick,
             preparation_ticks: contact_tick.saturating_sub(start_tick).max(1),
+            recovery_ticks: end_tick.saturating_sub(contact_tick).max(1),
             phase: 0.0,
         }
     }
 
     fn normalized(mut self) -> Self {
         self.preparation_ticks = self.preparation_ticks.max(1);
+        self.recovery_ticks = self.recovery_ticks.max(1);
         self.phase = if self.phase.is_finite() {
             self.phase.clamp(0.0, 1.0)
         } else {
@@ -502,12 +480,16 @@ impl ActionTimeline {
 enum ActionKind {
     Idle,
     Dodge {
-        direction: Vec2,
+        dodge: DodgeKind,
         timeline: ActionTimeline,
     },
     Attack {
         target_height: f32,
         animation: AttackAnimation,
+        strike_family: StrikeFamily,
+        hand: AttackHand,
+        continuation: bool,
+        curve: AttackCurve,
         timeline: ActionTimeline,
     },
     Block {
@@ -530,20 +512,17 @@ impl<'de> Deserialize<'de> for ActionState {
         let kind = ActionKind::deserialize(deserializer)?;
         Ok(Self(match kind {
             ActionKind::Idle => ActionKind::Idle,
-            ActionKind::Dodge {
-                direction,
-                timeline,
-            } => ActionKind::Dodge {
-                direction: if direction.is_finite() {
-                    direction.normalize_or_zero()
-                } else {
-                    Vec2::ZERO
-                },
+            ActionKind::Dodge { dodge, timeline } => ActionKind::Dodge {
+                dodge,
                 timeline: timeline.normalized(),
             },
             ActionKind::Attack {
                 target_height,
                 animation,
+                strike_family,
+                hand,
+                continuation,
+                curve,
                 timeline,
             } => ActionKind::Attack {
                 target_height: if target_height.is_finite() {
@@ -552,6 +531,10 @@ impl<'de> Deserialize<'de> for ActionState {
                     AttackSpec::default().target_height
                 },
                 animation,
+                strike_family,
+                hand,
+                continuation,
+                curve: curve.normalized(),
                 timeline: timeline.normalized(),
             },
             ActionKind::Block {
@@ -571,15 +554,189 @@ impl Default for ActionState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+enum DodgeKind {
+    Defensive,
+    Quickstep { direction: QuickstepDirection },
+}
+
+/// A finite, non-zero, normalized quickstep direction. Constructing this type
+/// at the input boundary makes a stationary defensive dodge structurally
+/// distinct from a locomotion quickstep.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct QuickstepDirection(Vec2);
+
+impl QuickstepDirection {
+    pub fn new(direction: Vec2) -> Option<Self> {
+        direction
+            .is_finite()
+            .then(|| direction.try_normalize())
+            .flatten()
+            .map(Self)
+    }
+
+    pub fn get(self) -> Vec2 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for QuickstepDirection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let direction = Vec2::deserialize(deserializer)?;
+        Self::new(direction).ok_or_else(|| {
+            serde::de::Error::custom("quickstep direction must be finite and non-zero")
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-pub struct DodgeSpec {
-    pub direction: Vec2,
+pub enum DodgeSpec {
+    #[default]
+    Defensive,
+    Quickstep(QuickstepDirection),
+}
+
+impl DodgeSpec {
+    pub fn quickstep(direction: Vec2) -> Option<Self> {
+        QuickstepDirection::new(direction).map(Self::Quickstep)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionTransitionError {
+    Downed,
+    PostureTransitionActive,
+    ActionBusy,
+}
+
+/// Bounded blend-coordinate curve for an attack's authored guard/contact
+/// poses. Coordinates below zero draw back through the guard pose; coordinates
+/// above one continue through contact. This mirrors Overgrowth's synced-pose
+/// overshoot without extrapolating clip time beyond authored keys.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AttackCurve {
+    /// Fraction of preparation spent drawing back before commitment begins.
+    pub tell_fraction: f32,
+    /// Furthest negative guard-to-contact blend coordinate reached by the tell.
+    pub drawback: f32,
+    /// Fraction of recovery spent continuing beyond contact before braking.
+    pub follow_through_fraction: f32,
+    /// Furthest distance beyond the contact pose reached during follow-through.
+    pub overshoot: f32,
+}
+
+impl Default for AttackCurve {
+    fn default() -> Self {
+        Self::from_handling(0.3, 3.0)
+    }
+}
+
+impl AttackCurve {
+    pub const MAX_DRAWBACK: f32 = 0.65;
+    pub const MAX_OVERSHOOT: f32 = 0.55;
+
+    /// Produces a readable but controlled curve from physical weapon inertia
+    /// and the attacker's effective weapon skill check. High-inertia weapons
+    /// and low-skill attacks telegraph and follow through more.
+    pub fn from_handling(moment_of_inertia_kg_m2: f32, skill: f32) -> Self {
+        Self::from_handling_with_config(
+            moment_of_inertia_kg_m2,
+            skill,
+            &crate::combat_config::TacticalCombatConfig::default()
+                .presentation
+                .attack_curve,
+        )
+    }
+
+    pub fn from_handling_with_config(
+        moment_of_inertia_kg_m2: f32,
+        skill: f32,
+        config: &crate::combat_config::AttackCurveConfig,
+    ) -> Self {
+        let inertia = if moment_of_inertia_kg_m2.is_finite() {
+            moment_of_inertia_kg_m2.max(0.0)
+        } else {
+            0.3
+        };
+        let inertia_difficulty = (inertia / (inertia + config.inertia_characteristic)).sqrt();
+        let skill = finite_clamp(skill / 5.0, 0.0, 1.0, 0.0);
+        let lack_of_control =
+            inertia_difficulty * config.inertia_weight + (1.0 - skill) * config.skill_weight;
+        Self {
+            tell_fraction: config.tell_base + config.tell_span * lack_of_control,
+            drawback: config.drawback_base + config.drawback_span * lack_of_control,
+            follow_through_fraction: config.follow_through_base
+                + config.follow_through_span * lack_of_control,
+            overshoot: config.overshoot_base + config.overshoot_span * lack_of_control,
+        }
+        .normalized_with_limits(config.maximum_drawback, config.maximum_overshoot)
+    }
+
+    fn normalized(self) -> Self {
+        self.normalized_with_limits(Self::MAX_DRAWBACK, Self::MAX_OVERSHOOT)
+    }
+
+    fn normalized_with_limits(mut self, maximum_drawback: f32, maximum_overshoot: f32) -> Self {
+        self.tell_fraction = finite_clamp(self.tell_fraction, 0.15, 0.75, 0.45);
+        self.drawback = finite_clamp(self.drawback, 0.0, maximum_drawback, 0.3);
+        self.follow_through_fraction = finite_clamp(self.follow_through_fraction, 0.1, 0.65, 0.3);
+        self.overshoot = finite_clamp(self.overshoot, 0.0, maximum_overshoot, 0.2);
+        self
+    }
+
+    /// Unclamped semantic pose coordinate at a normalized action phase where
+    /// contact remains exactly 0.5.
+    pub fn coordinate(self, phase: f32) -> f32 {
+        let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
+        if phase <= 0.5 {
+            let preparation = phase * 2.0;
+            if preparation <= self.tell_fraction {
+                let progress = smoothstep(preparation / self.tell_fraction);
+                -self.drawback * progress
+            } else {
+                let progress =
+                    smoothstep((preparation - self.tell_fraction) / (1.0 - self.tell_fraction));
+                -self.drawback + (1.0 + self.drawback) * progress
+            }
+        } else {
+            let recovery = (phase - 0.5) * 2.0;
+            if recovery <= self.follow_through_fraction {
+                1.0 + self.overshoot * smoothstep(recovery / self.follow_through_fraction)
+            } else {
+                let progress = smoothstep(
+                    (recovery - self.follow_through_fraction)
+                        / (1.0 - self.follow_through_fraction),
+                );
+                (1.0 + self.overshoot) * (1.0 - progress)
+            }
+        }
+    }
+}
+
+fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(minimum, maximum)
+    } else {
+        fallback
+    }
+}
+
+fn smoothstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AttackSpec {
     pub target_height: f32,
     pub animation: AttackAnimation,
+    pub strike_family: StrikeFamily,
+    pub hand: AttackHand,
+    pub continuation: bool,
+    pub curve: AttackCurve,
 }
 
 impl Default for AttackSpec {
@@ -587,6 +744,10 @@ impl Default for AttackSpec {
         Self {
             target_height: 0.5,
             animation: AttackAnimation::Thrust,
+            strike_family: StrikeFamily::Thrust,
+            hand: AttackHand::Main,
+            continuation: false,
+            curve: AttackCurve::default(),
         }
     }
 }
@@ -595,6 +756,27 @@ impl AttackSpec {
     pub fn new(animation: AttackAnimation) -> Self {
         Self {
             animation,
+            strike_family: animation.strike_family(),
+            ..Self::default()
+        }
+    }
+
+    pub fn main(family: StrikeFamily, continuation: bool) -> Self {
+        Self {
+            animation: AttackAnimation::initial(family),
+            strike_family: family,
+            hand: AttackHand::Main,
+            continuation,
+            ..Self::default()
+        }
+    }
+
+    pub fn offhand(family: StrikeFamily) -> Self {
+        Self {
+            animation: AttackAnimation::Offhand,
+            strike_family: family,
+            hand: AttackHand::Offhand,
+            continuation: false,
             ..Self::default()
         }
     }
@@ -631,6 +813,62 @@ pub enum StrikeFamily {
     Swing,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum AttackHand {
+    #[default]
+    Main,
+    Offhand,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum MeleePreparationInput {
+    #[default]
+    Preferred,
+    Alternate,
+    Offhand,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AttackPreparation {
+    pub from: AttackAnimation,
+    pub to: AttackAnimation,
+    pub progress: f32,
+}
+
+impl Default for AttackPreparation {
+    fn default() -> Self {
+        Self::main(StrikeFamily::Thrust)
+    }
+}
+
+impl AttackPreparation {
+    pub const fn main(family: StrikeFamily) -> Self {
+        let animation = AttackAnimation::initial(family);
+        Self {
+            from: animation,
+            to: animation,
+            progress: 1.0,
+        }
+    }
+
+    pub const fn offhand() -> Self {
+        Self {
+            from: AttackAnimation::Offhand,
+            to: AttackAnimation::Offhand,
+            progress: 1.0,
+        }
+    }
+
+    fn normalized(mut self) -> Self {
+        self.progress = if self.progress.is_finite() {
+            self.progress.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self
+    }
+}
+
 impl StrikeFamily {
     pub fn from_melee_style(style: MeleeAttackStyle) -> Self {
         match style {
@@ -657,16 +895,17 @@ impl StrikeFamily {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum AttackAnimation {
     Swing,
-    SwingFollow,
     #[default]
     Thrust,
+    Offhand,
 }
 
 impl AttackAnimation {
     pub fn strike_family(self) -> StrikeFamily {
         match self {
-            Self::Swing | Self::SwingFollow => StrikeFamily::Swing,
+            Self::Swing => StrikeFamily::Swing,
             Self::Thrust => StrikeFamily::Thrust,
+            Self::Offhand => StrikeFamily::Thrust,
         }
     }
 
@@ -681,21 +920,27 @@ impl AttackAnimation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub struct AttackAnimations {
     pub swing: bool,
-    pub swing_follow: bool,
+    pub swing_continuation: bool,
     pub thrust: bool,
+    pub thrust_continuation: bool,
+    pub offhand: bool,
+    pub offhand_preparation: bool,
 }
 
 impl AttackAnimations {
     pub const NONE: Self = Self {
         swing: false,
-        swing_follow: false,
+        swing_continuation: false,
         thrust: false,
+        thrust_continuation: false,
+        offhand: false,
+        offhand_preparation: false,
     };
     pub const fn supports(self, animation: AttackAnimation) -> bool {
         match animation {
             AttackAnimation::Swing => self.swing,
-            AttackAnimation::SwingFollow => self.swing_follow,
             AttackAnimation::Thrust => self.thrust,
+            AttackAnimation::Offhand => self.offhand,
         }
     }
 
@@ -704,7 +949,15 @@ impl AttackAnimations {
     }
 
     pub const fn any(self) -> bool {
-        self.swing || self.swing_follow || self.thrust
+        self.swing || self.thrust || self.offhand
+    }
+
+    pub const fn supports_continuation(self, animation: AttackAnimation) -> bool {
+        match animation {
+            AttackAnimation::Swing => self.swing_continuation,
+            AttackAnimation::Thrust => self.thrust_continuation,
+            AttackAnimation::Offhand => false,
+        }
     }
 }
 
@@ -712,8 +965,14 @@ impl Default for AttackAnimations {
     fn default() -> Self {
         Self {
             swing: true,
-            swing_follow: true,
+            swing_continuation: true,
             thrust: true,
+            thrust_continuation: false,
+            offhand: true,
+            // The server accepts replicated held preparation for every
+            // offhand attack. Each client resolves whether its loaded clip
+            // actually has the optional frame-4 contact anchor.
+            offhand_preparation: true,
         }
     }
 }
@@ -746,6 +1005,7 @@ pub struct SkeletonState {
     pub lead_foot: LeadFoot,
     guarded_sprint_locomotion: bool,
     stance: StanceState,
+    attack_preparation: AttackPreparation,
     action: ActionState,
     posture_transition: Option<PostureTransitionState>,
     downed_facing: Option<DownedFacingState>,
@@ -770,6 +1030,7 @@ struct SkeletonStateWire {
     lead_foot: LeadFoot,
     guarded_sprint_locomotion: bool,
     stance: StanceState,
+    attack_preparation: AttackPreparation,
     action: ActionState,
     posture_transition: Option<PostureTransitionState>,
     downed_facing: Option<DownedFacingState>,
@@ -808,6 +1069,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
             lead_foot: wire.lead_foot,
             guarded_sprint_locomotion: wire.guarded_sprint_locomotion,
             stance: wire.stance,
+            attack_preparation: wire.attack_preparation.normalized(),
             action: wire.action,
             posture_transition: wire
                 .posture_transition
@@ -841,6 +1103,7 @@ impl Default for SkeletonState {
             lead_foot: LeadFoot::Left,
             guarded_sprint_locomotion: false,
             stance: StanceState::Lowered,
+            attack_preparation: AttackPreparation::default(),
             action: ActionState::default(),
             posture_transition: None,
             downed_facing: None,
@@ -939,7 +1202,7 @@ impl SkeletonState {
             && locomotion.is_moving()
         {
             self.stance = StanceState::Raised {
-                locomotion: RaisedLocomotionIntent::planted(locomotion.step_sequence()),
+                locomotion: RaisedLocomotionIntent::planted(),
             };
         }
     }
@@ -982,7 +1245,7 @@ impl SkeletonState {
             let locomotion = if self.body == BodyState::Grounded(GroundedPosture::Upright) {
                 locomotion
             } else {
-                RaisedLocomotionIntent::planted(locomotion.step_sequence())
+                RaisedLocomotionIntent::planted()
             };
             self.stance = StanceState::Raised { locomotion };
         }
@@ -1131,7 +1394,9 @@ impl SkeletonState {
         aim_held: bool,
         maximum_step: f32,
     ) -> bool {
-        if !self.body.is_downed() || self.posture_transition.is_some() {
+        if !matches!(self.body, BodyState::Prone | BodyState::Supine)
+            || self.posture_transition.is_some()
+        {
             self.downed_facing = None;
             return false;
         }
@@ -1231,9 +1496,21 @@ impl SkeletonState {
     }
     pub fn action_direction(&self) -> Vec2 {
         match self.action {
-            ActionState(ActionKind::Dodge { direction, .. }) => direction,
+            ActionState(ActionKind::Dodge {
+                dodge: DodgeKind::Quickstep { direction },
+                ..
+            }) => direction.get(),
             _ => Vec2::ZERO,
         }
+    }
+    pub fn is_quickstep(&self) -> bool {
+        matches!(
+            self.action,
+            ActionState(ActionKind::Dodge {
+                dodge: DodgeKind::Quickstep { .. },
+                ..
+            })
+        )
     }
     pub fn attack_target_height(&self) -> f32 {
         match self.action {
@@ -1243,8 +1520,29 @@ impl SkeletonState {
     }
     pub fn strike_family(&self) -> StrikeFamily {
         match self.action {
-            ActionState(ActionKind::Attack { animation, .. }) => animation.strike_family(),
+            ActionState(ActionKind::Attack { strike_family, .. }) => strike_family,
             _ => StrikeFamily::Thrust,
+        }
+    }
+    pub fn attack_hand(&self) -> AttackHand {
+        match self.action {
+            ActionState(ActionKind::Attack { hand, .. }) => hand,
+            _ => AttackHand::Main,
+        }
+    }
+    pub fn attack_is_continuation(&self) -> bool {
+        matches!(
+            self.action,
+            ActionState(ActionKind::Attack {
+                continuation: true,
+                ..
+            })
+        )
+    }
+    pub fn attack_curve(&self) -> AttackCurve {
+        match self.action {
+            ActionState(ActionKind::Attack { curve, .. }) => curve,
+            _ => AttackCurve::default(),
         }
     }
     pub fn attack_animation(&self) -> Option<AttackAnimation> {
@@ -1252,6 +1550,14 @@ impl SkeletonState {
             ActionState(ActionKind::Attack { animation, .. }) => Some(animation),
             _ => None,
         }
+    }
+
+    pub fn attack_preparation(&self) -> AttackPreparation {
+        self.attack_preparation
+    }
+
+    pub fn set_attack_preparation(&mut self, preparation: AttackPreparation) {
+        self.attack_preparation = preparation.normalized();
     }
     pub fn available_strike_family(&self, preferred: StrikeFamily) -> Option<StrikeFamily> {
         if self.attack_animations.supports_family(preferred) {
@@ -1267,19 +1573,29 @@ impl SkeletonState {
     /// Selects a legal authored attack at the current action seam. An ordinary
     /// attack starts only from recovery-complete idle. A second swing may
     /// replace the first after contact when the pack owns a follow pose.
-    pub fn select_attack_animation(&self, family: StrikeFamily) -> Option<AttackAnimation> {
-        let initial = AttackAnimation::initial(family);
+    pub fn select_main_attack(&self, family: StrikeFamily) -> Option<AttackSpec> {
+        let animation = AttackAnimation::initial(family);
         match self.attack_animation() {
-            None => self.attack_animations.supports(initial).then_some(initial),
-            Some(AttackAnimation::Swing)
-                if family == StrikeFamily::Swing
+            None => self
+                .attack_animations
+                .supports(animation)
+                .then_some(AttackSpec::main(family, false)),
+            Some(active)
+                if active == animation
+                    && self.attack_hand() == AttackHand::Main
+                    && !self.attack_is_continuation()
                     && self.action_phase() >= 0.5
-                    && self.attack_animations.swing_follow =>
+                    && self.attack_animations.supports_continuation(animation) =>
             {
-                Some(AttackAnimation::SwingFollow)
+                Some(AttackSpec::main(family, true))
             }
             _ => None,
         }
+    }
+
+    pub fn select_offhand_attack(&self, family: StrikeFamily) -> Option<AttackSpec> {
+        (self.action_kind() == SkeletonAction::None && self.attack_animations.offhand)
+            .then_some(AttackSpec::offhand(family))
     }
     pub fn action_start_tick(&self) -> Option<u64> {
         match self.action {
@@ -1325,55 +1641,117 @@ impl SkeletonState {
     }
 
     pub fn quickstep_is_launched(&self) -> bool {
-        self.action_kind() == SkeletonAction::Dodge && self.action_phase() >= 0.125
+        self.is_quickstep() && self.action_phase() >= 0.125
     }
 
-    /// Replaces the current action. This deliberately preserves the existing
-    /// last-writer-wins compatibility policy until gameplay defines rejection
-    /// or cancellation rules between actions.
-    fn replace_action(&mut self, action: ActionState) {
-        self.action = if self.body.is_downed() || self.posture_transition.is_some() {
-            ActionState::default()
+    fn action_admission(&self) -> Result<(), ActionTransitionError> {
+        if self.body.is_downed() {
+            Err(ActionTransitionError::Downed)
+        } else if self.posture_transition.is_some() {
+            Err(ActionTransitionError::PostureTransitionActive)
         } else {
-            action
-        };
+            Ok(())
+        }
     }
 
-    pub fn begin_dodge(&mut self, spec: DodgeSpec, start_tick: u64, contact_tick: u64) {
+    /// Evasion explicitly preempts an attack or block. Repeated evasion input
+    /// is rejected so a held button cannot restart its timeline every tick.
+    pub fn begin_dodge(
+        &mut self,
+        spec: DodgeSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
+        self.action_admission()?;
+        if self.action_kind() == SkeletonAction::Dodge {
+            return Err(ActionTransitionError::ActionBusy);
+        }
         let timeline = ActionTimeline::new(start_tick, contact_tick);
-        let direction = if spec.direction.is_finite() {
-            spec.direction.normalize_or_zero()
-        } else {
-            Vec2::ZERO
+        let dodge = match spec {
+            DodgeSpec::Defensive => DodgeKind::Defensive,
+            DodgeSpec::Quickstep(direction) => DodgeKind::Quickstep { direction },
         };
-        self.replace_action(ActionState(ActionKind::Dodge {
-            direction,
-            timeline,
-        }));
+        self.action = ActionState(ActionKind::Dodge { dodge, timeline });
+        Ok(())
     }
 
-    pub fn begin_attack(&mut self, spec: AttackSpec, start_tick: u64, contact_tick: u64) {
+    pub fn begin_attack(
+        &mut self,
+        spec: AttackSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
+        let preparation_ticks = contact_tick.saturating_sub(start_tick).max(1);
+        self.begin_attack_timed(
+            spec,
+            start_tick,
+            contact_tick,
+            contact_tick.saturating_add(preparation_ticks),
+        )
+    }
+
+    /// Starts an attack with independently authored preparation and recovery.
+    /// Contact remains semantic phase 0.5 for presentation and gameplay.
+    pub fn begin_attack_timed(
+        &mut self,
+        spec: AttackSpec,
+        start_tick: u64,
+        contact_tick: u64,
+        end_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
+        self.action_admission()?;
+        let may_follow = matches!(
+            self.action,
+            ActionState(ActionKind::Attack {
+                animation,
+                hand: AttackHand::Main,
+                continuation: false,
+                timeline,
+                ..
+            }) if timeline.phase >= 0.5
+                && spec.hand == AttackHand::Main
+                && spec.continuation
+                && spec.animation == animation
+        );
+        if self.action_kind() != SkeletonAction::None && !may_follow {
+            return Err(ActionTransitionError::ActionBusy);
+        }
         let target_height = if spec.target_height.is_finite() {
             spec.target_height.clamp(0.0, 1.0)
         } else {
             AttackSpec::default().target_height
         };
-        self.replace_action(ActionState(ActionKind::Attack {
+        self.action = ActionState(ActionKind::Attack {
             target_height,
             animation: spec.animation,
-            timeline: ActionTimeline::new(start_tick, contact_tick),
-        }));
+            strike_family: spec.strike_family,
+            hand: spec.hand,
+            continuation: spec.continuation,
+            curve: spec.curve.normalized(),
+            timeline: ActionTimeline::with_recovery(start_tick, contact_tick, end_tick),
+        });
+        Ok(())
     }
 
-    pub fn begin_block(&mut self, spec: BlockSpec, start_tick: u64, contact_tick: u64) {
-        self.replace_action(ActionState(ActionKind::Block {
+    pub fn begin_block(
+        &mut self,
+        spec: BlockSpec,
+        start_tick: u64,
+        contact_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
+        self.action_admission()?;
+        if self.action_kind() != SkeletonAction::None {
+            return Err(ActionTransitionError::ActionBusy);
+        }
+        self.action = ActionState(ActionKind::Block {
             incoming_line: spec.incoming_line,
             timeline: ActionTimeline::new(start_tick, contact_tick),
-        }));
+        });
+        Ok(())
     }
 
-    /// Advances an action whose contact is the midpoint of its visual
-    /// timeline. Recovery gets the same bounded duration as preparation.
+    /// Advances an action whose semantic contact is phase 0.5. Preparation
+    /// and recovery may have different real-time durations.
     pub fn advance_action(&mut self, current_tick: u64) {
         let timeline = match &mut self.action {
             ActionState(ActionKind::Idle) => return,
@@ -1382,8 +1760,9 @@ impl SkeletonState {
             | ActionState(ActionKind::Block { timeline, .. }) => timeline,
         };
         let preparation = timeline.preparation_ticks.max(1);
+        let recovery = timeline.recovery_ticks.max(1);
         let contact_tick = timeline.start_tick.saturating_add(preparation);
-        let end_tick = contact_tick.saturating_add(preparation);
+        let end_tick = contact_tick.saturating_add(recovery);
         if current_tick >= end_tick {
             if current_tick > end_tick || end_tick == u64::MAX {
                 self.action = ActionState::default();
@@ -1395,7 +1774,7 @@ impl SkeletonState {
         timeline.phase = if current_tick <= contact_tick {
             0.5 * current_tick.saturating_sub(timeline.start_tick) as f32 / preparation as f32
         } else {
-            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / preparation as f32
+            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / recovery as f32
         };
     }
 }
@@ -1408,7 +1787,6 @@ pub struct SkeletonLocomotionInput {
     pub orientation: Quat,
     pub linear_velocity: Vec3,
     pub grounded: bool,
-    pub crouching: bool,
     pub delta_seconds: f32,
     pub tick: u64,
 }
@@ -1428,9 +1806,9 @@ pub fn controller_yaw(orientation: Quat) -> Quat {
     Quat::from_rotation_y((-flat_forward.x).atan2(-flat_forward.y))
 }
 
-/// Root orientation committed when an authored directional dive launches.
-/// Dive travel and pose selection are both camera-relative, so they must
-/// capture the same controller frame before posture-transition facing locks.
+/// Root orientation committed when a procedural directional dive launches.
+/// Dive travel and pelvis tilt are both camera-relative, so they must capture
+/// the same controller frame before posture-transition facing locks.
 pub fn dive_launch_root_rotation(controller_orientation: Quat) -> Quat {
     let forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
     Quat::from_rotation_y(forward.x.atan2(forward.z))
@@ -1448,6 +1826,26 @@ pub fn advance_body_facing(
     action: SkeletonAction,
     weapon_guard: WeaponGuardState,
     delta_seconds: f32,
+) -> Quat {
+    advance_body_facing_with_speed(
+        current,
+        controller_orientation,
+        linear_velocity,
+        action,
+        weapon_guard,
+        delta_seconds,
+        BODY_TURN_SPEED_RADIANS,
+    )
+}
+
+pub fn advance_body_facing_with_speed(
+    current: Quat,
+    controller_orientation: Quat,
+    linear_velocity: Vec3,
+    action: SkeletonAction,
+    weapon_guard: WeaponGuardState,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
 ) -> Quat {
     let current_yaw = body_yaw(current);
     let desired_forward = if weapon_guard == WeaponGuardState::Raised
@@ -1470,7 +1868,7 @@ pub fn advance_body_facing(
     if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
         delta = std::f32::consts::PI;
     }
-    let maximum = (BODY_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    let maximum = (turn_speed_radians * delta_seconds.max(0.0)).min(std::f32::consts::PI);
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
 }
 
@@ -1481,6 +1879,20 @@ pub fn advance_downed_body_facing(
     controller_orientation: Quat,
     delta_seconds: f32,
 ) -> Quat {
+    advance_downed_body_facing_with_speed(
+        current,
+        controller_orientation,
+        delta_seconds,
+        DOWNED_TURN_SPEED_RADIANS,
+    )
+}
+
+pub fn advance_downed_body_facing_with_speed(
+    current: Quat,
+    controller_orientation: Quat,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
+) -> Quat {
     let current_yaw = body_yaw(current);
     let desired_forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
     let desired_yaw = desired_forward.x.atan2(desired_forward.z);
@@ -1490,7 +1902,7 @@ pub fn advance_downed_body_facing(
     if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
         delta = std::f32::consts::PI;
     }
-    let maximum = (DOWNED_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    let maximum = (turn_speed_radians * delta_seconds.max(0.0)).min(std::f32::consts::PI);
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
 }
 
@@ -1533,8 +1945,6 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     };
     let previous_world_velocity = skeleton.world_velocity;
     let was_supported = skeleton.body.is_surface_supported();
-    let previous_guard_sequence = skeleton.raised_locomotion().step_sequence();
-    let previous_guard_swing = skeleton.raised_locomotion().swing_foot();
     let local_velocity = controller_yaw(input.orientation).inverse() * linear_velocity;
     let physical_speed = local_velocity.xz().length();
     let contiguous_sample = input.tick == skeleton.locomotion_sample_tick.wrapping_add(1);
@@ -1546,6 +1956,11 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.local_velocity = local_velocity;
     skeleton.world_velocity = linear_velocity;
     skeleton.locomotion_sample_tick = input.tick;
+    if skeleton.body == BodyState::Ragdolled {
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
+        skeleton.action = ActionState::default();
+        return;
+    }
     let landed = !was_supported && input.grounded;
     if landed {
         skeleton.landing_sequence = skeleton.landing_sequence.wrapping_add(1);
@@ -1554,7 +1969,6 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.transition_body(if input.grounded {
         match skeleton.body {
             BodyState::Prone | BodyState::Supine => skeleton.body,
-            _ if input.crouching => BodyState::Grounded(GroundedPosture::Crouched),
             _ => BodyState::Grounded(GroundedPosture::Upright),
         }
     } else {
@@ -1583,14 +1997,10 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     };
     if skeleton.weapon_guard() == WeaponGuardState::Raised && skeleton.posture() == Posture::Upright
     {
-        advance_raised_locomotion_intent(skeleton, local_velocity, delta_seconds);
-        let handoffs = skeleton
-            .raised_locomotion()
-            .step_sequence()
-            .wrapping_sub(previous_guard_sequence);
-        advance_contact_identity(skeleton, handoffs, previous_guard_swing);
+        let handoffs = advance_raised_locomotion_intent(skeleton, local_velocity, delta_seconds);
+        advance_contact_identity(skeleton, handoffs, None);
     } else {
-        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted(previous_guard_sequence));
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
         if input.grounded && ground_speed > 0.05 {
             let profile = locomotion_profile(skeleton);
             let phase = skeleton.gait_phase.rem_euclid(1.0);
@@ -1636,63 +2046,28 @@ fn advance_raised_locomotion_intent(
     skeleton: &mut SkeletonState,
     observed_local_velocity: Vec3,
     delta_seconds: f32,
-) {
-    let mut intent = skeleton.raised_locomotion();
+) -> u32 {
+    let intent = skeleton.raised_locomotion();
     let observed_speed = observed_local_velocity.xz().length();
     let observed = (observed_speed > 0.05).then(|| {
         RaisedLocomotionIntent::moving(
             Vec2::new(observed_local_velocity.x, observed_local_velocity.z),
             observed_speed,
-            skeleton.lead_foot,
-            intent.step_sequence(),
         )
     });
     if !intent.is_moving() {
         let Some(observed) = observed else {
             skeleton.gait_phase = 0.0;
             skeleton.set_raised_locomotion(intent);
-            return;
+            return 0;
         };
-        intent = RaisedLocomotionIntent::moving(
-            observed.local_direction(),
-            observed.speed(),
-            initial_guard_swing_foot(observed.local_direction(), skeleton.lead_foot),
-            observed.step_sequence(),
-        );
+        skeleton.set_raised_locomotion(observed);
         skeleton.gait_phase = 0.0;
     }
 
-    if let Some(observed) = observed {
-        // Do not latch the tiny velocity from the first acceleration tick for
-        // a complete pulse. Cadence and reach adapt immediately; only a hard
-        // direction change waits until the current swing foot lands.
-        let mut direction = intent.local_direction();
-        let mut swing_foot = intent.swing_foot().unwrap_or(skeleton.lead_foot);
-        let mut step_sequence = intent.step_sequence();
-        if direction.dot(observed.local_direction()) < -0.5 {
-            // Gameplay root velocity reverses immediately. Hand support off
-            // immediately too, rather than dragging the old world plant
-            // across its anatomical corridor until the scheduled seam.
-            direction = observed.local_direction();
-            swing_foot = match swing_foot {
-                LeadFoot::Left => LeadFoot::Right,
-                LeadFoot::Right => LeadFoot::Left,
-            };
-            step_sequence = step_sequence.wrapping_add(1);
-            intent = RaisedLocomotionIntent::moving(
-                direction,
-                observed.speed(),
-                swing_foot,
-                step_sequence,
-            );
-            skeleton.gait_phase = if skeleton.gait_phase < 0.5 { 0.5 } else { 0.0 };
-            skeleton.set_raised_locomotion(intent);
-            return;
-        }
-        intent =
-            RaisedLocomotionIntent::moving(direction, observed.speed(), swing_foot, step_sequence);
-    }
-    let speed = intent.speed();
+    let moving = observed.unwrap_or(intent);
+    skeleton.set_raised_locomotion(moving);
+    let speed = moving.speed();
     let phase = skeleton.gait_phase.rem_euclid(1.0);
     let profile = LocomotionProfile {
         step_distance: guard_step_length(speed),
@@ -1703,53 +2078,13 @@ fn advance_raised_locomotion_intent(
     let crossed_handoff = handoffs > 0;
 
     if observed.is_none() && crossed_handoff {
-        let step_sequence = intent.step_sequence().wrapping_add(1);
-        intent = RaisedLocomotionIntent::planted(step_sequence);
         skeleton.gait_phase = if phase < 0.5 { 0.5 } else { 0.0 };
-        skeleton.set_raised_locomotion(intent);
-        return;
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
+        return handoffs;
     }
 
     skeleton.gait_phase = next_phase.rem_euclid(1.0);
-    if crossed_handoff && let Some(observed) = observed {
-        if handoffs % 2 == 1 {
-            let swing_foot = match intent.swing_foot().unwrap_or(skeleton.lead_foot) {
-                LeadFoot::Left => LeadFoot::Right,
-                LeadFoot::Right => LeadFoot::Left,
-            };
-            intent = RaisedLocomotionIntent::moving(
-                observed.local_direction(),
-                observed.speed(),
-                swing_foot,
-                intent.step_sequence(),
-            );
-        }
-        intent = RaisedLocomotionIntent::moving(
-            observed.local_direction(),
-            observed.speed(),
-            intent.swing_foot().unwrap_or(skeleton.lead_foot),
-            intent.step_sequence().wrapping_add(handoffs),
-        );
-    }
-    skeleton.set_raised_locomotion(intent);
-}
-
-pub(super) fn initial_guard_swing_foot(direction: Vec2, lead: LeadFoot) -> LeadFoot {
-    if direction.x.abs() >= direction.y.abs() {
-        if direction.x.is_sign_negative() {
-            LeadFoot::Left
-        } else {
-            LeadFoot::Right
-        }
-    } else if direction.y.is_sign_positive() {
-        // Retreat begins with the forward foot; advance begins with the rear.
-        lead
-    } else {
-        match lead {
-            LeadFoot::Left => LeadFoot::Right,
-            LeadFoot::Right => LeadFoot::Left,
-        }
-    }
+    handoffs
 }
 
 /// Ground distance covered by one procedural combat-stance step. Raised

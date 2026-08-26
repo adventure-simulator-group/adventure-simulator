@@ -896,11 +896,11 @@ mod tests {
         assert!(markup.contains("Negative morale, -2.0"));
         assert!(markup.contains("--social-topic-color:color-mix"));
         assert!(!markup.contains("Local fame"));
-        assert!(markup.contains("How many years hast thou seen?"));
+        assert!(markup.contains("How many years have passed?"));
         assert!(markup.contains("I have seen 20 years."));
-        assert!(markup.contains("What faith dost thou profess?"));
+        assert!(markup.contains("What faith is professed?"));
         assert!(markup.contains("I am of the Lutheran confession."));
-        assert!(markup.contains("What report dost thou bear in these parts?"));
+        assert!(markup.contains("What report is borne in these parts?"));
         assert!(markup.contains("Folk here speak well of me"));
         assert!(markup.contains("data-local-chat-kind=\"player\" data-local-chat-subject=\"2\""));
         assert!(markup.contains("class=\"settlement-chat-messages\""));
@@ -1206,7 +1206,7 @@ mod tests {
     #[test]
     fn settlement_resident_strip_exposes_accessible_authoritative_context() {
         let strip = npc_portrait_strip("lubeck", "market").into_string();
-        assert!(strip.contains("aria-label=\"People here\""));
+        assert!(strip.contains("aria-label=\"People and things here\""));
         assert!(strip.contains("data-npc-settlement=\"lubeck\""));
         assert!(strip.contains("data-npc-location=\"market\""));
         assert!(strip.contains("aria-label=\"Cook at fireplace\""));

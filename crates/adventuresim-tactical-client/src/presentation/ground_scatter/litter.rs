@@ -6,7 +6,10 @@ use bevy::{
     light::NotShadowCaster,
     math::FloatExt,
     mesh::{Indices, PrimitiveTopology},
-    prelude::{Color, Commands, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, Transform, Vec2, Vec3},
+    prelude::{
+        Color, Commands, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, StandardMaterial, Transform,
+        Vec2, Vec3, default,
+    },
 };
 use std::collections::BTreeMap;
 
@@ -19,23 +22,44 @@ use super::{
     TacticalFoliageMaterial, TacticalTreeLeafCardMaterial, foliage_transform,
 };
 
-const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 12;
+const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 8;
 const TWIG_PASSES_PER_SAMPLE: u64 = 4;
 const WOODLAND_PLANT_PASSES_PER_SAMPLE: u64 = 1;
 const WOODLAND_FLOOR_TRANSITION_METRES: f32 = 3.2;
 const LITTER_BATCH_CELL_METRES: f32 = 24.0;
 const LITTER_BATCH_HALF_DIAGONAL_METRES: f32 =
     LITTER_BATCH_CELL_METRES * core::f32::consts::FRAC_1_SQRT_2;
-const DRY_LEAVES_PER_PATCH: u64 = 84;
+// Physical forest-floor detail is close-camera dressing. Beyond these local
+// ranges the terrain's existing canopy-floor/litter material carries the
+// forest-floor read; the batch visibility helper adds its AABB safety pad.
+const DRY_LEAF_LOCAL_END_METRES: f32 = 16.0;
+const TWIG_LOCAL_END_METRES: f32 = 12.0;
+const WOODLAND_PLANT_LOCAL_END_METRES: f32 = 14.0;
+const DRY_LEAVES_PER_PATCH: u64 = 56;
 const TWIGS_PER_PATCH: u64 = 8;
 
 pub(super) struct Assets {
     pub dry_leaf_meshes: Vec<Handle<Mesh>>,
     pub twig_meshes: Vec<Handle<Mesh>>,
     pub dry_leaf_material: Handle<TacticalTreeLeafCardMaterial>,
-    pub twig_material: Handle<TacticalFoliageMaterial>,
+    pub twig_material: Handle<StandardMaterial>,
     pub woodland_plant_meshes: Vec<Handle<Mesh>>,
     pub woodland_plant_material: Handle<TacticalFoliageMaterial>,
+}
+
+/// Static, vertex-colored wood for batched forest-floor twigs.
+///
+/// Twigs are fully modeled opaque geometry, so the stock PBR path preserves
+/// their per-vertex bark pigment, fog, and lighting without foliage wind,
+/// interaction, coverage-mask, or transmission work.
+pub(super) fn static_twig_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 0.96,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    }
 }
 
 #[derive(Default)]
@@ -63,6 +87,7 @@ pub(super) fn spawn(
     let mut batches = BTreeMap::<(i32, i32), LitterBatch>::new();
     let mut leaf_anchors = Vec::new();
     let mut twig_anchors = Vec::new();
+    let mut dry_leaf_patch_instances = 0;
     for (index, sample) in ground.samples().iter().enumerate() {
         let grid_x = index % ground.grid_width();
         let grid_z = index / ground.grid_width();
@@ -97,6 +122,7 @@ pub(super) fn spawn(
             if sample.cover == GroundCover::LeafLitter {
                 leaf_anchors.push(transform.translation);
             }
+            dry_leaf_patch_instances += 1;
             append_litter_batch(
                 meshes,
                 &assets.dry_leaf_meshes[(hash % assets.dry_leaf_meshes.len() as u64) as usize],
@@ -163,6 +189,13 @@ pub(super) fn spawn(
             GroundLitterCaptureAnchors { pairs },
         ));
     }
+    commands.spawn((
+        Name::new("Tactical litter diagnostics"),
+        super::GroundLitterDiagnostics {
+            dry_leaf_patch_instances,
+            physical_dry_leaf_count: dry_leaf_patch_instances * DRY_LEAVES_PER_PATCH as usize,
+        },
+    ));
     for ((cell_x, cell_z), batch) in batches {
         let transform = Transform::from_xyz(
             cell_x as f32 * LITTER_BATCH_CELL_METRES,
@@ -176,7 +209,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.dry_leaf_material.clone()),
-                batched_litter_visibility(26.0),
+                batched_litter_visibility(DRY_LEAF_LOCAL_END_METRES),
                 transform,
             ));
         }
@@ -187,7 +220,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.twig_material.clone()),
-                batched_litter_visibility(20.0),
+                batched_litter_visibility(TWIG_LOCAL_END_METRES),
                 transform,
             ));
         }
@@ -198,7 +231,7 @@ pub(super) fn spawn(
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(assets.woodland_plant_material.clone()),
-                batched_litter_visibility(28.0),
+                batched_litter_visibility(WOODLAND_PLANT_LOCAL_END_METRES),
                 transform,
             ));
         }
@@ -392,7 +425,9 @@ pub(super) fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
         Color::srgb_u8(95, 83, 67),
         Color::srgb_u8(104, 91, 72),
     ];
-    const STRATIFIED_LEAVES: u64 = 56;
+    // Keep a clustered tail even after reducing the patch population so
+    // variants retain their loose-pile silhouette differences.
+    const STRATIFIED_LEAVES: u64 = 40;
     const STRATIFIED_COLUMNS: u64 = 8;
     const CLUSTER_COUNT: u64 = 7;
     let clusters = (0..CLUSTER_COUNT)
@@ -802,16 +837,119 @@ mod tests {
     use bevy::{
         asset::{AssetApp, AssetPlugin},
         mesh::VertexAttributeValues,
-        prelude::{App, Image, TaskPoolPlugin, default},
+        prelude::{App, Assets as BevyAssets, Image, TaskPoolPlugin, World, default},
     };
 
     #[test]
+    fn litter_batches_use_static_twigs_and_tactical_foliage_for_plants() {
+        let terrain = SceneTerrain::from_heightmap(3, 3, 1.0, vec![0.0; 9]).unwrap();
+        let ground = SceneGround::from_samples(
+            3,
+            3,
+            1.0,
+            vec![
+                GroundSurface {
+                    cover: GroundCover::LeafLitter,
+                    cover_density_bps: 10_000,
+                    ..default()
+                };
+                9
+            ],
+        )
+        .unwrap();
+        let mut meshes = BevyAssets::<Mesh>::default();
+        let assets = Assets {
+            dry_leaf_meshes: vec![meshes.add(dry_leaf_patch_mesh(0))],
+            twig_meshes: vec![meshes.add(twig_patch_mesh(0))],
+            dry_leaf_material: Handle::default(),
+            twig_material: Handle::default(),
+            woodland_plant_meshes: vec![meshes.add(woodland_plant_patch_mesh(0))],
+            woodland_plant_material: Handle::default(),
+        };
+        let base_seed = (0..100)
+            .find(|base_seed| {
+                (0..9).any(|index| {
+                    unit_hash(splitmix64(*base_seed ^ index ^ 0x7b31_eaf4_2c5d_9081)) < 0.055
+                })
+            })
+            .expect("a deterministic seed with a woodland-floor plant");
+        let mut world = World::new();
+        {
+            let mut commands = world.commands();
+            spawn(
+                &mut commands,
+                &mut meshes,
+                &terrain,
+                &ground,
+                base_seed,
+                &assets,
+            );
+        }
+        world.flush();
+
+        let mut batches = world.query::<(
+            &GroundScatterLayer,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+            Option<&MeshMaterial3d<TacticalFoliageMaterial>>,
+            Option<&NotShadowCaster>,
+        )>();
+        let mut twig_batches = 0;
+        let mut plant_batches = 0;
+        for (layer, standard, foliage, not_shadow_caster) in batches.iter(&world) {
+            match layer {
+                GroundScatterLayer::Twigs => {
+                    twig_batches += 1;
+                    assert!(standard.is_some());
+                    assert!(foliage.is_none());
+                    assert!(not_shadow_caster.is_some());
+                }
+                GroundScatterLayer::Understory => {
+                    plant_batches += 1;
+                    assert!(standard.is_none());
+                    assert!(foliage.is_some());
+                    assert!(not_shadow_caster.is_some());
+                }
+                _ => {}
+            }
+        }
+        assert!(twig_batches > 0);
+        assert!(plant_batches > 0);
+    }
+
+    #[test]
+    fn static_twig_material_is_rough_double_sided_and_fog_lit() {
+        let material = static_twig_material();
+        assert_eq!(material.base_color, Color::WHITE);
+        assert_eq!(material.perceptual_roughness, 0.96);
+        assert!(material.double_sided);
+        assert_eq!(material.cull_mode, None);
+        assert!(material.fog_enabled);
+        assert!(!material.unlit);
+    }
+
+    #[test]
     fn batched_litter_visibility_cannot_cull_debris_inside_its_local_range() {
-        let local_end = 24.0;
+        let local_end = DRY_LEAF_LOCAL_END_METRES;
         let range = batched_litter_visibility(local_end);
         assert!(range.use_aabb);
         assert!(range.is_visible_at_all(LITTER_BATCH_HALF_DIAGONAL_METRES + local_end - 0.01));
         assert!(!range.is_visible_at_all(LITTER_BATCH_HALF_DIAGONAL_METRES + local_end + 0.01));
+    }
+
+    #[test]
+    fn forest_floor_litter_uses_close_local_ranges_with_batch_safety_padding() {
+        assert_eq!(DRY_LEAF_LOCAL_END_METRES, 16.0);
+        assert_eq!(TWIG_LOCAL_END_METRES, 12.0);
+        assert_eq!(WOODLAND_PLANT_LOCAL_END_METRES, 14.0);
+
+        for (local_end, expected_padded_end) in [
+            (DRY_LEAF_LOCAL_END_METRES, 32.970_562),
+            (TWIG_LOCAL_END_METRES, 28.970_562),
+            (WOODLAND_PLANT_LOCAL_END_METRES, 30.970_562),
+        ] {
+            let range = batched_litter_visibility(local_end);
+            assert!((range.end_margin.end - expected_padded_end).abs() < 0.000_1);
+        }
     }
 
     #[test]
@@ -845,6 +983,17 @@ mod tests {
         let outside = leaf_litter_proximity(&ground, 8, 4);
         assert!(1.0 > edge && edge > middle && middle > outside);
         assert_eq!(outside, 0.0);
+    }
+
+    #[test]
+    fn dry_leaf_density_uses_the_reduced_physical_geometry_budget() {
+        assert_eq!(DRY_LEAF_PASSES_PER_SAMPLE, 8);
+        assert_eq!(DRY_LEAVES_PER_PATCH, 56);
+
+        let old_leaf_budget = 12_u64 * 84;
+        let new_leaf_budget = DRY_LEAF_PASSES_PER_SAMPLE * DRY_LEAVES_PER_PATCH;
+        assert_eq!(new_leaf_budget, 448);
+        assert_eq!(new_leaf_budget * 9, old_leaf_budget * 4);
     }
 
     #[test]
@@ -1026,7 +1175,8 @@ mod tests {
         assert!(floor.physical_parameters.y < oak.physical_parameters.y);
         assert!((0.3..0.5).contains(&floor.physical_parameters.z));
         assert_eq!(oak.physical_parameters.z, 0.0);
-        let shader = include_str!("../../../../../assets/shaders/tactical_tree_leaf_card.wgsl");
+        let shader = include_str!("../../../../../assets/shaders/tactical_tree_leaf_card.wgsl")
+            .replace("\r\n", "\n");
         assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(\n        albedo,"));
         assert!(shader.contains("albedo = mix(albedo, in.color.rgb"));
         assert!(!shader.contains("spatial_hue"));

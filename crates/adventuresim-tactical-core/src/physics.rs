@@ -47,7 +47,6 @@ pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
 
 /// Maximum server-authoritative movement speed while the weapon guard is raised.
 pub const TACTICAL_GUARD_SPEED_METRES_PER_SECOND: f32 = 2.0;
-const TACTICAL_UPRIGHT_CROUCH_SPEED_SCALE: f32 = 1.0 / 3.0;
 
 /// Deliberate prone crawl speed used by the ordinary walking control mode.
 pub const TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND: f32 = 0.45;
@@ -73,6 +72,10 @@ pub const TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND: f32 = 5.0;
 pub const TACTICAL_RUN_ACCELERATION_HZ: f32 = 8.0;
 pub const TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 =
     TACTICAL_RUN_SPEED_METRES_PER_SECOND * TACTICAL_RUN_ACCELERATION_HZ;
+/// Ahoy's grounded friction response is part of hit-reaction tuning, so keep
+/// these values explicit instead of inheriting dependency defaults.
+pub const TACTICAL_CHARACTER_FRICTION_HZ: f32 = 12.0;
+pub const TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND: f32 = 2.54;
 
 pub fn tactical_jog_speed(endurance: f32) -> f32 {
     let endurance = endurance.clamp(0.0, 5.0);
@@ -160,6 +163,8 @@ pub fn tactical_character_controller() -> CharacterController {
     CharacterController {
         speed: TACTICAL_RUN_SPEED_METRES_PER_SECOND,
         acceleration_hz: TACTICAL_RUN_ACCELERATION_HZ,
+        friction_hz: TACTICAL_CHARACTER_FRICTION_HZ,
+        stop_speed: TACTICAL_CHARACTER_STOP_SPEED_METRES_PER_SECOND,
         jump_height: TACTICAL_JUMP_HEIGHT_METRES,
         ..default()
     }
@@ -239,6 +244,9 @@ fn tactical_prone_speed_for_pace(pace: MovementPace, upright_jog_speed: f32) -> 
 
 pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
+    /// Runs Avian's solver for explicitly enabled client-only presentation
+    /// bodies while keeping every ordinary replicated rigid body disabled.
+    pub enable_presentation_simulation: bool,
 }
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -250,12 +258,14 @@ impl Default for AdventureSimulatorPhysicsPlugin {
     fn default() -> Self {
         Self {
             enable_simulation: true,
+            enable_presentation_simulation: false,
         }
     }
 }
 
 impl Plugin for AdventureSimulatorPhysicsPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<crate::combat_config::TacticalCombatConfig>();
         if self.enable_simulation {
             app.add_plugins((
                 PhysicsPlugins::new(FixedPostUpdate),
@@ -267,6 +277,9 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
                     .in_set(AdventureSimulatorPhysicsSet::ApplyMovementSpeed)
                     .before(AhoySystems::MoveCharacters),
             );
+        } else if self.enable_presentation_simulation {
+            app.add_plugins((PhysicsPlugins::new(FixedPostUpdate), AhoyCameraPlugin))
+                .register_required_components::<RigidBody, RigidBodyDisabled>();
         } else {
             app.add_plugins((
                 PhysicsSchedulePlugin::new(FixedPostUpdate),
@@ -310,22 +323,20 @@ fn apply_analogue_movement_speed(
         Option<&MovementPace>,
     )>,
     viewer: TacticalPlayerViewer,
+    combat_config: Res<crate::combat_config::TacticalCombatConfig>,
 ) {
+    let movement_config = &combat_config.movement;
+    let speeds = &movement_config.speeds_metres_per_second;
+    let ground_acceleration = speeds.run * movement_config.run_acceleration_hz;
     for (entity, input, mut controller, skeleton, pace) in &mut controllers {
-        let is_downed = skeleton.is_some_and(|skeleton| skeleton.body().is_downed());
-        // Ahoy uses the crouch flag for both its shortened collision shape and
-        // a one-third upright crouch speed penalty. Downed postures need the
-        // short collider, but their configured crawl/scamper speeds already
-        // are the final physical targets and must not be reduced a second time.
-        controller.crouch_speed_scale = if is_downed {
-            1.0
-        } else {
-            TACTICAL_UPRIGHT_CROUCH_SPEED_SCALE
-        };
+        // Ahoy's crouch flag supplies the short collider used by downed and
+        // posture-transition states. Their configured speeds are already the
+        // final physical targets, so the collider must not scale speed again.
+        controller.crouch_speed_scale = 1.0;
         controller.jump_height = if skeleton.is_some_and(|skeleton| {
             skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
         }) {
-            TACTICAL_QUICKSTEP_JUMP_HEIGHT_METRES
+            movement_config.jump_heights_metres.quickstep
         } else if skeleton.is_some_and(|skeleton| {
             matches!(
                 skeleton
@@ -334,16 +345,17 @@ fn apply_analogue_movement_speed(
                 Some(crate::animation::PostureTransitionKind::DiveToDowned { .. })
             )
         }) {
-            TACTICAL_DIVE_JUMP_HEIGHT_METRES
+            movement_config.jump_heights_metres.dive
         } else {
-            TACTICAL_JUMP_HEIGHT_METRES
+            movement_config.jump_heights_metres.ordinary
         };
+        controller.friction_hz = movement_config.character_friction_hz;
+        controller.stop_speed = movement_config.character_stop_speed_metres_per_second;
         let guard = skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard);
         let roll_motion = skeleton.map_or(0.0, SkeletonState::downed_lateral_motion);
         if roll_motion.abs() > f32::EPSILON {
-            controller.speed = TACTICAL_ROLL_SPEED_METRES_PER_SECOND * roll_motion.abs();
-            controller.acceleration_hz =
-                TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED / controller.speed.max(0.01);
+            controller.speed = speeds.roll * roll_motion.abs();
+            controller.acceleration_hz = ground_acceleration / controller.speed.max(0.01);
             continue;
         }
         if skeleton.is_some_and(SkeletonState::is_posture_transitioning) {
@@ -356,9 +368,8 @@ fn apply_analogue_movement_speed(
                 && skeleton.quickstep_is_launched()
                 && skeleton.body() == crate::animation::BodyState::Airborne
         }) {
-            controller.speed = TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
-            controller.acceleration_hz = TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
-                / TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND;
+            controller.speed = speeds.quickstep;
+            controller.acceleration_hz = ground_acceleration / speeds.quickstep;
             continue;
         }
         let body = skeleton.map(SkeletonState::body);
@@ -366,55 +377,75 @@ fn apply_analogue_movement_speed(
             .last_movement
             .map_or(0.0, |movement| movement.length().clamp(0.0, 1.0));
         let Some(pace) = pace else {
-            controller.speed = tactical_movement_speed_for_guard(input.last_movement, guard);
+            let cap = match guard {
+                WeaponGuardState::Lowered => speeds.run,
+                WeaponGuardState::Raised => speeds.raised_guard,
+            };
+            controller.speed = cap * input_magnitude;
             match body {
                 Some(crate::animation::BodyState::Prone) => {
-                    controller.speed =
-                        tactical_prone_speed_for_pace(MovementPace::Walk, 3.75) * input_magnitude;
+                    controller.speed = speeds.prone_walk * input_magnitude;
                 }
                 Some(crate::animation::BodyState::Supine) => {
-                    controller.speed =
-                        tactical_prone_speed_for_pace(MovementPace::Walk, 3.75) * input_magnitude;
+                    controller.speed = speeds.prone_walk * input_magnitude;
                 }
                 _ => {}
             }
-            controller.acceleration_hz = tactical_movement_acceleration_hz_for_guard(guard);
+            controller.acceleration_hz = ground_acceleration / cap;
             continue;
         };
-        let (jog, sprint) =
-            viewer
-                .get(entity)
-                .map_or((3.75, TACTICAL_RUN_SPEED_METRES_PER_SECOND), |player| {
-                    let burden = player.body_weight() + player.inventory_weight();
-                    (
-                        tactical_jog_speed(
-                            player.raw_single_body_part_attr(SimpleAttribute::Endurance),
-                        ),
-                        tactical_sprint_speed(
-                            player.raw_limb_attr(LimbAttribute::Strength, BodyPart::LeftLeg),
-                            player.raw_limb_attr(LimbAttribute::Strength, BodyPart::RightLeg),
-                            player.body_part_health(BodyPart::LeftLeg),
-                            player.body_part_health(BodyPart::RightLeg),
-                            burden,
-                        ),
-                    )
-                });
-        controller.speed =
-            tactical_movement_speed_for_pace(input.last_movement, *pace, guard, jog, sprint);
+        let (jog, sprint) = viewer.get(entity).map_or((3.75, speeds.run), |player| {
+            let burden = player.body_weight() + player.inventory_weight();
+            (
+                tactical_jog_speed(player.raw_single_body_part_attr(SimpleAttribute::Endurance)),
+                tactical_sprint_speed(
+                    player.raw_limb_attr(LimbAttribute::Strength, BodyPart::LeftLeg),
+                    player.raw_limb_attr(LimbAttribute::Strength, BodyPart::RightLeg),
+                    player.body_part_health(BodyPart::LeftLeg),
+                    player.body_part_health(BodyPart::RightLeg),
+                    burden,
+                ),
+            )
+        });
+        let requested = match pace {
+            MovementPace::Walk => speeds.walk,
+            MovementPace::Jog => jog,
+            MovementPace::Sprint => sprint,
+        };
+        let cap = if guard == WeaponGuardState::Raised {
+            match pace {
+                MovementPace::Sprint => jog,
+                _ => requested.min(speeds.raised_guard),
+            }
+        } else {
+            requested
+        };
+        controller.speed = cap * input_magnitude;
         match body {
             Some(crate::animation::BodyState::Prone) => {
-                controller.speed = tactical_prone_speed_for_pace(*pace, jog) * input_magnitude;
+                controller.speed = match pace {
+                    MovementPace::Walk => speeds.prone_walk,
+                    MovementPace::Jog => jog / movement_config.prone_effort_scale,
+                    MovementPace::Sprint => speeds.prone,
+                } * input_magnitude;
             }
             Some(crate::animation::BodyState::Supine) => {
-                controller.speed = tactical_prone_speed_for_pace(*pace, jog) * input_magnitude;
+                controller.speed = match pace {
+                    MovementPace::Walk => speeds.prone_walk,
+                    MovementPace::Jog => jog / movement_config.prone_effort_scale,
+                    MovementPace::Sprint => speeds.prone,
+                } * input_magnitude;
             }
             _ => {}
         }
         controller.acceleration_hz = if input_magnitude > f32::EPSILON {
-            TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
-                / (controller.speed / input_magnitude).max(0.01)
+            ground_acceleration / (controller.speed / input_magnitude).max(0.01)
         } else {
-            tactical_movement_acceleration_hz_for_guard(guard)
+            let cap = match guard {
+                WeaponGuardState::Lowered => speeds.run,
+                WeaponGuardState::Raised => speeds.raised_guard,
+            };
+            ground_acceleration / cap
         };
     }
 }
@@ -473,6 +504,7 @@ mod tests {
                 CharacterController::default(),
             ))
             .id();
+        world.insert_resource(crate::combat_config::TacticalCombatConfig::default());
         let mut schedule = Schedule::default();
         schedule.add_systems(apply_analogue_movement_speed);
         schedule.run(&mut world);
@@ -505,7 +537,13 @@ mod tests {
     #[test]
     fn launched_quickstep_uses_the_short_hop_and_dodge_speed() {
         let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        skeleton.begin_dodge(crate::animation::DodgeSpec { direction: Vec2::Y }, 0, 20);
+        skeleton
+            .begin_dodge(
+                crate::animation::DodgeSpec::quickstep(Vec2::Y).unwrap(),
+                0,
+                20,
+            )
+            .unwrap();
         skeleton.advance_action(5);
         skeleton.transition_body(crate::animation::BodyState::Airborne);
         assert!(skeleton.quickstep_is_launched());
@@ -520,6 +558,7 @@ mod tests {
                 skeleton,
             ))
             .id();
+        world.insert_resource(crate::combat_config::TacticalCombatConfig::default());
         let mut schedule = Schedule::default();
         schedule.add_systems(apply_analogue_movement_speed);
         schedule.run(&mut world);
@@ -775,22 +814,6 @@ mod tests {
                 MovementPace::Jog,
             ))
             .id();
-        let upright_crouch = world
-            .spawn((
-                AccumulatedInput {
-                    last_movement: Some(Vec2::Y),
-                    ..default()
-                },
-                CharacterController {
-                    crouch_speed_scale: 1.0,
-                    ..default()
-                },
-                SkeletonState::default().with_body_state(crate::animation::BodyState::Grounded(
-                    crate::animation::GroundedPosture::Crouched,
-                )),
-                MovementPace::Walk,
-            ))
-            .id();
         let mut transitioning = SkeletonState::default();
         assert!(transitioning.begin_posture_transition(
             crate::animation::PostureTransitionKind::UprightToProne,
@@ -828,6 +851,7 @@ mod tests {
                 MovementPace::Sprint,
             ))
             .id();
+        world.insert_resource(crate::combat_config::TacticalCombatConfig::default());
         let mut schedule = Schedule::default();
         schedule.add_systems(apply_analogue_movement_speed);
         schedule.run(&mut world);
@@ -862,13 +886,6 @@ mod tests {
         assert_eq!(
             world.get::<CharacterController>(prone_jog).unwrap().speed,
             3.75 / TACTICAL_PRONE_EFFORT_SCALE
-        );
-        assert_eq!(
-            world
-                .get::<CharacterController>(upright_crouch)
-                .unwrap()
-                .crouch_speed_scale,
-            TACTICAL_UPRIGHT_CROUCH_SPEED_SCALE
         );
         assert_eq!(
             world.get::<CharacterController>(transition).unwrap().speed,

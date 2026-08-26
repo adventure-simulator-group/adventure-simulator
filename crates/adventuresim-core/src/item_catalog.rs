@@ -30,6 +30,50 @@ pub fn catalog() -> &'static [ItemDefinition] {
                 .drain(..)
                 .flat_map(|document| document.items)
                 .collect();
+            for item in &mut items {
+                let Some(equipment) = &item.equipment else {
+                    continue;
+                };
+                let placement_coverages = equipment
+                    .placements
+                    .iter()
+                    .filter_map(|placement| {
+                        let regions = placement
+                            .surface
+                            .iter()
+                            .map(|span| span.regions.len())
+                            .sum::<usize>();
+                        (regions > 0).then(|| {
+                            placement
+                                .surface
+                                .iter()
+                                .map(|span| span.coverage * span.regions.len() as f32)
+                                .sum::<f32>()
+                                / regions as f32
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if placement_coverages.is_empty() {
+                    continue;
+                }
+                let coverage =
+                    placement_coverages.iter().sum::<f32>() / placement_coverages.len() as f32;
+                match &mut item.kind {
+                    ItemKind::Armor {
+                        coverage: authored, ..
+                    } => *authored = coverage,
+                    ItemKind::Clothing => {
+                        if let Some(protection) = item
+                            .equipment
+                            .as_mut()
+                            .and_then(|equipment| equipment.protection.as_mut())
+                        {
+                            protection.coverage = coverage;
+                        }
+                    }
+                    _ => {}
+                }
+            }
             items.sort_by(|a, b| a.id.cmp(&b.id));
             items
         })
@@ -102,7 +146,7 @@ mod tests {
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
         // The source catalog expands each availability epoch into a compiled
         // definition; the generated weapon loop adds four epoch rows.
-        assert_eq!(catalog().len(), 166);
+        assert_eq!(catalog().len(), 167);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -134,8 +178,8 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "80399dff2299bcfb07cf1511b15e2dae04153b3992a05eb8995f3903f1dde35d",
-            "stable-ID golden changed intentionally: smithing stock was added; development data must be reseeded"
+            "3225263028af61c4b6aa5645c8686a05dfd2efa30d6c7b6a156b3ce89cb5fe7e",
+            "stable-ID golden changed intentionally: linen breeches were added; development data must be reseeded"
         );
 
         let counts = catalog().iter().fold([0_u16; 10], |mut counts, item| {
@@ -156,7 +200,7 @@ mod tests {
         });
         // Holder chassis are simple catalog rows; their individual procedural
         // identities live in WeaponHolderInstance.
-        assert_eq!(counts, [48, 6, 16, 14, 1, 1, 5, 25, 29, 21]);
+        assert_eq!(counts, [47, 6, 16, 14, 3, 1, 5, 25, 29, 21]);
     }
 
     #[test]
@@ -433,7 +477,7 @@ mod tests {
             .iter()
             .filter_map(|item| item.equipment.as_ref().map(|equipment| (item, equipment)))
             .collect();
-        assert_eq!(equipment.len(), 68);
+        assert_eq!(equipment.len(), 69);
         for (item, equipment) in equipment {
             assert!(
                 equipment

@@ -7,14 +7,10 @@ biped/
     idle_relaxed.glb
     walk.glb
     run.glb
-    guard.glb
     swing.glb
-    swing_follow.glb
     thrust.glb
-    duck_forward.glb
-    duck_backward.glb
-    duck_left.glb
-    duck_right.glb
+    offhand.glb
+    dive.glb
     ...
 ```
 
@@ -29,18 +25,26 @@ The on-disk pack directory is `unarmed`; its semantic pack ID is
 `humanoid_unarmed`. Future compatible packs may sit beside it and declare one
 parent pack.
 
-Guard movement is procedural. `guard.glb` supplies one static whole-body guard,
-while the ordinary raised-guard foot-target planner handles forward, backward,
-and lateral movement. There are no authored directional guard-motion,
+Guard movement is procedural around frame 0 of the selected `swing.glb` or
+`thrust.glb`. The ordinary raised-guard foot-target planner handles forward,
+backward, and lateral movement. There are no authored directional guard-motion,
 alternate-stance, or stance-transition files.
 
-`swing.glb`, `swing_follow.glb`, and `thrust.glb` are optional single contact
-poses. A pack that supplies any of these three owns its complete attack set;
-another missing attack remains unavailable and is not borrowed from a parent.
-A pack that supplies none inherits the nearest parent's attack set. This
-availability is gameplay-significant: a character cannot request a strike
-family with no usable initial contact pose. Preferred input uses the alternate
-family when only that family is available.
+Blocking is also procedural. Packs do not provide authored block motions.
+
+`swing.glb` and `thrust.glb` are optional main-hand motions. Frame 0 is guard
+and frame 4 is first contact; optional frames 8 and 12 provide recovery into
+one buffered continuation and its contact. A pack that supplies either main
+motion owns its complete main-hand attack set; another missing family remains
+unavailable and is not borrowed from a parent. A pack that supplies neither
+inherits the nearest parent's main-hand set. This availability is
+gameplay-significant: a character cannot request a strike family with no usable
+initial contact pose. Preferred input uses the alternate family when only that
+family is available.
+
+`offhand.glb` inherits independently. A single-frame file supplies the release
+contact. A two-anchor file uses frame 0 for held preparation and frame 4 for
+contact.
 
 Attacks do not own foot targets. Their authored full-body rotations may bend
 knees and pivot feet, but live guard locomotion and terrain IK continue to plan

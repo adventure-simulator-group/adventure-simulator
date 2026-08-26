@@ -3,6 +3,7 @@ use super::*;
 pub(super) fn apply_melee_attack_result(
     event: On<ApplyMeleeAttackResult>,
     mut combatants: Query<(&mut Limbs, &mut TacticalCombatState)>,
+    mut velocities: Query<&mut LinearVelocity>,
     metadata: Query<(&TacticalCombatSide, &CharacterId)>,
     mut consequences: ResMut<TacticalConsequenceAccumulator>,
     items: Query<(
@@ -26,6 +27,9 @@ pub(super) fn apply_melee_attack_result(
         event.result,
         event.body_part,
     );
+    if let Ok(mut velocity) = velocities.get_mut(event.impact_recipient) {
+        velocity.0 += event.impact_velocity_change;
+    }
     let attacker_metadata = metadata.get(event.attacker).ok();
     let defender_metadata = metadata.get(event.target).ok();
     if defender_metadata.is_some_and(|(side, _)| *side == TacticalCombatSide::Party)
@@ -144,8 +148,8 @@ pub(super) fn record_party_injury(
         });
     }
     consequence.blood_loss_fraction = (consequence.blood_loss_fraction
-        + (cut_damage + blunt_damage) * BLOOD_LOSS_PER_HEALTH_DAMAGE)
-        .clamp(0.0, 1.0);
+        + blood_loss_from_applied_health_damage(body_part, cut_damage, blunt_damage))
+    .clamp(0.0, 1.0);
 }
 
 pub(super) fn record_party_ammunition_use(
@@ -227,24 +231,16 @@ pub(crate) fn apply_transient_attack_result(
             attacker_state.imbalance += balance_damage.max(0.0);
             None
         }
-        AttackResult::ToDefender {
-            cut_damage,
-            blunt_damage,
-            balance_damage,
-            ..
-        } => {
+        AttackResult::ToDefender { balance_damage, .. } => {
             defender_state.imbalance += balance_damage.max(0.0);
             let damage = health_damage_from_attack(result, body_part);
             let applied = apply_clamped_limb_damage(defender_limbs.health_mut(body_part), damage);
+            let (applied_cut, applied_blunt) = apportion_attack_health_damage(result, applied);
             defender_state.blood_loss_fraction = (defender_state.blood_loss_fraction
-                + applied * BLOOD_LOSS_PER_HEALTH_DAMAGE)
-                .clamp(0.0, 1.0);
-            let raw_total = (cut_damage + blunt_damage).max(0.0);
-            if applied > 0.0 && raw_total > 0.0 {
-                Some((
-                    applied * cut_damage.max(0.0) / raw_total,
-                    applied * blunt_damage.max(0.0) / raw_total,
-                ))
+                + blood_loss_from_applied_health_damage(body_part, applied_cut, applied_blunt))
+            .clamp(0.0, 1.0);
+            if applied > 0.0 && applied_cut + applied_blunt > 0.0 {
+                Some((applied_cut, applied_blunt))
             } else {
                 None
             }

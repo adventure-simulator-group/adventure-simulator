@@ -23,7 +23,6 @@ def test_movement_input_moves_player(tactical_client: tactical_brp.BrpClient) ->
                 movement=[0.0, 1.0],
                 look=[0.0, 0.0],
                 jump=tactical_brp.JumpCommand(sequence=0),
-                crouch=False,
                 jump_charge=False,
                 downed_align=False,
                 posture=tactical_brp.PostureCommand(sequence=0, action=None),

@@ -17,6 +17,8 @@ use bevy::{
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, VariantArray};
 
+use crate::animation::AttackHand;
+
 pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 
@@ -103,17 +105,14 @@ pub struct WeaponItem {
     pub prefers_stab: bool,
     pub penetration: f32,
     pub reach: f32,
-    pub balance: f32,
+    pub grip_to_tip_m: f32,
+    pub moment_of_inertia_kg_m2: f32,
     pub precise: bool,
     pub melee: bool,
     pub ranged: bool,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
-    /// Real-time seconds between committing to a swing and the hit actually
-    /// landing. The single source of truth for this weapon's windup pacing -
-    /// see `PlayerEquipment::weapon_windup_secs`.
-    pub windup_secs: f32,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -314,6 +313,20 @@ impl InventoryViewer<'_, '_> {
             entity,
             q_inventory: &self.q_inventory,
             q_item: &self.q_item,
+            attack_hand: AttackHand::Main,
+        }
+    }
+
+    pub fn get_for_attack(
+        &self,
+        entity: Entity,
+        attack_hand: AttackHand,
+    ) -> InventoryView<'_, '_, '_> {
+        InventoryView {
+            entity,
+            q_inventory: &self.q_inventory,
+            q_item: &self.q_item,
+            attack_hand,
         }
     }
 }
@@ -322,6 +335,7 @@ pub struct InventoryView<'v, 'w, 's> {
     entity: Entity,
     q_inventory: &'v Query<'w, 's, &'static InventoryItems>,
     q_item: &'v Query<'w, 's, ItemQuery>,
+    attack_hand: AttackHand,
 }
 
 impl InventoryView<'_, '_, '_> {
@@ -342,16 +356,24 @@ impl InventoryView<'_, '_, '_> {
             .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
     }
 
+    fn striking_item(&self) -> Option<ItemQueryItem<'_, '_>> {
+        let slot = match self.attack_hand {
+            AttackHand::Main => EquipSlot::HoldingRight,
+            AttackHand::Offhand => EquipSlot::HoldingLeft,
+        };
+        self.iter().find(|item| item.slot == Some(&slot))
+    }
+
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
-        self.q_inventory
-            .get(self.entity)
-            .ok()
-            .and_then(|inventory| inventory.holding_weapon)
-            .and_then(|weapon| self.q_item.get(weapon).ok())
+        self.striking_item().filter(|item| item.weapon.is_some())
     }
 
     pub fn has_equipped_weapon(&self) -> bool {
         self.equipped_weapon().is_some()
+    }
+
+    pub fn has_striking_item(&self) -> bool {
+        self.striking_item().is_some()
     }
 
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
@@ -399,11 +421,13 @@ fn fold_armor_layers<'a>(
 
 impl PlayerEquipment for InventoryView<'_, '_, '_> {
     fn weapon_skill_distribution(&self) -> adventuresim_core::equipment::WeaponSkillDistribution {
-        let w = self
+        let Some(w) = self
             .equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.skill_weights)
-            .unwrap_or([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        else {
+            return adventuresim_core::equipment::WeaponSkillDistribution::UNARMED;
+        };
         adventuresim_core::equipment::WeaponSkillDistribution {
             polearm: w[0],
             axe: w[1],
@@ -427,21 +451,21 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.swing_precision)
-            .unwrap_or(0.2)
+            .unwrap_or(adventuresim_core::combat::UNARMED_SWING_PRECISION)
     }
 
     fn weapon_stab_precision(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.stab_precision)
-            .unwrap_or(0.5)
+            .unwrap_or(adventuresim_core::combat::UNARMED_STAB_PRECISION)
     }
 
     fn weapon_preferred_melee_style(&self) -> MeleeAttackStyle {
         if self
             .equipped_weapon()
             .and_then(|item| item.weapon)
-            .is_none_or(|weapon| weapon.prefers_stab)
+            .is_some_and(|weapon| weapon.prefers_stab)
         {
             MeleeAttackStyle::Stab
         } else {
@@ -459,6 +483,12 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .is_some_and(|weapon| weapon.ranged)
+    }
+
+    fn weapon_is_unarmed(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_none()
     }
 
     fn weapon_does_blunt(&self) -> bool {
@@ -480,13 +510,9 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_holding_side(&self) -> Option<BodySide> {
-        let Some(item) = self.equipped_weapon() else {
-            return Some(BodySide::Right);
-        };
-        item.slot.and_then(|slot| match slot {
-            EquipSlot::HoldingLeft => Some(BodySide::Left),
-            EquipSlot::HoldingRight => Some(BodySide::Right),
-            _ => None,
+        Some(match self.attack_hand {
+            AttackHand::Main => BodySide::Right,
+            AttackHand::Offhand => BodySide::Left,
         })
     }
 
@@ -498,10 +524,21 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_windup_secs(&self) -> f32 {
-        self.equipped_weapon()
-            .and_then(|item| item.weapon)
-            .map(|weapon| weapon.windup_secs)
-            .unwrap_or_default()
+        self.melee_timing_for(self.weapon_preferred_melee_style())
+            .preparation_secs
+    }
+
+    fn weapon_windup_secs_for(&self, style: MeleeAttackStyle) -> f32 {
+        self.melee_timing_for(style).preparation_secs
+    }
+
+    fn weapon_recovery_secs(&self) -> f32 {
+        self.melee_timing_for(self.weapon_preferred_melee_style())
+            .recovery_secs
+    }
+
+    fn weapon_recovery_secs_for(&self, style: MeleeAttackStyle) -> f32 {
+        self.melee_timing_for(style).recovery_secs
     }
 
     fn weapon_is_precise(&self) -> bool {
@@ -512,10 +549,23 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_balance(&self) -> f32 {
+        match self.striking_item() {
+            Some(item) if item.weapon.is_some() => {
+                let weapon = item.weapon.unwrap();
+                adventuresim_core::equipment::weapon_balance_from_moment(
+                    weapon.moment_of_inertia_kg_m2,
+                    item.properties.weight,
+                    weapon.grip_to_tip_m,
+                )
+            }
+            _ => 0.0,
+        }
+    }
+
+    fn weapon_moment_of_inertia(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
-            .map(|weapon| weapon.balance)
-            .unwrap_or_default()
+            .map_or(0.0, |weapon| weapon.moment_of_inertia_kg_m2)
     }
 
     fn armor_range_of_motion(&self, part: BodyPart) -> f32 {
@@ -544,7 +594,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn weapon_weight(&self) -> f32 {
-        self.equipped_weapon()
+        self.striking_item()
             .map(|item| item.properties.weight)
             .unwrap_or_default()
     }
@@ -570,6 +620,20 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
 
     fn armor_coverage(&self, part: BodyPart) -> f32 {
         self.layered_armor_for(part).coverage
+    }
+}
+
+impl InventoryView<'_, '_, '_> {
+    fn melee_timing_for(
+        &self,
+        style: MeleeAttackStyle,
+    ) -> adventuresim_core::equipment::MeleeAttackTiming {
+        let weapon = self.equipped_weapon().and_then(|item| item.weapon);
+        adventuresim_core::equipment::melee_attack_timing(
+            style,
+            weapon.map_or(0.0, |weapon| weapon.moment_of_inertia_kg_m2),
+            weapon.is_none(),
+        )
     }
 }
 
@@ -639,6 +703,35 @@ fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::SystemState;
+
+    #[test]
+    fn unarmed_combat_has_authored_windup_timing() {
+        let mut world = World::new();
+        let owner = world.spawn(InventoryItems::default()).id();
+        let mut viewer = SystemState::<InventoryViewer>::new(&mut world);
+        let inventory = viewer.get(&world).unwrap();
+
+        let unarmed = inventory.get(owner);
+        let cycle = unarmed.weapon_windup_secs() + unarmed.weapon_recovery_secs();
+        assert!((cycle - 0.36).abs() < 1.0e-5);
+        assert_eq!(
+            inventory.get(owner).weapon_preferred_melee_style(),
+            MeleeAttackStyle::Swing
+        );
+        assert_eq!(
+            inventory.get(owner).weapon_skill_distribution(),
+            adventuresim_core::equipment::WeaponSkillDistribution::UNARMED
+        );
+        assert_eq!(
+            inventory.get(owner).weapon_swing_precision(),
+            adventuresim_core::combat::UNARMED_SWING_PRECISION
+        );
+        assert_eq!(
+            inventory.get(owner).weapon_stab_precision(),
+            adventuresim_core::combat::UNARMED_STAB_PRECISION
+        );
+    }
 
     #[test]
     fn rebuilding_holding_cache_preserves_weapon_and_shield_after_owner_rebind() {
@@ -656,14 +749,14 @@ mod tests {
                     prefers_stab: false,
                     penetration: 0.0,
                     reach: 1.0,
-                    balance: 0.0,
+                    grip_to_tip_m: 1.0,
+                    moment_of_inertia_kg_m2: 0.0,
                     precise: false,
                     melee: true,
                     ranged: false,
                     blunt: false,
                     slash: true,
                     pierce: false,
-                    windup_secs: 0.0,
                 },
             ))
             .id();

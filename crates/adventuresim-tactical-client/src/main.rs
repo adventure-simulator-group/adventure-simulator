@@ -30,6 +30,7 @@ use clap::{Parser, ValueEnum};
 use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
+use web_time::Instant;
 
 #[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
@@ -62,6 +63,15 @@ struct Args {
     /// Write one JSON object per rendered animation frame.
     #[arg(long)]
     animation_log: Option<String>,
+    /// Write compact per-frame timing telemetry without animation pose data.
+    #[arg(long)]
+    frame_timing_log: Option<String>,
+    /// Record compact frame timing for this many seconds, then exit.
+    #[arg(long, requires = "frame_timing_log")]
+    frame_timing_seconds: Option<f64>,
+    /// Wait this many seconds after the local player is ready before timing.
+    #[arg(long, default_value_t = 5.0, requires = "frame_timing_log")]
+    frame_timing_warmup_seconds: f64,
     /// Close the native client shortly after the final scripted command.
     #[arg(long, requires = "input_script")]
     exit_after_script: bool,
@@ -161,9 +171,10 @@ impl GraphicsPreset {
             // near-constant floor regardless of scene content; gameplay
             // presets shorten it, capture tooling keeps full fidelity.
             cloud_quality_scale: if matches!(self, Self::Minimal) { 0.45 } else { 0.65 },
-            // Half-area offscreen clouds; the bilinear upsample is invisible
-            // on soft cloud fields while the march cost drops ~4x.
-            cloud_resolution_scale: 0.5,
+            // Clouds are baked into the frozen sky cubemap now, so the offscreen
+            // march runs once rather than every frame; the half-area downscale it
+            // used to justify no longer buys anything, so render it full-res.
+            cloud_resolution_scale: 1.0,
             // Two-sample coverage halves MSAA bandwidth at QHD; foliage
             // AlphaToCoverage still resolves, just with coarser edge dither.
             msaa_samples: if matches!(self, Self::Minimal) { 1 } else { 2 },
@@ -205,6 +216,9 @@ pub fn wasm_boot() {
             server_addr: String::new(),
             input_script: None,
             animation_log: None,
+            frame_timing_log: None,
+            frame_timing_seconds: None,
+            frame_timing_warmup_seconds: 5.0,
             exit_after_script: false,
             graphics_preset: GraphicsPreset::Default,
             grass_density: None,
@@ -260,6 +274,9 @@ pub fn wasm_quote_weapon_design(design_json: String) -> Result<String, JsValue> 
 }
 
 fn run(args: Args, initial_tactical: bool) {
+    let startup_started_at = Instant::now();
+    #[cfg(not(target_family = "wasm"))]
+    eprintln!("[startup] native client process entry");
     let mut app = App::new();
     #[cfg(not(target_family = "wasm"))]
     let asset_root = native_asset_root();
@@ -333,6 +350,7 @@ fn run(args: Args, initial_tactical: bool) {
             .build()
             .set(AdventureSimulatorPhysicsPlugin {
                 enable_simulation: false,
+                enable_presentation_simulation: true,
             }),
         AdventureSimulatorNetPlugins,
     ))
@@ -372,6 +390,7 @@ fn run(args: Args, initial_tactical: bool) {
         },
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
+    .insert_resource(presentation::ClientStartupTiming::new(startup_started_at))
     .add_systems(Startup, setup_initial_client)
     .add_systems(
         Update,
@@ -401,6 +420,9 @@ fn run(args: Args, initial_tactical: bool) {
         diagnostics::DiagnosticPlugin::new(
             args.input_script.as_deref(),
             args.animation_log.as_deref(),
+            args.frame_timing_log.as_deref(),
+            args.frame_timing_seconds,
+            args.frame_timing_warmup_seconds,
             args.exit_after_script,
         )
         .unwrap_or_else(|error| panic!("invalid tactical client diagnostics: {error}")),
@@ -430,6 +452,11 @@ fn run(args: Args, initial_tactical: bool) {
         app.add_systems(Update, configure_headless_render_target);
     }
 
+    #[cfg(not(target_family = "wasm"))]
+    eprintln!(
+        "[startup] native client app constructed elapsed_ms={}",
+        startup_started_at.elapsed().as_millis()
+    );
     app.run();
 }
 
@@ -501,6 +528,7 @@ fn setup_initial_client(
     mut commands: Commands,
     args: Res<Args>,
     initial_tactical: Res<InitialTacticalMode>,
+    startup: Res<presentation::ClientStartupTiming>,
 ) {
     if !initial_tactical.0 {
         return;
@@ -509,6 +537,7 @@ fn setup_initial_client(
         player_id: args.id,
         server_url: args.server_addr.clone(),
     });
+    startup.mark("startup schedule complete; connection requested");
 }
 
 fn capture_cursor(
@@ -554,21 +583,22 @@ mod graphics_preset_tests {
     }
 
     #[test]
-    fn individual_presets_disable_only_the_requested_effect() {
-        let no_atmosphere = GraphicsPreset::NoAtmosphere.presentation();
-        assert!(no_atmosphere.shadows_enabled);
-        assert!(!no_atmosphere.atmosphere_enabled);
-        assert!(!no_atmosphere.environment_light_enabled);
-        assert!(no_atmosphere.bloom_enabled);
+    fn no_shadows_disables_only_shadows() {
+        let preset = GraphicsPreset::NoShadows.presentation();
+        assert!(!preset.shadows_enabled);
+        assert!(preset.celestial_enabled);
+        assert_eq!(preset.max_vista_lods, 3);
     }
 
     #[test]
-    fn minimal_disables_every_optional_gpu_effect() {
+    fn minimal_reduces_non_atmosphere_presentation() {
         let minimal = GraphicsPreset::Minimal.presentation();
         assert!(!minimal.shadows_enabled);
         assert!(!minimal.atmosphere_enabled);
         assert!(!minimal.environment_light_enabled);
         assert!(!minimal.bloom_enabled);
+        assert!(!minimal.celestial_enabled);
+        assert_eq!(minimal.max_vista_lods, 1);
         assert!(minimal.grass_density_scale < 1.0);
         assert_eq!(
             GraphicsPreset::Default.presentation().grass_density_scale,
@@ -583,7 +613,9 @@ mod graphics_preset_tests {
             presentation::TacticalPresentationPlugin::default().cloud_quality_scale,
             1.0
         );
-        assert!(default.cloud_resolution_scale < 1.0);
+        // Clouds bake into the frozen sky cubemap, so the offscreen march runs
+        // full-resolution once instead of downscaling every frame.
+        assert_eq!(default.cloud_resolution_scale, 1.0);
         assert_eq!(
             presentation::TacticalPresentationPlugin::default().cloud_resolution_scale,
             1.0

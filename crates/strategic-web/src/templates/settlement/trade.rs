@@ -361,9 +361,13 @@ pub fn fireplace_page(
         }
     });
     let cooking_phase = dish.map(|row| {
-        if elapsed < u64::from(row.target_minutes) { "cooking" }
-        else if elapsed == u64::from(row.target_minutes) { "ready" }
-        else { "overdue" }
+        if elapsed < u64::from(row.target_minutes) {
+            "cooking"
+        } else if elapsed == u64::from(row.target_minutes) {
+            "ready"
+        } else {
+            "overdue"
+        }
     });
     let scope_href = |scope: &str| {
         format!(

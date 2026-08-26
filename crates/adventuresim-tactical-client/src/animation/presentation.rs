@@ -253,6 +253,7 @@ impl Plugin for TacticalAnimationPlugin {
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
             .init_resource::<procedural::FixedTickPoseCache>()
+            .register_required_components::<procedural::HumanoidBone, secondary_physics::SecondaryBoneDynamics>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
@@ -265,11 +266,12 @@ impl Plugin for TacticalAnimationPlugin {
                     establish_animation_targets,
                     procedural::bind_humanoid_bones,
                     procedural::cache_humanoid_rigs,
+                    full_ragdoll::sync_full_ragdolls,
+                    full_ragdoll::resolve_ragdoll_terrain_contacts,
                     capture_authored_bind_transforms,
                     procedural::capture_humanoid_rig_axes,
                     semantic_route::evaluate_semantic_route_paths,
                     evaluate_skeletons,
-                    log_animation_diagnostics,
                     tick_impact_reactions,
                     pose_buffer::update_pose_buffers,
                     update_rig_visibility,
@@ -281,20 +283,23 @@ impl Plugin for TacticalAnimationPlugin {
             .add_systems(
                 PostUpdate,
                 (
+                    procedural::restore_procedural_look_base,
                     pose_buffer::apply_pose_buffers,
                     restore_authored_bind_pose,
                     procedural::apply_pose_mirroring,
+                    procedural::apply_procedural_dive_lower_body,
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_landing_leg_compression,
                     procedural::apply_locomotion_body_response,
-                    procedural::apply_jump_charge_crouch,
+                    procedural::apply_jump_anticipation,
                     procedural::apply_head_and_torso_look,
-                    procedural::apply_impact_reaction,
+                    secondary_physics::apply_secondary_bone_physics,
                     procedural::apply_ordinary_locomotion_ik,
                     procedural::apply_terrain_leg_ik,
                     procedural::apply_quickstep_ik,
                     procedural::enforce_anatomical_knee_yaw,
                     procedural::apply_arm_and_weapon_constraints,
+                    full_ragdoll::apply_full_ragdoll_pose,
                     procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()
@@ -302,7 +307,13 @@ impl Plugin for TacticalAnimationPlugin {
             )
             .add_systems(
                 PostUpdate,
-                procedural::refresh_raised_support_after_propagation
+                (
+                    procedural::refresh_raised_support_after_propagation,
+                    // Diagnostics must observe the final global transforms
+                    // that the renderer receives, including procedural IK.
+                    log_animation_diagnostics,
+                )
+                    .chain()
                     .after(TransformSystems::Propagate),
             )
             .add_systems(Update, super::diagnostics::report_system_spikes);

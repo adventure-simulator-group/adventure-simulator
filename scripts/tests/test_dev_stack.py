@@ -92,6 +92,76 @@ class ProfileTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_startup_benchmark_persists_early_and_attached_phases(self):
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(
+            dev_stack.time, "monotonic", side_effect=[10.0, 11.0, 12.0, 13.0, 14.0]
+        ):
+            benchmark = dev_stack.StartupBenchmark.start()
+            benchmark.record("build", 10.0)
+            output = Path(temporary) / "startup.jsonl"
+            benchmark.attach(output)
+            benchmark.record("database", 12.0)
+            events = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(
+                [event["phase"] for event in events], ["build", "database"]
+            )
+            self.assertEqual(events[0]["duration_seconds"], 1.0)
+            self.assertEqual(events[1]["elapsed_seconds"], 4.0)
+
+    def test_binding_verification_cache_requires_module_and_bindings_digests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary) / "bindings.json"
+            dev_stack.atomic_write_json(cache, {
+                "format": 1,
+                "module_input_digest": "module-a",
+                "generated_bindings_digest": "bindings-a",
+            })
+            with mock.patch.object(
+                dev_stack, "generated_bindings_digest", return_value="bindings-a"
+            ), mock.patch.object(dev_stack.tempfile, "TemporaryDirectory") as generated:
+                self.assertEqual(dev_stack.verify_bindings(
+                    cache_path=cache, current_module_digest="module-a"
+                ), 0)
+                generated.assert_not_called()
+
+            failed = mock.Mock(returncode=7, stdout="generation failed")
+            with mock.patch.object(
+                dev_stack, "generated_bindings_digest", return_value="bindings-b"
+            ), mock.patch.object(dev_stack, "run_checked", return_value=failed):
+                self.assertEqual(dev_stack.verify_bindings(
+                    cache_path=cache, current_module_digest="module-a"
+                ), 7)
+
+    def test_tactical_profile_identity_invalidates_module_and_bootstrap_changes(self):
+        values = dev_stack.profile_values("demo", 23100)
+        first = dev_stack.tactical_profile_identity(values, "module-a", "token-a")
+        self.assertNotEqual(
+            first,
+            dev_stack.tactical_profile_identity(values, "module-b", "token-a"),
+        )
+        self.assertNotEqual(
+            first,
+            dev_stack.tactical_profile_identity(values, "module-a", "token-b"),
+        )
+        self.assertNotIn("token-a", json.dumps(first))
+
+    @mock.patch.object(dev_stack, "tactical_profile_database_is_ready", return_value=True)
+    def test_tactical_profile_cache_requires_exact_identity_and_live_seed(
+        self, database_is_ready
+    ):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "state.json"
+            identity = {"format": 1, "module_input_digest": "module-a"}
+            dev_stack.atomic_write_json(state, identity)
+            self.assertTrue(dev_stack.tactical_profile_cache_is_valid(
+                state, identity, "http://localhost:1", "db"
+            ))
+            self.assertFalse(dev_stack.tactical_profile_cache_is_valid(
+                state, {**identity, "module_input_digest": "module-b"},
+                "http://localhost:1", "db",
+            ))
+            self.assertEqual(database_is_ready.call_count, 1)
+
     @mock.patch.object(dev_stack, "run_checked")
     def test_authenticated_cli_token_is_forwarded_without_logging(self, run_checked):
         token = "header.payload.signature"
@@ -290,6 +360,15 @@ class WorkflowTests(unittest.TestCase):
                 dev_stack.stop_recorded(metadata, {"role": "test"})
             self.assertTrue(metadata.exists())
 
+    def test_termination_accepts_a_concurrent_natural_exit(self):
+        expected = {"pid": 42, "executable": "owned", "start_token": "start"}
+        with mock.patch.object(
+            dev_stack, "terminate_verified", side_effect=ValueError("already exiting")
+        ), mock.patch.object(
+            dev_stack, "process_snapshot", side_effect=[expected, None]
+        ), mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.terminate_verified_or_accept_exit(expected)
+
     def test_canonical_stop_does_not_require_tactical_binaries(self):
         with tempfile.TemporaryDirectory() as temp, \
              mock.patch.object(dev_stack, "runtime_root", return_value=Path(temp)), \
@@ -393,6 +472,13 @@ class WorkflowTests(unittest.TestCase):
             "--render-backend", "dx12",
         ])
         networking = parser.parse_args(["tactical-play", "networking", "25000"])
+        benchmark = parser.parse_args([
+            "tactical-play", "diagnostic", "--input-script", "benchmark.json"
+        ])
+        timed_release = parser.parse_args([
+            "tactical-play", "animation", "--client-profile", "release",
+            "--frame-timing-seconds", "15", "--frame-timing-warmup-seconds", "5",
+        ])
         self.assertEqual(animation.base_port, 24920)
         self.assertEqual(animation.presentation_trace, "auto")
         self.assertEqual(diagnostic.mode, "diagnostic")
@@ -406,6 +492,27 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(display_dx12.capture_source, "display")
         self.assertEqual(display_dx12.render_backend, "dx12")
         self.assertEqual(networking.base_port, 25000)
+        self.assertEqual(benchmark.input_script, "benchmark.json")
+        self.assertEqual(timed_release.client_profile, "release")
+        self.assertEqual(timed_release.frame_timing_seconds, 15.0)
+        self.assertEqual(timed_release.frame_timing_warmup_seconds, 5.0)
+
+    def test_removed_atmosphere_presets_are_rejected(self):
+        parser = dev_stack.create_parser()
+        removed = (
+            "no-atmosphere",
+            "no-environment-light",
+            "frozen-atmosphere-no-ibl",
+            "frozen-atmosphere-no-sky",
+            "frozen-atmosphere-no-consumers",
+            "dynamic-atmosphere",
+        )
+        for preset in removed:
+            with self.subTest(preset=preset):
+                with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    parser.parse_args([
+                        "tactical-play", "animation", "--graphics-preset", preset
+                    ])
 
     def test_removed_high_environment_light_preset_is_rejected(self):
         parser = dev_stack.create_parser()
@@ -444,6 +551,44 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn("--input-script", command)
             self.assertNotIn("animation_log", config)
 
+    def test_animation_timing_profile_adds_only_compact_bounded_trace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "animation",
+                "window_capture": "off",
+                "client_profile": "release",
+                "frame_timing_seconds": 15.0,
+                "frame_timing_warmup_seconds": 5.0,
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ) as executable_path, mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ) as spawn, mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+            executable_path.assert_called_once_with(
+                "adventuresim-tactical-client", "release"
+            )
+            command = spawn.call_args.args[0]
+            self.assertIn("--frame-timing-log", command)
+            self.assertIn("--frame-timing-seconds", command)
+            self.assertIn("--frame-timing-warmup-seconds", command)
+            self.assertNotIn("--animation-log", command)
+            self.assertNotIn("--input-script", command)
+            self.assertEqual(
+                Path(config["frame_timing_log"]).parent,
+                root,
+            )
+
     def test_diagnostic_profile_waits_for_capture_before_scripted_motion(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -471,7 +616,50 @@ class WorkflowTests(unittest.TestCase):
                 script["commands"][0]["path"], config["capture_ready_signal"]
             )
             self.assertEqual(script["commands"][1]["type"], "rotate")
+            command_types = [command["type"] for command in script["commands"]]
+            self.assertIn("attack", command_types)
+            self.assertIn("screenshot", command_types)
+            screenshot = next(
+                command for command in script["commands"]
+                if command["type"] == "screenshot"
+            )
+            self.assertEqual(
+                screenshot["path"], config["animation_attack_screenshot"]
+            )
             self.assertIn("animation_log", config)
+
+    def test_diagnostic_profile_copies_custom_input_script_after_capture_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            source = root / "benchmark.json"
+            source.write_text(
+                json.dumps({"commands": [{"type": "guard", "raised": True}]}),
+                encoding="utf-8",
+            )
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "diagnostic",
+                "window_capture": "required",
+                "input_script_source": str(source),
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ), mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ), mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+
+            copied = json.loads(Path(config["input_script"]).read_text())
+            self.assertEqual(copied["commands"][0]["type"], "wait_for_signal")
+            self.assertEqual(copied["commands"][1], {"type": "guard", "raised": True})
+            self.assertNotIn("animation_attack_screenshot", config)
 
     def test_presentmon_path_can_be_configured(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -710,9 +898,9 @@ class WorkflowTests(unittest.TestCase):
             "required",
         )
 
-    def test_visual_and_networking_profiles_disable_combat(self):
+    def test_animation_lab_and_combat_keep_full_stats(self):
         self.assertEqual(
-            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 0
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 10_000
         )
         self.assertEqual(
             dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.DIAGNOSTIC), 0
@@ -791,6 +979,16 @@ class WorkflowTests(unittest.TestCase):
                     recorded,
                 )
             self.assertEqual(sql.call_count, 3)
+
+    def test_client_readiness_requires_server_received_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            client_log = Path(temporary) / "client.log"
+            server_log = Path(temporary) / "server.log"
+            client_log.write_text("render device ready\n")
+            server_log.write_text("[startup] first server input received for 399v0\n")
+            process = mock.Mock()
+            process.poll.return_value = None
+            dev_stack.wait_for_tactical_client(process, client_log, server_log)
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_sql_readiness_accepts_cli_quoted_text_rows(self, run_checked):

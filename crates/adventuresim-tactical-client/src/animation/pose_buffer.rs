@@ -15,6 +15,7 @@ use bevy::{
 };
 
 use super::*;
+use crate::presentation::TacticalGameplayCamera;
 
 const SAMPLE_HZ: f32 = 30.0;
 const SAMPLE_DT: f32 = 1.0 / SAMPLE_HZ;
@@ -47,6 +48,13 @@ struct RigJoint {
     bind: LocalPose,
     lower_body: bool,
     strips_root_translation: bool,
+}
+
+fn strips_gameplay_root_translation(name: &str) -> bool {
+    // MetaHuman rigs name the skeleton-space root `body_world`; the joint
+    // named `root` is the anatomical pelvis. Pelvis translation is authored
+    // pose data (not gameplay root motion) and must survive clip baking.
+    name.eq_ignore_ascii_case("body_world")
 }
 
 #[derive(Clone)]
@@ -115,6 +123,18 @@ impl LocalPose {
             scale: self.scale.lerp(next.scale, alpha),
         }
     }
+
+    fn extrapolate(self, next: Self, coordinate: f32) -> Self {
+        let coordinate =
+            coordinate.clamp(-AttackCurve::MAX_DRAWBACK, 1.0 + AttackCurve::MAX_OVERSHOOT);
+        let relative = shortest_rotation(next.rotation * self.rotation.inverse());
+        Self {
+            translation: self.translation + (next.translation - self.translation) * coordinate,
+            rotation: (quaternion_exp(quaternion_log(relative) * coordinate) * self.rotation)
+                .normalize(),
+            scale: self.scale + (next.scale - self.scale) * coordinate,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,6 +150,12 @@ impl PosePlanKey {
             .iter()
             .map(|weighted| (weighted.clip.handle.id(), weighted.clip.layer))
             .collect::<Vec<_>>();
+        clips.extend(playback.extrapolated_spans.iter().flat_map(|span| {
+            [
+                (span.start.handle.id(), span.start.layer),
+                (span.end.handle.id(), span.end.layer),
+            ]
+        }));
         clips.sort_by_key(|(id, layer)| (format!("{id:?}"), *layer as u8));
         clips.dedup();
         Self {
@@ -239,13 +265,7 @@ pub(super) fn update_pose_buffers(
     procedural_clock: Res<ProceduralAnimationClock>,
     catalog: Res<AnimationPackCatalog>,
     clips: Res<Assets<AnimationClip>>,
-    cameras: Query<
-        (&GlobalTransform, &Frustum),
-        (
-            With<Camera3d>,
-            Without<crate::presentation::TacticalCloudOffscreenCamera>,
-        ),
-    >,
+    cameras: Query<(&GlobalTransform, &Frustum), With<TacticalGameplayCamera>>,
     owners: Query<(
         Entity,
         &PresentedSkeleton,
@@ -313,7 +333,7 @@ pub(super) fn update_pose_buffers(
                                     .is_some_and(is_lower_body_animation_target),
                                 strips_root_translation: name
                                     .as_deref()
-                                    .is_some_and(|name| name.eq_ignore_ascii_case("root")),
+                                    .is_some_and(strips_gameplay_root_translation),
                             })
                             .collect(),
                     })
@@ -483,7 +503,9 @@ fn sample_plan(
     bank: &mut BakedClipBank,
     metrics: &mut PoseBufferMetrics,
 ) -> Option<Vec<LocalPose>> {
-    if playback.use_authored_bind_pose || playback.clips.is_empty() {
+    if playback.use_authored_bind_pose
+        || (playback.clips.is_empty() && playback.extrapolated_spans.is_empty())
+    {
         return Some(definition.joints.iter().map(|joint| joint.bind).collect());
     }
     let mut baked = Vec::with_capacity(playback.clips.len());
@@ -497,6 +519,26 @@ fn sample_plan(
             metrics,
         )?;
         baked.push((weighted, clip));
+    }
+    let mut baked_spans = Vec::with_capacity(playback.extrapolated_spans.len());
+    for span in &playback.extrapolated_spans {
+        let start = get_or_bake(
+            span.start.handle.id(),
+            &span.start.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let end = get_or_bake(
+            span.end.handle.id(),
+            &span.end.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        baked_spans.push((span, start, end));
     }
     let mut pose = Vec::with_capacity(definition.joints.len());
     for (joint_index, joint) in definition.joints.iter().enumerate() {
@@ -515,6 +557,37 @@ fn sample_plan(
             let next_total = accumulated + weighted.weight;
             let alpha = if next_total > f32::EPSILON {
                 weighted.weight / next_total
+            } else {
+                0.0
+            };
+            blended = if accumulated <= f32::EPSILON {
+                sample
+            } else {
+                blended.interpolate(sample, alpha)
+            };
+            accumulated = next_total;
+        }
+        for (span, start_clip, end_clip) in &baked_spans {
+            let included = match span.start.layer {
+                ClipLayer::Whole => true,
+                ClipLayer::Upper => !joint.lower_body,
+                ClipLayer::Lower => joint.lower_body,
+            };
+            if !included || span.weight <= f32::EPSILON || !span.weight.is_finite() {
+                continue;
+            }
+            let start = sanitize_pose(
+                start_clip.sample(joint_index, span.start_time_seconds),
+                joint.bind,
+            );
+            let end = sanitize_pose(
+                end_clip.sample(joint_index, span.end_time_seconds),
+                joint.bind,
+            );
+            let sample = sanitize_pose(start.extrapolate(end, span.coordinate), joint.bind);
+            let next_total = accumulated + span.weight;
+            let alpha = if next_total > f32::EPSILON {
+                span.weight / next_total
             } else {
                 0.0
             };
@@ -710,6 +783,28 @@ mod tests {
     }
 
     #[test]
+    fn pose_extrapolation_extends_translation_and_shortest_rotation() {
+        let start = pose(Vec3::ZERO, Quat::IDENTITY);
+        let end = pose(Vec3::X, Quat::from_rotation_y(0.5));
+        let drawback = start.extrapolate(end, -0.5);
+        let follow_through = start.extrapolate(end, 1.5);
+        assert!((drawback.translation.x + 0.5).abs() < 1.0e-5);
+        assert!((follow_through.translation.x - 1.5).abs() < 1.0e-5);
+        assert!(
+            drawback
+                .rotation
+                .angle_between(Quat::from_rotation_y(-0.25))
+                < 1.0e-4
+        );
+        assert!(
+            follow_through
+                .rotation
+                .angle_between(Quat::from_rotation_y(0.75))
+                < 1.0e-4
+        );
+    }
+
+    #[test]
     fn quaternion_antipodes_interpolate_without_a_teleport() {
         let rotation = Quat::from_rotation_y(1.2);
         let halfway = hemisphere_slerp(rotation, -rotation, 0.5);
@@ -735,6 +830,14 @@ mod tests {
         let bind = pose(Vec3::Y, Quat::IDENTITY);
         let invalid = pose(Vec3::splat(f32::NAN), Quat::IDENTITY);
         assert_eq!(sanitize_pose(invalid, bind), bind);
+    }
+
+    #[test]
+    fn only_the_true_skeleton_root_strips_authored_translation() {
+        assert!(strips_gameplay_root_translation("body_world"));
+        assert!(strips_gameplay_root_translation("BODY_WORLD"));
+        assert!(!strips_gameplay_root_translation("root"));
+        assert!(!strips_gameplay_root_translation("c_spine0"));
     }
 
     #[test]

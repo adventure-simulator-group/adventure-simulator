@@ -2689,6 +2689,7 @@ pub(crate) fn insert_character_with_origin(
     } else if !newborn {
         add_inventory_item(ctx, character.id, "torch", 1);
         add_inventory_item(ctx, character.id, "bandage", 3);
+        add_and_equip_basic_clothing(ctx, character.id)?;
         for (item, slot) in [
             ("buckler", ItemSlot::LeftHolding),
             ("katzbalger", ItemSlot::RightHolding),
@@ -3581,6 +3582,63 @@ pub fn add_and_equip_item(
     // item is present, avoiding partial creation when its initial settlement
     // restricts arms or armor.
     equip_item_internal(ctx, character_id, id, destination, false)
+}
+
+pub(crate) fn add_and_equip_basic_clothing(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    for (item, slot) in [
+        ("linen_tunic", ItemSlot::Chest),
+        ("linen_breeches", ItemSlot::LeftLeg),
+    ] {
+        add_and_equip_item(ctx, character_id, item, slot)?;
+    }
+    for (item, placement_id) in [("leather_boot", "left"), ("leather_boot", "right")] {
+        let inventory_item_id = add_inventory_item(ctx, character_id, item, 1)
+            .ok_or_else(|| format!("Could not add starting item {item}"))?;
+        let placement = authored_placement_index(ctx, item, placement_id)?;
+        equip_equipment_internal(
+            ctx,
+            character_id,
+            inventory_item_id,
+            placement,
+            Vec::new(),
+            false,
+            false,
+        )?;
+    }
+    Ok(())
+}
+
+/// Replaces only the equipped roots of a disposable development character,
+/// reusing matching inventory rows before creating anything new. Keeping this
+/// beside the ordinary equipment internals gives fixtures the same placement
+/// validation as gameplay without exposing an unrestricted reducer.
+pub(crate) fn replace_development_loadout(
+    ctx: &ReducerContext,
+    character_id: u64,
+    loadout: &[(&str, ItemSlot)],
+) -> Result<(), String> {
+    for inventory_item_id in equipped_wearable_ids(ctx, character_id) {
+        unequip_wearable(ctx, inventory_item_id);
+    }
+
+    let mut selected = std::collections::BTreeSet::new();
+    for (item_id, destination) in loadout {
+        let inventory_item_id = ctx
+            .db
+            .inventory_item()
+            .character_and_item_id()
+            .filter((character_id, *item_id))
+            .find(|item| !selected.contains(&item.id))
+            .map(|item| item.id)
+            .or_else(|| add_inventory_item(ctx, character_id, item_id, 1))
+            .ok_or_else(|| format!("Failed to add {item_id} to development loadout"))?;
+        selected.insert(inventory_item_id);
+        equip_item_internal(ctx, character_id, inventory_item_id, *destination, false)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -584,19 +584,25 @@ timeout fails closed without presenting an uncommitted result.
 
 ## Testing a Single Server
 
-After changing the canonical unarmed `walk.glb` or `run.glb`, regenerate the
-closed runtime cycles and their mirrored comparison clips with:
+After changing any canonical unarmed motion, publish every currently available
+runtime animation with:
 
 ```powershell
-python scripts/build_locomotion_cycles.py
-python scripts/mirror_gait_assets.py
-python scripts/build_locomotion_cycles.py --check
-python scripts/mirror_gait_assets.py --check
+python scripts/prepare_animation_assets.py
+python scripts/prepare_animation_assets.py --check
 ```
 
-The generators require Python 3 and NumPy. Runtime locomotion samples the
-closed canonical cycle directly; mirrored files remain available for semantic
-fallback and comparison. It does not fractionally mirror an FK result.
+The publisher requires Python 3 and NumPy. It validates and strips ordinary
+motion meshes, retains only catalog frames, removes redundant transform tracks,
+builds five-key cubic locomotion cycles, and generates bind-relative mirrors.
+Cascadeur's exported interpolation frames are authoring data and are not copied
+to runtime assets. Runtime locomotion samples the closed canonical cycle
+directly; mirrored files remain available for semantic fallback and comparison.
+It does not fractionally mirror an FK result.
+
+The repository ignores reproducible GLB exports below `assets_src`; the tracked
+sources are the `.casc` projects. Export the motions needed for the current
+publication locally, then commit the compact outputs below `assets/animations`.
 
 For normal native tactical development, use the supervised launcher:
 
@@ -682,11 +688,10 @@ selects `auto-vsync`, `auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or
 wgpu's render backend. For example,
 `just tactical-play diagnostic 25020 default off auto-vsync required display dx12`
 records a deterministic DX12 Display Capture without requiring PresentMon. Pass
-a fourth argument of `no-shadows`, `no-bloom`, `no-atmosphere`, or `minimal` to
-compare GPU-oriented rendering presets; MSAA is already disabled in every
-tactical preset. The normal client uses a 64×64 generated atmosphere
-environment map. Use `no-environment-light` to omit it while retaining the
-visible sky.
+a fourth argument of `no-shadows` or `minimal` to
+compare GPU-oriented rendering presets; four-sample MSAA remains fixed across
+tactical presets. The normal client uses a 64×64 generated atmosphere
+environment map.
 
 This builds the native tactical server and client before creating a mission,
 starts a worktree-isolated SpacetimeDB instance, publishes and seeds it, starts
@@ -828,9 +833,10 @@ just tactical-scene-performance-benchmark <input.json> <fresh-output> 120
 ```
 
 The release-mode timing pass compares the natural scene against hidden
-playable/vista trees, playable leaves, grass, understory, litter, loose stones,
-procedural rocks, playable terrain, vista terrain, and forced tree LOD0 through
-LOD4 at one locked camera. It writes `scene-performance-benchmark.json` and
+playable/vista trees, leaves, tree trunks, tree branches, grass, understory,
+litter, loose stones, clouds, weather, procedural rocks, playable terrain,
+vista terrain, and forced tree LOD0 through LOD4 at one locked camera. It writes
+`scene-performance-benchmark.json` and
 `scene-performance-comparison.md`. Performance runs use an unpaced headless
 schedule and render to an offscreen 2560x1440 texture so desktop-compositor
 presentation cannot pin fast scenes to the monitor refresh interval. The
@@ -845,7 +851,19 @@ pass. Each mode also records playable-tree source counts and resident vertex,
 impostor-pixel, LOD-mask, and cumulative demand-generation counters. The
 Markdown summary prints the natural-view snapshot; the JSON retains every
 mode's snapshot so forced-LOD tests expose the assets they caused to become
-resident. Run the opt-in `tactical-scene-render-diagnostics` recipe when Metal,
+resident. Render-diagnostic reports also include signed GPU deltas versus
+natural mode for every elapsed-GPU pass, including separate opaque-3D and
+transparent-3D attribution. A positive delta estimates the hidden family\'s
+measured contribution without requiring per-draw GPU instrumentation.
+Tree isolation applies only to explicitly marked playable-tree representations.
+`No leaves` hides both detailed leaf meshes and baked canopy/impostor cards;
+the narrower `No detailed tree leaves` and `No tree canopy cards` modes isolate
+those families independently. `No tree branches` hides only detailed or
+aggregate live wood, while buds have their own `No tree buds` mode and trunks
+remain separate. Each result separately reports configured active cloud layers
+and visible cloud layers, so the three persistent cloud-shell entities are not
+mistaken for rendered decks. Run the
+opt-in `tactical-scene-render-diagnostics` recipe when Metal,
 DX12, or Vulkan GPU-pass timestamps and shader invocation counters are needed;
 those queries add enough
 observer/synchronization overhead that their frame times must not be compared
@@ -998,15 +1016,16 @@ flags, and its capture-clock strategy. The harness advances Bevy's virtual clock
 to a fixed two-second wind phase and pauses it before settling and GPU
 readbacks, so readback latency does not change foliage pose. Normal review
 plates use `TacticalPresentationPlugin::default()` exactly: shadows,
-atmosphere/celestials, 64-pixel atmosphere environment-map lighting, bloom and
-all three vista LODs are enabled just as in production. Four-sample MSAA is the
+atmosphere/celestials, 64-pixel atmosphere environment-map lighting, and all
+three vista LODs are enabled just as in production; tactical bloom is not
+installed. Four-sample MSAA is the
 WebGPU-compatible anti-aliasing path; SSAO is not part of the tactical renderer
 because Bevy 0.19 does not support it on WebGPU. The manifest records every
 setting and a production-default-parity gate; the matrix runner rejects any
 child whose feature map differs from this contract. Parity is based on observed
 runtime state, not only requested configuration: the manifest records the actual
-`TacticalGraphicsSettings`, camera environment map and size, Bloom component,
-four-sample MSAA, exposure, tonemapping, and final global ambient
+`TacticalGraphicsSettings`, camera environment map and size, four-sample MSAA,
+exposure, tonemapping, and final global ambient
 color/brightness. The capture harness does not override ambient light; the
 production environment observer owns its final value. After the ordinary warmup,
 each view performs two consecutive disposable GPU readbacks and records their

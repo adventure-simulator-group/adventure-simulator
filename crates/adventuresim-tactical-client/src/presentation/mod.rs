@@ -4,6 +4,7 @@
 //! plugin so screenshots cannot drift to a different camera, terrain mesh,
 //! lighting, or post-processing setup.
 
+mod atmosphere;
 mod clouds;
 mod environment;
 mod ground_scatter;
@@ -16,6 +17,7 @@ mod vista;
 mod volumetric;
 mod weather;
 
+use atmosphere::*;
 use clouds::*;
 use environment::*;
 use ground_scatter::*;
@@ -32,20 +34,29 @@ use vista::*;
 use volumetric::*;
 use weather::*;
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct TerrainTriangleCount(pub(crate) usize);
+
+fn mesh_triangle_count(mesh: &Mesh) -> usize {
+    mesh.indices()
+        .map_or_else(|| mesh.count_vertices() / 3, |indices| indices.len() / 3)
+}
+
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
 pub(crate) use clouds::{
-    TacticalCloudCaptureOverride, TacticalCloudCaptureProfile, TacticalCloudOffscreenCamera,
+    TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride,
+    TacticalCloudCaptureProfile, TacticalCloudLayer, TacticalCloudOffscreenCamera,
 };
 #[allow(unused_imports)]
 pub(crate) use environment::{
-    TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
+    TacticalCameraSetup, TacticalGameplayCamera, scene_ambient_light, scene_ibl_visibility_floor,
 };
 #[allow(unused_imports)]
 pub(crate) use ground_scatter::{
-    GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundScatterLayer,
-    LooseStonePebblePatch,
+    GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundLitterDiagnostics,
+    GroundScatterLayer, LooseStonePebblePatch,
 };
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
@@ -55,9 +66,13 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
-    PresentedTree, TacticalTreeBarkMaterial, TacticalTreeLeafCardMaterial,
+    PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
+    PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
+    PlayableTreeMidTrunk, PlayableTreeTrunk, PresentedTree, TacticalTreeAggregateBarkMaterial,
+    TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation, TacticalTreeLeafCardMaterial,
     TreeAssetResidencyDiagnostics, TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_bark_material, oak_leaf_material,
+    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_aggregate_bark_material,
+    oak_bark_material, oak_leaf_material,
 };
 pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
@@ -65,10 +80,11 @@ pub(crate) use sky::AtmosphereIblAmbientHandoff;
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
 pub(crate) use terrain::{
-    TerrainDetailPatch, TerrainMaterialPresentation, terrain_heightmap_image,
+    DETAIL_PATCH_SPACING_METRES, TerrainDetailPatch, TerrainMaterialPresentation,
+    terrain_heightmap_image,
 };
 #[allow(unused_imports)]
-pub(crate) use vista::{VistaTerrain, VistaTreePresentation};
+pub(crate) use vista::{VistaTerrain, VistaTerrainMesh, VistaTreePresentation};
 #[allow(unused_imports)]
 pub(crate) use weather::WeatherParticle;
 
@@ -85,8 +101,8 @@ use bevy::{
     core_pipeline::tonemapping::Tonemapping,
     image::ImageSampler,
     light::{
-        Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster,
-        atmosphere::ScatteringMedium, light_consts::lux,
+        Atmosphere, AtmosphereEnvironmentMapLight, DirectionalLightShadowMap, EnvironmentMapLight,
+        NotShadowCaster, atmosphere::ScatteringMedium, light_consts::lux,
     },
     mesh::{Indices, MeshVertexAttribute, PrimitiveTopology},
     pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension},
@@ -98,6 +114,38 @@ use bevy::{
     },
     shader::ShaderRef,
 };
+use web_time::Instant;
+
+#[derive(Resource)]
+pub(crate) struct ClientStartupTiming {
+    started_at: Instant,
+    terrain_preparation_reported: bool,
+}
+
+impl ClientStartupTiming {
+    pub(crate) fn new(started_at: Instant) -> Self {
+        Self {
+            started_at,
+            terrain_preparation_reported: false,
+        }
+    }
+
+    pub(crate) fn mark(&self, phase: &str) {
+        let elapsed_ms = self.started_at.elapsed().as_millis();
+        info!(phase, elapsed_ms, "[startup] tactical client phase");
+        #[cfg(not(target_family = "wasm"))]
+        eprintln!("[startup] native client phase={phase:?} elapsed_ms={elapsed_ms}");
+    }
+
+    pub(crate) fn mark_terrain_prepared_once(&mut self) {
+        if self.terrain_preparation_reported {
+            return;
+        }
+        self.terrain_preparation_reported = true;
+        self.mark("first tactical terrain prepared");
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TacticalPresentationPlugin {
     pub shadows_enabled: bool,
@@ -172,14 +220,24 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalPebbleMaterial>::default(),
             MaterialPlugin::<TacticalPebbleBillboardMaterial>::default(),
             MaterialPlugin::<TacticalTreeBarkMaterial>::default(),
+            MaterialPlugin::<TacticalTreeAggregateBarkMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
+            MaterialPlugin::<TacticalSunMaterial>::default(),
             MaterialPlugin::<TacticalStarMaterial>::default(),
             MaterialPlugin::<TacticalCloudMaterial>::default(),
             MaterialPlugin::<TacticalCloudCompositeMaterial>::default(),
-            MaterialPlugin::<TacticalWeatherMaterial>::default(),
         ))
+        // Split from the tuple above so the material-plugin group stays within
+        // Bevy's 15-element `Plugins` tuple arity limit.
+        .add_plugins(MaterialPlugin::<TacticalWeatherMaterial>::default())
+        // Tactical play uses one compact close-range cascade for whichever
+        // celestial light is active. Keep the map allocation identical in the
+        // game and all tactical review viewers.
+        .insert_resource(DirectionalLightShadowMap {
+            size: sky::TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE,
+        })
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
             atmosphere_enabled: self.atmosphere_enabled,
@@ -222,10 +280,13 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<VistaTreePresentationCache>()
         .init_resource::<ActiveVistaSurface>()
         .init_resource::<TreeLodRenderOverride>()
+        .init_resource::<TacticalTreeBenchmarkIsolation>()
         .init_resource::<ActiveTacticalScene>()
         .init_resource::<PresentedCelestialLighting>()
+        .init_resource::<FrozenAtmosphereStatus>()
         .init_resource::<AtmosphereIblAmbientHandoff>()
         .init_resource::<TacticalCloudCaptureOverride>()
+        .init_resource::<TacticalCloudBenchmarkIsolation>()
         .init_resource::<WeatherOcclusionState>()
         .add_systems(
             Update,
@@ -256,6 +317,9 @@ impl Plugin for TacticalPresentationPlugin {
                 update_tactical_clouds.after(update_presented_celestial_lighting),
                 update_tactical_cloud_offscreen_target,
                 update_global_ambient_policy.after(apply_presented_celestial_lighting),
+                freeze_initialized_atmosphere
+                    .after(update_global_ambient_policy)
+                    .after(update_presented_celestial_lighting),
                 apply_active_environment_fog.after(refresh_active_tactical_scene),
                 apply_active_scene_weather
                     .after(refresh_active_tactical_scene)
@@ -271,6 +335,12 @@ impl Plugin for TacticalPresentationPlugin {
         .add_observer(terrain::on_ground_added)
         .add_observer(on_scene_obstacle_added)
         .add_observer(on_scene_vista_bundle);
+    }
+
+    fn finish(&self, app: &mut App) {
+        // Install this after every plugin has built so the RenderApp and
+        // Bevy's atmosphere extractor exist regardless of plugin order.
+        install_atmosphere_cleanup_backport(app);
     }
 }
 

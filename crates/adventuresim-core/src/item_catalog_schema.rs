@@ -36,6 +36,10 @@ pub struct EquipmentDefinition {
     /// Authored tactical placeholder geometry. Exterior container volume is
     /// deliberately not used to guess a shape.
     pub physical: EquipmentPhysical,
+    /// Semantic surface material used by procedural placeholder rendering.
+    /// Detailed authored assets may later override this with textures.
+    #[serde(default)]
+    pub material: Option<EquipmentMaterial>,
     /// Tags used by parent attachment points to accept this item. An empty
     /// list is never inferred from ItemKind.
     #[serde(default)]
@@ -82,6 +86,60 @@ pub struct EquipmentPlacement {
     /// protection.
     #[serde(default)]
     pub protection: Vec<EquipmentBodyPart>,
+    /// Fundamental visible surface coverage used to generate fitted MHR
+    /// geometry. Each span is measured along its ordered anatomical regions.
+    #[serde(default)]
+    pub surface: Vec<EquipmentSurfaceSpan>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipmentMaterial {
+    PolishedSteel,
+    RoughSteel,
+    OxidizedSteel,
+    MailSteel,
+    VegetableTannedLeather,
+    Linen,
+    Wool,
+    QuiltedTextile,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EquipmentSurfaceSpan {
+    /// Ordered proximal-to-distal anatomical chain. More than one region makes
+    /// a continuous span across multiple bones.
+    pub regions: Vec<EquipmentAnatomicalRegion>,
+    /// Which end remains fixed while the other end is clipped to `coverage`.
+    pub anchor: SurfaceAnchor,
+    /// Fraction of the combined region-chain length retained.
+    pub coverage: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceAnchor {
+    Proximal,
+    Distal,
+    Center,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipmentAnatomicalRegion {
+    Head,
+    Neck,
+    Chest,
+    Stomach,
+    LeftUpperArm,
+    LeftForearm,
+    RightUpperArm,
+    RightForearm,
+    LeftThigh,
+    LeftLowerLeg,
+    RightThigh,
+    RightLowerLeg,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -147,7 +205,7 @@ pub struct ParentRequirement {
     pub order: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttachmentPointDefinition {
     pub id: String,
@@ -163,11 +221,31 @@ pub struct AttachmentPointDefinition {
     /// child's attachment tag must match.
     #[serde(default)]
     pub accepts_tags: Vec<String>,
+    /// Optional canonical anatomical-surface coordinate used to resolve this
+    /// point independently on every generated mesh LOD.
+    #[serde(default)]
+    pub surface_uv: Option<SurfaceUvCoordinate>,
+    /// Optional anatomical tangent for presentation sockets generated on the
+    /// parent item's fitted surface. Local +Y (grip toward weapon tip) on an
+    /// attached item follows this direction; gameplay topology does not depend
+    /// on it. Surface coordinates and tangents are authored together.
+    #[serde(default)]
+    pub tangent_direction: Option<[f32; 3]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceUvCoordinate {
+    /// Versioned canonical surface parameterization shared by compatible LODs.
+    pub domain: String,
+    /// Coordinate in that domain's non-overlapping anatomical UV atlas.
+    pub uv: [f32; 2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EquipmentProtection {
+    #[serde(default)]
     pub coverage: f32,
     #[serde(default)]
     pub padding: f32,
@@ -253,6 +331,9 @@ pub enum ItemKind {
     },
     Armor {
         slot: Slot,
+        /// Derived from `equipment.placements[].surface` when the catalog is
+        /// loaded; it is not independently authored.
+        #[serde(default)]
         coverage: f32,
         resistance: f32,
         padding: f32,
@@ -273,7 +354,8 @@ pub enum ItemKind {
         accuracy: f32,
         reach_m: f32,
         penetration: f32,
-        balance: f32,
+        /// Rotational inertia around the controlling hand, in kg*m^2.
+        moment_of_inertia_kg_m2: f32,
         precise: bool,
         melee: bool,
         ranged: bool,

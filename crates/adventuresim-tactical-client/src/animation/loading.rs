@@ -104,11 +104,11 @@ pub(super) fn collect_loaded_packs(
             changed = true;
             continue;
         };
-        if !frame_fits_clip(source.last_frame, clip.duration()) {
+        if !frame_fits_clip(source.required_last_frame, clip.duration()) {
             warn!(
                 pack = key.0,
                 motion = key.1,
-                last_frame = source.last_frame,
+                last_frame = source.required_last_frame,
                 duration = clip.duration(),
                 "Motion is shorter than its catalog frames"
             );
@@ -132,9 +132,13 @@ pub(super) fn collect_loaded_packs(
             .poses
             .iter()
             .filter(|(_, anchor)| {
-                runtime
-                    .processed_motions
-                    .contains(&(pack_id.clone(), anchor.motion.clone()))
+                let key = (pack_id.clone(), anchor.motion.clone());
+                runtime.processed_motions.contains(&key)
+                    && runtime
+                        .clip_handles
+                        .get(&key)
+                        .and_then(|handle| clips.get(handle))
+                        .is_some_and(|clip| frame_fits_clip(anchor.frame, clip.duration()))
             })
             .map(|(&pose, _)| pose)
             .collect();
@@ -300,11 +304,17 @@ pub(super) fn bind_animation_target_paths(
 pub(super) fn is_lower_body_animation_target(name: &str) -> bool {
     let bone_name = name.to_ascii_lowercase();
     bone_name == "skeleton"
+        || bone_name == "body_world"
         || bone_name == "root"
-        || bone_name == "pelvis"
-        || bone_name.contains("hips")
-        || bone_name.contains("thigh")
-        || bone_name.contains("shin")
-        || bone_name.contains("foot")
-        || bone_name.contains("toe")
+        || [
+            "_upleg",
+            "_lowleg",
+            "_foot",
+            "_talocrural",
+            "_subtalar",
+            "_transversetarsal",
+            "_ball",
+        ]
+        .iter()
+        .any(|part| bone_name.contains(part))
 }

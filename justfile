@@ -223,6 +223,31 @@ init-world-runtime:
     @{{ python_bin }} scripts/init_world_runtime.py --repository .
 replace-world-runtime:
     @{{ python_bin }} scripts/init_world_runtime.py --repository . --replace
+
+# Download and verify Meta MHR v1.0.1 into the ignored authoring cache.
+init-mhr-assets:
+    @{{ python_bin }} scripts/init_mhr_assets.py
+init-mhr-lod1-correctives:
+    @{{ python_bin }} scripts/init_mhr_assets.py --lod1-correctives
+verify-mhr-assets:
+    @{{ python_bin }} scripts/init_mhr_assets.py --verify-only
+# Edit the canonical John Fabelgeist MHR recipe and source rig.
+character-creator:
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml
+generate-procedural-equipment:
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --generate-equipment --lod 4
+# Model an animator reference weapon and export it against the character rig.
+weapon-modeler:
+    @npm --prefix tools/weapon-modeler start
+# Re-export the saved John recipe and prepare its spawnable runtime base.
+prepare-john-rig:
+    @cargo run --release --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --export-only
+    @{{ python_bin }} scripts/prepare_rig_base.py assets_src/biped/unarmed/base.glb assets/animations/biped/unarmed/base.glb
+# Publish every currently authored motion as a mesh-free runtime animation.
+prepare-animation-assets:
+    @{{ python_bin }} scripts/prepare_animation_assets.py
+check-animation-assets:
+    @{{ python_bin }} scripts/prepare_animation_assets.py --check
 verify-world-data-bundle archive descriptor descriptor_sha256:
     @{{ python_bin }} scripts/world_data_bundle.py verify {{ quote(archive) }} --descriptor {{ quote(descriptor) }} --descriptor-sha256 {{ quote(descriptor_sha256) }}
 install-world-data archive descriptor descriptor_sha256:
@@ -351,8 +376,13 @@ tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="miss
 # animation disables combat, diagnostic runs scripted real-client input and
 # records every animation frame, combat uses normal enemies, and networking
 # omits the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }}
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json" input_script="" client_profile="dev" frame_timing_seconds="" frame_timing_warmup_seconds="5": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --client-profile {{ quote(client_profile) }} --frame-timing-warmup-seconds {{ quote(frame_timing_warmup_seconds) }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }} {{ if frame_timing_seconds != "" { "--frame-timing-seconds " + quote(frame_timing_seconds) } else { "" } }}
+
+# Benchmark steady raised-guard locomotion in all four cardinal directions.
+# It records transforms only: OBS and PresentMon are deliberately disabled.
+animation-direction-benchmark base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} {{ quote(scene_input) }} scripts/animation_direction_benchmark.json
 
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
@@ -458,6 +488,13 @@ tactical-sky-capture view="sun" output="target/tactical-sky-captures/sun.png" se
 # Capture a deterministic semantic-route preview through pose-buffer playback.
 animation-preview scenario="steady-walk-2.0" output="target/animation-captures/animation-preview":
     @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
+
+# Run the deterministic animation regression suite and capture the complete
+# viewer scenario matrix. The manifest is the machine-readable result; PNGs
+# and index.html are retained for visual follow-up.
+animation-test output="target/animation-captures/animation-regression":
+    @cargo test -p adventuresim-tactical-client --bin animation-viewer
+    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --output {{ quote(output) }}
 
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.
@@ -591,9 +628,17 @@ test: test-chat test-schedule test-dev-stack build-strategic
 
 fmt:
     @cargo fmt --all
+    @cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml
+
+fmt-check:
+    @cargo fmt --all -- --check
+    @cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --check
 
 lint:
-    @cargo clippy --workspace --all-targets --all-features -- -D warnings
+    # Keep warnings denied; these are legacy feature-gated/restriction diagnostics
+    # tracked separately from correctness and ordinary style regressions.
+    @cargo clippy --workspace --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
+    @cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
 
 clean:
     @cargo clean

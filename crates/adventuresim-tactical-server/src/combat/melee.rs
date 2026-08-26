@@ -13,11 +13,13 @@ pub(super) fn resolve_melee_attack(
     q_pending: Query<&PendingDefenderResponse>,
     q_scene_items: Query<Entity, With<TacticalSceneItem>>,
     time: Res<Time<()>>,
+    config: Res<TacticalCombatConfig>,
 ) {
     let attack_style = event.strike_family.melee_style();
     let entity = event.attacker;
+    let hand = event.hand;
 
-    let Ok(attacker_view) = viewer.get(entity).inspect_err(|err| {
+    let Ok(attacker_view) = viewer.get_for_attack(entity, hand).inspect_err(|err| {
         debug!("Rejected attacker view for {entity:?}: {err}");
     }) else {
         return;
@@ -59,6 +61,10 @@ pub(super) fn resolve_melee_attack(
             .map(TacticalCombatState::is_incapacitated),
         reported_precision: event.reported_precision,
         weapon_reach,
+        range_latency_tolerance: config
+            .realtime_authority
+            .melee
+            .range_latency_tolerance_metres,
         separation: attacker_transform
             .translation
             .distance(defender_transform.translation),
@@ -97,7 +103,9 @@ pub(super) fn resolve_melee_attack(
     // Mutate the pre-existing authority component synchronously. A later
     // completion in this same message flush observes the consumed windup and
     // active cooldown instead of reusing deferred Commands state.
-    let Some(authorized) = authority.authorize_attack(validated, now, MELEE_COOLDOWN) else {
+    let cooldown =
+        CombatDuration::from_secs_f32(config.realtime_authority.melee.replay_cooldown_seconds);
+    let Some(authorized) = authority.authorize_attack(validated, now, cooldown) else {
         debug!("Rejected already-consumed melee authorization for {entity:?}");
         return;
     };
@@ -110,10 +118,18 @@ pub(super) fn resolve_melee_attack(
         debug!("Rejected attacker without a usable striking side");
         return;
     };
-    let attacker_has_weapon = viewer.inventory.get(entity).has_equipped_weapon();
+    let attacker_has_weapon = viewer
+        .inventory
+        .get_for_attack(entity, hand)
+        .has_striking_item();
 
     let pending = q_pending.get(attack.target()).ok();
-    let defender_response = resolve_defender_response(pending, &time, &defender_view);
+    let defender_response = resolve_defender_response(
+        pending,
+        &time,
+        &defender_view,
+        &config.realtime_authority.defense,
+    );
 
     // Consume the pending response so it is not reused.
     cmd.entity(attack.target())
@@ -147,6 +163,19 @@ pub(super) fn resolve_melee_attack(
             BodySide::Right => Some(EquipSlot::HoldingRight),
             BodySide::Both => None,
         });
+    let (hits_attacker, impact_velocity_change) = hit_velocity_change(
+        result,
+        attacker_transform.translation,
+        defender_transform.translation,
+        attacker_view.body_weight() + attacker_view.inventory_weight(),
+        defender_view.body_weight() + defender_view.inventory_weight(),
+        &config.realtime_authority.impact,
+    );
+    let impact_recipient = if hits_attacker {
+        attack.attacker()
+    } else {
+        attack.target()
+    };
 
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: attack.attacker(),
@@ -156,6 +185,8 @@ pub(super) fn resolve_melee_attack(
         attacker_weapon_slot,
         defender_parry_slot,
         attacker_weapon_contact: attacker_has_weapon,
+        impact_recipient,
+        impact_velocity_change,
     });
 
     match result {
@@ -190,6 +221,8 @@ pub(super) fn resolve_melee_attack(
             result,
             flanking,
             defender_response,
+            impact_recipient,
+            impact_velocity_change,
         },
     });
 }

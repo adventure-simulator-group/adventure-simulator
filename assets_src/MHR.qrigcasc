@@ -1,0 +1,1453 @@
+{
+	"Document": [
+		{
+			"Title": "Body",
+			"Sections": [
+				{
+					"Section": "Body",
+					"Names": [
+						{
+							"Bone name": "pelvis",
+							"Joint name": "root",
+							"Joint path": [
+								"body_world"
+							]
+						},
+						{
+							"Bone name": "stomach",
+							"Joint name": "c_spine1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0"
+							]
+						},
+						{
+							"Bone name": "chest",
+							"Joint name": "c_spine3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2"
+							]
+						},
+						{
+							"Bone name": "neck",
+							"Joint name": "c_neck",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3"
+							]
+						},
+						{
+							"Bone name": "head",
+							"Joint name": "c_head",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"c_neck"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Left arm",
+					"Names": [
+						{
+							"Bone name": "clavicle_l",
+							"Joint name": "l_clavicle",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3"
+							]
+						},
+						{
+							"Bone name": "arm_l",
+							"Joint name": "l_uparm",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle"
+							]
+						},
+						{
+							"Bone name": "forearm_l",
+							"Joint name": "l_lowarm",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm"
+							]
+						},
+						{
+							"Bone name": "hand_l",
+							"Joint name": "l_wrist",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist"
+							]
+						},
+						{
+							"Bone name": "weapon_l",
+							"Joint name": "l_weapon",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Right arm",
+					"Names": [
+						{
+							"Bone name": "clavicle_r",
+							"Joint name": "r_clavicle",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3"
+							]
+						},
+						{
+							"Bone name": "arm_r",
+							"Joint name": "r_uparm",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle"
+							]
+						},
+						{
+							"Bone name": "forearm_r",
+							"Joint name": "r_lowarm",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm"
+							]
+						},
+						{
+							"Bone name": "hand_r",
+							"Joint name": "r_wrist",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist"
+							]
+						},
+						{
+							"Bone name": "weapon_r",
+							"Joint name": "r_weapon",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Left leg",
+					"Names": [
+						{
+							"Bone name": "thigh_l",
+							"Joint name": "l_upleg",
+							"Joint path": [
+								"body_world",
+								"root"
+							]
+						},
+						{
+							"Bone name": "calf_l",
+							"Joint name": "l_lowleg",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg"
+							]
+						},
+						{
+							"Bone name": "foot_l",
+							"Joint name": "l_foot",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg",
+								"l_lowleg"
+							]
+						},
+						{
+							"Bone name": "toe_l",
+							"Joint name": "l_ball",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg",
+								"l_lowleg",
+								"l_foot",
+								"l_talocrural",
+								"l_subtalar",
+								"l_transversetarsal"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Right leg",
+					"Names": [
+						{
+							"Bone name": "thigh_r",
+							"Joint name": "r_upleg",
+							"Joint path": [
+								"body_world",
+								"root"
+							]
+						},
+						{
+							"Bone name": "calf_r",
+							"Joint name": "r_lowleg",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg"
+							]
+						},
+						{
+							"Bone name": "foot_r",
+							"Joint name": "r_foot",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg",
+								"r_lowleg"
+							]
+						},
+						{
+							"Bone name": "toe_r",
+							"Joint name": "r_ball",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg",
+								"r_lowleg",
+								"r_foot",
+								"r_talocrural",
+								"r_subtalar",
+								"r_transversetarsal"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"Title": "Left hand",
+			"Sections": [
+				{
+					"Section": "Thumb",
+					"Names": [
+						{
+							"Bone name": "thumb_l_1",
+							"Joint name": "l_thumb1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_thumb0"
+							]
+						},
+						{
+							"Bone name": "thumb_l_2",
+							"Joint name": "l_thumb2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_thumb0",
+								"l_thumb1"
+							]
+						},
+						{
+							"Bone name": "thumb_l_3",
+							"Joint name": "l_thumb3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_thumb0",
+								"l_thumb1",
+								"l_thumb2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Index finger",
+					"Names": [
+						{
+							"Bone name": "index_finger_l_1",
+							"Joint name": "l_index1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist"
+							]
+						},
+						{
+							"Bone name": "index_finger_l_2",
+							"Joint name": "l_index2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_index1"
+							]
+						},
+						{
+							"Bone name": "index_finger_l_3",
+							"Joint name": "l_index3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_index1",
+								"l_index2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Middle finger",
+					"Names": [
+						{
+							"Bone name": "middle_finger_l_1",
+							"Joint name": "l_middle1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist"
+							]
+						},
+						{
+							"Bone name": "middle_finger_l_2",
+							"Joint name": "l_middle2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_middle1"
+							]
+						},
+						{
+							"Bone name": "middle_finger_l_3",
+							"Joint name": "l_middle3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_middle1",
+								"l_middle2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Ring finger",
+					"Names": [
+						{
+							"Bone name": "ring_finger_l_1",
+							"Joint name": "l_ring1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist"
+							]
+						},
+						{
+							"Bone name": "ring_finger_l_2",
+							"Joint name": "l_ring2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_ring1"
+							]
+						},
+						{
+							"Bone name": "ring_finger_l_3",
+							"Joint name": "l_ring3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_ring1",
+								"l_ring2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Pinky",
+					"Names": [
+						{
+							"Bone name": "pinky_l_1",
+							"Joint name": "l_pinky1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_pinky0"
+							]
+						},
+						{
+							"Bone name": "pinky_l_2",
+							"Joint name": "l_pinky2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_pinky0",
+								"l_pinky1"
+							]
+						},
+						{
+							"Bone name": "pinky_l_3",
+							"Joint name": "l_pinky3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm",
+								"l_wrist_twist",
+								"l_wrist",
+								"l_pinky0",
+								"l_pinky1",
+								"l_pinky2"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"Title": "Right hand",
+			"Sections": [
+				{
+					"Section": "Thumb",
+					"Names": [
+						{
+							"Bone name": "thumb_r_1",
+							"Joint name": "r_thumb1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_thumb0"
+							]
+						},
+						{
+							"Bone name": "thumb_r_2",
+							"Joint name": "r_thumb2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_thumb0",
+								"r_thumb1"
+							]
+						},
+						{
+							"Bone name": "thumb_r_3",
+							"Joint name": "r_thumb3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_thumb0",
+								"r_thumb1",
+								"r_thumb2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Index finger",
+					"Names": [
+						{
+							"Bone name": "index_finger_r_1",
+							"Joint name": "r_index1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist"
+							]
+						},
+						{
+							"Bone name": "index_finger_r_2",
+							"Joint name": "r_index2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_index1"
+							]
+						},
+						{
+							"Bone name": "index_finger_r_3",
+							"Joint name": "r_index3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_index1",
+								"r_index2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Middle finger",
+					"Names": [
+						{
+							"Bone name": "middle_finger_r_1",
+							"Joint name": "r_middle1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist"
+							]
+						},
+						{
+							"Bone name": "middle_finger_r_2",
+							"Joint name": "r_middle2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_middle1"
+							]
+						},
+						{
+							"Bone name": "middle_finger_r_3",
+							"Joint name": "r_middle3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_middle1",
+								"r_middle2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Ring finger",
+					"Names": [
+						{
+							"Bone name": "ring_finger_r_1",
+							"Joint name": "r_ring1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist"
+							]
+						},
+						{
+							"Bone name": "ring_finger_r_2",
+							"Joint name": "r_ring2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_ring1"
+							]
+						},
+						{
+							"Bone name": "ring_finger_r_3",
+							"Joint name": "r_ring3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_ring1",
+								"r_ring2"
+							]
+						}
+					]
+				},
+				{
+					"Section": "Pinky",
+					"Names": [
+						{
+							"Bone name": "pinky_r_1",
+							"Joint name": "r_pinky1",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_pinky0"
+							]
+						},
+						{
+							"Bone name": "pinky_r_2",
+							"Joint name": "r_pinky2",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_pinky0",
+								"r_pinky1"
+							]
+						},
+						{
+							"Bone name": "pinky_r_3",
+							"Joint name": "r_pinky3",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm",
+								"r_wrist_twist",
+								"r_wrist",
+								"r_pinky0",
+								"r_pinky1",
+								"r_pinky2"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"Title": "Twist bones",
+			"Sections": [
+				{
+					"Section": "Left arm",
+					"Names": [
+						{
+							"Bone name": "arm_l",
+							"Joint name": "l_uparm_twist0_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_l",
+							"Joint name": "l_uparm_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_l",
+							"Joint name": "l_uparm_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_l",
+							"Joint name": "l_uparm_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_l",
+							"Joint name": "l_uparm_twist4_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						}
+					]
+				},
+				{
+					"Section": "Left arm",
+					"Names": [
+						{
+							"Bone name": "forearm_l",
+							"Joint name": "l_lowarm_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "forearm_l",
+							"Joint name": "l_lowarm_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "forearm_l",
+							"Joint name": "l_lowarm_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "forearm_l",
+							"Joint name": "l_lowarm_twist4_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"l_clavicle",
+								"l_uparm",
+								"l_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						}
+					]
+				},
+				{
+					"Section": "Right arm",
+					"Names": [
+						{
+							"Bone name": "arm_r",
+							"Joint name": "r_uparm_twist0_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_r",
+							"Joint name": "r_uparm_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_r",
+							"Joint name": "r_uparm_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_r",
+							"Joint name": "r_uparm_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "arm_r",
+							"Joint name": "r_uparm_twist4_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						}
+					]
+				},
+				{
+					"Section": "Right arm",
+					"Names": [
+						{
+							"Bone name": "forearm_r",
+							"Joint name": "r_lowarm_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "forearm_r",
+							"Joint name": "r_lowarm_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "forearm_r",
+							"Joint name": "r_lowarm_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "forearm_r",
+							"Joint name": "r_lowarm_twist4_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"c_spine0",
+								"c_spine1",
+								"c_spine2",
+								"c_spine3",
+								"r_clavicle",
+								"r_uparm",
+								"r_lowarm"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						}
+					]
+				},
+				{
+					"Section": "Left leg",
+					"Names": [
+						{
+							"Bone name": "thigh_l",
+							"Joint name": "l_upleg_twist0_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "thigh_l",
+							"Joint name": "l_upleg_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "thigh_l",
+							"Joint name": "l_upleg_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "thigh_l",
+							"Joint name": "l_upleg_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						}
+					]
+				},
+				{
+					"Section": "Left leg",
+					"Names": [
+						{
+							"Bone name": "calf_l",
+							"Joint name": "l_lowleg_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg",
+								"l_lowleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "calf_l",
+							"Joint name": "l_lowleg_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg",
+								"l_lowleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "calf_l",
+							"Joint name": "l_lowleg_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg",
+								"l_lowleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "calf_l",
+							"Joint name": "l_lowleg_twist4_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"l_upleg",
+								"l_lowleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						}
+					]
+				},
+				{
+					"Section": "Right leg",
+					"Names": [
+						{
+							"Bone name": "thigh_r",
+							"Joint name": "r_upleg_twist0_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "thigh_r",
+							"Joint name": "r_upleg_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "thigh_r",
+							"Joint name": "r_upleg_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "thigh_r",
+							"Joint name": "r_upleg_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						}
+					]
+				},
+				{
+					"Section": "Right leg",
+					"Names": [
+						{
+							"Bone name": "calf_r",
+							"Joint name": "r_lowleg_twist1_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg",
+								"r_lowleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "calf_r",
+							"Joint name": "r_lowleg_twist2_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg",
+								"r_lowleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "calf_r",
+							"Joint name": "r_lowleg_twist3_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg",
+								"r_lowleg"
+							],
+							"Strength": 0.000000,
+							"Axis": 1
+						},
+						{
+							"Bone name": "calf_r",
+							"Joint name": "r_lowleg_twist4_proc",
+							"Joint path": [
+								"body_world",
+								"root",
+								"r_upleg",
+								"r_lowleg"
+							],
+							"Strength": 80.000000,
+							"Axis": 1
+						}
+					]
+				}
+			]
+		}
+	],
+	"Settings": {
+		"Is align pelvis": true,
+		"Is create layers": true
+	}
+}

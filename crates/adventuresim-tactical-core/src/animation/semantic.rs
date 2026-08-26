@@ -11,11 +11,6 @@ pub enum SemanticPose {
     WalkPassing,
     RunContact,
     RunFlight,
-    CrouchIdle,
-    DuckForward,
-    DuckBackward,
-    DuckLeft,
-    DuckRight,
     DiveForward,
     DiveBackward,
     DiveLeft,
@@ -30,13 +25,17 @@ pub enum SemanticPose {
     ProneSupineRollLeft,
     ProneSupineRollRight,
     SupineTransition,
-    Guard,
+    GuardSwing,
     AttackSwing,
-    AttackSwingFollow,
+    RecoverSwing,
+    ContinueSwing,
+    GuardThrust,
     AttackThrust,
-    BlockCutLeft,
-    BlockCutRight,
-    BlockThrust,
+    RecoverThrust,
+    ContinueThrust,
+    GuardOffhand,
+    AttackOffhand,
+    AttackOffhandPrepared,
 }
 
 #[cfg(test)]
@@ -45,8 +44,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_twenty_five_authored_poses() {
-        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 28);
+    fn humanoid_contract_resolves_from_eighteen_semantic_variants() {
+        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 19);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -54,7 +53,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 25);
+        assert_eq!(authored.len(), 18);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -99,22 +98,18 @@ mod contract_tests {
         assert!(state.is_grounded());
         assert_eq!(state.action(), ActionState::default());
 
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Attack);
-        state.begin_dodge(DodgeSpec::default(), 12, 13);
+        state.begin_dodge(DodgeSpec::default(), 12, 13).unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Dodge);
+        assert!(!state.is_quickstep());
     }
 
     #[test]
     fn lowered_stance_cannot_retain_raised_motion_and_inputs_are_normalized() {
         let raised = SkeletonState::default()
             .with_weapon_guard(WeaponGuardState::Raised)
-            .with_raised_locomotion(RaisedLocomotionIntent::moving(
-                Vec2::new(10.0, 0.0),
-                2.0,
-                LeadFoot::Left,
-                0,
-            ));
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::new(10.0, 0.0), 2.0));
         assert_eq!(raised.raised_locomotion().local_direction(), Vec2::X);
         let lowered = raised.with_weapon_guard(WeaponGuardState::Lowered);
         assert_eq!(lowered.stance(), StanceState::Lowered);
@@ -127,7 +122,9 @@ mod contract_tests {
     #[test]
     fn action_timeline_uses_saturating_arithmetic_at_u64_max() {
         let mut state = SkeletonState::default();
-        state.begin_block(BlockSpec::default(), u64::MAX, u64::MAX);
+        state
+            .begin_block(BlockSpec::default(), u64::MAX, u64::MAX)
+            .unwrap();
         state.advance_action(u64::MAX);
         assert_eq!(state.action(), ActionState::default());
         assert_eq!(state.action_phase(), 0.0);
@@ -142,7 +139,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::splat(f32::NAN),
                 grounded: false,
-                crouching: true,
                 delta_seconds: f32::NAN,
                 tick: 1,
             },
@@ -155,25 +151,29 @@ mod contract_tests {
     #[test]
     fn sparse_attack_evaluation_uses_guard_contact_guard() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 0, 10);
+        state.begin_attack(AttackSpec::default(), 0, 10).unwrap();
         state.advance_action(5);
         let early = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(early.action[0].pose, SemanticPose::Guard);
-        assert_eq!(
-            early.action[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::AttackThrust,
-                progress: 0.5,
-            }
+        assert_eq!(early.action[0].pose, SemanticPose::GuardThrust);
+        let PoseSampling::CurveSpan { end, coordinate } = early.action[0].sampling else {
+            panic!("ordinary attacks should use the extrapolating pose curve");
+        };
+        assert_eq!(end, SemanticPose::AttackThrust);
+        assert!(
+            coordinate < 0.0,
+            "the early readable tell draws behind guard"
         );
-        state.advance_action(15);
+        state.advance_action(11);
         let recovery = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(recovery.action[0].pose, SemanticPose::AttackThrust);
+        let PoseSampling::CurveSpan { coordinate, .. } = recovery.action[0].sampling else {
+            panic!("ordinary recovery should use the extrapolating pose curve");
+        };
+        assert!(coordinate > 1.0, "recovery begins beyond contact");
     }
 
     #[test]
     fn repeated_guard_writes_preserve_live_raised_footwork() {
-        let intent = RaisedLocomotionIntent::moving(Vec2::X, 2.0, LeadFoot::Right, 17);
+        let intent = RaisedLocomotionIntent::moving(Vec2::X, 2.0);
         let mut server_like = SkeletonState::default()
             .with_weapon_guard(WeaponGuardState::Raised)
             .with_raised_locomotion(intent);
@@ -204,13 +204,16 @@ mod contract_tests {
     #[test]
     fn downed_body_transition_clears_action_and_raised_stance() {
         let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        state.begin_attack(AttackSpec::default(), 1, 2);
+        state.begin_attack(AttackSpec::default(), 1, 2).unwrap();
         state.transition_body(BodyState::Prone);
         assert_eq!(state.stance(), StanceState::Lowered);
         assert_eq!(state.action(), ActionState::default());
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         assert_eq!(state.stance(), StanceState::Lowered);
-        state.begin_attack(AttackSpec::default(), 3, 4);
+        assert_eq!(
+            state.begin_attack(AttackSpec::default(), 3, 4),
+            Err(ActionTransitionError::Downed)
+        );
         assert_eq!(state.action(), ActionState::default());
     }
 
@@ -331,7 +334,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::ZERO,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 0.25,
                 tick: 1,
             },
@@ -356,7 +358,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::NEG_Z * 2.0,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 0.25,
                 tick: 1,
             },
@@ -404,7 +405,7 @@ mod contract_tests {
         state.advance_posture_transition(100);
         assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
 
-        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.transition_body(BodyState::Grounded(GroundedPosture::Upright));
         state.advance_posture_transition(101);
         assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
         state.advance_posture_transition(106);
@@ -426,7 +427,7 @@ mod contract_tests {
         ));
         state.transition_body(BodyState::Airborne);
         state.advance_posture_transition(6);
-        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.transition_body(BodyState::Grounded(GroundedPosture::Upright));
         state.advance_posture_transition(7);
         state.advance_posture_transition(18);
         assert_eq!(state.body(), BodyState::Supine);
@@ -443,7 +444,6 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::ZERO,
                 grounded: true,
-                crouching: true,
                 delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
                 tick: 1,
             },
@@ -471,32 +471,67 @@ mod contract_tests {
     }
 
     #[test]
-    fn action_replacement_is_explicitly_last_writer_wins() {
+    fn evasion_explicitly_preempts_attack_while_other_actions_are_rejected() {
         let mut state = SkeletonState::default();
-        state.begin_attack(AttackSpec::default(), 10, 20);
-        state.begin_dodge(DodgeSpec { direction: Vec2::X }, 11, 12);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
+        assert_eq!(
+            state.begin_block(BlockSpec::default(), 11, 12),
+            Err(ActionTransitionError::ActionBusy)
+        );
+        state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 11, 12)
+            .unwrap();
         assert_eq!(state.action_kind(), SkeletonAction::Dodge);
+        assert!(state.is_quickstep());
         assert_eq!(state.action_direction(), Vec2::X);
+        assert_eq!(
+            state.begin_dodge(DodgeSpec::default(), 12, 13),
+            Err(ActionTransitionError::ActionBusy)
+        );
+        assert!(DodgeSpec::quickstep(Vec2::ZERO).is_none());
+    }
+
+    #[test]
+    fn dive_transition_cancels_actions_and_rejects_new_action_payloads() {
+        let mut state = SkeletonState::default();
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
+
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Forward,
+            },
+            11,
+            20,
+        ));
+        assert_eq!(state.action_kind(), SkeletonAction::None);
+        assert_eq!(
+            state.begin_dodge(DodgeSpec::default(), 12, 13),
+            Err(ActionTransitionError::PostureTransitionActive)
+        );
+        assert_eq!(
+            state.begin_attack(AttackSpec::default(), 12, 13),
+            Err(ActionTransitionError::PostureTransitionActive)
+        );
     }
 
     #[test]
     fn raised_intent_round_trip_preserves_valid_variants_and_normalizes_wire_input() {
-        let moving = RaisedLocomotionIntent::moving(Vec2::new(3.0, 0.0), 2.0, LeadFoot::Right, 9);
+        let moving = RaisedLocomotionIntent::moving(Vec2::new(3.0, 0.0), 2.0);
         let json = serde_json::to_string(&moving).unwrap();
         assert_eq!(
             serde_json::from_str::<RaisedLocomotionIntent>(&json).unwrap(),
             moving
         );
 
-        let invalid = r#"{"moving":{"local_direction":[null,0.0],"speed":2.0,"swing_foot":"Left","step_sequence":9}}"#;
+        let invalid = r#"{"moving":{"local_direction":[null,0.0],"speed":2.0}}"#;
         assert!(serde_json::from_str::<RaisedLocomotionIntent>(invalid).is_err());
         assert_eq!(
-            RaisedLocomotionIntent::moving(Vec2::ZERO, f32::NAN, LeadFoot::Left, 9),
-            RaisedLocomotionIntent::planted(9)
+            RaisedLocomotionIntent::moving(Vec2::ZERO, f32::NAN),
+            RaisedLocomotionIntent::planted()
         );
 
         let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        state.begin_attack(AttackSpec::default(), 10, 20);
+        state.begin_attack(AttackSpec::default(), 10, 20).unwrap();
         let mut wire = serde_json::to_value(&state).unwrap();
         wire["body"] = serde_json::json!("Prone");
         wire["action"]["Attack"]["timeline"]["preparation_ticks"] = serde_json::json!(0);
@@ -513,8 +548,8 @@ mod contract_tests {
     #[test]
     fn raised_stance_round_trips_through_replication_codec() {
         for locomotion in [
-            RaisedLocomotionIntent::planted(7),
-            RaisedLocomotionIntent::moving(Vec2::Y, 2.0, LeadFoot::Right, 8),
+            RaisedLocomotionIntent::planted(),
+            RaisedLocomotionIntent::moving(Vec2::Y, 2.0),
         ] {
             let state = SkeletonState::default()
                 .with_weapon_guard(WeaponGuardState::Raised)
@@ -527,17 +562,12 @@ mod contract_tests {
 }
 
 impl SemanticPose {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 30] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
-        Self::CrouchIdle,
-        Self::DuckForward,
-        Self::DuckBackward,
-        Self::DuckLeft,
-        Self::DuckRight,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -552,28 +582,27 @@ impl SemanticPose {
         Self::ProneSupineRollLeft,
         Self::ProneSupineRollRight,
         Self::SupineTransition,
-        Self::Guard,
+        Self::GuardSwing,
         Self::AttackSwing,
-        Self::AttackSwingFollow,
+        Self::RecoverSwing,
+        Self::ContinueSwing,
+        Self::GuardThrust,
         Self::AttackThrust,
-        Self::BlockCutLeft,
-        Self::BlockCutRight,
-        Self::BlockThrust,
+        Self::RecoverThrust,
+        Self::ContinueThrust,
+        Self::GuardOffhand,
+        Self::AttackOffhand,
+        Self::AttackOffhandPrepared,
     ];
     /// Non-attack semantics every complete humanoid family must resolve.
     /// Attack clips are capabilities: a pack may deliberately omit any or all
     /// of them, and gameplay respects that absence.
-    pub const HUMANOID_REQUIRED: [Self; 28] = [
+    pub const HUMANOID_REQUIRED: [Self; 19] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
-        Self::CrouchIdle,
-        Self::DuckForward,
-        Self::DuckBackward,
-        Self::DuckLeft,
-        Self::DuckRight,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -588,10 +617,6 @@ impl SemanticPose {
         Self::ProneSupineRollLeft,
         Self::ProneSupineRollRight,
         Self::SupineTransition,
-        Self::Guard,
-        Self::BlockCutLeft,
-        Self::BlockCutRight,
-        Self::BlockThrust,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -602,11 +627,6 @@ impl SemanticPose {
             WalkPassing => "walk_passing",
             RunContact => "run_contact",
             RunFlight => "run_flight",
-            CrouchIdle => "crouch_idle",
-            DuckForward => "duck_forward",
-            DuckBackward => "duck_backward",
-            DuckLeft => "duck_left",
-            DuckRight => "duck_right",
             DiveForward => "dive_forward",
             DiveBackward => "dive_backward",
             DiveLeft => "dive_left",
@@ -621,13 +641,17 @@ impl SemanticPose {
             ProneSupineRollLeft => "prone_supine_roll_left",
             ProneSupineRollRight => "prone_supine_roll_right",
             SupineTransition => "supine_transition",
-            Guard => "guard",
+            GuardSwing => "guard_swing",
             AttackSwing => "swing",
-            AttackSwingFollow => "swing_follow",
+            RecoverSwing => "recover_swing",
+            ContinueSwing => "continue_swing",
+            GuardThrust => "guard_thrust",
             AttackThrust => "thrust",
-            BlockCutLeft => "block_cut_left",
-            BlockCutRight => "block_cut_right",
-            BlockThrust => "block_thrust",
+            RecoverThrust => "recover_thrust",
+            ContinueThrust => "continue_thrust",
+            GuardOffhand => "guard_offhand",
+            AttackOffhand => "offhand",
+            AttackOffhandPrepared => "offhand_prepared",
         }
     }
 
@@ -638,10 +662,6 @@ impl SemanticPose {
     pub fn mirrored_counterpart(self) -> Option<Self> {
         use SemanticPose::*;
         Some(match self {
-            DuckLeft => DuckRight,
-            DuckRight => DuckLeft,
-            DiveLeft => DiveRight,
-            DiveRight => DiveLeft,
             ProneSupineRollLeft => ProneSupineRollRight,
             ProneSupineRollRight => ProneSupineRollLeft,
             _ => return None,
@@ -658,21 +678,19 @@ impl SemanticPose {
             WalkPassing => WalkContact,
             RunContact => WalkContact,
             RunFlight => WalkPassing,
-            CrouchIdle => IdleRelaxed,
-            DuckForward | DuckBackward | DuckLeft | DuckRight => Guard,
-            DiveForward | DiveBackward | DiveLeft | DiveRight => AirborneTravel,
+            DiveForward | DiveBackward | DiveLeft | DiveRight => GuardThrust,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,
-            ProneIdle | SupineIdle => CrouchIdle,
+            ProneIdle | SupineIdle => IdleRelaxed,
             ProneCrawlContact => ProneIdle,
             SupineScamperContact => SupineIdle,
-            ProneTransition => CrouchIdle,
+            ProneTransition => IdleRelaxed,
             ProneSupineRollLeft | ProneSupineRollRight => ProneIdle,
-            SupineTransition => CrouchIdle,
-            Guard => IdleRelaxed,
-            AttackSwing | AttackSwingFollow | AttackThrust => Guard,
-            BlockCutLeft | BlockCutRight => BlockThrust,
-            BlockThrust => Guard,
+            SupineTransition => IdleRelaxed,
+            GuardSwing | GuardThrust | GuardOffhand => IdleRelaxed,
+            AttackSwing | RecoverSwing | ContinueSwing => GuardSwing,
+            AttackThrust | RecoverThrust | ContinueThrust => GuardThrust,
+            AttackOffhand | AttackOffhandPrepared => GuardOffhand,
         })
     }
 }

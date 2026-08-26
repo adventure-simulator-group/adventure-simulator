@@ -73,6 +73,10 @@ struct Args {
     #[arg(long, requires = "scene_performance_benchmark_frames")]
     scene_performance_render_diagnostics: bool,
 
+    /// Capture only terrain as color-coded wireframes and count visible triangles by LOD.
+    #[arg(long, conflicts_with_all = ["leaf_benchmark_frames", "tree_lighting_benchmark_frames", "scene_performance_benchmark_frames"])]
+    terrain_wireframe: bool,
+
     /// Azimuth around the review tree for locked leaf-LOD comparison views.
     #[arg(long, default_value_t = 45.0)]
     tree_review_azimuth_degrees: f32,
@@ -107,6 +111,7 @@ fn main() {
         args.tree_lighting_benchmark_frames,
         args.scene_performance_benchmark_frames,
         args.scene_performance_render_diagnostics,
+        args.terrain_wireframe,
         args.tree_review_azimuth_degrees,
         match args.profile {
             CaptureProfile::Semantic => "semantic",

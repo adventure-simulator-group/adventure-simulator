@@ -55,3 +55,22 @@ fn main() {
 fn main() {
     panic!("tactical-sky-viewer is a native-only capture harness");
 }
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_arguments_select_a_view_and_output() {
+        let args = Args::try_parse_from([
+            "tactical-sky-viewer",
+            "--view",
+            "sun",
+            "--output",
+            "sun.png",
+        ])
+        .unwrap();
+        assert!(matches!(args.view, SkyView::Sun));
+        assert_eq!(args.output, PathBuf::from("sun.png"));
+    }
+}

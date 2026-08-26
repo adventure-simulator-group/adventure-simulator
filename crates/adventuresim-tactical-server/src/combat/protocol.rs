@@ -1,4 +1,4 @@
-use adventuresim_tactical_core::prelude::{BodyPart, StrikeFamily};
+use adventuresim_tactical_core::prelude::{AttackHand, BodyPart, StrikeFamily};
 use adventuresim_tactical_netcode::message::DefendRequest;
 use bevy::prelude::*;
 
@@ -12,17 +12,15 @@ pub(crate) struct PendingDefenderResponse {
     pub(crate) set_at: CombatInstant,
 }
 
-/// Transient allegiance is independent from connectivity and bot control.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Reflect)]
-#[reflect(Component)]
-pub(crate) enum TacticalCombatSide {
-    Party,
-    Enemy,
-}
-
-/// Emitted once per transition from active to incapacitated.
+/// Authoritative defensive action requested by either an authenticated client
+/// or a server-owned behavior package. Source-specific code may choose the
+/// actor, but all validation, animation state, and combat timing happens after
+/// this seam.
 #[derive(Event, Clone, Copy, Debug)]
-pub(crate) struct TacticalCombatantDefeated(pub(crate) Entity);
+pub(crate) struct DefendIntent {
+    pub(crate) defender: Entity,
+    pub(crate) choice: DefendRequest,
+}
 
 /// Both network clients and server-owned AI enter melee through this seam.
 #[derive(Event, Clone, Copy, Debug)]
@@ -32,6 +30,7 @@ pub(crate) struct MeleeAttackIntent {
     pub(crate) body_part: BodyPart,
     pub(crate) reported_precision: ReportedPrecision,
     pub(crate) strike_family: StrikeFamily,
+    pub(crate) hand: AttackHand,
 }
 
 #[derive(Event, Clone, Copy, Debug)]
@@ -40,6 +39,7 @@ pub(crate) struct MeleeAttackStartedIntent {
     pub(crate) target: Entity,
     pub(crate) windup: CombatDuration,
     pub(crate) strike_family: StrikeFamily,
+    pub(crate) hand: AttackHand,
 }
 
 /// `target == None` is an authoritative miss that still consumes a projectile.
@@ -55,5 +55,6 @@ pub(crate) struct RangedAttackIntent {
 pub(crate) struct RangedAttackStartedIntent {
     pub(crate) attacker: Entity,
     pub(crate) target: Option<Entity>,
-    pub(crate) windup: CombatDuration,
+    pub(crate) animation_windup: CombatDuration,
+    pub(crate) minimum_windup: CombatDuration,
 }

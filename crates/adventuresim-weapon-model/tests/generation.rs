@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use adventuresim_weapon_model::{
     Attachment, CodecError, ComponentDesign, ComponentRole, ComponentShape, CylinderSpec,
+    MAX_ROUND_GRIP_RADIUS_MM, MAX_SWORD_GRIP_THICKNESS_MM, MAX_SWORD_GRIP_WIDTH_MM,
     MELEE_CATALOG_IDS, MaceSpec, MaterialClass, Millimeters, OffsetMm, PRESET_IDS, Permille,
     Segments, ValidationError, WeaponDesign, WeaponHolderKind, WeaponIconLayout, WeaponIconSpec,
     decode, decode_holder, default_design, default_holder_design, derive_properties, design_hash,
@@ -176,11 +177,11 @@ fn haft_loop_tracks_the_grip_instead_of_the_head() {
         .find(|part| part.role == ComponentRole::Grip)
         .unwrap();
     match &mut grip.shape {
-        ComponentShape::Cylinder(spec) => spec.radius = Millimeters(spec.radius.0 + 4),
+        ComponentShape::Cylinder(spec) => spec.radius = Millimeters(spec.radius.0 + 2),
         _ => panic!("mace grip changed shape"),
     }
     let wider_holder = generate_holder(&default_holder_design(&wider).unwrap()).unwrap();
-    assert!(wider_holder.bounds.max[0] > holder.bounds.max[0] + 0.003);
+    assert!(wider_holder.bounds.max[0] > holder.bounds.max[0] + 0.0015);
 }
 
 #[test]
@@ -351,7 +352,7 @@ fn unusual_polearm_flanged_mace_uses_the_same_attachment_graph() {
                 material: MaterialClass::Wood,
                 shape: ComponentShape::Cylinder(CylinderSpec {
                     length: Millimeters(1_850),
-                    radius: Millimeters(25),
+                    radius: Millimeters(22),
                     bottom_scale: Permille(1000),
                     top_scale: Permille(1000),
                     segments: Segments(16),
@@ -513,6 +514,55 @@ fn validation_and_transport_reject_invalid_attachment_graphs() {
 }
 
 #[test]
+fn grips_respect_their_cross_section_specific_anatomical_caps() {
+    for id in PRESET_IDS {
+        let design = preset_design(id).unwrap();
+        for component in design
+            .components
+            .iter()
+            .filter(|component| component.role == ComponentRole::Grip)
+        {
+            if let ComponentShape::Cylinder(grip) = &component.shape {
+                let effective_radius = (u64::from(grip.radius.0)
+                    * u64::from(grip.bottom_scale.0.max(grip.top_scale.0)))
+                .div_ceil(1_000);
+                assert!(
+                    effective_radius <= u64::from(MAX_ROUND_GRIP_RADIUS_MM),
+                    "{id} grip radius {effective_radius} mm"
+                );
+            }
+            if let ComponentShape::OvalGrip(grip) = &component.shape {
+                let scale = u64::from(grip.bottom_scale.0.max(grip.top_scale.0));
+                let width = (u64::from(grip.width.0) * scale).div_ceil(1_000);
+                let thickness = (u64::from(grip.thickness.0) * scale).div_ceil(1_000);
+                assert!(
+                    width <= u64::from(MAX_SWORD_GRIP_WIDTH_MM),
+                    "{id} grip width {width} mm"
+                );
+                assert!(
+                    thickness <= u64::from(MAX_SWORD_GRIP_THICKNESS_MM),
+                    "{id} grip thickness {thickness} mm"
+                );
+                assert!(
+                    width > thickness,
+                    "{id} grip should be directionally indexed"
+                );
+            }
+        }
+    }
+
+    let mut oversized = default_design("longsword").unwrap();
+    let ComponentShape::OvalGrip(grip) = &mut oversized.components[0].shape else {
+        panic!("longsword grip");
+    };
+    grip.width = Millimeters(MAX_SWORD_GRIP_WIDTH_MM + 1);
+    assert!(matches!(
+        validate(&oversized),
+        Err(errors) if errors.iter().any(|error| matches!(error, ValidationError::GripCrossSectionExceeded { .. }))
+    ));
+}
+
+#[test]
 fn deterministic_parameter_fuzz_stays_finite_closed_and_outward() {
     let mut state = 0x1544_9e37_u64;
     let mut next = |limit: u32| {
@@ -525,9 +575,21 @@ fn deterministic_parameter_fuzz_stays_finite_closed_and_outward() {
         for _ in 0..8 {
             let mut design = preset_design(id).unwrap();
             for component in &mut design.components {
+                let is_grip = component.role == ComponentRole::Grip;
                 match &mut component.shape {
                     ComponentShape::Cylinder(value) => {
-                        value.radius.0 += next(3);
+                        let radius = value.radius.0 + next(3);
+                        value.radius.0 = if is_grip {
+                            let scale = u32::from(value.bottom_scale.0.max(value.top_scale.0));
+                            radius.min(MAX_ROUND_GRIP_RADIUS_MM * 1_000 / scale)
+                        } else {
+                            radius
+                        };
+                    }
+                    ComponentShape::OvalGrip(value) => {
+                        value.width.0 = (value.width.0 + next(2)).min(MAX_SWORD_GRIP_WIDTH_MM);
+                        value.thickness.0 =
+                            (value.thickness.0 + next(2)).min(MAX_SWORD_GRIP_THICKNESS_MM);
                     }
                     ComponentShape::Blade(value) => {
                         value.curvature.0 += next(5) as i32 - 2;
@@ -774,6 +836,7 @@ fn accepted_modeler_presets_cover_the_high_fidelity_vocabulary() {
                 ComponentShape::Spear(_) => "spear",
                 ComponentShape::ProfiledPommel(_) => "profiled-pommel",
                 ComponentShape::Cylinder(_)
+                | ComponentShape::OvalGrip(_)
                 | ComponentShape::Blade(_)
                 | ComponentShape::Guard(_)
                 | ComponentShape::Mace(_) => continue,
@@ -812,7 +875,36 @@ fn recipe_derivation_is_deterministic_and_mesh_independent() {
         assert!(first.mass_kg > 0.0, "{id}");
         assert!(first.length_m > 0.0, "{id}");
         assert!(first.grip_to_tip_m > 0.0, "{id}");
+        assert!(first.center_of_mass_from_grip_m.is_finite(), "{id}");
+        assert!(
+            first.moment_of_inertia_kg_m2.is_finite() && first.moment_of_inertia_kg_m2 > 0.0,
+            "{id}"
+        );
+        assert!(first.balance.is_finite() && first.balance > 0.0, "{id}");
     }
+}
+
+#[test]
+fn realistic_longsword_pommel_shifts_mass_and_handling_without_dominating_weight() {
+    let baseline = preset_design("landsknecht-longsword").unwrap();
+    let baseline_properties = derive_properties(&baseline).unwrap();
+    assert!((1.0..3.0).contains(&baseline_properties.mass_kg));
+    assert!(baseline_properties.center_of_mass_from_grip_m > 0.0);
+
+    let mut heavier = baseline.clone();
+    let ComponentShape::ProfiledPommel(pommel) = &mut heavier.components[1].shape else {
+        panic!("longsword pommel changed shape")
+    };
+    for point in &mut pommel.profile {
+        point.radius.0 = point.radius.0 * 108 / 100;
+    }
+    let heavier_properties = derive_properties(&heavier).unwrap();
+    assert!(heavier_properties.mass_kg > baseline_properties.mass_kg);
+    assert!(
+        heavier_properties.center_of_mass_from_grip_m
+            < baseline_properties.center_of_mass_from_grip_m
+    );
+    assert!(heavier_properties.balance < baseline_properties.balance);
 }
 
 #[test]
@@ -865,6 +957,7 @@ fn structural_kind(component: &ComponentDesign) -> &'static str {
         return "pommel";
     }
     match &component.shape {
+        ComponentShape::OvalGrip(_) => "ovalGrip",
         ComponentShape::Cylinder(_) if component.role == ComponentRole::Grip => "grip",
         ComponentShape::Cylinder(_) => "cylinder",
         ComponentShape::Socket(_) => "socket",
@@ -936,21 +1029,27 @@ fn all_accepted_presets_match_the_js_structural_fixture_and_key_controls() {
         ),
         (
             "landsknecht-longsword",
-            &["grip", "pommel", "guard", "blade"],
+            &["ovalGrip", "pommel", "guard", "blade"],
         ),
-        ("zweihander", &["grip", "pommel", "guard", "blade", "guard"]),
-        ("katzbalger", &["grip", "fanPommel", "figureEight", "blade"]),
+        (
+            "zweihander",
+            &["ovalGrip", "pommel", "guard", "blade", "guard"],
+        ),
+        (
+            "katzbalger",
+            &["ovalGrip", "fanPommel", "figureEight", "blade"],
+        ),
         (
             "grosse-messer",
             &["slabGrip", "pommel", "guard", "blade", "tube", "pommel"],
         ),
-        ("dussack", &["grip", "pommel", "knuckleBow", "blade"]),
-        ("estoc", &["grip", "pommel", "guard", "blade"]),
-        ("rondel-dagger", &["grip", "pommel", "pommel", "blade"]),
+        ("dussack", &["ovalGrip", "pommel", "knuckleBow", "blade"]),
+        ("estoc", &["ovalGrip", "pommel", "guard", "blade"]),
+        ("rondel-dagger", &["ovalGrip", "pommel", "pommel", "blade"]),
         (
             "reitschwert-1540",
             &[
-                "grip",
+                "ovalGrip",
                 "pommel",
                 "guard",
                 "blade",
@@ -1093,7 +1192,18 @@ fn all_accepted_presets_match_the_js_structural_fixture_and_key_controls() {
     };
     assert_eq!(cylinder(&halberd, "shaft"), (900, 920));
     let longsword = preset_design("landsknecht-longsword").unwrap();
-    assert_eq!(cylinder(&longsword, "grip"), (1000, 920));
+    let ComponentShape::OvalGrip(longsword_grip) = &longsword.components[0].shape else {
+        panic!("longsword grip was not oval")
+    };
+    assert_eq!(
+        (
+            longsword_grip.width.0,
+            longsword_grip.thickness.0,
+            longsword_grip.bottom_scale.0,
+            longsword_grip.top_scale.0,
+        ),
+        (33, 24, 1000, 850)
+    );
     let gothic = preset_design("gothic-flanged-mace").unwrap();
     assert_eq!(cylinder(&gothic, "grip"), (1000, 980));
     assert_eq!(cylinder(&gothic, "shaft"), (1000, 940));
@@ -1177,6 +1287,7 @@ fn hostile_full_integer_validation_is_total_and_never_panics() {
     fn poison(shape: &mut ComponentShape) {
         match shape {
             ComponentShape::Cylinder(v) => v.length.0 = u32::MAX,
+            ComponentShape::OvalGrip(v) => v.width.0 = u32::MAX,
             ComponentShape::Blade(v) => v.width.0 = u32::MAX,
             ComponentShape::Guard(v) => v.radius.0 = u32::MAX,
             ComponentShape::Mace(v) => v.length.0 = u32::MAX,

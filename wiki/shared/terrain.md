@@ -176,22 +176,25 @@ holes. These are materially different geometry rather than blades merely
 discarded in the vertex shader, following the high/low geometry and far-field
 impostor division described in Eric Wohllaib's GDC 2021
 [*Procedural Grass in Ghost of Tsushima*](https://gdcvault.com/play/1027033/)
-talk. They fade by 140 metres. Beneath every geometric tier, the terrain keeps
-the local solid soil, litter, mud, cultivation, or stone substrate instead of
-painting grass green onto the ground; the blades alone provide the near-field
-sward color. Only while the final vista blades fade from 124 to 140 metres does
-the terrain introduce an optical-average molded-plastic pigment derived from the
-same environmental grass palette. It compensates for the species/cohort
-darkening, blade occlusion, and thin-foliage lighting that act after the blade
-input color. This solid terminal LOD carries the field without sub-pixel
-geometry or exposing a differently colored silhouette when the last blades
-disappear. Regional vista vertices retain the same environmental samples,
-including an aggregate sward-coverage channel, and hard world-space coverage
-dithering selects that same calibrated pigment through every vista ring. Vista
-slopes use continuous height-gradient normals instead of per-cell face normals;
-sufficiently exposed hilly samples reuse the generated two-color rock surface
-through coarse-safe triplanar sampling. The locally controlled player's position
-and velocity flatten and push nearby grass as a presentation-only effect.
+talk. They fade by 40 metres. Beneath the close Near tier, the terrain keeps the
+local solid soil, litter, mud, cultivation, or stone substrate instead of
+painting grass green onto the ground. During the 8--10 metre Near-to-Far
+cross-fade, a stable world-space dither introduces the same optical-average
+grass pigment only in the physical coverage removed by Far's subset; its
+surviving blades retain their full width above it. That gap fill remains through
+the Far and Vista tiers, then grows continuously to full coverage as the final
+Vista blades fade from 35 to 40 metres. The pigment derives from the same
+environmental grass palette and compensates for the species/cohort darkening,
+blade occlusion, and thin-foliage lighting that act after the blade input color.
+This solid terminal LOD carries the field without sub-pixel geometry or exposing
+a differently colored silhouette when the last blades disappear. Regional vista
+vertices retain the same environmental samples, including an aggregate
+sward-coverage channel, and hard world-space coverage dithering selects that
+same calibrated pigment through every vista ring. Vista slopes use continuous
+height-gradient normals instead of per-cell face normals; sufficiently exposed
+hilly samples reuse the generated two-color rock surface through coarse-safe
+triplanar sampling. The locally controlled player's position and velocity
+flatten and push nearby grass as a presentation-only effect.
 
 Grass is organized into deterministic, roughly 24-metre coherent plant
 communities rather than selecting an unrelated species for every ribbon.
