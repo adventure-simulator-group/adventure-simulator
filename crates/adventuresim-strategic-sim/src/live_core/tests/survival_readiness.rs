@@ -40,7 +40,7 @@ fn unsafe_immediate_route_can_wait_for_a_safe_next_walking_window() {
 }
 
 #[test]
-fn safe_departure_wait_is_bounded_to_one_day() {
+fn safe_departure_selects_a_journey_clock_without_synchronizing_characters() {
     assert_eq!(safe_departure_wait_minutes(false, true, Some(60)), Some(60));
     assert_eq!(
         safe_departure_wait_minutes(false, true, Some(1_440)),
@@ -52,46 +52,25 @@ fn safe_departure_wait_is_bounded_to_one_day() {
 
     let source = LIVE_CORE_SOURCE;
     assert!(source.contains("minutes_until_next_walking_start"));
-    assert!(source.contains("rest_at_settlement_hours_then(member_id, member_wait"));
-    assert!(source.contains("let actual_party_floor = self"));
-    assert!(source.contains("reason=safe_departure_wait_incomplete"));
+    assert!(source.contains("mode=journey_local_clock"));
+    assert!(!source.contains("rest_at_settlement_hours_then(member_id, member_wait"));
+    assert!(!source.contains("let actual_party_floor = self"));
     assert!(source.contains("CoreLoopEventKind::SafeDepartureWait"));
 }
 
 #[test]
-fn safe_departure_wait_stops_when_member_rest_relocates_the_party() {
+fn safe_departure_configuration_does_not_rest_party_members() {
     let source = include_str!("../settlement.rs");
     let wait = source
         .split("pub(super) fn wait_for_safe_departure_at_settlement")
         .nth(1)
         .and_then(|tail| tail.split("pub(super) fn configure_safe_departure_itinerary").next())
         .expect("safe-departure wait implementation");
-    let rest = wait
-        .find("rest_at_settlement_hours_then(member_id, member_wait")
-        .expect("per-member public rest");
-    let reducer_result = wait[rest..]
-        .find("self.call(result)?")
-        .map(|offset| rest + offset)
-        .expect("completed rest reducer");
-    let relocation_observation = wait[reducer_result..]
-        .find("party_is_still_at_original_settlement")
-        .map(|offset| reducer_result + offset)
-        .expect("post-rest public location observation");
-    let next_member = wait[relocation_observation..]
-        .find("modes.push")
-        .map(|offset| relocation_observation + offset)
-        .expect("next member wait step");
-    let clock_diagnosis = wait
-        .find("let actual_party_floor")
-        .expect("clock-frontier diagnosis");
-
-    assert!(reducer_result < relocation_observation);
-    assert!(relocation_observation < next_member);
-    assert!(relocation_observation < clock_diagnosis);
-    assert!(wait.contains("CoreLoopEventKind::SafeDepartureWaitRelocated"));
-    assert!(wait.contains("reason=safe_departure_wait_relocated"));
-    assert!(wait.contains("bounded_event_field(&original_settlement_id)"));
-    assert!(wait.contains("return Ok(false)"));
+    assert!(wait.contains("configure_safe_departure_itinerary"));
+    assert!(wait.contains("journey_start_minute_of_day"));
+    assert!(wait.contains("mode=journey_local_clock"));
+    assert!(!wait.contains("rest_at_settlement"));
+    assert!(!wait.contains("let actual_party_floor"));
     assert!(!wait.contains("strategic_incident"));
 }
 

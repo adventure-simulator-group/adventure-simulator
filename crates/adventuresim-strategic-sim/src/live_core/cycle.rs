@@ -278,6 +278,7 @@ impl LiveRunner {
                         leader,
                         walking_minutes_per_day,
                         travel_at_night,
+                        None,
                     )?,
                     DepartureReadiness::WaitForSafeDeparture {
                         reason,

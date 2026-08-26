@@ -527,6 +527,9 @@ pub(crate) fn create_solo_party_for_character(
             camp_fatigue_percent: 50,
             walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
             travel_at_night: false,
+            journey_start_minute_of_day: 8 * 60,
+            wilderness_canonical_anchor_minute: None,
+            wilderness_elapsed_minutes: 0,
             camp_duration_mode: CampDurationMode::Auto,
             fixed_camp_minutes: 0,
             camp_destination: None,
@@ -1348,6 +1351,13 @@ pub fn request_to_join_party(
     if current_party_id == party_id {
         return Err("Cannot join your own party".into());
     }
+    if current_party.current_settlement_id.is_none()
+        || party.current_settlement_id.is_none()
+        || current_party.wilderness_canonical_anchor_minute.is_some()
+        || party.wilderness_canonical_anchor_minute.is_some()
+    {
+        return Err("Parties can merge only while synchronized at a settlement".into());
+    }
     require_living_recruitment_target(ctx, &party)?;
     require_open_recruitment_offer(ctx, &party)?;
     if !crate::simulation::same_simulation_scope(ctx, character_id, party.leader_id) {
@@ -1466,6 +1476,13 @@ pub fn accept_party_join_request(
     }
     if source_party.active_contract_id.is_some() {
         return Err("Applicant's party must abandon its current quest first".into());
+    }
+    if source_party.current_settlement_id.is_none()
+        || party.current_settlement_id.is_none()
+        || source_party.wilderness_canonical_anchor_minute.is_some()
+        || party.wilderness_canonical_anchor_minute.is_some()
+    {
+        return Err("Parties can merge only while synchronized at a settlement".into());
     }
     if source_party.current_settlement_id != party.current_settlement_id
         || source_party.current_case_site_id != party.current_case_site_id

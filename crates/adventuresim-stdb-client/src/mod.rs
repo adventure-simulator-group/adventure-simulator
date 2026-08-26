@@ -735,8 +735,7 @@ pub mod resolve_religious_demand_reducer;
 pub mod resolve_strategic_encounter_reducer;
 pub mod resolved_party_action_type;
 pub mod rest_at_camp_reducer;
-pub mod rest_at_residence_hours_reducer;
-pub mod rest_at_settlement_hours_reducer;
+pub mod rest_at_residence_reducer;
 pub mod rest_at_settlement_reducer;
 pub mod retained_projectile_table;
 pub mod retained_projectile_type;
@@ -880,8 +879,6 @@ pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
 pub mod surrender_to_authority_reducer;
-pub mod sync_development_clock_to_character_reducer;
-pub mod synchronize_character_time_reducer;
 pub mod synchronize_party_for_activity_reducer;
 pub mod tactical_character_consequence_type;
 pub mod tactical_consequence_receipt_type;
@@ -1676,8 +1673,7 @@ pub use resolve_religious_demand_reducer::resolve_religious_demand;
 pub use resolve_strategic_encounter_reducer::resolve_strategic_encounter;
 pub use resolved_party_action_type::ResolvedPartyAction;
 pub use rest_at_camp_reducer::rest_at_camp;
-pub use rest_at_residence_hours_reducer::rest_at_residence_hours;
-pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
+pub use rest_at_residence_reducer::rest_at_residence;
 pub use rest_at_settlement_reducer::rest_at_settlement;
 pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
@@ -1821,8 +1817,6 @@ pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
 pub use surrender_to_authority_reducer::surrender_to_authority;
-pub use sync_development_clock_to_character_reducer::sync_development_clock_to_character;
-pub use synchronize_character_time_reducer::synchronize_character_time;
 pub use synchronize_party_for_activity_reducer::synchronize_party_for_activity;
 pub use tactical_character_consequence_type::TacticalCharacterConsequence;
 pub use tactical_consequence_receipt_type::TacticalConsequenceReceipt;
@@ -2543,18 +2537,13 @@ pub enum Reducer {
         requested_minutes: u64,
         shelter: FieldShelter,
     },
-    RestAtResidenceHours {
+    RestAtResidence {
         character_id: u64,
-        requested_minutes: u64,
+        requested_days: u16,
     },
     RestAtSettlement {
         character_id: u64,
         requested_days: u16,
-        at_inn: bool,
-    },
-    RestAtSettlementHours {
-        character_id: u64,
-        requested_minutes: u64,
         at_inn: bool,
     },
     RetrieveFireplaceContainer {
@@ -2662,6 +2651,7 @@ pub enum Reducer {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
+        journey_start_minute_of_day: u16,
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
     },
@@ -2762,12 +2752,6 @@ pub enum Reducer {
     SurrenderToAuthority {
         character_id: u64,
         action_token: String,
-    },
-    SyncDevelopmentClockToCharacter {
-        character_id: u64,
-    },
-    SynchronizeCharacterTime {
-        character_id: u64,
     },
     SynchronizePartyForActivity {
         leader_id: u64,
@@ -2998,9 +2982,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::ResolveReligiousDemand { .. } => "resolve_religious_demand",
             Reducer::ResolveStrategicEncounter { .. } => "resolve_strategic_encounter",
             Reducer::RestAtCamp { .. } => "rest_at_camp",
-            Reducer::RestAtResidenceHours { .. } => "rest_at_residence_hours",
+            Reducer::RestAtResidence { .. } => "rest_at_residence",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
-            Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
             Reducer::RetrieveFireplaceContainer { .. } => "retrieve_fireplace_container",
             Reducer::RetrieveFireplaceDish { .. } => "retrieve_fireplace_dish",
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
@@ -3042,10 +3025,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
             Reducer::SubmitPuzzleChallenge { .. } => "submit_puzzle_challenge",
             Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
-            Reducer::SyncDevelopmentClockToCharacter { .. } => {
-                "sync_development_clock_to_character"
-            }
-            Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::SynchronizePartyForActivity { .. } => "synchronize_party_for_activity",
             Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
@@ -4240,12 +4219,12 @@ Reducer::BeginFormalCourtship{
                 requested_minutes: requested_minutes.clone(),
                 shelter: shelter.clone(),
 }),
-            Reducer::RestAtResidenceHours{
+            Reducer::RestAtResidence{
                 character_id,
-                requested_minutes,
-}             => __sats::bsatn::to_vec(&rest_at_residence_hours_reducer::RestAtResidenceHoursArgs {
+                requested_days,
+}             => __sats::bsatn::to_vec(&rest_at_residence_reducer::RestAtResidenceArgs {
                 character_id: character_id.clone(),
-                requested_minutes: requested_minutes.clone(),
+                requested_days: requested_days.clone(),
 }),
             Reducer::RestAtSettlement{
                 character_id,
@@ -4254,15 +4233,6 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&rest_at_settlement_reducer::RestAtSettlementArgs {
                 character_id: character_id.clone(),
                 requested_days: requested_days.clone(),
-                at_inn: at_inn.clone(),
-}),
-            Reducer::RestAtSettlementHours{
-                character_id,
-                requested_minutes,
-                at_inn,
-}             => __sats::bsatn::to_vec(&rest_at_settlement_hours_reducer::RestAtSettlementHoursArgs {
-                character_id: character_id.clone(),
-                requested_minutes: requested_minutes.clone(),
                 at_inn: at_inn.clone(),
 }),
             Reducer::RetrieveFireplaceContainer{
@@ -4451,12 +4421,14 @@ Reducer::BeginFormalCourtship{
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
+                journey_start_minute_of_day,
                 automatic_camp_duration,
                 fixed_camp_minutes,
 }             => __sats::bsatn::to_vec(&set_party_travel_itinerary_reducer::SetPartyTravelItineraryArgs {
                 character_id: character_id.clone(),
                 walking_minutes_per_day: walking_minutes_per_day.clone(),
                 travel_at_night: travel_at_night.clone(),
+                journey_start_minute_of_day: journey_start_minute_of_day.clone(),
                 automatic_camp_duration: automatic_camp_duration.clone(),
                 fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),
@@ -4639,16 +4611,6 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&surrender_to_authority_reducer::SurrenderToAuthorityArgs {
                 character_id: character_id.clone(),
                 action_token: action_token.clone(),
-}),
-            Reducer::SyncDevelopmentClockToCharacter{
-                character_id,
-}             => __sats::bsatn::to_vec(&sync_development_clock_to_character_reducer::SyncDevelopmentClockToCharacterArgs {
-                character_id: character_id.clone(),
-}),
-            Reducer::SynchronizeCharacterTime{
-                character_id,
-}             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
-                character_id: character_id.clone(),
 }),
             Reducer::SynchronizePartyForActivity{
                 leader_id,

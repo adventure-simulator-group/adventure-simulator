@@ -1356,9 +1356,9 @@ impl LiveRunner {
         }
         let wait_mode = if let Some(venue) = settlement_venue {
             let result = reducer_call!(self, "wait_for_investigation_window_settlement", |cb| {
-                self.connection.reducers.rest_at_settlement_hours_then(
+                self.connection.reducers.rest_at_settlement_then(
                     owner_character_id,
-                    u64::from(wait_minutes),
+                    1,
                     venue.at_inn(),
                     cb,
                 )
@@ -1976,6 +1976,7 @@ impl LiveRunner {
                                 character_id,
                                 walking_minutes_per_day,
                                 travel_at_night,
+                                None,
                             )?;
                         }
                         DepartureReadiness::WaitForSafeDeparture {

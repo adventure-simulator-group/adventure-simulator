@@ -1,4 +1,27 @@
-Time between players is kept *somewhat* in-sync. The idea is that generally, time advances at 56x speed, so that one week in the real world is one year in-game. The main purpose of this is to account for the realistic [travel distances](travel.md) and [healing rate](../shared/health.md) that we use, as otherwise the game would be extraordinarily boring. However, its not *exactly* in-sync, because at minimum there is also a real-time simulation for things like [combat](../tactical/combat.md) or navigating [difficult terrain](../shared/terrain.md). Thus, each party is permitted to be a little-bit out-of-sync with each other, and can use accelerated downtime to catch up.
+Settlements inhabit the canonical present. Their NPCs, calendars, seasons,
+weather, holy days, and celestial cycles follow official time. Official time
+advances continuously at the exact rate of one game year per real week: one
+game minute per 84/73 real seconds, or about 52.14 times real time.
+
+Player characters are changelings who do not belong entirely to that timeline.
+Rest and adventure can carry them through years while scarcely any time passes
+in the world. Their age, wounds, training, needs, and other personal
+consequences still advance. Another player character does not have to catch up
+before joining them.
+
+A party that leaves a settlement begins one subjective journey clock. The
+leader chooses its starting time of day. The party then tracks total elapsed
+time since setting out, not merely a repeating 24-hour clock, so the travel
+planner can retain the history and progress of a long expedition. Time of day
+repeats within that elapsed time, but the canonical date, weekday, season, and
+moon phase remain fixed. Camps and case sites belong to the journey clock.
+
+Returning to any settlement restores its canonical time of day. Each arriving
+character spends only the additional personal time needed to reach that time of
+day, always less than 24 hours. The interval has the ordinary consequences of
+rest and downtime. A character who can afford an inn pays for full board;
+otherwise the church provides sanctuary. Subjective months in the wilderness
+therefore never require months of arrival downtime.
 
 ## Current implementation
 
@@ -10,10 +33,10 @@ band during a long interval cascades into the next eligible title. Reading is
 allocated time rather than Leisure, and is disabled during travel and camp.
 
 Disease is evaluated in the patient's personal character time. Travel, camp
-rest, settlement rest, and lazy catch-up check every disease boundary crossed
-by the interval. If terminal physiological failure occurs, the clock and all
-work stop at that exact minute. This prevents a long skip from jumping over a
-fatal peak into apparent recovery.
+rest, settlement rest, and other elapsed-time actions check every disease
+boundary crossed by the interval. If terminal physiological failure occurs, the
+clock and all work stop at that exact minute. This prevents a long skip from
+jumping over a fatal peak into apparent recovery.
 
 The same centralized interval evaluation assembles settlement exposure,
 within-party close-contact transmission, and infected-blood exposure before
@@ -26,20 +49,19 @@ was protected or infected. Existing closed spans and companions who are not
 co-advancing remain clamped to their recorded clocks. Splitting an otherwise
 identical interval does not reroll exposure.
 
-Lazy catch-up and other solo elapsed-time actions do not project an absent
-companion forward and do not retroactively substitute the character's current
-Physiology rank. They use only recorded pair-presence history, including open
-span overlap through an already-ahead peer's current clock but never beyond
-it. Point actions can use the current organization role without changing elapsed-time
-semantics. Planning fetches relevant spans through the low/high participant
-indexes, deduplicates them, compiles piecewise coverage, and caps both spans
-and exposure work.
+Solo elapsed-time actions do not project an absent companion forward and do not
+retroactively substitute the character's current Physiology rank. They use only
+recorded pair-presence history, including open span overlap through an
+already-ahead peer's current clock but never beyond it. Point actions can use
+the current organization role without changing elapsed-time semantics. Planning
+fetches relevant spans through the low/high participant indexes, deduplicates
+them, compiles piecewise coverage, and caps both spans and exposure work.
 
 All assembled community, infected-blood, and contact candidates enter one
 absolute-minute timeline. Candidates in the same minute resolve
 simultaneously; a newly infected character becomes a contact source on the
 next minute. This preserves multi-person transmission chains across whole and
-chunked travel, sleep, treatment, rest, and catch-up intervals.
+chunked travel, sleep, treatment, and rest intervals.
 Long-running outbreaks and local problems keep stable future attempts in that
 timeline, so exposure resumes after an earlier episode resolves instead of
 depending on where the player split the action.
@@ -49,19 +71,33 @@ planning pass and the bounded checkpoint pass over the actually committed
 prefix. Raw indexed presence rows are rejected as soon as their deduplicated
 count exceeds the cap, before coverage materialization.
 
-The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A newly initialized world begins on August 20 at 00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
+The server stores official time as an absolute number of game minutes rather
+than a wrapping calendar value. A newly initialized world begins on August 20 at
+00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly
+84/73 real seconds, making one game year one real week. Calendar displays wrap
+this absolute number into a day-of-year and time-of-day, but comparisons never
+wrap.
 
-The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks and renders that snapshot without a wall-clock timer. The character snapshot also determines the interpolated location sky, the edge-to-edge sun or moon position, and building illumination until an explicit action returns a newer time. Authoritative reducers derive the current official minute from the epoch when gameplay needs it.
+The server stores an epoch rather than updating the clock table continuously.
+When a browser opens a page, it requests one snapshot of the character and
+official clocks and renders that snapshot without a wall-clock timer. The
+character snapshot also determines the interpolated location sky, the
+edge-to-edge sun or moon position, and building illumination until an explicit
+action returns a newer time. Authoritative reducers derive the current official
+minute from the epoch when gameplay needs it.
 
-In browser-local developer mode, an explicit rest also moves the disposable
-world epoch forward to the resting character's new personal date. Active NPC
-partners, household members, and immediate kin are advanced to that same date
-through the ordinary lifecycle settlement path, allowing wedding, pregnancy,
-birth, and dependent-aging UI flows to be exercised without waiting for the
-real-time world clock. This acceleration is scoped to developer-mode rest and
-does not fast-forward unrelated world NPCs.
+Each character has an independent subjective minute. Rest, travel, waiting,
+healing, training, and aging advance it without advancing official time. Party
+formation does not synchronize these clocks. A journey separately persists
+its canonical departure anchor, chosen starting time of day, total subjective
+elapsed time, and movement progress. Camp rest advances elapsed progress without
+changing distance.
 
-Each character has their own absolute minute. Character time advances lazily when their strategic page is accessed or their daily schedule is saved. If they are more than a year behind official time, the server advances them in one transaction to exactly one year behind and does not apply the triggering schedule change; the player can try again after the catch-up. Characters may remain out of sync while idle. At departure every living party member advances forward to the latest compatible party minute; nobody is rewound, dead members are unchanged, and excessive skew is rejected. Journeys persist that absolute departure minute plus separate movement and elapsed coordinates, so camp rest advances progress without changing distance.
+After marriage, the spouse, household, and immediate family share the player
+character's subjective advances. This does not make ceremonies subjective:
+weddings remain scheduled events in official time. A character can therefore
+spend decades adventuring between scheduling a wedding and attending it, with
+no special dialogue required for the resulting age difference.
 
 Persistent NPCs use this same `CharacterTime` row as their authoritative
 personal date. An `NpcPolicy` is authority over an ordinary full Character,
@@ -90,22 +126,40 @@ declare their temporal scope and never move the target's personal clock.
 Autonomous trade, travel, and guild decisions are intentionally outside this
 first lifecycle parity gate; future policies must use the same cohort and
 receipt contract rather than adding another NPC clock.
-Authoritative travel and stationary time paths split an actor interval at the
-next wedding, birth, or marriage boundary. Globally materialized future facts
-are filtered by effective minute, so pre-ceremony leisure and household actions
-cannot observe a future marriage.
+Scheduled ceremonies materialize when official time reaches them. They neither
+wait for nor synchronize the participants' subjective clocks.
 
-Every character saves one global 24-hour downtime plan with integer-minute allocations for activities; moving never edits that plan. At each execution boundary the server makes an effective copy. Every 15-minute segment assigned to an unavailable activity is independently reassigned to another available non-Leisure activity already present in the plan, with selection probability proportional to that activity's saved minutes. If there is no such activity, the segment remains unallocated Leisure. The character ID seeds these draws so authoritative execution and the schedule preview agree without persisting a second plan. Thievery is available only inside settlements, Raiding only at stationary named locations outside settlements (currently positive-distance case sites that are not incident sites), and Carousing only in settlements whose economy provides an inn. Training, income, Morale, reputation, fatigue, restorative Leisure, and incident risk all use this effective copy. Walking advances personal time and travel condition but never trains skills or performs scheduled activities. Journey-camp rest retains its existing camp-safe rules and offers no immediate activity controls. The pure training and activity calculations are shared with the native strategic simulation harness; the harness uses repeated one-day actions as its canonical cadence. A live bulk rest evaluates one aggregate outcome and at most one incident interruption, so rounded activity income and incidents can differ from an otherwise equivalent sequence of one-day rests; bulk-rest strategy parity remains follow-up work.
+Every character saves one global 24-hour downtime plan with integer-minute
+allocations for activities; moving never edits that plan. At each execution
+boundary the server makes an effective copy. Every 15-minute segment assigned to
+an unavailable activity is independently reassigned to another available
+non-Leisure activity already present in the plan, with selection probability
+proportional to that activity's saved minutes. If there is no such activity, the
+segment remains unallocated Leisure. The character ID seeds these draws so
+authoritative execution and the schedule preview agree without persisting a
+second plan. Thievery is available only inside settlements, Raiding only at
+stationary named locations outside settlements (currently positive-distance case
+sites that are not incident sites), and Carousing only in settlements whose
+economy provides an inn. Training, income, Morale, reputation, fatigue,
+restorative Leisure, and incident risk all use this effective copy. Walking
+advances personal time and travel condition but never trains skills or performs
+scheduled activities. Journey-camp rest retains its existing camp-safe rules and
+offers no immediate activity controls. The pure training and activity
+calculations are shared with the native strategic simulation harness; the
+harness uses repeated one-day actions as its canonical cadence. A live bulk rest
+evaluates one aggregate outcome and at most one incident interruption, so
+rounded activity income and incidents can differ from an otherwise equivalent
+sequence of one-day rests; bulk-rest strategy parity remains follow-up work.
 
-The Social dialog can persist automatic chats for an exact actor/companion
-pair. When that actor receives positive discretionary downtime after
-convalescence, maintenance, and fatigue recovery, the server considers enabled
-companions in stable character-ID order and selects an available approach for
-the first stable unaddressed source by combining the actor's effective relevant
-skills with their immutable personality. A Sanguine, Gregarious actor may lean
-toward humorous Charm, for example, while an Ambitious, Brave actor may favor Command;
-the strongest effective skill can outweigh that disposition. Exact-score ties
-favor the riskier fitting action instead of collapsing to Listen. The ordinary
+The Social dialog can persist automatic chats for an exact actor/companion pair.
+When that actor receives positive discretionary downtime after convalescence,
+maintenance, and fatigue recovery, the server considers enabled companions in
+stable character-ID order and selects an available approach for the first stable
+unaddressed source by combining the actor's effective relevant skills with their
+immutable personality. A Sanguine, Gregarious actor may lean toward humorous
+Charm, for example, while an Ambitious, Brave actor may favor Command; the
+strongest effective skill can outweigh that disposition. Exact-score ties favor
+the riskier fitting action instead of collapsing to Listen. The ordinary
 authoritative social action path still decides life, party, co-location, topic,
 cooldown, skill, and outcome rules. At most three companion attempts occur per
 downtime interval, and at most one attempt is made for each pair; an approach
@@ -114,7 +168,19 @@ future automatic attempts without affecting manual actions or erasing history.
 Travel, generic waits, and intervals consumed entirely by required recovery or
 maintenance do not trigger automatic chats.
 
-At settlements and stationary case sites, currently available explicit activities can also be performed immediately by selecting their icons. Unavailable activities remain visible and schedulable but explain their location requirement instead of opening the dialog. The activity dialog chooses one to 24 whole hours, beginning at the character's current personal minute and showing the resulting end time. The reducer rechecks authoritative location before changing the clock or character state. This advances personal time and applies that activity's training, economy, Morale, origin-settlement reputation, Fatigue, and incident risk without changing the saved plan. Immediate activity is not rest: it does not heal, wash, repair equipment, provide inn service, or apply the plan's Leisure remainder. Prayer/Meditation and Carousing use their saturating morale curves over the selected interval rather than pretending their effects are linear.
+At settlements and stationary case sites, currently available explicit
+activities can also be performed immediately by selecting their icons.
+Unavailable activities remain visible and schedulable but explain their location
+requirement instead of opening the dialog. The activity dialog chooses one to 24
+whole hours, beginning at the character's current personal minute and showing
+the resulting end time. The reducer rechecks authoritative location before
+changing the clock or character state. This advances personal time and applies
+that activity's training, economy, Morale, origin-settlement reputation,
+Fatigue, and incident risk without changing the saved plan. Immediate activity
+is not rest: it does not heal, wash, repair equipment, provide inn service, or
+apply the plan's Leisure remainder. Prayer/Meditation and Carousing use their
+saturating morale curves over the selected interval rather than pretending their
+effects are linear.
 
 Activities combine reduced-rate training with another strategic result:
 
@@ -123,39 +189,49 @@ Activities combine reduced-rate training with another strategic result:
 - **Carousing** requires a settlement with an inn, trains Charm, and grants saturating Morale. Ordinary carousing changes no reputation, but it can cause a disorder incident that adds local Infamy; Drunkards have substantially higher risk and Temperate characters lower risk.
 - **Prayer** recites and practices prayers rather than studying doctrine. For a professed character it trains their own Religion tradition at 25% speed, and its saturating morale is scaled by the party's knowledge of that tradition. A character with no professed religion instead sees **Meditate**, receives one quarter of the ordinary saturating morale independently of party Religion, and gains no Religion hours, Fervor, or neglect.
 
-Religion stores only direct hours in each tradition. Correlated knowledge is derived from those direct hours and never fed back into storage. Religious apprenticeship and practice train the tradition represented by the service NPC rather than an aggregate Religion skill.
+Religion stores only direct hours in each tradition. Correlated knowledge is
+derived from those direct hours and never fed back into storage. Religious
+apprenticeship and practice train the tradition represented by the service NPC
+rather than an aggregate Religion skill.
 
-Within Combat Training, current equipped hands determine the relevant Melee, Ranged, Dodge, and Block weights described in [Stats](../shared/stats.md). Training deterministically catches the lowest normalized trained hours up before maintaining their weighted balance, while also practicing Will and Balance. Changing equipment redirects future training without rewriting the saved schedule.
+Within Combat Training, current equipped hands determine the relevant Melee,
+Ranged, Dodge, and Block weights described in [Stats](../shared/stats.md).
+Training deterministically catches the lowest normalized trained hours up before
+maintaining their weighted balance, while also practicing Will and Balance.
+Changing equipment redirects future training without rewriting the saved
+schedule.
 - **Labor** earns personal gold from effective Strength and Endurance checks during settlement downtime (`hours × (Strength + Endurance) / 4`, rounded) and trains Will at 25% speed.
 - **Thievery** is available only inside settlements, earns more gold in more populous settlements, and trains Stealth at 25% speed. Stealth improves the take while reducing both Infamy and the continuous chance of discovery.
 - **Raiding** is available only outside settlements at stationary named locations. It earns gold against the location's origin-settlement economy and feeds the same equipment-derived leaf-skill distribution as Combat Training at 25% speed. It does not prefer Ranged over Melee or derive Block and Dodge practice from armor. Raiding produces origin-settlement Infamy and a high retaliation chance.
 
-The schedule previews each activity's daily Gold, Fame/Infamy, Morale, and Fatigue at the currently assigned time. Fame is positive and Infamy is negative in this compact preview; the two remain independent stored tracks.
+The schedule previews each activity's daily Gold, Fame/Infamy, Morale, and
+Fatigue at the currently assigned time. Fame is positive and Infamy is negative
+in this compact preview; the two remain independent stored tracks.
 
-See [settlement reputation](reputation.md) for population dilution, spillover, NPC reactions, and authority consequences.
+See [settlement reputation](reputation.md) for population dilution, spillover,
+NPC reactions, and authority consequences.
 
-Thievery and Raiding discovery is resolved whenever effective downtime advances, including explicit activity and off-screen catch-up. Case-site Raiding attributes currency, reputation, and incident provenance to the case site's authoritative origin settlement. The continuous exposure formulas are:
+Thievery and Raiding discovery is resolved whenever effective downtime advances,
+including explicit activity and off-screen catch-up. Case-site Raiding
+attributes currency, reputation, and incident provenance to the case site's
+authoritative origin settlement. The continuous exposure formulas are:
 
 ```rs
 thievery_discovery = 1 - exp(-0.12 * hours * population_scale / (1 + stealth));
 raiding_retaliation = 1 - exp(-0.35 * hours);
 ```
 
-Raiding is checked first because an organized retaliation supersedes a watch patrol. On discovery, the activity creates a typed strategic incident independent from quests and contracts. **Caught Red-Handed** pits the party against the town watch; **Retaliation at Dawn** pits it against armed retainers. Both offer tactical combat, autoresolve, or retreat through the encounter map. The party's active quest is never replaced or mutated.
+Raiding is checked first because an organized retaliation supersedes a watch
+patrol. On discovery, the activity creates a typed strategic incident
+independent from quests and contracts. **Caught Red-Handed** pits the party
+against the town watch; **Retaliation at Dawn** pits it against armed retainers.
+Both offer tactical combat, autoresolve, or retreat through the encounter map.
+The party's active quest is never replaced or mutated.
 
-At a settlement, a player may rest at an inn or temple, moving that
-character's personal time forward even if it passes official time. Rest may be
-entered as whole days, or as an `HH:MM` duration keyed to a selected wake time.
-The wake-time slider moves in whole-hour intervals, uses the travel planner's
-solid night, sunrise, day, and sunset colors, and defaults to 08:00; the
-duration's minus and plus controls change it by one hour while direct entry
-accepts exact minutes. Settlement rest always schedules at least 24 hours
-before the next selected clock time, preserving the character clock's exact
-minute. The same control is available from the Map for free, party-wide rest
-at the party's current settlement, en-route camps, and quest destinations.
-Field rest permits a sub-day interval, defaults to the time needed to clear the
-most-fatigued living member, and lets the leader wait for a chosen departure or
-combat time; selecting the current clock time means its next-day occurrence.
+At a settlement, rest is chosen in whole days and advances only that character's
+subjective life. The same interval rules apply whether the character rests at
+an inn, church, or residence. Field rest remains a party-local action and may
+use sub-day intervals at camps and case sites.
 
 Scheduled downtime uses the shared Leisure calculation documented in
 [Stats](../shared/stats.md): six hours offsets baseline fatigue, tiring
@@ -192,7 +268,15 @@ The rest summary itemizes the selected inn full-board charge separately from
 other net spending during the interval, such as alcohol or apprenticeship,
 without attributing that additional spending to a single activity.
 
-Strategic travel adds calories to the fatigue reservoir at the current marching calibration of 6,000 calories per full day. It also consumes food and water proportionally through the persistent strategic-needs state. The fatigue reservoir remains a separate representation of exertion and future sleep pressure: eating does not erase the fatigue caused by marching. Travel, camp, and private rest use carried provisions. Temple rest uses carried food and ordinary settlement water; paid inn rest feeds and hydrates its guest as part of full board. Recent morale events decay against each character's absolute strategic minute, so resting and travel both move them toward expiry.
+Strategic travel adds calories to the fatigue reservoir at the current marching
+calibration of 6,000 calories per full day. It also consumes food and water
+proportionally through the persistent strategic-needs state. The fatigue
+reservoir remains a separate representation of exertion and future sleep
+pressure: eating does not erase the fatigue caused by marching. Travel, camp,
+and private rest use carried provisions. Temple rest uses carried food and
+ordinary settlement water; paid inn rest feeds and hydrates its guest as part of
+full board. Recent morale events decay against each character's absolute
+strategic minute, so resting and travel both move them toward expiry.
 
 Every authoritative personal-clock path applies weather exposure once, after
 its actually elapsed prefix is committed. This includes terminal-clipped
@@ -204,31 +288,35 @@ inn, temple, or residence occurs indoors: exterior temperature cannot create
 new thermal strain there, and existing wetness and strain recover toward
 neutral.
 
-The calendar treats Day 7 and every seventh day thereafter as Sunday. A religious character who is in a settlement on Sunday receives an explicit call to keep a full day of worship and rest. Traveling during any part of Sunday counts as refusing that call. The server applies the same continuous Fervor- and party-Command-based morale penalty once for that Sunday, including when a journey begins Saturday night and ends Monday morning. A pending Sunday demand is automatically resolved as refused when the party departs; already resolved Sundays cannot be penalized twice.
+The canonical calendar treats Day 7 and every seventh day thereafter as Sunday.
+Religious observance follows that calendar rather than the journey's subjective
+day count. Leaving on Saturday and spending subjective months in the wilderness
+does not create months of missed Sundays. Only the official interval that
+actually passed can create an observance consequence.
 
-Throughout this wiki, the term "official time" refers to the *most current* time according to the server. Your character can be exactly one year behind official time, beyond that they will have to catch up with downtime (resting or training) before you can do anything else. Characters can move ahead of official time through settlement downtime; party time synchronization and its UI will be refined later.
+Throughout this wiki, "official time" means the settlement world's canonical
+present. NPC facts occur there. An NPC can die during a quest or marry a player
+without creating a past-versus-future paradox, because no player character's
+subjective date determines the NPC's present.
 
-For example, in the [example scenario](../scenario.md), at the time that they venture forth from a settlement they are in sync with the official time, but their four ~20-minute simulated encounters incurs a time-debt of 80 real-world minutes. 80 minutes in the real world is about 3 days of official time, thus when their characters return to a settlement they will ostensibly be recovering, training, relaxing, traveling between [settlements](settlement.md), or working some non-adventurous job for at least 3 days before they set out again.
+## Implications
 
-> Why bother keeping players within a year of each other?
-
-Its not necessary for the game to work, true, but it would contribute to a sense in which the world feels like a real simulation rather than an abstract game as many MMOs do. When you end up at the mercy of the simulation and sustain a very serious injury that kills your weekly playtime, there is always the last resort of just creating an additional [character](character.md). In fact, it is *expected* that players will maintain multiple alts for this purpose.
-
-> Ok, then why allow players to desync in the first place?
-
-Because the world is to-scale with realistic healing rates. It would be really boring even if it were constantly at 56x speed. Plus, there couldn't be a real-time tactical layer.
-
-# Implications
-The most odd implication of this is that ostensibly, characters that are further from official time are sort of prescient about certain things in the future, and characters closer to official time do not know the outcome of events which have ostensibly happened. As an example:
-
-> A griffon has nested near a town. Geoffrey, who is 3 weeks behind official time, decides that he wants to try and slay it. However, while he is forming his party, Jack, who is 5 months behind official time, also takes the quest and slays the griffin since he put his party together very quickly. Geoffrey then learns that actually, the griffon was apparently slain several months ago.
-
->When Jack put his party together, he was joined by Derthert, who was actually an entire year behind official time when he saw the open party. This means that Derthert must have consulted a diviner or seen this opportunity in a dream then decided to spend 7 months training/working in this settlement before the prophecy of this quest comes true. Bizarre, but it somehow works out.
-
-We are not actually simulating an economy (at least for the MVP) nor do quests originate from circumstances of the simulation (at least for the MVP, they're just totally arbitrary fetch/bounty quests), so the implications of this shouldn't be a big deal, but it *is* weird to think about. 
+A changeling may speak to an NPC, spend several subjective decades resting and
+adventuring, and speak to the same NPC again after only minutes of official
+time. The NPC might reasonably fail to recognize them or be profoundly
+confused. The initial implementation permits this without adding special
+dialogue reactions.
 
 ## Language exposure
 
-Actual elapsed settlement time grants conserved ambient Oral exposure in the local distribution. Travel grants each party member at most one elapsed interval of conversation exposure, chosen from a sorted pre-gain snapshot, so companions do not multiply time. Profession work grants Written exposure from centralized literacy profiles: merchants write substantially more than smiths; medical work uses Latin; Catholic work uses Latin; Jewish work uses Hebrew and Yiddish; other current religious work uses German. Herbalist, physician, and surgeon organization identities are distinct even where medical literacy uses the same language profile.
-Foraging advances the acting character's discrete personal strategic clock by
-the actual injury/disease-safe prefix, exactly once. It is not a wall-clock job.
+Actual elapsed settlement time grants conserved ambient Oral exposure in the
+local distribution. Travel grants each party member at most one elapsed interval
+of conversation exposure, chosen from a sorted pre-gain snapshot, so companions
+do not multiply time. Profession work grants Written exposure from centralized
+literacy profiles: merchants write substantially more than smiths; medical work
+uses Latin; Catholic work uses Latin; Jewish work uses Hebrew and Yiddish; other
+current religious work uses German. Herbalist, physician, and surgeon
+organization identities are distinct even where medical literacy uses the same
+language profile. Foraging advances the acting character's discrete personal
+strategic clock by the actual injury/disease-safe prefix, exactly once. It is
+not a wall-clock job.

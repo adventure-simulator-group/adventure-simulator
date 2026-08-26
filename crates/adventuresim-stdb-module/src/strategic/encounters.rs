@@ -213,6 +213,7 @@ pub(crate) fn advance_party_journey_delay(
             minutes,
         );
     ctx.db.party_journey_authority().party_id().update(journey);
+    advance_party_wilderness_elapsed(ctx, party_id, minutes)?;
     // Narrative and combat delays consume real time without movement. Rebuild
     // the remaining itinerary from that later frontier so future camp windows
     // and the total elapsed forecast remain canonical.
@@ -376,14 +377,13 @@ fn maybe_interrupt_travel(
     else {
         return Ok((requested_minutes, None, None, 1));
     };
-    let absolute_start = journey
-        .departure_minute
-        .saturating_add(journey.completed_elapsed_minutes);
+    let local_start = journey_local_minute(&journey, journey.completed_elapsed_minutes);
+    let official_start = crate::time::refresh_clock(ctx)?;
     if let (Some(origin_id), Some(destination_id)) = (
         journey.origin.settlement_id(),
         journey.destination.settlement_id(),
     ) {
-        crate::local_problem::ensure_route_problem(ctx, origin_id, destination_id, absolute_start)?;
+        crate::local_problem::ensure_route_problem(ctx, origin_id, destination_id, official_start)?;
     }
     let authority = ctx
         .db
@@ -440,8 +440,8 @@ fn maybe_interrupt_travel(
         requested_minutes,
         |minute| {
             let terrain = core_encounter_terrain(encounter_terrain_at(route.as_ref(), minute));
-            let absolute_minute = absolute_start.saturating_add(minute.saturating_sub(completed));
-            let night = absolute_minute % 1_440 < 360 || absolute_minute % 1_440 >= 1_200;
+            let local_minute = local_start.saturating_add(minute.saturating_sub(completed));
+            let night = local_minute % 1_440 < 360 || local_minute % 1_440 >= 1_200;
             adventuresim_core::encounter::EncounterContext {
                 terrain,
                 night,
@@ -463,8 +463,8 @@ fn maybe_interrupt_travel(
                     adventuresim_core::encounter::PARTY_WALKING_SPEED_M_PER_MINUTE,
             }
         },
-        |minute| {
-            let absolute_minute = absolute_start.saturating_add(minute.saturating_sub(completed));
+        |_minute| {
+            let absolute_minute = official_start;
             match (
                 journey.origin.settlement_id(),
                 journey.destination.settlement_id(),
@@ -532,7 +532,12 @@ fn maybe_interrupt_travel(
         journey
             .completed_elapsed_minutes
             .saturating_add(selection.boundary_minute.saturating_sub(completed)),
-        absolute_start.saturating_add(selection.boundary_minute.saturating_sub(completed)),
+        journey_local_minute(
+            &journey,
+            journey
+                .completed_elapsed_minutes
+                .saturating_add(selection.boundary_minute.saturating_sub(completed)),
+        ),
         (position.0 * 10_000_000.0).round() as i32,
         (position.1 * 10_000_000.0).round() as i32,
         journey.fatigue_percent,

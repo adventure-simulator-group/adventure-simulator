@@ -21,7 +21,6 @@ use crate::{
         fail_bound_mission_attempt, hostile_group_authority, mission_authority,
         outcome_source_authority, strategic_gateway_authority__view,
     },
-    time::character_time,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -108,6 +107,9 @@ pub struct TacticalServerRequest {
     pub latitude_e7: i32,
     /// Requesting leader's absolute strategic minute captured atomically.
     pub absolute_minute: u64,
+    /// Canonical minute used only for lunar phase. Wilderness time of day may
+    /// advance while this value remains fixed for the entire excursion.
+    pub lunar_phase_minute: u64,
     /// Living strategic party members bound when the mission is requested.
     pub expected_party_members: u32,
     /// Immutable participant authority captured with the mission request.
@@ -702,13 +704,9 @@ pub fn request_tactical_server(
     {
         return Err("Tactical entry requires an exact geographic case-site position".into());
     }
-    let absolute_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character has no authoritative strategic clock")?
-        .minutes;
+    let (absolute_minute, lunar_phase_minute) =
+        crate::strategic::party_wilderness_environment_minutes(&party)
+            .ok_or("Case-site tactical entry requires a party wilderness clock")?;
     match crate::investigation::case_site_provenance_reducer(ctx, &case_site) {
         Some(None) => {}
         Some(Some(_)) => {
@@ -823,6 +821,7 @@ pub fn request_tactical_server(
             longitude_e7: case_site.longitude_e7,
             latitude_e7: case_site.latitude_e7,
             absolute_minute,
+            lunar_phase_minute,
             expected_party_members,
             authorized_party_member_ids,
             required_enemy_kills: mission.enemy_count,

@@ -861,6 +861,9 @@ mod readiness_tests {
             camp_fatigue_percent: 50,
             walking_minutes_per_day: 480,
             travel_at_night: false,
+            journey_start_minute_of_day: 0,
+            wilderness_canonical_anchor_minute: case_site_id.is_some().then_some(0),
+            wilderness_elapsed_minutes: 0,
             camp_duration_mode: CampDurationMode::Auto,
             fixed_camp_minutes: 0,
             camp_destination: None,
@@ -1003,7 +1006,7 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
             .db
             .query::<WorldClock>("SELECT * FROM world_clock WHERE id = 0"),
     );
-    let character_time = match character_time {
+    let _character_time = match character_time {
         Ok(value) => value,
         Err(error) => {
             tracing::error!(%error, "failed to load character time");
@@ -1035,8 +1038,47 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
             i64::try_from(now_micros).unwrap_or(i64::MAX),
         )
     });
+    let active_character = state
+        .db
+        .query::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let display_minutes = if let Some(character) = active_character.as_ref() {
+        if character.current_settlement_id.is_some() {
+            official_minutes
+        } else if let Some(party_id) = character.party_id.as_deref() {
+            state
+                .db
+                .query::<Party>(&format!(
+                    "SELECT * FROM party WHERE id = {}",
+                    sql_string_literal(party_id),
+                ))
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .next()
+                .and_then(|party| {
+                    party.wilderness_canonical_anchor_minute.map(|anchor| {
+                        let frozen_day = anchor / 1_440 * 1_440;
+                        let minute_of_day = (u64::from(party.journey_start_minute_of_day)
+                            + party.wilderness_elapsed_minutes)
+                            % 1_440;
+                        frozen_day + minute_of_day
+                    })
+                })
+                .unwrap_or(official_minutes)
+        } else {
+            official_minutes
+        }
+    } else {
+        official_minutes
+    };
     Json(CurrentTime {
-        character_minutes: character_time.first().map_or(0, |time| time.minutes),
+        character_minutes: display_minutes,
         official_minutes,
     })
     .into_response()
