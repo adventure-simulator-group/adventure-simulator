@@ -253,8 +253,19 @@ pub(crate) fn rest_service_menu(
     }
 }
 
-fn settlement_rest_duration_control(initial_minutes: u64, unit: &str) -> Markup {
-    wake_time_rest_duration_control("settlement-rest", initial_minutes, unit, 1_440, None, None)
+fn settlement_rest_duration_control(initial_minutes: u64, _unit: &str) -> Markup {
+    let days = initial_minutes.div_ceil(1_440).clamp(1, 365);
+    html! {
+        div class="rest-duration-control settlement-rest-duration" data-rest-duration {
+            input type="hidden" name="unit" value="days";
+            div class="rest-days-control" {
+                input type="number" name="duration" value=(days) min="1" max="365" step="1"
+                    inputmode="numeric" aria-label="Rest duration in whole days"
+                    data-rest-duration-input;
+                span class="rest-days-unit" { "days" }
+            }
+        }
+    }
 }
 
 fn wake_time_rest_duration_control(
@@ -306,8 +317,6 @@ fn wake_time_rest_duration_control(
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
             }
             input type="hidden" name="requested_minutes" disabled[!hours_active] data-rest-exact-minutes;
-            input type="hidden" name="advance_development_clock" value="true" disabled
-                data-developer-mode-input;
         }
     }
 }

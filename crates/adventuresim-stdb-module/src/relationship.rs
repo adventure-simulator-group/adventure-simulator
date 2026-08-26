@@ -76,20 +76,12 @@ pub fn enforce_temporal_scope(
         }
         TemporalScope::ExclusiveShared => {
             let target_id = target_id.ok_or("Exclusive scope requires a second participant")?;
-            let target_minute = canonical_now(ctx, target_id)?;
-            // A hard shared fact is effective at the later known frontier. It
-            // never rewrites the lagging participant's personal clock. Active
-            // uniqueness rows reserve both people immediately, so an actor at
-            // an earlier date sees a future engagement as romantically
-            // unavailable without learning its private details.
-            let effective_minute = actor_minute.max(target_minute);
-            if actor_minute != effective_minute {
-                return Err(
-                    "A hard relationship action cannot be initiated from an earlier personal date"
-                        .into(),
-                );
+            if ctx.db.character().id().find(target_id).is_none() {
+                return Err("Exclusive scope requires an existing second participant".into());
             }
-            Ok(effective_minute)
+            // Commitments are facts in the settlement's canonical present.
+            // The participants' subjective ages never need to match.
+            crate::time::refresh_clock(ctx)
         }
     }
 }
@@ -1647,8 +1639,9 @@ fn formal_dowry_amount(father_wealth: u64) -> u32 {
 pub fn settle_due_weddings(
     ctx: &ReducerContext,
     participant_id: u64,
-    now: u64,
+    _participant_frontier: u64,
 ) -> Result<(), String> {
+    let now = crate::time::refresh_clock(ctx)?;
     let due: Vec<_> = ctx
         .db
         .exclusive_commitment()
@@ -1687,26 +1680,8 @@ pub fn settle_due_weddings(
             )?;
             continue;
         }
-        // The ceremony is a hard synchronization point. Normal policy or
-        // player actions must bring both participants to its effective minute
-        // before the shared fact materializes.
-        let mut all_participants_reached_ceremony = true;
-        for character_id in [
-            commitment.first_character_id,
-            commitment.second_character_id,
-        ] {
-            let frontier = canonical_now(ctx, character_id)?;
-            if frontier < effective_minute {
-                // Scheduled ceremonies are shared causal barriers. Normal NPC
-                // or player advancement must bring both people to the date;
-                // the relationship subsystem never skips their intervening
-                // needs, disease, training, or social activity.
-                all_participants_reached_ceremony = false;
-            }
-        }
-        if !all_participants_reached_ceremony {
-            continue;
-        }
+        // Ceremonies are canonical-world events. Subjective character clocks
+        // neither delay the ceremony nor need to synchronize with each other.
         let Some(commitment) = ctx.db.exclusive_commitment().id().find(&commitment.id) else {
             continue;
         };
@@ -4044,7 +4019,7 @@ pub fn cancel_wedding(
     if actor_id != commitment.first_character_id && actor_id != commitment.second_character_id {
         return Err("Only a participant can cancel this wedding".into());
     }
-    let minute = canonical_now(ctx, actor_id)?;
+    let minute = crate::time::refresh_clock(ctx)?;
     if commitment.status != CommitmentStatus::Reserved {
         return Err(
             "Only a reserved wedding can be cancelled; end an active marriage instead".into(),
@@ -4185,9 +4160,6 @@ pub fn end_marriage(
         Some(spouse_id),
         TemporalScope::ExclusiveShared,
     )?;
-    if canonical_now(ctx, spouse_id)? != actor_minute {
-        return Err("Both spouses must reach the same personal date to end a marriage".into());
-    }
     if marriage.married_minute > actor_minute
         || marriage
             .resolved_minute
@@ -4340,7 +4312,7 @@ mod tests {
     }
 
     #[test]
-    fn exclusive_scope_rejects_a_lagging_actor_without_clock_synchronization() {
+    fn exclusive_scope_and_weddings_use_canonical_world_time() {
         let source = include_str!("relationship.rs");
         let guard = source
             .split("pub fn enforce_temporal_scope")
@@ -4349,8 +4321,8 @@ mod tests {
             .split("pub enum KinshipKind")
             .next()
             .unwrap();
-        assert!(guard.contains("actor_minute.max(target_minute)"));
-        assert!(guard.contains("actor_minute != effective_minute"));
+        assert!(guard.contains("crate::time::refresh_clock(ctx)"));
+        assert!(!guard.contains("actor_minute.max(target_minute)"));
         let wedding = source
             .split("pub fn settle_due_weddings")
             .nth(1)
@@ -4359,7 +4331,8 @@ mod tests {
             .next()
             .unwrap();
         assert!(!wedding.contains("advance_npc_personal_time"));
-        assert!(wedding.contains("all_participants_reached_ceremony"));
+        assert!(wedding.contains("let now = crate::time::refresh_clock(ctx)?"));
+        assert!(!wedding.contains("all_participants_reached_ceremony"));
     }
 
     #[test]

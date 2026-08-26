@@ -338,6 +338,7 @@ fn setup_view(world: &mut World, view: SkyView) {
             latitude_microdegrees: LATITUDE_MICRODEGREES,
             longitude_microdegrees: LONGITUDE_MICRODEGREES,
             absolute_minute,
+            lunar_phase_minute: absolute_minute,
             absolute_elevation_metres: 20,
             weather: WeatherSnapshot {
                 rules_version: WEATHER_RULES_VERSION,

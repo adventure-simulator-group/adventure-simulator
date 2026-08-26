@@ -88,7 +88,7 @@ use adventuresim_stdb_client::{
     request_general_party_join_reducer::request_general_party_join,
     resolve_errantry_road_challenge_reducer::resolve_errantry_road_challenge,
     resolve_strategic_encounter_reducer::resolve_strategic_encounter,
-    rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
+    rest_at_camp_reducer::rest_at_camp, rest_at_settlement_reducer::rest_at_settlement,
     retrieve_repaired_item_reducer::retrieve_repaired_item,
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,

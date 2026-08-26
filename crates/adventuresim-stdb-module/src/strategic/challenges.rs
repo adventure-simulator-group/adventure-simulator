@@ -928,6 +928,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         }
         return Err("Narrative encounter identity collision".into());
     }
+    let official_minute = crate::time::refresh_clock(ctx)?;
     ctx.db
         .road_challenge_authority()
         .insert(RoadChallengeAuthority {
@@ -943,9 +944,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
             catalog_id: definition.id.clone(),
             catalog_revision: definition.version,
             catalog_digest: adventuresim_core::road_encounter_catalog::digest().into(),
-            absolute_minute: journey
-                .departure_minute
-                .saturating_add(journey.completed_elapsed_minutes),
+            absolute_minute: official_minute,
             longitude_e7: (position.0 * 10_000_000.0).round() as i32,
             latitude_e7: (position.1 * 10_000_000.0).round() as i32,
             trigger: match origin {
@@ -965,9 +964,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         ctx,
         &id,
         definition,
-        journey
-            .departure_minute
-            .saturating_add(journey.completed_elapsed_minutes),
+        official_minute,
     )?;
     ctx.db
         .narrative_encounter_private_authority()

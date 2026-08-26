@@ -706,7 +706,11 @@ pub fn seed_standalone_tactical_mission(
         .ok_or("Party not found")?;
     party.current_settlement_id = None;
     party.current_case_site_id = Some(case_site.id.clone());
-    ctx.db.party_authority().id().update(party);
+    if party.wilderness_canonical_anchor_minute.is_none() {
+        party.wilderness_canonical_anchor_minute = Some(crate::time::refresh_clock(ctx)?);
+        party.wilderness_elapsed_minutes = 0;
+    }
+    ctx.db.party_authority().id().update(party.clone());
     crate::investigation::set_character_case_site(
         ctx,
         character_id,
@@ -819,15 +823,10 @@ pub fn seed_standalone_tactical_mission(
             requested_by: character_id,
             longitude_e7: case_site.longitude_e7,
             latitude_e7: case_site.latitude_e7,
-            absolute_minute: ctx
-                .db
-                .character_time()
-                .character_id()
-                .find(character_id)
-                .map_or(
-                    adventuresim_core::strategic_time::WORLD_START_MINUTE,
-                    |time| time.minutes,
-                ),
+            absolute_minute: party_wilderness_environment_minutes(&party)
+                .map_or(adventuresim_core::strategic_time::WORLD_START_MINUTE, |value| value.0),
+            lunar_phase_minute: party_wilderness_environment_minutes(&party)
+                .map_or(adventuresim_core::strategic_time::WORLD_START_MINUTE, |value| value.1),
             expected_party_members,
             authorized_party_member_ids,
             required_enemy_kills,

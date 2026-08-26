@@ -300,11 +300,29 @@ pub fn apply_weather_exposure(
         .ok_or("Character exposure not found")?;
     let clothing = StrategicEquipment::load(ctx, character_id).survival_clothing();
     let location = exposure_location(ctx, character_id);
+    let wilderness_environment_start = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .and_then(|character| character.party_id)
+        .and_then(|party_id| ctx.db.party_authority().id().find(&party_id))
+        .and_then(|party| crate::strategic::party_wilderness_environment_minutes(&party))
+        .map(|minutes| minutes.0);
     let weather = (0..elapsed_minutes).map(|offset| {
         let (latitude, longitude, elevation) = location.position(if moving { offset } else { 0 });
+        let weather_minute = wilderness_environment_start.map_or_else(
+            || starting_minute.saturating_add(offset),
+            |environment_start| {
+                let frozen_day = environment_start / MINUTES_PER_DAY * MINUTES_PER_DAY;
+                frozen_day.saturating_add(
+                    (environment_start % MINUTES_PER_DAY + offset) % MINUTES_PER_DAY,
+                )
+            },
+        );
         adventuresim_core::weather::weather_at(
             adventuresim_core::weather::WORLD_WEATHER_SEED,
-            starting_minute.saturating_add(offset),
+            weather_minute,
             latitude,
             longitude,
             elevation,
@@ -1501,7 +1519,7 @@ fn ensure_holy_day_demand(
     if !professes_religion {
         return Ok(());
     }
-    let current_minute = character_minute(ctx, condition.character_id);
+    let current_minute = crate::time::refresh_clock(ctx)?;
     let current_day = current_minute / MINUTES_PER_DAY;
     if !is_sunday(current_day) {
         return Ok(());
@@ -1597,7 +1615,7 @@ fn refuse_expired_holy_day_demands(
     character_id: u64,
     departing: bool,
 ) -> Result<bool, String> {
-    let current_minute = character_minute(ctx, character_id);
+    let current_minute = crate::time::refresh_clock(ctx)?;
     let current_day = current_minute / MINUTES_PER_DAY;
     let pending: Vec<_> = ctx
         .db
@@ -1671,13 +1689,13 @@ pub fn resolve_religious_demand(
         if character.current_settlement_id.is_none() {
             return Err("A holy day can only be observed at a settlement".into());
         }
-        let current_day = character_minute(ctx, demand.character_id) / MINUTES_PER_DAY;
+        let current_day = crate::time::refresh_clock(ctx)? / MINUTES_PER_DAY;
         if current_day != demand.created_at_minute / MINUTES_PER_DAY {
             return Err("This holy day has already passed".into());
         }
     }
     demand.status = "resolved".into();
-    demand.resolved_at_minute = Some(character_minute(ctx, demand.character_id));
+    demand.resolved_at_minute = Some(crate::time::refresh_clock(ctx)?);
     demand.resolution = Some(choice.clone());
     ctx.db.religious_demand().id().update(demand.clone());
 
@@ -1980,38 +1998,43 @@ pub fn apply_travel_condition(
                 ),
             );
         }
-        for sunday in sundays_overlapping(starting_minute, elapsed_minutes) {
-            let existing_demand = ctx
-                .db
-                .religious_demand()
-                .character_id()
-                .filter(character_id)
-                .find(|demand| {
-                    demand.kind == "holy_day"
-                        && demand.created_at_minute / MINUTES_PER_DAY == sunday
-                });
-            let source_id = if let Some(mut demand) = existing_demand {
-                if demand.status != "pending" {
-                    continue;
-                }
-                demand.status = "resolved".into();
-                demand.resolved_at_minute = Some(character_minute(ctx, character_id));
-                demand.resolution = Some("refuse".into());
-                let id = demand.id;
-                ctx.db.religious_demand().id().update(demand);
-                format!("religious-demand:{id}")
-            } else {
-                format!("missed-sunday:{sunday}")
-            };
-            if daily_penalty > 0.0 && !has_morale_source(ctx, character_id, &source_id) {
-                insert_morale_event_without_refresh(
-                    ctx,
-                    character_id,
-                    "religious_observance_neglected",
-                    -daily_penalty,
-                    source_id,
-                );
-            }
+    }
+    refresh_character_strategic_condition_projection(ctx, character_id).map(|_| ())
+}
+
+/// Resolve canonical Sundays that passed while a character was outside a
+/// settlement. Subjective wilderness days never create additional holy days.
+pub(crate) fn apply_canonical_wilderness_observance(
+    ctx: &ReducerContext,
+    character_id: u64,
+    canonical_start: u64,
+    canonical_end: u64,
+) -> Result<(), String> {
+    let elapsed = canonical_end.saturating_sub(canonical_start);
+    if elapsed == 0 {
+        return Ok(());
+    }
+    let condition = refresh_character_strategic_condition_projection(ctx, character_id)?;
+    let professes_religion = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .is_some_and(|row| row.religion_id.is_some());
+    if !professes_religion || condition.fervor <= 0.0 {
+        return Ok(());
+    }
+    let penalty = religious_neglect_morale(condition.fervor, party_command(ctx, character_id)?);
+    for sunday in sundays_overlapping(canonical_start, elapsed) {
+        let source_id = format!("missed-canonical-sunday:{sunday}");
+        if penalty > 0.0 && !has_morale_source(ctx, character_id, &source_id) {
+            insert_morale_event_without_refresh(
+                ctx,
+                character_id,
+                "religious_observance_neglected",
+                -penalty,
+                source_id,
+            );
         }
     }
     refresh_character_strategic_condition_projection(ctx, character_id).map(|_| ())

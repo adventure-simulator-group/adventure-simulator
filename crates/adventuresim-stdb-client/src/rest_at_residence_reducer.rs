@@ -6,46 +6,49 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SynchronizeCharacterTimeArgs {
+pub(super) struct RestAtResidenceArgs {
     pub character_id: u64,
+    pub requested_days: u16,
 }
 
-impl From<SynchronizeCharacterTimeArgs> for super::Reducer {
-    fn from(args: SynchronizeCharacterTimeArgs) -> Self {
-        Self::SynchronizeCharacterTime {
+impl From<RestAtResidenceArgs> for super::Reducer {
+    fn from(args: RestAtResidenceArgs) -> Self {
+        Self::RestAtResidence {
             character_id: args.character_id,
+            requested_days: args.requested_days,
         }
     }
 }
 
-impl __sdk::InModule for SynchronizeCharacterTimeArgs {
+impl __sdk::InModule for RestAtResidenceArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `synchronize_character_time`.
+/// Extension trait for access to the reducer `rest_at_residence`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait synchronize_character_time {
-    /// Request that the remote module invoke the reducer `synchronize_character_time` to run as soon as possible.
+pub trait rest_at_residence {
+    /// Request that the remote module invoke the reducer `rest_at_residence` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`synchronize_character_time:synchronize_character_time_then`] to run a callback after the reducer completes.
-    fn synchronize_character_time(&self, character_id: u64) -> __sdk::Result<()> {
-        self.synchronize_character_time_then(character_id, |_, _| {})
+    /// /// Use [`rest_at_residence:rest_at_residence_then`] to run a callback after the reducer completes.
+    fn rest_at_residence(&self, character_id: u64, requested_days: u16) -> __sdk::Result<()> {
+        self.rest_at_residence_then(character_id, requested_days, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `synchronize_character_time` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `rest_at_residence` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn synchronize_character_time_then(
+    fn rest_at_residence_then(
         &self,
         character_id: u64,
+        requested_days: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -55,10 +58,11 @@ pub trait synchronize_character_time {
     ) -> __sdk::Result<()>;
 }
 
-impl synchronize_character_time for super::RemoteReducers {
-    fn synchronize_character_time_then(
+impl rest_at_residence for super::RemoteReducers {
+    fn rest_at_residence_then(
         &self,
         character_id: u64,
+        requested_days: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,7 +70,12 @@ impl synchronize_character_time for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(SynchronizeCharacterTimeArgs { character_id }, callback)
+        self.imp.invoke_reducer_with_callback(
+            RestAtResidenceArgs {
+                character_id,
+                requested_days,
+            },
+            callback,
+        )
     }
 }

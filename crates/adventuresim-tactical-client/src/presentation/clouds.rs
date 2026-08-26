@@ -1159,6 +1159,7 @@ mod tests {
             latitude_microdegrees: 53_500_000,
             longitude_microdegrees: 10_000_000,
             absolute_minute: 100_000,
+            lunar_phase_minute: 100_000,
             absolute_elevation_metres: 20,
             weather: WeatherSnapshot {
                 rules_version: WEATHER_RULES_VERSION,

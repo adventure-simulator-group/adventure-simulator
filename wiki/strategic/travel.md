@@ -4,6 +4,12 @@ Travel is a strategic activity. The party plans a route, chooses a daily
 schedule, prepares supplies, and advances time until it reaches the destination,
 stops at camp, or is interrupted.
 
+The leader also chooses the journey's starting time of day. From departure
+until the party next enters a settlement, the party owns one subjective elapsed
+clock shared by travel, camps, and case sites. The clock retains total time
+since setting out so the planner can show the whole expedition's progress.
+Canonical weekdays, seasons, and moon phases do not advance with it.
+
 ## Departure weather
 
 Strategic weather is evaluated from absolute minute, coarse geographic cell,
@@ -64,9 +70,10 @@ Overloading one character can therefore slow everyone.
 
 ## Daily schedule
 
-The leader chooses how many hours per day the party walks and whether that
-window is centered on daytime or nighttime. The remaining hours become camp
-and downtime.
+The leader chooses the departure time of day, how many hours per day the party
+walks, and whether its walking window is centered on daytime or nighttime. The
+remaining hours become camp and downtime. The chosen departure time cannot be
+changed after the party sets out.
 
 A longer walking day reaches the destination sooner but leaves less time to
 recover fatigue, treat injuries, cook, train, or perform other camp activity.
@@ -198,9 +205,10 @@ to the settlement is an immediate location-boundary transition rather than a
 journey. The server still verifies the actor, party, unresolved-encounter,
 readiness, and exact current-site authority, then applies the ordinary arrival
 state refresh and avoids only the pending incident for that same party and
-site. It does not synchronize clocks, consume or refill field supplies, advance
-time, create a camp, scan for travel encounters, or accept a caller-supplied
-nonzero route for the zero-distance crossing.
+site. It applies the ordinary settlement-arrival time-of-day synchronization.
+It does not consume or refill field supplies, create a camp, scan for travel
+encounters, or accept a caller-supplied nonzero route for the zero-distance
+crossing.
 
 ## Training and exposure
 

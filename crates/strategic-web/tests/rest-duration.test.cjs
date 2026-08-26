@@ -48,14 +48,15 @@ test("typed HH:MM durations preserve exact minutes and update target modulo day"
   assert.equal(parseDuration("24.5"), null);
 });
 
-test("markup reuses the accessible wake-time control for settlement and field rest", () => {
+test("settlement rest uses whole days while field rest retains the wake-time control", () => {
   const source = require("node:fs").readFileSync("crates/strategic-web/src/templates/settlement/rest.rs", "utf8");
-  const settlementControl = source.slice(source.indexOf("fn settlement_rest_duration_control"));
-  assert.match(settlementControl, /type="range"/);
-  assert.match(settlementControl, /step="60"/);
-  assert.match(settlementControl, /pattern="\[0-9\]\+:\[0-5\]\[0-9\]"/);
-  assert.match(settlementControl, /aria-label="Wake time"/);
-  assert.match(settlementControl, /disabled\[!hours_active\]/);
+  const settlementControl = source.slice(
+    source.indexOf("fn settlement_rest_duration_control"),
+    source.indexOf("fn wake_time_rest_duration_control"),
+  );
+  assert.match(settlementControl, /name="unit" value="days"/);
+  assert.match(settlementControl, /type="number"[\s\S]+min="1" max="365" step="1"/);
+  assert.doesNotMatch(settlementControl, /wake_time_rest_duration_control|type="range"/);
   const partyControl = source.slice(source.indexOf("pub(crate) fn party_rest_menu"), source.indexOf("pub fn rest_service_menu"));
   assert.match(partyControl, /wake_time_rest_duration_control/);
   assert.match(source, /data-rest-minimum-minutes/);

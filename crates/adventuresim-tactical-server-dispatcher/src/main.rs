@@ -164,6 +164,7 @@ fn main() {
                 request.latitude_e_7,
                 request.longitude_e_7,
                 request.absolute_minute,
+                request.lunar_phase_minute,
             )
             .and_then(|input| {
                 scene_input::materialize_scene_input(&scene_input_dir, &mission_id, &input)

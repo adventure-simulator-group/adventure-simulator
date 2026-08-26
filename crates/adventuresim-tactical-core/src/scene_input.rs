@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 2;
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 3;
 pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 9;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
@@ -112,6 +112,7 @@ pub struct TacticalSceneInput {
     pub latitude_microdegrees: i32,
     pub longitude_microdegrees: i32,
     pub absolute_minute: u64,
+    pub lunar_phase_minute: u64,
     pub absolute_elevation_metres: i16,
     pub playable: TerrainSampleGrid,
     pub vista: VistaSample,
@@ -130,6 +131,7 @@ pub struct SceneEnvironment {
     pub latitude_microdegrees: i32,
     pub longitude_microdegrees: i32,
     pub absolute_minute: u64,
+    pub lunar_phase_minute: u64,
     pub absolute_elevation_metres: i16,
     pub weather: WeatherSnapshot,
     pub canopy_bps: u16,
@@ -423,6 +425,7 @@ impl TacticalSceneInput {
             latitude_microdegrees: self.latitude_microdegrees,
             longitude_microdegrees: self.longitude_microdegrees,
             absolute_minute: self.absolute_minute,
+            lunar_phase_minute: self.lunar_phase_minute,
             absolute_elevation_metres: self.absolute_elevation_metres,
             weather: self.weather,
             canopy_bps: (sum[0] / count) as u16,
@@ -901,6 +904,7 @@ mod tests {
             latitude_microdegrees: 53_500_000,
             longitude_microdegrees: 10_000_000,
             absolute_minute: 123_456,
+            lunar_phase_minute: 123_456,
             absolute_elevation_metres: 80,
             playable: TerrainSampleGrid {
                 width: 3,

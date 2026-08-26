@@ -1158,6 +1158,7 @@ mod tests {
             latitude_microdegrees: 53_500_000,
             longitude_microdegrees: 10_000_000,
             absolute_minute: 340_440,
+            lunar_phase_minute: 340_440,
             absolute_elevation_metres: 420,
             weather: WeatherSnapshot {
                 rules_version: adventuresim_tactical_core::prelude::WEATHER_RULES_VERSION,
