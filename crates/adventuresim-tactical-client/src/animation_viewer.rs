@@ -34,6 +34,7 @@ use crate::animation::{
     MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
     locomotion_support_weights,
+    secondary_physics::SecondaryPhysicsTelemetry,
     semantic_route::{SemanticRoutePath, SemanticRouteTrace},
 };
 use crate::{
@@ -551,6 +552,7 @@ struct CaptureValidation {
     phase_owned_height_valid: bool,
     run_flight_valid: bool,
     body_response_valid: bool,
+    upper_body_secondary_physics_valid: bool,
     straight_run_torso_sway_valid: bool,
     speed_ramp_phase_continuity_valid: bool,
     contact_sequences_valid: bool,
@@ -669,6 +671,10 @@ struct FrameSample {
     locomotion_sample_tick: u64,
     body_acceleration: [f32; 3],
     world_acceleration: [f32; 3],
+    secondary_upper_body_bone_count: u32,
+    secondary_upper_body_mean_blend_weight: f32,
+    secondary_upper_body_maximum_pose_lag_degrees: f32,
+    secondary_upper_body_maximum_inertial_acceleration_radians_per_second_squared: f32,
     contact_sequence: u64,
     contact_foot: LeadFoot,
     landing_sequence: u64,
@@ -2226,9 +2232,17 @@ fn drive_sequence(
             );
         }
         if frame.scenario == "full-ragdoll" {
-            let fall = (frame.scenario_frame as f32 / 8.0).clamp(0.0, 1.0);
+            let fall = ((frame.scenario_frame + 4) as f32 / 8.0).clamp(0.0, 1.0);
             transform.rotation = Quat::from_rotation_y(std::f32::consts::PI)
                 * Quat::from_rotation_x(1.25 * smoothstep01(fall));
+            // The production root becomes a coarse dynamic body while the
+            // client ragdoll is active. Reproduce its descent in this focused
+            // viewer so the first sixty-frame settle window actually exercises
+            // whole-body terrain contact instead of suspending the pelvis at
+            // the standing controller height.
+            let ground = terrain.height_at(Vec2::ZERO).unwrap_or_default();
+            transform.translation.y =
+                ground + CAPTURE_ROOT_GROUND_OFFSET_METRES - 0.62 * smoothstep01(fall);
         }
         sequence.scenario_distance += frame.speed * delta_seconds;
         let jump_charging =
@@ -2468,6 +2482,7 @@ fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
     pose_buffer_metrics: Res<PoseBufferMetrics>,
+    secondary_physics_telemetry: Res<SecondaryPhysicsTelemetry>,
     terrain_ik: Res<TerrainIkEnabled>,
     subjects: Query<
         (
@@ -2652,6 +2667,15 @@ fn capture_frame(
             body_acceleration: (subject_global.rotation().inverse() * skeleton.world_acceleration)
                 .to_array(),
             world_acceleration: skeleton.world_acceleration.to_array(),
+            secondary_upper_body_bone_count: secondary_physics_telemetry
+                .simulated_upper_body_bones,
+            secondary_upper_body_mean_blend_weight: secondary_physics_telemetry
+                .mean_upper_body_blend_weight,
+            secondary_upper_body_maximum_pose_lag_degrees: secondary_physics_telemetry
+                .maximum_pose_lag_degrees,
+            secondary_upper_body_maximum_inertial_acceleration_radians_per_second_squared:
+                secondary_physics_telemetry
+                    .maximum_inertial_acceleration_radians_per_second_squared,
             // Raised guard owns its visual contacts locally. Segment its
             // diagnostics by the sequence that actually changed the rendered
             // support foot, not by the replicated locomotion cadence.
@@ -3113,7 +3137,8 @@ fn finish_capture(
                 && metrics.visible_guard_half_step_count == metrics.completed_guard_half_step_count)
     });
     let flat_controller_height_stable = scenarios.iter().all(|metrics| {
-        scenario_uses_terrain_ik(&metrics.scenario)
+        metrics.scenario == "full-ragdoll"
+            || scenario_uses_terrain_ik(&metrics.scenario)
             || metrics.scenario.contains("terrain")
             || is_quickstep_scenario(&metrics.scenario)
             || metrics.controller_vertical_range_metres <= 0.0001
@@ -3639,6 +3664,40 @@ fn finish_capture(
             .or_insert(0) += 1;
         counts
     });
+    let secondary_frames = frames
+        .iter()
+        .filter(|frame| {
+            frame.speed_metres_per_second > 3.2
+                || is_quickstep_scenario(&frame.scenario)
+                || frame.scenario.contains("reversal")
+        })
+        .collect::<Vec<_>>();
+    let inertial_response_required = secondary_frames
+        .iter()
+        .any(|frame| is_quickstep_scenario(&frame.scenario) || frame.scenario.contains("reversal"));
+    let inertial_response_valid = !inertial_response_required
+        || secondary_frames.iter().any(|frame| {
+            frame.secondary_upper_body_maximum_inertial_acceleration_radians_per_second_squared
+                >= 0.1
+        });
+    let upper_body_secondary_physics_valid = secondary_frames.is_empty()
+        || (secondary_frames.iter().all(|frame| {
+            // The current Cascadeur rig exposes fourteen of the semantic
+            // upper-body roles (some packs omit one intermediate spine/neck
+            // target). Twelve still requires the spine/head and both arm
+            // chains instead of allowing a hand-only secondary pass.
+            frame.secondary_upper_body_bone_count >= 12
+                && frame.secondary_upper_body_mean_blend_weight.is_finite()
+                && frame
+                    .secondary_upper_body_maximum_pose_lag_degrees
+                    .is_finite()
+                && frame
+                    .secondary_upper_body_maximum_inertial_acceleration_radians_per_second_squared
+                    .is_finite()
+        }) && secondary_frames.iter().any(|frame| {
+            frame.secondary_upper_body_mean_blend_weight >= 0.18
+                && frame.secondary_upper_body_maximum_pose_lag_degrees >= 0.25
+        }) && inertial_response_valid);
     let validation = CaptureValidation {
         finite_transforms,
         all_scenarios_complete,
@@ -3652,6 +3711,7 @@ fn finish_capture(
         phase_owned_height_valid,
         run_flight_valid,
         body_response_valid,
+        upper_body_secondary_physics_valid,
         straight_run_torso_sway_valid,
         speed_ramp_phase_continuity_valid,
         contact_sequences_valid,
@@ -3740,6 +3800,7 @@ fn validation_passed(validation: &CaptureValidation) -> bool {
         && validation.phase_owned_height_valid
         && validation.run_flight_valid
         && validation.body_response_valid
+        && validation.upper_body_secondary_physics_valid
         && validation.straight_run_torso_sway_valid
         && validation.speed_ramp_phase_continuity_valid
         && validation.contact_sequences_valid
@@ -5466,6 +5527,7 @@ mod tests {
             phase_owned_height_valid: true,
             run_flight_valid: true,
             body_response_valid: true,
+            upper_body_secondary_physics_valid: true,
             straight_run_torso_sway_valid: true,
             speed_ramp_phase_continuity_valid: true,
             contact_sequences_valid: true,
@@ -5626,6 +5688,10 @@ mod tests {
             locomotion_sample_tick: 0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
+            secondary_upper_body_bone_count: 0,
+            secondary_upper_body_mean_blend_weight: 0.0,
+            secondary_upper_body_maximum_pose_lag_degrees: 0.0,
+            secondary_upper_body_maximum_inertial_acceleration_radians_per_second_squared: 0.0,
             contact_sequence: 0,
             contact_foot: LeadFoot::Left,
             landing_sequence: 0,
@@ -6063,6 +6129,10 @@ mod tests {
             locomotion_sample_tick: 0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
+            secondary_upper_body_bone_count: 0,
+            secondary_upper_body_mean_blend_weight: 0.0,
+            secondary_upper_body_maximum_pose_lag_degrees: 0.0,
+            secondary_upper_body_maximum_inertial_acceleration_radians_per_second_squared: 0.0,
             contact_sequence: 0,
             contact_foot: LeadFoot::Left,
             landing_sequence: 0,
@@ -6321,6 +6391,10 @@ mod tests {
             locomotion_sample_tick: scenario_frame as u64,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
+            secondary_upper_body_bone_count: 0,
+            secondary_upper_body_mean_blend_weight: 0.0,
+            secondary_upper_body_maximum_pose_lag_degrees: 0.0,
+            secondary_upper_body_maximum_inertial_acceleration_radians_per_second_squared: 0.0,
             contact_sequence: 0,
             contact_foot: LeadFoot::Left,
             landing_sequence: 0,

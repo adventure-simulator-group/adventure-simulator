@@ -255,7 +255,7 @@ pub(super) struct ImpactReaction {
 
 mod full_ragdoll;
 mod loading;
-mod secondary_physics;
+pub(crate) mod secondary_physics;
 use loading::*;
 fn evaluate_skeletons(
     mut commands: Commands,

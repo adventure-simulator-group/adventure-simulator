@@ -13,10 +13,11 @@ use super::{
     procedural::{BoneRole, HumanoidBone},
 };
 
-const MOTOR_FREQUENCY_HZ: f32 = 5.0;
-const MOTOR_DAMPING_RATIO: f32 = 0.82;
+const MOTOR_FREQUENCY_HZ: f32 = 4.25;
+const MOTOR_DAMPING_RATIO: f32 = 0.78;
 const MAX_ANGULAR_SPEED_RADIANS_PER_SECOND: f32 = 18.0;
 const IMPACT_ANGULAR_SPEED_PER_METRE_PER_SECOND: f32 = 0.85;
+const MAX_LOCOMOTION_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 = 24.0;
 const RAGDOLL_MOTOR_FREQUENCY_HZ: f32 = 0.7;
 const RAGDOLL_GRAVITY_TORQUE: f32 = 8.0;
 const WEIGHT_RESPONSE_PER_SECOND: f32 = 12.0;
@@ -40,6 +41,14 @@ impl Default for SecondaryBoneDynamics {
             initialized: false,
         }
     }
+}
+
+#[derive(Resource, Debug, Default, Clone, Copy)]
+pub(crate) struct SecondaryPhysicsTelemetry {
+    pub(crate) simulated_upper_body_bones: u32,
+    pub(crate) mean_upper_body_blend_weight: f32,
+    pub(crate) maximum_pose_lag_degrees: f32,
+    pub(crate) maximum_inertial_acceleration_radians_per_second_squared: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,25 +125,61 @@ fn baseline_weight(class: SecondaryMotionClass, role: BoneRole) -> f32 {
     let leg = matches!(role, ThighLeft | ShinLeft | ThighRight | ShinRight);
 
     match class {
-        SecondaryMotionClass::Relaxed if distal_arm => 0.32,
-        SecondaryMotionClass::Relaxed if arm => 0.24,
-        SecondaryMotionClass::Moving if distal_arm => 0.24,
-        SecondaryMotionClass::Moving if arm => 0.18,
+        SecondaryMotionClass::Relaxed if distal_arm => 0.44,
+        SecondaryMotionClass::Relaxed if arm => 0.36,
+        SecondaryMotionClass::Moving if distal_arm => 0.40,
+        SecondaryMotionClass::Moving if arm => 0.32,
         // Overgrowth stiffens ordinary arms as running speed rises.
-        SecondaryMotionClass::Running if distal_arm => 0.15,
-        SecondaryMotionClass::Running if arm => 0.10,
-        SecondaryMotionClass::Airborne if distal_arm => 0.42,
-        SecondaryMotionClass::Airborne if arm => 0.34,
-        SecondaryMotionClass::Guarded if arm => 0.05,
-        SecondaryMotionClass::CommittedAction if arm => 0.025,
-        SecondaryMotionClass::Downed if arm => 0.08,
+        SecondaryMotionClass::Running if distal_arm => 0.34,
+        SecondaryMotionClass::Running if arm => 0.26,
+        SecondaryMotionClass::Airborne if distal_arm => 0.52,
+        SecondaryMotionClass::Airborne if arm => 0.44,
+        SecondaryMotionClass::Guarded if arm => 0.10,
+        SecondaryMotionClass::CommittedAction if arm => 0.12,
+        SecondaryMotionClass::Downed if arm => 0.16,
         SecondaryMotionClass::Ragdolled if !matches!(role, Root | Pelvis) => 1.0,
-        _ if axial => 0.06,
+        SecondaryMotionClass::Running if axial => 0.38,
+        SecondaryMotionClass::Moving if axial => 0.30,
+        SecondaryMotionClass::Airborne if axial => 0.46,
+        SecondaryMotionClass::CommittedAction if axial => 0.32,
+        SecondaryMotionClass::Guarded if axial => 0.22,
+        _ if axial => 0.16,
         _ if leg => 0.025,
         _ if role == Pelvis => 0.015,
         _ if matches!(role, FootLeft | ToeLeft | FootRight | ToeRight) => 0.01,
         _ => 0.0,
     }
+}
+
+/// Presentation-only pseudo torque produced by acceleration of the
+/// authoritative root. The spring still targets the authored local pose; this
+/// term gives the simulated upper body the lag that a point mass above each
+/// joint would have while the controller accelerates or changes direction.
+fn locomotion_inertial_acceleration(
+    world_acceleration: Vec3,
+    owner_rotation: Quat,
+    role: BoneRole,
+) -> Vec3 {
+    use BoneRole::*;
+    let gain = match role {
+        StomachOne => 0.12,
+        StomachTwo => 0.18,
+        StomachThree => 0.24,
+        Chest => 0.30,
+        NeckOne => 0.22,
+        Head => 0.34,
+        ClavicleLeft | ClavicleRight => 0.28,
+        UpperArmLeft | UpperArmRight => 0.34,
+        ForearmLeft | ForearmRight => 0.42,
+        HandLeft | HandRight => 0.48,
+        _ => 0.0,
+    };
+    let local = owner_rotation.inverse() * world_acceleration;
+    let local = Vec3::new(local.x, 0.0, local.z)
+        .clamp_length_max(MAX_LOCOMOTION_ACCELERATION_METRES_PER_SECOND_SQUARED);
+    // Horizontal acceleration produces the opposite apparent lean: local +X
+    // drives +Z-side lag (roll), while local +Z drives -Z-side lag (pitch).
+    Vec3::new(-local.z, 0.0, local.x) * gain
 }
 
 pub(super) fn secondary_physics_weight(
@@ -186,10 +231,11 @@ fn impact_affinity(body_part: BodyPart, role: BoneRole) -> f32 {
 
 pub(super) fn apply_secondary_bone_physics(
     time: Res<Time>,
+    mut telemetry: ResMut<SecondaryPhysicsTelemetry>,
     owners: Query<
         (
             &PresentedSkeleton,
-            &TacticalCombatState,
+            Option<&TacticalCombatState>,
             &Transform,
             Option<&ImpactReaction>,
         ),
@@ -197,6 +243,8 @@ pub(super) fn apply_secondary_bone_physics(
     >,
     mut bones: Query<(&HumanoidBone, &mut Transform, &mut SecondaryBoneDynamics), Without<Player>>,
 ) {
+    *telemetry = SecondaryPhysicsTelemetry::default();
+    let mut upper_body_weight_sum = 0.0;
     let delta_seconds = time.delta_secs().clamp(0.0, 1.0 / 30.0);
     for (bone, mut transform, mut dynamics) in &mut bones {
         let Ok((skeleton, combat, owner_transform, impact)) = owners.get(bone.owner) else {
@@ -237,6 +285,17 @@ pub(super) fn apply_secondary_bone_physics(
             let omega = std::f32::consts::TAU * motor_frequency;
             let mut acceleration = error * omega * omega
                 - dynamics.angular_velocity * (2.0 * MOTOR_DAMPING_RATIO * omega);
+            if !ragdolled {
+                let inertial_acceleration = locomotion_inertial_acceleration(
+                    skeleton.world_acceleration,
+                    owner_transform.rotation,
+                    bone.role,
+                );
+                telemetry.maximum_inertial_acceleration_radians_per_second_squared = telemetry
+                    .maximum_inertial_acceleration_radians_per_second_squared
+                    .max(inertial_acceleration.length());
+                acceleration += inertial_acceleration;
+            }
             if ragdolled && !matches!(bone.role, BoneRole::Root | BoneRole::Pelvis) {
                 let gravity_local = owner_transform.rotation.inverse() * Vec3::NEG_Y;
                 acceleration +=
@@ -259,7 +318,7 @@ pub(super) fn apply_secondary_bone_physics(
 
         let target_weight = secondary_physics_weight(
             baseline_weight(motion_class(skeleton), bone.role),
-            combat.incapacitation,
+            combat.map_or(0.0, |combat| combat.incapacitation),
             is_above_pelvis(bone.role),
         );
         let weight_response = 1.0 - (-WEIGHT_RESPONSE_PER_SECOND * delta_seconds).exp();
@@ -267,6 +326,17 @@ pub(super) fn apply_secondary_bone_physics(
         transform.rotation = target
             .slerp(dynamics.simulated_rotation, dynamics.blend_weight)
             .normalize();
+        if is_above_pelvis(bone.role) {
+            telemetry.simulated_upper_body_bones += 1;
+            upper_body_weight_sum += dynamics.blend_weight;
+            telemetry.maximum_pose_lag_degrees = telemetry
+                .maximum_pose_lag_degrees
+                .max(target.angle_between(transform.rotation).to_degrees());
+        }
+    }
+    if telemetry.simulated_upper_body_bones > 0 {
+        telemetry.mean_upper_body_blend_weight =
+            upper_body_weight_sum / telemetry.simulated_upper_body_bones as f32;
     }
 }
 
@@ -316,5 +386,38 @@ mod tests {
             baseline_weight(SecondaryMotionClass::Airborne, BoneRole::HandLeft)
                 > baseline_weight(SecondaryMotionClass::Relaxed, BoneRole::HandLeft)
         );
+    }
+
+    #[test]
+    fn locomotion_acceleration_drives_the_whole_upper_body_but_not_the_legs() {
+        let world_acceleration = Vec3::new(12.0, 0.0, -8.0);
+        for role in [
+            BoneRole::StomachOne,
+            BoneRole::Chest,
+            BoneRole::Head,
+            BoneRole::UpperArmLeft,
+            BoneRole::HandRight,
+        ] {
+            assert!(
+                locomotion_inertial_acceleration(world_acceleration, Quat::IDENTITY, role).length()
+                    > 0.5,
+                "{role:?} should receive inertial motor forcing"
+            );
+        }
+        assert_eq!(
+            locomotion_inertial_acceleration(
+                world_acceleration,
+                Quat::IDENTITY,
+                BoneRole::ShinLeft,
+            ),
+            Vec3::ZERO
+        );
+    }
+
+    #[test]
+    fn running_motors_have_visible_upper_body_ownership() {
+        assert!(baseline_weight(SecondaryMotionClass::Running, BoneRole::Chest) >= 0.35);
+        assert!(baseline_weight(SecondaryMotionClass::Running, BoneRole::ForearmLeft) >= 0.30);
+        assert!(baseline_weight(SecondaryMotionClass::Running, BoneRole::Chest) < 0.5);
     }
 }

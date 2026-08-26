@@ -419,6 +419,7 @@ impl Plugin for TacticalAnimationPlugin {
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
             .init_resource::<procedural::FixedTickPoseCache>()
+            .init_resource::<secondary_physics::SecondaryPhysicsTelemetry>()
             .register_required_components::<procedural::HumanoidBone, secondary_physics::SecondaryBoneDynamics>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
