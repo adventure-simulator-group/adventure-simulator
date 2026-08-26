@@ -8,6 +8,10 @@ use super::{AnimationPlayback, AuthoredBindTransform, PresentedSkeleton};
 mod rig;
 pub(crate) use rig::*;
 
+pub(super) fn authored_locomotion_ik_owns(skeleton: &SkeletonState) -> bool {
+    ik::authored_locomotion_owns(skeleton)
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct ProceduralLookState {
     base_rotation: Quat,
@@ -263,12 +267,8 @@ pub(super) fn apply_jump_anticipation(
         let Ok(skeleton) = owners.get(bone.owner) else {
             continue;
         };
-        let quickstep_amount = if skeleton.action_kind() == SkeletonAction::Dodge {
-            0.55 * (1.0 - smoothstep(0.0, 0.35, skeleton.action_phase()))
-        } else {
-            0.0
-        };
-        let charging = skeleton.jump_anticipation() == JumpAnticipation::Charging;
+        let charging =
+            skeleton.jump_anticipation() == JumpAnticipation::Charging && !skeleton.is_quickstep();
         let previous = state.as_deref().copied();
         let base = previous.map_or(*transform, |previous| {
             if previous.evaluation_tick == skeleton.locomotion_sample_tick
@@ -284,15 +284,19 @@ pub(super) fn apply_jump_anticipation(
         });
         let previous_amount = previous.map_or(0.0, |previous| previous.amount);
         let previous_pelvis_amount = previous.map_or(0.0, |previous| previous.pelvis_amount);
-        let amount = if previous
+        let amount = if skeleton.is_quickstep() {
+            0.0
+        } else if previous
             .is_some_and(|previous| previous.evaluation_tick == skeleton.locomotion_sample_tick)
         {
             previous_amount
         } else {
-            let target = if charging { 1.0 } else { quickstep_amount };
+            let target = charging as u8 as f32;
             previous_amount + (target - previous_amount).clamp(-0.125, 0.125)
         };
-        let pelvis_amount = if previous
+        let pelvis_amount = if skeleton.is_quickstep() {
+            0.0
+        } else if previous
             .is_some_and(|previous| previous.evaluation_tick == skeleton.locomotion_sample_tick)
         {
             previous_pelvis_amount
@@ -303,8 +307,6 @@ pub(super) fn apply_jump_anticipation(
         let mut applied = base;
         if amount > f32::EPSILON {
             match bone.role {
-                // The authored guard already supplies enough knee flexion for
-                // quicksteps. Pelvis lowering belongs only to jump charging.
                 BoneRole::Pelvis => applied.translation.y -= 0.12 * pelvis_amount,
                 BoneRole::StomachOne => {
                     applied.rotation =
@@ -470,15 +472,11 @@ pub(super) fn apply_pose_mirroring(
 
 const HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND: f32 = 0.4;
 const LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND: f32 = 0.8;
-const GUARD_HIP_DROP_TRANSITION_METRES_PER_SECOND: f32 = 0.8;
 const NORMALIZATION_TRANSITION_PER_SECOND: f32 = 8.0;
 // The upright lowered-guard humanoid_unarmed root/pelvis rotations lift its
 // pelvis by about 33 mm at passing even after local Y is normalized. This is a
 // measured state-and-pack calibration, not a safe assumption elsewhere.
 const AUTHORED_ORDINARY_PASSING_RISE_METRES: f32 = 0.033;
-// Current humanoid calibration: moving in the compact guard stance lowers the
-// hips by roughly ten centimetres while the IK-owned feet remain planted.
-const RAISED_GUARD_MOVING_HIP_DROP_METRES: f32 = 0.10;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct LocomotionHeightState {
@@ -487,7 +485,6 @@ pub(crate) struct LocomotionHeightState {
     authored_rise_compensation: f32,
     displayed_wave: f32,
     wave_transition_offset: f32,
-    guard_hip_drop: f32,
     normalization_weight: f32,
     pub(crate) landing_compression: f32,
     landing_compression_target: f32,
@@ -534,6 +531,10 @@ pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
     {
         return 0.0;
     }
+    if skeleton.weapon_guard() == WeaponGuardState::Raised && !skeleton.guarded_sprint_locomotion()
+    {
+        return 0.0;
+    }
     let speed = skeleton.animation_speed();
     if speed <= 0.05 {
         return 0.0;
@@ -566,20 +567,9 @@ fn locomotion_normalization_target(skeleton: &SkeletonState) -> f32 {
         && !skeleton.is_posture_transitioning()
         && skeleton.action_kind() == SkeletonAction::None
         && skeleton.posture() == Posture::Upright
+        && (skeleton.weapon_guard() == WeaponGuardState::Lowered
+            || skeleton.guarded_sprint_locomotion())
         && skeleton.animation_speed() > 0.05) as u8 as f32
-}
-
-fn raised_guard_moving_hip_drop(skeleton: &SkeletonState) -> f32 {
-    if !skeleton.is_grounded()
-        || skeleton.is_posture_transitioning()
-        || skeleton.action_kind() != SkeletonAction::None
-        || skeleton.posture() != Posture::Upright
-        || skeleton.weapon_guard() != WeaponGuardState::Raised
-        || !skeleton.raised_locomotion().is_moving()
-    {
-        return 0.0;
-    }
-    RAISED_GUARD_MOVING_HIP_DROP_METRES * smoothstep(0.05, 0.75, skeleton.animation_speed())
 }
 
 fn advance_towards(current: f32, target: f32, maximum_delta: f32) -> f32 {
@@ -619,16 +609,31 @@ pub(super) fn stabilize_locomotion_torso(
 ) {
     let mut heights = BTreeMap::new();
     for (owner, skeleton, state) in &mut owners {
+        if skeleton.is_quickstep() {
+            let mut cleared = state.as_deref().copied().unwrap_or_default();
+            cleared.amplitude = 0.0;
+            cleared.authored_rise_compensation = 0.0;
+            cleared.displayed_wave = 0.0;
+            cleared.wave_transition_offset = 0.0;
+            cleared.normalization_weight = 0.0;
+            cleared.landing_compression = 0.0;
+            cleared.landing_compression_target = 0.0;
+            clear_landing_foot_plants(&mut cleared);
+            if let Some(mut state) = state {
+                *state = cleared;
+            } else {
+                commands.entity(owner).insert(cleared);
+            }
+            continue;
+        }
         let target_wave = locomotion_height_wave(skeleton);
         let target_authored_compensation = authored_height_compensation(skeleton);
-        let target_guard_hip_drop = raised_guard_moving_hip_drop(skeleton);
         let target_normalization = locomotion_normalization_target(skeleton);
         let mut next = state.as_deref().copied().unwrap_or_default();
         if !next.initialized {
             next.initialized = true;
             next.amplitude = target_wave;
             next.authored_rise_compensation = target_authored_compensation;
-            next.guard_hip_drop = target_guard_hip_drop;
             next.normalization_weight = target_normalization;
             next.last_guard = Some(skeleton.weapon_guard());
             next.last_posture = Some(skeleton.posture());
@@ -658,11 +663,6 @@ pub(super) fn stabilize_locomotion_torso(
             next.authored_rise_compensation,
             target_authored_compensation,
             HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND * delta_seconds,
-        );
-        next.guard_hip_drop = advance_towards(
-            next.guard_hip_drop,
-            target_guard_hip_drop,
-            GUARD_HIP_DROP_TRANSITION_METRES_PER_SECOND * delta_seconds,
         );
         let retained_normalization =
             target_normalization.max((next.amplitude.abs() > 0.001) as u8 as f32);
@@ -767,7 +767,6 @@ pub(super) fn stabilize_locomotion_torso(
         };
         if height.normalization_weight <= f32::EPSILON
             && height.amplitude <= f32::EPSILON
-            && height.guard_hip_drop <= f32::EPSILON
             && height.landing_compression <= f32::EPSILON
         {
             continue;
@@ -790,9 +789,7 @@ pub(super) fn stabilize_locomotion_torso(
             BoneRole::Root => {
                 normalized_translation.y = bind.local.translation.y + height.displayed_wave;
             }
-            BoneRole::Pelvis => {
-                normalized_translation.y = bind.local.translation.y - height.guard_hip_drop;
-            }
+            BoneRole::Pelvis => normalized_translation.y = bind.local.translation.y,
             _ => {}
         }
         transform.translation = authored_translation.lerp(
@@ -800,6 +797,51 @@ pub(super) fn stabilize_locomotion_torso(
             height.normalization_weight.clamp(0.0, 1.0),
         );
     }
+}
+
+/// Turns authored walk/run legs into the movement direction while preserving
+/// the weapon layer's world-facing torso. The pelvis owns the yaw and the
+/// first spine bone cancels it, so descendants on either side of the layer
+/// boundary remain independent.
+pub(super) fn orient_guarded_run_lower_body(
+    owners: Query<&PresentedSkeleton>,
+    rigs: Query<(Entity, &HumanoidRig)>,
+    mut transforms: Query<&mut Transform>,
+) {
+    for (owner, rig) in &rigs {
+        let Ok(skeleton) = owners.get(owner) else {
+            continue;
+        };
+        if skeleton.is_quickstep()
+            || !skeleton.guarded_sprint_locomotion()
+            || !skeleton.raised_locomotion().is_moving()
+        {
+            continue;
+        }
+        let direction = skeleton.raised_locomotion().local_direction();
+        let Some((pelvis_yaw, spine_counter_yaw)) = guarded_run_split_yaw(direction) else {
+            continue;
+        };
+        let (Some(&pelvis), Some(&spine)) =
+            (rig.get(&BoneRole::Pelvis), rig.get(&BoneRole::StomachOne))
+        else {
+            continue;
+        };
+        let Ok([mut pelvis, mut spine]) = transforms.get_many_mut([pelvis, spine]) else {
+            continue;
+        };
+        pelvis.rotation = (pelvis.rotation * pelvis_yaw).normalize();
+        spine.rotation = (spine_counter_yaw * spine.rotation).normalize();
+    }
+}
+
+fn guarded_run_split_yaw(direction: Vec2) -> Option<(Quat, Quat)> {
+    let direction = direction.try_normalize()?;
+    // Local movement uses -Y for character-forward, corresponding to -Z in
+    // the authored rig. Positive X is character-right.
+    let angle = -direction.x.atan2(-direction.y);
+    let pelvis = Quat::from_rotation_y(angle);
+    Some((pelvis, pelvis.inverse()))
 }
 
 /// Preserves both world-space feet during the short landing-only pelvis
@@ -1029,9 +1071,8 @@ use ik::{
     terrain_conformed_guard_target, terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
 pub(super) use ik::{
-    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_ordinary_locomotion_ik,
-    apply_quickstep_ik, apply_terrain_leg_ik, enforce_anatomical_knee_yaw,
-    refresh_raised_support_after_propagation,
+    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_terrain_leg_ik,
+    enforce_anatomical_knee_yaw, refresh_raised_support_after_propagation,
 };
 use ik::{
     apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
@@ -1051,6 +1092,16 @@ mod contract_tests {
     fn presentation_tick_delta_handles_wrap_and_rejects_large_gaps() {
         assert_eq!(presentation_tick_delta(Some(u64::MAX), 0), Some(1));
         assert_eq!(presentation_tick_delta(Some(1), 100), None);
+    }
+
+    #[test]
+    fn guarded_run_pelvis_yaw_is_cancelled_at_the_upper_body_boundary() {
+        for direction in [Vec2::NEG_Y, Vec2::X, Vec2::Y, Vec2::NEG_X] {
+            let (pelvis, spine) = guarded_run_split_yaw(direction).unwrap();
+            assert!((pelvis * spine).abs_diff_eq(Quat::IDENTITY, 0.0001));
+            let expected = Vec3::new(direction.x, 0.0, direction.y);
+            assert!((pelvis * Vec3::NEG_Z).abs_diff_eq(expected, 0.0001));
+        }
     }
 
     #[test]
@@ -1340,7 +1391,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn locomotion_height_amplitude_covers_walk_run_and_guard() {
+    fn locomotion_height_amplitude_covers_walk_run_and_guarded_run_only() {
         let moving = |speed, posture, guard| {
             SkeletonState::default()
                 .with_local_velocity(Vec3::NEG_Z * speed)
@@ -1369,10 +1420,11 @@ mod legacy_tests {
                 .abs()
                 < 0.0001
         );
+        let raised = moving(2.0, Posture::Upright, WeaponGuardState::Raised).with_gait_phase(0.25);
+        assert_eq!(locomotion_height_wave(&raised), 0.0);
         assert!(
-            (locomotion_height_wave(
-                &moving(2.0, Posture::Upright, WeaponGuardState::Raised,).with_gait_phase(0.25)
-            ) - RAISED_GUARD_LOCOMOTION_PROFILE.bounce_metres)
+            (locomotion_height_wave(&raised.with_guarded_sprint_locomotion(true))
+                - WALK_LOCOMOTION_PROFILE.bounce_metres)
                 .abs()
                 < 0.0001
         );
@@ -1406,25 +1458,6 @@ mod legacy_tests {
             locomotion_normalization_target(
                 &SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised)
             ),
-            0.0
-        );
-    }
-
-    #[test]
-    fn moving_raised_guard_lowers_the_hips_by_ten_centimetres() {
-        let moving = SkeletonState::default()
-            .with_local_velocity(Vec3::NEG_Z * 2.0)
-            .with_weapon_guard(WeaponGuardState::Raised)
-            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
-        assert!(
-            (raised_guard_moving_hip_drop(&moving) - RAISED_GUARD_MOVING_HIP_DROP_METRES).abs()
-                < 0.0001
-        );
-
-        let planted = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
-        assert_eq!(raised_guard_moving_hip_drop(&planted), 0.0);
-        assert_eq!(
-            raised_guard_moving_hip_drop(&moving.with_body_state(BodyState::Airborne)),
             0.0
         );
     }
@@ -1973,6 +2006,12 @@ mod legacy_tests {
         let mut transition = SkeletonState::default();
         assert!(transition.begin_posture_transition(PostureTransitionKind::UprightToProne, 0, 10,));
         assert!(!ik::anatomical_knee_yaw_posture_is_valid(&transition));
+        let mut quickstep = SkeletonState::default();
+        quickstep
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
+        quickstep.advance_action(150);
+        assert!(!ik::anatomical_knee_yaw_posture_is_valid(&quickstep));
     }
 
     #[test]

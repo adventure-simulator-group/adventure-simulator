@@ -1,0 +1,20 @@
+{
+  "commands": [
+    { "type": "guard", "raised": true },
+    { "type": "pace", "pace": "Walk" },
+    { "type": "wait", "duration_seconds": 0.5 },
+    {
+      "type": "quickstep",
+      "direction": "right",
+      "duration_seconds": 0.08
+    },
+    { "type": "guard", "raised": false },
+    {
+      "type": "move",
+      "direction": "right",
+      "input_speed": 1.0,
+      "duration_seconds": 1.0
+    },
+    { "type": "wait", "duration_seconds": 0.5 }
+  ]
+}

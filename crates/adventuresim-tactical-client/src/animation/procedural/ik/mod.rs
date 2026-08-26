@@ -3,7 +3,6 @@ use super::*;
 mod body_response;
 mod hands;
 mod locomotion;
-mod quickstep;
 mod solver;
 
 pub(in crate::animation) use body_response::apply_locomotion_body_response;
@@ -13,8 +12,7 @@ pub(super) use body_response::presentation_tick_delta;
 pub(in crate::animation) use hands::apply_arm_and_weapon_constraints;
 #[cfg(test)]
 pub(super) use hands::secondary_grip_world;
-pub(in crate::animation) use locomotion::apply as apply_ordinary_locomotion_ik;
-pub(in crate::animation) use quickstep::apply as apply_quickstep_ik;
+pub(super) use locomotion::owns as authored_locomotion_owns;
 pub(super) use solver::*;
 
 /// Final lower-body invariant pass. Pose owners and terrain alignment may
@@ -137,7 +135,7 @@ pub(in crate::animation) fn enforce_anatomical_knee_yaw(
 }
 
 pub(super) fn anatomical_knee_yaw_posture_is_valid(skeleton: &SkeletonState) -> bool {
-    !skeleton.body().is_downed() && !skeleton.is_posture_transitioning()
+    !skeleton.body().is_downed() && !skeleton.is_posture_transitioning() && !skeleton.is_quickstep()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -290,6 +288,32 @@ impl QuickstepContactHandoff {
     }
 }
 
+fn seed_quickstep_contact_handoff(
+    memory: &mut LegIkMemory,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    left_world: Vec3,
+    right_world: Vec3,
+) -> bool {
+    if !rig_origin.is_finite()
+        || !rig_rotation.is_finite()
+        || !left_world.is_finite()
+        || !right_world.is_finite()
+    {
+        return false;
+    }
+    let inverse_rotation = rig_rotation.inverse();
+    let left = inverse_rotation * (left_world - rig_origin);
+    let right = inverse_rotation * (right_world - rig_origin);
+    if !left.is_finite() || !right.is_finite() {
+        return false;
+    }
+    memory.quickstep_handoff = QuickstepContactHandoff::Converging { left, right };
+    memory.rig_origin = Some(rig_origin);
+    memory.rig_rotation = Some(rig_rotation);
+    true
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct ArmIkMemory {
     left_arm: Option<Vec3>,
@@ -350,6 +374,8 @@ const RAISED_SETTLE_TARGET_SPEED: f32 =
         / MAX_KNEE_TARGET_AMPLIFICATION
         * 0.98;
 const GUARD_REACH_PELVIS_DROP_METRES: f32 = 0.12;
+const STATIONARY_TURN_FOOT_LIMIT_METRES: f32 = 0.14;
+const STATIONARY_TURN_STEP_SECONDS: f32 = 0.22;
 const KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS: f32 = std::f32::consts::FRAC_PI_8;
 // A 576 degree/second cap is nine degrees at the 64 Hz presentation
 // cadence, retaining numeric margin below the ten-degree review gate. Contact
@@ -529,6 +555,7 @@ impl GuardStepState {
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct RaisedFootworkState {
     step: GuardStepState,
+    step_sequence: u64,
     pub(crate) left_support_weight: f32,
     pub(crate) right_support_weight: f32,
     pub(crate) left_solve_target: Option<Vec3>,
@@ -542,6 +569,7 @@ impl Default for RaisedFootworkState {
     fn default() -> Self {
         Self {
             step: GuardStepState::Uninitialized,
+            step_sequence: 0,
             left_support_weight: 0.0,
             right_support_weight: 0.0,
             left_solve_target: None,
@@ -557,6 +585,19 @@ impl Default for RaisedFootworkState {
 impl RaisedFootworkState {
     pub(crate) fn initialized(&self) -> bool {
         self.step.initialized()
+    }
+
+    pub(crate) fn step_sequence(&self) -> u64 {
+        self.step_sequence
+    }
+
+    pub(crate) fn contact_foot(&self) -> Option<LeadFoot> {
+        match self.step {
+            GuardStepState::Uninitialized => None,
+            GuardStepState::Stationary { next, .. } => Some(opposite_guard_foot(next)),
+            GuardStepState::LeftSwing { .. } => Some(LeadFoot::Right),
+            GuardStepState::RightSwing { .. } => Some(LeadFoot::Left),
+        }
     }
 }
 
@@ -934,17 +975,56 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             continue;
         };
         if locomotion::owns(skeleton) {
+            // The authored pose remains untouched, but allocate observational
+            // memory so the post-propagation pass can retain its final feet
+            // for a continuous transfer to stationary procedural footwork.
+            if let Ok(mut state) = ik_states.get_mut(owner) {
+                // Authored locomotion has already accepted the post-dodge
+                // lower body. A still-pending landing handoff must not survive
+                // that owner and reappear later when the character stops.
+                release_raised_state_for_authored_locomotion(&mut state.0);
+            } else {
+                commands
+                    .entity(owner)
+                    .insert(LegIkState(LegIkMemory::default()));
+            }
             if let Ok(mut state) = raised_states.get_mut(owner) {
-                *state = RaisedFootworkState::default();
+                let step_sequence = retain_monotonic_contact_sequence(
+                    state.step_sequence,
+                    skeleton.contact_sequence,
+                );
+                *state = RaisedFootworkState {
+                    step_sequence,
+                    ..default()
+                };
+            } else {
+                commands.entity(owner).insert(RaisedFootworkState {
+                    step_sequence: skeleton.contact_sequence,
+                    ..default()
+                });
             }
             continue;
         }
         if !terrain_ik_posture_is_valid(skeleton) {
             if let Ok(mut state) = ik_states.get_mut(owner) {
                 state.0 = LegIkMemory::default();
+            } else {
+                // Quicksteps bypass every leg modifier, yet need a component
+                // on which the later propagated-pose observer can record the
+                // authored landing endpoints.
+                commands
+                    .entity(owner)
+                    .insert(LegIkState(LegIkMemory::default()));
             }
             if let Ok(mut state) = raised_states.get_mut(owner) {
-                *state = RaisedFootworkState::default();
+                let step_sequence = retain_monotonic_contact_sequence(
+                    state.step_sequence,
+                    skeleton.contact_sequence,
+                );
+                *state = RaisedFootworkState {
+                    step_sequence,
+                    ..default()
+                };
             }
             continue;
         }
@@ -1388,6 +1468,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 .get_mut(owner)
                 .map(|state| *state)
                 .unwrap_or_default();
+            let previous_swing = footwork.step.swing_foot();
             let left_authored = left_foot_snapshot.global.translation();
             let right_authored = right_foot_snapshot.global.translation();
             let live_speed = skeleton.world_velocity.with_y(0.0).length();
@@ -1448,7 +1529,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         target
                     }
                 };
-                footwork.step = match skeleton.raised_footwork() {
+                let requested = match skeleton.raised_footwork() {
                     GuardFootworkPlan::Uninitialized => GuardStepState::Stationary {
                         left: visible_left,
                         right: visible_right,
@@ -1457,11 +1538,29 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     GuardFootworkPlan::Planted {
                         contacts,
                         next_swing,
-                    } => GuardStepState::Stationary {
-                        left: contact_world(contacts.left(), left_authored),
-                        right: contact_world(contacts.right(), right_authored),
-                        next: next_swing,
-                    },
+                    } => {
+                        let authored_contact = |authored: Vec3| {
+                            let local = rig_rotation.inverse() * (authored - rig_origin);
+                            Vec2::new(local.x, local.z)
+                        };
+                        let (left_contact, right_contact) = if live_speed <= 0.05 {
+                            // Once translation has stopped, the prepared combat
+                            // stance is the canonical footprint. Replicated tap
+                            // contacts describe the last moving sample and can
+                            // otherwise leave both feet collapsed on one side.
+                            (
+                                authored_contact(left_authored),
+                                authored_contact(right_authored),
+                            )
+                        } else {
+                            (contacts.left(), contacts.right())
+                        };
+                        GuardStepState::Stationary {
+                            left: contact_world(left_contact, left_authored),
+                            right: contact_world(right_contact, right_authored),
+                            next: next_swing,
+                        }
+                    }
                     GuardFootworkPlan::Stepping(step) => {
                         let contacts = step.contacts();
                         let progress = match step.swing_foot() {
@@ -1489,6 +1588,48 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         }
                     }
                 };
+                if live_speed <= 0.05 && !footwork.step.initialized() {
+                    if let (Some(left), Some(right)) = (
+                        memory.left_last_rendered_world,
+                        memory.right_last_rendered_world,
+                    ) {
+                        let fallback = opposite_guard_foot(skeleton.contact_foot);
+                        let next = match requested {
+                            GuardStepState::Stationary {
+                                left: desired_left,
+                                right: desired_right,
+                                ..
+                            } => safer_guard_reacquire_foot(
+                                left,
+                                right,
+                                desired_left,
+                                desired_right,
+                                fallback,
+                            ),
+                            _ => fallback,
+                        };
+                        // Reacquire from the final authored locomotion pose.
+                        // The stationary stepper can then move one foot at a
+                        // time toward the guard contacts without a one-frame
+                        // ownership snap or contact-identity reset.
+                        footwork.step = GuardStepState::Stationary { left, right, next };
+                    }
+                }
+                footwork.step = if live_speed <= 0.05
+                    && matches!(requested, GuardStepState::Stationary { .. })
+                {
+                    advance_stationary_turn_step(footwork.step, requested, state_delta_seconds)
+                } else {
+                    requested
+                };
+            }
+            let next_swing = footwork.step.swing_foot();
+            if previous_swing.is_some() && previous_swing != next_swing {
+                // Match the authoritative contact-sequence convention: the
+                // sequence advances when the airborne foot lands (or a
+                // skipped presentation sample lands and launches the other
+                // foot), not when toe-off begins.
+                footwork.step_sequence = footwork.step_sequence.wrapping_add(1);
             }
 
             let mut left_target;
@@ -1793,6 +1934,12 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     footwork.right_support_weight = reported_support as u8 as f32;
                 }
             }
+            let raised_orientation_handoff = [
+                memory.left_foot_orientation_world.is_none()
+                    && memory.left_last_rendered_foot_rotation_world.is_some(),
+                memory.right_foot_orientation_world.is_none()
+                    && memory.right_last_rendered_foot_rotation_world.is_some(),
+            ];
             finalize_leg_rotation_chains(
                 rig,
                 skeleton,
@@ -1801,7 +1948,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 evaluation_advances,
                 state_delta_seconds,
                 airborne_orientation_owned,
-                [false; 2],
+                raised_orientation_handoff,
                 &parents,
                 &mut transforms,
             );
@@ -3764,6 +3911,30 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
     }
 }
 
+fn retain_monotonic_contact_sequence(current: u64, observed: u64) -> u64 {
+    // The replicated gait planner can return to its zero-valued idle plan
+    // while authored locomotion still owns the crossfade. That is an owner
+    // transition, not a landing, so retain the presentation sequence until
+    // stationary raised footwork takes over. Genuine cadence increments (and
+    // the u64 wrap) remain forward by exactly one.
+    (observed.wrapping_sub(current) <= 1)
+        .then_some(observed)
+        .unwrap_or(current)
+}
+
+fn release_raised_state_for_authored_locomotion(memory: &mut LegIkMemory) {
+    memory.quickstep_handoff = QuickstepContactHandoff::None;
+    // The pose-buffer transition captures the visible raised pelvis offset.
+    // Keeping the same correction dormant here would apply it a second time
+    // when stationary procedural footwork takes ownership again.
+    memory.raised_pelvis_shift = 0.0;
+    // Authored FK/contact weights own this interval. Do not expose the prior
+    // procedural plant as a current terrain-contact claim while retaining the
+    // propagated endpoints needed for the stop handoff.
+    memory.left_support_weight = None;
+    memory.right_support_weight = None;
+}
+
 /// Refresh contact diagnostics from propagated globals. The IK pass runs
 /// before transform propagation, while viewer/gameplay consumers observe the
 /// propagated hierarchy; twist bones and acquisition blending can make those
@@ -3783,9 +3954,6 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
         let Ok(skeleton) = owners.get(owner) else {
             continue;
         };
-        if locomotion::owns(skeleton) {
-            continue;
-        }
         let Ok(mut state) = ik_states.get_mut(owner) else {
             continue;
         };
@@ -3822,9 +3990,26 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
             .and_then(|foot| globals.get(*foot).ok())
             .map(GlobalTransform::rotation)
             .filter(|rotation| rotation.is_finite());
-        let owner_frame = state.0.rig_origin.zip(state.0.rig_rotation);
+        // IK deliberately does not modify the authored quickstep poses. It
+        // still observes their propagated endpoints so the first post-action
+        // solve begins from the last pose the player actually saw.
+        let propagated_owner_frame = rig
+            .rig_scene()
+            .and_then(|rig_scene| globals.get(rig_scene).ok())
+            .map(|global| (global.translation(), global.rotation()));
         let left_rendered_world = state.0.left_last_rendered_world;
         let right_rendered_world = state.0.right_last_rendered_world;
+        if skeleton.is_quickstep() {
+            if let (Some((origin, rotation)), Some(left), Some(right)) = (
+                propagated_owner_frame,
+                left_rendered_world,
+                right_rendered_world,
+            ) {
+                seed_quickstep_contact_handoff(&mut state.0, origin, rotation, left, right);
+            }
+        }
+        let owner_frame =
+            propagated_owner_frame.or_else(|| state.0.rig_origin.zip(state.0.rig_rotation));
         state.0.left_last_rendered_owner = owner_frame.and_then(|(origin, rotation)| {
             left_rendered_world
                 .map(|world| rotation.inverse() * (world - origin))
@@ -3835,6 +4020,20 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
                 .map(|world| rotation.inverse() * (world - origin))
                 .filter(|owner| owner.is_finite())
         });
+        if let Some((origin, rotation)) = propagated_owner_frame {
+            // Keep discontinuity detection in the same owner frame as these
+            // freshly observed endpoints. Otherwise a long authored segment
+            // compares its terminal root against the stale quickstep origin
+            // and discards the continuity snapshot during handoff.
+            state.0.rig_origin = Some(origin);
+            state.0.rig_rotation = Some(rotation);
+        }
+        // Authored locomotion owns the leg pose, but its final propagated feet
+        // are still the continuity boundary for the stationary follower that
+        // may take ownership on the next tick.
+        if locomotion::owns(skeleton) {
+            continue;
+        }
         if locomotion_profile(skeleton).gait == LocomotionGait::Run
             && skeleton.is_grounded()
             && skeleton.action_kind() == SkeletonAction::None
@@ -5416,11 +5615,128 @@ fn opposite_guard_foot(foot: LeadFoot) -> LeadFoot {
     }
 }
 
+fn safer_guard_reacquire_foot(
+    current_left: Vec3,
+    current_right: Vec3,
+    desired_left: Vec3,
+    desired_right: Vec3,
+    fallback: LeadFoot,
+) -> LeadFoot {
+    let left_first_clearance = desired_left.xz().distance(current_right.xz());
+    let right_first_clearance = desired_right.xz().distance(current_left.xz());
+    if (left_first_clearance - right_first_clearance).abs() <= 0.001 {
+        fallback
+    } else if left_first_clearance > right_first_clearance {
+        LeadFoot::Left
+    } else {
+        LeadFoot::Right
+    }
+}
+
 fn guard_swing_target(swing: GuardSwing) -> Vec3 {
     let progress = smootherstep01(swing.progress);
     let mut target = swing.start.lerp(swing.end, progress);
-    target.y += (std::f32::consts::PI * swing.progress).sin() * 0.10;
+    target.y += (std::f32::consts::PI * progress).sin() * 0.10;
     target
+}
+
+/// Keep stationary combat feet fixed in world space while the owner turns.
+/// Once the rotating authored stance pulls a plant beyond the pole/reach
+/// corridor, lift exactly one foot through the existing guard swing and place
+/// it at the new authored stance target. Translating authored locomotion never
+/// enters this path and is therefore allowed to slide instead of inventing
+/// extra up/down foot motion.
+fn advance_stationary_turn_step(
+    current: GuardStepState,
+    requested: GuardStepState,
+    delta_seconds: f32,
+) -> GuardStepState {
+    let GuardStepState::Stationary {
+        left: desired_left,
+        right: desired_right,
+        next: _requested_next,
+    } = requested
+    else {
+        return requested;
+    };
+    match current {
+        GuardStepState::Uninitialized => requested,
+        GuardStepState::Stationary { left, right, next } => {
+            // Pole-limit stepping responds to horizontal stance displacement.
+            // Pose-buffer/terrain settling may move the requested ankle height
+            // after touchdown; treating that vertical correction as another
+            // reach violation immediately relaunches the foot that just landed.
+            let left_exceeded =
+                left.xz().distance(desired_left.xz()) > STATIONARY_TURN_FOOT_LIMIT_METRES;
+            let right_exceeded =
+                right.xz().distance(desired_right.xz()) > STATIONARY_TURN_FOOT_LIMIT_METRES;
+            let swing = match (left_exceeded, right_exceeded, next) {
+                (false, false, _) => return GuardStepState::Stationary { left, right, next },
+                (true, false, _) => LeadFoot::Left,
+                (false, true, _) => LeadFoot::Right,
+                (true, true, next) => next,
+            };
+            match swing {
+                LeadFoot::Left => GuardStepState::LeftSwing {
+                    right_support: right,
+                    left: GuardSwing {
+                        start: left,
+                        end: desired_left,
+                        progress: 0.0,
+                    },
+                },
+                LeadFoot::Right => GuardStepState::RightSwing {
+                    left_support: left,
+                    right: GuardSwing {
+                        start: right,
+                        end: desired_right,
+                        progress: 0.0,
+                    },
+                },
+            }
+        }
+        GuardStepState::LeftSwing {
+            right_support,
+            mut left,
+        } => {
+            left.end = desired_left;
+            left.progress = (left.progress + delta_seconds.max(0.0) / STATIONARY_TURN_STEP_SECONDS)
+                .clamp(0.0, 1.0);
+            if left.progress >= 1.0 {
+                GuardStepState::Stationary {
+                    left: left.end,
+                    right: right_support,
+                    next: LeadFoot::Right,
+                }
+            } else {
+                GuardStepState::LeftSwing {
+                    right_support,
+                    left,
+                }
+            }
+        }
+        GuardStepState::RightSwing {
+            left_support,
+            mut right,
+        } => {
+            right.end = desired_right;
+            right.progress = (right.progress
+                + delta_seconds.max(0.0) / STATIONARY_TURN_STEP_SECONDS)
+                .clamp(0.0, 1.0);
+            if right.progress >= 1.0 {
+                GuardStepState::Stationary {
+                    left: left_support,
+                    right: right.end,
+                    next: LeadFoot::Left,
+                }
+            } else {
+                GuardStepState::RightSwing {
+                    left_support,
+                    right,
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -5844,6 +6160,14 @@ mod slope_cache_tests {
     use super::*;
 
     #[test]
+    fn authored_to_idle_handoff_does_not_reset_contact_sequence() {
+        assert_eq!(retain_monotonic_contact_sequence(1, 0), 1);
+        assert_eq!(retain_monotonic_contact_sequence(1, 1), 1);
+        assert_eq!(retain_monotonic_contact_sequence(1, 2), 2);
+        assert_eq!(retain_monotonic_contact_sequence(u64::MAX, 0), 0);
+    }
+
+    #[test]
     fn guard_step_state_cannot_represent_two_swing_feet() {
         let planted = GuardStepState::Stationary {
             left: Vec3::NEG_X,
@@ -5944,6 +6268,105 @@ mod slope_cache_tests {
     }
 
     #[test]
+    fn stationary_turn_retains_plants_until_limit_then_lifts_one_foot() {
+        let left = Vec3::new(-0.18, 0.1, 0.2);
+        let right = Vec3::new(0.18, 0.1, -0.2);
+        let planted = GuardStepState::Stationary {
+            left,
+            right,
+            next: LeadFoot::Left,
+        };
+        let nearby = GuardStepState::Stationary {
+            left: left + Vec3::X * 0.02,
+            right: right + Vec3::X * 0.02,
+            next: LeadFoot::Left,
+        };
+        assert_eq!(
+            advance_stationary_turn_step(planted, nearby, 1.0 / 64.0),
+            planted
+        );
+
+        let turned = GuardStepState::Stationary {
+            left: left + Vec3::Z * 0.2,
+            right: right + Vec3::Z * 0.2,
+            next: LeadFoot::Left,
+        };
+        let first = advance_stationary_turn_step(planted, turned, 1.0 / 64.0);
+        assert!(matches!(first, GuardStepState::LeftSwing { .. }));
+        let second = advance_stationary_turn_step(first, turned, 1.0 / 64.0);
+        let GuardStepState::LeftSwing {
+            right_support,
+            left: swing,
+        } = second
+        else {
+            panic!("turn adjustment should remain a one-foot swing");
+        };
+        assert_eq!(right_support, right);
+        assert!(swing.progress > 0.0);
+        assert!(guard_swing_target(swing).y > swing.start.y);
+
+        let vertical_settle = GuardStepState::Stationary {
+            left: left + Vec3::Y * 0.2,
+            right: right - Vec3::Y * 0.2,
+            next: LeadFoot::Left,
+        };
+        assert_eq!(
+            advance_stationary_turn_step(planted, vertical_settle, 1.0 / 64.0),
+            planted
+        );
+    }
+
+    #[test]
+    fn raised_footwork_reports_the_visual_support_contact() {
+        let mut state = RaisedFootworkState {
+            step: GuardStepState::Stationary {
+                left: Vec3::NEG_X,
+                right: Vec3::X,
+                next: LeadFoot::Left,
+            },
+            ..default()
+        };
+        assert_eq!(state.contact_foot(), Some(LeadFoot::Right));
+        state.step = GuardStepState::LeftSwing {
+            right_support: Vec3::X,
+            left: GuardSwing {
+                start: Vec3::NEG_X,
+                end: Vec3::NEG_Z,
+                progress: 0.5,
+            },
+        };
+        assert_eq!(state.contact_foot(), Some(LeadFoot::Right));
+        state.step = GuardStepState::RightSwing {
+            left_support: Vec3::NEG_X,
+            right: GuardSwing {
+                start: Vec3::X,
+                end: Vec3::Z,
+                progress: 0.5,
+            },
+        };
+        assert_eq!(state.contact_foot(), Some(LeadFoot::Left));
+    }
+
+    #[test]
+    fn guard_reacquire_moves_the_foot_whose_path_does_not_cross_support() {
+        let current_left = Vec3::new(-0.02, 0.0, 0.02);
+        let current_right = Vec3::new(0.18, 0.0, 0.20);
+        let desired_left = Vec3::new(-0.17, 0.0, 0.0);
+        let desired_right = Vec3::new(-0.06, 0.0, 0.0);
+
+        assert_eq!(
+            safer_guard_reacquire_foot(
+                current_left,
+                current_right,
+                desired_left,
+                desired_right,
+                LeadFoot::Right,
+            ),
+            LeadFoot::Left
+        );
+    }
+
+    #[test]
     fn quickstep_contact_handoff_can_be_held_without_waiting_for_a_full_stop() {
         let mut handoff = QuickstepContactHandoff::Converging {
             left: Vec3::X,
@@ -5952,6 +6375,45 @@ mod slope_cache_tests {
         handoff.hold();
         assert!(handoff.is_held());
         assert_eq!(handoff.targets(), Some((Vec3::X, Vec3::NEG_X)));
+    }
+
+    #[test]
+    fn authored_locomotion_releases_dormant_raised_pelvis_correction() {
+        let mut memory = LegIkMemory {
+            quickstep_handoff: QuickstepContactHandoff::Converging {
+                left: Vec3::NEG_X,
+                right: Vec3::X,
+            },
+            raised_pelvis_shift: -GUARD_REACH_PELVIS_DROP_METRES,
+            ..default()
+        };
+        release_raised_state_for_authored_locomotion(&mut memory);
+        assert_eq!(memory.quickstep_handoff, QuickstepContactHandoff::None);
+        assert_eq!(memory.raised_pelvis_shift, 0.0);
+        assert_eq!(memory.left_support_weight, None);
+        assert_eq!(memory.right_support_weight, None);
+    }
+
+    #[test]
+    fn quickstep_contact_handoff_is_seeded_from_the_last_rendered_pose() {
+        let mut memory = LegIkMemory::default();
+        let origin = Vec3::new(3.0, 0.5, -2.0);
+        let rotation = Quat::from_rotation_y(0.6);
+        let left_local = Vec3::new(-0.18, 0.12, 0.25);
+        let right_local = Vec3::new(0.16, 0.14, -0.2);
+
+        assert!(seed_quickstep_contact_handoff(
+            &mut memory,
+            origin,
+            rotation,
+            origin + rotation * left_local,
+            origin + rotation * right_local,
+        ));
+        let (left, right) = memory.quickstep_handoff.targets().unwrap();
+        assert!(left.distance(left_local) <= 1.0e-6);
+        assert!(right.distance(right_local) <= 1.0e-6);
+        assert_eq!(memory.rig_origin, Some(origin));
+        assert_eq!(memory.rig_rotation, Some(rotation));
     }
 
     #[test]

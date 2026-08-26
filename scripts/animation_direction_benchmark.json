@@ -8,6 +8,7 @@
     },
     { "type": "wait", "duration_seconds": 1.0 },
     { "type": "guard", "raised": true },
+    { "type": "pace", "pace": "Walk" },
     { "type": "wait", "duration_seconds": 0.75 },
     {
       "type": "move",

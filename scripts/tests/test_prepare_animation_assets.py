@@ -19,6 +19,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareAnimationAssetsTests(unittest.TestCase):
+    def test_combat_cycles_close_after_the_four_authored_keys(self):
+        self.assertEqual(MODULE.COMBAT_CYCLE_AUTHORED_FRAMES, (0, 6, 12, 18))
+        self.assertEqual(MODULE.COMBAT_CYCLE_LAST_FRAME, 24)
+
+    def test_quicksteps_retain_the_tucked_frame(self):
+        for motion in (
+            "quickstep_forward",
+            "quickstep_right",
+            "quickstep_left",
+            "quickstep_back",
+        ):
+            self.assertEqual(MODULE.DIRECT_MOTIONS[motion], (0, 3, 6))
+
     def test_unknown_source_motion_is_rejected_instead_of_silently_copied(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = pathlib.Path(temporary) / "source"

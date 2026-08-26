@@ -11,6 +11,17 @@ pub enum SemanticPose {
     WalkPassing,
     RunContact,
     RunFlight,
+    CombatStance,
+    StrafeCycle,
+    SkipCycle,
+    QuickstepForwardTakeoff,
+    QuickstepForwardContact,
+    QuickstepRightTakeoff,
+    QuickstepRightContact,
+    QuickstepLeftTakeoff,
+    QuickstepLeftContact,
+    QuickstepBackTakeoff,
+    QuickstepBackContact,
     DiveForward,
     DiveBackward,
     DiveLeft,
@@ -44,8 +55,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_eighteen_semantic_variants() {
-        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 19);
+    fn humanoid_contract_resolves_from_twenty_nine_semantic_variants() {
+        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 30);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -53,7 +64,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 18);
+        assert_eq!(authored.len(), 29);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -562,12 +573,23 @@ mod contract_tests {
 }
 
 impl SemanticPose {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 41] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
+        Self::CombatStance,
+        Self::StrafeCycle,
+        Self::SkipCycle,
+        Self::QuickstepForwardTakeoff,
+        Self::QuickstepForwardContact,
+        Self::QuickstepRightTakeoff,
+        Self::QuickstepRightContact,
+        Self::QuickstepLeftTakeoff,
+        Self::QuickstepLeftContact,
+        Self::QuickstepBackTakeoff,
+        Self::QuickstepBackContact,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -597,12 +619,23 @@ impl SemanticPose {
     /// Non-attack semantics every complete humanoid family must resolve.
     /// Attack clips are capabilities: a pack may deliberately omit any or all
     /// of them, and gameplay respects that absence.
-    pub const HUMANOID_REQUIRED: [Self; 19] = [
+    pub const HUMANOID_REQUIRED: [Self; 30] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
+        Self::CombatStance,
+        Self::StrafeCycle,
+        Self::SkipCycle,
+        Self::QuickstepForwardTakeoff,
+        Self::QuickstepForwardContact,
+        Self::QuickstepRightTakeoff,
+        Self::QuickstepRightContact,
+        Self::QuickstepLeftTakeoff,
+        Self::QuickstepLeftContact,
+        Self::QuickstepBackTakeoff,
+        Self::QuickstepBackContact,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -627,6 +660,17 @@ impl SemanticPose {
             WalkPassing => "walk_passing",
             RunContact => "run_contact",
             RunFlight => "run_flight",
+            CombatStance => "combat_stance",
+            StrafeCycle => "strafe_cycle",
+            SkipCycle => "skip_cycle",
+            QuickstepForwardTakeoff => "quickstep_forward_takeoff",
+            QuickstepForwardContact => "quickstep_forward_contact",
+            QuickstepRightTakeoff => "quickstep_right_takeoff",
+            QuickstepRightContact => "quickstep_right_contact",
+            QuickstepLeftTakeoff => "quickstep_left_takeoff",
+            QuickstepLeftContact => "quickstep_left_contact",
+            QuickstepBackTakeoff => "quickstep_back_takeoff",
+            QuickstepBackContact => "quickstep_back_contact",
             DiveForward => "dive_forward",
             DiveBackward => "dive_backward",
             DiveLeft => "dive_left",
@@ -678,6 +722,16 @@ impl SemanticPose {
             WalkPassing => WalkContact,
             RunContact => WalkContact,
             RunFlight => WalkPassing,
+            CombatStance => IdleRelaxed,
+            StrafeCycle | SkipCycle => CombatStance,
+            QuickstepForwardTakeoff
+            | QuickstepForwardContact
+            | QuickstepRightTakeoff
+            | QuickstepRightContact
+            | QuickstepLeftTakeoff
+            | QuickstepLeftContact
+            | QuickstepBackTakeoff
+            | QuickstepBackContact => CombatStance,
             DiveForward | DiveBackward | DiveLeft | DiveRight => GuardThrust,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,

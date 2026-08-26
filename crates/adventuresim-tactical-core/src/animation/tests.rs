@@ -579,86 +579,185 @@ mod legacy_tests {
     }
 
     #[test]
-    fn raised_guard_locomotion_uses_static_lead_guard_for_procedural_legs() {
+    fn raised_guard_locomotion_keeps_guard_upper_body_and_authored_combat_legs() {
         let evaluate = |velocity| {
             AnimationEvaluation::from_skeleton(
                 &SkeletonState::default()
                     .with_lead_foot(LeadFoot::Left)
                     .with_local_velocity(velocity)
-                    .with_gait_phase(0.25)
                     .with_weapon_guard(WeaponGuardState::Raised)
+                    .with_gait_phase(0.25)
                     .with_raised_locomotion(raised_intent(velocity)),
             )
         };
         let idle = evaluate(Vec3::ZERO);
         assert_eq!(idle.base[0].pose, SemanticPose::GuardThrust);
         assert_eq!(idle.base[0].sampling, PoseSampling::Anchor);
+        assert_eq!(idle.lower_body[0].pose, SemanticPose::CombatStance);
 
-        for velocity in [Vec3::NEG_Z, Vec3::Z, Vec3::NEG_X, Vec3::X] {
+        for (velocity, lower_pose, expected_phase) in [
+            (Vec3::NEG_Z, SemanticPose::SkipCycle, 0.0),
+            (Vec3::Z, SemanticPose::SkipCycle, 0.5),
+            (Vec3::NEG_X, SemanticPose::StrafeCycle, 0.5),
+            (Vec3::X, SemanticPose::StrafeCycle, 0.5),
+        ] {
             let evaluation = evaluate(velocity);
             assert_eq!(evaluation.base.len(), 1);
             assert_eq!(evaluation.base[0].pose, SemanticPose::GuardThrust);
             assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
+            assert_eq!(evaluation.lower_body[0].pose, lower_pose);
+            assert_eq!(
+                evaluation.lower_body[0].sampling,
+                PoseSampling::Cycle {
+                    phase: expected_phase
+                }
+            );
         }
     }
 
     #[test]
-    fn raised_guard_diagonal_keeps_static_guard_and_fixed_lead() {
+    fn raised_guard_diagonal_blends_strafe_and_skip_beneath_static_guard() {
         let evaluation = AnimationEvaluation::from_skeleton(
             &SkeletonState::default()
                 .with_lead_foot(LeadFoot::Right)
                 .with_local_velocity(Vec3::new(-3.0, 0.0, -1.0))
-                .with_gait_phase(0.75)
                 .with_weapon_guard(WeaponGuardState::Raised)
+                .with_gait_phase(0.75)
                 .with_raised_locomotion(raised_intent(Vec3::new(-3.0, 0.0, -1.0))),
         );
         assert_eq!(evaluation.base.len(), 1);
         assert_eq!(evaluation.base[0].pose, SemanticPose::GuardThrust);
         assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
         assert_eq!(evaluation.base[0].weight, 1.0);
+        assert_eq!(evaluation.lower_body.len(), 2);
+        assert_eq!(evaluation.lower_body[0].pose, SemanticPose::StrafeCycle);
+        assert_eq!(evaluation.lower_body[0].weight, 0.75);
+        assert_eq!(evaluation.lower_body[1].pose, SemanticPose::SkipCycle);
+        assert_eq!(evaluation.lower_body[1].weight, 0.25);
     }
 
     #[test]
-    fn raised_guard_fk_stays_at_guard_through_both_procedural_steps() {
+    fn forward_diagonals_pair_skip_with_the_opposite_foot_order() {
+        let phases = |velocity| {
+            AnimationEvaluation::from_skeleton(
+                &SkeletonState::default()
+                    .with_local_velocity(velocity)
+                    .with_weapon_guard(WeaponGuardState::Raised)
+                    .with_gait_phase(0.0)
+                    .with_raised_locomotion(raised_intent(velocity)),
+            )
+            .lower_body
+            .into_iter()
+            .map(|sample| match sample.sampling {
+                PoseSampling::Cycle { phase } => (sample.pose, phase),
+                _ => panic!("combat locomotion must be a cycle"),
+            })
+            .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            phases(Vec3::new(1.0, 0.0, 1.0)),
+            vec![
+                (SemanticPose::StrafeCycle, 0.25),
+                (SemanticPose::SkipCycle, 0.25),
+            ]
+        );
+        assert_eq!(
+            phases(Vec3::new(-1.0, 0.0, 1.0)),
+            vec![
+                (SemanticPose::StrafeCycle, 0.75),
+                (SemanticPose::SkipCycle, 0.25),
+            ]
+        );
+        assert_eq!(
+            phases(Vec3::new(1.0, 0.0, -1.0)),
+            vec![
+                (SemanticPose::StrafeCycle, 0.25),
+                (SemanticPose::SkipCycle, 0.75),
+            ]
+        );
+        assert_eq!(
+            phases(Vec3::new(-1.0, 0.0, -1.0)),
+            vec![
+                (SemanticPose::StrafeCycle, 0.75),
+                (SemanticPose::SkipCycle, 0.75),
+            ]
+        );
+    }
+
+    #[test]
+    fn left_strafe_reverses_the_single_authored_strafe_cycle() {
+        let evaluate = |velocity| {
+            AnimationEvaluation::from_skeleton(
+                &SkeletonState::default()
+                    .with_local_velocity(velocity)
+                    .with_weapon_guard(WeaponGuardState::Raised)
+                    .with_gait_phase(0.0)
+                    .with_raised_locomotion(raised_intent(velocity)),
+            )
+        };
+
+        assert_eq!(
+            evaluate(Vec3::X).lower_body[0].sampling,
+            PoseSampling::Cycle { phase: 0.25 }
+        );
+        assert_eq!(
+            evaluate(Vec3::NEG_X).lower_body[0].sampling,
+            PoseSampling::Cycle { phase: 0.75 }
+        );
+    }
+
+    #[test]
+    fn raised_guard_upper_body_stays_at_guard_through_authored_step_cycle() {
         for phase in [0.0, 0.5, 0.999] {
             let evaluation = AnimationEvaluation::from_skeleton(
                 &SkeletonState::default()
                     .with_lead_foot(LeadFoot::Right)
                     .with_local_velocity(Vec3::NEG_Z)
-                    .with_gait_phase(phase)
                     .with_weapon_guard(WeaponGuardState::Raised)
+                    .with_gait_phase(phase)
                     .with_raised_locomotion(raised_intent(Vec3::NEG_Z)),
             );
             assert_eq!(evaluation.base[0].pose, SemanticPose::GuardThrust);
             assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
+            assert_eq!(evaluation.lower_body[0].pose, SemanticPose::SkipCycle);
+            assert_eq!(
+                evaluation.lower_body[0].sampling,
+                PoseSampling::Cycle {
+                    phase: (phase + 0.75).rem_euclid(1.0)
+                }
+            );
         }
     }
 
     #[test]
-    fn raised_guard_jog_keeps_one_procedural_lower_body_owner() {
+    fn raised_guard_jog_uses_walk_run_lower_body_blend() {
         let evaluation = AnimationEvaluation::from_skeleton(
             &SkeletonState::default()
                 .with_local_velocity(Vec3::new(0.0, 0.0, -3.75))
-                .with_gait_phase(0.25)
                 .with_weapon_guard(WeaponGuardState::Raised)
+                .with_gait_phase(0.25)
                 .with_guarded_sprint_locomotion(true)
                 .with_raised_locomotion(raised_intent(Vec3::new(0.0, 0.0, -3.75))),
         );
         assert_eq!(evaluation.base[0].pose, SemanticPose::GuardThrust);
-        assert!(evaluation.lower_body.is_empty());
+        assert_eq!(evaluation.lower_body.len(), 2);
+        assert_eq!(evaluation.lower_body[0].pose, SemanticPose::WalkContact);
+        assert_eq!(evaluation.lower_body[1].pose, SemanticPose::RunContact);
     }
 
     #[test]
-    fn ordinary_guard_movement_keeps_procedural_legs_even_above_guard_speed() {
+    fn ordinary_guard_movement_uses_authored_skip_even_above_guard_speed() {
         let evaluation = AnimationEvaluation::from_skeleton(
             &SkeletonState::default()
                 .with_local_velocity(Vec3::new(0.0, 0.0, -3.75))
-                .with_gait_phase(0.25)
                 .with_weapon_guard(WeaponGuardState::Raised)
+                .with_gait_phase(0.25)
                 .with_raised_locomotion(raised_intent(Vec3::new(0.0, 0.0, -3.75))),
         );
 
-        assert!(evaluation.lower_body.is_empty());
+        assert_eq!(evaluation.lower_body.len(), 1);
+        assert_eq!(evaluation.lower_body[0].pose, SemanticPose::SkipCycle);
         assert_eq!(evaluation.base.len(), 1);
         assert_eq!(evaluation.base[0].pose, SemanticPose::GuardThrust);
     }
