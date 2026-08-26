@@ -186,8 +186,9 @@ pub(super) fn spawn(
             )));
         }
     }
-    let stone_material =
-        pebble_materials.add(TacticalPebbleMaterial::new(rock_color(RockLithology::Granite)));
+    let stone_material = pebble_materials.add(TacticalPebbleMaterial::new(rock_color(
+        RockLithology::Granite,
+    )));
     let woodland_stone_material =
         pebble_materials.add(TacticalPebbleMaterial::new(Color::srgb_u8(104, 91, 70)));
     let billboard_material = billboard_materials.add(TacticalPebbleBillboardMaterial {

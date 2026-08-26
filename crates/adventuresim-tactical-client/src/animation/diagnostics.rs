@@ -237,8 +237,9 @@ pub(super) fn log_animation_diagnostics() {}
 // Records the maximum wall time a handful of movement/animation systems take
 // per frame and logs the ranking once a second, so `just client` reveals which
 // system carries a running/jumping FPS drop without needing a Tracy capture.
-static PERF_MAX_MS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<&'static str, f32>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static PERF_MAX_MS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<&'static str, f32>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 /// Drop guard that stamps its label's per-frame max on scope exit, so it
 /// captures the cost even when a system returns early.

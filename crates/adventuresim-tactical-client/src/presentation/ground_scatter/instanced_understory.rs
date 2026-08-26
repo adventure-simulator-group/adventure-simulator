@@ -185,8 +185,7 @@ pub(super) fn spawn(
         // Mirrors `foliage_transform`'s yaw/scale hashes; the slope check and
         // terrain height also match it, so both renderers agree on sites.
         let sample = Vec2::new(world_x, world_z);
-        let (Some(height), Some(normal)) =
-            (terrain.height_at(sample), terrain.normal_at(sample))
+        let (Some(height), Some(normal)) = (terrain.height_at(sample), terrain.normal_at(sample))
         else {
             continue;
         };
@@ -214,20 +213,13 @@ pub(super) fn spawn(
             continue;
         }
         let presentation = cache.presentation(species);
-        let (
-            Some(branches),
-            Some(cambered),
-            Some(cards),
-            Some(bark_handle),
-            Some(leaf_handle),
-        ) = (
+        let (Some(branches), Some(cambered), Some(cards), Some(bark_handle), Some(leaf_handle)) = (
             presentation.branches.clone(),
             presentation.cambered_leaves.clone(),
             presentation.leaf_cards.clone(),
             presentation.bark.as_ref(),
             presentation.leaves.as_ref(),
-        )
-        else {
+        ) else {
             continue;
         };
         let bark_color = standard_materials

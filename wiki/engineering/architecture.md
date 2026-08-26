@@ -487,16 +487,16 @@ authored blade density near the player and camera. The distant mesh retains the
 earlier density because individual blades are subpixel there. The 4x near mesh
 cross-fades to the original far topology over 18--26 metres rather than paying
 four times the vertex cost throughout the former 34--44 metre high-detail
-radius. On native builds (`instanced-grass` feature, on by default) this playable
-sward renders through `bevy_eidolon` GPU instancing instead of macro-patch
-entities: each placement cell emits per-tuft instances grouped into
+radius. On native builds (`instanced-grass` feature, on by default) this
+playable sward renders through `bevy_eidolon` GPU instancing instead of
+macro-patch entities: each placement cell emits per-tuft instances grouped into
 tier-by-species batches, a compute pass frustum- and range-culls individual
 tufts into indirect draws, the placement-time ground-cover sample rides in each
 instance's seed byte instead of a mask texture, and wind runs from shader
 globals so no material asset is touched per frame. Cell eligibility, shoot
 totals per cell, and the tier cross-fade distances are identical to the legacy
-renderer, which remains compiled for the browser until the WebGPU
-indirect-draw fallback lands. A deterministic scalar mask derived from the same authoritative
+renderer, which remains compiled for the browser until the WebGPU indirect-draw
+fallback lands. A deterministic scalar mask derived from the same authoritative
 ground-cover contour as the terrain rejects blades on dirt and leaf litter and
 progressively thins the grass-side boundary. Tree crowns guarantee a compact
 litter core at the trunk, then use a deterministic radially tapered litter
@@ -514,22 +514,21 @@ per patch. Macro patches remain unit-scale and nearly gridded, with boundary
 blade rows constrained to wander outward to mitigate square seams on near-flat
 and ordinary sloped terrain. This is a continuity mitigation rather than a
 guarantee across sharp terrain-normal discontinuities. Within the unchanged
-topology, deterministic mixed-age height, independent width, clumping, lean,
-and curvature variation avoids a repeated vertical-curtain silhouette. A shared
-world-space meadow field keeps the full
-authored density within seven metres, then introduces short juvenile pockets and
-irregular occupancy before the 8--10 metre cross-fade. The authoritative
-grass-side mask uses a broader nonlinear feather, and surviving boundary blades
-shorten with coverage, so dirt and leaf-litter transitions do not terminate as a
-same-height wall. This composition also derives a stable age cohort from the
-existing per-blade LOD threshold: a bounded minority of mature blades develops
-one hard-edged, desaturated straw-tip region while healthy blades share their
-species pigment. A 0.60 perceptual roughness gives the differently oriented
-blades a waxy, view-dependent highlight instead of randomized albedo. Root
-shading and rib definition remain occlusion responses rather than color
-gradients. Near and far LODs therefore preserve the same age identity without
-another vertex attribute, texture read, transcendental evaluation, mesh,
-entity, material, or draw. Beneath and beyond the geometric
+topology, deterministic mixed-age height, independent width, clumping, lean, and
+curvature variation avoids a repeated vertical-curtain silhouette. A shared
+world-space meadow field keeps the full authored density within seven metres,
+then introduces short juvenile pockets and irregular occupancy before the 8--10
+metre cross-fade. The authoritative grass-side mask uses a broader nonlinear
+feather, and surviving boundary blades shorten with coverage, so dirt and
+leaf-litter transitions do not terminate as a same-height wall. This composition
+also derives a stable age cohort from the existing per-blade LOD threshold: a
+bounded minority of mature blades develops one hard-edged, desaturated straw-tip
+region while healthy blades share their species pigment. A 0.60 perceptual
+roughness gives the differently oriented blades a waxy, view-dependent highlight
+instead of randomized albedo. Root shading and rib definition remain occlusion
+responses rather than color gradients. Near and far LODs therefore preserve the
+same age identity without another vertex attribute, texture read, transcendental
+evaluation, mesh, entity, material, or draw. Beneath and beyond the geometric
 range, tall-grass terrain uses an optical-average solid albedo derived from the
 same environment pigment as the blades. The compensation accounts for
 categorical blade darkening, occlusion, and thin-foliage lighting; copying the
@@ -543,14 +542,14 @@ indirect batches when the adapter supports them, with its normal fallback on
 more limited browser devices. Forest-floor scatter retains its authoritative
 leaf-litter placement and patch composition. Nearby patches are merged
 deterministically into 24-metre render batches, collapsing many dry-leaf and
-twig entities while preserving the four leaf variants, three twig variants,
-two materials, and authored transforms. Detailed leaves now end at 35
-metres, while subpixel twigs end at 24 metres: the current visibility
-architecture cannot substitute a cheaper mesh without an extra entity/draw, and
-rendering alpha-tested cambered plates to 72 metres was not worth that overdraw.
-Each 56-leaf shared patch uses deterministic nine-vertex cambered, gently
-tilted, curled oak plates arranged into several loose, shallow layers plus
-scattered singles;
+twig entities while preserving the four leaf variants, three twig variants, two
+materials, and authored transforms. Detailed leaves now end at 35 metres, while
+subpixel twigs end at 24 metres: the current visibility architecture cannot
+substitute a cheaper mesh without an extra entity/draw, and rendering
+alpha-tested cambered plates to 72 metres was not worth that overdraw. Each
+56-leaf shared patch uses deterministic nine-vertex cambered, gently tilted,
+curled oak plates arranged into several loose, shallow layers plus scattered
+singles;
   every plate is seated by its lowest vertex slightly below the local patch
   plane and has a bounded lift so it cannot become an upright card. A dry-oak
   preset supplies bounded tan/brown blade and vein palettes. These plates

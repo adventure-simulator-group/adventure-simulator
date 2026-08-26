@@ -534,9 +534,8 @@ fn terrain_detail_patch_mesh(
     // and evaluate only the newly-exposed strip, instead of recomputing all
     // ~26k vertices' relief every metre travelled. The centre-relative morph
     // and the world-space vertex positions are reassembled cheaply each build.
-    let cell_point = |cell: IVec2| {
-        Vec2::new(cell.x as f32, cell.y as f32) * DETAIL_PATCH_SPACING_METRES
-    };
+    let cell_point =
+        |cell: IVec2| Vec2::new(cell.x as f32, cell.y as f32) * DETAIL_PATCH_SPACING_METRES;
     let origin = IVec2::new(
         (minimum.x / DETAIL_PATCH_SPACING_METRES).round() as i32,
         (minimum.y / DETAIL_PATCH_SPACING_METRES).round() as i32,
@@ -1242,7 +1241,10 @@ pub(super) fn grass_cover_mask_pixels(ground: &SceneGround, seed: u64) -> (u32, 
 
 #[cfg_attr(
     all(feature = "instanced-grass", not(target_family = "wasm")),
-    allow(dead_code, reason = "legacy patch renderer remains the wasm grass path")
+    allow(
+        dead_code,
+        reason = "legacy patch renderer remains the wasm grass path"
+    )
 )]
 pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
     let (width, height, mask) = grass_cover_mask_pixels(ground, seed);
@@ -1650,7 +1652,14 @@ mod tests {
         let vista = ActiveVistaSurface::default();
         let build = |centre: Vec2, cache: &mut TerrainDetailPatchCache| {
             terrain_detail_patch_mesh(
-                &terrain, None, &environment, &vista, centre, &[], &[], cache,
+                &terrain,
+                None,
+                &environment,
+                &vista,
+                centre,
+                &[],
+                &[],
+                cache,
             )
         };
         let positions = |mesh: &Mesh| match mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {

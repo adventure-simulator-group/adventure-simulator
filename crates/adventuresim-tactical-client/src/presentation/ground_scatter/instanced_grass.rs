@@ -14,9 +14,7 @@
 
 use std::sync::Arc;
 
-use adventuresim_tactical_core::prelude::{
-    SceneEnvironment, SceneGround, SceneId, SceneTerrain,
-};
+use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneId, SceneTerrain};
 use bevy::{
     camera::{primitives::Aabb, visibility::NoFrustumCulling},
     color::{Color, LinearRgba},
@@ -31,12 +29,13 @@ use bevy_eidolon::{prelude::*, prepass::CullComputeCamera};
 use crate::presentation::{bps, grass_cover_mask_pixels, splitmix64, stable_text_seed, unit_hash};
 
 use super::{
-    GrassInteractor, GroundScatterLayer, grass_pigment, grass_scatter_density,
+    GrassInteractor, GroundScatterLayer,
     grass::{
         GRASS_PATCH_SPACING, GrassCommunityProfile, GrassMeshLod, GrassSpecies,
         VISTA_GRASS_PATCH_SPACING, cell_allows_grass, grass_community_at, grass_species,
         grass_tuft_mesh, tuft_footprint_metres,
     },
+    grass_pigment, grass_scatter_density,
 };
 
 const GRASS_INSTANCED_SHADER: &str = "shaders/tactical_grass_instanced.wgsl";
@@ -254,10 +253,13 @@ fn update_instanced_grass_interaction(
 
     // Idle interactors converge to constants; stop dirtying material assets
     // once the written values are close enough that no motion is visible.
-    if state.written.is_some_and(|(written_position, written_velocity)| {
-        written_position.distance_squared(position) < 1e-6
-            && written_velocity.distance_squared(state.smoothed_velocity) < 1e-6
-    }) {
+    if state
+        .written
+        .is_some_and(|(written_position, written_velocity)| {
+            written_position.distance_squared(position) < 1e-6
+                && written_velocity.distance_squared(state.smoothed_velocity) < 1e-6
+        })
+    {
         return;
     }
 
@@ -337,11 +339,7 @@ pub(super) fn fitted_batch_aabb(instances: &[InstanceData], footprint: f32) -> A
         minimum = minimum.min(instance.position);
         maximum = maximum.max(instance.position);
     }
-    let margin = Vec3::new(
-        footprint,
-        TUFT_HEIGHT_MARGIN_METRES,
-        footprint,
-    );
+    let margin = Vec3::new(footprint, TUFT_HEIGHT_MARGIN_METRES, footprint);
     let minimum = minimum - margin * Vec3::new(1.0, 0.2, 1.0);
     let maximum = maximum + margin;
     Aabb {
@@ -451,8 +449,7 @@ pub(super) fn spawn(
             shading: Vec4::new(1.0, 0.72, 0.0, 0.0),
         });
         for species in GrassSpecies::ALL {
-            let instances =
-                std::mem::take(&mut batches[tier_index(lod)][species.index()]);
+            let instances = std::mem::take(&mut batches[tier_index(lod)][species.index()]);
             if instances.is_empty() {
                 continue;
             }
@@ -525,17 +522,15 @@ fn scatter_cell_tufts(
                 - Vec2::splat((side - 1) as f32 * 0.5 * footprint);
             for tuft_z in 0..side {
                 for tuft_x in 0..side {
-                    let tuft_hash = splitmix64(
-                        cell_hash ^ (((tuft_x as u64) << 17) | ((tuft_z as u64) << 3)),
-                    );
+                    let tuft_hash =
+                        splitmix64(cell_hash ^ (((tuft_x as u64) << 17) | ((tuft_z as u64) << 3)));
                     let jitter = Vec2::new(
                         unit_hash(tuft_hash) - 0.5,
                         unit_hash(splitmix64(tuft_hash)) - 0.5,
                     ) * footprint
                         * 0.35;
-                    let centre = cell_origin
-                        + Vec2::new(tuft_x as f32, tuft_z as f32) * footprint
-                        + jitter;
+                    let centre =
+                        cell_origin + Vec2::new(tuft_x as f32, tuft_z as f32) * footprint + jitter;
                     let coverage = mask.coverage_byte(centre);
                     if coverage == 0 {
                         continue;
@@ -550,15 +545,14 @@ fn scatter_cell_tufts(
                         continue;
                     }
                     let community = grass_community_at(centre, base_seed, profile);
-                    let species = grass_species(
-                        community,
-                        splitmix64(tuft_hash ^ 0x7475_6674_5f63_656c),
-                    );
+                    let species =
+                        grass_species(community, splitmix64(tuft_hash ^ 0x7475_6674_5f63_656c));
                     let batch = &mut species_batches[species.index()];
                     batch.push(InstanceData {
                         position: Vec3::new(centre.x, height, centre.y),
                         scale: 1.0,
-                        rotation: unit_hash(splitmix64(tuft_hash ^ 0x796177)) * core::f32::consts::TAU,
+                        rotation: unit_hash(splitmix64(tuft_hash ^ 0x796177))
+                            * core::f32::consts::TAU,
                         index: batch.len() as u32,
                         batch_id: 0,
                         seed: u32::from(coverage)
@@ -598,7 +592,11 @@ mod tests {
     fn instanced_fade_bands_match_the_legacy_visibility_ranges() {
         // The legacy near band's 18..26 fade-out is owned by the near-edge
         // sub-tier; the near field hands off to the edge ring at 8..10.
-        for lod in [GrassMeshLod::NearEdge, GrassMeshLod::Far, GrassMeshLod::Vista] {
+        for lod in [
+            GrassMeshLod::NearEdge,
+            GrassMeshLod::Far,
+            GrassMeshLod::Vista,
+        ] {
             let range = tier_visibility_range(lod, 1.0);
             let legacy = grass_lod_visibility(lod);
             assert_eq!(range.x, legacy.start_margin.start, "{lod:?}");

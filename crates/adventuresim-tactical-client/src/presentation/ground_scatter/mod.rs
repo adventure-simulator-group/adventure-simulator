@@ -14,6 +14,8 @@ use bevy::{
     shader::ShaderRef,
 };
 
+#[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+use super::grass_cover_mask_image;
 use super::obstacles::tree::{
     BLACKTHORN_BARK, BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_BARK, COMMON_HAWTHORN_PARAMETERS,
     COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, TacticalTreeBarkMaterial,
@@ -23,8 +25,6 @@ use super::obstacles::tree::{
     procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
     procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
-#[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
-use super::grass_cover_mask_image;
 use super::{
     PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, splitmix64, stable_text_seed,
     unit_hash,
@@ -196,10 +196,13 @@ pub(super) fn update_grass_interaction(
 
     // Idle interactors converge to constants; stop dirtying material assets
     // once the written values are close enough that no motion is visible.
-    if state.written.is_some_and(|(written_position, written_velocity)| {
-        written_position.distance_squared(position) < 1e-6
-            && written_velocity.distance_squared(state.smoothed_velocity) < 1e-6
-    }) {
+    if state
+        .written
+        .is_some_and(|(written_position, written_velocity)| {
+            written_position.distance_squared(position) < 1e-6
+                && written_velocity.distance_squared(state.smoothed_velocity) < 1e-6
+        })
+    {
         return;
     }
 

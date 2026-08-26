@@ -832,9 +832,8 @@ pub(in crate::presentation) fn grass_tuft_mesh(
     let blades = (0..grid_side * grid_side)
         .filter(|index| {
             grass_density >= 1.0
-                || unit_hash(splitmix64(
-                    (*index as u64) ^ seed ^ 0x24e8_51c6_9a37_b40d,
-                )) < grass_density
+                || unit_hash(splitmix64((*index as u64) ^ seed ^ 0x24e8_51c6_9a37_b40d))
+                    < grass_density
         })
         .map(|index| {
             let row = index / grid_side;

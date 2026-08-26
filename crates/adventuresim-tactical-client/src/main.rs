@@ -166,11 +166,19 @@ impl GraphicsPreset {
             // The gameplay client trades a shorter geometric sward for frame
             // rate by default; capture/benchmark tooling keeps the plugin's
             // 1.0 legacy reach so goldens stay comparable.
-            grass_range_scale: if matches!(self, Self::Minimal) { 0.5 } else { 0.75 },
+            grass_range_scale: if matches!(self, Self::Minimal) {
+                0.5
+            } else {
+                0.75
+            },
             // The reference 40-step cloud march costs ~20 ms/frame at QHD, a
             // near-constant floor regardless of scene content; gameplay
             // presets shorten it, capture tooling keeps full fidelity.
-            cloud_quality_scale: if matches!(self, Self::Minimal) { 0.45 } else { 0.65 },
+            cloud_quality_scale: if matches!(self, Self::Minimal) {
+                0.45
+            } else {
+                0.65
+            },
             // Clouds are baked into the frozen sky cubemap now, so the offscreen
             // march runs once rather than every frame; the half-area downscale it
             // used to justify no longer buys anything, so render it full-res.
@@ -182,7 +190,11 @@ impl GraphicsPreset {
             // engine default spends four cascades on reach the tactical
             // camera rarely benefits from.
             shadow_cascade_count: if matches!(self, Self::Minimal) { 1 } else { 2 },
-            shadow_maximum_distance: if matches!(self, Self::Minimal) { 40.0 } else { 72.0 },
+            shadow_maximum_distance: if matches!(self, Self::Minimal) {
+                40.0
+            } else {
+                72.0
+            },
         }
     }
 }
