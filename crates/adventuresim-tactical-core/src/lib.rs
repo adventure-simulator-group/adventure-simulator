@@ -1,5 +1,3 @@
-#![feature(iter_array_chunks)]
-
 //! Core adventuresim bevy-centric library that is used both by
 //! tactical client and tactical server.
 //!

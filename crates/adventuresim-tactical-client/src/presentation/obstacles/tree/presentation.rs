@@ -22,10 +22,10 @@ use super::{
 };
 use crate::presentation::TacticalGameplayCamera;
 use crate::presentation::{
-    ActiveTacticalScene, ActiveVistaSurface, ProceduralEnvironmentAssets, SceneEnvironment,
-    obstacle_seed, splitmix64, unit_hash,
+    ActiveTacticalScene, ProceduralEnvironmentAssets, SceneEnvironment, obstacle_seed, splitmix64,
+    unit_hash,
 };
-use adventuresim_tactical_core::prelude::{SceneGround, SceneObstacle, SceneTerrain};
+use adventuresim_tactical_core::prelude::SceneTerrain;
 use bevy::{
     camera::{primitives::Aabb, visibility::NoFrustumCulling},
     light::NotShadowCaster,
@@ -879,9 +879,6 @@ pub(in crate::presentation) fn present_pending_trees(
     active: Res<ActiveTacticalScene>,
     environments: Query<&SceneEnvironment>,
     terrains: Query<&SceneTerrain>,
-    grounds: Query<&SceneGround>,
-    obstacles: Query<(&SceneObstacle, &Transform)>,
-    vista: Res<ActiveVistaSurface>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut aggregate_bark_materials: ResMut<Assets<TacticalTreeAggregateBarkMaterial>>,
@@ -900,7 +897,6 @@ pub(in crate::presentation) fn present_pending_trees(
     let Some(terrain) = active.entity.and_then(|entity| terrains.get(entity).ok()) else {
         return;
     };
-    let ground = active.entity.and_then(|entity| grounds.get(entity).ok());
     if tree_cache.terrain_scene_digest.as_deref() != Some(&environment.scene_digest) {
         tree_cache.variants.clear();
         tree_cache.oak_bark_material = None;
@@ -908,13 +904,7 @@ pub(in crate::presentation) fn present_pending_trees(
         tree_cache.oak_aggregate_bark_material = None;
         tree_cache.beech_aggregate_bark_material = None;
         let (heightmap, height_range) =
-            crate::presentation::terrain::terrain_contact_heightmap_image(
-                terrain,
-                ground,
-                environment,
-                &vista,
-                &obstacles,
-            );
+            crate::presentation::terrain::terrain_contact_heightmap_image(terrain);
         tree_cache.terrain_heightmap = Some(images.add(heightmap));
         tree_cache.terrain_height_range = height_range;
         tree_cache.terrain_scene_digest = Some(environment.scene_digest.clone());
