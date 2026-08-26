@@ -1258,15 +1258,13 @@ fn ensure_settlement_activity_batched(
         })?;
     let active = active_contracts.saturating_add(active_generated_cases);
     let target = settlement_activity_target(settlement_id);
-    let mut generated = 0u32;
-    for _ in active..target {
-        if quest_batch != 0 && generated >= quest_batch {
+    for (generated, _) in (active..target).enumerate() {
+        if quest_batch != 0 && generated as u32 >= quest_batch {
             break;
         }
         generate_quest_for_settlement(ctx, settlement_id).map_err(|error| {
             settlement_activity_stage_error(settlement_id, "quest generation", error)
         })?;
-        generated += 1;
     }
     crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute).map_err(
         |error| settlement_activity_stage_error(settlement_id, "generated incidents", error),
