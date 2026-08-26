@@ -466,7 +466,10 @@ mod legacy_tests {
         ] {
             let mut state = SkeletonState::default();
             assert!(state.begin_posture_transition(
-                PostureTransitionKind::DiveToDowned { direction },
+                PostureTransitionKind::DiveToDowned {
+                    direction,
+                    trajectory: DiveTrajectory::Airborne,
+                },
                 0,
                 10,
             ));
@@ -487,11 +490,12 @@ mod legacy_tests {
     }
 
     #[test]
-    fn backward_dive_landing_uses_positive_root_counter_yaw() {
+    fn backward_dive_landing_transfers_the_supine_half_turn_to_the_root() {
         let mut state = SkeletonState::default();
         assert!(state.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::Airborne,
             },
             0,
             8,
@@ -504,7 +508,12 @@ mod legacy_tests {
         state.advance_posture_transition(6);
 
         let delta = dive_landing_facing_delta(previous, state.posture_transition());
-        assert!((delta * Vec3::Z).abs_diff_eq(Vec3::X, 0.0001));
+        let expected_linear = (0.5 - 0.18) / (0.92 - 0.18);
+        let expected_progress = expected_linear * expected_linear * (3.0 - 2.0 * expected_linear);
+        assert!(
+            (Quat::IDENTITY.angle_between(delta) - std::f32::consts::PI * expected_progress).abs()
+                < 0.0001
+        );
     }
 
     #[test]

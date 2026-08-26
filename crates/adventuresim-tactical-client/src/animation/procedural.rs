@@ -232,7 +232,7 @@ pub(super) fn apply_procedural_dive_lower_body(
         let Some(transition) = skeleton.posture_transition() else {
             continue;
         };
-        let PostureTransitionKind::DiveToDowned { direction } = transition.kind() else {
+        let PostureTransitionKind::DiveToDowned { direction, .. } = transition.kind() else {
             continue;
         };
         let phase = transition.phase().clamp(0.0, 1.0);

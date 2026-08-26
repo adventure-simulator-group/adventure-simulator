@@ -398,14 +398,39 @@ pub enum DiveDirection {
     Right,
 }
 
+impl DiveDirection {
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Forward => Self::Backward,
+            Self::Backward => Self::Forward,
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiveTrajectory {
+    #[default]
+    Airborne,
+    GroundedSlide,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PostureTransitionKind {
     UprightToProne,
     ProneToUpright,
-    ProneToSupine { direction: RollDirection },
-    SupineToProne { direction: RollDirection },
+    ProneToSupine {
+        direction: RollDirection,
+    },
+    SupineToProne {
+        direction: RollDirection,
+    },
     SupineToUpright,
-    DiveToDowned { direction: DiveDirection },
+    DiveToDowned {
+        direction: DiveDirection,
+        trajectory: DiveTrajectory,
+    },
 }
 
 impl PostureTransitionKind {
@@ -424,6 +449,7 @@ impl PostureTransitionKind {
             Self::UprightToProne | Self::SupineToProne { .. } => BodyState::Prone,
             Self::DiveToDowned {
                 direction: DiveDirection::Backward,
+                ..
             } => BodyState::Supine,
             Self::DiveToDowned { .. } => BodyState::Prone,
             Self::ProneToSupine { .. } => BodyState::Supine,
@@ -557,10 +583,33 @@ impl PostureTransitionState {
     /// airborne endpoint until impact; only the second half transfers the
     /// directional pose into its canonical downed contact pose.
     pub fn dive_recovery(self) -> Option<(DiveDirection, f32)> {
-        let PostureTransitionKind::DiveToDowned { direction } = self.kind else {
+        let PostureTransitionKind::DiveToDowned {
+            direction,
+            trajectory,
+        } = self.kind
+        else {
             return None;
         };
-        Some((direction, ((self.phase - 0.5) * 2.0).clamp(0.0, 1.0)))
+        // The authored body first settles out of its tilted dive pose, then
+        // expresses the planar yaw of the downed contact. Starting root yaw at
+        // contact gets ahead of that anatomical turn and visibly twists the
+        // whole character before the supine pose catches up. Reserve the first
+        // part of recovery for settling, then transfer root yaw with zero
+        // endpoint velocity. The endpoint remains the complete canonical turn.
+        const ROOT_HANDOFF_START_FRACTION: f32 = 0.18;
+        let root_handoff_end_fraction = match trajectory {
+            // The shorter slide devotes a larger normalized share to the same
+            // fixed presentation settling time, so its handoff finishes with
+            // the transition. The longer airborne recovery can finish just
+            // before the terminal pose without outrunning the authored turn.
+            DiveTrajectory::GroundedSlide => 1.0,
+            DiveTrajectory::Airborne => 0.92,
+        };
+        let recovery = ((self.phase - 0.5) * 2.0).clamp(0.0, 1.0);
+        let handoff = ((recovery - ROOT_HANDOFF_START_FRACTION)
+            / (root_handoff_end_fraction - ROOT_HANDOFF_START_FRACTION))
+            .clamp(0.0, 1.0);
+        Some((direction, smoothstep(handoff)))
     }
 }
 
@@ -583,10 +632,11 @@ pub fn dive_landing_facing_delta(
         .map_or(1.0, |(_, progress)| progress);
     let total_yaw = match direction {
         DiveDirection::Forward => 0.0,
-        // The canonical backward dive-to-supine contact span resolves its
-        // ambiguous half turn through negative yaw. Transfer the root through
-        // the equivalent positive branch so the two rotations cancel instead
-        // of composing into a visible full flip.
+        // The authored backward-dive-to-supine blend contains the body's
+        // half-turn. Transfer the inverse half-turn to the gameplay root over
+        // the same contact-recovery interval so visible facing stays fixed
+        // while the root reaches the canonical supine orientation. This must
+        // not be omitted or applied as a single completion-tick correction.
         DiveDirection::Backward => std::f32::consts::PI,
         DiveDirection::Left => std::f32::consts::FRAC_PI_2,
         DiveDirection::Right => -std::f32::consts::FRAC_PI_2,
@@ -1520,6 +1570,21 @@ impl SkeletonState {
             return;
         };
         let elapsed = current_tick.saturating_sub(transition.start_tick);
+        if matches!(
+            transition.kind,
+            PostureTransitionKind::DiveToDowned {
+                trajectory: DiveTrajectory::GroundedSlide,
+                ..
+            }
+        ) {
+            if elapsed >= transition.duration_ticks {
+                self.finish_posture_transition(transition.kind);
+                return;
+            }
+            transition.phase = elapsed as f32 / transition.duration_ticks as f32;
+            self.posture_transition = Some(transition);
+            return;
+        }
         if matches!(transition.kind, PostureTransitionKind::DiveToDowned { .. }) {
             if !self.body.is_surface_supported() {
                 transition.dive_was_airborne = true;
@@ -1540,7 +1605,14 @@ impl SkeletonState {
                 return;
             }
             if elapsed >= transition.duration_ticks {
-                self.finish_posture_transition(transition.kind);
+                // A delayed or missed unsupported-controller sample must not
+                // skip directly from the loading half to the final contact
+                // pose. Enter the same bounded recovery used after a detected
+                // landing so pose and facing remain continuous.
+                transition.dive_was_airborne = true;
+                transition.dive_landing_tick = Some(current_tick);
+                transition.phase = 0.5;
+                self.posture_transition = Some(transition);
                 return;
             }
             transition.phase = 0.5 * elapsed as f32 / transition.duration_ticks as f32;
@@ -1566,6 +1638,7 @@ impl SkeletonState {
         self.downed_facing = match kind {
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Left,
+                ..
             } => Some(DownedFacingState {
                 half_turns: -0.5,
                 target: DownedFacingPose::RollLeft,
@@ -1573,6 +1646,7 @@ impl SkeletonState {
             }),
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Right,
+                ..
             } => Some(DownedFacingState {
                 half_turns: 0.5,
                 target: DownedFacingPose::RollRight,

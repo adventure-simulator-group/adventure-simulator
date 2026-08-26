@@ -1626,7 +1626,13 @@ fn transition_for_scenario(scenario: &str) -> Option<(BodyState, PostureTransiti
         None
     };
     if let Some(direction) = dive_direction {
-        return Some((upright, PostureTransitionKind::DiveToDowned { direction }));
+        return Some((
+            upright,
+            PostureTransitionKind::DiveToDowned {
+                direction,
+                trajectory: DiveTrajectory::Airborne,
+            },
+        ));
     }
     match scenario {
         "prone-get-up" => Some((BodyState::Prone, PostureTransitionKind::ProneToUpright)),

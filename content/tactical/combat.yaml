@@ -41,6 +41,7 @@ movement:
     agility_one_sprint_turn_radius_metres: 4.5
     agility_five_sprint_turn_radius_metres: 2.2
     traction_coefficient: 0.9
+    slide_drag_coefficient: 0.65
     air_control_force_scale: 0.08
     maximum_step_height_metres: 0.35
     maximum_walkable_slope_degrees: 40.0
@@ -49,6 +50,7 @@ movement:
     roll_seconds: 0.40625
     dive_seconds: 0.3125
     backward_dive_seconds: 0.5
+    slide_seconds: 0.75
     quickstep_duration_seconds: 0.35
 
 ai:

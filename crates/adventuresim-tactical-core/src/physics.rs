@@ -443,18 +443,22 @@ fn apply_character_motor(
         // posture-transition states. Their configured speeds are already the
         // final physical targets, so the collider must not scale speed again.
         controller.crouch_speed_scale = 1.0;
-        let maneuver_jump_height = if skeleton.is_some_and(|skeleton| {
-            matches!(
-                skeleton
-                    .posture_transition()
-                    .map(|transition| transition.kind()),
-                Some(crate::animation::PostureTransitionKind::DiveToDowned { .. })
-            )
-        }) {
-            Some(movement_config.jump_heights_metres.dive)
-        } else {
-            None
-        };
+        let maneuver_jump_height = skeleton.and_then(|skeleton| {
+            match skeleton
+                .posture_transition()
+                .map(|transition| transition.kind())
+            {
+                Some(crate::animation::PostureTransitionKind::DiveToDowned {
+                    trajectory: crate::animation::DiveTrajectory::Airborne,
+                    ..
+                }) => Some(movement_config.jump_heights_metres.dive),
+                Some(crate::animation::PostureTransitionKind::DiveToDowned {
+                    trajectory: crate::animation::DiveTrajectory::GroundedSlide,
+                    ..
+                }) => Some(0.0),
+                _ => None,
+            }
+        });
         let motor = &movement_config.motor;
         controller.acceleration_hz = 0.0;
         controller.air_acceleration_hz = 0.0;
@@ -617,6 +621,25 @@ fn apply_character_motor(
         if quickstep_action {
             continue;
         }
+        if let Some(transition) = skeleton.and_then(SkeletonState::posture_transition)
+            && matches!(
+                transition.kind(),
+                crate::animation::PostureTransitionKind::DiveToDowned {
+                    trajectory: crate::animation::DiveTrajectory::GroundedSlide,
+                    ..
+                }
+            )
+        {
+            // The authored first half lowers the body while retaining exact
+            // sprint momentum. After body contact, integrate bounded kinetic
+            // drag; do not hand the slide to the ordinary target-speed motor.
+            if transition.phase() >= 0.5 && controller_state.grounded.is_some() {
+                let next = slide_drag_velocity(velocity.xz(), motor, time.delta_secs());
+                velocity.x = next.x;
+                velocity.z = next.y;
+            }
+            continue;
+        }
         let movement = input.last_movement.unwrap_or_default();
         let forward = (orientation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
         let right = (orientation * Vec3::X).with_y(0.0).normalize_or_zero();
@@ -667,6 +690,19 @@ fn apply_character_motor(
         velocity.x = next.x;
         velocity.z = next.y;
     }
+}
+
+fn slide_drag_velocity(
+    velocity: Vec2,
+    motor: &crate::combat_config::CharacterMotorConfig,
+    delta_seconds: f32,
+) -> Vec2 {
+    approach_velocity(
+        velocity,
+        Vec2::ZERO,
+        motor.gravity_metres_per_second_squared * motor.slide_drag_coefficient,
+        delta_seconds,
+    )
 }
 
 fn character_motor_force_limits(
@@ -829,6 +865,21 @@ fn approach_velocity(current: Vec2, target: Vec2, acceleration: f32, delta_secon
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slide_drag_is_bounded_and_preserves_heading() {
+        let config = crate::combat_config::TacticalCombatConfig::default();
+        let motor = &config.movement.motor;
+        let incoming = Vec2::new(3.0, 4.0);
+        let next = slide_drag_velocity(incoming, motor, 0.25);
+        let expected_speed =
+            5.0 - motor.gravity_metres_per_second_squared * motor.slide_drag_coefficient * 0.25;
+
+        assert!((next.length() - expected_speed).abs() < 1.0e-5);
+        assert!(next.normalize().abs_diff_eq(incoming.normalize(), 1.0e-6));
+        assert_eq!(slide_drag_velocity(incoming, motor, 0.0), incoming);
+        assert_eq!(slide_drag_velocity(Vec2::ZERO, motor, 1.0), Vec2::ZERO);
+    }
 
     #[test]
     fn movement_speed_preserves_stick_magnitude_and_caps_diagonals() {

@@ -999,26 +999,30 @@ pub(crate) fn on_player_input(
     ) {
         posture_intent.last_command_sequence = validated.posture.sequence;
         if let Some(action) = validated.posture.action
-            && let Some(direction) = apply_posture_action(
+            && let Some(launch) = apply_posture_action(
                 action,
                 &mut skeleton,
                 &mut accumulated_input,
+                validated.pace,
                 &combat_config,
             )
         {
-            // The authored direction and physical launch are both relative to
-            // this accepted camera frame. Commit the root before transition
-            // facing locks, rather than retaining a stale pre-aim heading.
-            let launch_rotation = dive_launch_root_rotation(Quat::from_rotation_y(look.yaw));
-            transform.rotation = launch_rotation;
-            physics_rotation.0 = launch_rotation;
-            let horizontal = dive_horizontal_velocity(
+            if launch.trajectory == DiveTrajectory::Airborne {
+                // Airborne dive travel and authored direction both capture
+                // this accepted camera frame before transition facing locks.
+                let launch_rotation = dive_launch_root_rotation(Quat::from_rotation_y(look.yaw));
+                transform.rotation = launch_rotation;
+                physics_rotation.0 = launch_rotation;
+            }
+            // A slide inherits an already-committed sprint heading and exact
+            // velocity. Rewriting its root to camera yaw would twist the whole
+            // body on the first frame, independently of its inverted animation.
+            apply_dive_launch_velocity(
+                &mut velocity,
                 look.yaw,
-                direction,
+                launch,
                 combat_config.movement.speeds_metres_per_second.dive,
             );
-            velocity.x = horizontal.x;
-            velocity.z = horizontal.z;
         }
     }
     accumulated_input.crouched = skeleton.body().is_downed() || skeleton.is_posture_transitioning();
@@ -1179,14 +1183,15 @@ fn apply_posture_action(
     action: PostureActionRequest,
     skeleton: &mut SkeletonState,
     accumulated_input: &mut AccumulatedInput,
+    pace: MovementPace,
     config: &TacticalCombatConfig,
-) -> Option<DiveDirection> {
+) -> Option<DiveLaunch> {
     if action == PostureActionRequest::Toggle && skeleton.body().is_downed() {
         begin_get_up_transition_configured(skeleton, config);
         return None;
     }
     let tick = skeleton.locomotion_sample_tick;
-    let mut dive_travel_direction = None;
+    let mut dive_launch = None;
     let transition = match action {
         PostureActionRequest::Toggle => match skeleton.body() {
             BodyState::Grounded(_) => Some(PostureTransitionKind::UprightToProne),
@@ -1200,10 +1205,24 @@ fn apply_posture_action(
             animation_direction,
             travel_direction,
         } => {
-            dive_travel_direction = Some(travel_direction);
+            let trajectory = if pace == MovementPace::Sprint {
+                DiveTrajectory::GroundedSlide
+            } else {
+                DiveTrajectory::Airborne
+            };
+            let direction = if trajectory == DiveTrajectory::GroundedSlide {
+                travel_direction.opposite()
+            } else {
+                animation_direction
+            };
+            dive_launch = Some(DiveLaunch {
+                travel_direction,
+                trajectory,
+            });
             matches!(skeleton.body(), BodyState::Grounded(_)).then_some(
                 PostureTransitionKind::DiveToDowned {
-                    direction: animation_direction,
+                    direction,
+                    trajectory,
                 },
             )
         }
@@ -1211,7 +1230,12 @@ fn apply_posture_action(
     let transition = transition?;
     let duration = match transition {
         PostureTransitionKind::DiveToDowned {
+            trajectory: DiveTrajectory::GroundedSlide,
+            ..
+        } => combat_seconds_to_ticks(config.movement.maneuvers.slide_seconds),
+        PostureTransitionKind::DiveToDowned {
             direction: DiveDirection::Backward,
+            ..
         } => combat_seconds_to_ticks(config.movement.maneuvers.backward_dive_seconds),
         PostureTransitionKind::DiveToDowned { .. } => {
             combat_seconds_to_ticks(config.movement.maneuvers.dive_seconds)
@@ -1226,10 +1250,18 @@ fn apply_posture_action(
         return None;
     }
     if matches!(transition, PostureTransitionKind::DiveToDowned { .. }) {
-        accumulated_input.jumped = Some(Stopwatch::new());
-        return dive_travel_direction;
+        let launch = dive_launch.expect("dive transition always records its launch");
+        accumulated_input.jumped =
+            (launch.trajectory == DiveTrajectory::Airborne).then(Stopwatch::new);
+        return Some(launch);
     }
     None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DiveLaunch {
+    travel_direction: DiveDirection,
+    trajectory: DiveTrajectory,
 }
 
 pub(crate) fn begin_get_up_transition_configured(
@@ -1256,6 +1288,22 @@ fn dive_horizontal_velocity(yaw: f32, direction: DiveDirection, speed: f32) -> V
         DiveDirection::Right => Vec3::X,
     };
     Quat::from_rotation_y(yaw) * local * speed
+}
+
+fn apply_dive_launch_velocity(
+    velocity: &mut LinearVelocity,
+    yaw: f32,
+    launch: DiveLaunch,
+    speed: f32,
+) {
+    // Sliding is a posture change, not a fresh launch. Preserve the complete
+    // sprint velocity; gravity and the later body-drag phase own its evolution.
+    if launch.trajectory == DiveTrajectory::GroundedSlide {
+        return;
+    }
+    let horizontal = dive_horizontal_velocity(yaw, launch.travel_direction, speed);
+    velocity.x = horizontal.x;
+    velocity.z = horizontal.z;
 }
 
 fn combat_seconds_to_ticks(seconds: f32) -> u64 {
@@ -1810,9 +1858,8 @@ fn advance_posture_transition_facing(
     current_transition: Option<PostureTransitionState>,
 ) {
     // Directional dives transfer the downed contact pose's yaw to the root
-    // during landing. Supine get-up applies an inverse half-turn that cancels the
-    // authored pose's implicit convention change in world space. Prone get-up
-    // receives neither correction.
+    // during landing. A backward dive's half-turn is spread across contact
+    // recovery; the supine get-up applies the inverse convention change.
     let rotation = (transform.rotation
         * dive_landing_facing_delta(previous_transition, current_transition)
         * supine_get_up_counter_yaw_delta(previous_transition, current_transition))
@@ -2135,25 +2182,23 @@ mod standalone_join_tests {
 mod tests {
     use super::{
         AuthoritativeInputTick, AuthoritativeMovementIntent, AuthoritativePostureIntent,
-        BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent, DisconnectedPlayer,
+        BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent, DisconnectedPlayer, DiveLaunch,
         GROUND_POSTURE_TRANSITION_TICKS, MeleeAttackAuthority, Player, RECONNECT_GRACE_SECS,
         ROLL_POSTURE_TRANSITION_TICKS, RangedAttackAuthority, ReconnectSession, WeaponGuardState,
-        advance_downed_facing_for_camera, advance_posture_transition_facing, apply_posture_action,
-        authoritative_weapon_guard, brake_quickstep_horizontal_velocity, dive_horizontal_velocity,
-        downed_tank_controller_input, input, launch_pending_quicksteps, mission_enemy_health_scale,
-        mission_enemy_scale, on_client_disconnected, player_collider,
+        advance_downed_facing_for_camera, advance_posture_transition_facing,
+        apply_dive_launch_velocity, apply_posture_action, authoritative_weapon_guard,
+        combat_seconds_to_ticks, dive_horizontal_velocity, downed_tank_controller_input, input,
+        mission_enemy_health_scale, mission_enemy_scale, on_client_disconnected, player_collider,
         posture_transition_locks_body_facing, queue_replication_rebind, reconnect_matches,
         restore_authoritative_movement_intent, sequence_is_newer,
         tactical_movement_speed_for_guard, try_claim_reconnect, update_character_motion_snapshots,
         validate_player_input,
     };
-    use adventuresim_tactical_core::physics::{
-        TACTICAL_QUICKSTEP_SPEED_METRES_PER_SECOND, tactical_character_controller,
-    };
+    use adventuresim_tactical_core::physics::tactical_character_controller;
     use adventuresim_tactical_core::prelude::{
         Attributes, BestiaryCategories, BodyState, CharacterControllerState, CharacterId,
-        CharacterLook, CharacterMotionSnapshot, CollisionMargin, DiveDirection, DodgeSpec,
-        EquipSlot, EquipmentActionState, GroundedPosture, InventoryItems, ItemOf, Limbs,
+        CharacterLook, CharacterMotionSnapshot, CollisionMargin, DiveDirection, DiveTrajectory,
+        DodgeSpec, EquipSlot, EquipmentActionState, GroundedPosture, InventoryItems, ItemOf, Limbs,
         LinearVelocity, MeleePreparationInput, MovementPace, PostureTransitionKind, QuickstepPush,
         RollDirection, Rotation, ShieldItem, SkeletonAction, SkeletonState, Skills, Stats,
         TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalCombatConfig, TacticalCombatSide,
@@ -2575,11 +2620,12 @@ mod tests {
     }
 
     #[test]
-    fn guarded_backward_dive_then_get_up_commits_the_supine_counter_yaw() {
+    fn backward_dive_and_supine_get_up_transfer_opposite_root_half_turns() {
         let mut skeleton = SkeletonState::default();
         assert!(skeleton.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::Airborne,
             },
             0,
             BACKWARD_DIVE_POSTURE_TRANSITION_TICKS,
@@ -2697,6 +2743,7 @@ mod tests {
             PostureActionRequest::Toggle,
             &mut skeleton,
             &mut input,
+            MovementPace::Walk,
             &config,
         );
         assert_eq!(
@@ -2710,6 +2757,7 @@ mod tests {
             PostureActionRequest::RollLeft,
             &mut skeleton,
             &mut input,
+            MovementPace::Walk,
             &config,
         );
         assert_eq!(
@@ -2729,6 +2777,7 @@ mod tests {
             PostureActionRequest::Toggle,
             &mut skeleton,
             &mut input,
+            MovementPace::Walk,
             &config,
         );
         assert_eq!(
@@ -2769,16 +2818,61 @@ mod tests {
             },
             &mut skeleton,
             &mut input,
+            MovementPace::Walk,
             &config,
         );
-        assert_eq!(launched, Some(DiveDirection::Backward));
+        assert_eq!(
+            launched,
+            Some(DiveLaunch {
+                travel_direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::Airborne,
+            })
+        );
         assert_eq!(
             skeleton.posture_transition().unwrap().kind(),
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Forward,
+                trajectory: DiveTrajectory::Airborne,
             }
         );
         assert!(input.jumped.is_some());
+    }
+
+    #[test]
+    fn sprinting_dive_becomes_grounded_opposite_animation_slide_to_supine() {
+        let mut skeleton = SkeletonState::default();
+        let mut input = input::AccumulatedInput::default();
+        let config = TacticalCombatConfig::default();
+        let launched = apply_posture_action(
+            PostureActionRequest::Dive {
+                animation_direction: DiveDirection::Forward,
+                travel_direction: DiveDirection::Forward,
+            },
+            &mut skeleton,
+            &mut input,
+            MovementPace::Sprint,
+            &config,
+        );
+
+        assert_eq!(
+            launched,
+            Some(DiveLaunch {
+                travel_direction: DiveDirection::Forward,
+                trajectory: DiveTrajectory::GroundedSlide,
+            })
+        );
+        assert_eq!(
+            skeleton.posture_transition().unwrap().kind(),
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::GroundedSlide,
+            }
+        );
+        assert!(input.jumped.is_none());
+
+        let duration = combat_seconds_to_ticks(config.movement.maneuvers.slide_seconds);
+        skeleton.advance_posture_transition(duration);
+        assert_eq!(skeleton.body(), BodyState::Supine);
     }
 
     #[test]
@@ -3010,6 +3104,7 @@ mod tests {
             PostureTransitionKind::UprightToProne,
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Left,
+                trajectory: DiveTrajectory::Airborne,
             },
         ] {
             let mut skeleton = SkeletonState::default();
@@ -3043,6 +3138,22 @@ mod tests {
     }
 
     #[test]
+    fn grounded_slide_preserves_the_complete_sprint_velocity() {
+        let mut velocity = LinearVelocity(Vec3::new(1.0, 4.0, 2.0));
+        apply_dive_launch_velocity(
+            &mut velocity,
+            0.0,
+            DiveLaunch {
+                travel_direction: DiveDirection::Forward,
+                trajectory: DiveTrajectory::GroundedSlide,
+            },
+            7.0,
+        );
+
+        assert_eq!(velocity.0, Vec3::new(1.0, 4.0, 2.0));
+    }
+
+    #[test]
     fn directional_dive_handoff_preserves_its_landing_heading() {
         for (direction, expected_world_heading, expected_half_roll) in [
             (DiveDirection::Forward, Vec3::NEG_Z, None),
@@ -3052,7 +3163,10 @@ mod tests {
         ] {
             let mut skeleton = SkeletonState::default();
             assert!(skeleton.begin_posture_transition(
-                PostureTransitionKind::DiveToDowned { direction },
+                PostureTransitionKind::DiveToDowned {
+                    direction,
+                    trajectory: DiveTrajectory::Airborne,
+                },
                 0,
                 10,
             ));

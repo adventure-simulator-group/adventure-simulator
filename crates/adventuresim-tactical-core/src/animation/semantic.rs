@@ -403,6 +403,7 @@ mod contract_tests {
         assert!(state.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Forward,
+                trajectory: DiveTrajectory::Airborne,
             },
             0,
             11,
@@ -432,6 +433,7 @@ mod contract_tests {
         assert!(state.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::Airborne,
             },
             0,
             11,
@@ -443,6 +445,28 @@ mod contract_tests {
         state.advance_posture_transition(18);
         assert_eq!(state.body(), BodyState::Supine);
         assert!(state.posture_transition().is_none());
+    }
+
+    #[test]
+    fn supported_dive_timeout_enters_contact_recovery_without_pose_snap() {
+        let mut state = SkeletonState::default();
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::Airborne,
+            },
+            0,
+            8,
+        ));
+
+        state.advance_posture_transition(7);
+        assert!(state.posture_transition().unwrap().phase() < 0.5);
+        state.advance_posture_transition(8);
+        assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
+        state.advance_posture_transition(12);
+        assert_eq!(state.posture_transition().unwrap().phase(), 0.75);
+        state.advance_posture_transition(16);
+        assert_eq!(state.body(), BodyState::Supine);
     }
 
     #[test]
@@ -510,6 +534,7 @@ mod contract_tests {
         assert!(state.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Forward,
+                trajectory: DiveTrajectory::Airborne,
             },
             11,
             20,

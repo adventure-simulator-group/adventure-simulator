@@ -249,6 +249,19 @@ fn update_direct_control_input(
     let gamepad_moving =
         gamepad_direction.length_squared() > input_config.movement_deadzone.powi(2);
     let moving = keyboard_moving || gamepad_moving;
+    let selected_pace = if keyboard_moving {
+        if controls.sprint.active {
+            MovementPace::Sprint
+        } else if controls.caps_jog {
+            MovementPace::Jog
+        } else {
+            MovementPace::Walk
+        }
+    } else if gamepad_moving {
+        MovementPace::Sprint
+    } else {
+        MovementPace::Walk
+    };
     controls.sprint.cancel_latch_when_idle(moving);
     let left_trigger_value = gamepads
         .iter()
@@ -347,14 +360,17 @@ fn update_direct_control_input(
             gamepad_direction
         };
         let travel_direction = dive_direction(movement_direction);
+        let animation_direction = if selected_pace == MovementPace::Sprint {
+            travel_direction.opposite()
+        } else if raised {
+            travel_direction
+        } else {
+            DiveDirection::Forward
+        };
         queue_posture_action(
             &mut controls,
             PostureActionRequest::Dive {
-                animation_direction: if raised {
-                    travel_direction
-                } else {
-                    DiveDirection::Forward
-                },
+                animation_direction,
                 travel_direction,
             },
         );
@@ -539,19 +555,7 @@ fn update_direct_control_input(
     if space_just_released {
         controls.space_jump_armed = false;
     }
-    controls.pace = if keyboard_moving {
-        if controls.sprint.active {
-            MovementPace::Sprint
-        } else if controls.caps_jog {
-            MovementPace::Jog
-        } else {
-            MovementPace::Walk
-        }
-    } else if gamepad_moving {
-        MovementPace::Sprint
-    } else {
-        MovementPace::Walk
-    };
+    controls.pace = selected_pace;
 }
 
 fn controller_roll_modifier(
@@ -1452,6 +1456,28 @@ mod tests {
                 .posture_command
                 .sequence,
             1
+        );
+    }
+
+    #[test]
+    fn sprinting_forward_dive_requests_the_backward_slide_animation() {
+        let (mut world, mut schedule) = input_fixture();
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ShiftLeft);
+            keys.press(KeyCode::AltLeft);
+            keys.press(KeyCode::KeyW);
+        }
+
+        schedule.run(&mut world);
+        let controls = world.resource::<DirectControlState>();
+        assert_eq!(controls.pace, MovementPace::Sprint);
+        assert_eq!(
+            controls.posture_command.action,
+            Some(PostureActionRequest::Dive {
+                animation_direction: DiveDirection::Backward,
+                travel_direction: DiveDirection::Forward,
+            })
         );
     }
 }

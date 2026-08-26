@@ -56,6 +56,10 @@ enum ScriptCommand {
         direction: MoveDirection,
         duration_seconds: f32,
     },
+    Slide {
+        direction: MoveDirection,
+        duration_seconds: f32,
+    },
     Quickstep {
         direction: MoveDirection,
         duration_seconds: f32,
@@ -86,6 +90,14 @@ enum ScriptCommand {
 
 fn default_attack_observation_seconds() -> f32 {
     1.0
+}
+
+fn diagnostic_command_pace(kind: &str, selected: MovementPace) -> MovementPace {
+    match kind {
+        "dive" => MovementPace::Walk,
+        "slide" => MovementPace::Sprint,
+        _ => selected,
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -421,8 +433,11 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
             }
             ScriptCommand::Dive {
                 duration_seconds, ..
+            }
+            | ScriptCommand::Slide {
+                duration_seconds, ..
             } if !duration_seconds.is_finite() || *duration_seconds <= 0.0 => {
-                return Err("dive duration_seconds must be positive".to_owned());
+                return Err("dive/slide duration_seconds must be positive".to_owned());
             }
             ScriptCommand::Quickstep {
                 duration_seconds, ..
@@ -582,7 +597,9 @@ fn drive_scripted_input(
         if command_start
             && matches!(
                 &command,
-                ScriptCommand::Dive { .. } | ScriptCommand::TogglePosture { .. }
+                ScriptCommand::Dive { .. }
+                    | ScriptCommand::Slide { .. }
+                    | ScriptCommand::TogglePosture { .. }
             )
         {
             script.posture_sequence = script.posture_sequence.wrapping_add(1);
@@ -630,6 +647,22 @@ fn drive_scripted_input(
                     sequence: script.posture_sequence,
                     action: Some(PostureActionRequest::Dive {
                         animation_direction: direction.dive_direction(),
+                        travel_direction: direction.dive_direction(),
+                    }),
+                },
+                JumpCommand::default(),
+            ),
+            ScriptCommand::Slide {
+                direction,
+                duration_seconds,
+            } => (
+                "slide",
+                duration_seconds,
+                Some(direction.vector()),
+                PostureCommand {
+                    sequence: script.posture_sequence,
+                    action: Some(PostureActionRequest::Dive {
+                        animation_direction: direction.dive_direction().opposite(),
                         travel_direction: direction.dive_direction(),
                     }),
                 },
@@ -689,7 +722,7 @@ fn drive_scripted_input(
             jump_charge: false,
             downed_align: false,
             posture,
-            pace: script.pace,
+            pace: diagnostic_command_pace(kind, script.pace),
             weapon_guard: script.weapon_guard,
             melee_preparation: MeleePreparationInput::Preferred,
         };
@@ -733,7 +766,7 @@ mod tests {
     #[test]
     fn example_script_parses_and_validates() {
         let script: InputScript = serde_json::from_str(
-            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"attack"},{"type":"screenshot","path":"captures/attack.png"},{"type":"dive","direction":"left","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"guard","raised":false},{"type":"quickstep","direction":"right","duration_seconds":0.5},{"type":"wait","duration_seconds":0.5}]}"#,
+            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"attack"},{"type":"screenshot","path":"captures/attack.png"},{"type":"slide","direction":"forward","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"dive","direction":"left","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"guard","raised":false},{"type":"quickstep","direction":"right","duration_seconds":0.5},{"type":"wait","duration_seconds":0.5}]}"#,
         )
         .unwrap();
         assert!(validate_script(&script).is_ok());
@@ -743,6 +776,21 @@ mod tests {
                 duration_seconds: 1.0
             }
         ));
+        assert!(matches!(
+            script.commands[5],
+            ScriptCommand::Slide {
+                direction: MoveDirection::Forward,
+                duration_seconds: 1.5,
+            }
+        ));
+        assert_eq!(
+            diagnostic_command_pace("dive", MovementPace::Sprint),
+            MovementPace::Walk
+        );
+        assert_eq!(
+            diagnostic_command_pace("slide", MovementPace::Walk),
+            MovementPace::Sprint
+        );
     }
 
     #[test]

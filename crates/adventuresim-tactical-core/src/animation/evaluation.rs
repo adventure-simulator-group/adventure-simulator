@@ -77,7 +77,7 @@ impl AnimationEvaluation {
             },
         };
         let lower_body = if let Some(transition) = state.posture_transition()
-            && let PostureTransitionKind::DiveToDowned { direction } = transition.kind()
+            && let PostureTransitionKind::DiveToDowned { direction, .. } = transition.kind()
         {
             dive_lower_body_samples(state.lead_foot, direction, transition.phase())
         } else if state.is_quickstep() {
@@ -108,7 +108,7 @@ impl AnimationEvaluation {
 fn posture_transition_samples(state: &SkeletonState) -> Option<Vec<PoseSample>> {
     let transition = state.posture_transition()?;
     use PostureTransitionKind::*;
-    if let DiveToDowned { direction } = transition.kind() {
+    if let DiveToDowned { direction, .. } = transition.kind() {
         return Some(dive_transition_samples(
             state.lead_foot,
             direction,
@@ -206,7 +206,7 @@ fn dive_transition_samples(
 ) -> Vec<PoseSample> {
     let dive = dive_pose(direction);
     let phase = phase.clamp(0.0, 1.0);
-    if phase <= 0.5 {
+    if phase < 0.5 {
         return vec![PoseSample {
             pose: SemanticPose::GuardThrust,
             sampling: PoseSampling::Span {
@@ -223,7 +223,11 @@ fn dive_transition_samples(
         DiveDirection::Left => SemanticPose::ProneSupineRollLeft,
         DiveDirection::Right => SemanticPose::ProneSupineRollRight,
     };
-    let recovery = (phase - 0.5) * 2.0;
+    // Contact begins and ends at zero blend velocity, matching the procedural
+    // pelvis release and the authoritative directional root handoff. Starting
+    // this span linearly made the complete upper-body chain visibly twist on
+    // the first grounded frame, including on forward dives with no root yaw.
+    let recovery = dive_contact_pose_progress(phase);
     vec![PoseSample {
         pose: dive,
         sampling: PoseSampling::Span {
@@ -243,7 +247,7 @@ fn dive_lower_body_samples(
     phase: f32,
 ) -> Vec<PoseSample> {
     let phase = phase.clamp(0.0, 1.0);
-    let sampling = if phase <= 0.5 {
+    let sampling = if phase < 0.5 {
         PoseSampling::Anchor
     } else {
         let contact = match direction {
@@ -254,7 +258,7 @@ fn dive_lower_body_samples(
         };
         PoseSampling::Span {
             end: contact,
-            progress: (phase - 0.5) * 2.0,
+            progress: dive_contact_pose_progress(phase),
         }
     };
     vec![PoseSample {
@@ -263,6 +267,15 @@ fn dive_lower_body_samples(
         weight: 1.0,
         mirror_lower_body: false,
     }]
+}
+
+fn dive_contact_pose_progress(phase: f32) -> f32 {
+    let recovery = smoothstep01((phase - 0.5) * 2.0);
+    // Weighted clips at or below epsilon are discarded before the pose-buffer
+    // plan key is built. Prime the contact endpoint invisibly on the exact
+    // landing pose so the first advancing recovery frame does not also change
+    // clip topology and retrigger whole-chain inertialization.
+    recovery.max(f32::EPSILON * 2.0)
 }
 
 fn dive_pose(direction: DiveDirection) -> SemanticPose {
@@ -654,12 +667,13 @@ mod tests {
             }
         );
 
-        let airborne = dive_transition_samples(LeadFoot::Left, DiveDirection::Right, 0.5);
+        let contact = dive_transition_samples(LeadFoot::Left, DiveDirection::Right, 0.5);
+        assert_eq!(contact[0].pose, SemanticPose::DiveRight);
         assert_eq!(
-            airborne[0].sampling,
+            contact[0].sampling,
             PoseSampling::Span {
-                end: SemanticPose::DiveRight,
-                progress: 1.0,
+                end: SemanticPose::ProneSupineRollRight,
+                progress: f32::EPSILON * 2.0,
             }
         );
 
@@ -695,9 +709,15 @@ mod tests {
 
     #[test]
     fn dive_lower_body_holds_guard_until_ground_contact() {
-        let airborne = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Backward, 0.5);
-        assert_eq!(airborne[0].pose, SemanticPose::GuardThrust);
-        assert_eq!(airborne[0].sampling, PoseSampling::Anchor);
+        let contact = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Backward, 0.5);
+        assert_eq!(contact[0].pose, SemanticPose::GuardThrust);
+        assert_eq!(
+            contact[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::SupineIdle,
+                progress: f32::EPSILON * 2.0,
+            }
+        );
 
         let recovery = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Backward, 0.75);
         assert_eq!(recovery[0].pose, SemanticPose::GuardThrust);
@@ -708,6 +728,21 @@ mod tests {
                 progress: 0.5,
             }
         );
+    }
+
+    #[test]
+    fn dive_contact_recovery_starts_with_zero_slope() {
+        let sample = dive_transition_samples(LeadFoot::Left, DiveDirection::Forward, 0.525);
+        let PoseSampling::Span { progress, .. } = sample[0].sampling else {
+            panic!("dive recovery must remain an authored pose span");
+        };
+        assert!((progress - 0.00725).abs() < 0.000_01);
+
+        let lower = dive_lower_body_samples(LeadFoot::Left, DiveDirection::Forward, 0.525);
+        let PoseSampling::Span { progress, .. } = lower[0].sampling else {
+            panic!("dive lower-body recovery must remain an authored pose span");
+        };
+        assert!((progress - 0.00725).abs() < 0.000_01);
     }
 
     #[test]

@@ -21,7 +21,7 @@ pub mod prelude {
         ActionState, ActionTransitionError, AnimationEvaluation, AnimationPack,
         AnimationPackLibrary, AttackAnimation, AttackAnimations, AttackCurve, AttackHand,
         AttackLine, AttackPreparation, AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
-        DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec, DownedFacingPose,
+        DOWNED_TURN_SPEED_RADIANS, DiveDirection, DiveTrajectory, DodgeSpec, DownedFacingPose,
         GUARD_CONTACT_MARGIN_METRES, GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS, GroundedPosture,
         GuardContacts, GuardFootworkPlan, GuardStepPlan, HUMANOID_LANDING_PROFILE,
         JumpAnticipation, LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait,

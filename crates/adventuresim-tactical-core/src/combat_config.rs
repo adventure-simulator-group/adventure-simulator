@@ -122,6 +122,9 @@ pub struct CharacterMotorConfig {
     /// Upper bound on ground force imposed by available traction, expressed as
     /// a multiple of normal force.
     pub traction_coefficient: f32,
+    /// Kinetic drag on a grounded body slide, expressed as a multiple of
+    /// normal force. It begins only at the authored body-contact point.
+    pub slide_drag_coefficient: f32,
     /// Fraction of ground drive force available without support.
     pub air_control_force_scale: f32,
     /// Maximum vertical obstacle height treated as a deliberate step.
@@ -157,6 +160,9 @@ pub struct ManeuverTimingConfig {
     pub roll_seconds: f32,
     pub dive_seconds: f32,
     pub backward_dive_seconds: f32,
+    /// Full sprint-slide duration. Its authored midpoint is body contact;
+    /// only the second half is subject to slide drag.
+    pub slide_seconds: f32,
     /// Complete input-to-recovery quickstep duration. `ActionTimeline` places
     /// semantic contact halfway through this interval.
     pub quickstep_duration_seconds: f32,
@@ -338,12 +344,14 @@ impl TacticalCombatConfig {
             movement.motor.agility_one_sprint_turn_radius_metres,
             movement.motor.agility_five_sprint_turn_radius_metres,
             movement.motor.traction_coefficient,
+            movement.motor.slide_drag_coefficient,
             movement.motor.maximum_step_height_metres,
             movement.motor.maximum_walkable_slope_degrees,
             movement.maneuvers.get_up_seconds,
             movement.maneuvers.roll_seconds,
             movement.maneuvers.dive_seconds,
             movement.maneuvers.backward_dive_seconds,
+            movement.maneuvers.slide_seconds,
             movement.maneuvers.quickstep_duration_seconds,
         ];
         if !movement_values
@@ -358,6 +366,7 @@ impl TacticalCombatConfig {
             || movement.motor.air_control_force_scale > 1.0
             || movement.motor.reference_lateral_acceleration_gravities > 2.0
             || movement.motor.traction_coefficient > 2.0
+            || movement.motor.slide_drag_coefficient > 2.0
             || movement.motor.quickstep_takeoff_angle_degrees >= 45.0
             || movement.motor.maximum_step_height_metres > 1.0
             || movement.motor.maximum_walkable_slope_degrees >= 90.0
@@ -576,6 +585,7 @@ impl Default for TacticalCombatConfig {
                     agility_one_sprint_turn_radius_metres: 4.5,
                     agility_five_sprint_turn_radius_metres: 2.2,
                     traction_coefficient: 0.9,
+                    slide_drag_coefficient: 0.65,
                     air_control_force_scale: 0.08,
                     maximum_step_height_metres: crate::physics::TACTICAL_MAXIMUM_STEP_HEIGHT_METRES,
                     maximum_walkable_slope_degrees:
@@ -586,6 +596,7 @@ impl Default for TacticalCombatConfig {
                     roll_seconds: 26.0 / 64.0,
                     dive_seconds: 20.0 / 64.0,
                     backward_dive_seconds: 32.0 / 64.0,
+                    slide_seconds: 48.0 / 64.0,
                     quickstep_duration_seconds: 0.35,
                 },
             },

@@ -1940,6 +1940,7 @@ def launch_recorded_tactical_client(
             config["capture_ready_signal"] = str(capture_ready)
         default_commands: list[dict[str, object]] = [
             {"type": "rotate", "degrees_right": 90.0},
+            {"type": "guard", "raised": False},
             {
                 "type": "move", "direction": "forward",
                 "input_speed": 0.5, "duration_seconds": 2.0,
@@ -1949,10 +1950,16 @@ def launch_recorded_tactical_client(
             {"type": "attack", "duration_seconds": 0.25},
             {"type": "screenshot", "path": str(attack_screenshot)},
             {"type": "wait", "duration_seconds": 0.75},
+            {"type": "guard", "raised": False},
             {
                 "type": "move", "direction": "forward",
                 "input_speed": 1.0, "duration_seconds": 2.0,
             },
+            {
+                "type": "slide", "direction": "forward",
+                "duration_seconds": 1.5,
+            },
+            {"type": "toggle_posture", "duration_seconds": 1.2},
             {
                 "type": "dive", "direction": "forward",
                 "duration_seconds": 1.5,
