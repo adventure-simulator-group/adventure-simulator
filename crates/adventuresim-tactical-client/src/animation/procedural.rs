@@ -472,10 +472,10 @@ pub(super) fn apply_pose_mirroring(
 
 const HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND: f32 = 0.4;
 const LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND: f32 = 0.8;
-const NORMALIZATION_TRANSITION_PER_SECOND: f32 = 8.0;
 // The upright lowered-guard humanoid_unarmed root/pelvis rotations lift its
-// pelvis by about 33 mm at passing even after local Y is normalized. This is a
-// measured state-and-pack calibration, not a safe assumption elsewhere.
+// pelvis by about 33 mm at passing. Subtract that measured authored rise only
+// from the additive run-flight treatment; authored walk/pelvis translation
+// remains untouched.
 const AUTHORED_ORDINARY_PASSING_RISE_METRES: f32 = 0.033;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -485,7 +485,6 @@ pub(crate) struct LocomotionHeightState {
     authored_rise_compensation: f32,
     displayed_wave: f32,
     wave_transition_offset: f32,
-    normalization_weight: f32,
     pub(crate) landing_compression: f32,
     landing_compression_target: f32,
     landing_absorption_metres_per_second: f32,
@@ -503,9 +502,10 @@ pub(crate) struct LocomotionHeightState {
     evaluation_tick: Option<u64>,
 }
 
-/// One phase-owned vertical waveform with contacts at 0/.5 and passing or
-/// flight peaks at .25/.75. This is presentation-only and is never applied to
-/// the authoritative owner/controller transform.
+/// Additive run-flight waveform with contacts at 0/.5 and flight peaks at
+/// .25/.75. Authored joint translation remains the base pose. This is
+/// presentation-only and is never applied to the authoritative owner/controller
+/// transform.
 fn grounded_height_wave(phase: f32, amplitude: f32) -> f32 {
     let sine = (phase.rem_euclid(1.0) * std::f32::consts::TAU).sin();
     amplitude * sine * sine
@@ -541,13 +541,12 @@ pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
     }
     let profile = locomotion_profile(skeleton);
     let moving_weight = smoothstep(0.05, 0.75, speed);
-    let grounded = grounded_height_wave(skeleton.gait_phase, profile.bounce_metres);
     if profile.flight_apex_metres <= f32::EPSILON {
-        return grounded * moving_weight;
+        return 0.0;
     }
     let half_step = (skeleton.gait_phase.rem_euclid(0.5) * 2.0).clamp(0.0, 1.0);
     let flight = (half_step * std::f32::consts::PI).sin().powi(2) * profile.flight_apex_metres;
-    (grounded + flight) * moving_weight
+    flight * moving_weight
 }
 
 fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
@@ -559,17 +558,11 @@ fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
     {
         return 0.0;
     }
-    AUTHORED_ORDINARY_PASSING_RISE_METRES * smoothstep(0.05, 0.75, skeleton.animation_speed())
-}
-
-fn locomotion_normalization_target(skeleton: &SkeletonState) -> f32 {
-    (skeleton.is_grounded()
-        && !skeleton.is_posture_transitioning()
-        && skeleton.action_kind() == SkeletonAction::None
-        && skeleton.posture() == Posture::Upright
-        && (skeleton.weapon_guard() == WeaponGuardState::Lowered
-            || skeleton.guarded_sprint_locomotion())
-        && skeleton.animation_speed() > 0.05) as u8 as f32
+    let run_weight =
+        locomotion_profile(skeleton).flight_apex_metres / RUN_LOCOMOTION_PROFILE.flight_apex_metres;
+    AUTHORED_ORDINARY_PASSING_RISE_METRES
+        * run_weight.clamp(0.0, 1.0)
+        * smoothstep(0.05, 0.75, skeleton.animation_speed())
 }
 
 fn advance_towards(current: f32, target: f32, maximum_delta: f32) -> f32 {
@@ -595,17 +588,17 @@ fn landing_compression_for_action(
     landing_compression_for_impact(profile, impact_speed)
 }
 
-/// Normalizes authored root/pelvis height before applying the single gait
-/// waveform. XZ translation, rotations, and all authored limb transforms are
-/// retained. Action and airborne transitions blend back to authored central Y.
-pub(super) fn stabilize_locomotion_torso(
+/// Preserves authored joint translation and adds only the run-flight height
+/// that is absent from the run clip. Action and airborne transitions blend the
+/// additive offset back to zero without changing the authored base pose.
+pub(super) fn apply_locomotion_height(
     mut commands: Commands,
     mut owners: Query<(
         Entity,
         &PresentedSkeleton,
         Option<&mut LocomotionHeightState>,
     )>,
-    mut bones: Query<(&HumanoidBone, &AuthoredBindTransform, &mut Transform)>,
+    mut bones: Query<(&HumanoidBone, &mut Transform)>,
 ) {
     let mut heights = BTreeMap::new();
     for (owner, skeleton, state) in &mut owners {
@@ -615,7 +608,6 @@ pub(super) fn stabilize_locomotion_torso(
             cleared.authored_rise_compensation = 0.0;
             cleared.displayed_wave = 0.0;
             cleared.wave_transition_offset = 0.0;
-            cleared.normalization_weight = 0.0;
             cleared.landing_compression = 0.0;
             cleared.landing_compression_target = 0.0;
             clear_landing_foot_plants(&mut cleared);
@@ -628,13 +620,11 @@ pub(super) fn stabilize_locomotion_torso(
         }
         let target_wave = locomotion_height_wave(skeleton);
         let target_authored_compensation = authored_height_compensation(skeleton);
-        let target_normalization = locomotion_normalization_target(skeleton);
         let mut next = state.as_deref().copied().unwrap_or_default();
         if !next.initialized {
             next.initialized = true;
             next.amplitude = target_wave;
             next.authored_rise_compensation = target_authored_compensation;
-            next.normalization_weight = target_normalization;
             next.last_guard = Some(skeleton.weapon_guard());
             next.last_posture = Some(skeleton.posture());
             next.last_action = Some(skeleton.action_kind());
@@ -663,13 +653,6 @@ pub(super) fn stabilize_locomotion_torso(
             next.authored_rise_compensation,
             target_authored_compensation,
             HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND * delta_seconds,
-        );
-        let retained_normalization =
-            target_normalization.max((next.amplitude.abs() > 0.001) as u8 as f32);
-        next.normalization_weight = advance_towards(
-            next.normalization_weight,
-            retained_normalization,
-            NORMALIZATION_TRANSITION_PER_SECOND * delta_seconds,
         );
         let landing_delta = skeleton
             .landing_sequence
@@ -761,41 +744,16 @@ pub(super) fn stabilize_locomotion_torso(
         }
     }
 
-    for (bone, bind, mut transform) in &mut bones {
+    for (bone, mut transform) in &mut bones {
         let Some(&height) = heights.get(&bone.owner) else {
             continue;
         };
-        if height.normalization_weight <= f32::EPSILON
-            && height.amplitude <= f32::EPSILON
-            && height.landing_compression <= f32::EPSILON
-        {
+        if height.displayed_wave.abs() <= f32::EPSILON {
             continue;
         }
-        let translation_limit = match bone.role {
-            BoneRole::Root => Vec3::new(0.02, 0.02, 0.025),
-            BoneRole::Pelvis => Vec3::new(0.035, 0.04, 0.045),
-            BoneRole::StomachOne
-            | BoneRole::StomachTwo
-            | BoneRole::StomachThree
-            | BoneRole::Chest => Vec3::splat(0.012),
-            BoneRole::NeckOne | BoneRole::Head => Vec3::splat(0.008),
-            _ => continue,
-        };
-        let authored_translation = transform.translation;
-        let mut normalized_translation = bind.local.translation
-            + (transform.translation - bind.local.translation)
-                .clamp(-translation_limit, translation_limit);
-        match bone.role {
-            BoneRole::Root => {
-                normalized_translation.y = bind.local.translation.y + height.displayed_wave;
-            }
-            BoneRole::Pelvis => normalized_translation.y = bind.local.translation.y,
-            _ => {}
+        if bone.role == BoneRole::Root {
+            transform.translation.y += height.displayed_wave;
         }
-        transform.translation = authored_translation.lerp(
-            normalized_translation,
-            height.normalization_weight.clamp(0.0, 1.0),
-        );
     }
 }
 
@@ -1082,6 +1040,104 @@ use ik::{
 #[cfg(test)]
 mod contract_tests {
     use super::*;
+
+    #[test]
+    fn walk_preserves_authored_root_and_pelvis_translation() {
+        let mut app = App::new();
+        app.add_systems(Update, apply_locomotion_height);
+        let state = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z * WALK_LOCOMOTION_PROFILE.reference_speed)
+            .with_gait_phase(0.25)
+            .with_locomotion_sample_tick(1);
+        let owner = app
+            .world_mut()
+            .spawn(PresentedSkeleton::new(state, None))
+            .id();
+        let authored_root = Transform::from_xyz(0.03, 0.81, -0.04);
+        let authored_pelvis = Transform::from_xyz(-0.02, 0.92, 0.05);
+        let root = app
+            .world_mut()
+            .spawn((
+                HumanoidBone {
+                    owner,
+                    role: BoneRole::Root,
+                },
+                authored_root,
+            ))
+            .id();
+        let pelvis = app
+            .world_mut()
+            .spawn((
+                HumanoidBone {
+                    owner,
+                    role: BoneRole::Pelvis,
+                },
+                authored_pelvis,
+            ))
+            .id();
+
+        app.update();
+
+        assert_eq!(*app.world().get::<Transform>(root).unwrap(), authored_root);
+        assert_eq!(
+            *app.world().get::<Transform>(pelvis).unwrap(),
+            authored_pelvis
+        );
+    }
+
+    #[test]
+    fn run_flight_is_additive_without_replacing_authored_pelvis_translation() {
+        let mut app = App::new();
+        app.add_systems(Update, apply_locomotion_height);
+        let state = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z * RUN_LOCOMOTION_PROFILE.reference_speed)
+            .with_gait_phase(0.25)
+            .with_locomotion_sample_tick(1);
+        let owner = app
+            .world_mut()
+            .spawn(PresentedSkeleton::new(state, None))
+            .id();
+        let authored_root = Transform::from_xyz(0.03, 0.81, -0.04);
+        let authored_pelvis = Transform::from_xyz(-0.02, 0.92, 0.05);
+        let root = app
+            .world_mut()
+            .spawn((
+                HumanoidBone {
+                    owner,
+                    role: BoneRole::Root,
+                },
+                authored_root,
+            ))
+            .id();
+        let pelvis = app
+            .world_mut()
+            .spawn((
+                HumanoidBone {
+                    owner,
+                    role: BoneRole::Pelvis,
+                },
+                authored_pelvis,
+            ))
+            .id();
+
+        app.update();
+
+        let expected_flight =
+            RUN_LOCOMOTION_PROFILE.flight_apex_metres - AUTHORED_ORDINARY_PASSING_RISE_METRES;
+        let displayed_root = app.world().get::<Transform>(root).unwrap();
+        assert!(
+            (displayed_root.translation.y - (authored_root.translation.y + expected_flight)).abs()
+                <= 0.0001
+        );
+        assert_eq!(
+            displayed_root.translation.xz(),
+            authored_root.translation.xz()
+        );
+        assert_eq!(
+            *app.world().get::<Transform>(pelvis).unwrap(),
+            authored_pelvis
+        );
+    }
 
     #[test]
     fn measured_sole_offset_matches_the_authored_rig() {
@@ -1391,7 +1447,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn locomotion_height_amplitude_covers_walk_run_and_guarded_run_only() {
+    fn additive_locomotion_height_covers_run_only() {
         let moving = |speed, posture, guard| {
             SkeletonState::default()
                 .with_local_velocity(Vec3::NEG_Z * speed)
@@ -1406,12 +1462,11 @@ mod legacy_tests {
                     RaisedLocomotionIntent::default()
                 })
         };
-        assert!(
-            (locomotion_height_wave(
+        assert_eq!(
+            locomotion_height_wave(
                 &moving(2.0, Posture::Upright, WeaponGuardState::Lowered,).with_gait_phase(0.25)
-            ) - WALK_LOCOMOTION_PROFILE.bounce_metres)
-                .abs()
-                < 0.0001
+            ),
+            0.0
         );
         assert!(
             (locomotion_height_wave(
@@ -1422,15 +1477,19 @@ mod legacy_tests {
         );
         let raised = moving(2.0, Posture::Upright, WeaponGuardState::Raised).with_gait_phase(0.25);
         assert_eq!(locomotion_height_wave(&raised), 0.0);
-        assert!(
-            (locomotion_height_wave(&raised.with_guarded_sprint_locomotion(true))
-                - WALK_LOCOMOTION_PROFILE.bounce_metres)
-                .abs()
-                < 0.0001
+        assert_eq!(
+            locomotion_height_wave(&raised.with_guarded_sprint_locomotion(true)),
+            0.0
+        );
+        assert_eq!(
+            authored_height_compensation(
+                &moving(2.0, Posture::Upright, WeaponGuardState::Lowered,)
+            ),
+            0.0
         );
         assert!(
             (authored_height_compensation(&moving(
-                2.0,
+                5.5,
                 Posture::Upright,
                 WeaponGuardState::Lowered,
             )) - AUTHORED_ORDINARY_PASSING_RISE_METRES)
@@ -1444,22 +1503,6 @@ mod legacy_tests {
         let mut specialized = moving(2.0, Posture::Upright, WeaponGuardState::Lowered);
         specialized.animation_pack = "humanoid_sword_and_shield".to_owned();
         assert_eq!(authored_height_compensation(&specialized), 0.0);
-    }
-
-    #[test]
-    fn central_height_normalization_applies_only_during_active_locomotion() {
-        let moving = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
-        assert_eq!(locomotion_normalization_target(&moving), 1.0);
-        assert_eq!(
-            locomotion_normalization_target(&SkeletonState::default()),
-            0.0
-        );
-        assert_eq!(
-            locomotion_normalization_target(
-                &SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised)
-            ),
-            0.0
-        );
     }
 
     #[test]

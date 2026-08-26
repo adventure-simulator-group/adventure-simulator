@@ -50,14 +50,6 @@ struct RigJoint {
     parent: Option<usize>,
     name: Option<String>,
     lower_body: bool,
-    strips_root_translation: bool,
-}
-
-fn strips_gameplay_root_translation(name: &str) -> bool {
-    // MetaHuman rigs name the skeleton-space root `body_world`; the joint
-    // named `root` is the anatomical pelvis. Pelvis translation is authored
-    // pose data (not gameplay root motion) and must survive clip baking.
-    name.eq_ignore_ascii_case("body_world")
 }
 
 #[derive(Clone)]
@@ -358,9 +350,6 @@ pub(super) fn update_pose_buffers(
                                 lower_body: name
                                     .as_deref()
                                     .is_some_and(is_lower_body_animation_target),
-                                strips_root_translation: name
-                                    .as_deref()
-                                    .is_some_and(strips_gameplay_root_translation),
                             })
                             .collect(),
                     })
@@ -942,7 +931,7 @@ fn bake_clip(clip: &AnimationClip, definition: &RigDefinition) -> BakedClip {
         .iter()
         .map(|joint| {
             let sample_time = |frame: usize| (frame as f32 * SAMPLE_DT).min(duration);
-            let mut translations = (0..frames)
+            let translations = (0..frames)
                 .map(|frame| {
                     clip.sample_clamped(translation_field.clone(), joint.target, sample_time(frame))
                         .unwrap_or(joint.bind.translation)
@@ -960,9 +949,6 @@ fn bake_clip(clip: &AnimationClip, definition: &RigDefinition) -> BakedClip {
                         .unwrap_or(joint.bind.scale)
                 })
                 .collect::<Vec<_>>();
-            if joint.strips_root_translation {
-                translations.fill(joint.bind.translation);
-            }
             BoneTrack {
                 translations,
                 rotations,
@@ -1312,14 +1298,6 @@ mod tests {
     }
 
     #[test]
-    fn only_the_true_skeleton_root_strips_authored_translation() {
-        assert!(strips_gameplay_root_translation("body_world"));
-        assert!(strips_gameplay_root_translation("BODY_WORLD"));
-        assert!(!strips_gameplay_root_translation("root"));
-        assert!(!strips_gameplay_root_translation("c_spine0"));
-    }
-
-    #[test]
     fn authored_foot_range_is_the_average_foot_travel_along_the_motion_axis() {
         let joint = |name: &str, parent: Option<usize>| RigJoint {
             target: AnimationTargetId::from_name(&Name::new(name.to_owned())),
@@ -1327,7 +1305,6 @@ mod tests {
             parent,
             name: Some(name.to_owned()),
             lower_body: true,
-            strips_root_translation: false,
         };
         let definition = RigDefinition {
             family: "test".to_owned(),
@@ -1367,7 +1344,6 @@ mod tests {
             parent,
             name: Some(name.to_owned()),
             lower_body: true,
-            strips_root_translation: false,
         };
         let definition = RigDefinition {
             family: "test".to_owned(),
@@ -1426,7 +1402,6 @@ mod tests {
             parent,
             name: Some(name.to_owned()),
             lower_body: true,
-            strips_root_translation: false,
         };
         let definition = RigDefinition {
             family: "test".to_owned(),
@@ -1487,7 +1462,6 @@ mod tests {
             parent,
             name: Some(name.to_owned()),
             lower_body: true,
-            strips_root_translation: false,
         };
         let definition = RigDefinition {
             family: "test".to_owned(),
@@ -1531,7 +1505,6 @@ mod tests {
             parent,
             name: Some(name.to_owned()),
             lower_body: true,
-            strips_root_translation: false,
         };
         let definition = RigDefinition {
             family: "test".to_owned(),
@@ -1615,7 +1588,6 @@ mod tests {
             parent,
             name: Some(name.to_owned()),
             lower_body: true,
-            strips_root_translation: false,
         };
         let definition = RigDefinition {
             family: "test".to_owned(),
