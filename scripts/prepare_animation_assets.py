@@ -51,10 +51,10 @@ DIRECT_MOTIONS = {
     "prone_supine_roll_left": (0,),
     "supine_transition": (0,),
     "combat_stance": (0,),
-    "quickstep_forward": (0, 3, 6),
-    "quickstep_right": (0, 3, 6),
-    "quickstep_left": (0, 3, 6),
-    "quickstep_back": (0, 3, 6),
+    "quickstep_forward": (3, 6, 9),
+    "quickstep_right": (3, 6, 9),
+    "quickstep_left": (3, 6, 9),
+    "quickstep_back": (3, 6, 9),
 }
 
 COMBAT_CYCLE_MOTIONS = ("strafe", "skip")
@@ -210,6 +210,7 @@ def publish_animation_assets(
             runtime_dir / f"{motion}.glb",
             last_frame=max(kept_frames),
             kept_frames=kept_frames,
+            remove_root_lateral_motion=motion.startswith("quickstep_"),
             check=check,
         )
         published.append(motion)

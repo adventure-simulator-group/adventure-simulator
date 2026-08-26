@@ -4,6 +4,8 @@ import sys
 import tempfile
 import unittest
 
+import numpy as np
+
 
 PATH = pathlib.Path(__file__).parents[1] / "prepare_animation_motion.py"
 sys.path.insert(0, str(PATH.parent))
@@ -61,6 +63,54 @@ class PrepareAnimationMotionTests(unittest.TestCase):
         motion["animations"][0]["channels"][0]["target"]["node"] = foreign
         with self.assertRaisesRegex(MODULE.GlbError, "foreign base path"):
             MODULE.validate_motion(base, motion, last_frame=0)
+
+    def test_quickstep_import_removes_only_lateral_root_motion(self):
+        source = self.SOURCE_DIR / "quickstep_forward.glb"
+        source_document, source_binary = MODULE.read_glb(source)
+        optimized, optimized_binary = MODULE.optimize_animation(
+            source_document,
+            source_binary,
+            kept_frames=(3, 6, 9),
+            remove_root_lateral_motion=True,
+        )
+
+        source_paths = MODULE.scene_paths(source_document)
+        optimized_paths = MODULE.scene_paths(optimized)
+
+        def root_translation(document, binary, paths):
+            animation = document["animations"][0]
+            channel = next(
+                channel
+                for channel in animation["channels"]
+                if paths[channel["target"]["node"]] == MODULE.ROOT_PATH
+                and channel["target"]["path"] == "translation"
+            )
+            sampler = animation["samplers"][channel["sampler"]]
+            return (
+                MODULE.accessor_view(document, binary, sampler["input"])[:, 0],
+                MODULE.accessor_view(document, binary, sampler["output"]),
+            )
+
+        source_times, source_values = root_translation(
+            source_document, source_binary, source_paths
+        )
+        output_times, output_values = root_translation(
+            optimized, optimized_binary, optimized_paths
+        )
+        source_indices = [
+            int(np.flatnonzero(np.isclose(source_times, frame / 30.0))[0])
+            for frame in (3, 6, 9)
+        ]
+        root_node = next(
+            node
+            for index, node in enumerate(optimized["nodes"])
+            if optimized_paths[index] == MODULE.ROOT_PATH
+        )
+
+        np.testing.assert_allclose(output_times, np.asarray((0.1, 0.2, 0.3)))
+        np.testing.assert_allclose(output_values[:, 1], source_values[source_indices, 1])
+        np.testing.assert_allclose(output_values[:, 0], root_node["translation"][0])
+        np.testing.assert_allclose(output_values[:, 2], root_node["translation"][2])
 
 
 if __name__ == "__main__":
