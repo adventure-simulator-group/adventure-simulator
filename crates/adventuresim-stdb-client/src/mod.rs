@@ -317,6 +317,11 @@ pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
 pub mod designate_residence_reducer;
+pub mod dev_bootstrap_base_reducer;
+pub mod dev_bootstrap_finalize_reducer;
+pub mod dev_bootstrap_gallery_reducer;
+pub mod dev_bootstrap_gallery_validate_reducer;
+pub mod dev_bootstrap_settlement_activity_reducer;
 pub mod development_scenario_browser_access_type;
 pub mod development_scenario_subject_type;
 pub mod development_scenario_type;
@@ -1255,6 +1260,11 @@ pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMe
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
 pub use designate_residence_reducer::designate_residence;
+pub use dev_bootstrap_base_reducer::dev_bootstrap_base;
+pub use dev_bootstrap_finalize_reducer::dev_bootstrap_finalize;
+pub use dev_bootstrap_gallery_reducer::dev_bootstrap_gallery;
+pub use dev_bootstrap_gallery_validate_reducer::dev_bootstrap_gallery_validate;
+pub use dev_bootstrap_settlement_activity_reducer::dev_bootstrap_settlement_activity;
 pub use development_scenario_browser_access_type::DevelopmentScenarioBrowserAccess;
 pub use development_scenario_subject_type::DevelopmentScenarioSubject;
 pub use development_scenario_type::DevelopmentScenario;
@@ -2155,6 +2165,24 @@ pub enum Reducer {
         character_id: u64,
         holding_id: String,
     },
+    DevBootstrapBase {
+        bootstrap_token: String,
+    },
+    DevBootstrapFinalize {
+        bootstrap_token: String,
+    },
+    DevBootstrapGallery {
+        bootstrap_token: String,
+        offset: u32,
+        count: u32,
+    },
+    DevBootstrapGalleryValidate {
+        bootstrap_token: String,
+    },
+    DevBootstrapSettlementActivity {
+        bootstrap_token: String,
+        index: u32,
+    },
     DisbandParty {
         leader_id: u64,
         party_id: String,
@@ -2902,6 +2930,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::DemandHostileSurrender { .. } => "demand_hostile_surrender",
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DesignateResidence { .. } => "designate_residence",
+            Reducer::DevBootstrapBase { .. } => "dev_bootstrap_base",
+            Reducer::DevBootstrapFinalize { .. } => "dev_bootstrap_finalize",
+            Reducer::DevBootstrapGallery { .. } => "dev_bootstrap_gallery",
+            Reducer::DevBootstrapGalleryValidate { .. } => "dev_bootstrap_gallery_validate",
+            Reducer::DevBootstrapSettlementActivity { .. } => "dev_bootstrap_settlement_activity",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
             Reducer::DiscoverInvestigationLead { .. } => "discover_investigation_lead",
@@ -3528,6 +3561,37 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&designate_residence_reducer::DesignateResidenceArgs {
                 character_id: character_id.clone(),
                 holding_id: holding_id.clone(),
+}),
+            Reducer::DevBootstrapBase{
+                bootstrap_token,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_base_reducer::DevBootstrapBaseArgs {
+                bootstrap_token: bootstrap_token.clone(),
+}),
+            Reducer::DevBootstrapFinalize{
+                bootstrap_token,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_finalize_reducer::DevBootstrapFinalizeArgs {
+                bootstrap_token: bootstrap_token.clone(),
+}),
+            Reducer::DevBootstrapGallery{
+                bootstrap_token,
+                offset,
+                count,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_gallery_reducer::DevBootstrapGalleryArgs {
+                bootstrap_token: bootstrap_token.clone(),
+                offset: offset.clone(),
+                count: count.clone(),
+}),
+            Reducer::DevBootstrapGalleryValidate{
+                bootstrap_token,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_gallery_validate_reducer::DevBootstrapGalleryValidateArgs {
+                bootstrap_token: bootstrap_token.clone(),
+}),
+            Reducer::DevBootstrapSettlementActivity{
+                bootstrap_token,
+                index,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_settlement_activity_reducer::DevBootstrapSettlementActivityArgs {
+                bootstrap_token: bootstrap_token.clone(),
+                index: index.clone(),
 }),
             Reducer::DisbandParty{
                 leader_id,
