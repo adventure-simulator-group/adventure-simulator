@@ -23,6 +23,7 @@ impl Plugin for AdventureSimulatorClientPlugin {
             .init_resource::<DirectControlState>()
             .init_resource::<DebugForceAttackTrigger>()
             .init_resource::<PlayerInputOverride>()
+            .init_resource::<LocalInputTick>()
             .add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
             .add_observer(on_client_added)
             .add_observer(store_reconnect_capability)
@@ -205,6 +206,9 @@ impl SprintInputState {
 #[reflect(Resource, Default)]
 pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
 
+#[derive(Resource, Debug, Clone, Copy, Default)]
+struct LocalInputTick(u32);
+
 fn update_direct_control_input(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -245,6 +249,19 @@ fn update_direct_control_input(
     let gamepad_moving =
         gamepad_direction.length_squared() > input_config.movement_deadzone.powi(2);
     let moving = keyboard_moving || gamepad_moving;
+    let selected_pace = if keyboard_moving {
+        if controls.sprint.active {
+            MovementPace::Sprint
+        } else if controls.caps_jog {
+            MovementPace::Jog
+        } else {
+            MovementPace::Walk
+        }
+    } else if gamepad_moving {
+        MovementPace::Sprint
+    } else {
+        MovementPace::Walk
+    };
     controls.sprint.cancel_latch_when_idle(moving);
     let left_trigger_value = gamepads
         .iter()
@@ -324,7 +341,7 @@ fn update_direct_control_input(
     let space_pressed = keys.pressed(KeyCode::Space);
     let space_just_pressed = keys.just_pressed(KeyCode::Space);
     let space_just_released = keys.just_released(KeyCode::Space);
-    let keyboard_dive_chord = shift_down && alt_pressed && keyboard_moving && !downed;
+    let keyboard_dive_chord = alt_pressed && keyboard_moving && !downed;
     if !keyboard_dive_chord {
         controls.keyboard_dive_latched = false;
     }
@@ -343,14 +360,17 @@ fn update_direct_control_input(
             gamepad_direction
         };
         let travel_direction = dive_direction(movement_direction);
+        let animation_direction = if selected_pace == MovementPace::Sprint {
+            travel_direction.opposite()
+        } else if raised {
+            travel_direction
+        } else {
+            DiveDirection::Forward
+        };
         queue_posture_action(
             &mut controls,
             PostureActionRequest::Dive {
-                animation_direction: if raised {
-                    travel_direction
-                } else {
-                    DiveDirection::Forward
-                },
+                animation_direction,
                 travel_direction,
             },
         );
@@ -531,23 +551,21 @@ fn update_direct_control_input(
     if jump_requested || quickstep_requested {
         controls.jump_command.sequence = controls.jump_command.sequence.wrapping_add(1);
         controls.jump_command.quickstep = quickstep_requested.then_some(quickstep_direction);
+        if quickstep_requested {
+            info!(
+                target: "quickstep_trace",
+                sequence = controls.jump_command.sequence,
+                direction = ?quickstep_direction,
+                raised,
+                quickstep_grounded,
+                "[quickstep][client-input] queued"
+            );
+        }
     }
     if space_just_released {
         controls.space_jump_armed = false;
     }
-    controls.pace = if keyboard_moving {
-        if controls.sprint.active {
-            MovementPace::Sprint
-        } else if controls.caps_jog {
-            MovementPace::Jog
-        } else {
-            MovementPace::Walk
-        }
-    } else if gamepad_moving {
-        MovementPace::Sprint
-    } else {
-        MovementPace::Walk
-    };
+    controls.pace = selected_pace;
 }
 
 fn controller_roll_modifier(
@@ -639,14 +657,18 @@ fn announce_join(
 
 fn send_player_input(
     mut commands: Commands,
+    mut input_tick: ResMut<LocalInputTick>,
     players: Query<(&Actions<Player>, &CharacterLook), With<ControlledPlayer>>,
     movements: Query<&Action<input::Movement>>,
     guard: Res<WeaponGuardInputState>,
     controls: Res<DirectControlState>,
     scripted: Res<PlayerInputOverride>,
 ) {
+    let simulation_tick = input_tick.0;
+    input_tick.0 = input_tick.0.wrapping_add(1);
     for (actions, look) in &players {
-        if let Some(request) = scripted.0 {
+        if let Some(mut request) = scripted.0 {
+            request.simulation_tick = simulation_tick;
             commands.client_trigger(request);
             continue;
         }
@@ -655,6 +677,7 @@ fn send_player_input(
             .next()
             .map(|movement| **movement);
         commands.client_trigger(PlayerInputRequest {
+            simulation_tick,
             movement,
             look: Vec2::new(look.yaw, look.pitch),
             jump: controls.jump_command,
@@ -924,18 +947,11 @@ mod tests {
     }
 
     #[test]
-    fn lateral_press_does_not_consume_posture_release() {
+    fn movement_held_before_left_alt_dives_and_consumes_posture_release() {
         let (mut world, mut schedule) = input_fixture();
         world
             .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::AltLeft);
-        schedule.run(&mut world);
-
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::AltLeft);
-            keys.press(KeyCode::KeyA);
-        }
+            .press(KeyCode::KeyA);
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
@@ -945,15 +961,32 @@ mod tests {
         {
             let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
             keys.clear_just_pressed(KeyCode::KeyA);
-            keys.release(KeyCode::AltLeft);
+            keys.press(KeyCode::AltLeft);
         }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
             PostureCommand {
                 sequence: 1,
-                action: Some(PostureActionRequest::Toggle),
+                action: Some(PostureActionRequest::Dive {
+                    animation_direction: DiveDirection::Forward,
+                    travel_direction: DiveDirection::Left,
+                }),
             }
+        );
+
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::AltLeft);
+            keys.release(KeyCode::AltLeft);
+        }
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .resource::<DirectControlState>()
+                .posture_command
+                .sequence,
+            1
         );
     }
 
@@ -1346,53 +1379,57 @@ mod tests {
     }
 
     #[test]
-    fn completing_shift_left_alt_movement_chord_dives_without_space() {
-        let (mut world, mut schedule) = input_fixture();
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ShiftLeft);
-            keys.press(KeyCode::AltLeft);
-        }
-
-        schedule.run(&mut world);
-        assert_eq!(
-            world.resource::<DirectControlState>().posture_command,
-            PostureCommand::default()
-        );
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::ShiftLeft);
-            keys.clear_just_pressed(KeyCode::AltLeft);
-            keys.press(KeyCode::KeyD);
-        }
-        schedule.run(&mut world);
-        assert_eq!(
-            world.resource::<DirectControlState>().posture_command,
-            PostureCommand {
-                sequence: 1,
-                action: Some(PostureActionRequest::Dive {
-                    animation_direction: DiveDirection::Forward,
-                    travel_direction: DiveDirection::Right,
-                }),
-            }
-        );
-        assert_eq!(
-            world.resource::<DirectControlState>().jump_command,
-            JumpCommand::default()
-        );
-        {
-            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::KeyD);
-            keys.release(KeyCode::AltLeft);
-        }
-        schedule.run(&mut world);
-        assert_eq!(
+    fn left_alt_and_each_wasd_key_dive_without_sprint_or_space() {
+        for (key, travel_direction) in [
+            (KeyCode::KeyW, DiveDirection::Forward),
+            (KeyCode::KeyA, DiveDirection::Left),
+            (KeyCode::KeyS, DiveDirection::Backward),
+            (KeyCode::KeyD, DiveDirection::Right),
+        ] {
+            let (mut world, mut schedule) = input_fixture();
             world
-                .resource::<DirectControlState>()
-                .posture_command
-                .sequence,
-            1
-        );
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::AltLeft);
+
+            schedule.run(&mut world);
+            assert_eq!(
+                world.resource::<DirectControlState>().posture_command,
+                PostureCommand::default()
+            );
+            {
+                let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+                keys.clear_just_pressed(KeyCode::AltLeft);
+                keys.press(key);
+            }
+            schedule.run(&mut world);
+            assert_eq!(
+                world.resource::<DirectControlState>().posture_command,
+                PostureCommand {
+                    sequence: 1,
+                    action: Some(PostureActionRequest::Dive {
+                        animation_direction: DiveDirection::Forward,
+                        travel_direction,
+                    }),
+                }
+            );
+            assert_eq!(
+                world.resource::<DirectControlState>().jump_command,
+                JumpCommand::default()
+            );
+            {
+                let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+                keys.clear_just_pressed(key);
+                keys.release(KeyCode::AltLeft);
+            }
+            schedule.run(&mut world);
+            assert_eq!(
+                world
+                    .resource::<DirectControlState>()
+                    .posture_command
+                    .sequence,
+                1
+            );
+        }
     }
 
     #[test]
@@ -1403,7 +1440,6 @@ mod tests {
             .press(MouseButton::Right);
         {
             let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ShiftLeft);
             keys.press(KeyCode::AltLeft);
             keys.press(KeyCode::KeyD);
         }
@@ -1420,7 +1456,6 @@ mod tests {
         );
         {
             let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear_just_pressed(KeyCode::ShiftLeft);
             keys.clear_just_pressed(KeyCode::AltLeft);
             keys.clear_just_pressed(KeyCode::KeyD);
         }
@@ -1431,6 +1466,28 @@ mod tests {
                 .posture_command
                 .sequence,
             1
+        );
+    }
+
+    #[test]
+    fn sprinting_forward_dive_requests_the_backward_slide_animation() {
+        let (mut world, mut schedule) = input_fixture();
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ShiftLeft);
+            keys.press(KeyCode::AltLeft);
+            keys.press(KeyCode::KeyW);
+        }
+
+        schedule.run(&mut world);
+        let controls = world.resource::<DirectControlState>();
+        assert_eq!(controls.pace, MovementPace::Sprint);
+        assert_eq!(
+            controls.posture_command.action,
+            Some(PostureActionRequest::Dive {
+                animation_direction: DiveDirection::Backward,
+                travel_direction: DiveDirection::Forward,
+            })
         );
     }
 }

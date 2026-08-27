@@ -5,7 +5,7 @@ use std::{
 };
 
 use adventuresim_tactical_core::prelude::*;
-use adventuresim_tactical_netcode::client::DebugForceAttackTrigger;
+use adventuresim_tactical_netcode::client::{DebugForceAttackTrigger, DirectControlState};
 use adventuresim_tactical_netcode::prelude::*;
 use bevy::{
     app::AppExit,
@@ -41,8 +41,26 @@ enum ScriptCommand {
         direction: MoveDirection,
         input_speed: f32,
         duration_seconds: f32,
+        /// Optional attack edge emitted while movement remains held. This is
+        /// intentionally part of the move command so diagnostics exercise the
+        /// real locomotion-to-attack ownership seam instead of stopping first.
+        #[serde(default)]
+        attack_at_seconds: Option<f32>,
+        /// Instant facing change applied on this command's first tick while
+        /// preserving the movement request. This exercises live turning
+        /// without an artificial zero-movement frame between commands.
+        #[serde(default)]
+        turn_degrees_right: Option<f32>,
     },
     Dive {
+        direction: MoveDirection,
+        duration_seconds: f32,
+    },
+    Slide {
+        direction: MoveDirection,
+        duration_seconds: f32,
+    },
+    Quickstep {
         direction: MoveDirection,
         duration_seconds: f32,
     },
@@ -54,6 +72,9 @@ enum ScriptCommand {
     },
     Guard {
         raised: bool,
+    },
+    Pace {
+        pace: MovementPace,
     },
     Attack {
         #[serde(default = "default_attack_observation_seconds")]
@@ -71,6 +92,14 @@ fn default_attack_observation_seconds() -> f32 {
     1.0
 }
 
+fn diagnostic_command_pace(kind: &str, selected: MovementPace) -> MovementPace {
+    match kind {
+        "dive" => MovementPace::Walk,
+        "slide" => MovementPace::Sprint,
+        _ => selected,
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum MoveDirection {
@@ -79,6 +108,10 @@ enum MoveDirection {
     Backward,
     Left,
     Right,
+    ForwardLeft,
+    ForwardRight,
+    BackwardLeft,
+    BackwardRight,
 }
 
 impl MoveDirection {
@@ -88,6 +121,16 @@ impl MoveDirection {
             Self::Backward => Vec2::NEG_Y,
             Self::Left => Vec2::NEG_X,
             Self::Right => Vec2::X,
+            Self::ForwardLeft => Vec2::new(
+                -std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ),
+            Self::ForwardRight => Vec2::splat(std::f32::consts::FRAC_1_SQRT_2),
+            Self::BackwardLeft => Vec2::splat(-std::f32::consts::FRAC_1_SQRT_2),
+            Self::BackwardRight => Vec2::new(
+                std::f32::consts::FRAC_1_SQRT_2,
+                -std::f32::consts::FRAC_1_SQRT_2,
+            ),
         }
     }
 
@@ -97,6 +140,8 @@ impl MoveDirection {
             Self::Backward => DiveDirection::Backward,
             Self::Left => DiveDirection::Left,
             Self::Right => DiveDirection::Right,
+            Self::ForwardLeft | Self::ForwardRight => DiveDirection::Forward,
+            Self::BackwardLeft | Self::BackwardRight => DiveDirection::Backward,
         }
     }
 }
@@ -108,7 +153,9 @@ struct ScriptedInput {
     command_elapsed: f32,
     look: Vec2,
     weapon_guard: WeaponGuardState,
+    pace: MovementPace,
     posture_sequence: u32,
+    jump_sequence: u32,
     started: bool,
     exit_after_script: bool,
     finished_elapsed: Option<f32>,
@@ -234,7 +281,9 @@ impl Plugin for DiagnosticPlugin {
                 command_elapsed: 0.0,
                 look: Vec2::ZERO,
                 weapon_guard: WeaponGuardState::Lowered,
+                pace: MovementPace::Sprint,
                 posture_sequence: 0,
+                jump_sequence: 0,
                 started: false,
                 exit_after_script: self.exit_after_script,
                 finished_elapsed: None,
@@ -357,20 +406,43 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
             ScriptCommand::Move {
                 input_speed,
                 duration_seconds,
+                attack_at_seconds: _,
+                turn_degrees_right,
                 ..
             } if !(0.0..=1.0).contains(input_speed)
                 || !duration_seconds.is_finite()
-                || *duration_seconds <= 0.0 =>
+                || *duration_seconds <= 0.0
+                || turn_degrees_right.is_some_and(|degrees| !degrees.is_finite()) =>
             {
                 return Err(
                     "move input_speed must be 0..=1 and duration_seconds must be positive"
                         .to_owned(),
                 );
             }
+            ScriptCommand::Move {
+                duration_seconds,
+                attack_at_seconds: Some(attack_at_seconds),
+                ..
+            } if !attack_at_seconds.is_finite()
+                || *attack_at_seconds < 0.0
+                || *attack_at_seconds >= *duration_seconds =>
+            {
+                return Err(
+                    "move attack_at_seconds must be finite and within the move duration".to_owned(),
+                );
+            }
             ScriptCommand::Dive {
                 duration_seconds, ..
+            }
+            | ScriptCommand::Slide {
+                duration_seconds, ..
             } if !duration_seconds.is_finite() || *duration_seconds <= 0.0 => {
-                return Err("dive duration_seconds must be positive".to_owned());
+                return Err("dive/slide duration_seconds must be positive".to_owned());
+            }
+            ScriptCommand::Quickstep {
+                duration_seconds, ..
+            } if !duration_seconds.is_finite() || *duration_seconds <= 0.0 => {
+                return Err("quickstep duration_seconds must be positive".to_owned());
             }
             ScriptCommand::TogglePosture { duration_seconds }
                 if !duration_seconds.is_finite() || *duration_seconds <= 0.0 =>
@@ -405,6 +477,7 @@ fn drive_scripted_input(
     player: Query<(), With<ClientPlayer>>,
     mut script: ResMut<ScriptedInput>,
     mut input_override: ResMut<PlayerInputOverride>,
+    mut direct_controls: ResMut<DirectControlState>,
     mut force_attack: ResMut<DebugForceAttackTrigger>,
     mut pending_captures: ResMut<PendingDiagnosticCaptures>,
     mut status: ResMut<DiagnosticInputStatus>,
@@ -459,6 +532,13 @@ fn drive_scripted_input(
             continue;
         }
 
+        if let ScriptCommand::Pace { pace } = command {
+            script.pace = pace;
+            script.command_index += 1;
+            script.command_elapsed = 0.0;
+            continue;
+        }
+
         if let ScriptCommand::Screenshot { path } = &command {
             let path = Path::new(path).to_path_buf();
             if let Some(parent) = path.parent()
@@ -505,27 +585,56 @@ fn drive_scripted_input(
 
         let command_start = script.command_elapsed == 0.0;
         if command_start
+            && let ScriptCommand::Move {
+                turn_degrees_right: Some(degrees_right),
+                ..
+            } = &command
+        {
+            script.look.x = (script.look.x + degrees_right.to_radians() + std::f32::consts::PI)
+                .rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+        }
+        if command_start
             && matches!(
                 &command,
-                ScriptCommand::Dive { .. } | ScriptCommand::TogglePosture { .. }
+                ScriptCommand::Dive { .. }
+                    | ScriptCommand::Slide { .. }
+                    | ScriptCommand::TogglePosture { .. }
             )
         {
             script.posture_sequence = script.posture_sequence.wrapping_add(1);
         }
+        if command_start && let ScriptCommand::Quickstep { direction, .. } = &command {
+            script.jump_sequence = script.jump_sequence.wrapping_add(1);
+            direct_controls.dodge_just_pressed = true;
+            direct_controls.quickstep_direction = direction.vector();
+        }
         if command_start && matches!(&command, ScriptCommand::Attack { .. }) {
             force_attack.0 = true;
         }
+        let previous_command_elapsed = script.command_elapsed;
         script.command_elapsed += delta;
-        let (kind, duration, movement, posture) = match command {
+        let move_attack_due = matches!(
+            &command,
+            ScriptCommand::Move {
+                attack_at_seconds: Some(attack_at_seconds),
+                ..
+            } if previous_command_elapsed <= *attack_at_seconds
+                && script.command_elapsed > *attack_at_seconds
+        );
+        let (kind, duration, movement, posture, jump) = match command {
             ScriptCommand::Move {
                 direction,
                 input_speed,
                 duration_seconds,
+                attack_at_seconds: _,
+                turn_degrees_right: _,
             } => (
                 "move",
                 duration_seconds,
                 Some(direction.vector() * input_speed),
                 PostureCommand::default(),
+                JumpCommand::default(),
             ),
             ScriptCommand::Dive {
                 direction,
@@ -541,6 +650,36 @@ fn drive_scripted_input(
                         travel_direction: direction.dive_direction(),
                     }),
                 },
+                JumpCommand::default(),
+            ),
+            ScriptCommand::Slide {
+                direction,
+                duration_seconds,
+            } => (
+                "slide",
+                duration_seconds,
+                Some(direction.vector()),
+                PostureCommand {
+                    sequence: script.posture_sequence,
+                    action: Some(PostureActionRequest::Dive {
+                        animation_direction: direction.dive_direction().opposite(),
+                        travel_direction: direction.dive_direction(),
+                    }),
+                },
+                JumpCommand::default(),
+            ),
+            ScriptCommand::Quickstep {
+                direction,
+                duration_seconds,
+            } => (
+                "quickstep",
+                duration_seconds,
+                Some(direction.vector()),
+                PostureCommand::default(),
+                JumpCommand {
+                    sequence: script.jump_sequence,
+                    quickstep: Some(direction.vector()),
+                },
             ),
             ScriptCommand::TogglePosture { duration_seconds } => (
                 "toggle_posture",
@@ -550,26 +689,40 @@ fn drive_scripted_input(
                     sequence: script.posture_sequence,
                     action: Some(PostureActionRequest::Toggle),
                 },
+                JumpCommand::default(),
             ),
-            ScriptCommand::Wait { duration_seconds } => {
-                ("wait", duration_seconds, None, PostureCommand::default())
-            }
-            ScriptCommand::Attack { duration_seconds } => {
-                ("attack", duration_seconds, None, PostureCommand::default())
-            }
+            ScriptCommand::Wait { duration_seconds } => (
+                "wait",
+                duration_seconds,
+                None,
+                PostureCommand::default(),
+                JumpCommand::default(),
+            ),
+            ScriptCommand::Attack { duration_seconds } => (
+                "attack",
+                duration_seconds,
+                None,
+                PostureCommand::default(),
+                JumpCommand::default(),
+            ),
             ScriptCommand::Rotate { .. }
             | ScriptCommand::Guard { .. }
+            | ScriptCommand::Pace { .. }
             | ScriptCommand::Screenshot { .. }
             | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
+        if move_attack_due {
+            force_attack.0 = true;
+        }
         let request = PlayerInputRequest {
+            simulation_tick: 0,
             movement,
             look: script.look,
-            jump: default(),
+            jump,
             jump_charge: false,
             downed_align: false,
             posture,
-            pace: MovementPace::Sprint,
+            pace: diagnostic_command_pace(kind, script.pace),
             weapon_guard: script.weapon_guard,
             melee_preparation: MeleePreparationInput::Preferred,
         };
@@ -613,7 +766,7 @@ mod tests {
     #[test]
     fn example_script_parses_and_validates() {
         let script: InputScript = serde_json::from_str(
-            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"attack"},{"type":"screenshot","path":"captures/attack.png"},{"type":"dive","direction":"left","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"guard","raised":false},{"type":"wait","duration_seconds":0.5}]}"#,
+            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"attack"},{"type":"screenshot","path":"captures/attack.png"},{"type":"slide","direction":"forward","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"dive","direction":"left","duration_seconds":1.5},{"type":"toggle_posture","duration_seconds":1.2},{"type":"guard","raised":false},{"type":"quickstep","direction":"right","duration_seconds":0.5},{"type":"wait","duration_seconds":0.5}]}"#,
         )
         .unwrap();
         assert!(validate_script(&script).is_ok());
@@ -623,12 +776,45 @@ mod tests {
                 duration_seconds: 1.0
             }
         ));
+        assert!(matches!(
+            script.commands[5],
+            ScriptCommand::Slide {
+                direction: MoveDirection::Forward,
+                duration_seconds: 1.5,
+            }
+        ));
+        assert_eq!(
+            diagnostic_command_pace("dive", MovementPace::Sprint),
+            MovementPace::Walk
+        );
+        assert_eq!(
+            diagnostic_command_pace("slide", MovementPace::Walk),
+            MovementPace::Sprint
+        );
     }
 
     #[test]
     fn invalid_analogue_speed_is_rejected() {
         let script: InputScript = serde_json::from_str(
             r#"{"commands":[{"type":"move","input_speed":1.1,"duration_seconds":2.0}]}"#,
+        )
+        .unwrap();
+        assert!(validate_script(&script).is_err());
+    }
+
+    #[test]
+    fn move_can_trigger_an_attack_without_releasing_directional_input() {
+        let script: InputScript = serde_json::from_str(
+            r#"{"commands":[{"type":"move","direction":"right","input_speed":1.0,"duration_seconds":2.0,"attack_at_seconds":1.0}]}"#,
+        )
+        .unwrap();
+        assert!(validate_script(&script).is_ok());
+    }
+
+    #[test]
+    fn move_attack_must_occur_strictly_within_the_command() {
+        let script: InputScript = serde_json::from_str(
+            r#"{"commands":[{"type":"move","input_speed":1.0,"duration_seconds":2.0,"attack_at_seconds":2.0}]}"#,
         )
         .unwrap();
         assert!(validate_script(&script).is_err());

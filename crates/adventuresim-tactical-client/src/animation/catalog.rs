@@ -176,6 +176,44 @@ impl AnimationPackCatalog {
                 )?;
             }
         }
+        builder.motion("combat_stance", 0);
+        builder.pose("combat_stance", 0, SemanticPose::CombatStance)?;
+        // The authored combat locomotion files expose keys at 0/6/12/18. The
+        // publication pipeline closes each cycle by copying frame 0 to frame
+        // 24, so frames 6/18 remain the two authoritative contacts.
+        for (motion, pose) in [
+            ("strafe", SemanticPose::StrafeCycle),
+            ("skip", SemanticPose::SkipCycle),
+        ] {
+            builder.motion(motion, 24);
+            builder.pose(motion, 0, pose)?;
+        }
+        for (motion, takeoff, contact) in [
+            (
+                "quickstep_forward",
+                SemanticPose::QuickstepForwardTakeoff,
+                SemanticPose::QuickstepForwardContact,
+            ),
+            (
+                "quickstep_right",
+                SemanticPose::QuickstepRightTakeoff,
+                SemanticPose::QuickstepRightContact,
+            ),
+            (
+                "quickstep_left",
+                SemanticPose::QuickstepLeftTakeoff,
+                SemanticPose::QuickstepLeftContact,
+            ),
+            (
+                "quickstep_back",
+                SemanticPose::QuickstepBackTakeoff,
+                SemanticPose::QuickstepBackContact,
+            ),
+        ] {
+            builder.motion(motion, 12);
+            builder.pose(motion, 0, takeoff)?;
+            builder.pose(motion, 12, contact)?;
+        }
         for (motion, pose) in [
             ("prone_crawl", "prone_crawl_contact"),
             ("supine_scamper", "supine_scamper_contact"),

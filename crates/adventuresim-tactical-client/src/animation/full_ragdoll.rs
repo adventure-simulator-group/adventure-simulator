@@ -76,6 +76,19 @@ pub(super) struct RagdollBodyPart {
     half_length: f32,
 }
 
+fn capsule_terrain_penetration(
+    part: &RagdollBodyPart,
+    position: Vec3,
+    rotation: Quat,
+    mut height_at: impl FnMut(Vec2) -> Option<f32>,
+) -> f32 {
+    let axis = rotation * Vec3::Y * part.half_length;
+    [position - axis, position, position + axis]
+        .into_iter()
+        .filter_map(|sample| height_at(sample.xz()).map(|height| height + part.radius - sample.y))
+        .fold(0.0_f32, f32::max)
+}
+
 /// Resolves presentation-only body contacts against the authoritative terrain
 /// heightfield. Avian still integrates and constrains the articulated bodies;
 /// keeping terrain response out of its contact graph avoids mixing this
@@ -90,22 +103,24 @@ pub(super) fn resolve_ragdoll_terrain_contacts(
     )>,
 ) {
     for (part, mut position, rotation, mut velocity) in &mut bodies {
-        let vertical_extent =
-            part.radius + part.half_length * (rotation.0 * Vec3::Y).dot(Vec3::Y).abs();
-        let ground = terrains
-            .iter()
-            .filter_map(|terrain| terrain.height_at(position.0.xz()))
-            .reduce(f32::max);
-        let Some(minimum_y) = ground.map(|height| height + vertical_extent) else {
-            continue;
-        };
-        if position.0.y < minimum_y {
-            position.0.y = minimum_y;
+        // Sample both capsule end-spheres as well as the centre. A single
+        // centre-height/vertical-extent test lets a tilted limb tunnel into a
+        // slope whenever its low endpoint is over higher terrain.
+        let penetration = capsule_terrain_penetration(part, position.0, rotation.0, |point| {
+            terrains
+                .iter()
+                .filter_map(|terrain| terrain.height_at(point))
+                .reduce(f32::max)
+        });
+        if penetration > 0.0 {
+            position.0.y += penetration;
             if velocity.y < 0.0 {
-                velocity.y *= -0.12;
+                // Ragdolls should settle rather than repeatedly rebound
+                // through the surface between presentation frames.
+                velocity.y = 0.0;
             }
-            velocity.x *= 0.78;
-            velocity.z *= 0.78;
+            velocity.x *= 0.72;
+            velocity.z *= 0.72;
         }
     }
 }
@@ -183,7 +198,9 @@ fn spawn_full_ragdoll(
                 Name::new(format!("Presentation ragdoll {role:?}")),
                 rigid_body,
                 Collider::capsule(radius, length),
-                CollisionLayers::new(RAGDOLL_LAYER, 0u32),
+                // The ragdoll remains a client-only collision island, but its
+                // non-neighbouring parts must collide with one another.
+                CollisionLayers::new(RAGDOLL_LAYER, RAGDOLL_LAYER),
                 Transform::from_translation(global.translation()).with_rotation(global.rotation()),
                 LinearVelocity(skeleton.world_velocity),
                 AngularVelocity(initial_angular_velocity(role, skeleton.world_velocity)),
@@ -211,14 +228,18 @@ fn spawn_full_ragdoll(
         let Some(joint) = spherical_joint(parent, child, rig, globals, &role_bodies) else {
             continue;
         };
-        let entity = commands.spawn((joint, RagdollPart { owner })).id();
+        let entity = commands
+            .spawn((joint, JointCollisionDisabled, RagdollPart { owner }))
+            .id();
         parts.push(entity);
     }
     for (parent, child) in HINGE_LINKS {
         let Some(joint) = hinge_joint(parent, child, rig, globals, &role_bodies) else {
             continue;
         };
-        let entity = commands.spawn((joint, RagdollPart { owner })).id();
+        let entity = commands
+            .spawn((joint, JointCollisionDisabled, RagdollPart { owner }))
+            .id();
         parts.push(entity);
     }
 
@@ -418,5 +439,25 @@ mod tests {
         let reconstructed = parent.mul_transform(local_from_world(parent, desired));
         assert!(reconstructed.translation.distance(desired.translation) < 1.0e-5);
         assert!(reconstructed.rotation.angle_between(desired.rotation) < 1.0e-5);
+    }
+
+    #[test]
+    fn tilted_capsule_samples_its_low_endpoint_on_a_slope() {
+        let part = RagdollBodyPart {
+            radius: 0.1,
+            half_length: 0.5,
+        };
+        let rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
+        let penetration =
+            capsule_terrain_penetration(&part, Vec3::new(0.0, 0.2, 0.0), rotation, |point| {
+                Some(point.x.max(0.0))
+            });
+        assert!((penetration - 0.4).abs() < 1.0e-5, "{penetration}");
+    }
+
+    #[test]
+    fn ragdoll_collision_layer_interacts_with_itself() {
+        let layers = CollisionLayers::new(RAGDOLL_LAYER, RAGDOLL_LAYER);
+        assert!(layers.interacts_with(layers));
     }
 }

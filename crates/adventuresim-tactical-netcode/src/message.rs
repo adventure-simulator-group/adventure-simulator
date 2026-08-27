@@ -51,6 +51,11 @@ pub struct TacticalCombatConfigSnapshot(pub TacticalCombatConfig);
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
 #[reflect(Default)]
 pub struct PlayerInputRequest {
+    /// Client fixed tick that sampled this complete input state. The server
+    /// rejects older samples so reordering on the unreliable channel cannot
+    /// restore stale movement or look intent. It is also the reconciliation
+    /// acknowledgement key for future client rollback.
+    pub simulation_tick: u32,
     pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: JumpCommand,

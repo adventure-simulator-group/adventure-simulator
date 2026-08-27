@@ -8,33 +8,38 @@
     },
     { "type": "wait", "duration_seconds": 1.0 },
     { "type": "guard", "raised": true },
+    { "type": "pace", "pace": "Walk" },
     { "type": "wait", "duration_seconds": 0.75 },
     {
       "type": "move",
       "direction": "forward",
       "input_speed": 1.0,
-      "duration_seconds": 4.0
+      "duration_seconds": 4.0,
+      "attack_at_seconds": 2.0
     },
     { "type": "wait", "duration_seconds": 1.0 },
     {
       "type": "move",
       "direction": "backward",
       "input_speed": 1.0,
-      "duration_seconds": 4.0
+      "duration_seconds": 4.0,
+      "attack_at_seconds": 2.0
     },
     { "type": "wait", "duration_seconds": 1.0 },
     {
       "type": "move",
       "direction": "left",
       "input_speed": 1.0,
-      "duration_seconds": 4.0
+      "duration_seconds": 4.0,
+      "attack_at_seconds": 2.0
     },
     { "type": "wait", "duration_seconds": 1.0 },
     {
       "type": "move",
       "direction": "right",
       "input_speed": 1.0,
-      "duration_seconds": 4.0
+      "duration_seconds": 4.0,
+      "attack_at_seconds": 2.0
     },
     { "type": "guard", "raised": false },
     { "type": "wait", "duration_seconds": 0.5 }

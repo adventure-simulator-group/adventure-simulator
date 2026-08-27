@@ -14,6 +14,7 @@ from prepare_rig_base import GlbError, encode_glb, read_glb
 
 
 ANIMATION_FPS = 30.0
+ROOT_PATH = ("Skeleton", "body_world", "root")
 
 
 def accessor_view(document: dict, binary: bytes, index: int) -> np.ndarray:
@@ -88,6 +89,7 @@ def optimize_animation(
     binary: bytes,
     *,
     kept_frames: tuple[int, ...] | None = None,
+    remove_root_lateral_motion: bool = False,
 ) -> tuple[dict, bytes]:
     """Keep authored keys, remove bind-default tracks, and collapse constants.
 
@@ -98,11 +100,11 @@ def optimize_animation(
     optimized = copy.deepcopy(document)
     animation = optimized["animations"][0]
     source_animation = document["animations"][0]
+    paths = scene_paths(document)
     packed = bytearray(binary)
     timestamp_accessors: dict[tuple[float, ...], int] = {}
     channels: list[dict] = []
     samplers: list[dict] = []
-
     def timestamps_accessor(times: np.ndarray) -> int:
         key = tuple(float(value) for value in times)
         existing = timestamp_accessors.get(key)
@@ -153,6 +155,15 @@ def optimize_animation(
 
         target = channel["target"]
         path = target["path"]
+        if (
+            remove_root_lateral_motion
+            and paths.get(target["node"]) == ROOT_PATH
+            and path == "translation"
+        ):
+            values = values.copy()
+            values[:, 0] = 0.0
+            values[:, 2] = 0.0
+            key_values = values[1::3] if interpolation == "CUBICSPLINE" else values
         default = _node_default(optimized["nodes"][target["node"]], path)
         if np.allclose(key_values, default, rtol=0.0, atol=1e-6):
             continue
@@ -395,6 +406,7 @@ def prepare_motion(
     *,
     last_frame: int,
     kept_frames: tuple[int, ...] | None = None,
+    remove_root_lateral_motion: bool = False,
     check: bool = False,
 ) -> tuple[float, int]:
     base_document, _ = read_glb(base)
@@ -403,7 +415,10 @@ def prepare_motion(
     if kept_frames is None:
         kept_frames = tuple(range(last_frame + 1))
     optimized_document, optimized_binary = optimize_animation(
-        motion_document, motion_binary, kept_frames=kept_frames
+        motion_document,
+        motion_binary,
+        kept_frames=kept_frames,
+        remove_root_lateral_motion=remove_root_lateral_motion,
     )
     stripped_document, stripped_binary = strip_motion_mesh(
         optimized_document, optimized_binary

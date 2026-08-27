@@ -25,6 +25,20 @@ pub(crate) struct PresentedSkeleton {
     pub(crate) last_phase_correction_delta: f32,
     pub(crate) last_phase_measurement_error: Option<f32>,
     pub(crate) last_phase_source_changed: bool,
+    authored_cadence: Option<AuthoredCadence>,
+    quickstep_phase: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthoredCadenceKind {
+    Ordinary,
+    Combat,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AuthoredCadence {
+    kind: AuthoredCadenceKind,
+    phase: f32,
 }
 
 impl PresentedSkeleton {
@@ -39,6 +53,8 @@ impl PresentedSkeleton {
             last_phase_correction_delta: 0.0,
             last_phase_measurement_error: None,
             last_phase_source_changed: false,
+            authored_cadence: None,
+            quickstep_phase: None,
         }
     }
 }
@@ -59,20 +75,54 @@ pub(super) fn can_predict_locomotion(
     previous: &SkeletonState,
     authoritative: &SkeletonState,
 ) -> bool {
+    let action_is_predictable = authoritative.action_kind() == SkeletonAction::None
+        || (authoritative.weapon_guard() == WeaponGuardState::Raised
+            && authoritative.action_kind() == SkeletonAction::Attack);
     authoritative.is_surface_supported()
-        && authoritative.action_kind() == SkeletonAction::None
+        && action_is_predictable
         && authoritative.animation_speed() > 0.05
         && previous.posture() == authoritative.posture()
         && previous.weapon_guard() == authoritative.weapon_guard()
         && previous.action_kind() == authoritative.action_kind()
         && previous.is_surface_supported() == authoritative.is_surface_supported()
         && previous.animation_pack == authoritative.animation_pack
+        && previous.contact_sequence == authoritative.contact_sequence
+        && same_guard_step(previous, authoritative)
+}
+
+fn same_guard_step(previous: &SkeletonState, authoritative: &SkeletonState) -> bool {
+    match (
+        previous.raised_footwork().step(),
+        authoritative.raised_footwork().step(),
+    ) {
+        (Some(previous), Some(authoritative)) => {
+            previous.swing_foot() == authoritative.swing_foot()
+                && previous.start_tick() == authoritative.start_tick()
+                && previous.contact_tick() == authoritative.contact_tick()
+        }
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 pub(super) fn advance_presented_skeleton(
     presented: &mut PresentedSkeleton,
     authoritative: &SkeletonState,
     delta_seconds: f32,
+) {
+    advance_presented_skeleton_with_strides(
+        presented,
+        authoritative,
+        delta_seconds,
+        &AuthoredLocomotionStrides::default(),
+    );
+}
+
+fn advance_presented_skeleton_with_strides(
+    presented: &mut PresentedSkeleton,
+    authoritative: &SkeletonState,
+    delta_seconds: f32,
+    authored_strides: &AuthoredLocomotionStrides,
 ) {
     let delta_seconds = delta_seconds.clamp(0.0, 0.1);
     let source_changed = presented.source_tick != authoritative.locomotion_sample_tick;
@@ -97,9 +147,15 @@ pub(super) fn advance_presented_skeleton(
             .world_velocity
             .lerp(authoritative.world_velocity, response);
 
-        let speed = presentation_phase_speed(&next);
-        let prediction_delta =
-            gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds);
+        let prediction_delta = if next.weapon_guard() == WeaponGuardState::Raised
+            && let Some(step) = next.raised_footwork().step()
+        {
+            let duration_ticks = step.contact_tick().saturating_sub(step.start_tick()).max(1);
+            delta_seconds * LOCOMOTION_SAMPLE_HZ * 0.5 / duration_ticks as f32
+        } else {
+            let speed = presentation_phase_speed(&next);
+            gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds)
+        };
         let predicted = (previous.gait_phase + prediction_delta).rem_euclid(1.0);
         presented.last_phase_prediction_delta = prediction_delta;
         let error = circular_phase_delta(predicted, authoritative.gait_phase);
@@ -135,8 +191,111 @@ pub(super) fn advance_presented_skeleton(
         presented.phase_error_remaining = 0.0;
     }
 
+    advance_presented_quickstep(
+        &previous,
+        authoritative,
+        &mut next,
+        &mut presented.quickstep_phase,
+        delta_seconds,
+    );
+    apply_authored_cadence(
+        &previous,
+        &mut next,
+        &mut presented.authored_cadence,
+        authored_strides,
+        delta_seconds,
+    );
     presented.state = next;
     presented.source_tick = authoritative.locomotion_sample_tick;
+}
+
+/// Keep authored quicksteps on a render-time timeline. Authoritative tactical
+/// ticks can be coalesced between render observations (including phase 0.13 →
+/// 1.0); copying that discontinuity directly skips the authored load and tuck.
+/// Gameplay still owns action admission/contact. Presentation only bounds how
+/// quickly the already-authoritative action phase may advance visually.
+fn advance_presented_quickstep(
+    previous: &SkeletonState,
+    authoritative: &SkeletonState,
+    next: &mut SkeletonState,
+    phase: &mut Option<f32>,
+    delta_seconds: f32,
+) {
+    let continuing = previous.is_quickstep();
+    if !authoritative.is_quickstep() && !continuing {
+        *phase = None;
+        return;
+    }
+    if !authoritative.is_quickstep() && phase.is_some_and(|phase| phase >= 1.0) {
+        *phase = None;
+        return;
+    }
+
+    let source = if authoritative.is_quickstep() {
+        authoritative
+    } else {
+        previous
+    };
+    let preparation_ticks = source.action_preparation_ticks().unwrap_or(1).max(1);
+    let entering = phase.is_none() && !previous.is_quickstep() && authoritative.is_quickstep();
+    let visual_phase = phase.get_or_insert_with(|| {
+        if previous.is_quickstep() {
+            previous.action_phase().clamp(0.0, 1.0)
+        } else {
+            source.action_phase().clamp(0.0, 1.0)
+        }
+    });
+    if !entering {
+        *visual_phase = (*visual_phase
+            + delta_seconds.max(0.0) * LOCOMOTION_SAMPLE_HZ / (2 * preparation_ticks) as f32)
+            .min(1.0);
+    }
+
+    *next = source.clone();
+    let start_tick = source.action_start_tick().unwrap_or(0);
+    let elapsed_ticks = (*visual_phase * (2 * preparation_ticks) as f32).round() as u64;
+    next.advance_action(
+        start_tick
+            .saturating_add(elapsed_ticks)
+            .min(start_tick.saturating_add(2 * preparation_ticks)),
+    );
+}
+
+fn apply_authored_cadence(
+    previous: &SkeletonState,
+    next: &mut SkeletonState,
+    cadence: &mut Option<AuthoredCadence>,
+    strides: &AuthoredLocomotionStrides,
+    delta_seconds: f32,
+) {
+    if next.posture() != Posture::Upright || next.is_quickstep() {
+        *cadence = None;
+        return;
+    }
+    let kind =
+        if next.weapon_guard() == WeaponGuardState::Raised && !next.guarded_sprint_locomotion() {
+            AuthoredCadenceKind::Combat
+        } else {
+            AuthoredCadenceKind::Ordinary
+        };
+    let speed = next.animation_speed();
+    let stride = match kind {
+        AuthoredCadenceKind::Ordinary => strides.ordinary(speed),
+        AuthoredCadenceKind::Combat => strides.combat(next.raised_locomotion().local_direction()),
+    };
+    let continuing = cadence.filter(|current| current.kind == kind);
+    if stride.is_none() && !(speed <= 0.05 && continuing.is_some()) {
+        *cadence = None;
+        return;
+    }
+    let mut phase = continuing.map_or(previous.gait_phase, |current| current.phase);
+    if speed > 0.05
+        && let Some(stride) = stride
+    {
+        phase = (phase + speed * delta_seconds.max(0.0) / (stride.max(0.01) * 2.0)).rem_euclid(1.0);
+    }
+    next.gait_phase = phase;
+    *cadence = Some(AuthoredCadence { kind, phase });
 }
 
 fn presentation_phase_speed(skeleton: &SkeletonState) -> f32 {
@@ -160,6 +319,7 @@ pub(super) fn update_presented_skeletons(
     mut commands: Commands,
     time: Res<Time>,
     procedural_clock: Res<ProceduralAnimationClock>,
+    authored_strides: Res<AuthoredLocomotionStrides>,
     mut players: Query<(Entity, &SkeletonState, Option<&mut PresentedSkeleton>), With<Player>>,
 ) {
     for (entity, authoritative, presented) in &mut players {
@@ -177,7 +337,12 @@ pub(super) fn update_presented_skeletons(
         } else {
             time.delta_secs()
         };
-        advance_presented_skeleton(&mut presented, authoritative, delta_seconds);
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            authoritative,
+            delta_seconds,
+            &authored_strides,
+        );
     }
 }
 
@@ -248,11 +413,13 @@ impl Plugin for TacticalAnimationPlugin {
             .init_resource::<pose_buffer::PoseBufferMetrics>()
             .init_resource::<pose_buffer::RigDefinitions>()
             .init_resource::<pose_buffer::BakedClipBank>()
+            .init_resource::<AuthoredLocomotionStrides>()
             .init_resource::<AnimationRuntime>()
             .init_resource::<semantic_route::SemanticRouteTelemetry>()
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
             .init_resource::<procedural::FixedTickPoseCache>()
+            .init_resource::<secondary_physics::SecondaryPhysicsTelemetry>()
             .register_required_components::<procedural::HumanoidBone, secondary_physics::SecondaryBoneDynamics>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
@@ -274,6 +441,7 @@ impl Plugin for TacticalAnimationPlugin {
                     evaluate_skeletons,
                     tick_impact_reactions,
                     pose_buffer::update_pose_buffers,
+                    pose_buffer::calibrate_authored_locomotion_strides,
                     update_rig_visibility,
                     emit_locomotion_presentation_events,
                     trace_locomotion_presentation_events,
@@ -288,15 +456,14 @@ impl Plugin for TacticalAnimationPlugin {
                     restore_authored_bind_pose,
                     procedural::apply_pose_mirroring,
                     procedural::apply_procedural_dive_lower_body,
-                    procedural::stabilize_locomotion_torso,
+                    procedural::apply_locomotion_height,
+                    procedural::orient_guarded_run_lower_body,
                     procedural::apply_landing_leg_compression,
                     procedural::apply_locomotion_body_response,
                     procedural::apply_jump_anticipation,
                     procedural::apply_head_and_torso_look,
                     secondary_physics::apply_secondary_bone_physics,
-                    procedural::apply_ordinary_locomotion_ik,
                     procedural::apply_terrain_leg_ik,
-                    procedural::apply_quickstep_ik,
                     procedural::enforce_anatomical_knee_yaw,
                     procedural::apply_arm_and_weapon_constraints,
                     full_ragdoll::apply_full_ragdoll_pose,
@@ -377,5 +544,138 @@ fn emit_locomotion_presentation_events(
         } else {
             commands.entity(owner).insert(next);
         }
+    }
+}
+
+#[cfg(test)]
+mod authored_cadence_tests {
+    use super::*;
+
+    #[test]
+    fn authored_walk_stride_controls_visual_cycle_rate() {
+        let state = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
+        let mut presented = PresentedSkeleton::new(state.clone(), None);
+        let strides = AuthoredLocomotionStrides {
+            walk: Some(1.0),
+            run: Some(2.0),
+            ..default()
+        };
+
+        advance_presented_skeleton_with_strides(&mut presented, &state, 0.1, &strides);
+
+        // One cycle owns two one-metre steps: 2 m/s advances 0.1 cycle in 0.1 s.
+        assert!((presented.gait_phase - 0.1).abs() < 0.0001);
+    }
+
+    #[test]
+    fn diagonal_combat_cadence_blends_strafe_and_skip_stride() {
+        let state = SkeletonState::default()
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_local_velocity(Vec3::new(1.0, 0.0, 1.0))
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::ONE, 2.0));
+        let mut presented = PresentedSkeleton::new(state.clone(), None);
+        let strides = AuthoredLocomotionStrides {
+            strafe: Some(0.25),
+            skip: Some(0.75),
+            ..default()
+        };
+
+        advance_presented_skeleton_with_strides(&mut presented, &state, 0.1, &strides);
+
+        assert!((presented.gait_phase - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn coalesced_quickstep_phase_still_traverses_the_authored_timeline() {
+        let mut authoritative =
+            SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        authoritative
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 10, 20)
+            .unwrap();
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+
+        // Simulate a coalesced authoritative observation that jumps directly
+        // to contact/recovery complete. Presentation must still visit frame 6,
+        // the midpoint of the authoritative 0/3/6/9/12 source timeline.
+        authoritative.advance_action(30);
+        let strides = AuthoredLocomotionStrides::default();
+        for _ in 0..15 {
+            advance_presented_skeleton_with_strides(
+                &mut presented,
+                &authoritative,
+                1.0 / LOCOMOTION_SAMPLE_HZ,
+                &strides,
+            );
+        }
+        let evaluation = AnimationEvaluation::from_skeleton(&presented.state);
+        assert!((presented.action_phase() - 0.75).abs() < 0.051);
+        assert!(evaluation.lower_body.iter().any(|sample| matches!(
+            sample.sampling,
+            PoseSampling::Timeline { progress } if (progress - 0.75).abs() < 0.051
+        )));
+    }
+
+    #[test]
+    fn released_guard_cannot_replace_the_presented_quickstep_timeline() {
+        let mut authoritative =
+            SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        authoritative
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 10, 20)
+            .unwrap();
+        authoritative.advance_action(10);
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+        let strides = AuthoredLocomotionStrides::default();
+
+        // The server has already observed landing and guard release. The
+        // presentation timeline still owns the complete authored action
+        // output before it may route back to ordinary/combat locomotion.
+        authoritative.advance_action(31);
+        authoritative = authoritative.with_weapon_guard(WeaponGuardState::Lowered);
+        authoritative = authoritative.with_local_velocity(Vec3::X * 2.0);
+
+        let initial = AnimationEvaluation::from_skeleton(&presented.state);
+        let mut progresses = initial
+            .lower_body
+            .iter()
+            .filter_map(|sample| match sample.sampling {
+                PoseSampling::Timeline { progress } => Some(progress),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        while presented.is_quickstep() {
+            advance_presented_skeleton_with_strides(
+                &mut presented,
+                &authoritative,
+                1.0 / LOCOMOTION_SAMPLE_HZ,
+                &strides,
+            );
+            let evaluation = AnimationEvaluation::from_skeleton(&presented.state);
+            if presented.is_quickstep() {
+                assert!(!evaluation.lower_body.is_empty());
+                for sample in &evaluation.lower_body {
+                    assert_eq!(sample.pose, SemanticPose::QuickstepRightTakeoff);
+                    let PoseSampling::Timeline { progress } = sample.sampling else {
+                        panic!("quickstep lower body must remain timeline sampled")
+                    };
+                    progresses.push(progress);
+                }
+            }
+            assert!(progresses.len() < 64, "presented quickstep did not finish");
+        }
+
+        assert!(progresses.first().is_some_and(|progress| *progress <= 0.01));
+        assert!(
+            progresses
+                .iter()
+                .any(|progress| (*progress - 0.5).abs() <= 0.11)
+        );
+        assert!(progresses.last().is_some_and(|progress| *progress >= 0.99));
+        let released = AnimationEvaluation::from_skeleton(&presented.state);
+        assert!(released.lower_body.iter().all(|sample| !matches!(
+            sample.pose,
+            SemanticPose::QuickstepRightTakeoff
+                | SemanticPose::StrafeCycle
+                | SemanticPose::SkipCycle
+        )));
     }
 }

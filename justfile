@@ -378,6 +378,18 @@ tactical-play mode="animation" base_port="24920" graphics_preset="default" prese
 animation-direction-benchmark base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
     @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} {{ quote(scene_input) }} scripts/animation_direction_benchmark.json
 
+# Exercise authored quickstep playback while guard is released during flight.
+animation-quickstep-guard-release base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} {{ quote(scene_input) }} scripts/animation_quickstep_guard_release.json
+
+# Capture the real flat-terrain quickstep used by authored-motion parity analysis.
+animation-quickstep-parity-capture base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto":
+    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} assets/tactical-scenes/flat-dry-grassland.json scripts/animation_quickstep_parity.json
+
+# Compare a captured real-client quickstep against the original five-key motion.
+animation-quickstep-parity-analyze trace report="target/dodge-investigation/quickstep-parity.json":
+    @{{ python_bin }} scripts/analyze_quickstep_parity.py {{ quote(trace) }} --report {{ quote(report) }}
+
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
 tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":

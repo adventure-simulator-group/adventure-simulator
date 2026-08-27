@@ -21,6 +21,24 @@ class ProfileTests(unittest.TestCase):
         ):
             self.assertEqual(dev_stack.runtime_root(), Path(state))
 
+    def test_writable_directory_uses_the_created_childs_canonical_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            requested = Path(temporary) / "requested"
+            redirected = Path(temporary) / "package-local-cache"
+            redirected.mkdir()
+            original_resolve = Path.resolve
+
+            def resolve_with_store_virtualization(path, strict=False):
+                if path.name.startswith(".path-resolution-"):
+                    return redirected / path.name
+                return original_resolve(path, strict=strict)
+
+            with mock.patch.object(Path, "resolve", resolve_with_store_virtualization):
+                self.assertEqual(
+                    dev_stack.resolve_writable_directory(requested), redirected
+                )
+            self.assertEqual(list(requested.iterdir()), [])
+
     def test_profile_has_worktree_isolated_identifiers(self):
         with tempfile.TemporaryDirectory() as state:
             one = dev_stack.profile_values("renderer-demo", 23100, root=Path("/repo/one"), state_root=Path(state))

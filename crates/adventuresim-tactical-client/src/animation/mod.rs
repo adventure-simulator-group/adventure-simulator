@@ -6,8 +6,11 @@ use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::message::PlayerInputRequest;
 use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{
-    animation::AnimationTargetId, asset::LoadState, ecs::hierarchy::ChildSpawnerCommands,
-    gltf::Gltf, prelude::*,
+    animation::AnimationTargetId,
+    asset::{AssetId, LoadState},
+    ecs::hierarchy::ChildSpawnerCommands,
+    gltf::Gltf,
+    prelude::*,
 };
 
 pub(crate) mod jitter;
@@ -67,6 +70,49 @@ impl Default for TerrainIkEnabled {
 pub(crate) mod catalog;
 pub use catalog::AnimationPackCatalog;
 use catalog::*;
+
+/// Per-step travel measured from the loaded authored foot curves. Until a
+/// motion and rig are both available, presentation retains the shared
+/// simulation profile instead of guessing from clip duration.
+#[derive(Resource, Debug, Clone, Default)]
+pub(super) struct AuthoredLocomotionStrides {
+    walk: Option<f32>,
+    run: Option<f32>,
+    strafe: Option<f32>,
+    skip: Option<f32>,
+    measured_clips: BTreeMap<String, AssetId<AnimationClip>>,
+}
+
+impl AuthoredLocomotionStrides {
+    fn ordinary(&self, speed: f32) -> Option<f32> {
+        let walk = self.walk?;
+        let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
+            / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+            .clamp(0.0, 1.0);
+        if blend <= f32::EPSILON {
+            Some(walk)
+        } else {
+            Some(walk.lerp(self.run?, blend))
+        }
+    }
+
+    fn combat(&self, direction: Vec2) -> Option<f32> {
+        let strafe_weight = direction.x.abs();
+        let skip_weight = direction.y.abs();
+        let total = strafe_weight + skip_weight;
+        if total <= f32::EPSILON {
+            return None;
+        }
+        let mut stride = 0.0;
+        if strafe_weight > f32::EPSILON {
+            stride += self.strafe? * strafe_weight;
+        }
+        if skip_weight > f32::EPSILON {
+            stride += self.skip? * skip_weight;
+        }
+        Some(stride / total)
+    }
+}
 
 #[derive(Debug, Clone)]
 struct LoadedClip {
@@ -209,7 +255,7 @@ pub(super) struct ImpactReaction {
 
 mod full_ragdoll;
 mod loading;
-mod secondary_physics;
+pub(crate) mod secondary_physics;
 use loading::*;
 fn evaluate_skeletons(
     mut commands: Commands,
@@ -340,7 +386,9 @@ fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
 /// The curve shapes are animation metadata: walk keeps one supported foot,
 /// run has genuine intervals with neither foot loaded, and idle loads both.
 fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
-    let samples = if evaluation.action.is_empty() {
+    let samples = if !evaluation.lower_body.is_empty() {
+        &evaluation.lower_body
+    } else if evaluation.action.is_empty() {
         &evaluation.base
     } else {
         return Vec2::ZERO;
@@ -350,6 +398,18 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
     for sample in samples {
         let mut weights = match (sample.pose, sample.sampling) {
             (SemanticPose::IdleRelaxed, _) => Vec2::ONE,
+            (SemanticPose::CombatStance, _) => Vec2::ONE,
+            (
+                SemanticPose::StrafeCycle | SemanticPose::SkipCycle,
+                PoseSampling::Cycle { phase },
+            ) => combat_cycle_ik_weights(phase),
+            (
+                SemanticPose::QuickstepForwardTakeoff
+                | SemanticPose::QuickstepRightTakeoff
+                | SemanticPose::QuickstepLeftTakeoff
+                | SemanticPose::QuickstepBackTakeoff,
+                PoseSampling::Timeline { .. },
+            ) => Vec2::ZERO,
             (SemanticPose::WalkContact, PoseSampling::Cycle { phase }) => {
                 let (left, right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, phase);
                 Vec2::new(left, right)
@@ -379,6 +439,19 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
         Vec2::ZERO
     }
     .clamp(Vec2::ZERO, Vec2::ONE)
+}
+
+/// Select the single authored combat contact. Frames 0/12 are swing midpoints
+/// and frames 6/18 switch contact. The pose buffer interpolates continuously
+/// into each terrain-conformed target; support identity itself must not overlap
+/// because an outgoing foot is free as soon as the incoming foot contacts.
+fn combat_cycle_ik_weights(phase: f32) -> Vec2 {
+    let phase = phase.rem_euclid(1.0);
+    if (0.25..0.75).contains(&phase) {
+        Vec2::X
+    } else {
+        Vec2::Y
+    }
 }
 
 fn capture_authored_bind_transforms(
@@ -451,9 +524,42 @@ struct ResolvedAnchor<'a> {
     pack_id: &'a str,
     semantic: SemanticPose,
     mirrored: bool,
+    timeline_reversed: bool,
 }
 
 fn resolve_anchor<'a>(
+    runtime: &'a AnimationRuntime,
+    catalog: &'a AnimationPackCatalog,
+    requested_pack: &str,
+    pose: SemanticPose,
+) -> Option<ResolvedAnchor<'a>> {
+    let ordinary = resolve_library_anchor(runtime, catalog, requested_pack, pose);
+    if ordinary
+        .as_ref()
+        .is_some_and(|resolved| resolved.semantic == pose)
+    {
+        return ordinary;
+    }
+
+    // A directional quickstep may omit its opposite file. In that case its
+    // takeoff resolves to the authored opposite contact and its contact to the
+    // opposite takeoff, which samples that one clip backward. Exact authored
+    // direction clips always win above.
+    if let Some(reversed_pose) = reversed_quickstep_pose(pose)
+        && let Some(reversed) =
+            resolve_library_anchor(runtime, catalog, requested_pack, reversed_pose)
+        && reversed.semantic == reversed_pose
+    {
+        return Some(ResolvedAnchor {
+            timeline_reversed: true,
+            ..reversed
+        });
+    }
+
+    ordinary
+}
+
+fn resolve_library_anchor<'a>(
     runtime: &'a AnimationRuntime,
     catalog: &'a AnimationPackCatalog,
     requested_pack: &str,
@@ -480,6 +586,22 @@ fn resolve_anchor<'a>(
         pack_id,
         semantic: resolved_pose,
         mirrored,
+        timeline_reversed: false,
+    })
+}
+
+fn reversed_quickstep_pose(pose: SemanticPose) -> Option<SemanticPose> {
+    use SemanticPose::*;
+    Some(match pose {
+        QuickstepForwardTakeoff => QuickstepBackTakeoff,
+        QuickstepForwardContact => QuickstepBackContact,
+        QuickstepBackTakeoff => QuickstepForwardTakeoff,
+        QuickstepBackContact => QuickstepForwardContact,
+        QuickstepRightTakeoff => QuickstepLeftTakeoff,
+        QuickstepRightContact => QuickstepLeftContact,
+        QuickstepLeftTakeoff => QuickstepRightTakeoff,
+        QuickstepLeftContact => QuickstepRightContact,
+        _ => return None,
     })
 }
 
@@ -581,11 +703,28 @@ fn append_resolved_sample_layer(
             append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer)
         }
         PoseSampling::Cycle { phase } => {
+            let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
             append_weighted_clip(
                 weighted,
-                start.clip,
+                &clip,
                 start.mirrored,
                 start.clip.duration_seconds * phase.rem_euclid(1.0),
+                sample.weight,
+            );
+        }
+        PoseSampling::Timeline { progress } => {
+            let progress = progress.clamp(0.0, 1.0);
+            let timeline = if start.timeline_reversed {
+                1.0 - progress
+            } else {
+                progress
+            };
+            let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
+            append_weighted_clip(
+                weighted,
+                &clip,
+                start.mirrored,
+                start.clip.duration_seconds * timeline,
                 sample.weight,
             );
         }
@@ -859,6 +998,34 @@ mod contract_tests {
         assert_eq!(root.poses[&SemanticPose::AttackSwing].motion, "swing");
         assert_eq!(root.poses[&SemanticPose::ContinueSwing].motion, "swing");
         assert_eq!(root.poses[&SemanticPose::AttackOffhand].motion, "offhand");
+    }
+
+    #[test]
+    fn combat_cycle_ik_switches_exclusive_support_at_authored_contacts() {
+        assert_eq!(combat_cycle_ik_weights(0.0), Vec2::Y);
+        assert_eq!(combat_cycle_ik_weights(0.125), Vec2::Y);
+        assert_eq!(combat_cycle_ik_weights(0.25), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.375), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.5), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.625), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.75), Vec2::Y);
+        assert_eq!(combat_cycle_ik_weights(0.875), Vec2::Y);
+    }
+
+    #[test]
+    fn authored_quickstep_timeline_never_requests_leg_ik() {
+        let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
+        // The first half is the interpolation from the planted stance into
+        // authored takeoff. Once frame 0 owns the lower body, every authored
+        // quickstep pose remains completely free of leg IK.
+        for tick in [100, 150, 199] {
+            state.advance_action(tick);
+            let evaluation = AnimationEvaluation::from_skeleton(&state);
+            assert_eq!(semantic_foot_ik_weights(&evaluation), Vec2::ZERO, "{tick}");
+        }
     }
 }
 

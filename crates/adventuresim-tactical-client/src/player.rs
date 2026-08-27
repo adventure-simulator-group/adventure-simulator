@@ -36,6 +36,7 @@ impl Plugin for PlayerPlugin {
                 )
                     .chain(),),
             )
+            .add_systems(Update, trace_local_quickstep_state)
             .add_systems(
                 PostUpdate,
                 predict_local_body_facing.before(bevy::transform::TransformSystems::Propagate),
@@ -61,6 +62,14 @@ pub struct ClientPlayer;
 struct LocalBodyFacing {
     rotation: Quat,
     initialized: bool,
+}
+
+#[derive(Component, Debug, Clone, Copy, Default)]
+struct LocalQuickstepTrace {
+    initialized: bool,
+    dodge_action: bool,
+    push_active: bool,
+    push_start_tick: u64,
 }
 
 #[derive(EntityEvent)]
@@ -126,6 +135,7 @@ fn on_new_player_added_hook(
             tactical_character_controller(),
             ClientPlayer,
             LocalBodyFacing::default(),
+            LocalQuickstepTrace::default(),
             GrassInteractor,
             actions!(Player[
                 (
@@ -190,6 +200,68 @@ fn on_new_player_added_hook(
     });
 
     Ok(())
+}
+
+fn trace_local_quickstep_state(
+    mut players: Query<
+        (
+            Entity,
+            &SkeletonState,
+            &CharacterMotionSnapshot,
+            &Transform,
+            &mut LocalQuickstepTrace,
+        ),
+        With<ControlledPlayer>,
+    >,
+) {
+    for (entity, skeleton, snapshot, transform, mut trace) in &mut players {
+        let dodge_action = skeleton.action_kind() == SkeletonAction::Dodge;
+        let push = snapshot.quickstep_push;
+        let changed = !trace.initialized
+            || trace.dodge_action != dodge_action
+            || trace.push_active != push.active
+            || trace.push_start_tick != push.start_tick;
+        if !changed {
+            continue;
+        }
+
+        if dodge_action != push.active {
+            warn!(
+                target: "quickstep_trace",
+                ?entity,
+                dodge_action,
+                action_direction = ?skeleton.action_direction(),
+                skeleton_tick = skeleton.locomotion_sample_tick,
+                push_active = push.active,
+                push_start_tick = push.start_tick,
+                push_direction = ?push.direction,
+                acknowledged_input_tick = snapshot.acknowledged_input_tick,
+                render_translation = ?transform.translation,
+                snapshot_translation = ?snapshot.translation,
+                "[quickstep][client-state] animation/actuator discrepancy"
+            );
+        } else if dodge_action || push.active || trace.dodge_action || trace.push_active {
+            info!(
+                target: "quickstep_trace",
+                ?entity,
+                dodge_action,
+                action_direction = ?skeleton.action_direction(),
+                skeleton_tick = skeleton.locomotion_sample_tick,
+                push_active = push.active,
+                push_start_tick = push.start_tick,
+                push_direction = ?push.direction,
+                acknowledged_input_tick = snapshot.acknowledged_input_tick,
+                render_translation = ?transform.translation,
+                snapshot_translation = ?snapshot.translation,
+                "[quickstep][client-state] transition"
+            );
+        }
+
+        trace.initialized = true;
+        trace.dodge_action = dodge_action;
+        trace.push_active = push.active;
+        trace.push_start_tick = push.start_tick;
+    }
 }
 
 fn predict_local_body_facing(
@@ -636,21 +708,10 @@ fn apply_direct_combat_controls(
                 &combat_config,
             );
         }
-        if controls.dodge_just_pressed {
-            if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
-                let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-                if let Some(spec) = DodgeSpec::quickstep(controls.quickstep_direction) {
-                    let _ = skeleton.begin_dodge(
-                        spec,
-                        start,
-                        start + animation_ticks(combat_config.presentation.dodge_seconds),
-                    );
-                }
-            }
-            cmd.client_trigger(DefendRequest::Dodge {
-                direction: controls.quickstep_direction,
-            });
-        }
+        // Quicksteps travel on the sequenced PlayerInputRequest stream. Do not
+        // predict only the SkeletonState here: the client does not simulate the
+        // matching QuickstepPush, so an authoritative rejection would otherwise
+        // animate a dodge over a stationary replicated transform.
         if controls.roll_just_pressed {
             cmd.client_trigger(DefendRequest::Roll);
         }

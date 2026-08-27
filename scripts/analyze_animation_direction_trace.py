@@ -97,6 +97,10 @@ CATASTROPHIC_FOOT_HORIZONTAL_HIP_OFFSET_METRES = 0.65
 CATASTROPHIC_FOOT_DISPLACEMENT_SECONDS = 0.1
 MINIMUM_GUARD_SWING_TRAVEL_METRES = 0.05
 MINIMUM_GUARD_SWING_CLEARANCE_GAIN_METRES = 0.03
+MINIMUM_DIRECTION_ROOT_TRAVEL_METRES = 0.25
+BODY_FOOT_LEAD_TOLERANCE_METRES = 0.02
+CONTACT_CLEARANCE_LIMIT_METRES = 0.04
+MINIMUM_ATTACK_FRAMES = 4
 
 
 def vector_length(value: Iterable[float]) -> float:
@@ -479,6 +483,100 @@ def global_bone_positions(frame: dict[str, object]) -> dict[str, tuple[float, ..
     }
 
 
+def controller_position(frame: dict[str, object]) -> tuple[float, float, float] | None:
+    value = (frame.get("controller_global_transform") or {}).get("translation")
+    if value is None:
+        value = frame.get("subject_translation")
+    if not isinstance(value, list) or len(value) != 3:
+        return None
+    return tuple(float(component) for component in value)
+
+
+def operational_contract_summary(frames: list[dict[str, object]]) -> dict[str, object]:
+    positions = [controller_position(frame) for frame in frames]
+    diagnostics_complete = all(position is not None for position in positions)
+    valid_positions = [position for position in positions if position is not None]
+    root_travel = (
+        math.hypot(
+            valid_positions[-1][0] - valid_positions[0][0],
+            valid_positions[-1][2] - valid_positions[0][2],
+        )
+        if len(valid_positions) >= 2
+        else 0.0
+    )
+    attack_frames = sum(str(frame.get("action", "")).lower() == "attack" for frame in frames)
+    body_ahead_violations = []
+    contact_handoff_violations = []
+    previous_sequence = None
+    previous_controller = None
+    last_direction = None
+    for frame, controller in zip(frames, positions, strict=True):
+        bones = global_bone_positions(frame)
+        required = {"left_hip", "right_hip", "left_foot", "right_foot"}
+        diagnostics_complete &= controller is not None and required <= bones.keys()
+        if controller is None or not required <= bones.keys():
+            continue
+        if previous_controller is not None:
+            dx = controller[0] - previous_controller[0]
+            dz = controller[2] - previous_controller[2]
+            distance = math.hypot(dx, dz)
+            if distance > 1.0e-5:
+                last_direction = (dx / distance, dz / distance)
+        previous_controller = controller
+        presented = frame.get("presented") or {}
+        sequence = presented.get("contact_sequence")
+        if last_direction is not None:
+            hip = (
+                (bones["left_hip"][0] + bones["right_hip"][0]) * 0.5,
+                (bones["left_hip"][2] + bones["right_hip"][2]) * 0.5,
+            )
+            hip_projection = hip[0] * last_direction[0] + hip[1] * last_direction[1]
+            foot_projections = {
+                foot: bones[foot][0] * last_direction[0]
+                + bones[foot][2] * last_direction[1]
+                for foot in ("left_foot", "right_foot")
+            }
+            if max(foot_projections.values()) + BODY_FOOT_LEAD_TOLERANCE_METRES < hip_projection:
+                body_ahead_violations.append(frame_context(frame))
+            if previous_sequence is not None and sequence != previous_sequence:
+                contact_name = str(presented.get("contact_foot", "")).lower()
+                contact = f"{contact_name}_foot"
+                clearance = bone_terrain_clearance(frame, contact)
+                if (
+                    contact not in foot_projections
+                    or foot_projections[contact] + BODY_FOOT_LEAD_TOLERANCE_METRES < hip_projection
+                    or clearance is None
+                    or clearance > CONTACT_CLEARANCE_LIMIT_METRES
+                ):
+                    contact_handoff_violations.append(frame_context(frame))
+        previous_sequence = sequence
+    travel_passed = root_travel >= MINIMUM_DIRECTION_ROOT_TRAVEL_METRES
+    attack_passed = attack_frames >= MINIMUM_ATTACK_FRAMES
+    passed = (
+        diagnostics_complete
+        and travel_passed
+        and attack_passed
+        and not body_ahead_violations
+        and not contact_handoff_violations
+    )
+    return {
+        "passed": passed,
+        "diagnostics_complete": diagnostics_complete,
+        "root_travel_passed": travel_passed,
+        "root_travel_metres": root_travel,
+        "root_travel_limit_metres": MINIMUM_DIRECTION_ROOT_TRAVEL_METRES,
+        "attack_coverage_passed": attack_passed,
+        "attack_frame_count": attack_frames,
+        "attack_frame_minimum": MINIMUM_ATTACK_FRAMES,
+        "body_ahead_violation_count": len(body_ahead_violations),
+        "body_ahead_tolerance_metres": BODY_FOOT_LEAD_TOLERANCE_METRES,
+        "body_ahead_violations": body_ahead_violations,
+        "contact_handoff_violation_count": len(contact_handoff_violations),
+        "contact_clearance_limit_metres": CONTACT_CLEARANCE_LIMIT_METRES,
+        "contact_handoff_violations": contact_handoff_violations,
+    }
+
+
 def bone_terrain_clearance(frame: dict[str, object], tracked_name: str) -> float | None:
     for bone in frame.get("bones", []):
         if TRACKED_BONES.get(str(bone.get("name", ""))) != tracked_name:
@@ -665,6 +763,7 @@ def score_direction(frames: list[dict[str, object]]) -> dict[str, object]:
     timing = timing_summary(frames)
     catastrophic_stance = catastrophic_stance_summary(frames)
     guard_step_liveness = guard_step_liveness_summary(frames)
+    operational_contracts = operational_contract_summary(frames)
     cadence_threshold_ratio = cadence["cadence_threshold_ratio"]
     score_basis = {
         "worst_metric": worst_metric,
@@ -683,7 +782,11 @@ def score_direction(frames: list[dict[str, object]]) -> dict[str, object]:
         }
     jitter_passed = all_incidents == 0 and cadence["cadence_gate_passed"]
     motion_smoothness_score = 100.0 / (1.0 + p95_ratio)
-    hard_failure = catastrophic_stance["failed"] or not guard_step_liveness["passed"]
+    hard_failure = (
+        catastrophic_stance["failed"]
+        or not guard_step_liveness["passed"]
+        or not operational_contracts["passed"]
+    )
     quality_score = 0.0 if hard_failure else motion_smoothness_score
     if catastrophic_stance["failed"]:
         score_basis = {
@@ -698,6 +801,12 @@ def score_direction(frames: list[dict[str, object]]) -> dict[str, object]:
         score_basis = {
             "worst_metric": "guard_step_liveness",
             "worst_bone": "foot",
+            "normalized_threshold_ratio": 1.0,
+        }
+    elif not operational_contracts["passed"]:
+        score_basis = {
+            "worst_metric": "operational_footwork_contract",
+            "worst_bone": "body_and_feet",
             "normalized_threshold_ratio": 1.0,
         }
     regions = {
@@ -725,6 +834,7 @@ def score_direction(frames: list[dict[str, object]]) -> dict[str, object]:
         "timing": timing,
         "catastrophic_stance": catastrophic_stance,
         "guard_step_liveness": guard_step_liveness,
+        "operational_contracts": operational_contracts,
         "regions": regions,
         "metrics": metrics,
     }
@@ -793,7 +903,11 @@ def analyze_trace(
         reverse=True,
     )
     benchmark_valid = all(
-        score["timing"]["benchmark_valid"] for score in scores.values()
+        score["timing"]["benchmark_valid"]
+        and score["operational_contracts"]["diagnostics_complete"]
+        and score["operational_contracts"]["root_travel_passed"]
+        and score["operational_contracts"]["attack_coverage_passed"]
+        for score in scores.values()
     )
     guard_catastrophic_stance = catastrophic_stance_summary(raised_guard_frames)
     benchmark_quality_score = (
@@ -804,8 +918,8 @@ def analyze_trace(
     return {
         "trace": str(path.resolve()),
         "score_definition": (
-            "zero for catastrophic horizontal hip-foot displacement or a missing "
-            "visible guard step; otherwise "
+            "zero for catastrophic stance, a missing visible guard step, or a violated "
+            "body/contact footwork contract; otherwise "
             "100 / (1 + worst derivative p95 or normalized cadence threshold ratio)"
         ),
         "steady_state_trim_seconds": {
@@ -856,6 +970,7 @@ def main() -> int:
         for direction, score in result["directions"].items():
             stance = score["catastrophic_stance"]
             liveness = score["guard_step_liveness"]
+            contracts = score["operational_contracts"]
             timing = score["timing"]
             print(
                 f"{direction}: quality={score['quality_score']:.2f} "
@@ -865,6 +980,11 @@ def main() -> int:
                 f"{stance['maximum_horizontal_hip_foot_offset_metres']:.3f} "
                 f"visible_steps={liveness['visible_half_step_count']}/"
                 f"{liveness['completed_half_step_count']} "
+                f"root_travel_metres={contracts['root_travel_metres']:.3f} "
+                f"attack_frames={contracts['attack_frame_count']} "
+                f"body_ahead_violations={contracts['body_ahead_violation_count']} "
+                "contact_handoff_violations="
+                f"{contracts['contact_handoff_violation_count']} "
                 f"timing_valid={timing['benchmark_valid']} "
                 f"render_stalls={len(timing['render_stalls'])} "
                 f"source_tick_gaps={len(timing['source_tick_gaps'])}"

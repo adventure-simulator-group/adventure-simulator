@@ -22,7 +22,12 @@ pub(crate) fn apply_defend_intent(
     mut cmd: Commands,
     time: Res<Time<()>>,
     states: Query<&TacticalCombatState>,
-    mut skeletons: Query<(&mut SkeletonState, &mut AuthoritativePostureIntent)>,
+    mut skeletons: Query<(
+        &mut SkeletonState,
+        &mut QuickstepPush,
+        &CharacterLook,
+        Option<&Transform>,
+    )>,
     config: Res<TacticalCombatConfig>,
 ) {
     let Ok(combat_state) = states.get(event.defender) else {
@@ -32,16 +37,22 @@ pub(crate) fn apply_defend_intent(
         return;
     }
 
-    let Ok((mut skeleton, mut posture_intent)) = skeletons.get_mut(event.defender) else {
+    let Ok((mut skeleton, mut quickstep_push, look, transform)) = skeletons.get_mut(event.defender)
+    else {
         return;
     };
     let start = animation_tick(&time);
     let accepted = match event.choice {
         DefendRequest::Dodge { direction } if DodgeSpec::quickstep(direction).is_none() => false,
         DefendRequest::Dodge { .. } if skeleton.action_kind() == SkeletonAction::Dodge => true,
-        DefendRequest::Dodge { direction } => {
-            begin_authoritative_quickstep(&mut skeleton, &mut posture_intent, direction, &config)
-        }
+        DefendRequest::Dodge { direction } => begin_authoritative_quickstep(
+            &mut skeleton,
+            &mut quickstep_push,
+            direction,
+            look.to_quat(),
+            transform.map_or(Vec3::ZERO, |transform| transform.translation),
+            &config,
+        ),
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
         DefendRequest::Roll => true,
         DefendRequest::Parry => skeleton
@@ -211,7 +222,8 @@ mod roll_tests {
             .spawn((
                 TacticalCombatState::default(),
                 SkeletonState::default(),
-                AuthoritativePostureIntent::default(),
+                QuickstepPush::default(),
+                CharacterLook::default(),
             ))
             .id();
         let bot = app
@@ -219,7 +231,8 @@ mod roll_tests {
             .spawn((
                 TacticalCombatState::default(),
                 SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
-                AuthoritativePostureIntent::default(),
+                QuickstepPush::default(),
+                CharacterLook::default(),
             ))
             .id();
 
@@ -253,6 +266,7 @@ mod roll_tests {
                 .action_direction(),
             Vec2::X
         );
+        assert!(app.world().get::<QuickstepPush>(bot).unwrap().active);
         assert!(matches!(
             app.world().get::<PendingDefenderResponse>(player),
             Some(PendingDefenderResponse {
@@ -280,7 +294,8 @@ mod roll_tests {
             .spawn((
                 TacticalCombatState::default(),
                 SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
-                AuthoritativePostureIntent::default(),
+                QuickstepPush::default(),
+                CharacterLook::default(),
             ))
             .id();
 
@@ -299,6 +314,7 @@ mod roll_tests {
                 .action_kind(),
             SkeletonAction::None
         );
+        assert!(!app.world().get::<QuickstepPush>(defender).unwrap().active);
         assert!(
             app.world()
                 .get::<PendingDefenderResponse>(defender)
@@ -317,7 +333,8 @@ mod roll_tests {
             .spawn((
                 TacticalCombatState::default(),
                 SkeletonState::default(),
-                AuthoritativePostureIntent::default(),
+                QuickstepPush::default(),
+                CharacterLook::default(),
             ))
             .id();
 
@@ -334,6 +351,7 @@ mod roll_tests {
                 .action_kind(),
             SkeletonAction::None
         );
+        assert!(!app.world().get::<QuickstepPush>(defender).unwrap().active);
         assert!(
             app.world()
                 .get::<PendingDefenderResponse>(defender)

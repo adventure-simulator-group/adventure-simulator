@@ -18,6 +18,7 @@ pub type ControlledPlayer = Actions<Player>;
 #[reflect(Component)]
 #[require(
     CharacterId,
+    CharacterDimensions,
     Limbs,
     Skills,
     Attributes,
@@ -27,6 +28,25 @@ pub type ControlledPlayer = Actions<Player>;
 #[component(immutable)]
 pub struct Player {
     pub name: String,
+}
+
+/// Anatomical measurements that affect authoritative tactical movement.
+///
+/// These values live beside the transient tactical character rather than in
+/// presentation state so server physics and client prediction use the same
+/// proportions. The default is measured from the current humanoid rig.
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, Copy, PartialEq)]
+#[reflect(Component)]
+pub struct CharacterDimensions {
+    pub leg_length_metres: f32,
+}
+
+impl Default for CharacterDimensions {
+    fn default() -> Self {
+        Self {
+            leg_length_metres: 0.840_348,
+        }
+    }
 }
 
 /// Transient tactical allegiance. This is authoritative on the tactical
