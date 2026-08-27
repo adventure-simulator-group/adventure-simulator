@@ -373,7 +373,7 @@ pub(crate) fn map_destination_detail(
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                         @if destination.uses_straight_line_estimate {
-                            span class="travel-route-estimate-warning" { " · Legacy straight-line estimate" }
+                            span class="travel-route-estimate-warning" { " · Straight-line estimate (terrain routing unavailable)" }
                         }
                     }
                 }))

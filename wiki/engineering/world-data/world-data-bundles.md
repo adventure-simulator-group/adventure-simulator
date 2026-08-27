@@ -32,10 +32,11 @@ installs. If a different release is already installed, rerun the script with
 already installed local inputs. It is the explicit rebuild path; it does not
 re-acquire the upstream sources or overwrite the pinned release.
 
-The installer stages and verifies every member before it changes any destination.
-It refuses to merge with an existing local component. To intentionally replace
-one, use `just replace-world-data /path/to/adventuresim-world-inputs.zip /path/to/adventuresim-world-inputs.release.json <published-descriptor-sha256>`; the
-previous component remains recoverable below `target/world-data-backups/`.
+The installer stages and verifies every member before it changes any
+destination. It refuses to merge with an existing local component. To
+intentionally replace one, use
+`just replace-world-data /path/to/adventuresim-world-inputs.zip /path/to/adventuresim-world-inputs.release.json <published-descriptor-sha256>`;
+the previous component remains recoverable below `target/world-data-backups/`.
 Do not remove that backup until the new compile has succeeded.
 
 Verification and installation require the separately published canonical release
@@ -65,8 +66,9 @@ hashed in the archive manifest.
 
 The default `build` command refuses an incomplete collection: it requires every
 active compiler input, the IEG checked-in marker, reviewed layouts, and its
-canonical per-component file inventory. `--partial` exists only for explicitly labelled test or
-non-developer archives and must not be published as the developer release.
+canonical per-component file inventory. `--partial` exists only for explicitly
+labelled test or non-developer archives and must not be published as the
+developer release.
 
 The Viabundus component includes only the five audited CSVs consumed by the
 importer plus its official source sidecar. The sidecar may describe additional
@@ -185,10 +187,9 @@ below `target/world-runtime-backups/`. A previously pinned runtime that is still
 byte-for-byte intact is recognized as downloaded output and upgraded
 automatically, with the prior files retained by the same backup mechanism. The
 optional second argument selects the database to recreate while retaining
-`spacetime_module` as the default, for example
+`spacetime_module` as the default. For example, use
 `just load-world http://127.0.0.1:24610 adventuresim-dev-example` for an
-isolated strategic profile. The `load-viabundus-world` compatibility alias
-accepts the same arguments.
+isolated strategic profile.
 
 Release maintainers build and publish it after `just build-strategic-map`:
 
