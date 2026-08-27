@@ -64,13 +64,13 @@ class PrepareAnimationMotionTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.GlbError, "foreign base path"):
             MODULE.validate_motion(base, motion, last_frame=0)
 
-    def test_quickstep_import_removes_only_lateral_root_motion(self):
+    def test_sparse_quickstep_import_removes_lateral_root_motion(self):
         source = self.SOURCE_DIR / "quickstep_forward.glb"
         source_document, source_binary = MODULE.read_glb(source)
         optimized, optimized_binary = MODULE.optimize_animation(
             source_document,
             source_binary,
-            kept_frames=(3, 6, 9),
+            kept_frames=(0, 3, 6, 9, 12),
             remove_root_lateral_motion=True,
         )
 
@@ -82,7 +82,8 @@ class PrepareAnimationMotionTests(unittest.TestCase):
             channel = next(
                 channel
                 for channel in animation["channels"]
-                if paths[channel["target"]["node"]] == MODULE.ROOT_PATH
+                if paths[channel["target"]["node"]]
+                == ("Skeleton", "body_world", "root")
                 and channel["target"]["path"] == "translation"
             )
             sampler = animation["samplers"][channel["sampler"]]
@@ -99,18 +100,21 @@ class PrepareAnimationMotionTests(unittest.TestCase):
         )
         source_indices = [
             int(np.flatnonzero(np.isclose(source_times, frame / 30.0))[0])
-            for frame in (3, 6, 9)
+            for frame in (0, 3, 6, 9, 12)
         ]
         root_node = next(
             node
             for index, node in enumerate(optimized["nodes"])
-            if optimized_paths[index] == MODULE.ROOT_PATH
+            if optimized_paths[index] == ("Skeleton", "body_world", "root")
         )
 
-        np.testing.assert_allclose(output_times, np.asarray((0.1, 0.2, 0.3)))
+        np.testing.assert_allclose(
+            output_times, np.asarray((0.0, 0.1, 0.2, 0.3, 0.4))
+        )
         np.testing.assert_allclose(output_values[:, 1], source_values[source_indices, 1])
-        np.testing.assert_allclose(output_values[:, 0], root_node["translation"][0])
-        np.testing.assert_allclose(output_values[:, 2], root_node["translation"][2])
+        np.testing.assert_allclose(output_values[:, 0], 0.0)
+        np.testing.assert_allclose(output_values[:, 2], 0.0)
+        np.testing.assert_allclose(np.asarray(root_node["translation"])[[0, 2]], 0.0)
 
 
 if __name__ == "__main__":

@@ -100,12 +100,11 @@ def optimize_animation(
     optimized = copy.deepcopy(document)
     animation = optimized["animations"][0]
     source_animation = document["animations"][0]
+    paths = scene_paths(document)
     packed = bytearray(binary)
     timestamp_accessors: dict[tuple[float, ...], int] = {}
     channels: list[dict] = []
     samplers: list[dict] = []
-    paths = scene_paths(document) if remove_root_lateral_motion else {}
-
     def timestamps_accessor(times: np.ndarray) -> int:
         key = tuple(float(value) for value in times)
         existing = timestamp_accessors.get(key)
@@ -156,19 +155,16 @@ def optimize_animation(
 
         target = channel["target"]
         path = target["path"]
-        default = _node_default(optimized["nodes"][target["node"]], path)
         if (
             remove_root_lateral_motion
-            and path == "translation"
             and paths.get(target["node"]) == ROOT_PATH
+            and path == "translation"
         ):
-            if interpolation == "CUBICSPLINE":
-                raise GlbError(
-                    "root lateral motion removal does not accept cubic source data"
-                )
-            values = np.array(values, copy=True)
-            values[:, (0, 2)] = default[[0, 2]]
-            key_values = values
+            values = values.copy()
+            values[:, 0] = 0.0
+            values[:, 2] = 0.0
+            key_values = values[1::3] if interpolation == "CUBICSPLINE" else values
+        default = _node_default(optimized["nodes"][target["node"]], path)
         if np.allclose(key_values, default, rtol=0.0, atol=1e-6):
             continue
 

@@ -266,6 +266,7 @@ mod roll_tests {
                 .action_direction(),
             Vec2::X
         );
+        assert!(app.world().get::<QuickstepPush>(bot).unwrap().active);
         assert!(matches!(
             app.world().get::<PendingDefenderResponse>(player),
             Some(PendingDefenderResponse {
@@ -313,6 +314,7 @@ mod roll_tests {
                 .action_kind(),
             SkeletonAction::None
         );
+        assert!(!app.world().get::<QuickstepPush>(defender).unwrap().active);
         assert!(
             app.world()
                 .get::<PendingDefenderResponse>(defender)
@@ -349,6 +351,7 @@ mod roll_tests {
                 .action_kind(),
             SkeletonAction::None
         );
+        assert!(!app.world().get::<QuickstepPush>(defender).unwrap().active);
         assert!(
             app.world()
                 .get::<PendingDefenderResponse>(defender)

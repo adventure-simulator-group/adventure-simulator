@@ -1287,6 +1287,32 @@ mod legacy_tests {
     }
 
     #[test]
+    fn quickstep_samples_the_complete_authored_timeline() {
+        let mut state = SkeletonState::default();
+        state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
+
+        for (tick, expected_progress) in
+            [(0, 0.0), (50, 0.25), (100, 0.5), (150, 0.75), (200, 1.0)]
+        {
+            state.advance_action(tick);
+            let evaluation = AnimationEvaluation::from_skeleton(&state);
+            assert_eq!(evaluation.lower_body.len(), 1);
+            assert_eq!(
+                evaluation.lower_body[0].pose,
+                SemanticPose::QuickstepRightTakeoff
+            );
+            assert_eq!(
+                evaluation.lower_body[0].sampling,
+                PoseSampling::Timeline {
+                    progress: expected_progress
+                }
+            );
+        }
+    }
+
+    #[test]
     fn authoritative_action_clock_centers_contact_and_finishes_recovery() {
         let mut state = SkeletonState::default();
         state.begin_attack(AttackSpec::default(), 10, 20).unwrap();

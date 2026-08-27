@@ -8,7 +8,7 @@ use bevy_ahoy::{
 
 use crate::{
     animation::{LOCOMOTION_SAMPLE_HZ, SkeletonState, WeaponGuardState},
-    player::TacticalPlayerViewer,
+    player::{CharacterDimensions, TacticalPlayerViewer},
 };
 
 #[derive(
@@ -207,6 +207,9 @@ pub struct QuickstepPush {
     pub active: bool,
 }
 
+#[derive(Component, Debug, Clone, Copy, Default)]
+struct QuickstepMismatchLogged;
+
 impl QuickstepPush {
     pub fn begin(&mut self, start_tick: u64, direction: Vec2, orientation: Quat, origin: Vec3) {
         self.start_tick = start_tick;
@@ -256,6 +259,124 @@ pub fn quickstep_peak_horizontal_force_newtons(
             * motor.quickstep_peak_horizontal_force_bodyweights_per_strength)
         .max(0.0);
     biological_mass_kg.max(0.0) * motor.gravity_metres_per_second_squared * bodyweights
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuickstepMotionTarget {
+    pub displacement_metres: f32,
+    pub velocity_metres_per_second: f32,
+    pub acceleration_metres_per_second_squared: f32,
+}
+
+/// Scales the authored reference travel by the character's hip-to-ankle chain.
+pub fn quickstep_target_displacement_metres(
+    leg_length_metres: f32,
+    motor: &crate::combat_config::CharacterMotorConfig,
+) -> f32 {
+    let reference_leg_length = motor
+        .reference_quickstep_leg_length_metres
+        .max(f32::EPSILON);
+    let leg_length = if leg_length_metres.is_finite() && leg_length_metres > 0.0 {
+        leg_length_metres
+    } else {
+        reference_leg_length
+    };
+    motor.reference_quickstep_target_displacement_metres * leg_length / reference_leg_length
+}
+
+/// Samples a monotone cubic through the authored 0/3/6/9/12 root positions.
+/// End tangents are zero so the physical body can enter and leave combat idle
+/// without an instantaneous velocity change.
+pub fn quickstep_motion_target(
+    normalized_time: f32,
+    target_displacement_metres: f32,
+    duration_seconds: f32,
+    profile: [f32; 5],
+) -> QuickstepMotionTarget {
+    let phase = normalized_time.clamp(0.0, 1.0);
+    if phase >= 1.0 {
+        return QuickstepMotionTarget {
+            displacement_metres: target_displacement_metres,
+            velocity_metres_per_second: 0.0,
+            acceleration_metres_per_second_squared: 0.0,
+        };
+    }
+    let segment = ((phase * 4.0).floor() as usize).min(3);
+    let u = phase * 4.0 - segment as f32;
+    let secants =
+        std::array::from_fn::<_, 4, _>(|index| (profile[index + 1] - profile[index]) * 4.0);
+    let mut tangents = [0.0; 5];
+    for index in 1..4 {
+        let before = secants[index - 1];
+        let after = secants[index];
+        if before > 0.0 && after > 0.0 {
+            tangents[index] = 2.0 * before * after / (before + after);
+        }
+    }
+    let p0 = profile[segment];
+    let p1 = profile[segment + 1];
+    let m0 = tangents[segment] * 0.25;
+    let m1 = tangents[segment + 1] * 0.25;
+    let u2 = u * u;
+    let u3 = u2 * u;
+    let position = (2.0 * u3 - 3.0 * u2 + 1.0) * p0
+        + (u3 - 2.0 * u2 + u) * m0
+        + (-2.0 * u3 + 3.0 * u2) * p1
+        + (u3 - u2) * m1;
+    let derivative_u = (6.0 * u2 - 6.0 * u) * p0
+        + (3.0 * u2 - 4.0 * u + 1.0) * m0
+        + (-6.0 * u2 + 6.0 * u) * p1
+        + (3.0 * u2 - 2.0 * u) * m1;
+    let second_derivative_u = (12.0 * u - 6.0) * p0
+        + (6.0 * u - 4.0) * m0
+        + (-12.0 * u + 6.0) * p1
+        + (6.0 * u - 2.0) * m1;
+    let duration = duration_seconds.max(f32::EPSILON);
+    QuickstepMotionTarget {
+        displacement_metres: position * target_displacement_metres,
+        velocity_metres_per_second: derivative_u * 4.0 * target_displacement_metres / duration,
+        acceleration_metres_per_second_squared: second_derivative_u
+            * 16.0
+            * target_displacement_metres
+            / (duration * duration),
+    }
+}
+
+/// Returns the bounded longitudinal ground-reaction force needed to follow the
+/// authored trajectory. Position and velocity feedback correct collision and
+/// integration error; neither term directly changes transform or velocity.
+pub fn quickstep_tracking_force_newtons(
+    displacement_metres: f32,
+    velocity_metres_per_second: f32,
+    target: QuickstepMotionTarget,
+    mass_kg: f32,
+    maximum_force_newtons: f32,
+    delta_seconds: f32,
+) -> f32 {
+    const TRACKING_FREQUENCY_RADIANS_PER_SECOND: f32 = 12.0;
+    // Ground projection can leave a few ten-thousandths of a metre per second
+    // behind on an otherwise stationary character. Treat that contact noise as
+    // rest: applying the reversal guard to it limits a launch to the tiny force
+    // needed to reach exactly zero velocity, suppressing the entire quickstep.
+    const VELOCITY_REVERSAL_GUARD_METRES_PER_SECOND: f32 = 0.02;
+    let position_error = target.displacement_metres - displacement_metres;
+    let velocity_error = target.velocity_metres_per_second - velocity_metres_per_second;
+    let acceleration = target.acceleration_metres_per_second_squared
+        + TRACKING_FREQUENCY_RADIANS_PER_SECOND.powi(2) * position_error
+        + 2.0 * TRACKING_FREQUENCY_RADIANS_PER_SECOND * velocity_error;
+    let mass = mass_kg.max(1.0);
+    let force = (mass * acceleration).clamp(
+        -maximum_force_newtons.max(0.0),
+        maximum_force_newtons.max(0.0),
+    );
+    let stopping_force = -velocity_metres_per_second * mass / delta_seconds.max(f32::EPSILON);
+    if velocity_metres_per_second > VELOCITY_REVERSAL_GUARD_METRES_PER_SECOND {
+        force.max(stopping_force)
+    } else if velocity_metres_per_second < -VELOCITY_REVERSAL_GUARD_METRES_PER_SECOND {
+        force.min(stopping_force)
+    } else {
+        force
+    }
 }
 
 /// Converts the configured complete quickstep duration into the midpoint tick
@@ -419,8 +540,10 @@ fn apply_character_motor(
         Option<&MovementPace>,
         Option<&mut QuickstepPush>,
         &Transform,
+        Has<QuickstepMismatchLogged>,
     )>,
     viewer: TacticalPlayerViewer,
+    dimensions: Query<&CharacterDimensions>,
     combat_config: Res<crate::combat_config::TacticalCombatConfig>,
 ) {
     let movement_config = &combat_config.movement;
@@ -437,6 +560,7 @@ fn apply_character_motor(
         pace,
         quickstep_push,
         transform,
+        mismatch_logged,
     ) in &mut controllers
     {
         // Ahoy's crouch flag supplies the short collider used by downed and
@@ -572,54 +696,145 @@ fn apply_character_motor(
             skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
                 && skeleton.action_direction() != Vec2::ZERO
         });
+        let quickstep_push_present = quickstep_push.is_some();
+        let quickstep_push_active = quickstep_push.as_ref().is_some_and(|push| push.active);
         if let Some(mut push) = quickstep_push {
-            if push.active && !quickstep_action {
-                push.cancel();
-            }
-            if push.active {
-                let supported_displacement = (transform.translation - push.origin).xz().length();
-                let elapsed_ticks = skeleton
-                    .map_or(push.start_tick, |skeleton| skeleton.locomotion_sample_tick)
-                    .saturating_sub(push.start_tick);
-                let duration = quickstep_push_seconds(leg_agility, motor);
-                let duration_ticks = (duration * LOCOMOTION_SAMPLE_HZ).ceil().max(1.0) as u64;
-                if elapsed_ticks < duration_ticks
-                    && supported_displacement
-                        < motor.quickstep_maximum_supported_root_displacement_metres
+            let world_direction = (push.orientation
+                * Vec3::new(push.direction.x, 0.0, -push.direction.y))
+            .xz()
+            .normalize_or_zero();
+            let elapsed_ticks = skeleton
+                .map_or(push.start_tick, |skeleton| skeleton.locomotion_sample_tick)
+                .saturating_sub(push.start_tick);
+            let action_duration = movement_config.maneuvers.quickstep_duration_seconds;
+            let action_ticks = (action_duration * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64;
+            let forward_velocity = velocity.xz().dot(world_direction);
+            let bounded_recovery = !quickstep_action
+                && elapsed_ticks <= action_ticks + 2
+                && forward_velocity.abs() > 0.02;
+            if push.active && (quickstep_action || bounded_recovery) {
+                let velocity_before = velocity.0;
+                if mismatch_logged {
+                    commands.entity(entity).remove::<QuickstepMismatchLogged>();
+                }
+                let displacement = (transform.translation - push.origin)
+                    .xz()
+                    .dot(world_direction)
+                    .max(0.0);
+                // Target the state produced by this integration step. Sampling
+                // the current tick leaves one full force step of momentum for
+                // ordinary locomotion to clean up after the dodge has ended.
+                let phase = (elapsed_ticks + 1) as f32 / action_ticks as f32;
+                let leg_length = dimensions
+                    .get(entity)
+                    .map_or(motor.reference_quickstep_leg_length_metres, |dimensions| {
+                        dimensions.leg_length_metres
+                    });
+                let target_displacement = quickstep_target_displacement_metres(leg_length, motor);
+                let target = quickstep_motion_target(
+                    phase,
+                    target_displacement,
+                    action_duration,
+                    motor.quickstep_authored_displacement_profile,
+                );
+                let maximum_force = quickstep_peak_horizontal_force_newtons(
+                    biological_mass_kg,
+                    leg_strength,
+                    motor,
+                );
+                let tracking_force = quickstep_tracking_force_newtons(
+                    displacement,
+                    forward_velocity,
+                    target,
+                    mass_kg,
+                    maximum_force,
+                    time.delta_secs(),
+                );
+                let planar_delta =
+                    world_direction * tracking_force / mass_kg.max(1.0) * time.delta_secs();
+                velocity.x += planar_delta.x;
+                velocity.z += planar_delta.y;
+                if !quickstep_action && velocity.xz().dot(world_direction).abs() <= 0.02 {
+                    push.cancel();
+                }
+
+                let support_duration = quickstep_push_seconds(leg_agility, motor);
+                let support_ticks =
+                    (support_duration * LOCOMOTION_SAMPLE_HZ).ceil().max(1.0) as u64;
+                let length_scale = target_displacement
+                    / motor
+                        .reference_quickstep_target_displacement_metres
+                        .max(f32::EPSILON);
+                if elapsed_ticks < support_ticks
+                    && displacement
+                        < motor.quickstep_maximum_supported_root_displacement_metres * length_scale
                 {
                     // While the virtual legs remain in contact, their baseline
                     // normal force supports body weight. Ahoy therefore must
                     // not apply airborne gravity yet; only the excess vertical
                     // ground-reaction force changes vertical velocity.
                     controller.gravity = 0.0;
-                    let phase = (elapsed_ticks as f32 + 0.5) / duration_ticks as f32;
-                    let force_scale = quickstep_force_curve(phase);
-                    let world_direction = (push.orientation
-                        * Vec3::new(push.direction.x, 0.0, -push.direction.y))
-                    .xz()
-                    .normalize_or_zero();
-                    let horizontal_force = quickstep_peak_horizontal_force_newtons(
-                        biological_mass_kg,
-                        leg_strength,
-                        motor,
-                    ) * force_scale;
+                    let support_phase = (elapsed_ticks as f32 + 0.5) / support_ticks as f32;
+                    let force_scale = quickstep_force_curve(support_phase);
+                    let horizontal_force = maximum_force * force_scale;
                     let vertical_net_force =
                         horizontal_force * motor.quickstep_takeoff_angle_degrees.to_radians().tan();
-                    velocity.x +=
-                        world_direction.x * horizontal_force / mass_kg * time.delta_secs();
-                    velocity.z +=
-                        world_direction.y * horizontal_force / mass_kg * time.delta_secs();
                     velocity.y += vertical_net_force / mass_kg * time.delta_secs();
-                    // The action coasts after release; neither the ordinary
-                    // target-speed motor nor an Ahoy jump event may inject or
-                    // remove takeoff momentum.
-                    continue;
                 }
+                info!(
+                    target: "quickstep_trace",
+                    ?entity,
+                    skeleton_tick = skeleton.map_or(0, |skeleton| skeleton.locomotion_sample_tick),
+                    push_start_tick = push.start_tick,
+                    elapsed_ticks,
+                    ?world_direction,
+                    phase,
+                    displacement,
+                    forward_velocity,
+                    target_displacement = target.displacement_metres,
+                    target_velocity = target.velocity_metres_per_second,
+                    target_acceleration = target.acceleration_metres_per_second_squared,
+                    tracking_force,
+                    maximum_force,
+                    ?velocity_before,
+                    velocity_after = ?velocity.0,
+                    grounded = ?controller_state.grounded,
+                    "[quickstep][motor-pre-collision] integrated force"
+                );
+                continue;
+            }
+            if push.active && !quickstep_action {
                 push.cancel();
             }
         }
         if quickstep_action {
+            if !mismatch_logged {
+                warn!(
+                    target: "quickstep_trace",
+                    ?entity,
+                    skeleton_tick = skeleton.map_or(0, |skeleton| skeleton.locomotion_sample_tick),
+                    action_direction = ?skeleton.map_or(Vec2::ZERO, SkeletonState::action_direction),
+                    push_present = quickstep_push_present,
+                    push_active = quickstep_push_active,
+                    translation = ?transform.translation,
+                    linear_velocity = ?velocity.0,
+                    "[quickstep][motor] dodge animation has no active force actuator"
+                );
+                commands.entity(entity).insert(QuickstepMismatchLogged);
+            }
+            // A missing actuator can occur only during partial state restore.
+            // Stop through the same bounded leg force instead of snapping the
+            // velocity so rollback recovery remains physically continuous.
+            let maximum_force =
+                quickstep_peak_horizontal_force_newtons(biological_mass_kg, leg_strength, motor);
+            let requested_force = -velocity.xz() * mass_kg.max(1.0) / time.delta_secs();
+            let force = requested_force.clamp_length_max(maximum_force);
+            velocity.x += force.x / mass_kg.max(1.0) * time.delta_secs();
+            velocity.z += force.y / mass_kg.max(1.0) * time.delta_secs();
             continue;
+        }
+        if mismatch_logged {
+            commands.entity(entity).remove::<QuickstepMismatchLogged>();
         }
         if let Some(transition) = skeleton.and_then(SkeletonState::posture_transition)
             && matches!(
@@ -1245,6 +1460,112 @@ mod tests {
         assert!((unburdened_speed - 13.48).abs() < 0.05);
         assert!((burdened_speed - 10.05).abs() < 0.05);
         assert!(burdened_speed < unburdened_speed);
+    }
+
+    #[test]
+    fn quickstep_force_follows_the_authored_profile_and_stops_at_scaled_distance() {
+        let config = crate::combat_config::TacticalCombatConfig::default();
+        let motor = &config.movement.motor;
+        let target_distance = quickstep_target_displacement_metres(
+            crate::player::CharacterDimensions::default().leg_length_metres,
+            motor,
+        );
+        let duration = config.movement.maneuvers.quickstep_duration_seconds;
+        let ticks = (duration * LOCOMOTION_SAMPLE_HZ).round() as usize;
+        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let maximum_force = quickstep_peak_horizontal_force_newtons(70.0, 3.0, motor);
+        let mut displacement = 0.0;
+        let mut velocity = 0.0;
+        let mut keyed_displacements = Vec::new();
+        for tick in 0..ticks {
+            if tick % (ticks / 4) == 0 {
+                keyed_displacements.push(displacement);
+            }
+            let target = quickstep_motion_target(
+                (tick + 1) as f32 / ticks as f32,
+                target_distance,
+                duration,
+                motor.quickstep_authored_displacement_profile,
+            );
+            let force = quickstep_tracking_force_newtons(
+                displacement,
+                velocity,
+                target,
+                70.0,
+                maximum_force,
+                delta_seconds,
+            );
+            velocity += force / 70.0 * delta_seconds;
+            displacement += velocity * delta_seconds;
+        }
+        keyed_displacements.push(displacement);
+
+        for (actual, normalized) in keyed_displacements
+            .iter()
+            .zip(motor.quickstep_authored_displacement_profile)
+        {
+            let expected = normalized * target_distance;
+            assert!(
+                (actual - expected).abs() <= 0.05,
+                "actual={actual} expected={expected}"
+            );
+        }
+        assert!(velocity.abs() <= 0.20, "terminal velocity={velocity}");
+    }
+
+    #[test]
+    fn quickstep_launch_overcomes_adverse_ground_contact_drift() {
+        let config = crate::combat_config::TacticalCombatConfig::default();
+        let motor = &config.movement.motor;
+        let duration = config.movement.maneuvers.quickstep_duration_seconds;
+        let ticks = (duration * LOCOMOTION_SAMPLE_HZ).round() as usize;
+        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let mass_kg = 70.0;
+        let maximum_force = quickstep_peak_horizontal_force_newtons(mass_kg, 3.0, motor);
+        let target = quickstep_motion_target(
+            1.0 / ticks as f32,
+            quickstep_target_displacement_metres(
+                crate::player::CharacterDimensions::default().leg_length_metres,
+                motor,
+            ),
+            duration,
+            motor.quickstep_authored_displacement_profile,
+        );
+        // This is larger than the adverse residuals observed after Ahoy ground
+        // projection, while still being physically indistinguishable from rest.
+        let adverse_velocity = -0.0001;
+        let force = quickstep_tracking_force_newtons(
+            0.0,
+            adverse_velocity,
+            target,
+            mass_kg,
+            maximum_force,
+            delta_seconds,
+        );
+        let velocity_after_force = adverse_velocity + force / mass_kg * delta_seconds;
+
+        assert!(
+            force >= maximum_force * 0.99,
+            "launch force {force} was suppressed below maximum {maximum_force}"
+        );
+        assert!(
+            velocity_after_force > 0.5,
+            "launch did not overcome adverse drift: {velocity_after_force}"
+        );
+    }
+
+    #[test]
+    fn quickstep_distance_scales_with_leg_length() {
+        let config = crate::combat_config::TacticalCombatConfig::default();
+        let motor = &config.movement.motor;
+        let reference = motor.reference_quickstep_leg_length_metres;
+        assert!((quickstep_target_displacement_metres(reference, motor) - 1.0).abs() < 1.0e-6);
+        assert!(
+            (quickstep_target_displacement_metres(reference * 1.2, motor) - 1.2).abs() < 1.0e-6
+        );
+        assert!(
+            (quickstep_target_displacement_metres(reference * 0.8, motor) - 0.8).abs() < 1.0e-6
+        );
     }
 
     #[test]

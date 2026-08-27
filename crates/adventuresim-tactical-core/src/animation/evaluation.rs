@@ -372,14 +372,11 @@ fn reverse_cycle_phase(phase: f32) -> f32 {
 }
 
 fn quickstep_lower_body_samples(state: &SkeletonState) -> Vec<PoseSample> {
-    // The authoritative first half is the planted load. Frame 0 of every
-    // quickstep begins exactly at takeoff, so authored playback starts only
-    // when that boundary is reached.
-    let phase = state.action_phase().clamp(0.0, 1.0);
-    if phase < 0.5 {
-        return vec![anchor_sample(SemanticPose::CombatStance)];
-    }
-    let progress = (phase - 0.5) * 2.0;
+    // Authored frames 0/12 are the combat-idle endpoints surrounding the
+    // complete load, launch, flight, and landing sequence at 3/6/9. Sampling
+    // the full action phase keeps those poses synchronized with the physical
+    // force curve instead of starting the legs only after the root launches.
+    let progress = state.action_phase().clamp(0.0, 1.0);
     let direction = state.action_direction().normalize_or_zero();
     let directional = [
         (direction.y.max(0.0), SemanticPose::QuickstepForwardTakeoff),
@@ -764,11 +761,9 @@ mod tests {
         assert_eq!(samples[0].weight, 0.5);
         assert_eq!(samples[1].pose, SemanticPose::QuickstepRightTakeoff);
         assert_eq!(samples[1].weight, 0.5);
-        assert!(
-            samples.iter().all(|sample| {
-                matches!(sample.sampling, PoseSampling::Timeline { progress: 0.5 })
-            })
-        );
+        assert!(samples.iter().all(|sample| {
+            matches!(sample.sampling, PoseSampling::Timeline { progress: 0.75 })
+        }));
     }
 
     #[test]

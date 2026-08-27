@@ -51,10 +51,13 @@ DIRECT_MOTIONS = {
     "prone_supine_roll_left": (0,),
     "supine_transition": (0,),
     "combat_stance": (0,),
-    "quickstep_forward": (3, 6, 9),
-    "quickstep_right": (3, 6, 9),
-    "quickstep_left": (3, 6, 9),
-    "quickstep_back": (3, 6, 9),
+    # Preserve Cascadeur's baked in-betweens: reducing these motions to only
+    # their five authored landmarks measurably changes the feet between keys.
+    # Lateral root translation is still neutralized below.
+    "quickstep_forward": tuple(range(13)),
+    "quickstep_right": tuple(range(13)),
+    "quickstep_left": tuple(range(13)),
+    "quickstep_back": tuple(range(13)),
 }
 
 COMBAT_CYCLE_MOTIONS = ("strafe", "skip")
@@ -270,6 +273,7 @@ def publish_animation_assets(
                 runtime_dir / f"{output_motion}.glb",
                 last_frame=max(kept_frames),
                 kept_frames=kept_frames,
+                remove_root_lateral_motion=output_motion.startswith("quickstep_"),
                 check=check,
             )
         published.append(output_motion)

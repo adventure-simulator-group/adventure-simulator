@@ -23,14 +23,14 @@ class PrepareAnimationAssetsTests(unittest.TestCase):
         self.assertEqual(MODULE.COMBAT_CYCLE_AUTHORED_FRAMES, (0, 6, 12, 18))
         self.assertEqual(MODULE.COMBAT_CYCLE_LAST_FRAME, 24)
 
-    def test_quicksteps_extract_only_the_three_authored_action_frames(self):
+    def test_quicksteps_preserve_idle_endpoints_and_authored_action_frames(self):
         for motion in (
             "quickstep_forward",
             "quickstep_right",
             "quickstep_left",
             "quickstep_back",
         ):
-            self.assertEqual(MODULE.DIRECT_MOTIONS[motion], (3, 6, 9))
+            self.assertEqual(MODULE.DIRECT_MOTIONS[motion], tuple(range(13)))
 
     def test_unknown_source_motion_is_rejected_instead_of_silently_copied(self):
         with tempfile.TemporaryDirectory() as temporary:

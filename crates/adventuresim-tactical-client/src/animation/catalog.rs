@@ -210,9 +210,9 @@ impl AnimationPackCatalog {
                 SemanticPose::QuickstepBackContact,
             ),
         ] {
-            builder.motion(motion, 6);
+            builder.motion(motion, 12);
             builder.pose(motion, 0, takeoff)?;
-            builder.pose(motion, 6, contact)?;
+            builder.pose(motion, 12, contact)?;
         }
         for (motion, pose) in [
             ("prone_crawl", "prone_crawl_contact"),

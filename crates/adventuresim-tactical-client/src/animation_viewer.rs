@@ -10,8 +10,8 @@ use std::{
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::physics::{
     AdventureSimulatorPhysicsPlugin, TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND,
-    TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED, quickstep_force_curve,
-    quickstep_peak_horizontal_force_newtons, quickstep_push_seconds,
+    quickstep_force_curve, quickstep_motion_target, quickstep_peak_horizontal_force_newtons,
+    quickstep_push_seconds, quickstep_target_displacement_metres, quickstep_tracking_force_newtons,
 };
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::client::WeaponGuardInputState;
@@ -1324,19 +1324,12 @@ fn capture_plan() -> Vec<PlannedFrame> {
 }
 
 fn quickstep_scenario(name: &'static str, local_direction: Vec2) -> Vec<PlannedFrame> {
-    let landing_frame = quickstep_landing_frame();
-    let grounded_deceleration = TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED * 0.9;
+    let planar_speeds = quickstep_fixture_planar_speeds(72);
     (0..72)
         .map(|scenario_frame| PlannedFrame {
             scenario: name,
             scenario_frame,
-            speed: if scenario_frame < landing_frame {
-                quickstep_fixture_push_speed(scenario_frame)
-            } else {
-                (quickstep_fixture_push_speed(quickstep_push_ticks())
-                    - grounded_deceleration * (scenario_frame - landing_frame) as f32 / SAMPLE_HZ)
-                    .max(0.0)
-            },
+            speed: planar_speeds[scenario_frame],
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             local_direction,
             camera_yaw: 0.0,
@@ -1360,20 +1353,49 @@ fn quickstep_push_ticks() -> usize {
         .ceil() as usize
 }
 
-fn quickstep_fixture_push_speed(scenario_frame: usize) -> f32 {
+fn quickstep_fixture_planar_speeds(frame_count: usize) -> Vec<f32> {
     let config = TacticalCombatConfig::default();
-    let ticks = quickstep_push_ticks();
+    let action_ticks = quickstep_action_ticks();
     let peak_force = quickstep_peak_horizontal_force_newtons(
         QUICKSTEP_FIXTURE_BIOLOGICAL_MASS_KG,
         QUICKSTEP_FIXTURE_LEG_STRENGTH,
         &config.movement.motor,
     );
-    (0..scenario_frame.min(quickstep_release_frame()))
-        .map(|tick| quickstep_force_curve((tick as f32 + 0.5) / ticks as f32))
-        .sum::<f32>()
-        * peak_force
-        / QUICKSTEP_FIXTURE_TOTAL_MASS_KG
-        / SAMPLE_HZ
+    let target_displacement = quickstep_target_displacement_metres(
+        CharacterDimensions::default().leg_length_metres,
+        &config.movement.motor,
+    );
+    let duration = action_ticks as f32 / SAMPLE_HZ;
+    let mut velocity: f32 = 0.0;
+    let mut displacement: f32 = 0.0;
+    let mut speeds = Vec::with_capacity(frame_count);
+    for frame in 0..frame_count {
+        speeds.push(velocity.abs());
+        if frame < action_ticks {
+            let target = quickstep_motion_target(
+                (frame + 1) as f32 / action_ticks as f32,
+                target_displacement,
+                duration,
+                config
+                    .movement
+                    .motor
+                    .quickstep_authored_displacement_profile,
+            );
+            let force = quickstep_tracking_force_newtons(
+                displacement,
+                velocity,
+                target,
+                QUICKSTEP_FIXTURE_TOTAL_MASS_KG,
+                peak_force,
+                1.0 / SAMPLE_HZ,
+            );
+            velocity += force / QUICKSTEP_FIXTURE_TOTAL_MASS_KG / SAMPLE_HZ;
+        } else {
+            velocity = 0.0;
+        }
+        displacement += velocity / SAMPLE_HZ;
+    }
+    speeds
 }
 
 fn quickstep_release_frame() -> usize {
@@ -5429,14 +5451,14 @@ mod tests {
         assert_eq!(quickstep_push_ticks(), 25);
         assert_eq!(quickstep_release_frame(), 11);
         assert_eq!(quickstep_landing_frame(), 22);
-        assert_eq!(quickstep_landing_frame(), quickstep_action_ticks());
+        assert!(quickstep_landing_frame() < quickstep_action_ticks());
     }
 
     #[test]
-    fn johns_quickstep_covers_about_one_metre_in_about_035_seconds() {
+    fn johns_quickstep_fixture_covers_about_one_metre_in_half_a_second() {
         let duration = quickstep_action_ticks() as f32 / SAMPLE_HZ;
         let distance = quickstep_fixture_action_distance_metres();
-        assert!((0.33..=0.36).contains(&duration), "duration={duration}");
+        assert!((0.49..=0.51).contains(&duration), "duration={duration}");
         assert!((0.90..=1.10).contains(&distance), "distance={distance}");
     }
 

@@ -62,10 +62,11 @@ pub mod prelude {
         tactical_movement_speed_for_guard, tactical_movement_speed_for_pace, tactical_sprint_speed,
     };
     pub use crate::player::{
-        Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
-        Stats, TacticalCombatSide, TacticalCombatState, TacticalIncapacitationSources,
-        TacticalPlayerView, TacticalPlayerViewer, attack_preparation_secs, attack_recovery_secs,
-        configure_attack_curve, default_tactical_character_id, effective_weapon_handling_skill,
+        Attributes, BestiaryCategories, CharacterDimensions, CharacterId, ControlledPlayer, Limbs,
+        Player, Skills, Stats, TacticalCombatSide, TacticalCombatState,
+        TacticalIncapacitationSources, TacticalPlayerView, TacticalPlayerViewer,
+        attack_preparation_secs, attack_recovery_secs, configure_attack_curve,
+        default_tactical_character_id, effective_weapon_handling_skill,
     };
     pub use crate::scene::{
         GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,

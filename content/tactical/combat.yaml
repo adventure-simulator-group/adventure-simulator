@@ -33,6 +33,9 @@ movement:
     reference_quickstep_push_seconds: 0.40
     quickstep_push_seconds_reduction_per_agility: 0.02
     quickstep_maximum_supported_root_displacement_metres: 0.25
+    reference_quickstep_target_displacement_metres: 1.0
+    reference_quickstep_leg_length_metres: 0.840348
+    quickstep_authored_displacement_profile: [0.0, 0.20226349, 0.5092641, 0.7891253, 1.0]
     quickstep_takeoff_angle_degrees: 9.0
     reference_leg_strength: 3.0
     reference_leg_agility: 3.0
@@ -51,7 +54,7 @@ movement:
     dive_seconds: 0.3125
     backward_dive_seconds: 0.5
     slide_seconds: 0.75
-    quickstep_duration_seconds: 0.35
+    quickstep_duration_seconds: 0.50
 
 ai:
   ordinary:

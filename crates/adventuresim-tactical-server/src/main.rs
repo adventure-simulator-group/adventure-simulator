@@ -42,7 +42,8 @@ use crate::{
     player_projection::{
         PlayerProjectionSet, expire_disconnected_players, on_client_disconnected, on_join_request,
         on_player_added, on_player_input, restore_authoritative_movement_intent,
-        spawn_connected_players, update_character_motion_snapshots, update_skeleton_locomotion,
+        spawn_connected_players, trace_authoritative_quickstep_after_collision,
+        update_character_motion_snapshots, update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
@@ -221,10 +222,14 @@ fn main() {
     if !standalone {
         app.add_observer(on_client_disconnected);
     }
-    app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
-        filter: "adventuresim_tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
-        ..default()
-    }))
+    app.add_plugins(
+        DefaultPlugins.set(bevy::log::LogPlugin {
+            filter:
+                "adventuresim_tactical_server=info,quickstep_trace=info,bevy_app=warn,bevy_ecs=warn"
+                    .to_string(),
+            ..default()
+        }),
+    )
     .add_plugins((
         AdventureSimulatorCorePlugins
             .build()
@@ -256,6 +261,7 @@ fn main() {
             restore_authoritative_movement_intent
                 .before(AdventureSimulatorPhysicsSet::ApplyCharacterMotor),
             (
+                trace_authoritative_quickstep_after_collision,
                 update_skeleton_locomotion,
                 update_character_motion_snapshots,
             )

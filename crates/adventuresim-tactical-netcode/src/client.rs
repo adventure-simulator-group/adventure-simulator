@@ -551,6 +551,16 @@ fn update_direct_control_input(
     if jump_requested || quickstep_requested {
         controls.jump_command.sequence = controls.jump_command.sequence.wrapping_add(1);
         controls.jump_command.quickstep = quickstep_requested.then_some(quickstep_direction);
+        if quickstep_requested {
+            info!(
+                target: "quickstep_trace",
+                sequence = controls.jump_command.sequence,
+                direction = ?quickstep_direction,
+                raised,
+                quickstep_grounded,
+                "[quickstep][client-input] queued"
+            );
+        }
     }
     if space_just_released {
         controls.space_jump_armed = false;

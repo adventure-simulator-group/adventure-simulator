@@ -741,7 +741,7 @@ mod legacy_tests {
             .id();
         assert_eq!(weighted.len(), 1);
         assert_eq!(weighted[0].clip.handle.id(), back);
-        assert!((weighted[0].time_seconds - 4.5 / ANIMATION_FPS).abs() < 0.0001);
+        assert!((weighted[0].time_seconds - 9.0 / ANIMATION_FPS).abs() < 0.0001);
         assert!((weighted[0].weight - 1.0).abs() < 0.0001);
     }
 
@@ -776,7 +776,7 @@ mod legacy_tests {
             .id();
         assert_eq!(weighted.len(), 1);
         assert_eq!(weighted[0].clip.handle.id(), right);
-        assert!((weighted[0].time_seconds - 3.0 / ANIMATION_FPS).abs() < 0.0001);
+        assert!((weighted[0].time_seconds - 6.0 / ANIMATION_FPS).abs() < 0.0001);
     }
 
     #[test]

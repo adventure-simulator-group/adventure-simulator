@@ -211,7 +211,7 @@ fn advance_presented_skeleton_with_strides(
 
 /// Keep authored quicksteps on a render-time timeline. Authoritative tactical
 /// ticks can be coalesced between render observations (including phase 0.13 →
-/// 1.0); copying that discontinuity directly skips the authored frame-3 tuck.
+/// 1.0); copying that discontinuity directly skips the authored load and tuck.
 /// Gameplay still owns action admission/contact. Presentation only bounds how
 /// quickly the already-authoritative action phase may advance visually.
 fn advance_presented_quickstep(
@@ -586,7 +586,7 @@ mod authored_cadence_tests {
     }
 
     #[test]
-    fn coalesced_quickstep_phase_still_traverses_the_authored_tuck() {
+    fn coalesced_quickstep_phase_still_traverses_the_authored_timeline() {
         let mut authoritative =
             SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
         authoritative
@@ -595,8 +595,8 @@ mod authored_cadence_tests {
         let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
 
         // Simulate a coalesced authoritative observation that jumps directly
-        // to contact/recovery complete. Presentation must still visit frame 3,
-        // the midpoint of the authoritative 0/3/6 source timeline.
+        // to contact/recovery complete. Presentation must still visit frame 6,
+        // the midpoint of the authoritative 0/3/6/9/12 source timeline.
         authoritative.advance_action(30);
         let strides = AuthoredLocomotionStrides::default();
         for _ in 0..15 {
@@ -611,23 +611,23 @@ mod authored_cadence_tests {
         assert!((presented.action_phase() - 0.75).abs() < 0.051);
         assert!(evaluation.lower_body.iter().any(|sample| matches!(
             sample.sampling,
-            PoseSampling::Timeline { progress } if (progress - 0.5).abs() < 0.11
+            PoseSampling::Timeline { progress } if (progress - 0.75).abs() < 0.051
         )));
     }
 
     #[test]
-    fn released_guard_cannot_replace_presented_quickstep_before_frame_six() {
+    fn released_guard_cannot_replace_the_presented_quickstep_timeline() {
         let mut authoritative =
             SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
         authoritative
             .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 10, 20)
             .unwrap();
-        authoritative.advance_action(20);
+        authoritative.advance_action(10);
         let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
         let strides = AuthoredLocomotionStrides::default();
 
         // The server has already observed landing and guard release. The
-        // presentation timeline still owns the complete authored airborne
+        // presentation timeline still owns the complete authored action
         // output before it may route back to ordinary/combat locomotion.
         authoritative.advance_action(31);
         authoritative = authoritative.with_weapon_guard(WeaponGuardState::Lowered);

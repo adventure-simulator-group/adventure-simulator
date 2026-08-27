@@ -102,6 +102,13 @@ pub struct CharacterMotorConfig {
     /// Maximum planar root travel while both quickstep feet remain planted.
     /// Reaching this extension releases support even if force time remains.
     pub quickstep_maximum_supported_root_displacement_metres: f32,
+    /// Intended planar displacement for the reference leg length.
+    pub reference_quickstep_target_displacement_metres: f32,
+    /// Hip-to-ankle chain length for the reference quickstep distance.
+    pub reference_quickstep_leg_length_metres: f32,
+    /// Normalized authored root displacement at frames 0, 3, 6, 9, and 12.
+    /// Runtime clips retain the poses but remove this lateral translation.
+    pub quickstep_authored_displacement_profile: [f32; 5],
     /// Upward angle of the propulsive quickstep force above horizontal. The
     /// separate baseline normal force supports body weight while planted.
     pub quickstep_takeoff_angle_degrees: f32,
@@ -336,6 +343,10 @@ impl TacticalCombatConfig {
             movement
                 .motor
                 .quickstep_maximum_supported_root_displacement_metres,
+            movement
+                .motor
+                .reference_quickstep_target_displacement_metres,
+            movement.motor.reference_quickstep_leg_length_metres,
             movement.motor.quickstep_takeoff_angle_degrees,
             movement.motor.reference_leg_strength,
             movement.motor.reference_leg_agility,
@@ -373,6 +384,18 @@ impl TacticalCombatConfig {
         {
             return Err(TacticalCombatConfigError::Validation(
                 "character motor values exceed compiled safety bounds",
+            ));
+        }
+        let quickstep_profile = movement.motor.quickstep_authored_displacement_profile;
+        if quickstep_profile[0].abs() > 1.0e-6
+            || (quickstep_profile[4] - 1.0).abs() > 1.0e-6
+            || !quickstep_profile
+                .into_iter()
+                .all(|value| value.is_finite() && (0.0..=1.0).contains(&value))
+            || !quickstep_profile.windows(2).all(|pair| pair[0] < pair[1])
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "quickstep authored displacement profile must increase from zero to one",
             ));
         }
         let low_agility_radius = movement.motor.agility_one_sprint_turn_radius_metres;
@@ -577,6 +600,15 @@ impl Default for TacticalCombatConfig {
                     reference_quickstep_push_seconds: 0.40,
                     quickstep_push_seconds_reduction_per_agility: 0.02,
                     quickstep_maximum_supported_root_displacement_metres: 0.25,
+                    reference_quickstep_target_displacement_metres: 1.0,
+                    reference_quickstep_leg_length_metres: 0.840_348,
+                    quickstep_authored_displacement_profile: [
+                        0.0,
+                        0.202_263_49,
+                        0.509_264_1,
+                        0.789_125_3,
+                        1.0,
+                    ],
                     quickstep_takeoff_angle_degrees: 9.0,
                     reference_leg_strength: 3.0,
                     reference_leg_agility: 3.0,
@@ -597,7 +629,7 @@ impl Default for TacticalCombatConfig {
                     dive_seconds: 20.0 / 64.0,
                     backward_dive_seconds: 32.0 / 64.0,
                     slide_seconds: 48.0 / 64.0,
-                    quickstep_duration_seconds: 0.35,
+                    quickstep_duration_seconds: 0.50,
                 },
             },
             ai: TacticalAiConfig {
