@@ -216,9 +216,11 @@ pub(super) fn drive_offensive_combat_ai(
                 };
                 cmd.trigger(MeleeAttackStartedIntent {
                     attacker: entity,
-                    target,
-                    body_part: config.target_body_part,
+                    target: Some(target),
+                    body_part: Some(config.target_body_part),
                     windup: CombatDuration::from_secs_f32(config.windup_seconds),
+                    reported_precision: ReportedPrecision::new(config.hit_precision)
+                        .expect("AI precision is finite"),
                     strike_family,
                     hand: AttackHand::Main,
                 });
@@ -237,20 +239,11 @@ pub(super) fn drive_offensive_combat_ai(
             }
             OffensiveCombatPhase::MeleeWindup {
                 timer,
-                strike_family,
+                strike_family: _,
             } => {
                 input.last_movement = None;
                 timer.tick(time.delta());
                 if timer.is_finished() {
-                    cmd.trigger(MeleeAttackIntent {
-                        attacker: entity,
-                        target,
-                        body_part: config.target_body_part,
-                        reported_precision: ReportedPrecision::new(config.hit_precision)
-                            .expect("AI precision is finite"),
-                        strike_family: *strike_family,
-                        hand: AttackHand::Main,
-                    });
                     controller.phase = OffensiveCombatPhase::Cooldown(Timer::from_seconds(
                         config.cooldown_seconds,
                         TimerMode::Once,

@@ -688,8 +688,6 @@ fn update_attack_state_system(
         let Some(target) = state.target else {
             if state.ranged {
                 cmd.client_trigger(RangedActionRequest::CompleteMiss);
-            } else {
-                cmd.client_trigger(MeleeActionRequest::CompleteMiss);
             }
             cmd.trigger(HitPerformed {
                 entity: attacker,
@@ -727,12 +725,6 @@ fn update_attack_state_system(
                     body_part: target.body_part,
                     reported_precision: combat_config.targeting.reported_hit_precision,
                 });
-            } else {
-                cmd.client_trigger(MeleeActionRequest::Complete {
-                    target: target.body,
-                    body_part: target.body_part,
-                    reported_precision: combat_config.targeting.reported_hit_precision,
-                });
             }
             cmd.trigger(HitPerformed {
                 entity: attacker,
@@ -743,8 +735,6 @@ fn update_attack_state_system(
         } else {
             if state.ranged {
                 cmd.client_trigger(RangedActionRequest::CompleteMiss);
-            } else {
-                cmd.client_trigger(MeleeActionRequest::CompleteMiss);
             }
             cmd.trigger(HitPerformed {
                 entity: attacker,
@@ -935,7 +925,7 @@ fn try_start_attack(
                 aim_direction,
             ))
             .remove::<BufferedMeleeAttack>();
-        cmd.client_trigger(MeleeActionRequest::Start {
+        cmd.client_trigger(MeleeActionRequest {
             strike_family,
             hand,
             target: target.map(|target| target.body),
@@ -1034,7 +1024,7 @@ fn flush_buffered_melee_attacks(
                 aim_direction,
             ))
             .remove::<BufferedMeleeAttack>();
-        cmd.client_trigger(MeleeActionRequest::Start {
+        cmd.client_trigger(MeleeActionRequest {
             strike_family: buffered.family,
             hand: buffered.hand,
             target: target.map(|target| target.body),
