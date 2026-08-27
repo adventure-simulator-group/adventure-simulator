@@ -17,7 +17,8 @@ use bevy::{
     prelude::*,
 };
 use bevy_egui::{
-    EguiContexts, EguiPlugin, EguiPrimaryContextPass,
+    EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass,
+    PrimaryEguiContext,
     egui::{self, Color32, Pos2, Stroke},
 };
 use bevy_flair::prelude::*;
@@ -43,10 +44,36 @@ pub struct UiPlugin;
 #[derive(Component)]
 pub(crate) struct TacticalUiRoot;
 
+/// Pins the primary egui context to the gameplay camera. The automatic
+/// first-camera adoption is disabled in `UiPlugin::build`, so cameras that
+/// render offscreen never receive UI passes.
+fn attach_primary_egui_context(
+    mut commands: Commands,
+    cameras: Query<
+        Entity,
+        (
+            Added<Camera3d>,
+            Without<crate::presentation::TacticalCloudOffscreenCamera>,
+            Without<EguiContext>,
+        ),
+    >,
+) {
+    for camera in &cameras {
+        commands.entity(camera).insert(PrimaryEguiContext);
+    }
+}
+
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((FlairPlugin, EguiPlugin::default()))
-            .add_systems(Startup, setup_ui)
+        app.add_plugins((FlairPlugin, EguiPlugin::default()));
+        app.world_mut()
+            .resource_mut::<EguiGlobalSettings>()
+            .auto_create_primary_context = false;
+        app.add_systems(Startup, setup_ui)
+            // bevy_egui would otherwise adopt the first camera it sees as
+            // the primary context, which can be the offscreen cloud camera
+            // whose Rgba16Float target the egui pipeline cannot render to.
+            .add_systems(PreUpdate, attach_primary_egui_context)
             .add_systems(
                 EguiPrimaryContextPass,
                 draw_incapacitation_wheel.run_if(any_with_component::<ClientPlayer>),

@@ -170,8 +170,21 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
     })
     .add_plugins(TacticalPresentationPlugin {
         shadows_enabled: true,
+        atmosphere_enabled: true,
         celestial_enabled: true,
+        environment_light_enabled: true,
+        environment_map_size: 64,
+        bloom_enabled: true,
         max_vista_lods: 0,
+        grass_density_scale: 1.0,
+        grass_range_scale: 1.0,
+        // Sky goldens require the full-fidelity reference cloud march at
+        // full resolution and the reference MSAA/shadow configuration.
+        cloud_quality_scale: 1.0,
+        cloud_resolution_scale: 1.0,
+        msaa_samples: 4,
+        shadow_cascade_count: 0,
+        shadow_maximum_distance: 0.0,
     })
     .insert_resource(TacticalCloudCaptureOverride(Some(cloud_capture_profile(
         view,

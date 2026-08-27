@@ -380,16 +380,6 @@ pub(in crate::presentation) fn leaf_material(
     }
 }
 
-pub(in crate::presentation) fn update_tree_leaf_wind(
-    time: Res<Time>,
-    mut materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
-) {
-    let phase_time = time.elapsed_secs() * 1.15;
-    for (_, material) in materials.iter_mut() {
-        material.parameters.w = phase_time;
-    }
-}
-
 impl Material for TacticalTreeLeafCardMaterial {
     fn vertex_shader() -> ShaderRef {
         TREE_LEAF_CARD_SHADER.into()

@@ -343,7 +343,13 @@ tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") sc
 # from `.env.tactical` when present, same as `tactical` above. Set brp_port
 # to expose the Bevy Remote Protocol endpoint for CLI-driven inspection/testing.
 client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="" brp_port=env_var_or_default("TACTICAL_BRP_PORT", ""):
-    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }}
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }} --grass-range 0.5
+
+# Optimized native client for performance playtesting. The plain `client`
+# recipe uses the dev profile, whose opt-level 1 workspace code and debug
+# overhead dominate frame cost; graphics changes are only judged fairly here.
+client-release id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="" brp_port=env_var_or_default("TACTICAL_BRP_PORT", ""):
+    @cargo run --release --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }}
 
 # Run a native tactical client with no OS window, driven entirely over BRP
 # (see `scripts/tactical_brp.py`) - for CLI-only automated testing.

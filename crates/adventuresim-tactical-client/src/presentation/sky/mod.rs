@@ -136,6 +136,26 @@ impl Material for TacticalStarMaterial {
     }
 }
 
+/// Cascade configuration from the graphics preset; `None` keeps the engine
+/// default (four cascades to its default reach), which capture tooling
+/// relies on for golden stability. Gameplay presets trade distant contact
+/// shadows for fewer, denser cascades.
+fn preset_cascade_config(
+    settings: &TacticalGraphicsSettings,
+) -> Option<bevy::light::CascadeShadowConfig> {
+    if settings.shadow_cascade_count == 0 && settings.shadow_maximum_distance <= 0.0 {
+        return None;
+    }
+    let mut builder = bevy::light::CascadeShadowConfigBuilder::default();
+    if settings.shadow_cascade_count > 0 {
+        builder.num_cascades = settings.shadow_cascade_count;
+    }
+    if settings.shadow_maximum_distance > 0.0 {
+        builder.maximum_distance = settings.shadow_maximum_distance;
+    }
+    Some(builder.build())
+}
+
 pub(in crate::presentation) fn setup_tactical_sky(
     mut commands: Commands,
     settings: Res<TacticalGraphicsSettings>,
@@ -145,7 +165,7 @@ pub(in crate::presentation) fn setup_tactical_sky(
     mut moon_materials: ResMut<Assets<TacticalMoonMaterial>>,
     mut star_materials: ResMut<Assets<TacticalStarMaterial>>,
 ) {
-    commands.spawn((
+    let mut sunlight = commands.spawn((
         Name::new("Tactical sunlight"),
         TacticalSunlight,
         SunDisk::EARTH,
@@ -157,8 +177,11 @@ pub(in crate::presentation) fn setup_tactical_sky(
         },
         tactical_directional_shadow_config(),
     ));
+    if let Some(cascades) = preset_cascade_config(&settings) {
+        sunlight.insert(cascades);
+    }
 
-    commands.spawn((
+    let mut moonlight = commands.spawn((
         Name::new("Tactical moonlight"),
         TacticalMoonlight,
         SunDisk::OFF,
@@ -171,6 +194,9 @@ pub(in crate::presentation) fn setup_tactical_sky(
         },
         tactical_directional_shadow_config(),
     ));
+    if let Some(cascades) = preset_cascade_config(&settings) {
+        moonlight.insert(cascades);
+    }
 
     if !settings.celestial_enabled {
         return;
@@ -495,8 +521,19 @@ mod ambient_handoff_tests {
             .init_resource::<PresentedCelestialLighting>()
             .insert_resource(TacticalGraphicsSettings {
                 shadows_enabled: true,
+                atmosphere_enabled: true,
                 celestial_enabled: true,
+                environment_light_enabled: true,
+                environment_map_size: 64,
+                bloom_enabled: true,
                 max_vista_lods: 3,
+                grass_density_scale: 1.0,
+                grass_range_scale: 1.0,
+                cloud_quality_scale: 1.0,
+                cloud_resolution_scale: 1.0,
+                msaa_samples: 4,
+                shadow_cascade_count: 0,
+                shadow_maximum_distance: 0.0,
             })
             .insert_resource(GlobalAmbientLight {
                 brightness: 42.0,

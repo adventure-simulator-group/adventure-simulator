@@ -1102,6 +1102,24 @@ fn capture_presentation_plugin() -> TacticalPresentationPlugin {
     if std::env::var_os("TACTICAL_BENCH_DISABLE_SHADOWS").is_some() {
         plugin.shadows_enabled = false;
     }
+    if std::env::var_os("TACTICAL_BENCH_DISABLE_POST_PROCESSING").is_some() {
+        plugin.bloom_enabled = false;
+    }
+    // Cost-scaling overrides so the performance benchmark can measure the
+    // gameplay-preset configuration instead of only the 1.0 reference.
+    let scale_override = |name: &str| std::env::var(name).ok()?.parse::<f32>().ok();
+    if let Some(scale) = scale_override("TACTICAL_BENCH_GRASS_DENSITY_SCALE") {
+        plugin.grass_density_scale = scale;
+    }
+    if let Some(scale) = scale_override("TACTICAL_BENCH_GRASS_RANGE_SCALE") {
+        plugin.grass_range_scale = scale;
+    }
+    if let Some(scale) = scale_override("TACTICAL_BENCH_CLOUD_QUALITY_SCALE") {
+        plugin.cloud_quality_scale = scale;
+    }
+    if let Some(scale) = scale_override("TACTICAL_BENCH_CLOUD_RESOLUTION_SCALE") {
+        plugin.cloud_resolution_scale = scale;
+    }
     plugin
 }
 

@@ -1,11 +1,18 @@
 //! A single, baked optical cloud shell for the grounded tactical camera.
 
 use super::*;
+use bevy::{
+    camera::{ClearColorConfig, RenderTarget, visibility::RenderLayers},
+    render::render_resource::{TextureDescriptor, TextureUsages},
+};
 
 #[cfg(not(target_family = "wasm"))]
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on};
 
 const CLOUD_SHADER: &str = "shaders/tactical_clouds.wgsl";
+const CLOUD_COMPOSITE_SHADER: &str = "shaders/tactical_cloud_composite.wgsl";
+/// Render layer reserved for the offscreen volumetric cloud pass.
+const CLOUD_OFFSCREEN_LAYER: usize = 2;
 const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
 /// Deliberately smaller than Earth's radius so the global cloud surface bends
 /// into the tactical horizon while staying visually flat around the player.
@@ -127,6 +134,54 @@ impl Material for TacticalCloudMaterial {
     }
 }
 
+/// Marks the reduced-resolution camera that renders the volumetric shells
+/// offscreen. Gameplay systems that assume one `Camera3d` must exclude it.
+#[derive(Component)]
+pub(crate) struct TacticalCloudOffscreenCamera;
+
+/// Camera-following dome that samples the offscreen cloud target back into
+/// the main view, so terrain and trees keep occluding clouds through the
+/// ordinary depth test.
+#[derive(Component)]
+pub(in crate::presentation) struct TacticalCloudComposite;
+
+#[derive(Resource)]
+pub(in crate::presentation) struct TacticalCloudOffscreenTarget {
+    image: Handle<Image>,
+    resolution_scale: f32,
+}
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(in crate::presentation) struct TacticalCloudCompositeMaterial {
+    #[texture(0)]
+    #[sampler(1)]
+    source: Handle<Image>,
+}
+
+impl Material for TacticalCloudCompositeMaterial {
+    fn fragment_shader() -> ShaderRef {
+        CLOUD_COMPOSITE_SHADER.into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        // The offscreen pass already blends the shells premultiplied over a
+        // transparent clear, so one premultiplied composite is equivalent to
+        // the legacy in-view shell blending.
+        AlphaMode::Premultiplied
+    }
+
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // The camera remains inside the composite dome.
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct CloudLayerParameters {
     coverage: f32,
@@ -235,6 +290,72 @@ impl CloudLayerParameters {
     }
 }
 
+fn cloud_offscreen_size(target_size: UVec2, resolution_scale: f32) -> Extent3d {
+    Extent3d {
+        width: ((target_size.x as f32 * resolution_scale) as u32).max(1),
+        height: ((target_size.y as f32 * resolution_scale) as u32).max(1),
+        depth_or_array_layers: 1,
+    }
+}
+
+fn cloud_offscreen_image(size: Extent3d) -> Image {
+    let mut image = Image::default();
+    image.texture_descriptor = TextureDescriptor {
+        label: Some("tactical_cloud_offscreen_target"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        // Preserves the scene-referred radiance range until the composite,
+        // matching what the shells previously wrote into the main pass.
+        format: TextureFormat::Rgba16Float,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    };
+    image.resize(size);
+    image
+}
+
+/// Keeps the offscreen target matched to the window and the offscreen
+/// camera's projection matched to the gameplay camera.
+pub(in crate::presentation) fn update_tactical_cloud_offscreen_target(
+    target: Option<Res<TacticalCloudOffscreenTarget>>,
+    mut images: ResMut<Assets<Image>>,
+    main_camera: Query<&Camera, (With<Camera3d>, Without<TacticalCloudOffscreenCamera>)>,
+    main_projection: Query<
+        &Projection,
+        (
+            With<Camera3d>,
+            Without<TacticalCloudOffscreenCamera>,
+            Changed<Projection>,
+        ),
+    >,
+    mut offscreen_projection: Query<&mut Projection, With<TacticalCloudOffscreenCamera>>,
+) {
+    let Some(target) = target else {
+        return;
+    };
+    if let Some(target_size) = main_camera
+        .iter()
+        .next()
+        .and_then(Camera::physical_target_size)
+    {
+        let desired = cloud_offscreen_size(target_size, target.resolution_scale);
+        let stale = images
+            .get(&target.image)
+            .is_some_and(|image| image.texture_descriptor.size != desired);
+        if stale && let Some(mut image) = images.get_mut(&target.image) {
+            image.resize(desired);
+        }
+    }
+    if let (Some(main), Some(mut offscreen)) = (
+        main_projection.iter().next(),
+        offscreen_projection.iter_mut().next(),
+    ) {
+        *offscreen = main.clone();
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct CloudBakeKey {
     layers: [Option<CloudLayerParameters>; 3],
@@ -282,7 +403,22 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
+    mut composite_materials: ResMut<Assets<TacticalCloudCompositeMaterial>>,
+    settings: Res<TacticalGraphicsSettings>,
+    cameras: Query<(Entity, &Projection, &Camera), With<Camera3d>>,
 ) {
+    // The baked shell can render at a reduced offscreen resolution and
+    // composite through one dome; clouds are soft enough that the bilinear
+    // upsample is close to invisible while the fragment cost drops with the
+    // resolution squared. The full-resolution in-view path (1.0) stays
+    // authoritative for capture tooling.
+    let offscreen = if settings.cloud_resolution_scale < 0.999 {
+        cameras.iter().next().map(|(camera, projection, main)| {
+            (camera, projection.clone(), main.physical_target_size())
+        })
+    } else {
+        None
+    };
     let mesh = meshes.add(cloud_hemisphere_mesh());
     let empty_request = CloudBakeRequest {
         key: CloudBakeKey {
@@ -296,12 +432,12 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     let baked_texture_b = images.add(cloud_bake_image(&empty_request));
     commands.insert_resource(CloudBakeState::default());
     commands.insert_resource(TacticalCloudAnimationStatus::default());
-    commands.spawn((
+    let mut shell = commands.spawn((
         Name::new("Baked tactical cloud shell"),
         TacticalCloudLayer { active: false },
         NoFrustumCulling,
         NotShadowCaster,
-        Mesh3d(mesh),
+        Mesh3d(mesh.clone()),
         MeshMaterial3d(materials.add(TacticalCloudMaterial {
             lighting: Vec4::new(0.0, 1.0, 0.0, 1.43),
             shape: Vec4::ZERO,
@@ -314,6 +450,57 @@ pub(in crate::presentation) fn setup_tactical_clouds(
         })),
         Transform::default(),
     ));
+    if offscreen.is_some() {
+        shell.insert(RenderLayers::layer(CLOUD_OFFSCREEN_LAYER));
+    }
+    let Some((camera, projection, target_size)) = offscreen else {
+        return;
+    };
+    let resolution_scale = settings.cloud_resolution_scale.clamp(0.25, 1.0);
+    // The camera's computed target size is often not known yet during
+    // startup; the per-frame update system re-sizes the image on the first
+    // frame where it is.
+    let size = cloud_offscreen_size(
+        target_size.unwrap_or(UVec2::new(960, 540)),
+        resolution_scale,
+    );
+    let image = images.add(cloud_offscreen_image(size));
+    commands.insert_resource(TacticalCloudOffscreenTarget {
+        image: image.clone(),
+        resolution_scale,
+    });
+    commands.spawn((
+        Name::new("Tactical cloud composite dome"),
+        TacticalCloudComposite,
+        NoFrustumCulling,
+        NotShadowCaster,
+        Mesh3d(mesh),
+        MeshMaterial3d(composite_materials.add(TacticalCloudCompositeMaterial {
+            source: image.clone(),
+        })),
+        Transform::default(),
+    ));
+    commands.entity(camera).with_children(|children| {
+        children.spawn((
+            Name::new("Tactical cloud offscreen camera"),
+            TacticalCloudOffscreenCamera,
+            Camera3d::default(),
+            Camera {
+                // Render before the main camera consumes the target.
+                order: -1,
+                clear_color: ClearColorConfig::Custom(Color::NONE),
+                ..default()
+            },
+            RenderTarget::Image(image.into()),
+            projection,
+            // The main pass tonemaps the composited result exactly once,
+            // like the legacy in-view shells.
+            Tonemapping::None,
+            Msaa::Off,
+            RenderLayers::layer(CLOUD_OFFSCREEN_LAYER),
+            Transform::IDENTITY,
+        ));
+    });
 }
 
 /// Bakes one endpoint from a stable tactical eye point into the upper dome's
@@ -678,6 +865,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
     environments: Query<&SceneEnvironment>,
     celestial: Res<PresentedCelestialLighting>,
     capture: Res<TacticalCloudCaptureOverride>,
+    settings: Res<super::TacticalGraphicsSettings>,
     isolation: Res<TacticalCloudBenchmarkIsolation>,
     camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     mut clouds: Query<(
@@ -686,11 +874,18 @@ pub(in crate::presentation) fn update_tactical_clouds(
         &mut Transform,
         &mut Visibility,
     )>,
+    mut composites: Query<
+        &mut Transform,
+        (With<TacticalCloudComposite>, Without<TacticalCloudLayer>),
+    >,
     mut materials: ResMut<Assets<TacticalCloudMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut bake_state: ResMut<CloudBakeState>,
     mut animation_status: ResMut<TacticalCloudAnimationStatus>,
 ) {
+    for mut transform in &mut composites {
+        transform.translation = camera.translation();
+    }
     animation_status.ready = false;
     let environment = active
         .entity
@@ -805,7 +1000,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
             daylight,
             celestial.weather_transmission,
         );
-        material.spectral = solar_color.extend(1.0);
+        material.spectral = solar_color.extend(settings.cloud_quality_scale.clamp(0.35, 1.0));
         material.geometry = cloud_shell_geometry();
         #[cfg(not(target_family = "wasm"))]
         {

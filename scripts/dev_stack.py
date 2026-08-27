@@ -9,6 +9,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -23,6 +24,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from urllib.parse import urlparse
 from urllib.parse import urlparse
 import zlib
 
@@ -760,15 +762,145 @@ def publish(server: str, database: str) -> int:
     return result.returncode
 
 
+class _SeedHttpClient:
+    """One keep-alive HTTP connection to the local SpacetimeDB, reused for every
+    staged-bootstrap reducer call and row-count query.
+
+    The staged seed makes dozens of small reducer calls. Doing each as a
+    separate `spacetime` CLI invocation costs seconds of process start-up and
+    reconnect per call (minutes total) while the actual work is milliseconds.
+    The CLI is just an HTTP client to the local node, so we issue the same
+    requests directly over a single persistent connection instead: the seed then
+    runs in roughly its real compute time.
+    """
+
+    def __init__(self, server: str, database: str, bootstrap_token: str) -> None:
+        parsed = urlparse(server)
+        self._host = parsed.hostname or "127.0.0.1"
+        self._port = parsed.port or 80
+        self._database = database
+        self._bootstrap_token = bootstrap_token
+        self._headers = {"Content-Type": "application/json"}
+        token_result = run_checked(["spacetime", "login", "show", "--token"])
+        tokens = JWT_RE.findall(token_result.stdout)
+        if not token_result.returncode and len(tokens) == 1:
+            self._headers["Authorization"] = f"Bearer {tokens[0]}"
+        self._conn = http.client.HTTPConnection(self._host, self._port, timeout=180)
+
+    def _request(self, path: str, body: str, headers: dict[str, str]) -> tuple[int, str]:
+        # Reconnect once if the keep-alive connection was dropped mid-run.
+        for attempt in range(2):
+            try:
+                self._conn.request("POST", path, body=body, headers=headers)
+                response = self._conn.getresponse()
+                return response.status, response.read().decode("utf-8", "replace")
+            except (http.client.HTTPException, OSError):
+                self._conn.close()
+                if attempt == 1:
+                    raise
+                self._conn = http.client.HTTPConnection(
+                    self._host, self._port, timeout=180
+                )
+        raise RuntimeError("unreachable")
+
+    def call(self, reducer: str, *args: object) -> int:
+        """Invoke one split-bootstrap reducer as its own transaction. `args` are
+        the reducer arguments after the bootstrap token (strings stay JSON
+        strings, ints stay JSON numbers). Returns 0 on success, 1 on failure
+        (surfacing the reducer error rather than hiding it)."""
+        body = json.dumps([self._bootstrap_token, *args])
+        path = f"/v1/database/{self._database}/call/{reducer}"
+        try:
+            status, text = self._request(path, body, self._headers)
+        except OSError as error:
+            print(f"reducer {reducer!r} HTTP call failed: {error}", file=sys.stderr)
+            return 1
+        if status // 100 != 2:
+            print(
+                f"development bootstrap reducer {reducer!r} failed "
+                f"(HTTP {status}): {text.strip()}",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+
+    def count(self, table: str) -> int:
+        """Return a table's row count via the SQL endpoint over the same
+        connection, so the caller can drive per-settlement / per-gallery-item
+        seeding and stop when a call adds nothing."""
+        headers = dict(self._headers)
+        headers["Content-Type"] = "text/plain"
+        path = f"/v1/database/{self._database}/sql"
+        status, text = self._request(
+            path, f"SELECT COUNT(*) AS count FROM {table}", headers
+        )
+        if status // 100 != 2:
+            raise RuntimeError(f"sql count on {table} failed (HTTP {status}): {text.strip()}")
+        try:
+            value = json.loads(text)[0]["rows"][0][0]
+        except (ValueError, IndexError, KeyError, TypeError) as error:
+            raise RuntimeError(
+                f"unexpected sql response counting {table}: {text}"
+            ) from error
+        return int(value)
+
+    def close(self) -> None:
+        self._conn.close()
+
+
 def seed(server: str, database: str, bootstrap_token: str) -> int:
-    result = run_checked([
-        "spacetime", "call", "--server", server, database,
-        "bootstrap_development_world", bootstrap_token,
-    ])
-    write_console(result.stdout)
-    if result.returncode:
-        print("development bootstrap failed; refusing to hide the reducer error.", file=sys.stderr)
-    return result.returncode
+    # The monolithic `bootstrap_development_world` exceeds SpacetimeDB's
+    # per-reducer compute budget (HTTP 402). The same world is instead seeded
+    # across many small transactions whose union is byte-identical: base
+    # geography/settlements, per-settlement strategic activity (quest generation
+    # batched so no single call blows the budget), demo characters, then the
+    # scenario gallery. All the calls share one persistent HTTP connection so
+    # the fine-grained split costs ~its compute time, not a CLI spawn per call.
+    client = _SeedHttpClient(server, database, bootstrap_token)
+    try:
+        print("[seed] staged bootstrap (base -> settlements -> demos -> gallery)", flush=True)
+        returncode = client.call("dev_bootstrap_base")
+        if returncode:
+            return returncode
+
+        # One call per settlement materializes its full activity (all quests) in a
+        # single transaction; that is well under the per-reducer budget and avoids
+        # re-running the idempotent population/incident work once per quest.
+        for index in range(client.count("settlement")):
+            returncode = client.call("dev_bootstrap_settlement_activity", index)
+            if returncode:
+                return returncode
+
+        # All demo characters in one call (each is individually cheap).
+        returncode = client.call("dev_bootstrap_finalize")
+        if returncode:
+            return returncode
+
+        # The scenario gallery can't fit in one transaction, but a batch of a few
+        # items does. Materialize it in batches, stopping once a batch adds no new
+        # scenario row (fresh DBs add >=1 per item; an over-long final batch just
+        # no-ops past the end). Then run the postcondition check once.
+        print("[seed] materializing development scenario gallery", flush=True)
+        GALLERY_BATCH = 8
+        GALLERY_OFFSET_CAP = 256  # backstop against a non-terminating loop
+        previous_scenarios = client.count("development_scenario")
+        offset = 0
+        while offset < GALLERY_OFFSET_CAP:
+            returncode = client.call("dev_bootstrap_gallery", offset, GALLERY_BATCH)
+            if returncode:
+                return returncode
+            current_scenarios = client.count("development_scenario")
+            if current_scenarios == previous_scenarios:
+                break
+            previous_scenarios = current_scenarios
+            offset += GALLERY_BATCH
+        returncode = client.call("dev_bootstrap_gallery_validate")
+        if returncode:
+            return returncode
+        print("[seed] staged bootstrap complete", flush=True)
+        return 0
+    finally:
+        client.close()
 
 
 def spacetime_auth_token() -> str:
@@ -1515,9 +1647,15 @@ def run_profile(
                     os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = previous_token
             if code:
                 return code
-            code = seed(server, database, bootstrap_token)
-            if code:
-                return code
+            # Only strategic profiles need the full development world. A tactical
+            # host is self-contained: `seed_standalone_tactical_mission` seeds the
+            # light host world, the player character + inventory, the party, and
+            # the mission on its own, so an isolated tactical database skips the
+            # (much heavier) strategic bootstrap entirely.
+            if mode is ProfileMode.STRATEGIC:
+                code = seed(server, database, bootstrap_token)
+                if code:
+                    return code
 
             if mode is ProfileMode.TACTICAL:
                 tactical_claim = secrets.token_hex(32)
@@ -1677,9 +1815,9 @@ def reseed_tactical_mission(
         return 1
     server, database = live["server"], live["database"]
     bootstrap_token = dev_bootstrap_token()
-    code = seed(server, database, bootstrap_token)
-    if code:
-        return code
+    # Reseeding a tactical mission needs no strategic world:
+    # `seed_standalone_tactical_mission` is self-contained (host world, player
+    # character + inventory, party, and mission), so skip the strategic bootstrap.
     mission_id = f"{mission_id_prefix}-{secrets.token_hex(4)}"
     tactical_claim = secrets.token_hex(32)
     result = run_checked([

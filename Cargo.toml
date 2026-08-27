@@ -92,6 +92,7 @@ bevy_egui = { version = "0.40.1", default-features = false, features = [
 bevy_mod_outline = { version = "0.13", default-features = false, features = [
   "flood",
 ] }
+bevy_eidolon = { version = "0.5" }
 noiz = "0.5.0"
 serde = { version = "1", default-features = false, features = [
   "alloc",
@@ -147,6 +148,13 @@ adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
 adventuresim-core = { path = "crates/adventuresim-core" }
 adventuresim-puzzles = { path = "crates/adventuresim-puzzles" }
 adventuresim-strategic-sim = { path = "crates/adventuresim-strategic-sim" }
+# Fork carrying two fixes over 0.5.0: (1) the duplicate CullComputeCamera
+# extraction plugin that panics when more than one InstancedMaterialPlugin
+# registers, and (2) skipping instanced meshes whose specialized pipeline
+# hasn't finished compiling, so the GPU-driven indirect draw doesn't fire
+# against a stale pipeline during runtime view-layout switches (atmosphere ->
+# environment_map at sky-bake freeze). Consumed from our fork until upstreamed.
+bevy_eidolon = { git = "https://github.com/barsoosayque/bevy_eidolon", branch = "fablegeist-0.19" }
 
 [profile.win-dev]
 inherits = "dev"

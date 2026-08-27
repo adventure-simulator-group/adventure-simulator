@@ -58,7 +58,9 @@ impl GrassMaterialPath {
     pub(in crate::presentation) const fn for_lod(lod: GrassMeshLod) -> Self {
         match lod {
             GrassMeshLod::Near => Self::FullInteractive,
-            GrassMeshLod::Far | GrassMeshLod::Vista => Self::CheapLod,
+            // The instanced near-edge ring shades cheaply like the reduced
+            // tiers; the legacy patch renderer never spawns it.
+            GrassMeshLod::NearEdge | GrassMeshLod::Far | GrassMeshLod::Vista => Self::CheapLod,
         }
     }
 }
@@ -104,7 +106,10 @@ impl CommunityMeshes {
         topology: GrassTopology,
     ) -> &Handle<Mesh> {
         match lod {
-            GrassMeshLod::Near => &self.near[topology.index()],
+            // `NearEdge` is an instanced-only sub-tier with no patch-level mesh
+            // cache; it never reaches `CommunityMeshes`, so map it to the near
+            // handle to keep the match exhaustive.
+            GrassMeshLod::Near | GrassMeshLod::NearEdge => &self.near[topology.index()],
             GrassMeshLod::Far => &self.far[topology.index()],
             GrassMeshLod::Vista => &self.vista[topology.index()],
         }
@@ -505,7 +510,7 @@ pub(in crate::presentation) fn vista_grass_material(
         // The close exterior field keeps the full interactive representation.
         // Far/Vista retain this authored footprint while their material's
         // quality selector uses the reduced wind and vertex path.
-        GrassMeshLod::Near | GrassMeshLod::Far => {
+        GrassMeshLod::Near | GrassMeshLod::NearEdge | GrassMeshLod::Far => {
             Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(1.0))
         }
         GrassMeshLod::Vista => Vec4::new(1.0, 0.94, 0.055, lod.width_compensation(1.0)),
@@ -605,9 +610,49 @@ fn grass_patch_placement(
     }
     grass_patch_transform(terrain, render_centre.x, render_centre.y)
 }
+
+/// Reproduces the legacy jittered-cell eligibility gate for a single placement
+/// cell. Used by the instanced renderer to keep tuft placement identical to the
+/// legacy patch grid: same jitter, same legacy/render two-centre cover gate,
+/// same slope rejection.
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+pub(super) fn cell_allows_grass(
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    cell_hash: u64,
+    x: i32,
+    z: i32,
+    cell_spacing: f32,
+) -> bool {
+    let jitter_x = unit_hash(splitmix64(cell_hash ^ 0x39bd_7f21)) - 0.5;
+    let jitter_z = unit_hash(splitmix64(cell_hash ^ 0xe651_34aa)) - 0.5;
+    let eligibility_centre = Vec2::new(
+        (x as f32 + jitter_x * 0.24) * cell_spacing,
+        (z as f32 + jitter_z * 0.24) * cell_spacing,
+    );
+    let render_centre = Vec2::new(
+        (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * cell_spacing,
+        (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * cell_spacing,
+    );
+    grass_patch_placement(terrain, ground, eligibility_centre, render_centre).is_some()
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::presentation) enum GrassMeshLod {
     Near,
+    /// Instanced-only outer ring of the near band. Same tuft placements as
+    /// `Near`, but a thinner blade grid at reduced ribbon vertices: past ~9 m
+    /// individual blades stop being countable while the near band's area is
+    /// dominated by this ring (area grows with radius squared). The legacy
+    /// patch renderer never spawns it, so it is dead on the wasm/legacy build.
+    #[cfg_attr(
+        any(not(feature = "instanced-grass"), target_family = "wasm"),
+        allow(
+            dead_code,
+            reason = "instanced-only near sub-tier; legacy patch renderer never spawns it"
+        )
+    )]
+    NearEdge,
     Far,
     /// Patch-level vista representation. Broad five-vertex tuft ribbons carry
     /// the field here instead of merely thinning the close-range blade mesh.
@@ -635,6 +680,10 @@ impl GrassMeshLod {
             // removing two intermediate ribbon segments from ordinary Near
             // grass.
             Self::Near => &[0.0, 0.22, 0.45, 0.68, 0.9],
+            // Instanced-only outer near ring. Four paired rows plus a shared
+            // tip: nine vertices keep the ribbon bend readable while shedding
+            // cost past the countable-blade distance.
+            Self::NearEdge => &[0.0, 0.3, 0.58, 0.83],
             // Three paired rows plus a shared tip: seven vertices at distance.
             Self::Far => &[0.0, 0.45, 0.82],
             Self::Vista => &[0.0, 0.62],
@@ -654,7 +703,9 @@ impl GrassMeshLod {
 
     fn selects_grid_root(self, row: usize, column: usize) -> bool {
         let (stratum_side, salt) = match self {
-            Self::Near => return true,
+            // Both near tiers keep every grid root; `NearEdge` is instanced-only
+            // and never reaches the legacy stratified selection.
+            Self::Near | Self::NearEdge => return true,
             Self::Far => (GRASS_FAR_STRATUM_SIDE, 0x6661_725f_726f_6f74),
             Self::Vista => (GRASS_VISTA_STRATUM_SIDE, 0x7669_7374_726f_6f74),
         };
@@ -684,9 +735,13 @@ impl GrassMeshLod {
         self.blade_grid_indices(grass_density).count()
     }
 
-    fn width_compensation(self, grass_density: f32) -> f32 {
+    pub(in crate::presentation) fn width_compensation(self, grass_density: f32) -> f32 {
         match self {
             Self::Near => return 1.0,
+            // Compensates the thinned instanced edge tuft (6x6) against the near
+            // tuft (8x8) so projected ground cover holds through the sub-tier
+            // crossfade. Instanced-only; the legacy renderer never asks for it.
+            Self::NearEdge => return (64.0_f32 / 36.0).sqrt(),
             // Vista represents small tufts, but must not become the broad
             // rectangular cards that were conspicuous in traversal views.
             Self::Vista => return 1.8,
@@ -709,6 +764,15 @@ pub(in crate::presentation) fn grass_lod_visibility(lod: GrassMeshLod) -> Visibi
             end_margin: NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES,
             use_aabb: false,
         },
+        // Instanced-only sub-tier; the legacy patch renderer never spawns it,
+        // so this band only informs the instanced fade-continuity invariant.
+        // The near field hands off to the edge ring at 4..6 m and the ring
+        // fades out into the far tier across the legacy near band's end.
+        GrassMeshLod::NearEdge => VisibilityRange {
+            start_margin: 4.0..6.0,
+            end_margin: NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES,
+            use_aabb: false,
+        },
         GrassMeshLod::Far => VisibilityRange {
             start_margin: NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES,
             end_margin: 36.0..44.0,
@@ -720,6 +784,79 @@ pub(in crate::presentation) fn grass_lod_visibility(lod: GrassMeshLod) -> Visibi
             use_aabb: false,
         },
     }
+}
+
+/// Blade grid side of one instanced tuft, per LOD tier.
+///
+/// Near tufts subdivide the legacy macro patch so the instanced sward
+/// reproduces the legacy per-cell shoot density; the near-edge ring deliberately
+/// thins that count past the countable-blade distance. Far and vista tufts cover
+/// larger footprints with the legacy per-cell shoot totals.
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+pub(in crate::presentation) fn tuft_blade_side(lod: GrassMeshLod) -> usize {
+    match lod {
+        GrassMeshLod::Near => 8,
+        GrassMeshLod::NearEdge => 6,
+        GrassMeshLod::Far => 10,
+        GrassMeshLod::Vista => 12,
+    }
+}
+
+/// Footprint of one instanced tuft in metres, per LOD tier.
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+pub(in crate::presentation) fn tuft_footprint_metres(lod: GrassMeshLod) -> f32 {
+    match lod {
+        GrassMeshLod::Near | GrassMeshLod::NearEdge => GRASS_PATCH_SPACING / 12.0,
+        GrassMeshLod::Far => GRASS_PATCH_SPACING / 4.0,
+        GrassMeshLod::Vista => VISTA_GRASS_PATCH_SPACING / 2.0,
+    }
+}
+
+/// One instanced grass tuft: a small blade grid sharing the legacy blade,
+/// pigment, and inflorescence construction so the instanced and patch renderers
+/// stay visually comparable. Placement resolves one species per tuft with the
+/// legacy community weights; `seed` decorrelates blade hashes between the shared
+/// tuft meshes of different species. The tuft is built from the current
+/// (#560) blade/ribbon geometry via `grass_ribbon_patch_mesh`.
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+pub(in crate::presentation) fn grass_tuft_mesh(
+    color: Color,
+    lod: GrassMeshLod,
+    grass_density: f32,
+    species: GrassSpecies,
+    seed: u64,
+) -> Mesh {
+    let grid_side = tuft_blade_side(lod);
+    let centre = (grid_side - 1) as f32 * 0.5;
+    let blade_spacing = tuft_footprint_metres(lod) / grid_side as f32;
+    let blades = (0..grid_side * grid_side)
+        .filter(|index| {
+            grass_density >= 1.0
+                || unit_hash(splitmix64((*index as u64) ^ seed ^ 0x24e8_51c6_9a37_b40d))
+                    < grass_density
+        })
+        .map(|index| {
+            let row = index / grid_side;
+            let column = index % grid_side;
+            let hash = splitmix64(index as u64 ^ seed ^ 0x8d12_6f4a_0bc3_7791);
+            let jitter_x = (unit_hash(hash) - 0.5) * blade_spacing * 0.46;
+            let jitter_z = (unit_hash(splitmix64(hash)) - 0.5) * blade_spacing * 0.46;
+            let clump_vigor = 0.5 + 0.5 * (row as f32 * 0.31 + column as f32 * 0.17 + 0.8).sin();
+            let height_scale =
+                (0.50 + unit_hash(splitmix64(hash ^ 0x52a9_f131)) * 0.62 + clump_vigor * 0.20)
+                    .clamp(0.50, 1.30);
+            let width_scale = 0.62 + unit_hash(splitmix64(hash ^ 0x91e2_57a4)) * 0.76;
+            GrassBlade {
+                offset_x: (column as f32 - centre) * blade_spacing + jitter_x,
+                offset_z: (row as f32 - centre) * blade_spacing + jitter_z,
+                height_scale,
+                width_scale,
+                seed: splitmix64(index as u64 ^ seed),
+                species,
+            }
+        })
+        .collect::<Vec<_>>();
+    grass_ribbon_patch_mesh(0.026, 0.82, color, lod, &blades)
 }
 
 pub(in crate::presentation) fn grass_patch_mesh(
@@ -801,7 +938,9 @@ fn legacy_grass_vertex_allocation(
     community: GrassCommunity,
 ) -> usize {
     let coordinates: &[usize] = match lod {
-        GrassMeshLod::Near => &[],
+        // `NearEdge` is instanced-only and never reaches this legacy allocation
+        // contract; it keeps the near tier's full grid for exhaustiveness.
+        GrassMeshLod::Near | GrassMeshLod::NearEdge => &[],
         GrassMeshLod::Far => &LEGACY_GRASS_FAR_GRID_COORDINATES,
         GrassMeshLod::Vista => &LEGACY_GRASS_VISTA_GRID_COORDINATES,
     };
@@ -897,7 +1036,7 @@ struct GrassInflorescence {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum GrassSpecies {
+pub(in crate::presentation) enum GrassSpecies {
     FalseOatGrass,
     Cocksfoot,
     RedFescue,
@@ -906,7 +1045,7 @@ enum GrassSpecies {
     YorkshireFog,
 }
 
-fn grass_species(community: GrassCommunity, hash: u64) -> GrassSpecies {
+pub(in crate::presentation) fn grass_species(community: GrassCommunity, hash: u64) -> GrassSpecies {
     let roll = unit_hash(splitmix64(hash ^ 0x7370_6563_6965_735f));
     match community {
         GrassCommunity::MesicMeadow if roll < 0.68 => GrassSpecies::FalseOatGrass,
@@ -919,6 +1058,29 @@ fn grass_species(community: GrassCommunity, hash: u64) -> GrassSpecies {
 }
 
 impl GrassSpecies {
+    /// Enumerates every species so the instanced renderer can key one batch
+    /// per species. Instanced-only; dead on the legacy/wasm build.
+    #[cfg_attr(
+        any(not(feature = "instanced-grass"), target_family = "wasm"),
+        allow(dead_code, reason = "instanced grass renderer is native-only")
+    )]
+    pub(in crate::presentation) const ALL: [Self; 6] = [
+        Self::FalseOatGrass,
+        Self::Cocksfoot,
+        Self::RedFescue,
+        Self::CommonBent,
+        Self::TuftedHairGrass,
+        Self::YorkshireFog,
+    ];
+
+    #[cfg_attr(
+        any(not(feature = "instanced-grass"), target_family = "wasm"),
+        allow(dead_code, reason = "instanced grass renderer is native-only")
+    )]
+    pub(in crate::presentation) const fn index(self) -> usize {
+        self as usize
+    }
+
     fn inflorescence_branch_count(self) -> usize {
         match self {
             Self::FalseOatGrass => 2,
@@ -1685,6 +1847,11 @@ mod tests {
                 ],
                 GrassMeshLod::Far => vec![0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 4, 5, 6],
                 GrassMeshLod::Vista => vec![0, 1, 3, 0, 3, 2, 2, 3, 4],
+                // Instanced-only sub-tier, excluded from this legacy geometry
+                // table; the loop above never yields it.
+                GrassMeshLod::NearEdge => {
+                    unreachable!("near-edge tier is instanced-only")
+                }
             };
             assert_eq!(indices, expected_indices);
         }

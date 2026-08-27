@@ -482,7 +482,8 @@ impl Plugin for TacticalAnimationPlugin {
                 )
                     .chain()
                     .after(TransformSystems::Propagate),
-            );
+            )
+            .add_systems(Update, super::diagnostics::report_system_spikes);
     }
 }
 

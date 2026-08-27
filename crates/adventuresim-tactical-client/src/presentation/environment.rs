@@ -185,10 +185,16 @@ fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-fn tactical_msaa() -> Msaa {
-    // Fixed-function 4x hardware resolve is supported by the WebGPU path and
-    // is particularly valuable for thin grass and branch silhouettes.
-    Msaa::Sample4
+fn tactical_msaa(samples: u8) -> Msaa {
+    // Fixed-function hardware resolve is supported by the WebGPU path and
+    // is particularly valuable for thin grass and branch silhouettes; the
+    // sample count is a preset lever because coverage bandwidth at QHD
+    // scales with it.
+    match samples {
+        0 | 1 => Msaa::Off,
+        2 => Msaa::Sample2,
+        _ => Msaa::Sample4,
+    }
 }
 
 #[derive(Resource, Clone, Copy)]
@@ -216,13 +222,16 @@ impl Default for TacticalCameraSetup {
 pub(in crate::presentation) fn setup_tactical_presentation(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
+    settings: Res<TacticalGraphicsSettings>,
     camera_setup: Res<TacticalCameraSetup>,
 ) {
-    commands.spawn(Atmosphere::earth(
-        scattering_mediums.add(ScatteringMedium::default()),
-    ));
+    if settings.atmosphere_enabled {
+        commands.spawn(Atmosphere::earth(
+            scattering_mediums.add(ScatteringMedium::default()),
+        ));
+    }
 
-    commands.spawn((
+    let mut camera = commands.spawn((
         Name::new("Tactical gameplay camera"),
         TacticalGameplayCamera,
         Camera3d::default(),
@@ -243,9 +252,22 @@ pub(in crate::presentation) fn setup_tactical_presentation(
             },
             ..default()
         },
-        tactical_msaa(),
-        AtmosphereSettings::default(),
+        tactical_msaa(settings.msaa_samples),
     ));
+    if settings.atmosphere_enabled {
+        // Only declare the atmosphere here. The generated environment map is
+        // baked once and frozen into a static Skybox + EnvironmentMapLight by
+        // the atmosphere bake system (`presentation::atmosphere`), which owns
+        // the `AtmosphereEnvironmentMapLight` on its own one-shot bake probe.
+        // Inserting it on the camera as well left the view carrying both an
+        // atmosphere and an environment-map bind group, which no longer matched
+        // the specialized opaque-mesh pipelines and aborted rendering with a
+        // DrawIndirect bind-group validation error.
+        camera.insert(AtmosphereSettings::default());
+    }
+    if settings.bloom_enabled {
+        camera.insert(Bloom::NATURAL);
+    }
 }
 
 pub(super) fn apply_active_environment_fog(
@@ -279,8 +301,19 @@ mod tests {
         app.init_resource::<Assets<ScatteringMedium>>()
             .insert_resource(TacticalGraphicsSettings {
                 shadows_enabled: true,
+                atmosphere_enabled: true,
                 celestial_enabled: true,
+                environment_light_enabled: true,
+                environment_map_size: 64,
+                bloom_enabled: false,
                 max_vista_lods: 3,
+                grass_density_scale: 1.0,
+                grass_range_scale: 1.0,
+                cloud_quality_scale: 1.0,
+                cloud_resolution_scale: 1.0,
+                msaa_samples: 4,
+                shadow_cascade_count: 0,
+                shadow_maximum_distance: 0.0,
             })
             .init_resource::<TacticalCameraSetup>()
             .add_systems(Startup, setup_tactical_presentation);
@@ -336,7 +369,10 @@ mod tests {
 
     #[test]
     fn gameplay_uses_four_sample_webgpu_hardware_msaa() {
-        assert_eq!(tactical_msaa(), Msaa::Sample4);
+        // Capture tooling keeps the 4x reference; presets may lower it.
+        assert_eq!(tactical_msaa(4), Msaa::Sample4);
+        assert_eq!(tactical_msaa(2), Msaa::Sample2);
+        assert_eq!(tactical_msaa(1), Msaa::Off);
     }
 
     #[test]

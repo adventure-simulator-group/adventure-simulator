@@ -341,6 +341,133 @@ pub fn bootstrap_development_world(
     Ok(())
 }
 
+/// Reject a dev-bootstrap call whose token does not match the compiled
+/// capability. Shared by every split bootstrap reducer so the granular seed
+/// path is gated exactly like [`bootstrap_development_world`].
+fn require_dev_bootstrap_token(bootstrap_token: &str) -> Result<(), String> {
+    if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
+        COMPILED_DEV_BOOTSTRAP_TOKEN,
+        bootstrap_token,
+    ) {
+        return Err("Development bootstrap is disabled or unauthorized".into());
+    }
+    Ok(())
+}
+
+/// Settlement ids in a stable, id-sorted order so a caller can drive
+/// per-settlement seeding by index across separate transactions.
+fn sorted_settlement_ids(ctx: &ReducerContext) -> Vec<String> {
+    let mut ids: Vec<String> = ctx.db.settlement().iter().map(|s| s.id).collect();
+    ids.sort();
+    ids
+}
+
+/// First split of [`bootstrap_development_world`]: seed geography, settlements,
+/// and the errantry demo chapter, WITHOUT materializing per-settlement
+/// strategic activity (that expensive work is done by
+/// [`dev_bootstrap_settlement_activity`]). Kept under the per-reducer compute
+/// budget so it can run as its own transaction.
+#[reducer]
+pub fn dev_bootstrap_base(ctx: &ReducerContext, bootstrap_token: String) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    seed_world_rows(ctx, true, false)?;
+    Ok(())
+}
+
+/// Second split of [`bootstrap_development_world`]: materialize strategic
+/// activity for a single settlement, addressed by its index into the
+/// id-sorted settlement list. Out-of-range indices are a no-op so the caller
+/// can loop `0..count` without racing the exact settlement total. Each call is
+/// its own transaction, keeping the heavy per-settlement work under budget.
+///
+/// `quest_batch` caps how many NEW quests are generated on this call (0 means
+/// "no cap"). The cheap idempotent ensures (smith, residence, population,
+/// incidents, recruiting) run every call; passing a small `quest_batch` and
+/// repeating the call lets a settlement whose full quest generation would
+/// exceed the compute budget be filled across several transactions.
+#[reducer]
+pub fn dev_bootstrap_settlement_activity(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+    index: u32,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    let ids = sorted_settlement_ids(ctx);
+    let Some(settlement_id) = ids.get(index as usize) else {
+        return Ok(());
+    };
+    // One settlement's full activity is well under the per-reducer budget, so a
+    // single call materializes all of its quests (`quest_batch == 0` = no cap);
+    // this avoids re-running the idempotent population/incident work per quest.
+    ensure_settlement_activity_batched(ctx, settlement_id, 0)?;
+    crate::repair::ensure_settlement_smith(ctx, settlement_id);
+    Ok(())
+}
+
+/// The number of discrete finalize steps [`dev_bootstrap_finalize`] exposes;
+/// a caller drives `0..DEV_BOOTSTRAP_FINALIZE_STEPS` to complete the world.
+pub const DEV_BOOTSTRAP_FINALIZE_STEPS: u32 = 7;
+
+/// Final split of [`bootstrap_development_world`]: everything after the world
+/// and its strategic activity - the demo characters, social demo, and the
+/// development scenario gallery. Each `step` runs one sub-seed as its own
+/// transaction so no single call exceeds the per-reducer compute budget; the
+/// union of steps `0..DEV_BOOTSTRAP_FINALIZE_STEPS` reproduces the tail of
+/// `bootstrap_development_world` exactly. Every sub-seed is idempotent, and an
+/// out-of-range `step` is a no-op so the caller can loop without racing.
+#[reducer]
+pub fn dev_bootstrap_finalize(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    // The demo characters are individually cheap, so one call seeds them all.
+    // The development scenario gallery stays separate (via `dev_bootstrap_gallery`
+    // / `dev_bootstrap_gallery_validate`) because it exceeds the budget alone.
+    crate::disease::seed_sick_character(ctx)?;
+    crate::character::seed_damaged_character(ctx)?;
+    crate::character::seed_religion_scholar_character(ctx)?;
+    crate::character::seed_bestiary_scholar_character(ctx)?;
+    crate::social::seed_social_demo(ctx)?;
+    crate::character::seed_herbalism_demo_character(ctx)?;
+    Ok(())
+}
+
+/// Materialize one development-gallery item (see `materialize_gallery_item`).
+/// The whole gallery is too heavy for a single reducer transaction, so callers
+/// invoke this with `index` 0, 1, 2, ... until a call materializes nothing new,
+/// then run `dev_bootstrap_gallery_validate` once. Idempotent per item.
+#[reducer]
+pub fn dev_bootstrap_gallery(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+    offset: u32,
+    count: u32,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    // Materialize a contiguous batch of gallery items in one transaction (a
+    // batch of several stays well under the budget); stop early once past the
+    // end so an over-long final batch is harmless.
+    let start = offset as usize;
+    for index in start..start.saturating_add(count as usize) {
+        if !materialize_gallery_item(ctx, index)? {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Run the gallery postcondition check once every item has been materialized by
+/// `dev_bootstrap_gallery`. Fails if any scenario lacks its primary character.
+#[reducer]
+pub fn dev_bootstrap_gallery_validate(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    validate_gallery_postcondition(ctx)
+}
+
 /// Seed a standalone tactical mission: a solo party occupying a typed case
 /// site with a bound hostile group, mission, tactical-server request, and
 /// its authorized claim.
@@ -1034,6 +1161,20 @@ fn ensure_settlement_activity_inner(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Result<(), String> {
+    ensure_settlement_activity_batched(ctx, settlement_id, 0)
+}
+
+/// Like [`ensure_settlement_activity_inner`], but generates at most
+/// `quest_batch` new quests when `quest_batch > 0` (0 means "no cap", the
+/// behavior [`ensure_settlement_activity_inner`] relies on). The cheap
+/// idempotent ensures run unconditionally; only quest generation is throttled,
+/// letting a heavy settlement be filled across several transactions while the
+/// `active..target` loop still converges on the same final quest count.
+fn ensure_settlement_activity_batched(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    quest_batch: u32,
+) -> Result<(), String> {
     // World import writes only canonical settlement facts. These derived
     // service rows are instead materialized when settlement activity is used.
     crate::repair::ensure_settlement_smith(ctx, settlement_id);
@@ -1116,7 +1257,11 @@ fn ensure_settlement_activity_inner(
             )
         })?;
     let active = active_contracts.saturating_add(active_generated_cases);
-    for _ in active..settlement_activity_target(settlement_id) {
+    let target = settlement_activity_target(settlement_id);
+    for (generated, _) in (active..target).enumerate() {
+        if quest_batch != 0 && generated as u32 >= quest_batch {
+            break;
+        }
         generate_quest_for_settlement(ctx, settlement_id).map_err(|error| {
             settlement_activity_stage_error(settlement_id, "quest generation", error)
         })?;

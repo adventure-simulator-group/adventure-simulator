@@ -117,20 +117,30 @@ fn ground_allows_species(surface: GroundSurface, species: UnderstorySpecies) -> 
     }
 }
 
-pub(super) fn spawn(
-    commands: &mut Commands,
+/// One shrub site produced by the shared placement walk, consumed by both
+/// the legacy per-entity renderer and the instanced batches.
+pub(super) struct ShrubPlacement {
+    pub(super) species: UnderstorySpecies,
+    pub(super) world_x: f32,
+    pub(super) world_z: f32,
+    pub(super) hash: u64,
+}
+
+/// Deterministic shrub placement walk shared by both renderers, so the
+/// instanced path reproduces the legacy thickets exactly.
+pub(super) fn placements(
     terrain: &SceneTerrain,
     ground: &SceneGround,
-    cache: &WoodyUnderstoryPresentationCache,
     base_seed: u64,
     chance: f32,
     habitat: UnderstoryHabitat,
-) {
+) -> Vec<ShrubPlacement> {
     let spacing = 3.2;
     let count_x = (terrain.width() / spacing).floor() as i32;
     let count_z = (terrain.depth() / spacing).floor() as i32;
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
+    let mut sites = Vec::new();
     for z in 0..count_z {
         for x in 0..count_x {
             let cell = ((x as u32 as u64) << 32) | z as u32 as u64;
@@ -151,6 +161,38 @@ pub(super) fn spawn(
             {
                 continue;
             }
+            sites.push(ShrubPlacement {
+                species,
+                world_x,
+                world_z,
+                hash,
+            });
+        }
+    }
+    sites
+}
+
+#[cfg_attr(
+    all(feature = "instanced-grass", not(target_family = "wasm")),
+    allow(dead_code, reason = "legacy shrub renderer remains the wasm path")
+)]
+pub(super) fn spawn(
+    commands: &mut Commands,
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    cache: &WoodyUnderstoryPresentationCache,
+    base_seed: u64,
+    chance: f32,
+    habitat: UnderstoryHabitat,
+) {
+    for placement in placements(terrain, ground, base_seed, chance, habitat) {
+        {
+            let ShrubPlacement {
+                species,
+                world_x,
+                world_z,
+                hash,
+            } = placement;
             let Some(transform) = foliage_transform(terrain, world_x, world_z, hash) else {
                 continue;
             };

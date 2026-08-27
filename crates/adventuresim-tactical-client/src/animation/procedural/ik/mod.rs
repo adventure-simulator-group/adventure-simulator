@@ -969,6 +969,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
     mut commands: Commands,
 ) {
+    let _spike = crate::animation::diagnostics::SpikeGuard::new("apply_terrain_leg_ik");
     let terrain = terrain.single().ok();
     for (owner, rig) in &rigs {
         let Ok(skeleton) = owners.get(owner) else {

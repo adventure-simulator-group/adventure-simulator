@@ -819,6 +819,7 @@ pub(super) fn apply_landing_leg_compression(
     parents: Query<&ChildOf>,
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
 ) {
+    let _spike = crate::animation::diagnostics::SpikeGuard::new("apply_landing_leg_compression");
     let mut previous_world_positions = BTreeMap::<Entity, Vec3>::new();
     for (entity, global) in &bones {
         previous_world_positions.insert(entity, global.translation());

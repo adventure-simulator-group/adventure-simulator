@@ -840,7 +840,19 @@ fn spawn_vista_trees(
                     Name::new(format!("Distant vista {} billboard", species.name())),
                     VistaTerrain(lod.level),
                     VistaTreePresentation,
-                    NoFrustumCulling,
+                    // The impostor shader yaws the card toward the camera, so
+                    // the mesh's static bounds would mis-cull near screen
+                    // edges. This rotation-safe box restores frustum culling:
+                    // off-screen stands previously always rendered through
+                    // `NoFrustumCulling`, roughly half the vista vertex cost.
+                    bevy::camera::primitives::Aabb {
+                        center: bevy::math::Vec3A::new(0.0, card_height * 0.5, 0.0),
+                        half_extents: bevy::math::Vec3A::new(
+                            card_height * 0.8,
+                            card_height * 0.6,
+                            card_height * 0.8,
+                        ),
+                    },
                     NotShadowCaster,
                     Mesh3d(cached.mesh.clone()),
                     MeshMaterial3d(cached.material.clone()),
