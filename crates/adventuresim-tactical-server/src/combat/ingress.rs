@@ -645,6 +645,301 @@ mod roll_tests {
         assert!(fist.distance_metres > 0.0);
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum ExpectedLungeMode {
+        None,
+        Forward,
+        Quickstep,
+    }
+
+    fn fixed_tick_lunge_displacement_at_contact(
+        movement: MeleeLungeMovement,
+        config: &TacticalCombatConfig,
+    ) -> f32 {
+        let dt = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let authored_windup_seconds = 0.18_f32;
+        let contact_seconds =
+            authored_windup_seconds.max(melee_lunge_movement_delay(movement, config));
+        let contact_ticks = (contact_seconds * LOCOMOTION_SAMPLE_HZ).ceil() as u64;
+        let motor = &config.movement.motor;
+        let mass = motor.fallback_character_mass_kg;
+        let mut displacement = 0.0;
+        let mut velocity = 0.0;
+
+        if movement.quickstep {
+            let action_seconds = config.movement.maneuvers.quickstep_duration_seconds;
+            let action_ticks = (action_seconds * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64;
+            let maximum_force = quickstep_peak_horizontal_force_newtons(70.0, 3.0, motor);
+            for tick in 0..contact_ticks {
+                if displacement >= movement.distance_metres {
+                    break;
+                }
+                let target = adventuresim_tactical_core::physics::quickstep_motion_target(
+                    (tick + 1) as f32 / action_ticks as f32,
+                    movement.distance_metres,
+                    action_seconds,
+                    motor.quickstep_authored_displacement_profile,
+                );
+                let force = adventuresim_tactical_core::physics::quickstep_tracking_force_newtons(
+                    displacement,
+                    velocity,
+                    target,
+                    mass,
+                    maximum_force,
+                    dt,
+                );
+                velocity += force / mass * dt;
+                displacement += velocity * dt;
+            }
+        } else {
+            let drive_acceleration = (motor.reference_ground_drive_force_newtons / mass)
+                .min(motor.gravity_metres_per_second_squared * motor.traction_coefficient);
+            let run_speed = config.movement.speeds_metres_per_second.run;
+            for _ in 0..contact_ticks {
+                if displacement >= movement.distance_metres {
+                    break;
+                }
+                velocity = (velocity + drive_acceleration * dt).min(run_speed);
+                displacement += velocity * dt;
+            }
+        }
+
+        displacement
+    }
+
+    #[test]
+    fn stationary_defender_melee_range_matrix_reaches_client_ray_and_authority() {
+        let collider = Collider::cylinder(0.4, 1.9);
+        let dimensions = CharacterDimensions::default();
+        let config = TacticalCombatConfig::default();
+        let quickstep_distance = quickstep_target_displacement_metres(
+            dimensions.leg_length_metres,
+            &config.movement.motor,
+        );
+        let cases = [
+            (
+                "in-range",
+                0.0,
+                0.8,
+                BodyPart::Chest,
+                ExpectedLungeMode::None,
+                true,
+                true,
+            ),
+            (
+                "window-outside",
+                0.099,
+                0.8,
+                BodyPart::Chest,
+                ExpectedLungeMode::None,
+                false,
+                true,
+            ),
+            (
+                "over-window",
+                0.101,
+                0.8,
+                BodyPart::Chest,
+                ExpectedLungeMode::Forward,
+                true,
+                true,
+            ),
+            (
+                "under-mode",
+                0.499,
+                0.8,
+                BodyPart::Chest,
+                ExpectedLungeMode::Forward,
+                true,
+                true,
+            ),
+            (
+                "over-mode",
+                0.501,
+                0.8,
+                BodyPart::Chest,
+                ExpectedLungeMode::Quickstep,
+                true,
+                true,
+            ),
+            (
+                "quickstep-max",
+                quickstep_distance - 0.01,
+                0.8,
+                BodyPart::Chest,
+                ExpectedLungeMode::Quickstep,
+                true,
+                true,
+            ),
+            (
+                "quickstep-over",
+                quickstep_distance + 0.01,
+                0.8,
+                BodyPart::Chest,
+                ExpectedLungeMode::None,
+                false,
+                false,
+            ),
+            (
+                "fist-close",
+                0.0,
+                0.0,
+                BodyPart::Chest,
+                ExpectedLungeMode::None,
+                true,
+                true,
+            ),
+            (
+                "fist-forward",
+                0.30,
+                0.0,
+                BodyPart::Chest,
+                ExpectedLungeMode::Forward,
+                true,
+                true,
+            ),
+            (
+                "fist-quickstep",
+                0.70,
+                0.0,
+                BodyPart::Chest,
+                ExpectedLungeMode::Quickstep,
+                true,
+                true,
+            ),
+            (
+                "head-forward",
+                0.30,
+                0.8,
+                BodyPart::Head,
+                ExpectedLungeMode::Forward,
+                true,
+                true,
+            ),
+            (
+                "head-quickstep",
+                0.70,
+                0.8,
+                BodyPart::Head,
+                ExpectedLungeMode::Quickstep,
+                true,
+                true,
+            ),
+            (
+                "left-arm",
+                0.30,
+                0.8,
+                BodyPart::LeftArm,
+                ExpectedLungeMode::Forward,
+                true,
+                true,
+            ),
+        ];
+
+        for (
+            label,
+            desired_gap,
+            weapon_reach,
+            body_part,
+            expected_mode,
+            expected_client_hit,
+            expected_server_acceptance,
+        ) in cases
+        {
+            let reach = melee_interaction_range(dimensions.arm_reach_metres, weapon_reach);
+            let attacker_origin = melee_attack_origin(Vec3::ZERO, &collider, dimensions);
+            let mut low = 0.0;
+            let mut high = 5.0;
+            for _ in 0..40 {
+                let mid = (low + high) * 0.5;
+                let target = Transform::from_xyz(mid, 0.0, 0.0);
+                let gap = configured_body_part_surface_distance(
+                    attacker_origin,
+                    &target,
+                    body_part,
+                    &config,
+                )
+                .unwrap()
+                    - reach;
+                if gap < desired_gap {
+                    low = mid;
+                } else {
+                    high = mid;
+                }
+            }
+            let target = Transform::from_xyz((low + high) * 0.5, 0.0, 0.0);
+            let maximum_travel = quickstep_distance.min(melee_collision_clearance(
+                Vec3::ZERO,
+                &collider,
+                &target,
+                &collider,
+            ));
+            let strike_point = configured_body_part_strike_point(
+                attacker_origin,
+                Vec2::X,
+                &target,
+                body_part,
+                reach,
+                maximum_travel,
+                &config,
+            )
+            .map(|(point, _)| point);
+            let movement = planned_melee_lunge(
+                Vec3::ZERO,
+                &collider,
+                &target,
+                &collider,
+                body_part,
+                dimensions,
+                weapon_reach,
+                quickstep_distance,
+                &config,
+            );
+            let actual_mode = match movement {
+                None => ExpectedLungeMode::None,
+                Some(movement) if movement.quickstep => ExpectedLungeMode::Quickstep,
+                Some(_) => ExpectedLungeMode::Forward,
+            };
+            assert_eq!(actual_mode, expected_mode, "{label}: wrong lunge mode");
+
+            let actual_displacement = movement
+                .map(|movement| fixed_tick_lunge_displacement_at_contact(movement, &config))
+                .unwrap_or(0.0);
+            let arrived_position = movement.map_or(Vec3::ZERO, |movement| {
+                Vec3::new(
+                    movement.direction.x * actual_displacement,
+                    0.0,
+                    movement.direction.y * actual_displacement,
+                )
+            });
+            let arrived_origin = melee_attack_origin(arrived_position, &collider, dimensions);
+            let surface_distance =
+                configured_body_part_surface_distance(arrived_origin, &target, body_part, &config)
+                    .unwrap();
+            let server_accepts = surface_distance
+                <= reach
+                    + config
+                        .realtime_authority
+                        .melee
+                        .range_latency_tolerance_metres;
+            let client_ray_hits = strike_point.is_some_and(|strike_point| {
+                arrived_origin.distance(strike_point) <= reach + 1.0e-4
+            });
+            println!(
+                "{label:>14} gap={desired_gap:.3} mode={actual_mode:?} planned={:.3} actual={actual_displacement:.3} ray={client_ray_hits} server={server_accepts}",
+                movement.map_or(0.0, |movement| movement.distance_metres),
+            );
+            assert_eq!(
+                client_ray_hits, expected_client_hit,
+                "{label}: client ray mismatch at fixed-tick contact (surface={surface_distance:.4}, reach={reach:.4}, actual travel={actual_displacement:.4})"
+            );
+            assert_eq!(
+                server_accepts, expected_server_acceptance,
+                "{label}: server validation mismatch at fixed-tick contact (surface={surface_distance:.4}, reach={reach:.4}, actual travel={actual_displacement:.4})"
+            );
+        }
+    }
+
     #[test]
     fn clients_and_server_ai_share_authoritative_defense_transitions() {
         let mut app = App::new();
