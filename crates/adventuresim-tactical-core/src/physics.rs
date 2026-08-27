@@ -222,6 +222,10 @@ pub struct MeleeLungeMovement {
     pub quickstep: bool,
 }
 
+fn melee_lunge_has_arrived(travelled_metres: f32, planned_distance_metres: f32) -> bool {
+    travelled_metres >= planned_distance_metres
+}
+
 #[derive(Component, Debug, Clone, Copy, Default)]
 struct QuickstepMismatchLogged;
 
@@ -762,7 +766,7 @@ fn apply_character_motor(
                     .max(0.0);
                 if let Some(lunge) = melee_lunge
                     && lunge.quickstep
-                    && displacement + 0.01 >= lunge.distance_metres
+                    && melee_lunge_has_arrived(displacement, lunge.distance_metres)
                 {
                     push.cancel();
                     commands.entity(entity).remove::<MeleeLungeMovement>();
@@ -919,7 +923,7 @@ fn apply_character_motor(
                 .xz()
                 .dot(lunge.direction)
                 .max(0.0);
-            if travelled + 0.01 >= lunge.distance_metres {
+            if melee_lunge_has_arrived(travelled, lunge.distance_metres) {
                 commands.entity(entity).remove::<MeleeLungeMovement>();
                 Vec3::ZERO
             } else {
@@ -1148,6 +1152,60 @@ fn approach_velocity(current: Vec2, target: Vec2, acceleration: f32, delta_secon
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn melee_lunge_does_not_stop_one_centimetre_before_strike_ready_distance() {
+        assert!(!melee_lunge_has_arrived(0.990, 1.0));
+        assert!(!melee_lunge_has_arrived(0.999_9, 1.0));
+        assert!(melee_lunge_has_arrived(1.0, 1.0));
+        assert!(melee_lunge_has_arrived(1.01, 1.0));
+    }
+
+    #[test]
+    fn conservative_forward_lunge_arrival_covers_fixed_tick_motor_path() {
+        let config = crate::combat_config::TacticalCombatConfig::default();
+        let motor = &config.movement.motor;
+        let mass = motor.fallback_character_mass_kg;
+        let (drive_force, braking_force) = character_motor_force_limits(motor, mass, 1.0);
+        let drive_acceleration = drive_force / mass;
+        let braking_acceleration = braking_force / mass;
+        let traction_acceleration =
+            motor.gravity_metres_per_second_squared * motor.traction_coefficient;
+        let predicted_acceleration = crate::combat::conservative_forward_lunge_acceleration(motor);
+        let run_speed = config.movement.speeds_metres_per_second.run;
+        let dt = 1.0 / LOCOMOTION_SAMPLE_HZ;
+
+        for distance in [0.101, 0.404, 0.441, 0.499] {
+            let predicted_seconds = crate::combat::melee_lunge_delay_seconds(
+                crate::combat::MeleeLunge::Forward {
+                    distance_metres: distance,
+                },
+                run_speed,
+                predicted_acceleration,
+                config.movement.maneuvers.quickstep_duration_seconds,
+            );
+            let ticks = (predicted_seconds * LOCOMOTION_SAMPLE_HZ).ceil() as usize;
+            let mut velocity = Vec2::ZERO;
+            let mut displacement = 0.0;
+            for _ in 0..ticks {
+                velocity = approach_ground_velocity(
+                    velocity,
+                    Vec2::X * run_speed,
+                    drive_acceleration,
+                    braking_acceleration,
+                    traction_acceleration,
+                    traction_acceleration,
+                    motor.reference_sprint_turn_radius_metres,
+                    dt,
+                );
+                displacement += velocity.x * dt;
+            }
+            assert!(
+                displacement >= distance,
+                "distance {distance:.3}: predicted {predicted_seconds:.3}s reached only {displacement:.3}m"
+            );
+        }
+    }
 
     #[test]
     fn slide_drag_is_bounded_and_preserves_heading() {
@@ -1592,37 +1650,39 @@ mod tests {
         let duration = config.movement.maneuvers.quickstep_duration_seconds;
         let ticks = (duration * LOCOMOTION_SAMPLE_HZ).round() as usize;
         let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
-        let gap = 0.72;
         let maximum_force = quickstep_peak_horizontal_force_newtons(70.0, 3.0, motor);
-        let mut displacement = 0.0;
-        let mut velocity = 0.0;
-        for tick in 0..ticks {
-            let target = quickstep_motion_target(
-                (tick + 1) as f32 / ticks as f32,
-                gap,
-                duration,
-                motor.quickstep_authored_displacement_profile,
-            );
-            let force = quickstep_tracking_force_newtons(
-                displacement,
-                velocity,
-                target,
-                70.0,
-                maximum_force,
-                delta_seconds,
-            );
-            velocity += force / 70.0 * delta_seconds;
-            displacement += velocity * delta_seconds;
-        }
-
-        assert!((displacement - gap).abs() <= 0.05, "travel={displacement}");
-        assert!(
-            displacement
-                < quickstep_target_displacement_metres(
-                    motor.reference_quickstep_leg_length_metres,
-                    motor,
-                )
+        let maximum_gap = quickstep_target_displacement_metres(
+            motor.reference_quickstep_leg_length_metres,
+            motor,
         );
+        for gap in [0.501, 0.70, maximum_gap - 0.01] {
+            let mut displacement = 0.0;
+            let mut velocity = 0.0;
+            for tick in 0..ticks {
+                let target = quickstep_motion_target(
+                    (tick + 1) as f32 / ticks as f32,
+                    gap,
+                    duration,
+                    motor.quickstep_authored_displacement_profile,
+                );
+                let force = quickstep_tracking_force_newtons(
+                    displacement,
+                    velocity,
+                    target,
+                    70.0,
+                    maximum_force,
+                    delta_seconds,
+                );
+                velocity += force / 70.0 * delta_seconds;
+                displacement += velocity * delta_seconds;
+            }
+
+            assert!(
+                (displacement - gap).abs() <= 0.05,
+                "gap={gap} travel={displacement}"
+            );
+            assert!(displacement <= maximum_gap + 0.01);
+        }
     }
 
     #[test]
