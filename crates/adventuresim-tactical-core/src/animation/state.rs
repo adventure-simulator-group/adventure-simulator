@@ -2135,6 +2135,19 @@ pub fn advance_body_facing_with_speed(
         };
         Vec3::new(direction.x, 0.0, direction.y)
     };
+    advance_body_facing_toward(current, desired_forward, delta_seconds, turn_speed_radians)
+}
+
+/// Advances the authored body's +Z axis toward an explicit planar target.
+/// Attack target acquisition uses this lower-level seam to share the ordinary
+/// bounded facing actuator while choosing a target independently of camera yaw.
+pub fn advance_body_facing_toward(
+    current: Quat,
+    desired_forward: Vec3,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
+) -> Quat {
+    let current_yaw = body_yaw(current);
     let desired_yaw = desired_forward.x.atan2(desired_forward.z);
     let mut delta = (desired_yaw - current_yaw + std::f32::consts::PI)
         .rem_euclid(std::f32::consts::TAU)
@@ -2144,6 +2157,22 @@ pub fn advance_body_facing_with_speed(
     }
     let maximum = (turn_speed_radians * delta_seconds.max(0.0)).min(std::f32::consts::PI);
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
+}
+
+/// Angular speed required to reach a planar facing by a deadline without an
+/// instantaneous turn. Re-evaluating this as the target moves still lands on
+/// the live heading at canonical contact.
+pub fn body_turn_speed_for_deadline(
+    current: Quat,
+    desired_forward: Vec3,
+    remaining_seconds: f32,
+    delta_seconds: f32,
+) -> f32 {
+    let Some(desired) = desired_forward.xz().try_normalize() else {
+        return 0.0;
+    };
+    let current = (current * Vec3::Z).xz().normalize_or_zero();
+    current.angle_to(desired).abs() / remaining_seconds.max(delta_seconds).max(f32::EPSILON)
 }
 
 /// Rotates a downed body's fixed head direction toward camera yaw only while

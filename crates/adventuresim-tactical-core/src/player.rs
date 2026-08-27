@@ -39,12 +39,14 @@ pub struct Player {
 #[reflect(Component)]
 pub struct CharacterDimensions {
     pub leg_length_metres: f32,
+    pub body_height_metres: f32,
 }
 
 impl Default for CharacterDimensions {
     fn default() -> Self {
         Self {
             leg_length_metres: 0.840_348,
+            body_height_metres: 1.9,
         }
     }
 }

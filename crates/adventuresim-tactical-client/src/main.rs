@@ -46,6 +46,7 @@ mod equipment;
 #[allow(dead_code)] // Viewer-only input diagnostics are compiled into this binary.
 mod player;
 mod presentation;
+mod targeting;
 mod ui;
 
 #[derive(Parser, Debug, Clone, Resource)]

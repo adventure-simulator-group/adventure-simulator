@@ -18,7 +18,8 @@ use bevy::prelude::*;
 use std::{collections::HashMap, num::NonZeroU32};
 
 use crate::player_projection::{
-    AuthoritativeMovementIntent, PlayerProjectionSet, begin_authoritative_quickstep,
+    AuthoritativeMovementIntent, PlayerProjectionSet, begin_attack_facing,
+    begin_authoritative_quickstep,
 };
 pub(crate) use authority::{
     CombatDuration, CombatInstant, MeleeAttackAuthority, RangedAttackAuthority, ReportedPrecision,
@@ -842,6 +843,7 @@ mod tests {
             message: MeleeActionRequest::Start {
                 strike_family: StrikeFamily::Thrust,
                 hand: AttackHand::Main,
+                target: None,
             },
         });
         // The bare test attacker has no equipped weapon, so its observed

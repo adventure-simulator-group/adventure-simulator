@@ -43,7 +43,8 @@ use crate::{
         PlayerProjectionSet, expire_disconnected_players, on_client_disconnected, on_join_request,
         on_player_added, on_player_input, restore_authoritative_movement_intent,
         spawn_connected_players, trace_authoritative_quickstep_after_collision,
-        update_character_motion_snapshots, update_skeleton_locomotion,
+        update_attack_facing_targets, update_character_motion_snapshots,
+        update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
@@ -262,6 +263,7 @@ fn main() {
                 .before(AdventureSimulatorPhysicsSet::ApplyCharacterMotor),
             (
                 trace_authoritative_quickstep_after_collision,
+                update_attack_facing_targets,
                 update_skeleton_locomotion,
                 update_character_motion_snapshots,
             )

@@ -4,12 +4,13 @@ use adventuresim_tactical_netcode::{
     client::{DirectControlState, WeaponGuardInputState},
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest},
 };
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::{
     animation::spawn_fallback_t_pose,
-    camera::CameraAimState,
     presentation::{GrassInteractor, TacticalGameplayCamera},
+    targeting::auto_aim_candidate,
 };
 
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
@@ -83,11 +84,58 @@ pub struct HitPerformed {
 #[derive(Component, Clone, Copy)]
 pub struct LimbHitbox(pub BodyPart);
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct AttackState {
     pub pre_hit_timer: Timer,
     pub reach: f32,
     pub ranged: bool,
+    target: Option<AttackTarget>,
+    target_position: Option<Vec3>,
+    aim_direction: Dir3,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AttackTarget {
+    body: Entity,
+    hitbox: Entity,
+    body_part: BodyPart,
+}
+
+#[derive(SystemParam)]
+struct CombatTargeting<'w, 's> {
+    spatial: SpatialQuery<'w, 's>,
+    attackers: Query<
+        'w,
+        's,
+        (
+            &'static Transform,
+            &'static CharacterDimensions,
+            &'static TacticalCombatSide,
+            &'static CharacterControllerCamera,
+        ),
+    >,
+    cameras: Query<'w, 's, &'static Transform, With<TacticalGameplayCamera>>,
+    hitboxes: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static GlobalTransform,
+            &'static ColliderOf,
+            &'static LimbHitbox,
+        ),
+    >,
+    combatants: Query<
+        'w,
+        's,
+        (
+            &'static TacticalCombatSide,
+            &'static TacticalCombatState,
+            &'static Transform,
+            &'static Collider,
+        ),
+    >,
+    scene_items: Query<'w, 's, Entity, With<TacticalSceneItem>>,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -97,18 +145,143 @@ struct BufferedMeleeAttack {
 }
 
 impl AttackState {
-    pub fn new(pre_hit_delay: f32, reach: f32, ranged: bool) -> Self {
+    fn new(
+        pre_hit_delay: f32,
+        reach: f32,
+        ranged: bool,
+        target: Option<AttackTarget>,
+        target_position: Option<Vec3>,
+        aim_direction: Dir3,
+    ) -> Self {
         let pre_hit_timer = Timer::from_seconds(pre_hit_delay, TimerMode::Once);
         Self {
             pre_hit_timer,
             reach,
             ranged,
+            target,
+            target_position,
+            aim_direction,
         }
     }
 
     pub fn is_attacking(&self) -> bool {
         !self.pre_hit_timer.is_paused() && !self.pre_hit_timer.is_finished()
     }
+}
+
+impl CombatTargeting<'_, '_> {
+    fn acquire(&self, attacker: Entity, reach: f32) -> (Option<AttackTarget>, Option<Vec3>, Dir3) {
+        let Ok((transform, dimensions, attacker_side, camera)) = self.attackers.get(attacker)
+        else {
+            return (None, None, Dir3::NEG_Z);
+        };
+        let Ok(camera_transform) = self.cameras.get(camera.get()) else {
+            return (None, None, Dir3::NEG_Z);
+        };
+        let origin = attack_origin(transform.translation, *dimensions);
+        let excluded: Vec<_> = self.scene_items.iter().chain([attacker]).collect();
+        let obstruction_filter = SpatialQueryFilter::from_excluded_entities(excluded);
+        let selected = auto_aim_candidate(
+            camera_transform.translation,
+            camera_transform.forward().as_vec3(),
+            origin,
+            reach,
+            self.hitboxes
+                .iter()
+                .filter_map(|(hitbox, target_transform, collider, limb)| {
+                    let target = collider.body;
+                    let Ok((target_side, target_state, body_transform, body_collider)) =
+                        self.combatants.get(target)
+                    else {
+                        return None;
+                    };
+                    if target_side == attacker_side || target_state.is_incapacitated() {
+                        return None;
+                    }
+                    let position = target_transform.translation();
+                    let surface_distance = attack_target_surface_distance(
+                        transform.translation,
+                        body_transform,
+                        body_collider,
+                    );
+                    if !attack_target_within_angular_threshold(
+                        camera_transform.forward().as_vec3(),
+                        position - camera_transform.translation,
+                        surface_distance,
+                    ) {
+                        return None;
+                    }
+                    let sight = position - origin;
+                    let distance = sight.length();
+                    let direction = Dir3::new(sight).ok()?;
+                    let visible = distance > f32::EPSILON
+                        && self
+                            .spatial
+                            .cast_ray(origin, direction, distance, true, &obstruction_filter)
+                            .is_some_and(|impact| {
+                                impact.entity == target
+                                    || impact.entity == hitbox
+                                    || self.hitboxes.get(impact.entity).is_ok_and(
+                                        |(_, _, impact_collider, _)| impact_collider.body == target,
+                                    )
+                            });
+                    visible.then_some((
+                        (
+                            AttackTarget {
+                                body: target,
+                                hitbox,
+                                body_part: limb.0,
+                            },
+                            position,
+                        ),
+                        position,
+                        hitbox.to_bits(),
+                    ))
+                }),
+        );
+        match selected {
+            Some((target, position)) => (Some(target), Some(position), camera_transform.forward()),
+            None => (None, None, camera_transform.forward()),
+        }
+    }
+}
+
+fn attack_origin(server_position: Vec3, dimensions: CharacterDimensions) -> Vec3 {
+    server_position + Vec3::Y * (dimensions.body_height_metres * (2.0 / 3.0))
+}
+
+fn attack_target_angular_threshold_degrees(surface_distance_metres: f32) -> f32 {
+    90.0 / surface_distance_metres.max(0.5)
+}
+
+fn attack_target_within_angular_threshold(
+    camera_forward: Vec3,
+    direction_to_candidate: Vec3,
+    surface_distance_metres: f32,
+) -> bool {
+    let Some(camera_forward) = camera_forward.try_normalize() else {
+        return false;
+    };
+    let Some(direction) = direction_to_candidate.try_normalize() else {
+        return false;
+    };
+    let threshold = attack_target_angular_threshold_degrees(surface_distance_metres).to_radians();
+    camera_forward.dot(direction).clamp(-1.0, 1.0) >= threshold.cos()
+}
+
+fn attack_target_surface_distance(
+    attacker_position: Vec3,
+    target_transform: &Transform,
+    target_collider: &Collider,
+) -> f32 {
+    let bounds = target_collider.aabb(
+        target_transform.translation,
+        Rotation(target_transform.rotation),
+    );
+    let center = ((bounds.min + bounds.max) * 0.5).xz();
+    let half_extents = ((bounds.max - bounds.min) * 0.5).xz();
+    let radius = half_extents.x.max(half_extents.y);
+    (attacker_position.xz().distance(center) - radius).max(0.0)
 }
 
 fn on_new_player_added_hook(
@@ -272,6 +445,7 @@ fn predict_local_body_facing(
         (
             &CharacterControllerCamera,
             &SkeletonState,
+            Option<&AttackState>,
             &mut Transform,
             &mut LocalBodyFacing,
         ),
@@ -279,7 +453,7 @@ fn predict_local_body_facing(
     >,
     cameras: Query<&Transform, (With<TacticalGameplayCamera>, Without<ClientPlayer>)>,
 ) {
-    for (camera, skeleton, mut transform, mut facing) in &mut players {
+    for (camera, skeleton, attack, mut transform, mut facing) in &mut players {
         if skeleton.body().is_downed() || skeleton.is_posture_transitioning() {
             facing.rotation = transform.rotation;
             facing.initialized = false;
@@ -294,15 +468,36 @@ fn predict_local_body_facing(
             facing.initialized = true;
         }
 
-        facing.rotation = advance_body_facing_with_speed(
-            facing.rotation,
-            camera_transform.rotation,
-            skeleton.world_velocity,
-            skeleton.action_kind(),
-            guard.desired,
-            time.delta_secs(),
-            std::f32::consts::PI / combat_config.presentation.body_turn_seconds_per_half_turn,
-        );
+        facing.rotation = if let Some((target_position, remaining_seconds)) =
+            attack.and_then(|state| {
+                state
+                    .target_position
+                    .map(|target| (target, state.pre_hit_timer.remaining_secs()))
+            }) {
+            let desired_forward = target_position - transform.translation;
+            let turn_speed = body_turn_speed_for_deadline(
+                facing.rotation,
+                desired_forward,
+                remaining_seconds,
+                time.delta_secs(),
+            );
+            advance_body_facing_toward(
+                facing.rotation,
+                desired_forward,
+                time.delta_secs(),
+                turn_speed,
+            )
+        } else {
+            advance_body_facing_with_speed(
+                facing.rotation,
+                camera_transform.rotation,
+                skeleton.world_velocity,
+                skeleton.action_kind(),
+                guard.desired,
+                time.delta_secs(),
+                std::f32::consts::PI / combat_config.presentation.body_turn_seconds_per_half_turn,
+            )
+        };
         transform.rotation = facing.rotation;
     }
 }
@@ -311,74 +506,46 @@ fn update_attack_state_system(
     mut cmd: Commands,
     spatial: SpatialQuery,
     time: Res<Time>,
-    aim: Res<CameraAimState>,
-    mut q_attacker: Query<(
-        Entity,
-        &Transform,
-        &mut AttackState,
-        &CharacterControllerCamera,
-    )>,
-    q_camera: Query<&Transform>,
-    q_collider: Query<(&ColliderOf, &LimbHitbox)>,
+    mut q_attacker: Query<(Entity, &Transform, &CharacterDimensions, &mut AttackState)>,
+    q_collider: Query<(&GlobalTransform, &ColliderOf, &LimbHitbox)>,
     q_scene_items: Query<Entity, With<TacticalSceneItem>>,
     combat_config: Res<TacticalCombatConfig>,
 ) {
-    for (attacker, attacker_transform, mut state, camera) in &mut q_attacker {
+    for (attacker, attacker_transform, dimensions, mut state) in &mut q_attacker {
+        if let Some(target) = state.target
+            && let Ok((transform, _, _)) = q_collider.get(target.hitbox)
+        {
+            state.target_position = Some(transform.translation());
+        }
         state.pre_hit_timer.tick(time.delta());
         if !state.pre_hit_timer.is_finished() {
             continue;
         }
 
         cmd.entity(attacker).remove::<AttackState>();
-
-        let Ok(camera_transform) = q_camera.get(camera.get()) else {
-            warn!("Can't get camera transform to calculate attack ray");
-            continue;
-        };
-
-        let camera_origin = camera_transform.translation;
-        let camera_direction = camera_transform.forward();
-        let target_filter = SpatialQueryFilter::from_mask(HITBOX_LAYER);
         let reach = if state.ranged {
             state.reach
         } else {
             melee_interaction_range(state.reach)
         };
-        let selection_distance = camera_origin.distance(attacker_transform.translation) + reach;
-
-        let intended = spatial.cast_ray(
-            camera_origin,
-            camera_direction,
-            selection_distance,
-            true,
-            &target_filter,
-        );
-        let Some(intended) = intended else {
+        let origin = attack_origin(attacker_transform.translation, *dimensions);
+        let Some(target) = state.target else {
             if state.ranged {
                 cmd.client_trigger(RangedActionRequest::CompleteMiss);
             }
             cmd.trigger(HitPerformed {
                 entity: attacker,
-                direction: camera_direction,
-                origin: camera_origin,
-                length: selection_distance,
+                direction: state.aim_direction,
+                origin,
+                length: reach,
             });
             continue;
         };
-        let Ok((target, body_part)) = q_collider
-            .get(intended.entity)
-            .map(|(collider, limb)| (collider.body, limb.0))
-        else {
-            continue;
-        };
-        let intended_point = camera_origin + *camera_direction * intended.distance;
-        let origin = if state.ranged && aim.active {
-            aim.muzzle_origin
-        } else {
-            attacker_transform.translation + Vec3::Y * 0.5
-        };
+        let intended_point = state
+            .target_position
+            .unwrap_or(origin + *state.aim_direction * reach);
         let delta = intended_point - origin;
-        let direction = Dir3::new(delta).unwrap_or(camera_direction);
+        let direction = Dir3::new(delta).unwrap_or(state.aim_direction);
         let excluded: Vec<_> = q_scene_items.iter().chain([attacker]).collect();
         let obstruction_filter = SpatialQueryFilter::from_excluded_entities(excluded);
         let obstruction = spatial.cast_ray(
@@ -389,23 +556,23 @@ fn update_attack_state_system(
             &obstruction_filter,
         );
         let unobstructed = obstruction.is_some_and(|hit| {
-            hit.entity == target
+            hit.entity == target.body
                 || q_collider
                     .get(hit.entity)
-                    .is_ok_and(|(collider, _)| collider.body == target)
+                    .is_ok_and(|(_, collider, _)| collider.body == target.body)
         });
 
         if unobstructed {
             if state.ranged {
                 cmd.client_trigger(RangedActionRequest::CompleteHit {
-                    target,
-                    body_part,
+                    target: target.body,
+                    body_part: target.body_part,
                     reported_precision: combat_config.targeting.reported_hit_precision,
                 });
             } else {
                 cmd.client_trigger(MeleeActionRequest::Complete {
-                    target,
-                    body_part,
+                    target: target.body,
+                    body_part: target.body_part,
                     reported_precision: combat_config.targeting.reported_hit_precision,
                 });
             }
@@ -436,6 +603,7 @@ fn on_attack_fired_hook(
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
     combat_config: Res<TacticalCombatConfig>,
+    targeting: CombatTargeting,
 ) {
     try_start_attack(
         event.context,
@@ -446,6 +614,7 @@ fn on_attack_fired_hook(
         &viewer,
         &time,
         &combat_config,
+        &targeting,
     );
 }
 
@@ -458,6 +627,7 @@ fn try_start_attack(
     viewer: &TacticalPlayerViewer,
     time: &Time,
     combat_config: &TacticalCombatConfig,
+    targeting: &CombatTargeting,
 ) {
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
@@ -506,9 +676,18 @@ fn try_start_attack(
         {
             return;
         }
-        cmd.entity(entity)
-            .insert(AttackState::new(windup_secs, reach, true));
-        cmd.client_trigger(RangedActionRequest::Start);
+        let (target, target_position, aim_direction) = targeting.acquire(entity, reach);
+        cmd.entity(entity).insert(AttackState::new(
+            windup_secs,
+            reach,
+            true,
+            target,
+            target_position,
+            aim_direction,
+        ));
+        cmd.client_trigger(RangedActionRequest::Start {
+            target: target.map(|target| target.body),
+        });
     } else {
         let preferred_family = StrikeFamily::from_melee_style(preferred_style);
         let requested_family = if alternate_attack && hand == AttackHand::Main {
@@ -568,12 +747,22 @@ fn try_start_attack(
                 return;
             }
         }
+        let (target, target_position, aim_direction) =
+            targeting.acquire(entity, melee_interaction_range(reach));
         cmd.entity(entity)
-            .insert(AttackState::new(windup_secs, reach, false))
+            .insert(AttackState::new(
+                windup_secs,
+                reach,
+                false,
+                target,
+                target_position,
+                aim_direction,
+            ))
             .remove::<BufferedMeleeAttack>();
         cmd.client_trigger(MeleeActionRequest::Start {
             strike_family,
             hand,
+            target: target.map(|target| target.body),
         });
     }
 }
@@ -592,6 +781,7 @@ fn flush_buffered_melee_attacks(
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
     combat_config: Res<TacticalCombatConfig>,
+    targeting: CombatTargeting,
 ) {
     for (entity, buffered, attacking, mut skeleton) in &mut characters {
         if attacking {
@@ -638,12 +828,22 @@ fn flush_buffered_melee_attacks(
         {
             continue;
         }
+        let (target, target_position, aim_direction) =
+            targeting.acquire(entity, melee_interaction_range(reach));
         cmd.entity(entity)
-            .insert(AttackState::new(windup_secs, reach, false))
+            .insert(AttackState::new(
+                windup_secs,
+                reach,
+                false,
+                target,
+                target_position,
+                aim_direction,
+            ))
             .remove::<BufferedMeleeAttack>();
         cmd.client_trigger(MeleeActionRequest::Start {
             strike_family: buffered.family,
             hand: buffered.hand,
+            target: target.map(|target| target.body),
         });
     }
 }
@@ -660,6 +860,7 @@ fn apply_direct_combat_controls(
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
     combat_config: Res<TacticalCombatConfig>,
+    targeting: CombatTargeting,
 ) {
     for entity in &players {
         if let Ok((_, mut skeleton)) = q_character.get_mut(entity)
@@ -706,6 +907,7 @@ fn apply_direct_combat_controls(
                 &viewer,
                 &time,
                 &combat_config,
+                &targeting,
             );
         }
         // Quicksteps travel on the sequenced PlayerInputRequest stream. Do not
@@ -799,5 +1001,82 @@ mod tests {
 
         assert!(next.angle_between(target) < Quat::IDENTITY.angle_between(target));
         assert!(next.angle_between(target) > 0.0);
+    }
+
+    #[test]
+    fn attack_origin_is_two_thirds_of_body_height_above_server_position() {
+        let position = Vec3::new(2.0, 5.0, -3.0);
+        let dimensions = CharacterDimensions {
+            body_height_metres: 1.8,
+            ..default()
+        };
+
+        assert_eq!(
+            attack_origin(position, dimensions),
+            Vec3::new(2.0, 6.2, -3.0)
+        );
+    }
+
+    #[test]
+    fn attack_target_threshold_scales_with_surface_distance() {
+        assert_eq!(attack_target_angular_threshold_degrees(0.0), 180.0);
+        assert_eq!(attack_target_angular_threshold_degrees(0.5), 180.0);
+        assert_eq!(attack_target_angular_threshold_degrees(1.0), 90.0);
+        assert_eq!(attack_target_angular_threshold_degrees(2.0), 45.0);
+        assert!((attack_target_angular_threshold_degrees(1_000.0) - 0.09).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn attack_target_threshold_accepts_wide_nearby_and_narrow_distant_aim() {
+        assert!(attack_target_within_angular_threshold(
+            Vec3::NEG_Z,
+            Vec3::Z,
+            0.0,
+        ));
+        assert!(attack_target_within_angular_threshold(
+            Vec3::NEG_Z,
+            Vec3::X,
+            1.0,
+        ));
+        assert!(attack_target_within_angular_threshold(
+            Vec3::NEG_Z,
+            Vec3::new(1.0, 0.0, -1.0),
+            2.0,
+        ));
+        assert!(!attack_target_within_angular_threshold(
+            Vec3::NEG_Z,
+            Quat::from_rotation_y(0.1_f32.to_radians()) * Vec3::NEG_Z,
+            1_000.0,
+        ));
+    }
+
+    #[test]
+    fn attack_target_distance_uses_the_enemy_bounding_circle_surface() {
+        let collider = Collider::cylinder(0.4, 1.9);
+        let target = Transform::from_xyz(0.0, 0.0, -1.4);
+
+        assert!(
+            (attack_target_surface_distance(Vec3::ZERO, &target, &collider) - 1.0).abs() < 1.0e-5
+        );
+    }
+
+    #[test]
+    fn attack_facing_reaches_the_target_at_canonical_contact_without_snapping() {
+        let desired = Vec3::X;
+        let delta_seconds = 0.05;
+        let contact_seconds = 0.5;
+        let mut rotation = Quat::IDENTITY;
+
+        for step in 0..10 {
+            let remaining = contact_seconds - step as f32 * delta_seconds;
+            let speed = body_turn_speed_for_deadline(rotation, desired, remaining, delta_seconds);
+            let next = advance_body_facing_toward(rotation, desired, delta_seconds, speed);
+            if step == 0 {
+                assert!(next.angle_between(rotation) < std::f32::consts::FRAC_PI_2);
+            }
+            rotation = next;
+        }
+
+        assert!((rotation * Vec3::Z).angle_between(desired) < 1.0e-5);
     }
 }
