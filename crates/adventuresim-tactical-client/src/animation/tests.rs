@@ -647,6 +647,19 @@ mod legacy_tests {
     }
 
     #[test]
+    fn database_weapon_skill_weights_select_the_grip_without_item_names() {
+        let mut hilt = [0.0; 9];
+        hilt[3] = 1.0;
+        assert_eq!(weapon_grip(&hilt), WeaponGrip::Hilt);
+
+        let mut hybrid_polearm = [0.0; 9];
+        hybrid_polearm[0] = 1.0 / 3.0;
+        hybrid_polearm[1] = 1.0 / 3.0;
+        hybrid_polearm[2] = 1.0 / 3.0;
+        assert_eq!(weapon_grip(&hybrid_polearm), WeaponGrip::Polearm);
+    }
+
+    #[test]
     fn authored_rig_attaches_to_a_player_with_skeleton_state() {
         let mut world = World::new();
         let runtime = AnimationRuntime {
@@ -892,7 +905,6 @@ mod legacy_tests {
             owner: Entity::PLACEHOLDER,
             primary_hand: HandSide::Right,
             secondary_grip_local: None,
-            socket_bind_correction: Transform::IDENTITY,
         };
         assert_eq!(constraint.primary_hand, HandSide::Right);
     }

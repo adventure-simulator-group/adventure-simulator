@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 import tempfile
@@ -32,6 +33,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "assets_src" / "biped" / "unarmed"
 RUNTIME_DIR = ROOT / "assets" / "animations" / "biped" / "unarmed"
 RUNTIME_BASE = RUNTIME_DIR / "base.glb"
+GRIP_SOURCE_DIR = ROOT / "assets_src" / "biped"
+GRIP_RUNTIME_DIR = ROOT / "assets" / "animations" / "biped"
+GRIP_POSES = ("grip_hilt", "grip_polearm")
+BARE_KNUCKLE_OVERLAY = GRIP_SOURCE_DIR / "grip_bare_knuckle.glb"
 
 # Keep this table aligned with AnimationPackCatalog::biped_root. Generated
 # locomotion and mirrored counterparts are deliberately absent.
@@ -40,6 +45,7 @@ DIRECT_MOTIONS = {
     "prone_idle": (0,),
     "supine_idle": (0,),
     "prone_crawl": (0,),
+    "prone_strafe": tuple(range(7)),
     "supine_scamper": (0,),
     "dive": (0,),
     "airborne_center": (0,),
@@ -162,6 +168,9 @@ def publish_animation_assets(
     source_dir: Path = SOURCE_DIR,
     runtime_dir: Path = RUNTIME_DIR,
     runtime_base: Path = RUNTIME_BASE,
+    grip_source_dir: Path = GRIP_SOURCE_DIR,
+    grip_runtime_dir: Path = GRIP_RUNTIME_DIR,
+    bare_knuckle_overlay: Path = BARE_KNUCKLE_OVERLAY,
     check: bool = False,
 ) -> PublicationReport:
     if not runtime_base.is_file():
@@ -192,9 +201,36 @@ def publish_animation_assets(
             "source motions are absent from the publication contract: "
             + ", ".join(unknown)
         )
+    available_attacks = sorted(
+        motion
+        for motion in VARIABLE_ATTACK_FRAMES
+        if (source_dir / f"{motion}.glb").is_file()
+    )
+    if available_attacks and not bare_knuckle_overlay.is_file():
+        raise GlbError(
+            "bare-knuckle grip overlay is required to publish unarmed attacks: "
+            f"{bare_knuckle_overlay}"
+        )
 
     published: list[str] = []
     skipped: list[str] = []
+    for motion in GRIP_POSES:
+        source = grip_source_dir / f"{motion}.glb"
+        if not source.is_file():
+            skipped.append(motion)
+            continue
+        prepare_motion(
+            source,
+            runtime_base,
+            grip_runtime_dir / f"{motion}.glb",
+            last_frame=0,
+            kept_frames=(0,),
+            target_subtree_roots=("l_wrist", "r_wrist"),
+            preserve_default_target_nodes=("r_weapon",) if motion == "grip_hilt" else (),
+            check=check,
+        )
+        published.append(motion)
+
     for motion, kept_frames in DIRECT_MOTIONS.items():
         source = source_dir / f"{motion}.glb"
         if not source.is_file():
@@ -207,15 +243,30 @@ def publish_animation_assets(
                 raise GlbError(
                     f"{motion} does not expose its required attack anchors"
                 )
-        prepare_motion(
-            source,
-            runtime_base,
-            runtime_dir / f"{motion}.glb",
-            last_frame=max(kept_frames),
-            kept_frames=kept_frames,
-            remove_root_lateral_motion=motion.startswith("quickstep_"),
-            check=check,
+        uses_bare_knuckles = motion in VARIABLE_ATTACK_FRAMES
+        temporary_overlay = (
+            tempfile.TemporaryDirectory() if uses_bare_knuckles else nullcontext(None)
         )
+        with temporary_overlay as temporary:
+            overlay_poses: tuple[tuple[Path, tuple[str, ...]], ...] = ()
+            if uses_bare_knuckles:
+                mirrored_overlay = Path(temporary) / "grip_bare_knuckle_mirrored.glb"
+                mirrored_overlay.write_bytes(mirrored_glb(bare_knuckle_overlay))
+                overlay_poses = (
+                    (bare_knuckle_overlay, ("r_wrist",)),
+                    (mirrored_overlay, ("l_wrist",)),
+                )
+            prepare_motion(
+                source,
+                runtime_base,
+                runtime_dir / f"{motion}.glb",
+                last_frame=max(kept_frames),
+                kept_frames=kept_frames,
+                remove_root_lateral_motion=motion.startswith("quickstep_"),
+                overlay_poses=overlay_poses,
+                overlay_target_subtree_roots=("l_wrist", "r_wrist"),
+                check=check,
+            )
         published.append(motion)
 
     for motion in LOCOMOTION_MOTIONS:

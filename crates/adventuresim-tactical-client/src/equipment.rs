@@ -1693,17 +1693,6 @@ fn equipment_bind_correction(
     Some(bind_space_attachment_correction(bind, desired_rotation))
 }
 
-fn weapon_bind_correction(
-    role: BoneRole,
-    rig: &HumanoidRig,
-    bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
-) -> Option<Transform> {
-    let &socket = rig.get(&role)?;
-    let owner = bind_nodes.get(socket).ok()?.0.owner;
-    let bind = authored_bind_global(socket, owner, bind_nodes)?;
-    Some(bind_space_attachment_correction(bind, Quat::IDENTITY))
-}
-
 fn update_item_placeholders(
     mut commands: Commands,
     items: Query<
@@ -1769,11 +1758,11 @@ fn update_item_placeholders(
                     HandSide::Left => BoneRole::WeaponLeft,
                     HandSide::Right => BoneRole::WeaponRight,
                 };
+                rig.get(&role)?;
                 Some(HeldWeaponConstraint {
                     owner: owner.0,
                     primary_hand,
                     secondary_grip_local: None,
-                    socket_bind_correction: weapon_bind_correction(role, rig, &bind_nodes)?,
                 })
             });
             if let Some(constraint) = constraint {

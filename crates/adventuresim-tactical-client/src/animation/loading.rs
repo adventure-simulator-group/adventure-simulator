@@ -6,6 +6,11 @@ pub(super) fn request_animation_packs(
     mut runtime: ResMut<AnimationRuntime>,
 ) {
     runtime.requested_base = Some(asset_server.load(animation_asset_path(BIPED_BASE_GLB)));
+    for grip in WeaponGrip::ALL {
+        runtime
+            .requested_grips
+            .insert(grip, asset_server.load(animation_asset_path(grip.path())));
+    }
     for (pack_id, pack) in &catalog.packs {
         for (motion_id, source) in &pack.motions {
             runtime.requested_motions.insert(
@@ -124,6 +129,7 @@ pub(super) fn collect_loaded_packs(
     }
 
     if !changed {
+        collect_loaded_grips(&asset_server, &gltfs, &clips, &mut runtime);
         return;
     }
     runtime.library = AnimationPackLibrary::default();
@@ -169,6 +175,65 @@ pub(super) fn collect_loaded_packs(
             )
         })
         .collect();
+    collect_loaded_grips(&asset_server, &gltfs, &clips, &mut runtime);
+}
+
+fn collect_loaded_grips(
+    asset_server: &AssetServer,
+    gltfs: &Assets<Gltf>,
+    clips: &Assets<AnimationClip>,
+    runtime: &mut AnimationRuntime,
+) {
+    let requested = runtime
+        .requested_grips
+        .iter()
+        .map(|(&grip, handle)| (grip, handle.clone()))
+        .collect::<Vec<_>>();
+    for (grip, handle) in requested {
+        if runtime.processed_grips.contains(&grip) || runtime.unavailable_grips.contains(&grip) {
+            continue;
+        }
+        if matches!(asset_server.load_state(handle.id()), LoadState::Failed(_)) {
+            runtime.unavailable_grips.insert(grip);
+            warn!(path = grip.path(), "Authored weapon grip is unavailable");
+            continue;
+        }
+        let Some(gltf) = gltfs.get(&handle) else {
+            continue;
+        };
+        let Some(clip_handle) = sole_animation(&gltf.animations) else {
+            warn!(
+                path = grip.path(),
+                count = gltf.animations.len(),
+                "Weapon grip must contain exactly one animation"
+            );
+            runtime.unavailable_grips.insert(grip);
+            continue;
+        };
+        let Some(clip) = clips.get(clip_handle) else {
+            continue;
+        };
+        if runtime.canonical_targets.is_empty() {
+            continue;
+        }
+        if !clip_targets_match_base(clip, &runtime.canonical_targets) {
+            warn!(
+                path = grip.path(),
+                "Weapon grip targets are incompatible with the base rig"
+            );
+            runtime.unavailable_grips.insert(grip);
+            continue;
+        }
+        runtime.grips.insert(
+            grip,
+            LoadedClip {
+                handle: clip_handle.clone(),
+                duration_seconds: clip.duration(),
+                layer: ClipLayer::Hands,
+            },
+        );
+        runtime.processed_grips.insert(grip);
+    }
 }
 
 pub(super) fn sole_animation(
