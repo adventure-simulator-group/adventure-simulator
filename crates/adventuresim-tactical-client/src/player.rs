@@ -891,7 +891,7 @@ fn try_start_attack(
         else {
             return;
         };
-        let acquisition_range = targeting.melee_acquisition_range(entity, reach, &combat_config);
+        let acquisition_range = targeting.melee_acquisition_range(entity, reach, combat_config);
         let (target, target_position, aim_direction) = targeting.acquire(
             entity,
             acquisition_range,
