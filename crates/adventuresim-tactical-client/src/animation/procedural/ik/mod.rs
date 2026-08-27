@@ -948,9 +948,6 @@ pub(crate) struct HeldWeaponConstraint {
     pub owner: Entity,
     pub primary_hand: HandSide,
     pub secondary_grip_local: Option<Vec3>,
-    /// Converts the MHR socket's rolled authored bind frame into the
-    /// character-space +Y weapon convention before live deformation.
-    pub socket_bind_correction: Transform,
 }
 
 /// Places the planted foot on the terrain with an analytic two-bone solve,

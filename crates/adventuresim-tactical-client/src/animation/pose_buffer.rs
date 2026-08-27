@@ -65,6 +65,7 @@ struct BoneTrack {
     translations: Vec<Vec3>,
     rotations: Vec<Quat>,
     scales: Vec<Vec3>,
+    animated: bool,
 }
 
 impl BakedClip {
@@ -628,6 +629,7 @@ fn sample_plan(
                 ClipLayer::Whole => true,
                 ClipLayer::Upper => !joint.lower_body,
                 ClipLayer::Lower => joint.lower_body,
+                ClipLayer::Hands => false,
             };
             if !included || weighted.weight <= f32::EPSILON || !weighted.weight.is_finite() {
                 continue;
@@ -651,6 +653,7 @@ fn sample_plan(
                 ClipLayer::Whole => true,
                 ClipLayer::Upper => !joint.lower_body,
                 ClipLayer::Lower => joint.lower_body,
+                ClipLayer::Hands => false,
             };
             if !included || span.weight <= f32::EPSILON || !span.weight.is_finite() {
                 continue;
@@ -677,14 +680,58 @@ fn sample_plan(
             };
             accumulated = next_total;
         }
-        pose.push(if accumulated > f32::EPSILON {
+        let mut result = if accumulated > f32::EPSILON {
             blended
         } else {
             joint.bind
-        });
+        };
+        if is_hand_animation_joint(definition, joint_index) {
+            let mut hand_pose = joint.bind;
+            let mut hand_weight = 0.0_f32;
+            for (weighted, clip) in &baked {
+                if weighted.clip.layer != ClipLayer::Hands
+                    || !clip.tracks[joint_index].animated
+                    || weighted.weight <= f32::EPSILON
+                    || !weighted.weight.is_finite()
+                {
+                    continue;
+                }
+                let sample =
+                    sanitize_pose(clip.sample(joint_index, weighted.time_seconds), joint.bind);
+                let total = hand_weight + weighted.weight;
+                hand_pose = if hand_weight <= f32::EPSILON {
+                    sample
+                } else {
+                    hand_pose.interpolate(sample, weighted.weight / total)
+                };
+                hand_weight = total;
+            }
+            if hand_weight > f32::EPSILON {
+                result = hand_pose;
+            }
+        }
+        pose.push(result);
     }
     metrics.sampled_pose_count = metrics.sampled_pose_count.saturating_add(1);
     Some(pose)
+}
+
+fn is_hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> bool {
+    loop {
+        if definition.joints[joint]
+            .name
+            .as_deref()
+            .is_some_and(|name| {
+                name.eq_ignore_ascii_case("l_wrist") || name.eq_ignore_ascii_case("r_wrist")
+            })
+        {
+            return true;
+        }
+        let Some(parent) = definition.joints[joint].parent else {
+            return false;
+        };
+        joint = parent;
+    }
 }
 
 /// Solve the terrain-adjusted upcoming sample in pose-buffer space. The
@@ -974,6 +1021,7 @@ fn bake_clip(clip: &AnimationClip, definition: &RigDefinition) -> BakedClip {
                 translations,
                 rotations,
                 scales,
+                animated: clip.curves().contains_key(&joint.target),
             }
         })
         .collect();
@@ -1260,6 +1308,35 @@ fn decay_spring_quaternion(
 mod tests {
     use super::*;
 
+    #[test]
+    fn hand_layer_contains_only_hand_bone_subtrees() {
+        let joint = |name: &str, parent: Option<usize>| RigJoint {
+            target: AnimationTargetId::from_name(&Name::new(name.to_owned())),
+            bind: LocalPose::from_transform(Transform::IDENTITY),
+            parent,
+            name: Some(name.to_owned()),
+            lower_body: false,
+        };
+        let definition = RigDefinition {
+            family: "test".to_owned(),
+            joints: vec![
+                joint("root", None),
+                joint("r_lowarm", Some(0)),
+                joint("r_wrist", Some(1)),
+                joint("r_index1", Some(2)),
+                joint("l_wrist", Some(0)),
+                joint("l_thumb1", Some(4)),
+            ],
+        };
+
+        assert!(!is_hand_animation_joint(&definition, 0));
+        assert!(!is_hand_animation_joint(&definition, 1));
+        assert!(is_hand_animation_joint(&definition, 2));
+        assert!(is_hand_animation_joint(&definition, 3));
+        assert!(is_hand_animation_joint(&definition, 4));
+        assert!(is_hand_animation_joint(&definition, 5));
+    }
+
     fn pose(translation: Vec3, rotation: Quat) -> LocalPose {
         LocalPose {
             translation,
@@ -1339,6 +1416,7 @@ mod tests {
             translations,
             rotations: vec![Quat::IDENTITY; 3],
             scales: vec![Vec3::ONE; 3],
+            animated: true,
         };
         let clip = BakedClip {
             duration: 2.0 / 30.0,
@@ -1394,6 +1472,7 @@ mod tests {
                 .collect(),
             rotations: vec![Quat::IDENTITY; frames],
             scales: vec![Vec3::ONE; frames],
+            animated: true,
         };
         let clip = BakedClip {
             duration,
@@ -1404,6 +1483,7 @@ mod tests {
                     translations: vec![Vec3::ZERO; frames],
                     rotations: vec![Quat::IDENTITY; frames],
                     scales: vec![Vec3::ONE; frames],
+                    animated: true,
                 },
                 foot_track(0.0, 50.0),
                 foot_track(0.5, -80.0),

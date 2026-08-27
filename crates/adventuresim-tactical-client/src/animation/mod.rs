@@ -27,6 +27,8 @@ pub(crate) use procedural::{
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
+const BIPED_GRIP_HILT_GLB: &str = "animations/biped/grip_hilt.glb";
+const BIPED_GRIP_POLEARM_GLB: &str = "animations/biped/grip_polearm.glb";
 const ANIMATION_FPS: f32 = 30.0;
 // Player transforms sit at the center of the 1.9 m server collider, while
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
@@ -138,6 +140,24 @@ enum ClipLayer {
     Whole,
     Upper,
     Lower,
+    Hands,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum WeaponGrip {
+    Hilt,
+    Polearm,
+}
+
+impl WeaponGrip {
+    const ALL: [Self; 2] = [Self::Hilt, Self::Polearm];
+
+    const fn path(self) -> &'static str {
+        match self {
+            Self::Hilt => BIPED_GRIP_HILT_GLB,
+            Self::Polearm => BIPED_GRIP_POLEARM_GLB,
+        }
+    }
 }
 
 #[derive(Resource, Default)]
@@ -151,6 +171,10 @@ pub(super) struct AnimationRuntime {
     unavailable_motions: BTreeSet<(String, String)>,
     clip_handles: BTreeMap<(String, String), Handle<AnimationClip>>,
     clips: BTreeMap<(String, String), LoadedClip>,
+    requested_grips: BTreeMap<WeaponGrip, Handle<Gltf>>,
+    processed_grips: BTreeSet<WeaponGrip>,
+    unavailable_grips: BTreeSet<WeaponGrip>,
+    grips: BTreeMap<WeaponGrip, LoadedClip>,
     library: AnimationPackLibrary,
     canonical_targets: HashSet<AnimationTargetId>,
 }
@@ -266,12 +290,14 @@ fn evaluate_skeletons(
             Entity,
             &PresentedSkeleton,
             &semantic_route::SemanticRouteTrace,
+            Option<&InventoryItems>,
             Option<&mut AnimationPlayback>,
         ),
         With<Player>,
     >,
+    weapons: Query<&WeaponItem>,
 ) {
-    for (entity, skeleton, route_trace, playback) in players {
+    for (entity, skeleton, route_trace, inventory, playback) in players {
         // The preceding chained system directly routes authoritative
         // presentation state into deterministic semantic samples.
         let evaluation = route_trace.evaluation.clone();
@@ -309,29 +335,41 @@ fn evaluate_skeletons(
                 ClipLayer::Lower,
             );
         }
-        let target = PlaybackPose {
-            use_authored_bind_pose: weighted.is_empty() && extrapolated_spans.is_empty(),
-            whole_body_mirror: {
-                let total = weighted.iter().map(|clip| clip.weight).sum::<f32>()
+        let whole_body_mirror = {
+            let total = weighted.iter().map(|clip| clip.weight).sum::<f32>()
+                + extrapolated_spans
+                    .iter()
+                    .map(|span| span.weight)
+                    .sum::<f32>();
+            if total > f32::EPSILON {
+                ((weighted
+                    .iter()
+                    .map(|clip| clip.mirrored_weight)
+                    .sum::<f32>()
                     + extrapolated_spans
                         .iter()
-                        .map(|span| span.weight)
-                        .sum::<f32>();
-                if total > f32::EPSILON {
-                    ((weighted
-                        .iter()
-                        .map(|clip| clip.mirrored_weight)
-                        .sum::<f32>()
-                        + extrapolated_spans
-                            .iter()
-                            .map(|span| span.mirrored_weight)
-                            .sum::<f32>())
-                        / total)
-                        .clamp(0.0, 1.0)
-                } else {
-                    0.0
-                }
-            },
+                        .map(|span| span.mirrored_weight)
+                        .sum::<f32>())
+                    / total)
+                    .clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        if let Some(grip) = equipped_weapon_grip(inventory, &weapons)
+            && let Some(clip) = runtime.grips.get(&grip)
+        {
+            append_weighted_clip(
+                &mut weighted,
+                &clip.at_anchor_layer(0, ClipLayer::Hands),
+                false,
+                0.0,
+                1.0,
+            );
+        }
+        let target = PlaybackPose {
+            use_authored_bind_pose: weighted.is_empty() && extrapolated_spans.is_empty(),
+            whole_body_mirror,
             foot_ik_weights: semantic_foot_ik_weights(&evaluation),
             clips: weighted,
             extrapolated_spans,
@@ -364,6 +402,24 @@ fn evaluate_skeletons(
             });
         }
     }
+}
+
+fn weapon_grip(skill_weights: &[f32; 9]) -> WeaponGrip {
+    if skill_weights[0] > f32::EPSILON {
+        WeaponGrip::Polearm
+    } else {
+        WeaponGrip::Hilt
+    }
+}
+
+fn equipped_weapon_grip(
+    inventory: Option<&InventoryItems>,
+    weapons: &Query<&WeaponItem>,
+) -> Option<WeaponGrip> {
+    inventory
+        .and_then(InventoryItems::holding_weapon)
+        .and_then(|entity| weapons.get(entity).ok())
+        .map(|weapon| weapon_grip(&weapon.skill_weights))
 }
 
 fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {

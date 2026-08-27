@@ -90,6 +90,8 @@ def optimize_animation(
     *,
     kept_frames: tuple[int, ...] | None = None,
     remove_root_lateral_motion: bool = False,
+    target_subtree_roots: tuple[str, ...] = (),
+    preserve_default_target_nodes: tuple[str, ...] = (),
 ) -> tuple[dict, bytes]:
     """Keep authored keys, remove bind-default tracks, and collapse constants.
 
@@ -105,6 +107,7 @@ def optimize_animation(
     timestamp_accessors: dict[tuple[float, ...], int] = {}
     channels: list[dict] = []
     samplers: list[dict] = []
+    emitted_targets: set[tuple[int, str]] = set()
     def timestamps_accessor(times: np.ndarray) -> int:
         key = tuple(float(value) for value in times)
         existing = timestamp_accessors.get(key)
@@ -122,6 +125,14 @@ def optimize_animation(
         return index
 
     for channel in source_animation["channels"]:
+        target = channel["target"]
+        target_path = paths.get(target["node"])
+        if target_path is None:
+            raise GlbError("animation channel targets a node outside the scene hierarchy")
+        if target_subtree_roots and not any(
+            root in target_path for root in target_subtree_roots
+        ):
+            continue
         source_sampler = source_animation["samplers"][channel["sampler"]]
         interpolation = source_sampler.get("interpolation", "LINEAR")
         times = accessor_view(document, binary, source_sampler["input"])[:, 0]
@@ -153,7 +164,6 @@ def optimize_animation(
             values = values[indices]
             key_values = values
 
-        target = channel["target"]
         path = target["path"]
         if (
             remove_root_lateral_motion
@@ -165,7 +175,11 @@ def optimize_animation(
             values[:, 2] = 0.0
             key_values = values[1::3] if interpolation == "CUBICSPLINE" else values
         default = _node_default(optimized["nodes"][target["node"]], path)
-        if np.allclose(key_values, default, rtol=0.0, atol=1e-6):
+        target_node_name = target_path[-1]
+        if (
+            target_node_name not in preserve_default_target_nodes
+            and np.allclose(key_values, default, rtol=0.0, atol=1e-6)
+        ):
             continue
 
         constant = np.allclose(key_values, key_values[0], rtol=0.0, atol=1e-6)
@@ -191,6 +205,46 @@ def optimize_animation(
         updated_channel = copy.deepcopy(channel)
         updated_channel["sampler"] = len(samplers) - 1
         channels.append(updated_channel)
+        emitted_targets.add((target["node"], path))
+
+    for node_name in preserve_default_target_nodes:
+        matching_nodes = [
+            node_index
+            for node_index, target_path in paths.items()
+            if target_path[-1] == node_name
+            and (
+                not target_subtree_roots
+                or any(root in target_path for root in target_subtree_roots)
+            )
+        ]
+        if len(matching_nodes) != 1:
+            raise GlbError(
+                f"preserved animation target {node_name!r} must resolve exactly once"
+            )
+        node_index = matching_nodes[0]
+        for path in ("translation", "rotation", "scale"):
+            if (node_index, path) in emitted_targets:
+                continue
+            value = _node_default(optimized["nodes"][node_index], path).reshape(1, -1)
+            samplers.append(
+                {
+                    "input": timestamps_accessor(np.asarray([0.0], dtype="<f4")),
+                    "output": append_float_accessor(
+                        optimized,
+                        packed,
+                        value,
+                        "VEC4" if path == "rotation" else "VEC3",
+                    ),
+                    "interpolation": "STEP",
+                }
+            )
+            channels.append(
+                {
+                    "sampler": len(samplers) - 1,
+                    "target": {"node": node_index, "path": path},
+                }
+            )
+            emitted_targets.add((node_index, path))
 
     if not channels:
         raise GlbError("animation optimization removed every channel")
@@ -286,6 +340,95 @@ def strip_motion_mesh(document: dict, binary: bytes) -> tuple[dict, bytes]:
     for field in ("meshes", "skins", "materials", "textures", "images", "samplers"):
         stripped.pop(field, None)
     return stripped, bytes(compact_binary)
+
+
+def overlay_static_animation(
+    motion: dict,
+    motion_binary: bytes,
+    overlays: tuple[tuple[dict, bytes], ...],
+    *,
+    target_subtree_roots: tuple[str, ...],
+) -> tuple[dict, bytes]:
+    """Replace motion tracks below named bones with frame-zero overlay tracks."""
+    composed = copy.deepcopy(motion)
+    packed = bytearray(motion_binary)
+    motion_paths = scene_paths(composed)
+    motion_nodes = {path: node for node, path in motion_paths.items()}
+    motion_animation = composed["animations"][0]
+    source_samplers = motion_animation["samplers"]
+    channels: list[dict] = []
+    samplers: list[dict] = []
+
+    def in_overlay_subtree(path: tuple[str, ...]) -> bool:
+        return any(root in path for root in target_subtree_roots)
+
+    for channel in motion_animation["channels"]:
+        if in_overlay_subtree(motion_paths[channel["target"]["node"]]):
+            continue
+        updated = copy.deepcopy(channel)
+        updated["sampler"] = len(samplers)
+        channels.append(updated)
+        samplers.append(copy.deepcopy(source_samplers[channel["sampler"]]))
+
+    timestamp_accessor = append_float_accessor(
+        composed,
+        packed,
+        np.asarray([[0.0]], dtype="<f4"),
+        "SCALAR",
+        minimum=[0.0],
+        maximum=[0.0],
+    )
+    overlaid_targets: set[tuple[tuple[str, ...], str]] = set()
+    for overlay, overlay_binary in overlays:
+        overlay_paths = scene_paths(overlay)
+        overlay_animation = overlay["animations"][0]
+        for channel in overlay_animation["channels"]:
+            target = channel["target"]
+            target_path = overlay_paths[target["node"]]
+            if not in_overlay_subtree(target_path):
+                continue
+            key = (target_path, target["path"])
+            if key in overlaid_targets:
+                raise GlbError(f"overlay contains duplicate animation target {key!r}")
+            overlaid_targets.add(key)
+            try:
+                motion_node = motion_nodes[target_path]
+            except KeyError as error:
+                raise GlbError(
+                    f"overlay target is absent from motion hierarchy: {target_path}"
+                ) from error
+            overlay_sampler = overlay_animation["samplers"][channel["sampler"]]
+            values = accessor_view(overlay, overlay_binary, overlay_sampler["output"])
+            if overlay_sampler.get("interpolation", "LINEAR") == "CUBICSPLINE":
+                values = values[1::3]
+            if values.shape[0] == 0:
+                raise GlbError(f"overlay target has no frame-zero value: {target_path}")
+            output_type = overlay["accessors"][overlay_sampler["output"]]["type"]
+            samplers.append(
+                {
+                    "input": timestamp_accessor,
+                    "output": append_float_accessor(
+                        composed,
+                        packed,
+                        values[:1],
+                        output_type,
+                    ),
+                    "interpolation": "STEP",
+                }
+            )
+            channels.append(
+                {
+                    "sampler": len(samplers) - 1,
+                    "target": {"node": motion_node, "path": target["path"]},
+                }
+            )
+
+    if not overlaid_targets:
+        raise GlbError("static animation overlay contains no requested bone tracks")
+    motion_animation["channels"] = channels
+    motion_animation["samplers"] = samplers
+    composed["buffers"][0]["byteLength"] = len(packed)
+    return composed, bytes(packed)
 
 
 def scene_paths(document: dict) -> dict[int, tuple[str, ...]]:
@@ -407,6 +550,10 @@ def prepare_motion(
     last_frame: int,
     kept_frames: tuple[int, ...] | None = None,
     remove_root_lateral_motion: bool = False,
+    target_subtree_roots: tuple[str, ...] = (),
+    preserve_default_target_nodes: tuple[str, ...] = (),
+    overlay_poses: tuple[tuple[pathlib.Path, tuple[str, ...]], ...] = (),
+    overlay_target_subtree_roots: tuple[str, ...] = (),
     check: bool = False,
 ) -> tuple[float, int]:
     base_document, _ = read_glb(base)
@@ -419,7 +566,31 @@ def prepare_motion(
         motion_binary,
         kept_frames=kept_frames,
         remove_root_lateral_motion=remove_root_lateral_motion,
+        target_subtree_roots=target_subtree_roots,
+        preserve_default_target_nodes=preserve_default_target_nodes,
     )
+    if overlay_poses:
+        if not overlay_target_subtree_roots:
+            raise GlbError("an overlay pose requires at least one target subtree root")
+        overlays: list[tuple[dict, bytes]] = []
+        for overlay_pose, source_subtree_roots in overlay_poses:
+            if not source_subtree_roots:
+                raise GlbError("an overlay pose requires at least one source subtree root")
+            overlay_document, overlay_binary = read_glb(overlay_pose)
+            validate_motion(base_document, overlay_document, last_frame=0)
+            overlay_document, overlay_binary = optimize_animation(
+                overlay_document,
+                overlay_binary,
+                kept_frames=(0,),
+                target_subtree_roots=source_subtree_roots,
+            )
+            overlays.append((overlay_document, overlay_binary))
+        optimized_document, optimized_binary = overlay_static_animation(
+            optimized_document,
+            optimized_binary,
+            tuple(overlays),
+            target_subtree_roots=overlay_target_subtree_roots,
+        )
     stripped_document, stripped_binary = strip_motion_mesh(
         optimized_document, optimized_binary
     )
