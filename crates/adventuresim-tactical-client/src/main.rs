@@ -409,6 +409,12 @@ fn configure_headless_render_target(
 
 #[cfg(not(target_family = "wasm"))]
 fn native_asset_root() -> std::path::PathBuf {
+    let staged = std::path::PathBuf::from("assets");
+    if validate_native_presentation_assets(&staged).is_ok() {
+        return staged
+            .canonicalize()
+            .unwrap_or_else(|error| panic!("could not resolve staged asset directory: {error}"));
+    }
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../assets")
         .canonicalize()

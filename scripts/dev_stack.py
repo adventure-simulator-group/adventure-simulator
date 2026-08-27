@@ -771,6 +771,27 @@ def seed(server: str, database: str, bootstrap_token: str) -> int:
     return result.returncode
 
 
+def seed_standalone_tactical_mission(
+    server: str,
+    database: str,
+    bootstrap_token: str,
+    character_id: int,
+    mission_id: str,
+    scene_key: str,
+    enemy_count: int,
+    tactical_claim: str,
+) -> int:
+    result = run_checked([
+        "spacetime", "call", "--server", server, database,
+        "seed_standalone_tactical_mission", bootstrap_token,
+        str(character_id), mission_id, scene_key, str(enemy_count), tactical_claim,
+    ])
+    write_console(result.stdout)
+    if result.returncode:
+        print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
+    return result.returncode
+
+
 def spacetime_auth_token() -> str:
     """Return the CLI's authenticated token without printing or persisting it."""
     result = run_checked(["spacetime", "login", "show", "--token"])
@@ -1223,12 +1244,15 @@ def executable_identity_matches(expected: object, actual: object) -> bool:
     actual_path = str(actual)
     if os.path.normcase(expected_path) == os.path.normcase(actual_path):
         return True
-    expected_name = Path(expected_path).stem.lower()
-    actual_name = Path(actual_path).stem.lower()
-    return (
-        expected_name in {"spacetime", "spacetimedb-cli"}
-        and actual_name in {"spacetime-standalone", "spacetimedb-standalone"}
-    )
+    expected_name = Path(expected_path.replace("\\", "/")).stem.lower()
+    actual_name = Path(actual_path.replace("\\", "/")).stem.lower()
+    spacetime_processes = {
+        "spacetime",
+        "spacetimedb-cli",
+        "spacetime-standalone",
+        "spacetimedb-standalone",
+    }
+    return expected_name in spacetime_processes and actual_name in spacetime_processes
 
 
 def identity_matches(expected: dict[str, object]) -> bool:
@@ -1515,22 +1539,14 @@ def run_profile(
                     os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = previous_token
             if code:
                 return code
-            code = seed(server, database, bootstrap_token)
-            if code:
-                return code
-
             if mode is ProfileMode.TACTICAL:
                 tactical_claim = secrets.token_hex(32)
-                result = run_checked([
-                    "spacetime", "call", "--server", server, database,
-                    "seed_standalone_tactical_mission", bootstrap_token,
-                    str(character_id), mission_id, scene_key, str(enemy_count),
-                    tactical_claim,
-                ])
-                write_console(result.stdout)
-                if result.returncode:
-                    print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
-                    return result.returncode
+                code = seed_standalone_tactical_mission(
+                    server, database, bootstrap_token, character_id, mission_id,
+                    scene_key, enemy_count, tactical_claim,
+                )
+                if code:
+                    return code
                 write_tactical_env_file(
                     url=server, database=database, port=int(values["tactical_port"]),
                     mission_id=mission_id, scene_key=scene_key,
@@ -1544,7 +1560,15 @@ def run_profile(
                 print("Strategic layer and WASM client are not built or running.")
                 print("Run `just tactical` and `just client` in other terminals (no arguments needed).")
                 print("Press Ctrl+C to stop the isolated database.")
-                return stdb.wait()
+                try:
+                    return stdb.wait()
+                except KeyboardInterrupt:
+                    print("\nStopping isolated tactical database...")
+                    return 0
+
+            code = seed(server, database, bootstrap_token)
+            if code:
+                return code
 
             gateway_token = spacetime_auth_token()
             if mode is ProfileMode.STRATEGIC:
@@ -1637,6 +1661,25 @@ def live_spacetime_for_profile(name: str, base_port: int) -> dict[str, str] | No
     return {"server": server, "database": database}
 
 
+def stop_tactical_profile(name: str, base_port: int) -> int:
+    values = profile_values(name, base_port)
+    profile_dir = Path(str(values["profile_dir"]))
+    if not profile_dir.is_dir():
+        return 0
+    with ProfileLock(profile_dir / "lifecycle.lock"):
+        config = {
+            "role": "spacetimedb",
+            "profile": name,
+            "worktree_fingerprint": values["worktree_fingerprint"],
+            "server": f"http://127.0.0.1:{values['spacetime_port']}",
+            "database": values["database"],
+            "data_dir": str(values["data_dir"]),
+        }
+        stop_spacetime(profile_dir / "run" / "spacetime.identity.json", config)
+        remove_tactical_env_file()
+    return 0
+
+
 def reseed_tactical_mission(
     profile: str,
     base_port: int,
@@ -1677,20 +1720,14 @@ def reseed_tactical_mission(
         return 1
     server, database = live["server"], live["database"]
     bootstrap_token = dev_bootstrap_token()
-    code = seed(server, database, bootstrap_token)
-    if code:
-        return code
     mission_id = f"{mission_id_prefix}-{secrets.token_hex(4)}"
     tactical_claim = secrets.token_hex(32)
-    result = run_checked([
-        "spacetime", "call", "--server", server, database,
-        "seed_standalone_tactical_mission", bootstrap_token,
-        str(character_id), mission_id, scene_key, str(enemy_count), tactical_claim,
-    ])
-    write_console(result.stdout)
-    if result.returncode:
-        print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
-        return result.returncode
+    code = seed_standalone_tactical_mission(
+        server, database, bootstrap_token, character_id, mission_id,
+        scene_key, enemy_count, tactical_claim,
+    )
+    if code:
+        return code
     values = profile_values(profile, base_port)
     write_tactical_env_file(
         url=server, database=database, port=int(values["tactical_port"]),
@@ -2998,6 +3035,9 @@ def create_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
+    tactical_stopper = sub.add_parser("stop-tactical-profile")
+    tactical_stopper.add_argument("name")
+    tactical_stopper.add_argument("base_port", type=int)
     reseeder = sub.add_parser("reseed-tactical-mission")
     reseeder.add_argument("--mission-id-prefix", default="mission:test-mission")
     reseeder.add_argument("--scene-key", default="hills")
@@ -3068,6 +3108,8 @@ def main() -> int:
             return tactical_status()
         if args.command == "tactical-client":
             return tactical_client_relaunch()
+        if args.command == "stop-tactical-profile":
+            return stop_tactical_profile(args.name, args.base_port)
         if args.command == "reseed-tactical-mission":
             return reseed_tactical_mission(
                 args.name, args.base_port, mission_id_prefix=args.mission_id_prefix,

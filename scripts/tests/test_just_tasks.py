@@ -152,6 +152,33 @@ class JustTaskTests(unittest.TestCase):
             self.assertEqual((destination / "base.txt").read_text(encoding="utf-8"), "base")
             self.assertEqual((destination / "shared.txt").read_text(encoding="utf-8"), "overlay")
 
+    def test_windows_tactical_commands_match_current_server_contract(self):
+        stage = Path("/mnt/e/adventure-sim-dev")
+        values = {
+            "TACTICAL_SPACETIMEDB_URL": "http://127.0.0.1:23200",
+            "TACTICAL_SPACETIMEDB_MODULE": "adventuresim-dev-tactical",
+            "TACTICAL_PORT": "23202",
+            "TACTICAL_MISSION_ID": "mission:test-mission",
+            "TACTICAL_SCENE_KEY": "woodland",
+            "TACTICAL_SCENE_INPUT": "assets/tactical-scenes/dense-woodland.json",
+            "TACTICAL_CHARACTER_ID": "1",
+            "TACTICAL_BOTS": "3",
+            "ADVENTURESIM_TACTICAL_CLAIM": "secret",
+        }
+
+        server, client, environment = just_tasks.windows_tactical_commands(stage, values)
+
+        self.assertIn("--required-enemy-kills", server)
+        self.assertIn("--enemy-combat-scale-bps", server)
+        self.assertNotIn("--bots", server)
+        self.assertEqual(client[-4:], ["--id", "1", "--server-addr", "127.0.0.1:23202"])
+        self.assertEqual(environment["ADVENTURESIM_TACTICAL_CLAIM"], "secret")
+        self.assertIn("ADVENTURESIM_TACTICAL_CLAIM", environment["WSLENV"].split(":"))
+
+    def test_windows_tactical_commands_require_one_use_claim(self):
+        with self.assertRaisesRegex(RuntimeError, "ADVENTURESIM_TACTICAL_CLAIM"):
+            just_tasks.windows_tactical_commands(Path("/stage"), {})
+
     @unittest.skipUnless(os.name == "nt", "Windows process probing behavior")
     def test_windows_process_probe_does_not_use_os_kill(self):
         kernel32 = mock.Mock()

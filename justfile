@@ -541,8 +541,8 @@ certs sans="127.0.0.1,localhost":
     @{{ python_bin }} utils/generate_certificates.py {{ quote(sans) }}
 
 # Windows tactical development recipe
-# Runs the strategic stack in WSL, then stages and runs the tactical server and
-# client 0 as native Windows executables (GPU accelerated, no WSLg/UDP issues).
+# Runs an isolated tactical database in WSL, then stages and runs the tactical
+# server and client as native Windows executables (GPU accelerated, no WSLg).
 win-dev:
     @{{ python_bin }} scripts/just_tasks.py win-dev
 

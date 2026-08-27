@@ -222,6 +222,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(run_checked.call_args.args[0][-2:], ["bootstrap_development_world", "a" * 64])
 
     @mock.patch.object(dev_stack, "run_checked")
+    def test_standalone_tactical_seed_does_not_bootstrap_strategic_world(self, run_checked):
+        run_checked.return_value = mock.Mock(returncode=0, stdout="")
+
+        self.assertEqual(dev_stack.seed_standalone_tactical_mission(
+            "http://localhost:1", "db", "a" * 64, 1,
+            "mission:test", "woodland", 3, "claim",
+        ), 0)
+
+        command = run_checked.call_args.args[0]
+        self.assertIn("seed_standalone_tactical_mission", command)
+        self.assertNotIn("bootstrap_development_world", command)
+
+    @mock.patch.object(dev_stack, "run_checked")
     def test_publish_messages_distinguish_reset(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=1, stdout="failed\n")
         ordinary = io.StringIO()
@@ -333,6 +346,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(args.character_id, 1)
         self.assertEqual(args.enemy_count, 3)
 
+    def test_profile_parser_supports_tactical_stop(self):
+        args = dev_stack.create_parser().parse_args([
+            "stop-tactical-profile", "tactical-dev", "23200",
+        ])
+        self.assertEqual(args.name, "tactical-dev")
+        self.assertEqual(args.base_port, 23200)
+
     def test_binding_diff_detects_changed_and_extra_files(self):
         with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
             Path(left, "a.rs").write_text("fn a() {}\n")
@@ -357,6 +377,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(dev_stack.identity_matches(wrong_start))
 
     def test_spacetime_launcher_exec_transition_is_allowed(self):
+        self.assertTrue(dev_stack.executable_identity_matches(
+            "/home/user/.local/bin/spacetime",
+            "/home/user/.local/share/spacetime/bin/2.6.1/spacetimedb-cli",
+        ))
         self.assertTrue(dev_stack.executable_identity_matches(
             "/usr/bin/spacetime",
             "/usr/bin/spacetimedb-standalone",
