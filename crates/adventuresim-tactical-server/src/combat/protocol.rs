@@ -37,6 +37,7 @@ pub(crate) struct MeleeAttackIntent {
 pub(crate) struct MeleeAttackStartedIntent {
     pub(crate) attacker: Entity,
     pub(crate) target: Entity,
+    pub(crate) body_part: BodyPart,
     pub(crate) windup: CombatDuration,
     pub(crate) strike_family: StrikeFamily,
     pub(crate) hand: AttackHand,

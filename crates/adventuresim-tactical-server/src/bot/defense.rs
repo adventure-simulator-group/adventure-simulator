@@ -71,6 +71,7 @@ pub(super) fn on_attack_started(
         strike_family,
         hand,
         target: _,
+        body_part: _,
     } = **event
     else {
         return;

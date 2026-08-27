@@ -82,6 +82,8 @@ pub(super) fn on_melee_attack_started(
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
     transforms: Query<&Transform>,
+    dimensions: Query<&CharacterDimensions>,
+    colliders: Query<&Collider>,
     viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
     config: Res<TacticalCombatConfig>,
@@ -115,32 +117,397 @@ pub(super) fn on_melee_attack_started(
         })
         .unwrap_or((spec, event.windup));
     let start = animation_tick(&time);
+    let weapon_reach = viewer
+        .get_for_attack(event.attacker, event.hand)
+        .map_or(0.0, |view| view.weapon_reach());
+    let lunge_delay = planned_melee_lunge_for_entities(
+        event.attacker,
+        event.target,
+        event.body_part,
+        weapon_reach,
+        &transforms,
+        &dimensions,
+        &colliders,
+        &config,
+    )
+    .map_or(0.0, |movement| {
+        melee_lunge_movement_delay(movement, &config)
+    });
+    let contact_windup = CombatDuration::from_secs_f32(event.windup.as_secs_f32().max(lunge_delay));
+    let (animation_start_tick, contact_tick, recovery_tick) =
+        delayed_melee_timing_ticks(start, event.windup, lunge_delay, recovery);
     if skeleton
-        .begin_attack_timed(
-            spec,
-            start,
-            start + duration_ticks(event.windup),
-            start
-                .saturating_add(duration_ticks(event.windup))
-                .saturating_add(duration_ticks(recovery)),
-        )
+        .begin_attack_timed(spec, animation_start_tick, contact_tick, recovery_tick)
         .is_err()
     {
         return;
     }
+    info!(attack_key = start, attacker = ?event.attacker, target = ?Some(event.target), body_part = ?Some(event.body_part), strike_family = ?event.strike_family, hand = ?event.hand, "melee_attack_started");
     begin_attack_facing(
         &mut commands,
         event.attacker,
         Some(event.target),
-        start + duration_ticks(event.windup),
+        contact_tick,
         &transforms,
     );
+    begin_melee_lunge(
+        &mut commands,
+        event.attacker,
+        event.target,
+        event.body_part,
+        weapon_reach,
+        start,
+        &transforms,
+        &dimensions,
+        &colliders,
+        &config,
+    );
     authority.observe(
+        start,
         Some(event.target),
+        Some(event.body_part),
         CombatInstant::from_elapsed(&time),
-        event.windup,
+        contact_windup,
         CombatDuration::from_secs_f32(config.realtime_authority.melee.completion_allowance_seconds),
     );
+}
+
+fn begin_melee_lunge(
+    commands: &mut Commands,
+    attacker: Entity,
+    target: Entity,
+    body_part: BodyPart,
+    weapon_reach: f32,
+    start_tick: u64,
+    transforms: &Query<&Transform>,
+    dimensions: &Query<&CharacterDimensions>,
+    colliders: &Query<&Collider>,
+    config: &TacticalCombatConfig,
+) {
+    commands.entity(attacker).remove::<MeleeLungeMovement>();
+    let Ok([attacker_transform, target_transform]) = transforms.get_many([attacker, target]) else {
+        return;
+    };
+    let Ok([attacker_collider, target_collider]) = colliders.get_many([attacker, target]) else {
+        return;
+    };
+    let dimensions = dimensions.get(attacker).copied().unwrap_or_default();
+    let leg_length = dimensions.leg_length_metres;
+    let quickstep_distance =
+        quickstep_target_displacement_metres(leg_length, &config.movement.motor);
+    let reach = melee_interaction_range(dimensions.arm_reach_metres, weapon_reach);
+    let maximum_travel = quickstep_distance.min(melee_collision_clearance(
+        attacker_transform.translation,
+        attacker_collider,
+        target_transform,
+        target_collider,
+    ));
+    let Some(movement) = planned_melee_lunge(
+        attacker_transform.translation,
+        attacker_collider,
+        target_transform,
+        target_collider,
+        body_part,
+        dimensions,
+        weapon_reach,
+        quickstep_distance,
+        config,
+    ) else {
+        let direction = (target_transform.translation - attacker_transform.translation)
+            .xz()
+            .normalize_or_zero();
+        let closure = configured_body_part_strike_point(
+            melee_attack_origin(
+                attacker_transform.translation,
+                attacker_collider,
+                dimensions,
+            ),
+            direction,
+            target_transform,
+            body_part,
+            reach,
+            maximum_travel,
+            config,
+        )
+        .map(|(_, closure)| closure);
+        let outcome =
+            if closure.is_some_and(|value| value <= MELEE_LUNGE_RANGE_WINDOW_METRES + 1.0e-5) {
+                "already_in_window"
+            } else {
+                "unreachable_no_movement"
+            };
+        info!(attack_key = start_tick, attacker = ?attacker, target = ?target, body_part = ?body_part, outcome, reach_metres = reach, closure_metres = closure.unwrap_or(f32::INFINITY), maximum_travel_metres = maximum_travel, "melee_lunge_planned");
+        return;
+    };
+    info!(attack_key = start_tick, attacker = ?attacker, target = ?target, body_part = ?body_part, outcome = if movement.quickstep { "quickstep" } else { "forward" }, reach_metres = reach, planned_distance_metres = movement.distance_metres, maximum_travel_metres = maximum_travel, "melee_lunge_planned");
+    commands.entity(attacker).insert(movement);
+    if movement.quickstep {
+        commands.entity(attacker).insert(QuickstepPush {
+            start_tick,
+            direction: Vec2::new(movement.direction.x, -movement.direction.y),
+            orientation: Quat::IDENTITY,
+            origin: movement.origin,
+            active: true,
+        });
+    }
+}
+
+fn planned_melee_lunge_for_entities(
+    attacker: Entity,
+    target: Entity,
+    body_part: BodyPart,
+    weapon_reach: f32,
+    transforms: &Query<&Transform>,
+    dimensions: &Query<&CharacterDimensions>,
+    colliders: &Query<&Collider>,
+    config: &TacticalCombatConfig,
+) -> Option<MeleeLungeMovement> {
+    let [attacker_transform, target_transform] = transforms.get_many([attacker, target]).ok()?;
+    let [attacker_collider, target_collider] = colliders.get_many([attacker, target]).ok()?;
+    let dimensions = dimensions.get(attacker).copied().unwrap_or_default();
+    planned_melee_lunge(
+        attacker_transform.translation,
+        attacker_collider,
+        target_transform,
+        target_collider,
+        body_part,
+        dimensions,
+        weapon_reach,
+        quickstep_target_displacement_metres(dimensions.leg_length_metres, &config.movement.motor),
+        config,
+    )
+}
+
+fn melee_lunge_movement_delay(movement: MeleeLungeMovement, config: &TacticalCombatConfig) -> f32 {
+    let lunge = if movement.quickstep {
+        MeleeLunge::Quickstep {
+            distance_metres: movement.distance_metres,
+        }
+    } else {
+        MeleeLunge::Forward {
+            distance_metres: movement.distance_metres,
+        }
+    };
+    melee_lunge_delay_seconds(
+        lunge,
+        config.movement.speeds_metres_per_second.run,
+        conservative_forward_lunge_acceleration(&config.movement.motor),
+        config.movement.maneuvers.quickstep_duration_seconds,
+    )
+}
+
+fn planned_melee_lunge(
+    attacker_position: Vec3,
+    attacker_collider: &Collider,
+    target_transform: &Transform,
+    target_collider: &Collider,
+    body_part: BodyPart,
+    dimensions: CharacterDimensions,
+    weapon_reach: f32,
+    quickstep_distance: f32,
+    config: &TacticalCombatConfig,
+) -> Option<MeleeLungeMovement> {
+    let direction = (target_transform.translation - attacker_position)
+        .xz()
+        .normalize_or_zero();
+    if direction == Vec2::ZERO {
+        return None;
+    }
+    let arm_reach = dimensions.arm_reach_metres;
+    let origin = melee_attack_origin(attacker_position, attacker_collider, dimensions);
+    let maximum_travel = quickstep_distance.min(melee_collision_clearance(
+        attacker_position,
+        attacker_collider,
+        target_transform,
+        target_collider,
+    ));
+    let (strike_point, closure) = configured_body_part_strike_point(
+        origin,
+        direction,
+        target_transform,
+        body_part,
+        melee_interaction_range(arm_reach, weapon_reach),
+        maximum_travel,
+        config,
+    )?;
+    let _ = strike_point;
+    let (distance_metres, quickstep) = match melee_lunge(
+        melee_interaction_range(arm_reach, weapon_reach) + closure,
+        arm_reach,
+        weapon_reach,
+        maximum_travel,
+    ) {
+        MeleeLunge::None => return None,
+        MeleeLunge::Forward { distance_metres } => (distance_metres, false),
+        MeleeLunge::Quickstep { distance_metres } => (distance_metres, true),
+    };
+    Some(MeleeLungeMovement {
+        origin: attacker_position,
+        direction,
+        distance_metres,
+        quickstep,
+    })
+}
+
+pub(crate) fn melee_attack_origin(
+    attacker_position: Vec3,
+    attacker_collider: &Collider,
+    dimensions: CharacterDimensions,
+) -> Vec3 {
+    let base = attacker_collider
+        .aabb(attacker_position, Rotation::default())
+        .min
+        .y;
+    attacker_position.with_y(base + dimensions.body_height_metres * (2.0 / 3.0))
+}
+
+pub(crate) fn melee_collision_clearance(
+    attacker_position: Vec3,
+    attacker_collider: &Collider,
+    target_transform: &Transform,
+    target_collider: &Collider,
+) -> f32 {
+    let a = attacker_collider.aabb(attacker_position, Rotation::default());
+    let b = target_collider.aabb(
+        target_transform.translation,
+        Rotation(target_transform.rotation),
+    );
+    let ar = ((a.max - a.min) * 0.5).xz().max_element();
+    let br = ((b.max - b.min) * 0.5).xz().max_element();
+    (attacker_position
+        .xz()
+        .distance(target_transform.translation.xz())
+        - ar
+        - br)
+        .max(0.0)
+}
+
+pub(crate) fn configured_body_part_strike_point(
+    origin: Vec3,
+    direction: Vec2,
+    target_transform: &Transform,
+    body_part: BodyPart,
+    reach: f32,
+    maximum_travel: f32,
+    config: &TacticalCombatConfig,
+) -> Option<(Vec3, f32)> {
+    let hitbox = config
+        .targeting
+        .body_part_hitboxes
+        .iter()
+        .find(|hitbox| hitbox.body_part == body_part)?;
+    let half = Vec3::from_array(hitbox.half_extents_metres);
+    let collider = Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0);
+    let translation = target_transform.translation
+        + target_transform.rotation * Vec3::from_array(hitbox.center_metres);
+    reachable_melee_strike_point(
+        &collider,
+        translation,
+        target_transform.rotation,
+        origin,
+        direction,
+        reach,
+        maximum_travel,
+    )
+}
+
+pub(crate) fn configured_body_part_surface_distance(
+    origin: Vec3,
+    target_transform: &Transform,
+    body_part: BodyPart,
+    config: &TacticalCombatConfig,
+) -> Option<f32> {
+    let hitbox = config
+        .targeting
+        .body_part_hitboxes
+        .iter()
+        .find(|h| h.body_part == body_part)?;
+    let half = Vec3::from_array(hitbox.half_extents_metres);
+    let collider = Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0);
+    let translation = target_transform.translation
+        + target_transform.rotation * Vec3::from_array(hitbox.center_metres);
+    Some(collider.distance_to_point(
+        translation,
+        Rotation(target_transform.rotation),
+        origin,
+        true,
+    ))
+}
+
+pub(crate) fn melee_body_part_reachable(
+    attacker_transform: &Transform,
+    attacker_collider: &Collider,
+    dimensions: CharacterDimensions,
+    target_transform: &Transform,
+    target_collider: &Collider,
+    body_part: BodyPart,
+    weapon_reach: f32,
+    quickstep_distance: f32,
+    config: &TacticalCombatConfig,
+) -> bool {
+    let direction = (target_transform.translation - attacker_transform.translation)
+        .xz()
+        .normalize_or_zero();
+    let maximum_travel = quickstep_distance.min(melee_collision_clearance(
+        attacker_transform.translation,
+        attacker_collider,
+        target_transform,
+        target_collider,
+    ));
+    configured_body_part_strike_point(
+        melee_attack_origin(
+            attacker_transform.translation,
+            attacker_collider,
+            dimensions,
+        ),
+        direction,
+        target_transform,
+        body_part,
+        melee_interaction_range(dimensions.arm_reach_metres, weapon_reach),
+        maximum_travel,
+        config,
+    )
+    .is_some()
+}
+
+pub(crate) fn melee_body_part_lunge_delay(
+    attacker_transform: &Transform,
+    attacker_collider: &Collider,
+    dimensions: CharacterDimensions,
+    target_transform: &Transform,
+    target_collider: &Collider,
+    body_part: BodyPart,
+    weapon_reach: f32,
+    quickstep_distance: f32,
+    config: &TacticalCombatConfig,
+) -> Option<f32> {
+    if !melee_body_part_reachable(
+        attacker_transform,
+        attacker_collider,
+        dimensions,
+        target_transform,
+        target_collider,
+        body_part,
+        weapon_reach,
+        quickstep_distance,
+        config,
+    ) {
+        return None;
+    }
+    Some(
+        planned_melee_lunge(
+            attacker_transform.translation,
+            attacker_collider,
+            target_transform,
+            target_collider,
+            body_part,
+            dimensions,
+            weapon_reach,
+            quickstep_distance,
+            config,
+        )
+        .map_or(0.0, |movement| melee_lunge_movement_delay(movement, config)),
+    )
 }
 
 pub(super) fn resolve_defender_response(
@@ -217,6 +584,65 @@ mod roll_tests {
 
         assert_eq!(duration_ticks(animation_windup), 19);
         assert_eq!(duration_ticks(minimum_windup), 18);
+    }
+
+    #[test]
+    fn lunge_delays_contact_without_stretching_authored_attack_animation() {
+        let authored = CombatDuration::from_duration(Duration::from_millis(300));
+        let recovery = CombatDuration::from_duration(Duration::from_millis(200));
+        let (animation_start, contact, recovery_end) =
+            delayed_melee_timing_ticks(10, authored, 0.5, recovery);
+        assert_eq!(animation_start, 23);
+        assert_eq!(contact, 42);
+        assert_eq!(contact - animation_start, duration_ticks(authored));
+        assert_eq!(recovery_end - contact, duration_ticks(recovery));
+
+        let (animation_start, contact, _) = delayed_melee_timing_ticks(10, authored, 0.0, recovery);
+        assert_eq!(animation_start, 10);
+        assert_eq!(contact, 10 + duration_ticks(authored));
+    }
+
+    #[test]
+    fn surface_gap_plans_forward_quickstep_and_unreachable_attack_movement() {
+        let collider = Collider::cylinder(0.4, 1.9);
+        let dimensions = CharacterDimensions::default();
+        let config = TacticalCombatConfig::default();
+        let plan = |target_x| {
+            planned_melee_lunge(
+                Vec3::ZERO,
+                &collider,
+                &Transform::from_xyz(target_x, 0.0, 0.0),
+                &collider,
+                BodyPart::Chest,
+                dimensions,
+                0.8,
+                1.0,
+                &config,
+            )
+        };
+
+        assert!(plan(1.8).is_some(), "reachable chest should plan movement");
+        assert!(
+            plan(3.0).is_none(),
+            "collision-limited unreachable target must not lunge"
+        );
+
+        let fist = planned_melee_lunge(
+            Vec3::ZERO,
+            &collider,
+            &Transform::from_xyz(1.25, 0.0, 0.0),
+            &collider,
+            BodyPart::Chest,
+            CharacterDimensions {
+                arm_reach_metres: 0.55,
+                ..dimensions
+            },
+            0.0,
+            1.0,
+            &config,
+        )
+        .expect("fist attack should use its 55 cm anatomical reach");
+        assert!(fist.distance_metres > 0.0);
     }
 
     #[test]
@@ -388,6 +814,8 @@ pub(super) fn on_melee_action_request(
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
     transforms: Query<&Transform>,
+    dimensions: Query<&CharacterDimensions>,
+    colliders: Query<&Collider>,
     config: Res<TacticalCombatConfig>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
@@ -402,6 +830,7 @@ pub(super) fn on_melee_action_request(
             strike_family,
             hand,
             target,
+            body_part,
         } => {
             let Ok(mut skeleton) = skeletons.get_mut(attacker) else {
                 return;
@@ -448,34 +877,73 @@ pub(super) fn on_melee_action_request(
                 })
                 .unwrap_or((spec, animation_windup));
             let start = animation_tick(&time);
+            let weapon_reach = viewer
+                .get_for_attack(attacker, hand)
+                .map_or(0.0, |view| view.weapon_reach());
+            let lunge_delay = target
+                .zip(body_part)
+                .and_then(|(target, body_part)| {
+                    planned_melee_lunge_for_entities(
+                        attacker,
+                        target,
+                        body_part,
+                        weapon_reach,
+                        &transforms,
+                        &dimensions,
+                        &colliders,
+                        &config,
+                    )
+                })
+                .map_or(0.0, |movement| {
+                    melee_lunge_movement_delay(movement, &config)
+                });
+            let minimum_contact_windup =
+                CombatDuration::from_secs_f32(minimum_windup.as_secs_f32().max(lunge_delay));
+            let (animation_start_tick, contact_tick, recovery_tick) =
+                delayed_melee_timing_ticks(start, animation_windup, lunge_delay, recovery);
             if skeleton
-                .begin_attack_timed(
-                    spec,
-                    start,
-                    start + duration_ticks(animation_windup),
-                    start
-                        .saturating_add(duration_ticks(animation_windup))
-                        .saturating_add(duration_ticks(recovery)),
-                )
+                .begin_attack_timed(spec, animation_start_tick, contact_tick, recovery_tick)
                 .is_err()
             {
                 return;
             }
-            begin_attack_facing(
-                &mut cmd,
-                attacker,
-                target,
-                start + duration_ticks(animation_windup),
-                &transforms,
-            );
+            info!(attack_key = start, attacker = ?attacker, target = ?target, body_part = ?body_part, strike_family = ?strike_family, hand = ?hand, "melee_attack_started");
+            begin_attack_facing(&mut cmd, attacker, target, contact_tick, &transforms);
+            if let (Some(target), Some(body_part)) = (target, body_part) {
+                begin_melee_lunge(
+                    &mut cmd,
+                    attacker,
+                    target,
+                    body_part,
+                    weapon_reach,
+                    start,
+                    &transforms,
+                    &dimensions,
+                    &colliders,
+                    &config,
+                );
+            } else {
+                cmd.entity(attacker).remove::<MeleeLungeMovement>();
+                info!(attack_key = start, attacker = ?attacker, target = ?target, body_part = ?body_part, outcome = "untargeted_no_movement", "melee_lunge_planned");
+            }
             authority.observe(
+                start,
                 target,
+                body_part,
                 CombatInstant::from_elapsed(&time),
-                minimum_windup,
+                minimum_contact_windup,
                 CombatDuration::from_secs_f32(
                     config.realtime_authority.melee.completion_allowance_seconds,
                 ),
             );
+        }
+        MeleeActionRequest::CompleteMiss => {
+            let attack_key = authorities
+                .get_mut(attacker)
+                .ok()
+                .and_then(|mut authority| authority.complete_miss())
+                .unwrap_or_default();
+            info!(attack_key, attacker = ?attacker, outcome = "client_ray_miss", "melee_attack_resolved");
         }
         MeleeActionRequest::Complete {
             target,
@@ -483,7 +951,12 @@ pub(super) fn on_melee_action_request(
             reported_precision,
         } => {
             let Some(reported_precision) = ReportedPrecision::new(reported_precision) else {
-                debug!("Ignoring non-finite melee precision from {attacker:?}");
+                let attack_key = authorities
+                    .get(attacker)
+                    .ok()
+                    .and_then(MeleeAttackAuthority::attack_key)
+                    .unwrap_or_default();
+                info!(attack_key, attacker = ?attacker, target = ?target, body_part = ?body_part, reason = "non_finite_precision", "melee_completion_rejected");
                 return;
             };
             // Finite precision is intentionally accepted as reported. Full
@@ -631,6 +1104,20 @@ pub(super) fn on_ranged_attack_started(
 
 fn animation_tick(time: &Time<()>) -> u64 {
     (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64
+}
+
+fn delayed_melee_timing_ticks(
+    input_tick: u64,
+    authored_windup: CombatDuration,
+    lunge_delay_seconds: f32,
+    recovery: CombatDuration,
+) -> (u64, u64, u64) {
+    let authored_ticks = duration_ticks(authored_windup);
+    let arrival_ticks = (lunge_delay_seconds.max(0.0) * LOCOMOTION_SAMPLE_HZ).round() as u64;
+    let contact = input_tick.saturating_add(authored_ticks.max(arrival_ticks));
+    let animation_start = contact.saturating_sub(authored_ticks);
+    let recovery_end = contact.saturating_add(duration_ticks(recovery));
+    (animation_start, contact, recovery_end)
 }
 
 fn duration_ticks(duration: CombatDuration) -> u64 {

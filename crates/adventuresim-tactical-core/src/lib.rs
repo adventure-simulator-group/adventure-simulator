@@ -39,7 +39,12 @@ pub mod prelude {
         guard_step_length, locomotion_profile, ordinary_step_distance, project_skeleton_locomotion,
         project_skeleton_locomotion_with_intent, set_weapon_guard, supine_get_up_counter_yaw_delta,
     };
-    pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
+    pub use crate::combat::{
+        Attack, Dodge, MELEE_LUNGE_QUICKSTEP_THRESHOLD_METRES, MELEE_LUNGE_RANGE_WINDOW_METRES,
+        MeleeLunge, Parry, conservative_forward_lunge_acceleration, maximum_melee_lunge_range,
+        melee_horizontal_closure, melee_interaction_range, melee_lunge, melee_lunge_delay_seconds,
+        reachable_melee_strike_point,
+    };
     pub use crate::combat_config::*;
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
@@ -50,14 +55,14 @@ pub mod prelude {
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, CharacterMotionSnapshot,
-        MovementPace, QuickstepPush, TACTICAL_BREATH_RESPONSE_SCALE,
+        MeleeLungeMovement, MovementPace, QuickstepPush, TACTICAL_BREATH_RESPONSE_SCALE,
         TACTICAL_GUARD_SPEED_METRES_PER_SECOND, TACTICAL_PRONE_LATERAL_SPEED_SCALE,
         TACTICAL_PRONE_SPEED_METRES_PER_SECOND, TACTICAL_PRONE_WALK_SPEED_METRES_PER_SECOND,
         TACTICAL_ROLL_SPEED_METRES_PER_SECOND, TACTICAL_RUN_SPEED_METRES_PER_SECOND,
         TACTICAL_WALK_SPEED_METRES_PER_SECOND, quickstep_action_contact_ticks,
         quickstep_force_curve, quickstep_peak_horizontal_force_newtons, quickstep_push_seconds,
-        tactical_breath_recovery_per_second, tactical_character_controller,
-        tactical_exhaustion_change_per_second, tactical_jog_speed,
+        quickstep_target_displacement_metres, tactical_breath_recovery_per_second,
+        tactical_character_controller, tactical_exhaustion_change_per_second, tactical_jog_speed,
         tactical_movement_exhaustion_change_per_second, tactical_movement_speed,
         tactical_movement_speed_for_guard, tactical_movement_speed_for_pace, tactical_sprint_speed,
     };

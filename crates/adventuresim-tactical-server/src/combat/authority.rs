@@ -177,7 +177,9 @@ impl AuthorizedRangedShot {
 
 #[derive(Debug, Clone)]
 struct ObservedMeleeWindup {
+    attack_key: u64,
     target: Option<Entity>,
+    body_part: Option<BodyPart>,
     ready_at: CombatInstant,
     expires_at: CombatInstant,
 }
@@ -191,22 +193,43 @@ pub(crate) struct MeleeAttackAuthority {
 impl MeleeAttackAuthority {
     pub(crate) fn observe(
         &mut self,
+        attack_key: u64,
         target: Option<Entity>,
+        body_part: Option<BodyPart>,
         now: CombatInstant,
         windup: CombatDuration,
         network_allowance: CombatDuration,
     ) {
         let ready_at = now + windup;
         self.windup = Some(ObservedMeleeWindup {
+            attack_key,
             target,
+            body_part,
             ready_at,
             expires_at: ready_at + network_allowance,
         });
     }
 
-    fn authorize(&mut self, target: Entity, now: CombatInstant, cooldown: CombatDuration) -> bool {
+    pub(crate) fn attack_key(&self) -> Option<u64> {
+        self.windup.as_ref().map(|windup| windup.attack_key)
+    }
+
+    pub(crate) fn complete_miss(&mut self) -> Option<u64> {
+        self.windup.take().map(|windup| windup.attack_key)
+    }
+
+    fn authorize(
+        &mut self,
+        target: Entity,
+        body_part: BodyPart,
+        now: CombatInstant,
+        cooldown: CombatDuration,
+    ) -> bool {
         let valid = self.windup.as_ref().is_some_and(|windup| {
             windup.target.is_none_or(|observed| observed == target)
+                && windup
+                    .body_part
+                    .is_none_or(|observed| observed == body_part)
                 && now >= windup.ready_at
                 && now <= windup.expires_at
                 && now >= self.cooldown_until
@@ -224,13 +247,16 @@ impl MeleeAttackAuthority {
         now: CombatInstant,
         cooldown: CombatDuration,
     ) -> Option<AuthorizedMeleeAttack> {
-        self.authorize(attack.target, now, cooldown)
+        self.authorize(attack.target, attack.body_part, now, cooldown)
             .then_some(AuthorizedMeleeAttack(attack))
     }
 
-    pub(crate) fn permits(&self, target: Entity, now: CombatInstant) -> bool {
+    pub(crate) fn permits(&self, target: Entity, body_part: BodyPart, now: CombatInstant) -> bool {
         self.windup.as_ref().is_some_and(|windup| {
             windup.target.is_none_or(|observed| observed == target)
+                && windup
+                    .body_part
+                    .is_none_or(|observed| observed == body_part)
                 && now >= windup.ready_at
                 && now <= windup.expires_at
                 && now >= self.cooldown_until
@@ -310,10 +336,34 @@ mod tests {
         let target = Entity::from_bits(7);
         let start = CombatInstant(Duration::ZERO);
         let mut authority = MeleeAttackAuthority::default();
-        authority.observe(Some(target), start, SECOND, SECOND);
-        assert!(!authority.permits(target, start));
-        assert!(authority.permits(target, start + SECOND));
-        assert!(authority.permits(target, start + SECOND + SECOND));
+        authority.observe(
+            7,
+            Some(target),
+            Some(BodyPart::Chest),
+            start,
+            SECOND,
+            SECOND,
+        );
+        assert!(!authority.permits(target, BodyPart::Chest, start));
+        assert!(!authority.permits(target, BodyPart::Head, start + SECOND));
+        assert!(authority.permits(target, BodyPart::Chest, start + SECOND));
+        assert!(authority.permits(target, BodyPart::Chest, start + SECOND + SECOND));
+    }
+
+    #[test]
+    fn client_miss_terminates_the_correlated_windup() {
+        let target = Entity::from_bits(7);
+        let mut authority = MeleeAttackAuthority::default();
+        authority.observe(
+            42,
+            Some(target),
+            Some(BodyPart::Head),
+            CombatInstant(Duration::ZERO),
+            SECOND,
+            SECOND,
+        );
+        assert_eq!(authority.complete_miss(), Some(42));
+        assert_eq!(authority.attack_key(), None);
     }
 }
 
@@ -399,12 +449,17 @@ pub(super) fn validate_melee_intent_cheap(
     if attacker_incapacitated || target_incapacitated {
         return Err(MeleeIntentRejection::Incapacitated);
     }
-    if !facts.weapon_reach.is_finite() || facts.weapon_reach <= 0.0 {
+    if !facts.arm_reach.is_finite()
+        || facts.arm_reach <= 0.0
+        || !facts.weapon_reach.is_finite()
+        || facts.weapon_reach < 0.0
+    {
         return Err(MeleeIntentRejection::Unarmed);
     }
     if !facts.separation.is_finite()
         || facts.separation
-            > melee_interaction_range(facts.weapon_reach) + facts.range_latency_tolerance
+            > melee_interaction_range(facts.arm_reach, facts.weapon_reach)
+                + facts.range_latency_tolerance
     {
         return Err(MeleeIntentRejection::OutOfRange);
     }

@@ -540,6 +540,7 @@ mod tests {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
                 target: None,
+                body_part: None,
             },
         };
 
@@ -597,6 +598,7 @@ mod tests {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
                 target: None,
+                body_part: None,
             },
         });
         app.world_mut().flush();
@@ -779,9 +781,30 @@ mod tests {
             .distance(enemy_transform.translation.xz());
         const KATZBALGER_REACH: f32 = 0.8;
         const TWO_CHARACTER_COLLIDER_RADII: f32 = 0.8;
+        let combat_config = TacticalCombatConfig::default();
+        let quickstep_distance = quickstep_target_displacement_metres(
+            combat_config
+                .movement
+                .motor
+                .reference_quickstep_leg_length_metres,
+            &combat_config.movement.motor,
+        );
         assert!(
-            separation <= melee_interaction_range(KATZBALGER_REACH),
-            "AI stopped outside melee interaction range: {separation}"
+            separation
+                <= maximum_melee_lunge_range(
+                    CharacterDimensions::default().arm_reach_metres,
+                    KATZBALGER_REACH,
+                    quickstep_distance,
+                ),
+            "AI stopped outside reachable lunge range: {separation}"
+        );
+        assert!(
+            separation
+                > melee_interaction_range(
+                    CharacterDimensions::default().arm_reach_metres,
+                    KATZBALGER_REACH,
+                ),
+            "AI should commit its attack while the lunge still has a gap to close: {separation}"
         );
         assert!(
             separation >= TWO_CHARACTER_COLLIDER_RADII,
