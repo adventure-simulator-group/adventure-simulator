@@ -37,13 +37,13 @@ pub(crate) use ingress::apply_defend_intent;
 pub(crate) use ingress::melee_body_part_lunge_delay;
 use ingress::{
     authoritative_line_of_sight, on_defender_response_request, on_melee_action_request,
-    on_melee_attack_started, on_ranged_action_request, on_ranged_attack_started,
-    resolve_defender_response,
+    on_ranged_action_request, on_ranged_attack_started, resolve_defender_response,
 };
+pub(crate) use ingress::{on_melee_attack_started, resolve_pending_melee_contacts};
 use melee::resolve_melee_attack;
 pub(crate) use protocol::{
     DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
-    RangedAttackIntent, RangedAttackStartedIntent,
+    PendingMeleeContact, RangedAttackIntent, RangedAttackStartedIntent,
 };
 use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;
@@ -256,6 +256,7 @@ impl Plugin for CombatPlugin {
                         .in_set(CombatSet::Condition)
                         .after(PlayerProjectionSet::Spawn),
                     update_authoritative_ragdoll_lifecycle.after(CombatSet::Condition),
+                    resolve_pending_melee_contacts.after(CombatSet::Condition),
                 ),
             );
     }
@@ -266,83 +267,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId;
-
     fn default_impact_config() -> ImpactConfig {
         TacticalCombatConfig::default().realtime_authority.impact
-    }
-
-    #[derive(Resource)]
-    struct BatchedCompletions {
-        attacker: Entity,
-        target: Entity,
-    }
-
-    #[derive(Resource, Default)]
-    struct AcceptedCompletions(u32);
-
-    fn emit_batched_completions(mut cmd: Commands, batch: Res<BatchedCompletions>) {
-        for _ in 0..3 {
-            cmd.trigger(FromClient {
-                client_id: ClientId::Client(batch.attacker),
-                message: MeleeActionRequest::Complete {
-                    target: batch.target,
-                    body_part: BodyPart::Chest,
-                    reported_precision: 1.0,
-                },
-            });
-        }
-    }
-
-    fn apply_if_authorized(
-        event: On<MeleeAttackIntent>,
-        time: Res<Time<()>>,
-        mut authorities: Query<&mut MeleeAttackAuthority>,
-        mut limbs: Query<&mut Limbs>,
-        mut accepted: ResMut<AcceptedCompletions>,
-    ) {
-        let Ok(mut authority) = authorities.get_mut(event.attacker) else {
-            return;
-        };
-        let Some(validated) = validate_melee_intent_cheap(MeleeIntentFacts {
-            attacker: event.attacker,
-            target: event.target,
-            attacker_side: Some(TacticalCombatSide::Party),
-            target_side: Some(TacticalCombatSide::Enemy),
-            attacker_incapacitated: Some(false),
-            target_incapacitated: Some(false),
-            reported_precision: event.reported_precision,
-            arm_reach: 0.55,
-            weapon_reach: 1.0,
-            range_latency_tolerance: 0.25,
-            separation: 1.0,
-            authority_permits: authority.permits(
-                event.target,
-                event.body_part,
-                CombatInstant::from_elapsed(&time),
-            ),
-            body_part: event.body_part,
-            attacker_position: Vec3::ZERO,
-            target_position: Vec3::X,
-            attacker_yaw: 0.0,
-            target_yaw: 0.0,
-        })
-        .ok() else {
-            return;
-        };
-        if authority
-            .authorize_attack(
-                validated,
-                CombatInstant::from_elapsed(&time),
-                CombatDuration::from_secs_f32(0.08),
-            )
-            .is_some()
-        {
-            accepted.0 += 1;
-            if let Ok(mut limbs) = limbs.get_mut(event.target) {
-                limbs.chest -= 0.1;
-            }
-        }
     }
 
     fn valid_facts(world: &mut World) -> MeleeIntentFacts {
@@ -849,42 +775,6 @@ mod tests {
             .unwrap()
             .exhaustion;
         assert!(resting_exhaustion < sprint_exhaustion);
-    }
-
-    #[test]
-    fn batched_completions_consume_one_windup_once() {
-        let mut app = App::new();
-        app.insert_resource(Time::<()>::default())
-            .init_resource::<TacticalCombatConfig>()
-            .init_resource::<AcceptedCompletions>()
-            .add_observer(on_melee_action_request)
-            .add_observer(apply_if_authorized);
-        let attacker = app
-            .world_mut()
-            .spawn((MeleeAttackAuthority::default(), SkeletonState::default()))
-            .id();
-        let target = app.world_mut().spawn(Limbs::default()).id();
-        app.world_mut().trigger(FromClient {
-            client_id: ClientId::Client(attacker),
-            message: MeleeActionRequest::Start {
-                strike_family: StrikeFamily::Thrust,
-                hand: AttackHand::Main,
-                target: None,
-                body_part: None,
-            },
-        });
-        // The bare test attacker has no equipped weapon, so its observed
-        // windup is zero and any positive advance clears it; 300ms mirrors
-        // the default `PlayerEquipment::weapon_windup_secs` pacing.
-        app.world_mut()
-            .resource_mut::<Time<()>>()
-            .advance_by(Duration::from_millis(300));
-        app.insert_resource(BatchedCompletions { attacker, target })
-            .add_systems(Update, emit_batched_completions);
-        app.update();
-
-        assert_eq!(app.world().resource::<AcceptedCompletions>().0, 1);
-        assert!((app.world().entity(target).get::<Limbs>().unwrap().chest - 0.9).abs() < 0.0001);
     }
 
     #[test]

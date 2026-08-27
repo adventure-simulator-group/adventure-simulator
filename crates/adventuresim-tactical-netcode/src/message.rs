@@ -263,24 +263,13 @@ mod equipment_action_mapping_tests {
     }
 }
 
-/// Both melee phases share one mapped ordered stream, so a completion cannot
-/// overtake its server-observed start.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
-pub enum MeleeActionRequest {
-    Start {
-        strike_family: StrikeFamily,
-        hand: AttackHand,
-        #[entities]
-        target: Option<Entity>,
-        body_part: Option<BodyPart>,
-    },
-    CompleteMiss,
-    Complete {
-        #[entities]
-        target: Entity,
-        body_part: BodyPart,
-        reported_precision: f32,
-    },
+pub struct MeleeActionRequest {
+    pub strike_family: StrikeFamily,
+    pub hand: AttackHand,
+    #[entities]
+    pub target: Option<Entity>,
+    pub body_part: Option<BodyPart>,
 }
 
 /// Both ranged phases share one mapped ordered stream. A completion may omit
@@ -311,7 +300,7 @@ mod combat_action_mapping_tests {
     fn attack_starts_map_their_acquired_target() {
         let target = Entity::from_bits(21);
         let mapped = Entity::from_bits(22);
-        let mut melee = MeleeActionRequest::Start {
+        let mut melee = MeleeActionRequest {
             strike_family: StrikeFamily::Swing,
             hand: AttackHand::Main,
             target: Some(target),
@@ -326,7 +315,7 @@ mod combat_action_mapping_tests {
 
         assert!(matches!(
             melee,
-            MeleeActionRequest::Start {
+            MeleeActionRequest {
                 target: Some(found),
                 body_part: Some(BodyPart::Chest),
                 ..

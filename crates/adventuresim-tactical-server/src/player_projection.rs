@@ -18,7 +18,9 @@ use bevy::time::Stopwatch;
 use crate::{
     Args, SceneVistaBundleResource,
     bot::{CombatantBehaviorPackages, MissionEnemy},
-    combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
+    combat::{
+        MeleeAttackAuthority, PendingMeleeContact, RangedAttackAuthority, TacticalCombatSide,
+    },
     equipment::{
         LastEquipmentSequence, PendingEquipmentActions, purge_equipment_lifecycle,
         reconnect_equipment_lifecycle,
@@ -243,6 +245,7 @@ pub(crate) struct ProjectedPlayerSnapshot {
     velocity: LinearVelocity,
     skeleton: SkeletonState,
     melee_authority: MeleeAttackAuthority,
+    pending_melee_contact: Option<PendingMeleeContact>,
     ranged_authority: RangedAttackAuthority,
     collider: Collider,
     collision_margin: CollisionMargin,
@@ -290,6 +293,9 @@ impl DisconnectedProjection {
                     snapshot.melee_authority,
                     snapshot.ranged_authority,
                 ));
+                if let Some(pending) = snapshot.pending_melee_contact {
+                    commands.entity(target).insert(pending);
+                }
                 if let Some(melee_lunge) = snapshot.melee_lunge {
                     commands.entity(target).insert(melee_lunge);
                 }
@@ -1820,6 +1826,7 @@ pub(crate) fn on_client_disconnected(
         &LinearVelocity,
         &SkeletonState,
         &MeleeAttackAuthority,
+        Option<&PendingMeleeContact>,
         &RangedAttackAuthority,
     )>,
     projected_physics: Query<(
@@ -1866,7 +1873,8 @@ pub(crate) fn on_client_disconnected(
             velocity: *motion.10,
             skeleton: motion.11.clone(),
             melee_authority: motion.12.clone(),
-            ranged_authority: motion.13.clone(),
+            pending_melee_contact: motion.13.copied(),
+            ranged_authority: motion.14.clone(),
             collider: physics.0.clone(),
             collision_margin: *physics.1,
             controller: physics.2.clone(),

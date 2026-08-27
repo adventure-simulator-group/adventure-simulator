@@ -12,8 +12,8 @@ use std::cmp::Ordering;
 
 use crate::{
     combat::{
-        CombatDuration, CombatSet, DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent,
-        RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
+        CombatDuration, CombatSet, DefendIntent, MeleeAttackStartedIntent, RangedAttackIntent,
+        RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
     },
     player_projection::begin_get_up_transition_configured,
 };
@@ -256,7 +256,7 @@ mod tests {
 
     use super::defense::PendingBotReaction;
     use super::*;
-    use crate::combat::PendingDefenderResponse;
+    use crate::combat::{MeleeAttackAuthority, MeleeAttackIntent, PendingDefenderResponse};
     use crate::player_projection::AuthoritativePostureIntent;
 
     #[derive(Resource, Default)]
@@ -317,6 +317,10 @@ mod tests {
                 input::AccumulatedInput::default(),
                 OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
+                SkeletonState::default(),
+                CharacterDimensions::default(),
+                Collider::cylinder(0.4, 1.9),
+                MeleeAttackAuthority::default(),
             ))
             .id();
         let weapon = world.spawn(ItemOf(actor)).id();
@@ -359,6 +363,10 @@ mod tests {
                 input::AccumulatedInput::default(),
                 OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
+                SkeletonState::default(),
+                CharacterDimensions::default(),
+                Collider::cylinder(0.4, 1.9),
+                MeleeAttackAuthority::default(),
             ))
             .id();
         let weapon = world.spawn(ItemOf(actor)).id();
@@ -402,6 +410,7 @@ mod tests {
                 side,
                 CharacterLook::default(),
                 TacticalCombatState::default(),
+                Collider::cylinder(0.4, 1.9),
             ))
             .id()
     }
@@ -414,7 +423,15 @@ mod tests {
             .init_resource::<RecordedRangedAttacks>()
             .add_observer(record_attack)
             .add_observer(record_ranged_attack)
-            .add_systems(Update, drive_offensive_combat_ai);
+            .add_observer(crate::combat::on_melee_attack_started)
+            .add_systems(
+                Update,
+                (
+                    drive_offensive_combat_ai,
+                    crate::combat::resolve_pending_melee_contacts,
+                )
+                    .chain(),
+            );
         app
     }
 
@@ -536,7 +553,7 @@ mod tests {
             client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
                 attacker,
             ),
-            message: MeleeActionRequest::Start {
+            message: MeleeActionRequest {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
                 target: None,
@@ -594,7 +611,7 @@ mod tests {
             client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
                 attacker,
             ),
-            message: MeleeActionRequest::Start {
+            message: MeleeActionRequest {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
                 target: None,

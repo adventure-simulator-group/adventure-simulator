@@ -36,9 +36,21 @@ pub(crate) struct MeleeAttackIntent {
 #[derive(Event, Clone, Copy, Debug)]
 pub(crate) struct MeleeAttackStartedIntent {
     pub(crate) attacker: Entity,
-    pub(crate) target: Entity,
-    pub(crate) body_part: BodyPart,
+    pub(crate) target: Option<Entity>,
+    pub(crate) body_part: Option<BodyPart>,
     pub(crate) windup: CombatDuration,
+    pub(crate) reported_precision: ReportedPrecision,
+    pub(crate) strike_family: StrikeFamily,
+    pub(crate) hand: AttackHand,
+}
+
+#[derive(Component, Clone, Copy, Debug)]
+pub(crate) struct PendingMeleeContact {
+    pub(crate) attack_key: u64,
+    pub(crate) target: Option<Entity>,
+    pub(crate) body_part: Option<BodyPart>,
+    pub(crate) resolve_at: CombatInstant,
+    pub(crate) reported_precision: ReportedPrecision,
     pub(crate) strike_family: StrikeFamily,
     pub(crate) hand: AttackHand,
 }

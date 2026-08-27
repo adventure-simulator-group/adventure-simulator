@@ -67,15 +67,17 @@ pub(super) fn on_attack_started(
     >,
     combat_config: Res<TacticalCombatConfig>,
 ) {
-    let MeleeActionRequest::Start {
+    let MeleeActionRequest {
         strike_family,
         hand,
-        target: _,
+        target,
         body_part: _,
-    } = **event
-    else {
+    } = **event;
+    if target.is_some() {
+        // Targeted player starts enter the shared server start intent and are
+        // handled by `on_targeted_attack_started` alongside AI attacks.
         return;
-    };
+    }
     let Some(attacker) = event.client_id.entity() else {
         return;
     };
@@ -122,16 +124,18 @@ pub(super) fn on_targeted_attack_started(
     )>,
     combat_config: Res<TacticalCombatConfig>,
 ) {
-    let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, event.target])
-    else {
+    let Some(target) = event.target else {
         return;
     };
-    if let Ok((_, state, defense, chances)) = q_ai.get(event.target)
+    let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, target]) else {
+        return;
+    };
+    if let Ok((_, state, defense, chances)) = q_ai.get(target)
         && !state.is_incapacitated()
     {
         try_start_reaction(
             &mut cmd,
-            event.target,
+            target,
             attacker_look,
             defender_look,
             *defense,

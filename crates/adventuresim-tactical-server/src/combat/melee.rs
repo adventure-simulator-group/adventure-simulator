@@ -106,6 +106,7 @@ pub(super) fn resolve_melee_attack(
         Ok(validated) => validated,
         Err(reason) => {
             info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
+            info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "miss", reason = ?reason, "melee_attack_resolved");
             return;
         }
     };
@@ -119,6 +120,7 @@ pub(super) fn resolve_melee_attack(
     );
     if let Err(reason) = validate_melee_line_of_sight(line_of_sight) {
         info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
+        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "miss", reason = ?reason, "melee_attack_resolved");
         return;
     }
     // Mutate the pre-existing authority component synchronously. A later
@@ -128,6 +130,7 @@ pub(super) fn resolve_melee_attack(
         CombatDuration::from_secs_f32(config.realtime_authority.melee.replay_cooldown_seconds);
     let Some(authorized) = authority.authorize_attack(validated, now, cooldown) else {
         info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = "authorization_consumed", surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
+        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "miss", reason = "authorization_consumed", "melee_attack_resolved");
         return;
     };
     info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_accepted");
