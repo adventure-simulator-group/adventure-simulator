@@ -118,15 +118,8 @@ fn is_quickstep_scenario(name: &str) -> bool {
 }
 
 fn scenario_metadata(name: &str) -> ScenarioMetadata {
-    if is_quickstep_scenario(name) {
-        ScenarioMetadata {
-            kind: ScenarioKind::Transition,
-            repeatable: false,
-            // The quickstep uses planted IK only during load, then owns the
-            // airborne lower body as a fixed local-space FK recovery.
-            procedural_solver: false,
-        }
-    } else if name.starts_with("downed-")
+    if is_quickstep_scenario(name)
+        || name.starts_with("downed-")
         || name.starts_with("dive-")
         || name.ends_with("-get-up")
         || name.starts_with("prone-roll-")

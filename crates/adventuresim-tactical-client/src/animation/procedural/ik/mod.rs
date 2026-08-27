@@ -1588,32 +1588,33 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         }
                     }
                 };
-                if live_speed <= 0.05 && !footwork.step.initialized() {
-                    if let (Some(left), Some(right)) = (
+                if live_speed <= 0.05
+                    && !footwork.step.initialized()
+                    && let (Some(left), Some(right)) = (
                         memory.left_last_rendered_world,
                         memory.right_last_rendered_world,
-                    ) {
-                        let fallback = opposite_guard_foot(skeleton.contact_foot);
-                        let next = match requested {
-                            GuardStepState::Stationary {
-                                left: desired_left,
-                                right: desired_right,
-                                ..
-                            } => safer_guard_reacquire_foot(
-                                left,
-                                right,
-                                desired_left,
-                                desired_right,
-                                fallback,
-                            ),
-                            _ => fallback,
-                        };
-                        // Reacquire from the final authored locomotion pose.
-                        // The stationary stepper can then move one foot at a
-                        // time toward the guard contacts without a one-frame
-                        // ownership snap or contact-identity reset.
-                        footwork.step = GuardStepState::Stationary { left, right, next };
-                    }
+                    )
+                {
+                    let fallback = opposite_guard_foot(skeleton.contact_foot);
+                    let next = match requested {
+                        GuardStepState::Stationary {
+                            left: desired_left,
+                            right: desired_right,
+                            ..
+                        } => safer_guard_reacquire_foot(
+                            left,
+                            right,
+                            desired_left,
+                            desired_right,
+                            fallback,
+                        ),
+                        _ => fallback,
+                    };
+                    // Reacquire from the final authored locomotion pose.
+                    // The stationary stepper can then move one foot at a
+                    // time toward the guard contacts without a one-frame
+                    // ownership snap or contact-identity reset.
+                    footwork.step = GuardStepState::Stationary { left, right, next };
                 }
                 footwork.step = if live_speed <= 0.05
                     && matches!(requested, GuardStepState::Stationary { .. })
@@ -3999,14 +4000,14 @@ pub(in crate::animation) fn refresh_raised_support_after_propagation(
             .map(|global| (global.translation(), global.rotation()));
         let left_rendered_world = state.0.left_last_rendered_world;
         let right_rendered_world = state.0.right_last_rendered_world;
-        if skeleton.is_quickstep() {
-            if let (Some((origin, rotation)), Some(left), Some(right)) = (
+        if skeleton.is_quickstep()
+            && let (Some((origin, rotation)), Some(left), Some(right)) = (
                 propagated_owner_frame,
                 left_rendered_world,
                 right_rendered_world,
-            ) {
-                seed_quickstep_contact_handoff(&mut state.0, origin, rotation, left, right);
-            }
+            )
+        {
+            seed_quickstep_contact_handoff(&mut state.0, origin, rotation, left, right);
         }
         let owner_frame =
             propagated_owner_frame.or_else(|| state.0.rig_origin.zip(state.0.rig_rotation));

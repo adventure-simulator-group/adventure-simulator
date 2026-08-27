@@ -48,12 +48,8 @@ pub(in crate::animation) fn apply_locomotion_body_response(
             || skeleton.action_kind() != SkeletonAction::None
             || !skeleton.is_grounded()
             || skeleton.weapon_guard() == WeaponGuardState::Raised
+            || discontinuous
         {
-            next.pitch_radians = 0.0;
-            next.roll_radians = 0.0;
-            next.target_pitch_radians = 0.0;
-            next.target_roll_radians = 0.0;
-        } else if discontinuous {
             next.pitch_radians = 0.0;
             next.roll_radians = 0.0;
             next.target_pitch_radians = 0.0;

@@ -883,7 +883,7 @@ fn apply_character_motor(
             );
             let reference_turn_radius = agility_sprint_turn_radius(leg_agility, motor);
             let turn_radius = ordinary_turn_radius(horizontal.length(), reference_turn_radius);
-            let candidate = approach_ground_velocity(
+            approach_ground_velocity(
                 horizontal,
                 target,
                 drive_force / mass_kg,
@@ -892,8 +892,7 @@ fn apply_character_motor(
                 traction_acceleration,
                 turn_radius,
                 time.delta_secs(),
-            );
-            candidate
+            )
         } else {
             approach_velocity(
                 horizontal,
@@ -1355,13 +1354,17 @@ mod tests {
             }
         }
 
-        for radii_at_agility in measured_radii {
+        for radii_at_agility in &measured_radii {
             assert!(radii_at_agility[0] > radii_at_agility[1]);
             assert!(radii_at_agility[1] > radii_at_agility[2]);
         }
-        for speed_index in 0..speeds.len() {
-            assert!(measured_radii[0][speed_index] > measured_radii[1][speed_index]);
-            assert!(measured_radii[1][speed_index] > measured_radii[2][speed_index]);
+        for ((average, john), olympian) in measured_radii[0]
+            .iter()
+            .zip(&measured_radii[1])
+            .zip(&measured_radii[2])
+        {
+            assert!(average > john);
+            assert!(john > olympian);
         }
     }
 

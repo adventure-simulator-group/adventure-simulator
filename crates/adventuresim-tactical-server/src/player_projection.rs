@@ -954,10 +954,10 @@ pub(crate) fn on_player_input(
     else {
         return;
     };
-    if let Some(mut newest) = input_tick {
-        if !newest.accept(input.simulation_tick) {
-            return;
-        }
+    if let Some(mut newest) = input_tick
+        && !newest.accept(input.simulation_tick)
+    {
+        return;
     }
     let jump_requested =
         sequence_is_newer(validated.jump.sequence, posture_intent.last_jump_sequence);
