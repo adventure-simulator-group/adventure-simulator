@@ -539,6 +539,7 @@ mod tests {
             message: MeleeActionRequest::Start {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
+                target: None,
             },
         };
 
@@ -595,6 +596,7 @@ mod tests {
             message: MeleeActionRequest::Start {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
+                target: None,
             },
         });
         app.world_mut().flush();

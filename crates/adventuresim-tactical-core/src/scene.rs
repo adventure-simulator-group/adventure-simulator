@@ -495,12 +495,23 @@ impl SceneTerrain {
     }
 
     pub fn collider(&self) -> Collider {
-        let heights = self
-            .heightmap
+        let heights = self.collider_height_matrix();
+        Collider::heightfield(heights, Vec3::new(self.width(), 1.0, self.depth()))
+    }
+
+    fn collider_height_matrix(&self) -> Vec<Vec<f32>> {
+        // Avian flattens this nested Vec directly into Parry's column-major
+        // Array2. Supply X-major values while retaining Z rows and X columns
+        // as the matrix dimensions expected by Parry's heightfield.
+        let column_major = (0..self.grid_width())
+            .flat_map(|x| {
+                (0..self.grid_depth()).map(move |z| self.heightmap[x + z * self.grid_width()])
+            })
+            .collect::<Vec<_>>();
+        column_major
             .chunks_exact(self.grid_width())
             .map(|row| row.to_vec())
-            .collect();
-        Collider::heightfield(heights, Vec3::new(self.width(), 1.0, self.depth()))
+            .collect()
     }
 
     #[cfg(feature = "meshgen")]
@@ -671,6 +682,49 @@ mod tests {
         let b = Vec3::from_array(positions[indices[1] as usize]);
         let c = Vec3::from_array(positions[indices[2] as usize]);
         assert!((b - a).cross(c - a).y > 0.0);
+    }
+
+    #[test]
+    fn collider_heightfield_matches_the_rendered_surface_without_transposing_axes() {
+        let terrain = SceneTerrain::from_heightmap(
+            3,
+            2,
+            1.0,
+            vec![0.0, 1.0, 4.0, 10.0, 13.0, 20.0],
+        )
+        .unwrap();
+        assert_eq!(
+            terrain.collider_height_matrix(),
+            vec![vec![0.0, 10.0, 1.0], vec![13.0, 4.0, 20.0]]
+        );
+
+        let collider = terrain.collider();
+        for point in [
+            Vec2::new(-0.6, -0.2),
+            Vec2::new(0.6, -0.2),
+            Vec2::new(-0.6, 0.2),
+            Vec2::new(0.6, 0.2),
+            Vec2::ZERO,
+        ] {
+            let expected_height = terrain.height_at(point).unwrap();
+            let ray_origin = Vec3::new(point.x, 30.0, point.y);
+            let (distance, _) = collider
+                .cast_ray(
+                    Vec3::ZERO,
+                    Rotation::default(),
+                    ray_origin,
+                    Vec3::NEG_Y,
+                    60.0,
+                    false,
+                )
+                .expect("the downward ray should hit the terrain collider");
+            let collider_height = ray_origin.y - distance;
+
+            assert!(
+                (collider_height - expected_height).abs() < 0.0001,
+                "collider {collider_height} != sampled surface {expected_height} at {point}"
+            );
+        }
     }
 
     #[test]

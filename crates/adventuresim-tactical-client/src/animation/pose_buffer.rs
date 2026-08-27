@@ -282,6 +282,7 @@ pub(super) fn update_pose_buffers(
         &GlobalTransform,
         Option<&mut PoseBufferRig>,
     )>,
+    rig_scenes: Query<(&AnimationRigScene, &Transform)>,
     targets: Query<(
         Entity,
         &AnimationTargetId,
@@ -447,10 +448,21 @@ pub(super) fn update_pose_buffers(
             && let Ok(terrain) = terrain.single()
         {
             let definition = Arc::clone(&rig.definition);
+            // Buffered joint poses are relative to the authored scene, not to
+            // the controller entity. The scene is translated from the
+            // capsule's centre to the character's visual ground origin.
+            // Omitting that transform makes every sampled ankle appear about
+            // one capsule half-height too high and disables terrain contact.
+            let presentation_transform = rig_scenes
+                .iter()
+                .find_map(|(scene, local)| {
+                    (scene.0 == owner).then(|| presentation_world_transform(owner_transform, local))
+                })
+                .unwrap_or(*owner_transform);
             conform_upcoming_pose_to_terrain(
                 &definition,
                 &mut target,
-                owner_transform,
+                &presentation_transform,
                 playback.foot_ik_weights,
                 terrain,
                 &mut rig.terrain_plants,
@@ -523,6 +535,13 @@ pub(super) fn update_pose_buffers(
             rig.interpolation_alpha = (rig.sample_accumulator / SAMPLE_DT).clamp(0.0, 1.0);
         }
     }
+}
+
+fn presentation_world_transform(
+    owner: &GlobalTransform,
+    rig_scene_local: &Transform,
+) -> GlobalTransform {
+    owner.mul_transform(*rig_scene_local)
 }
 
 pub(super) fn apply_pose_buffers(
@@ -1452,6 +1471,16 @@ mod tests {
         assert!(displayed_foot.y > 0.0);
         assert!(displayed_foot.y < next_foot.y);
         assert!((next_foot.y - (0.5 + MEASURED_ANKLE_SOLE_OFFSET_METRES)).abs() < 0.001);
+    }
+
+    #[test]
+    fn presentation_space_removes_the_controller_centre_height() {
+        let owner = GlobalTransform::from_translation(Vec3::Y * 0.95);
+        let rig_scene = Transform::from_translation(Vec3::NEG_Y * 0.95);
+
+        let presentation = presentation_world_transform(&owner, &rig_scene);
+
+        assert!(presentation.translation().abs().max_element() < 0.0001);
     }
 
     #[test]

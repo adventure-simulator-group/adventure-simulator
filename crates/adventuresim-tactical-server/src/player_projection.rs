@@ -50,6 +50,55 @@ pub(crate) struct StartupInputObserved;
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct AuthoritativeMovementIntent(pub(crate) Option<Vec2>);
 
+/// Temporary authoritative yaw drive created by attack target acquisition.
+/// It follows the target root during windup and expires after canonical contact.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct AttackFacing {
+    pub(crate) target: Entity,
+    pub(crate) target_position: Vec3,
+    pub(crate) contact_tick: u64,
+}
+
+pub(crate) fn begin_attack_facing(
+    commands: &mut Commands,
+    attacker: Entity,
+    target: Option<Entity>,
+    contact_tick: u64,
+    transforms: &Query<&Transform>,
+) {
+    let Some(target) = target.filter(|target| *target != attacker) else {
+        commands.entity(attacker).remove::<AttackFacing>();
+        return;
+    };
+    let Ok(transform) = transforms.get(target) else {
+        commands.entity(attacker).remove::<AttackFacing>();
+        return;
+    };
+    commands.entity(attacker).insert(AttackFacing {
+        target,
+        target_position: transform.translation,
+        contact_tick,
+    });
+}
+
+pub(crate) fn update_attack_facing_targets(
+    mut commands: Commands,
+    time: Res<Time<Fixed>>,
+    mut attackers: Query<(Entity, &mut AttackFacing)>,
+    targets: Query<&Transform>,
+) {
+    let tick = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+    for (entity, mut facing) in &mut attackers {
+        if tick > facing.contact_tick {
+            commands.entity(entity).remove::<AttackFacing>();
+        } else if let Ok(transform) = targets.get(facing.target) {
+            facing.target_position = transform.translation;
+        } else {
+            commands.entity(entity).remove::<AttackFacing>();
+        }
+    }
+}
+
 /// Newest complete continuous-input sample accepted from the unreliable
 /// channel. Wrap-aware ordering prevents a delayed packet from restoring stale
 /// movement or look intent.
@@ -1544,6 +1593,7 @@ pub(crate) fn update_skeleton_locomotion(
             &AuthoritativePostureIntent,
             &QuickstepPush,
             &AccumulatedInput,
+            Option<&AttackFacing>,
         ),
         With<Player>,
     >,
@@ -1559,6 +1609,7 @@ pub(crate) fn update_skeleton_locomotion(
         posture,
         quickstep_push,
         accumulated_input,
+        attack_facing,
     ) in &mut players
     {
         if combat_state.is_incapacitated() {
@@ -1595,15 +1646,34 @@ pub(crate) fn update_skeleton_locomotion(
             }
         } else if skeleton.body() != BodyState::Ragdolled {
             skeleton.set_downed_turning(false);
-            transform.rotation = advance_body_facing_with_speed(
-                transform.rotation,
-                controller.orientation,
-                velocity.0,
-                skeleton.action_kind(),
-                skeleton.weapon_guard(),
-                time.delta_secs(),
-                std::f32::consts::PI / combat_config.presentation.body_turn_seconds_per_half_turn,
-            );
+            transform.rotation = if let Some(attack_facing) = attack_facing {
+                let remaining_seconds =
+                    attack_facing.contact_tick.saturating_sub(tick) as f32 / LOCOMOTION_SAMPLE_HZ;
+                let desired_forward = attack_facing.target_position - transform.translation;
+                let turn_speed = body_turn_speed_for_deadline(
+                    transform.rotation,
+                    desired_forward,
+                    remaining_seconds,
+                    time.delta_secs(),
+                );
+                advance_body_facing_toward(
+                    transform.rotation,
+                    desired_forward,
+                    time.delta_secs(),
+                    turn_speed,
+                )
+            } else {
+                advance_body_facing_with_speed(
+                    transform.rotation,
+                    controller.orientation,
+                    velocity.0,
+                    skeleton.action_kind(),
+                    skeleton.weapon_guard(),
+                    time.delta_secs(),
+                    std::f32::consts::PI
+                        / combat_config.presentation.body_turn_seconds_per_half_turn,
+                )
+            };
         }
         project_skeleton_locomotion_with_intent(
             &mut skeleton,

@@ -270,6 +270,8 @@ pub enum MeleeActionRequest {
     Start {
         strike_family: StrikeFamily,
         hand: AttackHand,
+        #[entities]
+        target: Option<Entity>,
     },
     Complete {
         #[entities]
@@ -283,7 +285,10 @@ pub enum MeleeActionRequest {
 /// a target when the client-fired shot missed, but it still consumes ammo.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
 pub enum RangedActionRequest {
-    Start,
+    Start {
+        #[entities]
+        target: Option<Entity>,
+    },
     CompleteMiss,
     CompleteHit {
         #[entities]
@@ -291,6 +296,45 @@ pub enum RangedActionRequest {
         body_part: BodyPart,
         reported_precision: f32,
     },
+}
+
+#[cfg(test)]
+mod combat_action_mapping_tests {
+    use super::{MeleeActionRequest, RangedActionRequest};
+    use adventuresim_tactical_core::prelude::{AttackHand, StrikeFamily};
+    use bevy::ecs::entity::MapEntities;
+    use bevy::prelude::Entity;
+
+    #[test]
+    fn attack_starts_map_their_acquired_target() {
+        let target = Entity::from_bits(21);
+        let mapped = Entity::from_bits(22);
+        let mut melee = MeleeActionRequest::Start {
+            strike_family: StrikeFamily::Swing,
+            hand: AttackHand::Main,
+            target: Some(target),
+        };
+        let mut ranged = RangedActionRequest::Start {
+            target: Some(target),
+        };
+
+        melee.map_entities(&mut (target, mapped));
+        ranged.map_entities(&mut (target, mapped));
+
+        assert!(matches!(
+            melee,
+            MeleeActionRequest::Start {
+                target: Some(found),
+                ..
+            } if found == mapped
+        ));
+        assert!(matches!(
+            ranged,
+            RangedActionRequest::Start {
+                target: Some(found)
+            } if found == mapped
+        ));
+    }
 }
 
 #[derive(Debug, Clone, Event, Serialize, Deserialize, MapEntities)]

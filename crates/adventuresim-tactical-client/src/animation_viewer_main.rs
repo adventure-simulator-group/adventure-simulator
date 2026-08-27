@@ -9,6 +9,7 @@ mod animation_viewer;
 mod camera;
 mod player;
 mod presentation;
+mod targeting;
 
 use std::path::PathBuf;
 

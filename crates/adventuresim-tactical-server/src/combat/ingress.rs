@@ -78,8 +78,10 @@ pub(crate) fn apply_defend_intent(
 
 pub(super) fn on_melee_attack_started(
     event: On<MeleeAttackStartedIntent>,
+    mut commands: Commands,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    transforms: Query<&Transform>,
     viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
     config: Res<TacticalCombatConfig>,
@@ -126,6 +128,13 @@ pub(super) fn on_melee_attack_started(
     {
         return;
     }
+    begin_attack_facing(
+        &mut commands,
+        event.attacker,
+        Some(event.target),
+        start + duration_ticks(event.windup),
+        &transforms,
+    );
     authority.observe(
         Some(event.target),
         CombatInstant::from_elapsed(&time),
@@ -378,6 +387,7 @@ pub(super) fn on_melee_action_request(
     viewer: TacticalPlayerViewer,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    transforms: Query<&Transform>,
     config: Res<TacticalCombatConfig>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
@@ -391,6 +401,7 @@ pub(super) fn on_melee_action_request(
         MeleeActionRequest::Start {
             strike_family,
             hand,
+            target,
         } => {
             let Ok(mut skeleton) = skeletons.get_mut(attacker) else {
                 return;
@@ -450,8 +461,15 @@ pub(super) fn on_melee_action_request(
             {
                 return;
             }
+            begin_attack_facing(
+                &mut cmd,
+                attacker,
+                target,
+                start + duration_ticks(animation_windup),
+                &transforms,
+            );
             authority.observe(
-                None,
+                target,
                 CombatInstant::from_elapsed(&time),
                 minimum_windup,
                 CombatDuration::from_secs_f32(
@@ -500,7 +518,7 @@ pub(super) fn on_ranged_action_request(
         return;
     };
     match **event {
-        RangedActionRequest::Start => {
+        RangedActionRequest::Start { target } => {
             // Same per-weapon windup + jitter-tolerance treatment as the
             // melee path - see `on_melee_action_request`.
             let authored_windup = viewer
@@ -511,7 +529,7 @@ pub(super) fn on_ranged_action_request(
                 player_attack_windups(authored_windup, &config.realtime_authority.melee);
             cmd.trigger(RangedAttackStartedIntent {
                 attacker,
-                target: None,
+                target,
                 animation_windup,
                 minimum_windup,
             });
@@ -547,8 +565,10 @@ pub(super) fn on_ranged_action_request(
 
 pub(super) fn on_ranged_attack_started(
     event: On<RangedAttackStartedIntent>,
+    mut commands: Commands,
     mut authorities: Query<&mut RangedAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    transforms: Query<&Transform>,
     viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
     config: Res<TacticalCombatConfig>,
@@ -590,6 +610,13 @@ pub(super) fn on_ranged_attack_started(
     {
         return;
     }
+    begin_attack_facing(
+        &mut commands,
+        event.attacker,
+        event.target,
+        start + duration_ticks(event.animation_windup),
+        &transforms,
+    );
     authority.observe(
         CombatInstant::from_elapsed(&time),
         event.minimum_windup,

@@ -70,6 +70,7 @@ pub(super) fn on_attack_started(
     let MeleeActionRequest::Start {
         strike_family,
         hand,
+        target: _,
     } = **event
     else {
         return;

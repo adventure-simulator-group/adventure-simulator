@@ -36,6 +36,7 @@ use crate::{
     },
     player::ClientPlayer,
     presentation::TacticalGameplayCamera,
+    targeting::auto_aim_candidate,
 };
 
 const PICKUP_RANGE_M: f32 = 2.0;
@@ -440,6 +441,7 @@ fn auto_aim_scene_item(
         camera.translation(),
         camera.forward().as_vec3(),
         actor.translation(),
+        PICKUP_RANGE_M,
         scene_items
             .iter()
             .filter_map(|(entity, transform, physical)| {
@@ -456,39 +458,9 @@ fn auto_aim_scene_item(
                             &SpatialQueryFilter::from_mask(TACTICAL_TERRAIN_LAYER),
                         )
                         .is_none();
-                visible.then_some((entity, position))
+                visible.then_some((entity, position, entity.to_bits()))
             }),
     )
-}
-
-fn auto_aim_candidate(
-    camera_origin: Vec3,
-    camera_forward: Vec3,
-    actor_position: Vec3,
-    candidates: impl IntoIterator<Item = (Entity, Vec3)>,
-) -> Option<Entity> {
-    let camera_forward = camera_forward.try_normalize()?;
-    candidates
-        .into_iter()
-        .filter_map(|(entity, position)| {
-            let actor_distance_squared = position.distance_squared(actor_position);
-            if actor_distance_squared > PICKUP_RANGE_M * PICKUP_RANGE_M {
-                return None;
-            }
-            let camera_delta = position - camera_origin;
-            let alignment = camera_delta
-                .try_normalize()
-                .map_or(-1.0, |direction| direction.dot(camera_forward));
-            let angular_error = 1.0 - alignment.clamp(-1.0, 1.0);
-            Some((entity, angular_error, actor_distance_squared))
-        })
-        .min_by(|left, right| {
-            left.1
-                .total_cmp(&right.1)
-                .then(left.2.total_cmp(&right.2))
-                .then(left.0.to_bits().cmp(&right.0.to_bits()))
-        })
-        .map(|(entity, _, _)| entity)
 }
 
 fn scene_grab_selection(
@@ -2398,51 +2370,6 @@ mod tests {
         assert_eq!(
             scene_grab_selection(selection, false, Some(Entity::from_bits(23))),
             selection
-        );
-    }
-
-    #[test]
-    fn auto_aim_prefers_cursor_alignment_over_character_distance() {
-        let pointed = Entity::from_bits(31);
-        let nearby_side = Entity::from_bits(32);
-        assert_eq!(
-            auto_aim_candidate(
-                Vec3::Y,
-                Vec3::NEG_Z,
-                Vec3::ZERO,
-                [
-                    (nearby_side, Vec3::new(0.5, 0.0, 0.0)),
-                    (pointed, Vec3::new(0.0, 0.0, -1.8)),
-                ],
-            ),
-            Some(pointed)
-        );
-    }
-
-    #[test]
-    fn auto_aim_has_no_cursor_cone_and_falls_back_to_an_item_behind() {
-        let behind = Entity::from_bits(33);
-        assert_eq!(
-            auto_aim_candidate(
-                Vec3::Y,
-                Vec3::NEG_Z,
-                Vec3::ZERO,
-                [(behind, Vec3::new(0.0, 0.0, 1.5))],
-            ),
-            Some(behind)
-        );
-    }
-
-    #[test]
-    fn auto_aim_excludes_items_outside_character_pickup_range() {
-        assert_eq!(
-            auto_aim_candidate(
-                Vec3::Y,
-                Vec3::NEG_Z,
-                Vec3::ZERO,
-                [(Entity::from_bits(34), Vec3::new(0.0, 0.0, -2.01))],
-            ),
-            None
         );
     }
 
