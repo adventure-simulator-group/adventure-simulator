@@ -34,6 +34,7 @@ use consequence::{
     attacker_weapon_contact_matches, defender_equipment_contact_matches, record_party_injury,
 };
 pub(crate) use ingress::apply_defend_intent;
+pub(crate) use ingress::melee_body_part_lunge_delay;
 use ingress::{
     authoritative_line_of_sight, on_defender_response_request, on_melee_action_request,
     on_melee_attack_started, on_ranged_action_request, on_ranged_attack_started,
@@ -209,6 +210,7 @@ struct MeleeIntentFacts {
     attacker_incapacitated: Option<bool>,
     target_incapacitated: Option<bool>,
     reported_precision: ReportedPrecision,
+    arm_reach: f32,
     weapon_reach: f32,
     range_latency_tolerance: f32,
     separation: f32,
@@ -310,10 +312,15 @@ mod tests {
             attacker_incapacitated: Some(false),
             target_incapacitated: Some(false),
             reported_precision: event.reported_precision,
+            arm_reach: 0.55,
             weapon_reach: 1.0,
             range_latency_tolerance: 0.25,
             separation: 1.0,
-            authority_permits: authority.permits(event.target, CombatInstant::from_elapsed(&time)),
+            authority_permits: authority.permits(
+                event.target,
+                event.body_part,
+                CombatInstant::from_elapsed(&time),
+            ),
             body_part: event.body_part,
             attacker_position: Vec3::ZERO,
             target_position: Vec3::X,
@@ -347,9 +354,10 @@ mod tests {
             attacker_incapacitated: Some(false),
             target_incapacitated: Some(false),
             reported_precision: ReportedPrecision::new(1.0).unwrap(),
+            arm_reach: 0.55,
             weapon_reach: 0.8,
             range_latency_tolerance: 0.25,
-            separation: 2.0,
+            separation: 1.2,
             authority_permits: true,
             body_part: BodyPart::Chest,
             attacker_position: Vec3::ZERO,
@@ -387,6 +395,24 @@ mod tests {
         let mut world = World::new();
         let valid = valid_facts(&mut world);
         assert!(validate_melee_intent_cheap(valid).is_ok());
+        assert!(
+            validate_melee_intent_cheap(MeleeIntentFacts {
+                weapon_reach: 0.0,
+                separation: valid.arm_reach,
+                ..valid
+            })
+            .is_ok(),
+            "fists use anatomical arm reach with zero weapon contribution"
+        );
+        assert_eq!(
+            validate_melee_intent_cheap(MeleeIntentFacts {
+                weapon_reach: 0.0,
+                separation: valid.arm_reach + valid.range_latency_tolerance + 0.01,
+                ..valid
+            })
+            .unwrap_err(),
+            MeleeIntentRejection::OutOfRange
+        );
         assert_eq!(validate_melee_line_of_sight(true), Ok(()));
         assert_eq!(
             validate_melee_line_of_sight(false),
@@ -844,6 +870,7 @@ mod tests {
                 strike_family: StrikeFamily::Thrust,
                 hand: AttackHand::Main,
                 target: None,
+                body_part: None,
             },
         });
         // The bare test attacker has no equipped weapon, so its observed

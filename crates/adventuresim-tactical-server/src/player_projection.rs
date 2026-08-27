@@ -236,6 +236,7 @@ pub(crate) struct ProjectedPlayerSnapshot {
     input_tick: AuthoritativeInputTick,
     motion_snapshot: CharacterMotionSnapshot,
     quickstep_push: QuickstepPush,
+    melee_lunge: Option<MeleeLungeMovement>,
     posture_intent: AuthoritativePostureIntent,
     pace: MovementPace,
     mass: Mass,
@@ -289,6 +290,9 @@ impl DisconnectedProjection {
                     snapshot.melee_authority,
                     snapshot.ranged_authority,
                 ));
+                if let Some(melee_lunge) = snapshot.melee_lunge {
+                    commands.entity(target).insert(melee_lunge);
+                }
                 commands.entity(target).insert((
                     snapshot.collider,
                     snapshot.collision_margin,
@@ -1757,12 +1761,15 @@ pub(crate) fn update_character_motion_snapshots(
             &CharacterControllerState,
             &AuthoritativeInputTick,
             &QuickstepPush,
+            Option<&MeleeLungeMovement>,
             &mut CharacterMotionSnapshot,
         ),
         With<Player>,
     >,
 ) {
-    for (transform, velocity, controller, input, quickstep_push, mut snapshot) in &mut players {
+    for (transform, velocity, controller, input, quickstep_push, melee_lunge, mut snapshot) in
+        &mut players
+    {
         *snapshot = CharacterMotionSnapshot {
             acknowledged_input_tick: input.tick,
             translation: transform.translation,
@@ -1770,6 +1777,7 @@ pub(crate) fn update_character_motion_snapshots(
             linear_velocity: velocity.0,
             grounded: controller.grounded.is_some(),
             quickstep_push: *quickstep_push,
+            melee_lunge: melee_lunge.copied(),
         };
     }
 }
@@ -1805,6 +1813,7 @@ pub(crate) fn on_client_disconnected(
         &AuthoritativeInputTick,
         &CharacterMotionSnapshot,
         &QuickstepPush,
+        Option<&MeleeLungeMovement>,
         &AuthoritativePostureIntent,
         &MovementPace,
         &Mass,
@@ -1850,13 +1859,14 @@ pub(crate) fn on_client_disconnected(
             input_tick: *motion.3,
             motion_snapshot: *motion.4,
             quickstep_push: *motion.5,
-            posture_intent: *motion.6,
-            pace: *motion.7,
-            mass: *motion.8,
-            velocity: *motion.9,
-            skeleton: motion.10.clone(),
-            melee_authority: motion.11.clone(),
-            ranged_authority: motion.12.clone(),
+            melee_lunge: motion.6.copied(),
+            posture_intent: *motion.7,
+            pace: *motion.8,
+            mass: *motion.9,
+            velocity: *motion.10,
+            skeleton: motion.11.clone(),
+            melee_authority: motion.12.clone(),
+            ranged_authority: motion.13.clone(),
             collider: physics.0.clone(),
             collision_margin: *physics.1,
             controller: physics.2.clone(),

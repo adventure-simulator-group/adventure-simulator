@@ -40,6 +40,9 @@ pub struct Player {
 pub struct CharacterDimensions {
     pub leg_length_metres: f32,
     pub body_height_metres: f32,
+    /// Fully extended shoulder-to-hand length. The reference value is the
+    /// `uparm -> lowarm -> wrist` chain measured from the authoritative MHR rig.
+    pub arm_reach_metres: f32,
 }
 
 impl Default for CharacterDimensions {
@@ -47,6 +50,7 @@ impl Default for CharacterDimensions {
         Self {
             leg_length_metres: 0.840_348,
             body_height_metres: 1.9,
+            arm_reach_metres: 0.526_801,
         }
     }
 }

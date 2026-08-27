@@ -187,6 +187,7 @@ pub struct CharacterMotionSnapshot {
     pub linear_velocity: Vec3,
     pub grounded: bool,
     pub quickstep_push: QuickstepPush,
+    pub melee_lunge: Option<MeleeLungeMovement>,
 }
 
 /// Rollback-safe state for a quickstep's finite, foot-supported push.
@@ -205,6 +206,20 @@ pub struct QuickstepPush {
     pub orientation: Quat,
     pub origin: Vec3,
     pub active: bool,
+}
+
+/// A server-owned, collision-resolved forward movement committed when a melee
+/// attack starts. It is intentionally independent of `SkeletonAction`, so the
+/// attack animation remains authoritative while the lower body closes range.
+#[derive(
+    Component, Debug, Clone, Copy, PartialEq, Reflect, serde::Serialize, serde::Deserialize,
+)]
+#[reflect(Component)]
+pub struct MeleeLungeMovement {
+    pub origin: Vec3,
+    pub direction: Vec2,
+    pub distance_metres: f32,
+    pub quickstep: bool,
 }
 
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -539,6 +554,7 @@ fn apply_character_motor(
         Option<&SkeletonState>,
         Option<&MovementPace>,
         Option<&mut QuickstepPush>,
+        Option<&MeleeLungeMovement>,
         &Transform,
         Has<QuickstepMismatchLogged>,
     )>,
@@ -559,10 +575,23 @@ fn apply_character_motor(
         skeleton,
         pace,
         quickstep_push,
+        melee_lunge,
         transform,
         mismatch_logged,
     ) in &mut controllers
     {
+        let attack_quickstep_ended = melee_lunge.is_some_and(|lunge| lunge.quickstep)
+            && !skeleton.is_some_and(|skeleton| {
+                skeleton.action_kind() == crate::animation::SkeletonAction::Attack
+            });
+        let melee_lunge = melee_lunge.filter(|_| {
+            skeleton.is_some_and(|skeleton| {
+                skeleton.action_kind() == crate::animation::SkeletonAction::Attack
+            })
+        });
+        if melee_lunge.is_none() {
+            commands.entity(entity).remove::<MeleeLungeMovement>();
+        }
         // Ahoy's crouch flag supplies the short collider used by downed and
         // posture-transition states. Their configured speeds are already the
         // final physical targets, so the collider must not scale speed again.
@@ -603,6 +632,12 @@ fn apply_character_motor(
                 && skeleton.action_direction() != Vec2::ZERO
         }) {
             controller.speed = speeds.quickstep;
+        } else if let Some(lunge) = melee_lunge {
+            controller.speed = if lunge.quickstep {
+                speeds.quickstep
+            } else {
+                speeds.run
+            };
         } else {
             let body = skeleton.map(SkeletonState::body);
             let input_magnitude = input
@@ -696,9 +731,13 @@ fn apply_character_motor(
             skeleton.action_kind() == crate::animation::SkeletonAction::Dodge
                 && skeleton.action_direction() != Vec2::ZERO
         });
+        let attack_quickstep = melee_lunge.is_some_and(|lunge| lunge.quickstep);
         let quickstep_push_present = quickstep_push.is_some();
         let quickstep_push_active = quickstep_push.as_ref().is_some_and(|push| push.active);
         if let Some(mut push) = quickstep_push {
+            if attack_quickstep_ended {
+                push.cancel();
+            }
             let world_direction = (push.orientation
                 * Vec3::new(push.direction.x, 0.0, -push.direction.y))
             .xz()
@@ -712,7 +751,7 @@ fn apply_character_motor(
             let bounded_recovery = !quickstep_action
                 && elapsed_ticks <= action_ticks + 2
                 && forward_velocity.abs() > 0.02;
-            if push.active && (quickstep_action || bounded_recovery) {
+            if push.active && (quickstep_action || attack_quickstep || bounded_recovery) {
                 let velocity_before = velocity.0;
                 if mismatch_logged {
                     commands.entity(entity).remove::<QuickstepMismatchLogged>();
@@ -721,6 +760,14 @@ fn apply_character_motor(
                     .xz()
                     .dot(world_direction)
                     .max(0.0);
+                if let Some(lunge) = melee_lunge
+                    && lunge.quickstep
+                    && displacement + 0.01 >= lunge.distance_metres
+                {
+                    push.cancel();
+                    commands.entity(entity).remove::<MeleeLungeMovement>();
+                    continue;
+                }
                 // Target the state produced by this integration step. Sampling
                 // the current tick leaves one full force step of momentum for
                 // ordinary locomotion to clean up after the dodge has ended.
@@ -730,7 +777,13 @@ fn apply_character_motor(
                     .map_or(motor.reference_quickstep_leg_length_metres, |dimensions| {
                         dimensions.leg_length_metres
                     });
-                let target_displacement = quickstep_target_displacement_metres(leg_length, motor);
+                let target_displacement = melee_lunge.map_or_else(
+                    || quickstep_target_displacement_metres(leg_length, motor),
+                    |lunge| {
+                        quickstep_target_displacement_metres(leg_length, motor)
+                            .min(lunge.distance_metres)
+                    },
+                );
                 let target = quickstep_motion_target(
                     phase,
                     target_displacement,
@@ -754,7 +807,10 @@ fn apply_character_motor(
                     world_direction * tracking_force / mass_kg.max(1.0) * time.delta_secs();
                 velocity.x += planar_delta.x;
                 velocity.z += planar_delta.y;
-                if !quickstep_action && velocity.xz().dot(world_direction).abs() <= 0.02 {
+                if !quickstep_action
+                    && !attack_quickstep
+                    && velocity.xz().dot(world_direction).abs() <= 0.02
+                {
                     push.cancel();
                 }
 
@@ -803,7 +859,7 @@ fn apply_character_motor(
                 );
                 continue;
             }
-            if push.active && !quickstep_action {
+            if push.active && !quickstep_action && !attack_quickstep {
                 push.cancel();
             }
         }
@@ -858,7 +914,20 @@ fn apply_character_motor(
         let movement = input.last_movement.unwrap_or_default();
         let forward = (orientation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
         let right = (orientation * Vec3::X).with_y(0.0).normalize_or_zero();
-        let desired_direction = (movement.y * forward + movement.x * right).normalize_or_zero();
+        let desired_direction = if let Some(lunge) = melee_lunge {
+            let travelled = (transform.translation - lunge.origin)
+                .xz()
+                .dot(lunge.direction)
+                .max(0.0);
+            if travelled + 0.01 >= lunge.distance_metres {
+                commands.entity(entity).remove::<MeleeLungeMovement>();
+                Vec3::ZERO
+            } else {
+                Vec3::new(lunge.direction.x, 0.0, lunge.direction.y)
+            }
+        } else {
+            (movement.y * forward + movement.x * right).normalize_or_zero()
+        };
         let grounded = controller_state.grounded.is_some();
         let strength_scale = (leg_strength.max(0.0) / motor.reference_leg_strength).max(0.0);
         let agility_scale = (leg_agility.max(0.0) / motor.reference_leg_agility).max(0.0);
@@ -1514,6 +1583,46 @@ mod tests {
             );
         }
         assert!(velocity.abs() <= 0.20, "terminal velocity={velocity}");
+    }
+
+    #[test]
+    fn attack_quickstep_uses_force_tracking_but_caps_travel_at_the_melee_gap() {
+        let config = crate::combat_config::TacticalCombatConfig::default();
+        let motor = &config.movement.motor;
+        let duration = config.movement.maneuvers.quickstep_duration_seconds;
+        let ticks = (duration * LOCOMOTION_SAMPLE_HZ).round() as usize;
+        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let gap = 0.72;
+        let maximum_force = quickstep_peak_horizontal_force_newtons(70.0, 3.0, motor);
+        let mut displacement = 0.0;
+        let mut velocity = 0.0;
+        for tick in 0..ticks {
+            let target = quickstep_motion_target(
+                (tick + 1) as f32 / ticks as f32,
+                gap,
+                duration,
+                motor.quickstep_authored_displacement_profile,
+            );
+            let force = quickstep_tracking_force_newtons(
+                displacement,
+                velocity,
+                target,
+                70.0,
+                maximum_force,
+                delta_seconds,
+            );
+            velocity += force / 70.0 * delta_seconds;
+            displacement += velocity * delta_seconds;
+        }
+
+        assert!((displacement - gap).abs() <= 0.05, "travel={displacement}");
+        assert!(
+            displacement
+                < quickstep_target_displacement_metres(
+                    motor.reference_quickstep_leg_length_metres,
+                    motor,
+                )
+        );
     }
 
     #[test]

@@ -6,6 +6,8 @@ pub(super) fn resolve_melee_attack(
     viewer: TacticalPlayerViewer,
     spatial: SpatialQuery,
     q_character: Query<(&CharacterLook, &Transform)>,
+    q_colliders: Query<&Collider>,
+    q_dimensions: Query<&CharacterDimensions>,
     q_sides: Query<&TacticalCombatSide>,
     q_states: Query<&TacticalCombatState>,
     mut q_authorities: Query<&mut MeleeAttackAuthority>,
@@ -18,14 +20,19 @@ pub(super) fn resolve_melee_attack(
     let attack_style = event.strike_family.melee_style();
     let entity = event.attacker;
     let hand = event.hand;
+    let Ok(mut authority) = q_authorities.get_mut(entity) else {
+        info!(attacker = ?entity, reason = "missing_authority", "melee_completion_rejected");
+        return;
+    };
+    let attack_key = authority.attack_key().unwrap_or_default();
 
     let Ok(attacker_view) = viewer.get_for_attack(entity, hand).inspect_err(|err| {
-        debug!("Rejected attacker view for {entity:?}: {err}");
+        info!(attack_key, attacker = ?entity, reason = %err, "melee_completion_rejected");
     }) else {
         return;
     };
     let Ok(defender_view) = viewer.get(event.target).inspect_err(|err| {
-        debug!("Rejected defender view for {:?}: {err}", event.target);
+        info!(attack_key, attacker = ?entity, target = ?event.target, reason = %err, "melee_completion_rejected");
     }) else {
         return;
     };
@@ -33,7 +40,7 @@ pub(super) fn resolve_melee_attack(
     let Ok([attacker_character, defender_character]) = q_character
         .get_many([entity, event.target])
         .inspect_err(|err| {
-            debug!("Rejected attacker/defender transform: {err}");
+            info!(attack_key, attacker = ?entity, target = ?event.target, reason = %err, "melee_completion_rejected");
         })
     else {
         return;
@@ -42,10 +49,31 @@ pub(super) fn resolve_melee_attack(
     let (defender_look, defender_transform) = defender_character;
 
     let weapon_reach = attacker_view.weapon_reach();
-    let now = CombatInstant::from_elapsed(&time);
-    let Ok(mut authority) = q_authorities.get_mut(entity) else {
+    let Ok(attacker_dimensions) = q_dimensions.get(entity) else {
+        info!(attack_key, attacker = ?entity, reason = "missing_attacker_dimensions", "melee_completion_rejected");
         return;
     };
+    let Ok(attacker_collider) = q_colliders.get(entity) else {
+        info!(attack_key, attacker = ?entity, reason = "missing_attacker_collider", "melee_completion_rejected");
+        return;
+    };
+    let Ok(_defender_collider) = q_colliders.get(event.target) else {
+        info!(attack_key, attacker = ?entity, target = ?event.target, reason = "missing_defender_collider", "melee_completion_rejected");
+        return;
+    };
+    let now = CombatInstant::from_elapsed(&time);
+    let reach = melee_interaction_range(attacker_dimensions.arm_reach_metres, weapon_reach);
+    let surface_distance = super::ingress::configured_body_part_surface_distance(
+        super::ingress::melee_attack_origin(
+            attacker_transform.translation,
+            attacker_collider,
+            *attacker_dimensions,
+        ),
+        defender_transform,
+        event.body_part,
+        &config,
+    )
+    .unwrap_or(f32::INFINITY);
     let facts = MeleeIntentFacts {
         attacker: entity,
         target: event.target,
@@ -60,15 +88,14 @@ pub(super) fn resolve_melee_attack(
             .ok()
             .map(TacticalCombatState::is_incapacitated),
         reported_precision: event.reported_precision,
+        arm_reach: attacker_dimensions.arm_reach_metres,
         weapon_reach,
         range_latency_tolerance: config
             .realtime_authority
             .melee
             .range_latency_tolerance_metres,
-        separation: attacker_transform
-            .translation
-            .distance(defender_transform.translation),
-        authority_permits: authority.permits(event.target, now),
+        separation: surface_distance,
+        authority_permits: authority.permits(event.target, event.body_part, now),
         body_part: event.body_part,
         attacker_position: attacker_transform.translation,
         target_position: defender_transform.translation,
@@ -78,10 +105,7 @@ pub(super) fn resolve_melee_attack(
     let validated = match validate_melee_intent_cheap(facts) {
         Ok(validated) => validated,
         Err(reason) => {
-            debug!(
-                "Rejected melee intent from {entity:?} to {:?}: {reason:?}",
-                event.target
-            );
+            info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
             return;
         }
     };
@@ -94,10 +118,7 @@ pub(super) fn resolve_melee_attack(
         validated.target_position(),
     );
     if let Err(reason) = validate_melee_line_of_sight(line_of_sight) {
-        debug!(
-            "Rejected melee intent from {entity:?} to {:?}: {reason:?}",
-            event.target
-        );
+        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
         return;
     }
     // Mutate the pre-existing authority component synchronously. A later
@@ -106,16 +127,17 @@ pub(super) fn resolve_melee_attack(
     let cooldown =
         CombatDuration::from_secs_f32(config.realtime_authority.melee.replay_cooldown_seconds);
     let Some(authorized) = authority.authorize_attack(validated, now, cooldown) else {
-        debug!("Rejected already-consumed melee authorization for {entity:?}");
+        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = "authorization_consumed", surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
         return;
     };
+    info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_accepted");
     let attack = authorized;
     let (a2, a1) = attack.attacker_yaw().sin_cos();
     let (d2, d1) = attack.target_yaw().sin_cos();
     let flanking = flanking_from_dir((a1, a2), (d1, d2));
 
     let Some(attacker_side) = attacker_view.weapon_holding_side() else {
-        debug!("Rejected attacker without a usable striking side");
+        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "failed", reason = "missing_striking_side", "melee_attack_resolved");
         return;
     };
     let attacker_has_weapon = viewer
@@ -153,7 +175,10 @@ pub(super) fn resolve_melee_attack(
     let attacker_weapon_slot = match attacker_side {
         BodySide::Left => EquipSlot::HoldingLeft,
         BodySide::Right => EquipSlot::HoldingRight,
-        BodySide::Both => return,
+        BodySide::Both => {
+            info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "failed", reason = "ambiguous_striking_side", "melee_attack_resolved");
+            return;
+        }
     };
     let defender_parry_slot = matches!(defender_response, DefenderResponse::Parry { .. })
         .then(|| defender_view.shield_holding_side())
@@ -192,9 +217,13 @@ pub(super) fn resolve_melee_attack(
     match result {
         AttackResult::ToAttacker { balance_damage, .. } => {
             info!(
-                "{entity:?} failed to hit {:?} on {:?} and receiver {balance_damage:.1} balance damage",
-                attack.target(),
-                attack.body_part(),
+                attack_key,
+                attacker = ?entity,
+                target = ?attack.target(),
+                body_part = ?attack.body_part(),
+                outcome = "failed",
+                balance_damage,
+                "melee_attack_resolved"
             );
         }
         AttackResult::ToDefender {
@@ -204,10 +233,16 @@ pub(super) fn resolve_melee_attack(
             ..
         } => {
             info!(
-                "{entity:?} hit {:?} on {:?} for {:.1} damage ({cut_damage:.1} cut + {blunt_damage:.1} blunt) and {balance_damage:.1} balance damage",
-                attack.target(),
-                attack.body_part(),
-                cut_damage + blunt_damage
+                attack_key,
+                attacker = ?entity,
+                target = ?attack.target(),
+                body_part = ?attack.body_part(),
+                outcome = "connected",
+                total_damage = cut_damage + blunt_damage,
+                cut_damage,
+                blunt_damage,
+                balance_damage,
+                "melee_attack_resolved"
             );
         }
     }

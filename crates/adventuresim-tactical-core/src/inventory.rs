@@ -520,7 +520,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.reach)
-            .unwrap_or(crate::combat::HANDS_REACH)
+            .unwrap_or(0.0)
     }
 
     fn weapon_windup_secs(&self) -> f32 {
@@ -713,6 +713,7 @@ mod tests {
         let inventory = viewer.get(&world).unwrap();
 
         let unarmed = inventory.get(owner);
+        assert_eq!(unarmed.weapon_reach(), 0.0);
         let cycle = unarmed.weapon_windup_secs() + unarmed.weapon_recovery_secs();
         assert!((cycle - 0.36).abs() < 1.0e-5);
         assert_eq!(

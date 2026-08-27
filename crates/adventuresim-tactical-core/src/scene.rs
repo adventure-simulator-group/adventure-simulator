@@ -686,13 +686,8 @@ mod tests {
 
     #[test]
     fn collider_heightfield_matches_the_rendered_surface_without_transposing_axes() {
-        let terrain = SceneTerrain::from_heightmap(
-            3,
-            2,
-            1.0,
-            vec![0.0, 1.0, 4.0, 10.0, 13.0, 20.0],
-        )
-        .unwrap();
+        let terrain =
+            SceneTerrain::from_heightmap(3, 2, 1.0, vec![0.0, 1.0, 4.0, 10.0, 13.0, 20.0]).unwrap();
         assert_eq!(
             terrain.collider_height_matrix(),
             vec![vec![0.0, 10.0, 1.0], vec![13.0, 4.0, 20.0]]

@@ -86,6 +86,8 @@ pub(super) fn drive_offensive_combat_ai(
         &TacticalCombatState,
         &SkeletonState,
     )>,
+    colliders: Query<&Collider>,
+    dimensions: Query<&CharacterDimensions>,
     combat_config: Res<TacticalCombatConfig>,
 ) {
     let config = &combat_config.ai.ordinary.offense;
@@ -137,12 +139,35 @@ pub(super) fn drive_offensive_combat_ai(
         let has_ammo = ranged_weapon_needs_ammo_lookup(weapon_is_ranged, weapon_reach)
             && viewer.inventory.get(entity).has_item_id(ARROW_ID);
         let use_ranged = weapon_is_ranged && weapon_reach > 0.0 && has_ammo;
-        let interaction_range = melee_interaction_range(weapon_reach);
+        let dimensions = dimensions.get(entity).copied().unwrap_or_default();
+        let leg_length = dimensions.leg_length_metres;
+        let quickstep_distance =
+            quickstep_target_displacement_metres(leg_length, &combat_config.movement.motor);
+        let melee_lunge_delay = colliders
+            .get(entity)
+            .ok()
+            .zip(colliders.get(target).ok())
+            .and_then(|(attacker_collider, target_collider)| {
+                crate::combat::melee_body_part_lunge_delay(
+                    transform,
+                    attacker_collider,
+                    dimensions,
+                    target_transform,
+                    target_collider,
+                    config.target_body_part,
+                    weapon_reach,
+                    quickstep_distance,
+                    &combat_config,
+                )
+            });
+        let melee_target_reachable = melee_lunge_delay.is_some();
 
         let abort_windup = matches!(
             &controller.phase,
             OffensiveCombatPhase::MeleeWindup { .. }
-                if !weapon_is_melee || weapon_reach <= 0.0 || distance > interaction_range
+                if !weapon_is_melee
+                    || dimensions.arm_reach_metres <= 0.0
+                    || !melee_target_reachable
         ) || matches!(
             &controller.phase,
             OffensiveCombatPhase::RangedWindup(_) if !use_ranged || distance > weapon_reach
@@ -181,7 +206,9 @@ pub(super) fn drive_offensive_combat_ai(
                 }
             }
             OffensiveCombatPhase::Pursuing
-                if weapon_is_melee && weapon_reach > 0.0 && distance <= interaction_range =>
+                if weapon_is_melee
+                    && dimensions.arm_reach_metres > 0.0
+                    && melee_target_reachable =>
             {
                 input.last_movement = None;
                 let Some(strike_family) = skeleton.available_strike_family(strike_family) else {
@@ -190,12 +217,18 @@ pub(super) fn drive_offensive_combat_ai(
                 cmd.trigger(MeleeAttackStartedIntent {
                     attacker: entity,
                     target,
+                    body_part: config.target_body_part,
                     windup: CombatDuration::from_secs_f32(config.windup_seconds),
                     strike_family,
                     hand: AttackHand::Main,
                 });
                 controller.phase = OffensiveCombatPhase::MeleeWindup {
-                    timer: Timer::from_seconds(config.windup_seconds, TimerMode::Once),
+                    timer: Timer::from_seconds(
+                        config
+                            .windup_seconds
+                            .max(melee_lunge_delay.unwrap_or_default()),
+                        TimerMode::Once,
+                    ),
                     strike_family,
                 };
             }
