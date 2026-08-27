@@ -1,6 +1,7 @@
 //! Bounded procedural cloud shells for the grounded tactical camera.
 
 use super::*;
+use fabelgeist_determinism::splitmix64;
 
 const CLOUD_SHADER: &str = "shaders/tactical_clouds.wgsl";
 const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
@@ -8,6 +9,7 @@ const CLOUD_DOME_DISTANCE_METRES: f32 = 20_000.0;
 /// range. Keeping this bounded avoids spending cloud march work on a horizon
 /// that is visually absorbed into haze.
 const CLOUD_MAX_TRACE_DISTANCE_METRES: f32 = 16_000.0;
+#[cfg(test)]
 const CLOUD_AERIAL_FADE_START_FRACTION: f32 = 0.68;
 /// Deliberately smaller than Earth's radius so cloud decks bend into the
 /// tactical horizon within the renderer's bounded trace distance.
@@ -19,21 +21,15 @@ const CLOUD_AERIAL_EXTINCTION_PER_METRE: f32 = 0.000_025;
 const CLOUD_NOISE_VOLUME_EDGE: u32 = 32;
 const CLOUD_NOISE_VOLUME_CHANNELS: usize = 4;
 const CLOUD_NOISE_VOLUME_SEED: u64 = 0x4f7a_95c3_1bd2_e608;
+const CLOUD_NOISE_CHANNEL_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
 
 #[derive(Component)]
 pub(crate) struct TacticalCloudLayer {
     slot: usize,
-    active: bool,
-}
-
-impl TacticalCloudLayer {
-    pub(crate) fn is_active(&self) -> bool {
-        self.active
-    }
+    pub(crate) active: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[allow(dead_code)] // Named variants are consumed by the native capture binary.
 pub(crate) enum TacticalCloudCaptureProfile {
     #[default]
     Cumulus,
@@ -268,10 +264,10 @@ fn cloud_noise_volume_image() -> Image {
             for x in 0..CLOUD_NOISE_VOLUME_EDGE {
                 let cell = u64::from(x) | (u64::from(y) << 8) | (u64::from(z) << 16);
                 for channel in 0..CLOUD_NOISE_VOLUME_CHANNELS {
-                    let value = cloud_noise_hash(
+                    let value = splitmix64(
                         CLOUD_NOISE_VOLUME_SEED
                             ^ cell.rotate_left((channel as u32 + 1) * 11)
-                            ^ (channel as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+                            ^ (channel as u64).wrapping_mul(CLOUD_NOISE_CHANNEL_STRIDE),
                     );
                     pixels.push((value >> 56) as u8);
                 }
@@ -297,15 +293,6 @@ fn cloud_noise_volume_image() -> Image {
         ..ImageSamplerDescriptor::linear()
     });
     image
-}
-
-/// Fixed integer mixing makes the generated volume bit-for-bit repeatable on
-/// every native and browser target; no platform random source is involved.
-fn cloud_noise_hash(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
 }
 
 fn cloud_hemisphere_mesh() -> Mesh {
@@ -371,6 +358,10 @@ fn cloud_sort_bias(slot: usize) -> f32 {
     (2_usize.saturating_sub(slot) as f32) * 1_000.0
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects cloud scene state, lighting, capture controls, and material storage independently"
+)]
 pub(in crate::presentation) fn update_tactical_clouds(
     time: Res<Time>,
     active: Res<ActiveTacticalScene>,
@@ -393,14 +384,14 @@ pub(in crate::presentation) fn update_tactical_clouds(
     else {
         for (mut cloud, _, _, mut visibility) in &mut clouds {
             cloud.active = false;
-            *visibility = cloud_visibility(false, *isolation);
+            *visibility = cloud_visibility(cloud.active, *isolation);
         }
         return;
     };
     let Some(celestial) = celestial.snapshot.as_ref() else {
         for (mut cloud, _, _, mut visibility) in &mut clouds {
             cloud.active = false;
-            *visibility = cloud_visibility(false, *isolation);
+            *visibility = cloud_visibility(cloud.active, *isolation);
         }
         return;
     };
@@ -420,12 +411,12 @@ pub(in crate::presentation) fn update_tactical_clouds(
         transform.translation = camera.translation();
         let Some(mut parameters) = layers[cloud.slot] else {
             cloud.active = false;
-            *visibility = cloud_visibility(false, *isolation);
+            *visibility = cloud_visibility(cloud.active, *isolation);
             continue;
         };
         if parameters.coverage <= 0.001 || parameters.density <= 0.001 {
             cloud.active = false;
-            *visibility = cloud_visibility(false, *isolation);
+            *visibility = cloud_visibility(cloud.active, *isolation);
             continue;
         }
         cloud.active = true;
@@ -458,7 +449,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
         );
         material.spectral = solar_color.extend(1.0);
         material.geometry = cloud_shell_geometry();
-        *visibility = cloud_visibility(true, *isolation);
+        *visibility = cloud_visibility(cloud.active, *isolation);
     }
 }
 

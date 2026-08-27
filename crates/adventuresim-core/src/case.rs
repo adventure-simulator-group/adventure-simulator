@@ -70,6 +70,7 @@ pub struct Case {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum CaseStatus {
     Open,
     Resolved,
@@ -77,6 +78,7 @@ pub enum CaseStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum ContractStatus {
     Offered,
     Accepted,

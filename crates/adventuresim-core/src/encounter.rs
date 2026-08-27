@@ -5,6 +5,16 @@
 //! is intentionally represented as a speed input; absent mounts are neutral.
 
 use crate::bestiary::{ActivityTime, Habitat, ThreatId, select_habitat_relation};
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use fabelgeist_determinism::mix64;
+use serde::{Deserialize, Serialize};
+
+const ENCOUNTER_ID_HIGH_DOMAIN: u64 = 0x656e_636f_756e_7465;
+const ENCOUNTER_ID_LOW_DOMAIN: u64 = 0x7265_6365_6970_7473;
+const ENCOUNTER_ROLL_INDEX_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const ENCOUNTER_ROLL_DOMAIN_STRIDE: u64 = 0xd6e8_feb8_6659_fd93;
+const NARRATIVE_CHANCE_DOMAIN_BASE: u64 = 100;
+const NARRATIVE_SELECTION_DOMAIN_BASE: u64 = 110;
 
 pub const ENCOUNTER_ROLL_INTERVAL_MINUTES: u64 = 180;
 pub const BASE_ENCOUNTER_BASIS_POINTS: u32 = 180;
@@ -23,23 +33,19 @@ pub const NARRATIVE_REST_INTERVAL_MINUTES: u64 = 180;
 pub const NARRATIVE_TRAVEL_CHANCE_BPS: u16 = 900;
 pub const NARRATIVE_REST_CHANCE_BPS: u16 = 1_200;
 
-fn mix_encounter_identity_word(mut value: u64) -> u64 {
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
-}
-
 /// Observer-safe, deterministic identity for a strategic encounter. The two
 /// independently domain-separated words retain no readable journey shape and
 /// provide 128 bits for durable action-receipt identity.
 pub fn opaque_strategic_encounter_id(seed: u64, roll_index: u64) -> String {
-    let high =
-        mix_encounter_identity_word(seed ^ roll_index.rotate_left(17) ^ 0x656e_636f_756e_7465);
-    let low =
-        mix_encounter_identity_word(seed.rotate_left(31) ^ roll_index ^ 0x7265_6365_6970_7473);
+    let high = mix64(seed ^ roll_index.rotate_left(17) ^ ENCOUNTER_ID_HIGH_DOMAIN);
+    let low = mix64(seed.rotate_left(31) ^ roll_index ^ ENCOUNTER_ID_LOW_DOMAIN);
     format!("enc:{high:016x}{low:016x}")
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "retry validation compares every supplied receipt field explicitly"
+)]
 pub fn strategic_encounter_retry_matches(
     receipt_encounter_id: &str,
     receipt_character_id: u64,
@@ -64,7 +70,9 @@ pub enum EncounterTerrain {
     DeepWoods,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
 pub enum EncounterArchetype {
     Bandits,
     Goblins,
@@ -168,16 +176,17 @@ pub fn sustainable_speed_m_per_minute(
     party_size: u16,
     terrain: EncounterTerrain,
 ) -> u32 {
-    let fatigue = 10_000_u32.saturating_sub(u32::from(fatigue_percent) * 50);
+    let whole_bps = u32::from(BASIS_POINTS_PER_WHOLE);
+    let fatigue = whole_bps.saturating_sub(u32::from(fatigue_percent) * 50);
     let encumbrance =
-        encumbrance_remaining_basis_points.clamp(MIN_ENCUMBRANCE_SPEED_BASIS_POINTS, 10_000);
-    let logistics = 10_000_u32
+        encumbrance_remaining_basis_points.clamp(MIN_ENCUMBRANCE_SPEED_BASIS_POINTS, whole_bps);
+    let logistics = whole_bps
         .saturating_sub(
             u32::from(party_size.saturating_sub(1)) * PARTY_MEMBER_LOGISTICS_PENALTY_BASIS_POINTS,
         )
         .max(7_000);
     let terrain: u32 = match terrain {
-        EncounterTerrain::Road => 10_000,
+        EncounterTerrain::Road => whole_bps,
         EncounterTerrain::Open => 9_000,
         EncounterTerrain::SparseWoods => 8_000,
         EncounterTerrain::DeepWoods => 6_500,
@@ -275,7 +284,9 @@ fn select_at_with_problem(
         + if context.night { 90 } else { 0 }
         + quest_frequency_bonus as u32
         + problem.map_or(0, |value| u32::from(value.frequency_bonus_basis_points));
-    if domain_roll(seed, index, 0) % 10_000 >= u64::from(frequency) {
+    if domain_roll(seed, index, EncounterRollDomain::Frequency) % u64::from(BASIS_POINTS_PER_WHOLE)
+        >= u64::from(frequency)
+    {
         return None;
     }
 
@@ -317,13 +328,16 @@ fn select_at_with_problem(
                 weights[slot].saturating_add(u32::from(problem.frequency_bonus_basis_points));
         }
     }
-    let archetype = select_archetype_from_weights(domain_roll(seed, index, 1), weights)?;
+    let archetype = select_archetype_from_weights(
+        domain_roll(seed, index, EncounterRollDomain::Archetype),
+        weights,
+    )?;
     let count = scale_enemy_count(
         enemy_count(seed, index, context.combat_capable_members),
         archetype,
     );
-    let party_roll = (domain_roll(seed, index, 3) % 1000) as u16;
-    let enemy_roll = (domain_roll(seed, index, 4) % 1000) as u16;
+    let party_roll = (domain_roll(seed, index, EncounterRollDomain::PartyAwareness) % 1000) as u16;
+    let enemy_roll = (domain_roll(seed, index, EncounterRollDomain::EnemyAwareness) % 1000) as u16;
     let awareness = awareness_from_rolls(
         party_roll,
         enemy_roll,
@@ -370,7 +384,7 @@ fn encounter_weight(id: ThreatId, habitat: Habitat, night: bool) -> u32 {
         (ActivityTime::Night, true) | (ActivityTime::Day, false) | (ActivityTime::Any, _) => 100,
         _ => 20,
     };
-    (u32::from(profile.base_weight) * habitat * activity / 10_000)
+    (u32::from(profile.base_weight) * habitat * activity / u32::from(BASIS_POINTS_PER_WHOLE))
         .saturating_add(u32::from(profile.curation_weight) / 10)
 }
 
@@ -381,7 +395,9 @@ fn encounter_weight(id: ThreatId, habitat: Habitat, night: bool) -> u32 {
 pub fn enemy_count(seed: u64, index: u64, combat_capable_members: u16) -> u16 {
     let capable = combat_capable_members.max(1);
     let spread = (capable / 2).max(1);
-    capable.saturating_add((domain_roll(seed, index, 2) % u64::from(spread + 1)) as u16)
+    capable.saturating_add(
+        (domain_roll(seed, index, EncounterRollDomain::EnemyCount) % u64::from(spread + 1)) as u16,
+    )
 }
 
 pub fn scale_enemy_count(count: u16, archetype: EncounterArchetype) -> u16 {
@@ -392,7 +408,7 @@ pub fn scale_enemy_count(count: u16, archetype: EncounterArchetype) -> u16 {
             .combat
             .encounter_scale_basis_points,
     );
-    ((u32::from(count) * basis_points).div_ceil(10_000))
+    ((u32::from(count) * basis_points).div_ceil(u32::from(BASIS_POINTS_PER_WHOLE)))
         .max(1)
         .min(u32::from(u16::MAX)) as u16
 }
@@ -421,17 +437,56 @@ pub fn sneak_succeeds(
     party_stealth: u16,
     enemy_awareness: u16,
 ) -> bool {
-    (domain_roll(seed, roll_index, 5) % 1000) as u16 + party_stealth
-        > (domain_roll(seed, roll_index, 6) % 1000) as u16 + enemy_awareness
+    (domain_roll(seed, roll_index, EncounterRollDomain::PartySneak) % 1000) as u16 + party_stealth
+        > (domain_roll(seed, roll_index, EncounterRollDomain::EnemySneak) % 1000) as u16
+            + enemy_awareness
 }
 
-fn domain_roll(seed: u64, index: u64, domain: u64) -> u64 {
-    let mut value = seed
-        ^ index.wrapping_mul(0x9e37_79b9_7f4a_7c15)
-        ^ domain.wrapping_mul(0xd6e8_feb8_6659_fd93);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EncounterRollDomain {
+    Frequency,
+    Archetype,
+    EnemyCount,
+    PartyAwareness,
+    EnemyAwareness,
+    PartySneak,
+    EnemySneak,
+    NarrativeChance(NarrativeBoundaryKind),
+    NarrativeSelection(NarrativeBoundaryKind),
+}
+
+impl EncounterRollDomain {
+    const fn code(self) -> u64 {
+        match self {
+            Self::Frequency => 0,
+            Self::Archetype => 1,
+            Self::EnemyCount => 2,
+            Self::PartyAwareness => 3,
+            Self::EnemyAwareness => 4,
+            Self::PartySneak => 5,
+            Self::EnemySneak => 6,
+            Self::NarrativeChance(kind) => {
+                NARRATIVE_CHANCE_DOMAIN_BASE + narrative_boundary_offset(kind)
+            }
+            Self::NarrativeSelection(kind) => {
+                NARRATIVE_SELECTION_DOMAIN_BASE + narrative_boundary_offset(kind)
+            }
+        }
+    }
+}
+
+const fn narrative_boundary_offset(kind: NarrativeBoundaryKind) -> u64 {
+    match kind {
+        NarrativeBoundaryKind::Travel => 0,
+        NarrativeBoundaryKind::Rest => 1,
+    }
+}
+
+fn domain_roll(seed: u64, index: u64, domain: EncounterRollDomain) -> u64 {
+    mix64(
+        seed ^ index.wrapping_mul(ENCOUNTER_ROLL_INDEX_STRIDE)
+            ^ domain.code().wrapping_mul(ENCOUNTER_ROLL_DOMAIN_STRIDE),
+    )
 }
 
 /// Durable context for a goal-neutral narrative interruption roll. This uses
@@ -495,9 +550,13 @@ pub fn narrative_selection_at(
         NarrativeBoundaryKind::Travel => NARRATIVE_TRAVEL_CHANCE_BPS,
         NarrativeBoundaryKind::Rest => NARRATIVE_REST_CHANCE_BPS,
     };
-    // Domains 100+ are reserved for narrative encounters and cannot perturb
-    // the combat selector's domains 0..=6.
-    if domain_roll(seed, index, 100 + context.kind as u64) % 10_000 >= u64::from(chance) {
+    if domain_roll(
+        seed,
+        index,
+        EncounterRollDomain::NarrativeChance(context.kind),
+    ) % u64::from(BASIS_POINTS_PER_WHOLE)
+        >= u64::from(chance)
+    {
         return None;
     }
     let candidates: Vec<_> = crate::road_encounter_catalog::definitions()
@@ -514,7 +573,11 @@ pub fn narrative_selection_at(
     if total == 0 {
         return None;
     }
-    let mut pick = domain_roll(seed, index, 110 + context.kind as u64) % total;
+    let mut pick = domain_roll(
+        seed,
+        index,
+        EncounterRollDomain::NarrativeSelection(context.kind),
+    ) % total;
     for definition in candidates {
         if pick < u64::from(definition.weight) {
             return Some(NarrativeSelection {

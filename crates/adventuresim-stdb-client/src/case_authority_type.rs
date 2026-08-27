@@ -4,18 +4,19 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::case_resolution_status_type::CaseResolutionStatus;
+use super::case_status_type::CaseStatus;
+use super::investigation_provenance_kind_type::InvestigationProvenanceKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CaseAuthority {
     pub id: String,
     pub investigation_case_id: String,
-    pub provenance_kind: String,
+    pub provenance_kind: InvestigationProvenanceKind,
     pub generated_case_id: String,
     pub local_problem_id: Option<String>,
     pub objective_expression_json: String,
-    pub resolution_status: CaseResolutionStatus,
+    pub resolution_status: CaseStatus,
     pub resolved_by_party_id: Option<String>,
 }
 
@@ -29,11 +30,11 @@ impl __sdk::InModule for CaseAuthority {
 pub struct CaseAuthorityCols {
     pub id: __sdk::__query_builder::Col<CaseAuthority, String>,
     pub investigation_case_id: __sdk::__query_builder::Col<CaseAuthority, String>,
-    pub provenance_kind: __sdk::__query_builder::Col<CaseAuthority, String>,
+    pub provenance_kind: __sdk::__query_builder::Col<CaseAuthority, InvestigationProvenanceKind>,
     pub generated_case_id: __sdk::__query_builder::Col<CaseAuthority, String>,
     pub local_problem_id: __sdk::__query_builder::Col<CaseAuthority, Option<String>>,
     pub objective_expression_json: __sdk::__query_builder::Col<CaseAuthority, String>,
-    pub resolution_status: __sdk::__query_builder::Col<CaseAuthority, CaseResolutionStatus>,
+    pub resolution_status: __sdk::__query_builder::Col<CaseAuthority, CaseStatus>,
     pub resolved_by_party_id: __sdk::__query_builder::Col<CaseAuthority, Option<String>>,
 }
 

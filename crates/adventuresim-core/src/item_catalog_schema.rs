@@ -1,5 +1,6 @@
 //! Exact typed authoring schema shared by the build compiler and runtime.
 
+use crate::combat_style::MeleeAttackStyle;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -85,6 +86,7 @@ pub struct EquipmentPlacement {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentChannel {
     Held,
@@ -99,7 +101,6 @@ pub enum EquipmentChannel {
 }
 
 impl EquipmentChannel {
-    #[allow(dead_code)] // The build-script schema does not aggregate layers.
     pub const fn order(self) -> u8 {
         match self {
             Self::Held => 0,
@@ -114,7 +115,6 @@ impl EquipmentChannel {
         }
     }
 
-    #[allow(dead_code)] // The build-script schema validates this from raw authored values.
     pub const fn singleton_per_location(self) -> bool {
         matches!(
             self,
@@ -188,6 +188,7 @@ fn default_equipment_range_of_motion() -> f32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentBodyPart {
     LeftArm,
@@ -202,6 +203,7 @@ pub enum EquipmentBodyPart {
 /// Fine-grained equipment topology. This is intentionally separate from the
 /// seven-part combat/health `BodyPart` ABI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentLocation {
     Head,
@@ -290,9 +292,11 @@ pub enum WeaponCarry {
     HandOnly,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "snake_case")]
 pub enum Slot {
+    #[default]
     None,
     LeftHolding,
     RightHolding,
@@ -314,14 +318,6 @@ pub enum DamageType {
     Blunt,
     Slash,
     Pierce,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MeleeAttackStyle {
-    #[default]
-    Swing,
-    Stab,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

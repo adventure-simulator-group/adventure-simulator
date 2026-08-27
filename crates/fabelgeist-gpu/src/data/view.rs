@@ -1,5 +1,4 @@
-use crate::data::matrix::Mat4;
-use crate::data::transform::Transform;
+use fabelgeist_math::{Mat4, Transform};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

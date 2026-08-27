@@ -394,7 +394,6 @@ impl<
     C: DomainRightsCommitReceipt,
 > PermissionGrant<S, R, O, J, G, C>
 {
-    #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         id: RightsGrantId,
         revision: RightsRevision,

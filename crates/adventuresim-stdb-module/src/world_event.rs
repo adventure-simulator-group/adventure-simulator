@@ -833,7 +833,10 @@ pub(crate) fn commit_noticed_illegal_foraging(
     .map(|_| ())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(crate) fn commit_generated_case_resolution(
     ctx: &ReducerContext,
     finale_id: &str,
@@ -910,7 +913,10 @@ pub(crate) fn commit_generated_case_resolution(
     .map(|_| ())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(crate) fn commit_food_water_infection(
     ctx: &ReducerContext,
     consumption_id: &str,

@@ -2,6 +2,8 @@
 
 pub const SIM_BOOTSTRAP_TOKEN_ENV: &str = "ADVENTURESIM_SIM_BOOTSTRAP_TOKEN";
 pub const SIM_BOOTSTRAP_TOKEN_HEX_LEN: usize = 64;
+/// Upper bound accepted for any skill value entering a simulation fixture.
+pub const MAX_SIMULATION_SKILL_HOURS: f32 = 1_000_000.0;
 
 fn valid_compiled_token(token: &str) -> bool {
     token.len() == SIM_BOOTSTRAP_TOKEN_HEX_LEN && token.bytes().all(|byte| byte.is_ascii_hexdigit())

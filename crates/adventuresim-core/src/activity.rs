@@ -1,6 +1,11 @@
 //! Strategic schedule activities which combine training with other outcomes.
 
+use fabelgeist_determinism::mix64;
+
 use crate::strategic_time::MINUTES_PER_DAY;
+
+const ACTIVITY_REDISTRIBUTION_DOMAIN: u64 = 0xa4c7_1d5b_93e2_f860;
+const ACTIVITY_REDISTRIBUTION_SEGMENT_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
 
 pub const THIEVERY_UNAVAILABLE_REASON: &str = "Thievery is only available inside settlements.";
 pub const RAIDING_UNAVAILABLE_REASON: &str =
@@ -77,10 +82,10 @@ pub fn redistribute_unavailable_segments<const N: usize>(
 }
 
 fn redistribution_roll(seed: u64, segment: u64) -> u64 {
-    let mut value = seed ^ 0xA4C7_1D5B_93E2_F860 ^ segment.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    value ^ (value >> 31)
+    mix64(
+        seed ^ ACTIVITY_REDISTRIBUTION_DOMAIN
+            ^ segment.wrapping_mul(ACTIVITY_REDISTRIBUTION_SEGMENT_STRIDE),
+    )
 }
 
 impl ActivityLocation {

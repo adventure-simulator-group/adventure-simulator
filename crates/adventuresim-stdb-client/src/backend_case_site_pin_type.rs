@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::destination_knowledge_stage_type::DestinationKnowledgeStage;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendCaseSitePin {
@@ -18,7 +20,7 @@ pub struct BackendCaseSitePin {
     pub latitude_e_7: i32,
     pub coordinates_are_geographic: bool,
     pub distance_m: u64,
-    pub knowledge_stage: String,
+    pub knowledge_stage: DestinationKnowledgeStage,
     pub tracked: bool,
     pub display_title: String,
     pub generated_case: bool,
@@ -47,7 +49,7 @@ pub struct BackendCaseSitePinCols {
     pub latitude_e_7: __sdk::__query_builder::Col<BackendCaseSitePin, i32>,
     pub coordinates_are_geographic: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
     pub distance_m: __sdk::__query_builder::Col<BackendCaseSitePin, u64>,
-    pub knowledge_stage: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
+    pub knowledge_stage: __sdk::__query_builder::Col<BackendCaseSitePin, DestinationKnowledgeStage>,
     pub tracked: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
     pub display_title: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
     pub generated_case: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,

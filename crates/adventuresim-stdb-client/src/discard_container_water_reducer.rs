@@ -6,57 +6,62 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct RestAtSettlementArgs {
+pub(super) struct DiscardContainerWaterArgs {
     pub character_id: u64,
-    pub requested_days: u16,
-    pub at_inn: bool,
+    pub container_object_id: u64,
+    pub requested_ml: u64,
 }
 
-impl From<RestAtSettlementArgs> for super::Reducer {
-    fn from(args: RestAtSettlementArgs) -> Self {
-        Self::RestAtSettlement {
+impl From<DiscardContainerWaterArgs> for super::Reducer {
+    fn from(args: DiscardContainerWaterArgs) -> Self {
+        Self::DiscardContainerWater {
             character_id: args.character_id,
-            requested_days: args.requested_days,
-            at_inn: args.at_inn,
+            container_object_id: args.container_object_id,
+            requested_ml: args.requested_ml,
         }
     }
 }
 
-impl __sdk::InModule for RestAtSettlementArgs {
+impl __sdk::InModule for DiscardContainerWaterArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `rest_at_settlement`.
+/// Extension trait for access to the reducer `discard_container_water`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait rest_at_settlement {
-    /// Request that the remote module invoke the reducer `rest_at_settlement` to run as soon as possible.
+pub trait discard_container_water {
+    /// Request that the remote module invoke the reducer `discard_container_water` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`rest_at_settlement:rest_at_settlement_then`] to run a callback after the reducer completes.
-    fn rest_at_settlement(
+    /// /// Use [`discard_container_water:discard_container_water_then`] to run a callback after the reducer completes.
+    fn discard_container_water(
         &self,
         character_id: u64,
-        requested_days: u16,
-        at_inn: bool,
+        container_object_id: u64,
+        requested_ml: u64,
     ) -> __sdk::Result<()> {
-        self.rest_at_settlement_then(character_id, requested_days, at_inn, |_, _| {})
+        self.discard_container_water_then(
+            character_id,
+            container_object_id,
+            requested_ml,
+            |_, _| {},
+        )
     }
 
-    /// Request that the remote module invoke the reducer `rest_at_settlement` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `discard_container_water` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn rest_at_settlement_then(
+    fn discard_container_water_then(
         &self,
         character_id: u64,
-        requested_days: u16,
-        at_inn: bool,
+        container_object_id: u64,
+        requested_ml: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,12 +71,12 @@ pub trait rest_at_settlement {
     ) -> __sdk::Result<()>;
 }
 
-impl rest_at_settlement for super::RemoteReducers {
-    fn rest_at_settlement_then(
+impl discard_container_water for super::RemoteReducers {
+    fn discard_container_water_then(
         &self,
         character_id: u64,
-        requested_days: u16,
-        at_inn: bool,
+        container_object_id: u64,
+        requested_ml: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -80,10 +85,10 @@ impl rest_at_settlement for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            RestAtSettlementArgs {
+            DiscardContainerWaterArgs {
                 character_id,
-                requested_days,
-                at_inn,
+                container_object_id,
+                requested_ml,
             },
             callback,
         )

@@ -1,3 +1,8 @@
+#![expect(
+    unused_imports,
+    reason = "the gameplay client, animation viewer, and reflection linker consume different parts of this shared facade"
+)]
+
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use adventuresim_tactical_core::prelude::*;
@@ -13,7 +18,6 @@ pub(crate) mod jitter;
 pub(crate) mod pose_buffer;
 mod procedural;
 
-#[allow(unused_imports)]
 pub(crate) use procedural::{
     ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
     HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
@@ -32,7 +36,6 @@ const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
 mod diagnostics;
 use diagnostics::log_animation_diagnostics;
 #[cfg(not(target_family = "wasm"))]
-#[allow(unused_imports)] // Gameplay diagnostics consume these; the viewer target does not.
 pub(crate) use diagnostics::{
     AnimationDiagnosticLog, DiagnosticInputStatus, RenderScheduleTelemetry,
 };
@@ -127,7 +130,6 @@ pub(super) struct AnimationPlayback {
 }
 
 impl AnimationPlayback {
-    #[allow(dead_code)] // Used by the standalone animation-viewer binary.
     pub(super) fn authored_pose_is_ready(&self) -> bool {
         !self.use_authored_bind_pose && !self.clips.is_empty()
     }
@@ -349,6 +351,10 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
     .clamp(Vec2::ZERO, Vec2::ONE)
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query selects newly transformed nodes that do not yet own a captured bind transform"
+)]
 fn capture_authored_bind_transforms(
     mut commands: Commands,
     nodes: Query<(Entity, &Transform), (Added<Transform>, Without<AuthoredBindTransform>)>,

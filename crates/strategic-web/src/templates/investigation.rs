@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::spacetimedb::DestinationKnowledgeStage;
 use crate::spacetimedb::{
     BackendBestiaryDeduction, BackendInvestigationCaseSummary, BackendInvestigationJournalEntry,
     BackendInvestigationLead,
@@ -215,7 +217,7 @@ mod tests {
             summary: summary.into(),
             source_label: source_label.into(),
             confidence_bps: 5500,
-            destination_stage: "textual".into(),
+            destination_stage: DestinationKnowledgeStage::Textual,
             directions: "beyond the mill".into(),
             exact_location_id: String::new(),
             latitude_e7: 0,

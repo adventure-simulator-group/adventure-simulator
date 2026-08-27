@@ -175,9 +175,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     claim,
                     TestimonyChallengeResponses {
                         charm: Some("Help me follow how those signs led thither.".into()),
-                        command: Some(
-                            "Part the tracks observed from the course inferred.".into(),
-                        ),
+                        command: Some("Part the tracks observed from the course inferred.".into()),
                         bluff: Some(
                             "That trail turneth elsewhere upon my map; explain the route.".into(),
                         ),
@@ -220,7 +218,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let has_private_pattern_detail = hash(
         context.observer_entropy_hi ^ context.observer_entropy_lo.rotate_left(17),
         "testimony-concern:private-pattern-detail",
-    ).is_multiple_of(2);
+    )
+    .is_multiple_of(2);
     let evidence_site_label = if family == TemplateFamily::RecurringDepredation {
         "the latest incident site"
     } else {
@@ -277,7 +276,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             spoken_text: presented_location_statement,
             challenge_text: presented_location_challenge,
             challenge_responses: presented_location_responses,
-            destination_stage: "route_segment".into(),
+            destination_stage: DestinationKnowledgeStage::RouteSegment,
             site_id: Some(if reliability == Reliability::Truthful {
                 finale_site.clone()
             } else {
@@ -298,7 +297,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 command: Some("Part what was observed from what was merely supposed.".into()),
                 bluff: Some("I know which detail mattereth; name what was withheld.".into()),
             },
-            destination_stage: "textual".into(),
+            destination_stage: DestinationKnowledgeStage::Textual,
             site_id: None,
             corrects_proposition_id: None,
             referred_witness_ids: vec![],
@@ -321,7 +320,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 command: Some("State exactly where and when it was found.".into()),
                 bluff: Some("The site was searched already; tell me what I will find.".into()),
             },
-            destination_stage: "exact_believed".into(),
+            destination_stage: DestinationKnowledgeStage::ExactBelieved,
             site_id: Some(evidence_site.clone()),
             corrects_proposition_id: None,
             referred_witness_ids: vec![],
@@ -340,7 +339,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 command: Some("Give the whole account now.".into()),
                 bluff: Some("That confirms what I heard elsewhere; continue.".into()),
             },
-            destination_stage: "textual".into(),
+            destination_stage: DestinationKnowledgeStage::Textual,
             site_id: None,
             corrects_proposition_id: None,
             referred_witness_ids: vec![],
@@ -411,7 +410,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         "I followed part of that trail already; complete the route.".into(),
                     ),
                 },
-                destination_stage: "route_segment".into(),
+                destination_stage: DestinationKnowledgeStage::RouteSegment,
                 site_id: Some(finale_site.clone()),
                 corrects_proposition_id: secondary_corrects_proposition_id,
                 referred_witness_ids: vec![],
@@ -521,7 +520,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     }],
                 },
             ];
-            if matches!(cause, CanonicalCause::Hostile(threat) if crate::strategic_action::hostile_surrender_is_authored(threat)) {
+            if matches!(cause, CanonicalCause::Hostile(threat) if crate::strategic_action::hostile_surrender_is_authored(threat))
+            {
                 paths.push(ObjectivePath {
                     objectives: vec![Objective {
                         id: ObjectiveId::new(scoped_id(&prefix, "objective", "surrender")).unwrap(),
@@ -532,31 +532,31 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 });
             }
             (
-            ObjectiveExpression::new(paths).expect("generated objective"),
-            vec![
-                GeneratedFinale {
-                    id: FinaleId::new(scoped_id(&prefix, "finale", "defeat")),
-                    kind: FinaleKind::Defeat,
-                    site_id: finale_site.clone(),
-                    hostile_group_id: Some(hostile_id.clone()),
-                    subject_id: None,
-                    asset_id: None,
-                    strategic_outcome_compatible: true,
-                },
-                GeneratedFinale {
-                    id: FinaleId::new(scoped_id(&prefix, "finale", "driveoff")),
-                    kind: FinaleKind::DriveOff,
-                    site_id: finale_site.clone(),
-                    hostile_group_id: Some(hostile_id.clone()),
-                    subject_id: None,
-                    asset_id: None,
-                    strategic_outcome_compatible: true,
-                },
-            ],
-            vec![],
-            vec![],
-        )
-        },
+                ObjectiveExpression::new(paths).expect("generated objective"),
+                vec![
+                    GeneratedFinale {
+                        id: FinaleId::new(scoped_id(&prefix, "finale", "defeat")),
+                        kind: FinaleKind::Defeat,
+                        site_id: finale_site.clone(),
+                        hostile_group_id: Some(hostile_id.clone()),
+                        subject_id: None,
+                        asset_id: None,
+                        strategic_outcome_compatible: true,
+                    },
+                    GeneratedFinale {
+                        id: FinaleId::new(scoped_id(&prefix, "finale", "driveoff")),
+                        kind: FinaleKind::DriveOff,
+                        site_id: finale_site.clone(),
+                        hostile_group_id: Some(hostile_id.clone()),
+                        subject_id: None,
+                        asset_id: None,
+                        strategic_outcome_compatible: true,
+                    },
+                ],
+                vec![],
+                vec![],
+            )
+        }
         TemplateFamily::DisappearanceOrLoss => match cause {
             CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness => {
                 let objective_id =
@@ -1031,7 +1031,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                     "Another account puts the first fever elsewhere; explain that.".into()
                 }),
             },
-            destination_stage: "textual".into(),
+            destination_stage: DestinationKnowledgeStage::Textual,
             site_id: None,
             corrects_proposition_id: None,
             referred_witness_ids,
@@ -1145,7 +1145,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         });
     }
     let exact = GeneratedActionOutput::Destination {
-        stage: GeneratedDestinationStage::Exact,
+        stage: DestinationKnowledgeStage::ExactBelieved,
         site_id: Some(source_site.clone()),
     };
     let mut actions = vec![
@@ -1214,11 +1214,17 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 track_segment_id: None,
                 outputs: if has_collectible_water_source {
                     vec![
-                        GeneratedActionOutput::Evidence { evidence_id: source_evidence_id.clone() },
-                        GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
+                        GeneratedActionOutput::Evidence {
+                            evidence_id: source_evidence_id.clone(),
+                        },
+                        GeneratedActionOutput::Remediation {
+                            remediation_id: remediation_ref.clone(),
+                        },
                     ]
                 } else {
-                    vec![GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() }]
+                    vec![GeneratedActionOutput::Remediation {
+                        remediation_id: remediation_ref.clone(),
+                    }]
                 },
             },
             GeneratedAction {
@@ -1234,11 +1240,17 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 track_segment_id: None,
                 outputs: if has_collectible_water_source {
                     vec![
-                        GeneratedActionOutput::Evidence { evidence_id: source_evidence_id },
-                        GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
+                        GeneratedActionOutput::Evidence {
+                            evidence_id: source_evidence_id,
+                        },
+                        GeneratedActionOutput::Remediation {
+                            remediation_id: remediation_ref.clone(),
+                        },
                     ]
                 } else {
-                    vec![GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() }]
+                    vec![GeneratedActionOutput::Remediation {
+                        remediation_id: remediation_ref.clone(),
+                    }]
                 },
             },
         ]);
@@ -1288,19 +1300,25 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             let (died_at, death_kind) = if carrier_death {
                 let attack_at = context
                     .now_minute
-                    .saturating_sub(1_440)
+                    .saturating_sub(crate::strategic_time::MINUTES_PER_DAY)
                     .max(became_symptomatic_at);
                 let attack_precedes_terminal =
                     terminal.is_none_or(|(terminal_at, _)| attack_at < terminal_at);
                 if attack_at <= context.now_minute && attack_precedes_terminal {
-                    (Some(attack_at), Some(OutbreakPatientDeathKind::CarrierAttack))
+                    (
+                        Some(attack_at),
+                        Some(OutbreakPatientDeathKind::CarrierAttack),
+                    )
                 } else {
                     (None, None)
                 }
             } else {
                 let past_terminal =
                     terminal.filter(|(terminal_at, _)| *terminal_at <= context.now_minute);
-                (past_terminal.map(|value| value.0), past_terminal.map(|_| OutbreakPatientDeathKind::Disease))
+                (
+                    past_terminal.map(|value| value.0),
+                    past_terminal.map(|_| OutbreakPatientDeathKind::Disease),
+                )
             };
             OutbreakExposure {
                 patient_ref,
@@ -1368,7 +1386,9 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             subject: "several households".into(),
             predicate: "became ill during".into(),
             object: "the same few days".into(),
-            occurred_at: context.now_minute.saturating_sub(3 * 1_440),
+            occurred_at: context
+                .now_minute
+                .saturating_sub(3 * crate::strategic_time::MINUTES_PER_DAY),
         }],
         consequence: ConsequenceProfile {
             symptom: Symptom::SickLocals,

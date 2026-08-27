@@ -1,17 +1,23 @@
 #[cfg(test)]
 mod rest_form_tests {
-    use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
+    use adventuresim_core::strategic_time::{
+        DAYS_PER_YEAR, MINUTES_PER_DAY, MINUTES_PER_YEAR, is_walking_time,
+        minutes_until_next_walking_start,
+    };
+    use adventuresim_world_schema::SettlementActionService;
     use serde_json::json;
 
     use super::{
-        RestForm, SETTLEMENTS_SOURCE, calculate_rest_supply_availability,
+        RestForm, RestSupplySources, SETTLEMENTS_SOURCE, calculate_rest_supply_availability,
         calculate_soap_rest_preview, camp_continue_block_reason, field_shelter_argument,
-        rest_spending_breakdown, safe_rest_error, settlement_rest_minutes, travel_rest_minutes,
+        rest_spending_breakdown, safe_rest_error, settlement_action_service_argument,
+        settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
         Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
         FilthOrigin, FilthSubstance, Hygiene, InventoryItem, InventoryItemAmount, ItemDefinition,
-        Nerve, Outlook, PartyInventoryItem, PartyItemAmount, SelfRegard, Sociability, Temperance,
+        Nerve, Outlook, PartyInventoryItem, PartyItemAmount, SelfRegard, Sociability,
+        StrategicEncounterStatus, Temperance,
     };
     use crate::templates::settlement::SoapRestPreview;
 
@@ -42,6 +48,18 @@ mod rest_form_tests {
     }
 
     #[test]
+    fn settlement_action_service_is_a_typed_unit_variant() {
+        assert_eq!(
+            settlement_action_service_argument(SettlementActionService::Inn),
+            json!({"inn": {}})
+        );
+        assert_eq!(
+            settlement_action_service_argument(SettlementActionService::Temple),
+            json!({"temple": {}})
+        );
+    }
+
+    #[test]
     fn fireplace_convenience_rest_accepts_exact_minutes() {
         assert_eq!(travel_rest_minutes(&form("37", "minutes", None)), Ok(37));
         assert!(travel_rest_minutes(&form("0", "minutes", None)).is_err());
@@ -54,7 +72,6 @@ mod rest_form_tests {
             name: format!("Member {id}"),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: None,
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -106,7 +123,7 @@ mod rest_form_tests {
             id: 1,
             character_id: 1,
             item_id: "soft_soap".into(),
-            qty: 1,
+            quantity: 1,
         }];
         let shared = [
             PartyInventoryItem {
@@ -124,16 +141,19 @@ mod rest_form_tests {
         ];
         let personal_amounts = [InventoryItemAmount {
             inventory_item_id: 1,
-            remaining_milliunits: 1_000_000,
+            remaining_fraction_micros:
+                adventuresim_core::inventory_measurement::ConsumableFractionMicros::WHOLE.get(),
         }];
         let party_amounts = [
             PartyItemAmount {
                 party_inventory_item_id: 2,
-                remaining_milliunits: 1_000_000,
+                remaining_fraction_micros:
+                    adventuresim_core::inventory_measurement::ConsumableFractionMicros::WHOLE.get(),
             },
             PartyItemAmount {
                 party_inventory_item_id: 3,
-                remaining_milliunits: 1_000_000,
+                remaining_fraction_micros:
+                    adventuresim_core::inventory_measurement::ConsumableFractionMicros::WHOLE.get(),
             },
         ];
         let preview = calculate_soap_rest_preview(
@@ -157,13 +177,13 @@ mod rest_form_tests {
                 id: 1,
                 character_id: 1,
                 item_id: "soft_soap".into(),
-                qty: 1,
+                quantity: 1,
             },
             InventoryItem {
                 id: 2,
                 character_id: 1,
                 item_id: "table_wine".into(),
-                qty: 1,
+                quantity: 1,
             },
         ];
         let alcohol = ItemDefinition {
@@ -176,40 +196,40 @@ mod rest_form_tests {
         let amounts = [
             InventoryItemAmount {
                 inventory_item_id: 1,
-                remaining_milliunits: 1_000_000,
+                remaining_fraction_micros:
+                    adventuresim_core::inventory_measurement::ConsumableFractionMicros::WHOLE.get(),
             },
             InventoryItemAmount {
                 inventory_item_id: 2,
-                remaining_milliunits: 1_000_000,
+                remaining_fraction_micros:
+                    adventuresim_core::inventory_measurement::ConsumableFractionMicros::WHOLE.get(),
             },
         ];
         let mut preview = SoapRestPreview::default();
-        calculate_rest_supply_availability(
-            &mut preview,
-            &[member(1)],
-            &supplies,
-            &[],
-            &amounts,
-            &[],
-            std::slice::from_ref(&alcohol),
-            &[personality(1, Temperance::Temperate)],
-            Some("party"),
-        );
+        calculate_rest_supply_availability(&mut preview, RestSupplySources {
+            members: &[member(1)],
+            personal: &supplies,
+            shared: &[],
+            personal_amounts: &amounts,
+            party_amounts: &[],
+            definitions: std::slice::from_ref(&alcohol),
+            personalities: &[personality(1, Temperance::Temperate)],
+            party_id: Some("party"),
+        });
         assert_eq!(preview.available_units, 25);
         assert!(preview.alcohol_available);
         assert!(!preview.alcohol_will_be_consumed);
 
-        calculate_rest_supply_availability(
-            &mut preview,
-            &[member(1)],
-            &supplies,
-            &[],
-            &amounts,
-            &[],
-            &[alcohol],
-            &[personality(1, Temperance::Neutral)],
-            Some("party"),
-        );
+        calculate_rest_supply_availability(&mut preview, RestSupplySources {
+            members: &[member(1)],
+            personal: &supplies,
+            shared: &[],
+            personal_amounts: &amounts,
+            party_amounts: &[],
+            definitions: &[alcohol],
+            personalities: &[personality(1, Temperance::Neutral)],
+            party_id: Some("party"),
+        });
         assert!(preview.alcohol_will_be_consumed);
     }
 
@@ -247,25 +267,40 @@ mod rest_form_tests {
 
     #[test]
     fn days_are_independent_whole_days_with_a_minimum_of_one() {
-        assert_eq!(settlement_rest_minutes(&form("1", "days", None)), Ok(1_440));
+        assert_eq!(
+            settlement_rest_minutes(&form("1", "days", None)),
+            Ok(MINUTES_PER_DAY)
+        );
         assert_eq!(
             settlement_rest_minutes(&form("2", "days", Some(1_441))),
             Ok(2_880)
         );
         assert!(settlement_rest_minutes(&form("0", "days", None)).is_err());
         assert!(settlement_rest_minutes(&form("1.5", "days", None)).is_err());
+        let maximum_days = DAYS_PER_YEAR.to_string();
+        let over_maximum_days = (DAYS_PER_YEAR + 1).to_string();
         assert_eq!(
-            settlement_rest_minutes(&form("365", "days", None)),
-            Ok(365 * 1_440)
+            settlement_rest_minutes(&form(&maximum_days, "days", None)),
+            Ok(MINUTES_PER_YEAR)
         );
-        assert!(settlement_rest_minutes(&form("366", "days", None)).is_err());
+        assert!(settlement_rest_minutes(&form(&over_maximum_days, "days", None)).is_err());
     }
 
     #[test]
     fn rest_spending_itemizes_full_board_and_other_downtime_costs() {
-        assert_eq!(rest_spending_breakdown(4, true, 1_440), (2, 2));
-        assert_eq!(rest_spending_breakdown(10, true, 2_880), (4, 6));
-        assert_eq!(rest_spending_breakdown(2, false, 1_440), (0, 2));
+        assert_eq!(
+            rest_spending_breakdown(4, Some(SettlementActionService::Inn), 1_440),
+            (2, 2)
+        );
+        assert_eq!(
+            rest_spending_breakdown(10, Some(SettlementActionService::Inn), 2_880),
+            (4, 6)
+        );
+        assert_eq!(
+            rest_spending_breakdown(2, Some(SettlementActionService::Temple), 1_440),
+            (0, 2)
+        );
+        assert_eq!(rest_spending_breakdown(2, None, 1_440), (0, 2));
     }
 
     #[test]
@@ -285,7 +320,7 @@ mod rest_form_tests {
     fn rest_failures_have_safe_visible_prose() {
         assert_eq!(
             safe_rest_error("Not enough coin to pay for the inn stay"),
-            "You do not have enough coin for that inn stay."
+            "The rest could not be completed. Review the duration and try again."
         );
         assert!(!safe_rest_error("private injury authority 123").contains("123"));
     }
@@ -345,8 +380,8 @@ mod rest_form_tests {
             "character_id",
             "requested_settlement_id = %id",
             "requested_minutes = ?form.requested_minutes",
-            "at_inn",
-            "service = kind.as_str()",
+            "public_service = ?public_service",
+            "route_service = kind.as_str()",
             "duration_length = form.duration.len()",
             "reason = message",
         ] {
@@ -385,14 +420,16 @@ mod rest_form_tests {
             "requested_settlement_id = %id",
             "character_settlement_id",
             "requested_minutes",
-            "at_inn",
-            "service = kind.as_str()",
+            "public_service = ?public_service",
+            "route_service = kind.as_str()",
             "error = %error",
         ] {
             assert!(reducer_error[..sanitization].contains(field), "{field}");
         }
         assert!(handler.contains("character.current_settlement_id.as_deref()"));
         assert!(handler.contains(".unwrap_or(\"<none>\")"));
+        assert!(handler.contains("Some(service) => vec!["));
+        assert!(handler.contains("settlement_action_service_argument(service)"));
         assert!(reducer_error.contains("settlement rest reducer rejected request"));
     }
 
@@ -422,10 +459,13 @@ mod rest_form_tests {
     #[test]
     fn unresolved_encounters_override_walking_time_for_camp_continuation() {
         assert_eq!(
-            camp_continue_block_reason(Some("awaiting_choice"), true),
+            camp_continue_block_reason(Some(StrategicEncounterStatus::AwaitingChoice), true),
             Some("Resolve the encounter above before continuing travel.")
         );
-        assert_eq!(camp_continue_block_reason(Some("resolved"), true), None);
+        assert_eq!(
+            camp_continue_block_reason(Some(StrategicEncounterStatus::Resolved), true),
+            None
+        );
         assert_eq!(camp_continue_block_reason(None, true), None);
         assert_eq!(
             camp_continue_block_reason(None, false),

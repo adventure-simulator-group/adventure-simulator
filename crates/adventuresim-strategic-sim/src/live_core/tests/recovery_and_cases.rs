@@ -4,7 +4,7 @@ fn off_settlement_recovery_is_bounded_public_and_precedes_quest_selection() {
         agent_id: 0,
         character_id: 7,
         alive: true,
-        condition_status: "incapacitated".into(),
+        condition_status: Some(DomainIncapacitationStatus::Incapacitated),
         hunger: 0.1,
         thirst: 0.2,
         food_days: 3.0,
@@ -25,7 +25,7 @@ fn off_settlement_recovery_is_bounded_public_and_precedes_quest_selection() {
     assert!(expedition_member_needs_recovery(&recovering));
     assert!(!expedition_member_needs_recovery(
         &ExpeditionMemberObservation {
-            condition_status: "ready".into(),
+            condition_status: Some(DomainIncapacitationStatus::Ready),
             ..recovering.clone()
         }
     ));
@@ -33,7 +33,7 @@ fn off_settlement_recovery_is_bounded_public_and_precedes_quest_selection() {
     assert!(!expedition_party_can_resume(std::slice::from_ref(&recovering)));
     assert!(expedition_party_can_resume(&[
         ExpeditionMemberObservation {
-            condition_status: "ready".into(),
+            condition_status: Some(DomainIncapacitationStatus::Ready),
             ..recovering.clone()
         }
     ]));
@@ -103,7 +103,7 @@ fn passive_no_actionable_recovery_is_camp_only_typed_and_publicly_gated() {
         agent_id: 0,
         character_id: 7,
         alive: true,
-        condition_status: "staggered".into(),
+        condition_status: Some(DomainIncapacitationStatus::Staggered),
         hunger: 0.1,
         thirst: 0.2,
         food_days: 3.0,
@@ -124,7 +124,7 @@ fn passive_no_actionable_recovery_is_camp_only_typed_and_publicly_gated() {
     let incapacitated_companion = ExpeditionMemberObservation {
         agent_id: 1,
         character_id: 8,
-        condition_status: "incapacitated".into(),
+        condition_status: Some(DomainIncapacitationStatus::Incapacitated),
         ..staggered_leader.clone()
     };
     let members = [staggered_leader.clone(), incapacitated_companion.clone()];
@@ -147,7 +147,7 @@ fn passive_no_actionable_recovery_is_camp_only_typed_and_publicly_gated() {
     assert!(passive_no_actionable_rest_allowed(
         &[
             ExpeditionMemberObservation {
-                condition_status: "ready".into(),
+                condition_status: Some(DomainIncapacitationStatus::Ready),
                 symptomatic: true,
                 ..staggered_leader.clone()
             },
@@ -176,7 +176,7 @@ fn passive_no_actionable_recovery_is_camp_only_typed_and_publicly_gated() {
     assert!(!passive_no_actionable_rest_allowed(
         &[
             ExpeditionMemberObservation {
-                condition_status: "unavailable".into(),
+                condition_status: None,
                 ..members[0].clone()
             },
             members[1].clone(),
@@ -224,12 +224,12 @@ fn passive_no_actionable_recovery_is_camp_only_typed_and_publicly_gated() {
         })
         .expect("coherent public active-camp predicate");
     assert!(camp_predicate.contains("let [journey] = journeys.as_slice()"));
-    assert!(camp_predicate.contains("let [itinerary] = itineraries.as_slice()"));
     assert!(camp_predicate.contains("&journey.destination != camp_destination"));
     assert!(
         camp_predicate
             .contains("journey.completed_elapsed_minutes >= journey.total_elapsed_minutes")
     );
+    assert!(camp_predicate.contains("&journey.forecast_camp_intervals"));
     assert!(camp_predicate.contains("projected_camp_rest_minutes("));
 
     let passive_call_boundary = source
@@ -575,7 +575,7 @@ fn final_agent_diagnostics_expose_public_remote_and_illness_state() {
         agent_id: 0,
         character_id: 7,
         alive: true,
-        condition_status: "ready".into(),
+        condition_status: DomainIncapacitationStatus::Ready,
         thermal: 0.0,
         wetness_bps: 250,
         thermal_strain: -120,

@@ -214,7 +214,10 @@ fn polearm_finish(mut design: WeaponDesign, length: u32) -> WeaponDesign {
 
 // This constructor keeps the authored dimensions and component shapes at the
 // call site; bundling them into an options struct would obscure the catalog.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn sword(
     id: &str,
     blade_length: u32,
@@ -470,10 +473,8 @@ fn gothic(id: &str, length: u32, haft: u32, concavity: u16) -> WeaponDesign {
     }
 }
 
-// The wildcard arm exits the outer `Option`-returning function from inside a
-// match that is wrapped in `Some`; Clippy's needless-return suggestion is not
-// type-correct for this expression.
-#[allow(clippy::needless_return)]
+// The wildcard arm exits the outer `Option`-returning function from inside the
+// `Some`-wrapped match.
 pub fn preset_design(id: &str) -> Option<WeaponDesign> {
     Some(match id {
         "halberd-1540" => {
@@ -1034,9 +1035,12 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
     })
 }
 
-// The compatibility aliases intentionally return early from this large match
-// so unknown catalog IDs fail closed without constructing a design.
-#[allow(clippy::needless_return)]
+// These two catalog-native designs have no reusable preset. Resolve them before
+// the configured-preset match so unknown catalog IDs still fail closed.
+#[expect(
+    clippy::needless_return,
+    reason = "the catalog-native branches return before configured preset resolution"
+)]
 pub fn default_design(catalog_id: &str) -> Option<WeaponDesign> {
     if catalog_id == "walking_staff" {
         return Some(WeaponDesign {

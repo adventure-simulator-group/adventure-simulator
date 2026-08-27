@@ -7,35 +7,27 @@ use super::{
 };
 use crate::medical::{ChartGapPresentation, ChartReadingPresentation, MedicalPresentation};
 use crate::spacetimedb::{
-    BackendCorpse, Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition,
-    LimbInjury, LimbRegion, ProjectileKind, RetainedProjectile,
+    BackendCorpse, BodyRegion, Character, CharacterAttributes, CharacterLimbs,
+    CharacterStrategicCondition, LimbInjury, ProjectileKind, RetainedProjectile,
 };
 use crate::templates::{
     decorative_game_icon, game_icon, item_display_name, sidebar_section, stat_icon_path,
 };
 
-fn surgery_limb_name(limb: LimbRegion) -> &'static str {
+fn surgery_limb_name(limb: BodyRegion) -> &'static str {
     match limb {
-        LimbRegion::LeftArm => "Left arm",
-        LimbRegion::RightArm => "Right arm",
-        LimbRegion::LeftLeg => "Left leg",
-        LimbRegion::RightLeg => "Right leg",
-        LimbRegion::Chest => "Chest",
-        LimbRegion::Stomach => "Stomach",
-        LimbRegion::Head => "Head",
+        BodyRegion::LeftArm => "Left arm",
+        BodyRegion::RightArm => "Right arm",
+        BodyRegion::LeftLeg => "Left leg",
+        BodyRegion::RightLeg => "Right leg",
+        BodyRegion::Chest => "Chest",
+        BodyRegion::Abdomen => "Stomach",
+        BodyRegion::Head => "Head",
     }
 }
 
-fn surgery_limb_slug(limb: LimbRegion) -> &'static str {
-    match limb {
-        LimbRegion::LeftArm => "left-arm",
-        LimbRegion::RightArm => "right-arm",
-        LimbRegion::LeftLeg => "left-leg",
-        LimbRegion::RightLeg => "right-leg",
-        LimbRegion::Chest => "chest",
-        LimbRegion::Stomach => "stomach",
-        LimbRegion::Head => "head",
-    }
+fn surgery_limb_slug(limb: BodyRegion) -> &'static str {
+    limb.slug()
 }
 
 fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
@@ -126,6 +118,10 @@ fn surgery_difficulty_meter(procedure_label: &str, dc: f32, effective_skill: f32
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the surgery row mirrors independent procedure requirements and form selections"
+)]
 fn surgery_procedure_row(
     action: &str,
     label: &str,
@@ -201,14 +197,17 @@ fn surgery_procedure_row(
 }
 
 /// Manual limb treatment is an SSR-open dialog over the ordinary character rails.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub fn surgery_dialog(
     location: &LocationView,
     active_character: &Character,
     patient: &Character,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
-    selected_limb: LimbRegion,
+    selected_limb: BodyRegion,
     bandages: u32,
     surgery_kits: u32,
     splints: u32,
@@ -300,6 +299,10 @@ pub fn surgery_dialog(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the corpse action form keeps independent authorization and action fields explicit"
+)]
 fn corpse_action_form(
     corpse: &BackendCorpse,
     location_base: &str,
@@ -698,7 +701,8 @@ fn physiology_series_paths(
 }
 
 fn physiology_relative_day_label(minute: u64, today: u64) -> String {
-    let days_ago = today.saturating_sub(minute) / 1_440;
+    let days_ago =
+        today.saturating_sub(minute) / adventuresim_core::strategic_time::MINUTES_PER_DAY;
     match days_ago {
         0 => "Today".to_owned(),
         1 => "1 day ago".to_owned(),
@@ -752,7 +756,8 @@ fn physiology_likelihood(
     tooltip_id: &str,
 ) -> Markup {
     let percent = candidate.likelihood_bps / 100;
-    let hue = candidate.likelihood_bps as f32 * 120.0 / 10_000.0;
+    let hue = candidate.likelihood_bps as f32 * 120.0
+        / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE);
     html! {
         li class="physiology-disease-likelihood"
             style=(format!("--likelihood-hue: {hue:.1}deg"))
@@ -834,188 +839,6 @@ fn physiology_reading_aria_label(
         values[3] / 100,
         reading.confidence_bps / 100,
     )
-}
-
-#[cfg(any())]
-fn physiology_dialog_legacy(
-    medical: &MedicalPresentation,
-    dialog_id: &str,
-    patient_name: &str,
-) -> Markup {
-    html! {
-        dialog id=(dialog_id) class="physiology-dialog" data-physiology-dialog
-            aria-labelledby="physiology-dialog-title" {
-            div class="physiology-dialog-shell" {
-                header class="physiology-dialog-header" {
-                    div {
-                        span class="physiology-dialog-kicker" { "Physician notebook" }
-                        h2 id="physiology-dialog-title" { (patient_name) }
-                    }
-                    button type="button" class="physiology-dialog-close"
-                        aria-label="Close physician notebook" data-physiology-dialog-close { "×" }
-                }
-                div class="physiology-dialog-body" {
-                    @if medical.unavailable {
-                        p class="physiology-empty-state" { "Authorized Physiology chart unavailable." }
-                    } @else if medical.readings.is_empty() {
-                        p class="physiology-empty-state" { "No authorized shared-presence readings." }
-                    } @else {
-                        @let first_minute = medical.readings.first().map_or(0, |reading| reading.minute);
-                        @let last_minute = medical.readings.last().map_or(first_minute, |reading| reading.minute);
-                        section class="physiology-trend-panel" aria-labelledby="physiology-trend-title" {
-                            div class="physiology-section-heading" {
-                                div {
-                                    span class="physiology-eyebrow" { "Over time" }
-                                    h3 id="physiology-trend-title" { "Humour trend" }
-                                }
-                                ul class="physiology-trend-legend" aria-label="Humour colours" {
-                                    @for (name, short, tone) in [
-                                        ("Sanguine", "S", "sanguine"),
-                                        ("Phlegmatic", "P", "phlegmatic"),
-                                        ("Choleric", "C", "choleric"),
-                                        ("Melancholic", "M", "melancholic"),
-                                    ] {
-                                        li class=(format!("physiology-tone-{tone}")) {
-                                            i aria-hidden="true" {}
-                                            span class="sr-only" { (name) }
-                                            span aria-hidden="true" { (short) }
-                                        }
-                                    }
-                                }
-                            }
-                            ul class="physiology-trend-annotation-key" aria-label="Timeline annotations" {
-                                li { i class="physiology-event-key physiology-event-start" aria-hidden="true" {} "Medication start" }
-                                li { i class="physiology-event-key physiology-event-stop" aria-hidden="true" {} "Medication stop" }
-                                li { i class="physiology-gap-key" aria-hidden="true" {} "Not in party" }
-                            }
-                            figure class="physiology-trend-figure" {
-                                svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img"
-                                    aria-label="Quantized humour losses with medication events and party-presence gaps" {
-                                    defs {
-                                        pattern id=(format!("{dialog_id}-gap-pattern")) width="2" height="2"
-                                            patternUnits="userSpaceOnUse" patternTransform="rotate(35)" {
-                                            line x1="0" y1="0" x2="0" y2="2"
-                                                class="physiology-gap-hatch" {}
-                                        }
-                                    }
-                                    path class="physiology-trend-grid" d="M 0,5 H 100 M 0,22 H 100 M 0,39 H 100" {}
-                                    @for gap in &medical.gaps {
-                                        @let gap_start = gap.from.clamp(first_minute, last_minute);
-                                        @let gap_end = gap.to.clamp(first_minute, last_minute);
-                                        @if gap_end > gap_start {
-                                            @let gap_x = physiology_time_x(gap_start, first_minute, last_minute);
-                                            @let gap_width = physiology_time_x(gap_end, first_minute, last_minute) - gap_x;
-                                            g class="physiology-trend-gap" role="img"
-                                                aria-label=(format!(
-                                                    "Not in party from {} to {}",
-                                                    physiology_day_label(gap.from),
-                                                    physiology_day_label(gap.to),
-                                                )) {
-                                                title {
-                                                    "Not in party: "
-                                                    (physiology_day_label(gap.from))
-                                                    "–"
-                                                    (physiology_day_label(gap.to))
-                                                }
-                                                rect x=(format!("{gap_x:.2}")) y="4"
-                                                    width=(format!("{gap_width:.2}")) height="36"
-                                                    fill=(format!("url(#{dialog_id}-gap-pattern)")) {}
-                                            }
-                                        }
-                                    }
-                                    @for administration in &medical.administrations {
-                                        @if administration.administered_at >= first_minute && administration.administered_at <= last_minute {
-                                            @let event_x = physiology_time_x(administration.administered_at, first_minute, last_minute);
-                                            line class="physiology-treatment-event physiology-treatment-start"
-                                                x1=(format!("{event_x:.2}")) y1="4"
-                                                x2=(format!("{event_x:.2}")) y2="40"
-                                                role="img"
-                                                aria-label=(format!(
-                                                    "{} started {}",
-                                                    administration.preparation_id.replace('_', " "),
-                                                    physiology_day_label(administration.administered_at),
-                                                )) {
-                                                title {
-                                                    (administration.preparation_id.replace('_', " "))
-                                                    " started · "
-                                                    (physiology_day_label(administration.administered_at))
-                                                }
-                                            }
-                                        }
-                                        @if let Some(stopped_at) = administration.stopped_at {
-                                            @if stopped_at >= first_minute && stopped_at <= last_minute {
-                                                @let event_x = physiology_time_x(stopped_at, first_minute, last_minute);
-                                                line class="physiology-treatment-event physiology-treatment-stop"
-                                                    x1=(format!("{event_x:.2}")) y1="4"
-                                                    x2=(format!("{event_x:.2}")) y2="40"
-                                                    role="img"
-                                                    aria-label=(format!(
-                                                        "{} stopped {}",
-                                                        administration.preparation_id.replace('_', " "),
-                                                        physiology_day_label(stopped_at),
-                                                    )) {
-                                                    title {
-                                                        (administration.preparation_id.replace('_', " "))
-                                                        " stopped · "
-                                                        (physiology_day_label(stopped_at))
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    @for (index, tone) in ["sanguine", "phlegmatic", "choleric", "melancholic"].into_iter().enumerate() {
-                                        @for path_data in physiology_series_paths(&medical.readings, &medical.gaps, index) {
-                                            path class=(format!("physiology-trend-line physiology-tone-{tone}"))
-                                                d=(path_data) {}
-                                        }
-                                    }
-                                    @for (reading_index, reading) in medical.readings.iter().enumerate() {
-                                        @let reading_x = physiology_time_x(reading.minute, first_minute, last_minute);
-                                        @let tooltip_id = format!("{dialog_id}-reading-{reading_index}");
-                                        g class="physiology-trend-point" {
-                                            rect class="physiology-trend-point-hit"
-                                                x=(format!("{:.2}", (reading_x - 0.3).clamp(0.0, 99.4)))
-                                                y="4" width="0.6" height="36"
-                                                tabindex="0" role="button"
-                                                aria-label=(physiology_reading_aria_label(reading))
-                                                aria-controls=(&tooltip_id) aria-expanded="false"
-                                                data-physiology-reading-point data-physiology-tooltip-id=(&tooltip_id) {}
-                                            line class="physiology-trend-point-guide"
-                                                x1=(format!("{reading_x:.2}")) y1="4"
-                                                x2=(format!("{reading_x:.2}")) y2="40" {}
-                                            @for (humour_index, tone) in ["sanguine", "phlegmatic", "choleric", "melancholic"].into_iter().enumerate() {
-                                                @let reading_y = physiology_humour_y(reading.humour_losses_bps[humour_index]);
-                                                line class=(format!("physiology-trend-point-mark physiology-tone-{tone}"))
-                                                    x1=(format!("{:.2}", reading_x - 0.35)) y1=(format!("{reading_y:.2}"))
-                                                    x2=(format!("{:.2}", reading_x + 0.35)) y2=(format!("{reading_y:.2}")) {}
-                                            }
-                                        }
-                                    }
-                                }
-                                figcaption {
-                                    span { (physiology_day_label(first_minute)) }
-                                    span { "Hover or focus a point for its observation" }
-                                    span { (physiology_day_label(last_minute)) }
-                                }
-                                @for (reading_index, reading) in medical.readings.iter().enumerate() {
-                                    @let reading_x = physiology_time_x(reading.minute, first_minute, last_minute);
-                                    article id=(format!("{dialog_id}-reading-{reading_index}"))
-                                        class="physiology-reading-tooltip"
-                                        style=(format!("--tooltip-x: {reading_x:.2}%"))
-                                        data-physiology-reading-tooltip hidden {
-                                        (physiology_reading_snapshot(reading))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    footer class="physiology-dialog-footer" {
-                        span { "Observed, quantized, and limited to shared presence." }
-                    }
-                }
-            }
-        }
-    }
 }
 
 pub(super) fn physiology_dialog(
@@ -1341,6 +1164,10 @@ pub(super) fn physiology_controls(medical: &MedicalPresentation, action_base: &s
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the health rail renders independently optional character physiology projections"
+)]
 pub(super) fn party_attributes_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
@@ -1388,7 +1215,7 @@ pub(super) fn party_attributes_rail(
                 (attribute_group("Chest", "chest", chest_health, medical, 4, surgery, injuries, projectiles, &[
                     ("Endurance", "endurance", attributes.endurance),
                 ]))
-                (attribute_group("Stomach", "stomach", stomach_health, medical, 5, surgery, injuries, projectiles, &[
+                (attribute_group("Stomach", "abdomen", stomach_health, medical, 5, surgery, injuries, projectiles, &[
                     ("Immunity", "immunity", attributes.immunity),
                     ("Gut", "gut", attributes.gut),
                 ]))
@@ -1417,6 +1244,10 @@ pub(super) fn party_attributes_rail(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the limb column mirrors independent health, treatment, and diagnostic presentation fields"
+)]
 fn limb_attribute_column(
     name: &str,
     slug: &str,
@@ -1444,6 +1275,10 @@ fn limb_attribute_column(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the attribute group mirrors independent health and treatment presentation fields"
+)]
 fn attribute_group(
     name: &str,
     slug: &str,
@@ -1470,6 +1305,10 @@ fn attribute_group(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the labelled attribute group is the final Maud boundary for independent presentation fields"
+)]
 fn attribute_group_with_labels(
     name: &str,
     slug: &str,
@@ -1520,13 +1359,13 @@ fn regional_health_bar(
     let physical_health = physical_health.clamp(0.0, 1.0);
     let physical_damage = 1.0 - physical_health;
     let limb = [
-        LimbRegion::LeftArm,
-        LimbRegion::RightArm,
-        LimbRegion::LeftLeg,
-        LimbRegion::RightLeg,
-        LimbRegion::Chest,
-        LimbRegion::Stomach,
-        LimbRegion::Head,
+        BodyRegion::LeftArm,
+        BodyRegion::RightArm,
+        BodyRegion::LeftLeg,
+        BodyRegion::RightLeg,
+        BodyRegion::Chest,
+        BodyRegion::Abdomen,
+        BodyRegion::Head,
     ][region];
     let injury = injuries.iter().find(|injury| injury.limb == limb);
     let cut = injury
@@ -1833,7 +1672,7 @@ mod tests {
             water_capacity_ml: 2_000,
             incapacitation: 0.0,
             check_multiplier: 1.0,
-            status: "ready".into(),
+            status: adventuresim_core::morale::IncapacitationStatus::Ready,
         };
         let markup =
             strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
@@ -1893,7 +1732,7 @@ mod tests {
             water_capacity_ml: 2_000,
             incapacitation: 0.03,
             check_multiplier: 1.0,
-            status: "ready".into(),
+            status: adventuresim_core::morale::IncapacitationStatus::Ready,
         };
         let sources = [
             CharacterMoraleSource {
@@ -2100,7 +1939,7 @@ mod tests {
         for removed in [
             "Administer preparation",
             "No prepared interventions",
-            "amount_milliunits",
+            "dose_milliunits",
             "name=\"route\"",
             "name=\"region\"",
         ] {
@@ -2113,8 +1952,8 @@ mod tests {
                 preparation_id: "oral_rehydration_draught".into(),
                 display_name: "Oral rehydration draught".into(),
                 profile_version: 1,
-                route: "oral".into(),
-                amount_milliunits: 1_000,
+                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                dose: adventuresim_core::physiology::DoseMilliunits::STANDARD,
                 region: None,
                 administered_at: 100,
                 stopped_at: None,
@@ -2174,8 +2013,8 @@ mod tests {
                 preparation_id: "oral_rehydration".into(),
                 display_name: "Oral rehydration draught".into(),
                 profile_version: 1,
-                route: "oral".into(),
-                amount_milliunits: 1_000,
+                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                dose: adventuresim_core::physiology::DoseMilliunits::STANDARD,
                 region: None,
                 administered_at: 1_800,
                 stopped_at: Some(3_600),
@@ -2302,7 +2141,7 @@ mod tests {
         let injury = LimbInjury {
             id: "1:chest".into(),
             character_id: 1,
-            limb: LimbRegion::Chest,
+            limb: BodyRegion::Chest,
             cut_damage: 0.2,
             bruise_damage: 0.2,
             frostbite_damage: 0.0,

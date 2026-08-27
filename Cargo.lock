@@ -119,9 +119,11 @@ dependencies = [
  "blanket",
  "enum-assoc",
  "enumflags2",
+ "fabelgeist-determinism",
  "serde",
  "serde_json",
  "sha2",
+ "spacetimedb",
 ]
 
 [[package]]
@@ -138,6 +140,7 @@ name = "adventuresim-puzzles"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "fabelgeist-determinism",
  "serde",
  "serde_json",
 ]
@@ -155,15 +158,16 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-core",
  "adventuresim-dialogue",
+ "adventuresim-puzzles",
  "adventuresim-weapon-model",
  "adventuresim-world-schema",
+ "fabelgeist-determinism",
  "log",
  "petname",
  "serde",
  "serde_json",
  "sha2",
  "spacetimedb",
- "strum 0.28.0",
 ]
 
 [[package]]
@@ -176,6 +180,7 @@ dependencies = [
  "adventuresim-world-schema",
  "blake3",
  "clap",
+ "fabelgeist-determinism",
  "reqwest",
  "serde",
  "serde_json",
@@ -199,12 +204,14 @@ dependencies = [
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",
  "adventuresim-weapon-model",
+ "adventuresim-world-schema",
  "bevy",
  "bevy_egui",
  "bevy_flair",
  "bevy_mod_outline",
  "clap",
  "console_error_panic_hook",
+ "fabelgeist-determinism",
  "serde",
  "serde_json",
  "tracing",
@@ -220,10 +227,12 @@ name = "adventuresim-tactical-core"
 version = "0.1.0"
 dependencies = [
  "adventuresim-core",
+ "adventuresim-world-schema",
  "avian3d",
  "bevy",
  "bevy_ahoy",
  "bevy_enhanced_input",
+ "fabelgeist-determinism",
  "noiz",
  "postcard",
  "serde",
@@ -255,6 +264,7 @@ dependencies = [
  "adventuresim-stdb-client",
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",
+ "adventuresim-world-schema",
  "bevy",
  "clap",
  "rand 0.9.5",
@@ -271,7 +281,9 @@ dependencies = [
  "adventuresim-stdb-client",
  "adventuresim-tactical-core",
  "adventuresim-terrain",
+ "adventuresim-world-schema",
  "clap",
+ "fabelgeist-determinism",
  "flate2",
  "rand 0.9.5",
  "serde_json",
@@ -284,6 +296,7 @@ dependencies = [
 name = "adventuresim-terrain"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-world-schema",
  "flate2",
  "serde",
  "serde_json",
@@ -314,6 +327,7 @@ dependencies = [
  "clap",
  "csv",
  "dbase",
+ "fabelgeist-determinism",
  "geo",
  "geozero",
  "html-escape",
@@ -337,6 +351,7 @@ dependencies = [
 name = "adventuresim-world-schema"
 version = "0.1.0"
 dependencies = [
+ "fabelgeist-determinism",
  "serde",
  "serde_json",
  "spacetimedb",
@@ -4521,6 +4536,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "fabelgeist-determinism"
+version = "0.1.0"
 
 [[package]]
 name = "fabelgeist-fbx"
@@ -9832,6 +9851,7 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-core",
  "adventuresim-dialogue",
+ "adventuresim-puzzles",
  "adventuresim-stdb-client",
  "adventuresim-terrain",
  "adventuresim-weapon-model",

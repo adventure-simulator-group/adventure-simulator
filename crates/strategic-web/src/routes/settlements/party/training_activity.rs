@@ -162,7 +162,7 @@ pub(super) async fn perform_immediate_activity(
         return (StatusCode::BAD_REQUEST, "Unknown activity").into_response();
     };
     if form.requested_minutes < 60
-        || form.requested_minutes > 1_440
+        || form.requested_minutes > adventuresim_core::strategic_time::MINUTES_PER_DAY
         || form.requested_minutes % 60 != 0
     {
         return (StatusCode::BAD_REQUEST, "Choose one to 24 whole hours").into_response();

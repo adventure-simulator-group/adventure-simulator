@@ -80,6 +80,10 @@ fn character_summary_rail(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the stats panel renders independently optional character projections"
+)]
 pub(crate) fn character_stats_panel(
     character: &Character,
     capability: Option<&CharacterCapability>,
@@ -223,6 +227,10 @@ pub(crate) fn character_visual_preview(character: &Character) -> Markup {
 }
 
 /// Active character's combined strategic view.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the personal page boundary composes independently authorized character projections"
+)]
 pub fn party_personal_page(
     location: &LocationView,
     active_character: &Character,
@@ -352,6 +360,10 @@ pub fn party_personal_page(
     location.render_layout("Party", content, Some(&active_character.name))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the party stats page boundary composes independently authorized character projections"
+)]
 pub fn party_stats_page(
     location: &LocationView,
     selected: &Character,
@@ -488,6 +500,10 @@ pub(super) fn religion_name(religion_id: Option<&str>) -> &'static str {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the biography rail renders independent identity, reputation, and organization projections"
+)]
 fn character_bio_rail(
     character: &Character,
     religion_id: Option<&str>,

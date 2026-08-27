@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const { readRustModuleSource } = require("./rust-module-source.cjs");
+const strategicCalendar = require("./strategic-calendar-fixture.cjs");
 
 const source = fs.readFileSync("crates/strategic-web/static/strategic-time.js", "utf8");
 const buildingSource = fs.readFileSync("crates/strategic-web/static/building-state.js", "utf8");
@@ -20,6 +21,7 @@ test("grouped inventory disclosures stay beside their labels in narrow merchant 
 const layoutTemplate = fs.readFileSync("crates/strategic-web/src/templates/layout.rs", "utf8");
 const settlementTemplate = readRustModuleSource("crates/strategic-web/src/templates/settlement/mod.rs");
 const window = {
+  strategicCalendar,
   queueStrategicInitialLoad: () => new Promise(() => {}),
   strategicBackgroundFetch() {},
   reportStrategicError() {},
@@ -193,7 +195,7 @@ test("quest and camp headers share the tent while keeping fire and enemy layers 
   assert.doesNotMatch(layoutTemplate, /aria-label="(?:Encounter|Loot)"/);
   assert.match(layoutCss, /service-tab-icon-enemy[\s\S]*death-skull\.svg/);
   assert.match(layoutCss, /data-environment="wilderness"[\s\S]*\.wilderness-tab-prop \{[\s\S]*background-blend-mode: color, normal[\s\S]*pointer-events: none/);
-  assert.match(settlementTemplate, /actual_camp_intervals[\s\S]*movement_minute == journey\.completed_minutes/);
+  assert.match(settlementTemplate, /actual_camp_intervals[\s\S]*movement_minute == journey\.completed_movement_minutes/);
   assert.match(settlementTemplate, /camp_location_layout_with_session\([\s\S]*camp_fire_lit/);
   assert.doesNotMatch(settlementTemplate, /camp-fire|fire-state|rested=.*Query/);
 });

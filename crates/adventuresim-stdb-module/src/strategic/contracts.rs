@@ -6,6 +6,10 @@ fn contract_interaction_receipt_id(
     format!("interaction:{contract_id}:{party_id}:{stage:?}").to_lowercase()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the receipt records every immutable contract interaction coordinate"
+)]
 fn record_contract_issuer_interaction(
     ctx: &ReducerContext,
     character_id: u64,
@@ -71,7 +75,10 @@ fn record_contract_issuer_interaction(
         || presence.location_id != location_id
         || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
     {
-        return Err("Contract issuer is not available for interaction".into());
+        return Err(adventuresim_core::reducer_error::coded_reducer_error(
+            adventuresim_core::reducer_error::ReducerErrorCode::ContractIssuerUnavailable,
+            "Contract issuer is not available for interaction",
+        ));
     }
     let id = contract_interaction_receipt_id(&contract_id, &party_id, stage);
     let row = ContractIssuerInteractionReceipt {
@@ -246,7 +253,7 @@ pub fn accept_contract(
         .id()
         .find(&quest.case_id)
         .ok_or("Contract case not found")?;
-    if case.resolution_status != CaseResolutionStatus::Open {
+    if case.resolution_status != CaseStatus::Open {
         return Err("This case is no longer open".into());
     }
 

@@ -1,5 +1,6 @@
 //! Authoritative recipe-driven smithing transactions.
 
+use adventuresim_core::inventory_measurement::ConsumableFractionMicros;
 use adventuresim_weapon_model::{
     MaterialClass, WeaponDesign, decode, derive_material_masses, derive_properties,
 };
@@ -7,7 +8,6 @@ use spacetimedb::{ReducerContext, reducer};
 
 use crate::character::character;
 use crate::inventory_amount::inventory_item_amount;
-use crate::inventory_container::inventory_object;
 use crate::item::{add_inventory_item_checked, inventory_item};
 
 pub const FORGE_MINUTES_BASE: u64 = 60;
@@ -34,14 +34,16 @@ pub fn forge_material_requirements(design: &WeaponDesign) -> Result<Vec<(String,
     let mut requirements = std::collections::BTreeMap::<String, u32>::new();
     for mass in derive_material_masses(design).map_err(|errors| format!("{errors:?}"))? {
         let item_id = stock_id(mass.material);
-        let milliunits = (mass.mass_kg / stock_unit_kg(item_id) * 1_000_000.0).ceil();
-        if !milliunits.is_finite() || milliunits > u32::MAX as f32 {
+        let required_micros = (mass.mass_kg / stock_unit_kg(item_id)
+            * ConsumableFractionMicros::MICROS_PER_WHOLE as f32)
+            .ceil();
+        if !required_micros.is_finite() || required_micros > u32::MAX as f32 {
             return Err("Weapon material requirement is outside the supported range".into());
         }
         requirements
             .entry(item_id.into())
-            .and_modify(|total| *total = total.saturating_add(milliunits as u32))
-            .or_insert(milliunits as u32);
+            .and_modify(|total| *total = total.saturating_add(required_micros as u32))
+            .or_insert(required_micros as u32);
     }
     Ok(requirements.into_iter().collect())
 }
@@ -64,7 +66,7 @@ fn available(ctx: &ReducerContext, character_id: u64, item_id: &str) -> u32 {
                 .inventory_item_amount()
                 .inventory_item_id()
                 .find(row.id)
-                .map(|amount| amount.remaining_milliunits)
+                .map(|amount| amount.remaining_fraction_micros)
         })
         .fold(0_u32, u32::saturating_add)
 }
@@ -73,7 +75,7 @@ fn consume(
     ctx: &ReducerContext,
     character_id: u64,
     item_id: &str,
-    requested: u32,
+    requested_micros: u32,
 ) -> Result<(), String> {
     let mut rows = ctx
         .db
@@ -83,11 +85,15 @@ fn consume(
         .filter(|row| row.item_id == item_id)
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.id);
-    let mut remaining = requested;
+    let mut remaining_micros = requested_micros;
     for row in rows {
-        let consumed = crate::inventory_amount::consume_personal(ctx, row.id, remaining)?;
-        remaining -= consumed;
-        if remaining == 0 {
+        let requested_fraction = ConsumableFractionMicros::try_new(
+            remaining_micros.min(ConsumableFractionMicros::MICROS_PER_WHOLE),
+        )
+        .expect("bounded smithing request must fit one consumable row");
+        let consumed = crate::inventory_amount::consume_personal(ctx, row.id, requested_fraction)?;
+        remaining_micros -= consumed.get();
+        if remaining_micros == 0 {
             return Ok(());
         }
     }
@@ -150,13 +156,12 @@ pub fn forge_weapon(
     }
     let inventory_id = add_inventory_item_checked(ctx, character_id, &design.catalog_id, 1)?
         .ok_or("Could not create forged weapon")?;
-    let object = ctx
-        .db
-        .inventory_object()
-        .location_and_row()
-        .filter(("personal", inventory_id))
-        .next()
-        .ok_or("Forged weapon has no physical identity")?;
+    let object = crate::inventory_container::object_for_row(
+        ctx,
+        adventuresim_core::physical_object::CarriedInventoryScope::Personal,
+        inventory_id,
+    )?
+    .ok_or("Forged weapon has no physical identity")?;
     crate::weapon_instance::replace_design(ctx, object.id, &design)
 }
 

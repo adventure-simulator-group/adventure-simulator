@@ -30,6 +30,18 @@ pub enum MovementPace {
     Sprint,
 }
 
+type MovementControllerQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static AccumulatedInput,
+        &'static mut CharacterController,
+        Option<&'static SkeletonState>,
+        Option<&'static MovementPace>,
+    ),
+>;
+
 pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 1.4;
 pub const BREATH_PER_METRE_PER_SECOND: f32 = 0.0034;
 pub const TACTICAL_BREATH_RESPONSE_SCALE: f32 = 5.0;
@@ -301,13 +313,7 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
 }
 
 fn apply_analogue_movement_speed(
-    mut controllers: Query<(
-        Entity,
-        &AccumulatedInput,
-        &mut CharacterController,
-        Option<&SkeletonState>,
-        Option<&MovementPace>,
-    )>,
+    mut controllers: MovementControllerQuery<'_, '_>,
     viewer: TacticalPlayerViewer,
 ) {
     for (entity, input, mut controller, skeleton, pace) in &mut controllers {

@@ -25,6 +25,7 @@ bevy = { workspace = true, features = ["multi_threaded"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["server"] }
 adventuresim-tactical-core.workspace = true
 adventuresim-core.workspace = true
+adventuresim-world-schema.workspace = true
 
 # SpacetimeDB client
 adventuresim-stdb-client.workspace = true 

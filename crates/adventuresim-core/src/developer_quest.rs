@@ -1858,7 +1858,14 @@ pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
             "reliabilities": ["truthful", "mistaken", "evasive", "deceptive", "partly_truthful"],
             "evidence_check_stats": ["eyesight", "intelligence", "instinct"],
             "route_classes": ["physical_trail", "pattern_surveillance", "social_inquiry"],
-            "destination_stages": ["unknown", "textual", "landmark", "approximate_area", "route_segment", "exact"],
+            "destination_stages": [
+                crate::investigation::DestinationKnowledgeStage::Unknown,
+                crate::investigation::DestinationKnowledgeStage::Textual,
+                crate::investigation::DestinationKnowledgeStage::Landmark,
+                crate::investigation::DestinationKnowledgeStage::ApproximateArea,
+                crate::investigation::DestinationKnowledgeStage::RouteSegment,
+                crate::investigation::DestinationKnowledgeStage::ExactBelieved,
+            ],
             "finale_kinds": ["defeat", "drive_off", "capture", "rescue", "retrieve_return", "expose", "negotiate"],
             "dialogue_actions": ["expose", "return_asset"]
             ,"investigation_actions": ["inspect_site", "search_area", "follow_tracks", "reacquire_tracks", "locate_contact", "watch", "patrol", "lay_ambush", "approach_lead"]

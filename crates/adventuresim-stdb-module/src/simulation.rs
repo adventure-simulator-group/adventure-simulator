@@ -4,6 +4,11 @@ use spacetimedb::{
     Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
 
+use adventuresim_core::simulation_security::MAX_SIMULATION_SKILL_HOURS;
+use adventuresim_core::strategic_time::{
+    MINUTES_PER_DAY, MINUTES_PER_YEAR, real_micros_for_official_minutes,
+};
+
 use crate::character::character;
 use crate::investigation::investigation_witness_referral__view;
 use crate::local_problem::local_problem_receipt__view;
@@ -18,8 +23,7 @@ use crate::{
 /// Ordinary module builds deliberately contain no simulation capability. The
 /// disposable launcher supplies this only to the one module build it owns.
 const COMPILED_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_SIM_BOOTSTRAP_TOKEN");
-const MAX_INITIAL_SKILL_HOURS: f32 = 1_000_000.0;
-const MAX_SIMULATION_CLOCK_ADVANCE_MINUTES: u64 = 100 * 365 * 1_440;
+const MAX_SIMULATION_CLOCK_ADVANCE_MINUTES: u64 = 100 * MINUTES_PER_YEAR;
 const SIMULATION_STARTING_COIN: u32 = 100;
 
 fn valid_simulation_clock_advance(delta_minutes: u64) -> bool {
@@ -27,15 +31,15 @@ fn valid_simulation_clock_advance(delta_minutes: u64) -> bool {
 }
 
 fn simulation_epoch_shift_micros(delta_minutes: u64) -> Option<i64> {
-    i64::try_from((u128::from(delta_minutes) * 84_000_000_u128).div_ceil(73)).ok()
+    i64::try_from(real_micros_for_official_minutes(delta_minutes)).ok()
 }
 
 fn simulation_religion_hours_valid(hours: adventuresim_world_schema::ReligionHours) -> bool {
-    hours.direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+    hours.direct_fields_valid(MAX_SIMULATION_SKILL_HOURS)
 }
 
 fn simulation_bestiary_hours_valid(hours: adventuresim_world_schema::BestiaryHours) -> bool {
-    hours.direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+    hours.direct_fields_valid(MAX_SIMULATION_SKILL_HOURS)
 }
 
 #[derive(Clone, Debug)]
@@ -394,9 +398,8 @@ pub fn advance_simulation_world_time(
         .id()
         .find(0)
         .ok_or("Simulation world clock is not initialized")?;
-    // The authoritative clock runs at one real week per 365-day game year:
-    // 84/73 real seconds per official minute. Move its epoch by the inverse
-    // transform, rounding up so every requested official minute is observed.
+    // Move the epoch by the inverse authoritative-clock transform, rounding up
+    // so every requested official minute is observed.
     let delta_micros = simulation_epoch_shift_micros(delta_minutes)
         .ok_or("Simulation world-time advance overflow")?;
     clock.epoch_micros = clock
@@ -435,6 +438,10 @@ pub fn kill_simulation_character(
 /// Configure a fresh character only inside the claimed isolated run. Combat
 /// entropy is intentionally absent; autoresolve continues to use server RNG.
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the simulation reducer exposes each independently controlled fixture field"
+)]
 pub fn configure_simulation_character(
     ctx: &ReducerContext,
     nonce: String,
@@ -511,16 +518,16 @@ pub fn configure_simulation_character(
         skills.tailoring_hours,
     ]
     .into_iter()
-    .all(|value| value.is_finite() && (0.0..=MAX_INITIAL_SKILL_HOURS).contains(&value))
+    .all(|value| value.is_finite() && (0.0..=MAX_SIMULATION_SKILL_HOURS).contains(&value))
         && simulation_religion_hours_valid(skills.religion_hours)
         && simulation_bestiary_hours_valid(skills.bestiary_hours)
         && skills
             .oral_languages
-            .direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+            .direct_fields_valid(MAX_SIMULATION_SKILL_HOURS)
         && skills
             .written_languages
-            .direct_fields_valid(MAX_INITIAL_SKILL_HOURS);
-    if !attributes_valid || !skills_valid || downtime.allocated_minutes() > 1_440 {
+            .direct_fields_valid(MAX_SIMULATION_SKILL_HOURS);
+    if !attributes_valid || !skills_valid || downtime.allocated_minutes() > MINUTES_PER_DAY {
         return Err("Simulation profile is outside bounded gameplay ranges".into());
     }
     if ctx.db.settlement().id().find(&settlement_id).is_none() {
@@ -631,8 +638,13 @@ pub fn seed_simulation_disease(
     // Advance through the same disease interval hooks as ordinary gameplay so
     // the simulator observes symptom onset instead of receiving hidden fixture
     // knowledge from the private infection row.
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        requested,
+        crate::surgery::InjuryRecoveryMinutes::NONE,
+    )?
+    .elapsed;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
     let mut time = ctx
@@ -641,7 +653,12 @@ pub fn seed_simulation_disease(
         .character_id()
         .find(character_id)
         .ok_or("Simulation character time not found")?;
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    let settled = crate::surgery::settle_injuries(
+        ctx,
+        character_id,
+        elapsed,
+        crate::surgery::InjuryRecoveryMinutes::NONE,
+    )?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     let interval_end = time.minutes;
     ctx.db.character_time().character_id().update(time);
@@ -752,17 +769,21 @@ mod tests {
     #[test]
     fn simulation_world_time_advance_is_positive_and_bounded() {
         assert!(!valid_simulation_clock_advance(0));
-        assert!(valid_simulation_clock_advance(1_440));
+        assert!(valid_simulation_clock_advance(
+            adventuresim_core::strategic_time::MINUTES_PER_DAY
+        ));
         assert!(valid_simulation_clock_advance(
             MAX_SIMULATION_CLOCK_ADVANCE_MINUTES
         ));
         assert!(!valid_simulation_clock_advance(
             MAX_SIMULATION_CLOCK_ADVANCE_MINUTES + 1
         ));
-        let shift = simulation_epoch_shift_micros(1_440).unwrap();
+        let shift =
+            simulation_epoch_shift_micros(adventuresim_core::strategic_time::MINUTES_PER_DAY)
+                .unwrap();
         assert_eq!(
             adventuresim_core::strategic_time::elapsed_official_minutes(-shift, 0),
-            1_440
+            adventuresim_core::strategic_time::MINUTES_PER_DAY
         );
     }
 }

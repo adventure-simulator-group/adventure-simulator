@@ -96,10 +96,7 @@ pub(super) async fn begin_service_apprenticeship(
     };
     let settlement = state
         .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&id))
         .await
         .ok()
         .flatten();
@@ -383,10 +380,7 @@ pub(super) async fn service_quest_offers(
     {
         state
             .db
-            .query::<Party>(&format!(
-                "SELECT * FROM party WHERE id = {}",
-                sql_string_literal(party_id)
-            ))
+            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -540,10 +534,10 @@ pub(super) async fn service_quest_offers(
                     party.active_contract_id.as_deref() == Some(quest.id.as_str())
                         && quest.accepted_by.as_deref() == Some(party.id.as_str())
                 });
-                let state = if quest.status == ContractPresentationStatus::Offered {
+                let state = if quest.status == ContractStatus::Offered {
                     "available"
                 } else if is_current
-                    && quest.status == ContractPresentationStatus::ReadyToReport
+                    && quest.status == ContractStatus::ReadyToReport
                 {
                     "ready"
                 } else if is_current {
@@ -655,7 +649,7 @@ mod bestiary_quest_presentation_tests {
             settlement_id: "s".into(),
             service_id: "inn".into(),
             issuer_resident_character_id: String::new(),
-            status: ContractPresentationStatus::Offered,
+            status: ContractStatus::Offered,
             accepted_by: None,
             opposition_wording: opposition_wording.into(),
             opposition_count_wording: "perhaps several".into(),
@@ -690,7 +684,7 @@ pub(super) fn role_requirement_labels(role: &PartyRecruitmentRole) -> Vec<String
             labels.push(label.to_string());
         }
     }
-    let precision = role.effective_weapon_precision();
+    let precision = requirements.weapon_precision;
     if precision > 0.0 {
         labels.push(format!("Weapon precision {precision:.1}+"));
     }
@@ -761,8 +755,8 @@ pub(super) fn matched_role_requirements(
             matched += 1;
         }
     }
-    if role.effective_weapon_precision() > 0.0
-        && capability.weapon_precision >= role.effective_weapon_precision()
+    if requirements.weapon_precision > 0.0
+        && capability.weapon_precision >= requirements.weapon_precision
     {
         matched += 1;
     }

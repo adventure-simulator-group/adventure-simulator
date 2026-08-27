@@ -1,7 +1,8 @@
 //! Shared authoritative settlement storefront predicates.
 
 use adventuresim_world_schema::{
-    SettlementEconomyProfile, SettlementService as Service, StockCategory as Stock,
+    SettlementActionService, SettlementEconomyProfile, SettlementService as Service,
+    StockCategory as Stock,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,18 +22,6 @@ pub struct SettlementResidentTab {
     pub label: &'static str,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SettlementActionService {
-    Inn,
-    Temple,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SettlementDowntimeAccess {
-    PublicService { at_inn: bool },
-    PrivateSystem,
-}
-
 pub const fn action_service_location_id(service: SettlementActionService) -> &'static str {
     match service {
         SettlementActionService::Inn => "inn",
@@ -47,21 +36,6 @@ pub fn action_service_available(
     match service {
         SettlementActionService::Inn => storefront_available(profile, Storefront::Inn),
         SettlementActionService::Temple => profile.has_service(Service::Temple),
-    }
-}
-
-/// Maps the compatibility rest flag at the public reducer boundary.
-pub const fn required_settlement_rest_service(
-    access: SettlementDowntimeAccess,
-) -> Option<SettlementActionService> {
-    match access {
-        SettlementDowntimeAccess::PublicService { at_inn: true } => {
-            Some(SettlementActionService::Inn)
-        }
-        SettlementDowntimeAccess::PublicService { at_inn: false } => {
-            Some(SettlementActionService::Temple)
-        }
-        SettlementDowntimeAccess::PrivateSystem => None,
     }
 }
 
@@ -88,10 +62,6 @@ pub const fn select_available_settlement_rest_service(
     } else {
         None
     }
-}
-
-pub const fn action_service_at_inn(service: SettlementActionService) -> bool {
-    matches!(service, SettlementActionService::Inn)
 }
 
 pub fn player_visible_npc_tabs(
@@ -447,19 +417,6 @@ mod tests {
             Some(SettlementActionService::Temple)
         );
         assert_eq!(select_available_settlement_rest_service(false, false), None);
-        assert!(action_service_at_inn(SettlementActionService::Inn));
-        assert!(!action_service_at_inn(SettlementActionService::Temple));
-        assert_eq!(
-            required_settlement_rest_service(SettlementDowntimeAccess::PrivateSystem),
-            None,
-            "party synchronization and companion convalescence are venue-neutral"
-        );
-        assert_eq!(
-            required_settlement_rest_service(SettlementDowntimeAccess::PublicService {
-                at_inn: false,
-            }),
-            Some(SettlementActionService::Temple)
-        );
     }
 
     #[test]

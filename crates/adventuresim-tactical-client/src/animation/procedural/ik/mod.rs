@@ -96,13 +96,8 @@ pub(in crate::animation) fn enforce_anatomical_knee_yaw(
                 &transforms.p0(),
             );
             if let Some(solution) = solve_two_bone_with_reach(
-                hip,
-                knee,
+                TwoBoneChain::new(hip, knee, target, upper_length, lower_length, pole),
                 target,
-                target,
-                upper_length,
-                lower_length,
-                pole,
                 maximum_reach(upper_length, lower_length),
             ) {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
@@ -317,15 +312,10 @@ struct ArmIkMemory {
 /// Bevy's render delta.
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub(crate) struct ProceduralAnimationClock {
-    fixed_tick: Option<(u64, f32)>,
+    pub(crate) fixed_tick: Option<(u64, f32)>,
 }
 
 impl ProceduralAnimationClock {
-    #[allow(dead_code)] // Used by the standalone animation viewer and unit fixtures.
-    pub(crate) fn set_fixed_tick(&mut self, tick: u64, delta_seconds: f32) {
-        self.fixed_tick = Some((tick, delta_seconds.max(0.0)));
-    }
-
     pub(crate) fn fixed_step(&self) -> Option<(u64, f32)> {
         self.fixed_tick
     }
@@ -926,7 +916,6 @@ pub(crate) struct HumanoidIkTargets {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Public input for optional held-item constraints.
 pub(crate) enum HandSide {
     Left,
     Right,
@@ -947,6 +936,10 @@ pub(crate) struct HeldWeaponConstraint {
 /// Places the planted foot on the terrain with an analytic two-bone solve,
 /// then lowers the hips by the bounded residual. Existing weapon/hand
 /// constraints run at the same final-pose seam.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each independently borrowed terrain IK resource and query as a system parameter"
+)]
 pub(in crate::animation) fn apply_terrain_leg_ik(
     enabled: Res<super::super::TerrainIkEnabled>,
     time: Res<Time>,
@@ -1834,13 +1827,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     &transforms.p0(),
                 );
                 if let Some(solution) = solve_two_bone_with_reach(
-                    upper_snapshot.global.translation(),
-                    lower_snapshot.global.translation(),
-                    foot_snapshot.global.translation(),
+                    TwoBoneChain::new(
+                        upper_snapshot.global.translation(),
+                        lower_snapshot.global.translation(),
+                        foot_snapshot.global.translation(),
+                        upper_length,
+                        lower_length,
+                        pole,
+                    ),
                     target,
-                    upper_length,
-                    lower_length,
-                    pole,
                     if support {
                         upper_length + lower_length - 0.0001
                     } else {
@@ -2362,13 +2357,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     &transforms.p0(),
                 );
                 if let Some(solution) = solve_two_bone_with_reach(
-                    upper_snapshot.global.translation(),
-                    lower_snapshot.global.translation(),
-                    foot_position,
+                    TwoBoneChain::new(
+                        upper_snapshot.global.translation(),
+                        lower_snapshot.global.translation(),
+                        foot_position,
+                        upper_length,
+                        lower_length,
+                        pole,
+                    ),
                     target,
-                    upper_length,
-                    lower_length,
-                    pole,
                     terrain_maximum_reach(upper_length, lower_length),
                 ) {
                     apply_two_bone_solution(
@@ -3039,13 +3036,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     );
                     let mut resolved_end = None;
                     if let Some(solution) = solve_two_bone_with_reach(
-                        upper_snapshot.global.translation(),
-                        lower_snapshot.global.translation(),
-                        foot_position,
+                        TwoBoneChain::new(
+                            upper_snapshot.global.translation(),
+                            lower_snapshot.global.translation(),
+                            foot_position,
+                            upper_length,
+                            lower_length,
+                            pole,
+                        ),
                         target,
-                        upper_length,
-                        lower_length,
-                        pole,
                         maximum_reach(upper_length, lower_length),
                     ) {
                         resolved_end = Some(solution.end);
@@ -3227,13 +3226,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     &transforms.p0(),
                 );
                 if let Some(solution) = solve_two_bone_with_reach(
-                    upper_snapshot.global.translation(),
-                    lower_snapshot.global.translation(),
-                    foot_position,
+                    TwoBoneChain::new(
+                        upper_snapshot.global.translation(),
+                        lower_snapshot.global.translation(),
+                        foot_position,
+                        upper_length,
+                        lower_length,
+                        pole,
+                    ),
                     target,
-                    upper_length,
-                    lower_length,
-                    pole,
                     maximum_reach(upper_length, lower_length),
                 ) {
                     settle_contact_reached = settle.progress >= 1.0
@@ -3762,13 +3763,15 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // the anatomical foot-facing cone, so leg IK must use the final
             // constrained pole without another authored blend.
             let solution = solve_two_bone_with_reach(
-                upper_snapshot.global.translation(),
-                lower_snapshot.global.translation(),
-                foot_position,
+                TwoBoneChain::new(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_position,
+                    upper_length,
+                    lower_length,
+                    pole,
+                ),
                 target,
-                upper_length,
-                lower_length,
-                pole,
                 solve_reach,
             );
             let mut reported_support_weight = 0.0;
@@ -4216,7 +4219,10 @@ fn uses_run_airborne_motion_budget(gait: LocomotionGait, planar_speed: f32) -> b
                 * 0.5
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn bound_unacquired_run_support_release_target(
     run_budget: bool,
     has_plan: bool,
@@ -4282,7 +4288,10 @@ fn airborne_unplanned_release_uses_resolved_end(
     run_airborne_budget && planned_contact.is_none() && release_active
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn commit_resolved_unplanned_airborne_release(
     memory: &mut LegIkMemory,
     left: bool,
@@ -4584,6 +4593,10 @@ fn constrain_knee_pole_to_foot_facing(
 /// its effective pole stays within the foot-facing cone. Keeping this wrapper
 /// beside the raw constraint prevents ordinary terrain and landing paths from
 /// bypassing the combat-specific stabilizer.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the final leg-pole constraint keeps the anatomical geometry and hierarchy readers explicit"
+)]
 pub(super) fn constrain_rendered_leg_pole(
     rig: &HumanoidRig,
     left: bool,
@@ -5048,7 +5061,10 @@ fn run_contact_within_follower_motion_step(
         <= RUN_AIRBORNE_OWNER_TARGET_SPEED * delta_seconds.max(0.0) + 0.0001
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn retarget_unacquired_run_contact_for_descent(
     previous_owner: Option<Vec3>,
     fixed_contact: Vec3,
@@ -5168,7 +5184,10 @@ fn ordinary_contact_target(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn reachable_run_contact_target(
     mut candidate: Vec3,
     current_upper_root: Vec3,
@@ -5875,6 +5894,10 @@ fn run_foot_roll_degrees(skeleton: &SkeletonState, left: bool) -> f32 {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the final leg rotation boundary keeps pose state, airborne transitions, and hierarchy access explicit"
+)]
 fn finalize_leg_rotation_chains(
     rig: &HumanoidRig,
     skeleton: &SkeletonState,
@@ -6522,24 +6545,14 @@ mod slope_cache_tests {
         let authored_foot = authored_knee + Vec3::new(0.0, -0.43, -0.04);
         let pole = Vec3::NEG_Z;
         let before = solve_two_bone_with_reach(
-            upper,
-            authored_knee,
-            authored_foot,
+            TwoBoneChain::new(upper, authored_knee, authored_foot, 0.523, 0.430, pole),
             swing_end,
-            0.523,
-            0.430,
-            pole,
             reach,
         )
         .unwrap();
         let after = solve_two_bone_with_reach(
-            upper,
-            authored_knee,
-            authored_foot,
+            TwoBoneChain::new(upper, authored_knee, authored_foot, 0.523, 0.430, pole),
             first_acquired,
-            0.523,
-            0.430,
-            pole,
             reach,
         )
         .unwrap();
@@ -6562,24 +6575,28 @@ mod slope_cache_tests {
         let authored_foot = authored_knee + Vec3::new(0.0, -0.43, -0.04);
         let terrain_reach = terrain_maximum_reach(0.523, 0.430);
         let first = solve_two_bone_with_reach(
-            first_root,
-            authored_knee,
-            authored_foot,
+            TwoBoneChain::new(
+                first_root,
+                authored_knee,
+                authored_foot,
+                0.523,
+                0.430,
+                retained,
+            ),
             target,
-            0.523,
-            0.430,
-            retained,
             terrain_reach,
         )
         .unwrap();
         let next = solve_two_bone_with_reach(
-            next_root,
-            authored_knee + (next_root - first_root),
-            authored_foot + (next_root - first_root),
+            TwoBoneChain::new(
+                next_root,
+                authored_knee + (next_root - first_root),
+                authored_foot + (next_root - first_root),
+                0.523,
+                0.430,
+                retained,
+            ),
             target,
-            0.523,
-            0.430,
-            retained,
             terrain_reach,
         )
         .unwrap();
@@ -7010,7 +7027,10 @@ mod slope_cache_tests {
     }
 
     #[test]
-    #[allow(clippy::assertions_on_constants)] // Locks the authored continuity budget constants.
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "this regression locks the authored continuity budget constants"
+    )]
     fn raised_stop_settle_keeps_terrain_ik_alive_across_ticks() {
         let mut settle = LocomotionSettleState {
             support_left: true,
@@ -7164,13 +7184,15 @@ mod slope_cache_tests {
         )
         .expect("the settle knee pole remains transportable on restart");
         let solution = solve_two_bone_with_reach(
-            current_hip,
-            previous_knee,
-            previous_ankle,
+            TwoBoneChain::new(
+                current_hip,
+                previous_knee,
+                previous_ankle,
+                upper_length,
+                lower_length,
+                pole,
+            ),
             resolved_ankle,
-            upper_length,
-            lower_length,
-            pole,
             maximum_reach(upper_length, lower_length),
         )
         .expect("the bounded restart target remains reachable");
@@ -8086,7 +8108,10 @@ mod slope_cache_tests {
     }
 
     #[test]
-    #[allow(clippy::assertions_on_constants)] // Locks the authored run-release speed envelope.
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "this regression locks the authored run-release speed envelope"
+    )]
     fn run_release_follows_root_once_and_lifts_only_clearance_floor() {
         let release_clearance = run_airborne_clearance_for_sample(true, 0.81, None, false);
         assert_eq!(release_clearance, RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES);

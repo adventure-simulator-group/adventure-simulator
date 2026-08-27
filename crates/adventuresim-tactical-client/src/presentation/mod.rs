@@ -4,6 +4,11 @@
 //! plugin so screenshots cannot drift to a different camera, terrain mesh,
 //! lighting, or post-processing setup.
 
+#![expect(
+    unused_imports,
+    reason = "the gameplay client and capture binaries consume different parts of this shared presentation facade"
+)]
+
 mod clouds;
 mod environment;
 mod ground_scatter;
@@ -34,28 +39,20 @@ use weather::*;
 
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
-#[allow(unused_imports)]
 pub(crate) use clouds::TacticalCloudLayer;
-#[allow(unused_imports)]
 pub(crate) use clouds::{
     TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride, TacticalCloudCaptureProfile,
 };
-#[allow(unused_imports)]
 pub(crate) use environment::{
     TacticalCameraSetup, scene_ambient_light, scene_ibl_visibility_floor,
 };
-#[allow(unused_imports)]
 pub(crate) use ground_scatter::{
     GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundLitterDiagnostics,
     GroundScatterLayer, LooseStonePebblePatch,
 };
-#[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
-#[allow(unused_imports)]
 pub(crate) use obstacles::rock::ProceduralRockVisual;
-#[allow(unused_imports)]
 pub(crate) use obstacles::tree::TreeImpostorProvenance;
-#[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
     PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
     PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
@@ -67,15 +64,11 @@ pub(crate) use obstacles::tree::{
 };
 pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
-#[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
-#[allow(unused_imports)]
 pub(crate) use terrain::{
     TerrainDetailPatch, TerrainMaterialPresentation, terrain_heightmap_image,
 };
-#[allow(unused_imports)]
 pub(crate) use vista::{VistaTerrain, VistaTreePresentation};
-#[allow(unused_imports)]
 pub(crate) use weather::WeatherParticle;
 
 use adventuresim_tactical_core::prelude::*;

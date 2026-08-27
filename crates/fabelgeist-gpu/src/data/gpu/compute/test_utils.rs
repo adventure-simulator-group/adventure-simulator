@@ -2,8 +2,8 @@ use crate::data::gpu::buffer::{Buffer, BufferDefinition};
 use crate::data::gpu::compute::signature::ResourceBaseType;
 use crate::data::gpu::resource::GpuResource;
 use crate::data::gpu::texture::{Texture2d, Texture3d, TextureFormat};
-use crate::data::vector::{Vec2, Vec3};
 use crate::prelude::*;
+use fabelgeist_math::{Vec2, Vec3};
 
 pub struct Resource<'a, T>(&'a [T], pub TestResourceType);
 
@@ -194,12 +194,10 @@ where
     Ok(())
 }
 
-#[allow(non_snake_case)]
 pub fn vec2<T>(x: T, y: T) -> [T; 2] {
     [x, y]
 }
 
-#[allow(non_snake_case)]
 pub fn vec4<T>(x: T, y: T, z: T, w: T) -> [T; 4] {
     [x, y, z, w]
 }

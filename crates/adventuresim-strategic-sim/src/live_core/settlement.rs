@@ -128,15 +128,16 @@ impl LiveRunner {
             if actor.is_none()
                 && let (Some(candidate), Some(settlement_id)) =
                     (candidates.first(), settlement_id.as_deref())
-                    && self.acquire_first_aid_material(
-                        candidate.0,
-                        &party_id,
-                        settlement_id,
-                        item_id,
-                        agent,
-                    )? {
-                        actor = Some(candidate.0);
-                    }
+                && self.acquire_first_aid_material(
+                    candidate.0,
+                    &party_id,
+                    settlement_id,
+                    item_id,
+                    agent,
+                )?
+            {
+                actor = Some(candidate.0);
+            }
             let Some(actor_id) = actor else {
                 self.event(
                     agent,
@@ -147,15 +148,7 @@ impl LiveRunner {
                 );
                 continue;
             };
-            let limb_slug = match injury.limb {
-                LimbRegion::LeftArm => "left-arm",
-                LimbRegion::RightArm => "right-arm",
-                LimbRegion::LeftLeg => "left-leg",
-                LimbRegion::RightLeg => "right-leg",
-                LimbRegion::Chest => "chest",
-                LimbRegion::Stomach => "stomach",
-                LimbRegion::Head => "head",
-            };
+            let limb_slug = domain_body_region(injury.limb).slug();
             let result = reducer_call!(self, "visible_first_aid", |cb| self
                 .connection
                 .reducers
@@ -307,7 +300,7 @@ impl LiveRunner {
         let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
         Ok(ActivityObservation {
             personal_gold_coin: self.personal_gold(character_id),
-            condition_status: condition.status,
+            condition_status: domain_incapacitation_status(condition.status),
             hunger: condition.hunger,
             thirst: condition.thirst,
             food_days: condition.food_days,
@@ -320,7 +313,8 @@ impl LiveRunner {
 
     /// Total concrete food energy and water volume visible to the character
     /// for a non-inn rest. Public food lots expose nutrition, while public
-    /// needs and party state expose physiological, carried, and pooled water.
+    /// needs expose physiological water and physical containers expose stored
+    /// portable water.
     pub(super) fn visible_rest_supplies(&self, character_id: u64) -> (f32, f32) {
         let Some(character) = self
             .connection
@@ -332,20 +326,34 @@ impl LiveRunner {
             return (0.0, 0.0);
         };
         let party_id = character.party_id;
+        let personal_custody = OperationalCustody::character(character_id).ok();
         let personal_ids = self
             .connection
             .db
             .inventory_item()
             .iter()
-            .filter(|row| row.character_id == character_id)
+            .filter(|row| {
+                row.character_id == character_id
+                    && personal_custody
+                        .as_ref()
+                        .is_some_and(|custody| self.public_row_is_carried(custody, row.id))
+            })
             .map(|row| row.id)
             .collect::<HashSet<_>>();
+        let party_custody = party_id
+            .as_deref()
+            .and_then(|party_id| OperationalCustody::party(party_id.to_owned()).ok());
         let party_ids = party_id.as_deref().map_or_else(HashSet::new, |party_id| {
             self.connection
                 .db
                 .party_inventory_item()
                 .iter()
-                .filter(|row| row.party_id == party_id)
+                .filter(|row| {
+                    row.party_id == party_id
+                        && party_custody
+                            .as_ref()
+                            .is_some_and(|custody| self.public_row_is_carried(custody, row.id))
+                })
                 .map(|row| row.id)
                 .collect()
         });
@@ -372,20 +380,18 @@ impl LiveRunner {
         let physiological_food = needs
             .as_ref()
             .map_or(0.0, |row| row.food_balance_kcal.max(0.0));
-        let personal_water = needs.as_ref().map_or(0.0, |row| {
-            row.water_balance_ml.max(0.0) + row.carried_water_ml.max(0.0)
-        });
-        let party_water = party_id.as_deref().map_or(0.0, |party_id| {
-            self.connection
-                .db
-                .party()
-                .iter()
-                .find(|row| row.id == party_id)
-                .map_or(0.0, |row| row.pooled_water_ml.max(0.0))
-        });
+        let physiological_water = needs
+            .as_ref()
+            .map_or(0.0, |row| row.water_balance_ml.max(0.0));
+        let contained_water = personal_custody
+            .as_ref()
+            .map_or(0.0, |custody| self.public_contained_water_ml(custody))
+            + party_custody
+                .as_ref()
+                .map_or(0.0, |custody| self.public_contained_water_ml(custody));
         (
             physiological_food + stored_food_kcal,
-            personal_water + party_water,
+            physiological_water + contained_water,
         )
     }
 
@@ -564,7 +570,7 @@ impl LiveRunner {
                 Some(PublicInterventionOffer {
                     preparation_id: profile.preparation_id.to_owned(),
                     profile_version: profile.version,
-                    route: intervention_route_name(profile.route).to_owned(),
+                    route: profile.route,
                     public_score_micropoints: score,
                     storefront_quote,
                     inventory_item_id,
@@ -600,7 +606,7 @@ impl LiveRunner {
             .iter()
             .find(|row| row.id == settlement_id)?;
         let (food_kcal, _) = self.visible_rest_supplies(character_id);
-        let at_inn = affordable_medical_rest_venue(
+        let rest_service = affordable_medical_rest_venue(
             settlement
                 .economy
                 .services
@@ -613,9 +619,9 @@ impl LiveRunner {
             u64::MAX,
             quote,
         )?;
-        if at_inn {
+        if matches!(rest_service, DomainSettlementActionService::Inn) {
             quote.checked_add(adventuresim_core::strategic_economy::inn_full_board_cost(
-                1_440,
+                MINUTES_PER_DAY,
             )?)
         } else {
             Some(quote)
@@ -631,11 +637,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "pause_schedule_for_treatment", |cb| self
             .connection
             .reducers
-            .update_training_schedule_then(
-                character_id,
-                schedule.clone(),
-                cb
-            ));
+            .update_training_schedule_then(character_id, schedule.clone(), cb));
         self.call(result)?;
         let installed = self
             .connection
@@ -660,11 +662,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "restore_schedule_after_treatment", |cb| self
             .connection
             .reducers
-            .update_training_schedule_then(
-                character_id,
-                schedule.clone(),
-                cb
-            ));
+            .update_training_schedule_then(character_id, schedule.clone(), cb));
         self.call(result)?;
         let restored = self
             .connection
@@ -696,11 +694,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "install_activity_schedule", |cb| self
                 .connection
                 .reducers
-                .update_training_schedule_then(
-                    character_id,
-                    schedule.clone(),
-                    cb
-                ));
+                .update_training_schedule_then(character_id, schedule.clone(), cb));
             self.call(result)?;
         }
         let installed = self
@@ -767,7 +761,9 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .is_some_and(|row| row.symptomatic);
-            if (condition.status != "ready" || symptomatic)
+            if (domain_incapacitation_status(condition.status)
+                != DomainIncapacitationStatus::Ready
+                || symptomatic)
                 && character.current_settlement_id.is_some()
             {
                 // Installing the medical schedule may synchronize a lagging
@@ -834,7 +830,8 @@ impl LiveRunner {
                 });
             let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
             let temple_food_covers_day = temple_food_covers_one_day(visible_food_kcal);
-            let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440);
+            let inn_cost =
+                adventuresim_core::strategic_economy::inn_full_board_cost(MINUTES_PER_DAY);
             let self_funded_natural_rest_venue = affordable_medical_rest_venue(
                 inn_available,
                 temple_available,
@@ -855,8 +852,12 @@ impl LiveRunner {
                 && rest_sponsor.is_none()
                 && temple_available;
             let natural_rest_venue = self_funded_natural_rest_venue
-                .or_else(|| rest_sponsor.as_ref().map(|_| true))
-                .or_else(|| emergency_temple_rest.then_some(false));
+                .or_else(|| {
+                    rest_sponsor
+                        .as_ref()
+                        .map(|_| DomainSettlementActionService::Inn)
+                })
+                .or_else(|| emergency_temple_rest.then_some(DomainSettlementActionService::Temple));
             let selected_intervention = intervention_offers
                 .iter()
                 .find(|offer| {
@@ -896,31 +897,36 @@ impl LiveRunner {
                     quote,
                 )
             });
-            let required_rest_cost = medicated_rest_venue
-                .or(natural_rest_venue)
-                .and_then(|at_inn| {
-                    if at_inn {
-                        adventuresim_core::strategic_economy::inn_full_board_cost(1_440)
-                    } else {
-                        Some(0)
-                    }
-                });
+            let required_rest_cost =
+                medicated_rest_venue
+                    .or(natural_rest_venue)
+                    .and_then(|service| {
+                        if matches!(service, DomainSettlementActionService::Inn) {
+                            adventuresim_core::strategic_economy::inn_full_board_cost(
+                                MINUTES_PER_DAY,
+                            )
+                        } else {
+                            Some(0)
+                        }
+                    });
             let observable_care_total =
                 observable_quote
                     .zip(medicated_rest_venue)
-                    .and_then(|(quote, at_inn)| {
-                        let rest = if at_inn {
-                            adventuresim_core::strategic_economy::inn_full_board_cost(1_440)?
+                    .and_then(|(quote, service)| {
+                        let rest = if matches!(service, DomainSettlementActionService::Inn) {
+                            adventuresim_core::strategic_economy::inn_full_board_cost(
+                                MINUTES_PER_DAY,
+                            )?
                         } else {
                             0
                         };
                         quote.checked_add(rest)
                     });
-            let (choice, base_reason) = choose_medical_action(
-                &condition.status,
+            let (choice, base_reason) = choose_medical_action(MedicalActionContext {
+                condition_status: domain_incapacitation_status(condition.status),
                 symptomatic,
-                settlement.is_some(),
-                herbalist_available
+                at_settlement: settlement.is_some(),
+                intervention_available: herbalist_available
                     || selected_intervention
                         .as_ref()
                         .is_some_and(|offer| offer.inventory_item_id.is_some()),
@@ -928,7 +934,7 @@ impl LiveRunner {
                 observable_quote,
                 natural_rest_venue,
                 medicated_rest_venue,
-            );
+            });
             let reason = if symptomatic && choice == MedicalChoice::RestNaturally {
                 if chart.is_none() {
                     "chart_unavailable_or_low_confidence"
@@ -975,7 +981,7 @@ impl LiveRunner {
                 CoreLoopEventKind::MedicalDecision,
                 format!(
                     "status={};symptomatic={symptomatic};settlement={};purse={purse};clinician={};chart_confidence_band={};chart_confidence_bps={};public_differential={};preparation={};public_score_micropoints={};route={};storefront_quote={};purchase_cost={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};emergency_temple_rest={emergency_temple_rest};sponsor={};sponsor_purse={};sponsor_medical_reserve={};sponsor_spendable={};patient_contribution_quote={};sponsor_quote={};party_treasury={};sponsor_stake={};care_affordable={};action={choice:?};reason={reason}",
-                    condition.status,
+                    domain_incapacitation_status(condition.status),
                     settlement.as_deref().unwrap_or("none"),
                     chart.as_ref().map_or_else(|| "none".into(), |chart| chart.observer_id.to_string()),
                     chart.as_ref().map_or("none", |chart| public_confidence_band(chart.confidence_bps)),
@@ -988,7 +994,7 @@ impl LiveRunner {
                     observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
                     required_rest_cost.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
                     observable_care_total.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
-                    selected_rest_venue.map_or("unavailable", |at_inn| if at_inn { "inn" } else { "temple" }),
+                    selected_rest_venue.map_or("unavailable", settlement_action_service_label),
                     rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.payer_id.to_string()),
                     rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.purse.to_string()),
                     rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.medical_reserve.to_string()),
@@ -1009,7 +1015,10 @@ impl LiveRunner {
                 self.event(
                     agent,
                     CoreLoopEventKind::QuestSuppressed,
-                    format!("status={};reason={reason}", condition.status),
+                    format!(
+                        "status={};reason={reason}",
+                        domain_incapacitation_status(condition.status)
+                    ),
                 );
                 return Ok(false);
             }
@@ -1020,7 +1029,8 @@ impl LiveRunner {
                 .public_survival_observation(character_id)
                 .unwrap_or_default();
             if choice == MedicalChoice::RestNaturally {
-                let at_inn = natural_rest_venue.expect("natural rest choice requires a venue");
+                let rest_service =
+                    natural_rest_venue.expect("natural rest choice requires a venue");
                 let rest_started_at = self
                     .connection
                     .db
@@ -1029,8 +1039,11 @@ impl LiveRunner {
                     .find(|row| row.character_id == character_id)
                     .ok_or("missing patient clock before natural recovery rest")?
                     .minutes;
-                let actual_rest_minutes = if at_inn
-                    && purse < inn_cost.expect("inn venue requires a public quote")
+                let actual_rest_minutes = if matches!(
+                    rest_service,
+                    DomainSettlementActionService::Inn
+                ) && purse
+                    < inn_cost.expect("inn venue requires a public quote")
                 {
                     let sponsor = rest_sponsor
                         .as_ref()
@@ -1053,7 +1066,7 @@ impl LiveRunner {
                     }
                     let payer_purse_before = self.personal_gold(sponsor.payer_id);
                     let patient_purse_before = purse;
-                    let condition_before = condition.status.clone();
+                    let condition_before = domain_incapacitation_status(condition.status);
                     let public_quote = inn_cost.expect("sponsored inn rest requires a quote");
                     let result = reducer_call!(self, "sponsor_party_member_inn_rest", |cb| self
                         .connection
@@ -1086,7 +1099,7 @@ impl LiveRunner {
                         .backend_character_strategic_conditions()
                         .iter()
                         .find(|row| row.character_id == character_id)
-                        .map_or_else(|| "unavailable".into(), |row| row.status);
+                        .map(|row| domain_incapacitation_status(row.status));
                     self.metrics.sponsored_settlement_rests =
                         self.metrics.sponsored_settlement_rests.saturating_add(1);
                     self.metrics.sponsored_settlement_rest_gold_spent = self
@@ -1096,7 +1109,7 @@ impl LiveRunner {
                     self.metrics.sponsored_settlement_rest_requested_minutes = self
                         .metrics
                         .sponsored_settlement_rest_requested_minutes
-                        .saturating_add(1_440);
+                        .saturating_add(MINUTES_PER_DAY);
                     self.metrics.sponsored_settlement_rest_elapsed_minutes = self
                         .metrics
                         .sponsored_settlement_rest_elapsed_minutes
@@ -1109,7 +1122,7 @@ impl LiveRunner {
                         sponsor.payer_agent_id,
                         CoreLoopEventKind::Recover,
                         format!(
-                            "sponsored_settlement_rest=completed;payer={};patient={character_id};settlement={};venue=inn;public_quote={public_quote};patient_contribution_quote={};sponsor_quote={};payer_medical_reserve={};payer_spendable={};party_treasury={};payer_party_stake={};patient_spend={patient_spend};sponsor_spend={sponsor_spend};actual_spend={actual_spend};payer_purse_before={payer_purse_before};payer_purse_after={payer_purse_after};patient_purse_before={patient_purse_before};patient_purse_after={patient_purse_after};condition_before={};condition_after={};symptomatic={symptomatic};exposure=public_transition_recorded_in_patient_recovery_event;requested_minutes=1440;actual_elapsed_minutes={actual_rest_minutes}",
+                            "sponsored_settlement_rest=completed;payer={};patient={character_id};settlement={};venue=inn;public_quote={public_quote};patient_contribution_quote={};sponsor_quote={};payer_medical_reserve={};payer_spendable={};party_treasury={};payer_party_stake={};patient_spend={patient_spend};sponsor_spend={sponsor_spend};actual_spend={actual_spend};payer_purse_before={payer_purse_before};payer_purse_after={payer_purse_after};patient_purse_before={patient_purse_before};patient_purse_after={patient_purse_after};condition_before={};condition_after={};symptomatic={symptomatic};exposure=public_transition_recorded_in_patient_recovery_event;requested_minutes={MINUTES_PER_DAY};actual_elapsed_minutes={actual_rest_minutes}",
                             sponsor.payer_id,
                             bounded_event_field(&settlement),
                             sponsor.patient_contribution,
@@ -1118,8 +1131,11 @@ impl LiveRunner {
                             sponsor.spendable,
                             sponsor.party_treasury,
                             sponsor.party_stake,
-                            bounded_event_field(&condition_before),
-                            bounded_event_field(&condition_after),
+                            bounded_event_field(condition_before.as_str()),
+                            bounded_event_field(
+                                condition_after
+                                    .map_or("unavailable", DomainIncapacitationStatus::as_str),
+                            ),
                         ),
                     );
                     actual_rest_minutes
@@ -1127,7 +1143,12 @@ impl LiveRunner {
                     let result = reducer_call!(self, "natural_illness_recovery_rest", |cb| self
                         .connection
                         .reducers
-                        .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
+                        .rest_at_settlement_hours_then(
+                            character_id,
+                            MINUTES_PER_DAY,
+                            stdb_settlement_action_service(rest_service),
+                            cb,
+                        ));
                     self.call(result)?;
                     let rest_ended_at = self
                         .connection
@@ -1154,8 +1175,8 @@ impl LiveRunner {
                     agent,
                     CoreLoopEventKind::Recover,
                     format!(
-                        "natural_recovery_requested_minutes=1440;natural_recovery_actual_minutes={actual_rest_minutes};venue={};emergency_free_rest={emergency_temple_rest};reason={reason};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
-                        if at_inn { "inn" } else { "temple" },
+                        "natural_recovery_requested_minutes={MINUTES_PER_DAY};natural_recovery_actual_minutes={actual_rest_minutes};venue={};emergency_free_rest={emergency_temple_rest};reason={reason};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
+                        settlement_action_service_label(rest_service),
                         survival_before.thermal,
                         survival_after.thermal,
                         survival_before.wetness_bps,
@@ -1206,7 +1227,7 @@ impl LiveRunner {
                         CoreLoopEventKind::QuestSuppressed,
                         format!(
                             "status={};reason=natural_rest_not_improving_public_condition;burden={burden_after:.4};rests_without_progress={nonprogressing_natural_rests}",
-                            condition_after.status
+                            domain_incapacitation_status(condition_after.status)
                         ),
                     );
                     return Ok(false);
@@ -1270,8 +1291,8 @@ impl LiveRunner {
                     character_id,
                     preparation_inventory_id,
                     intervention.profile_version,
-                    intervention.route.clone(),
-                    1_000,
+                    reducer_intervention_route(intervention.route),
+                    adventuresim_core::physiology::DoseMilliunits::STANDARD.get(),
                     None,
                     cb
                 ));
@@ -1297,7 +1318,7 @@ impl LiveRunner {
                 .backend_character_strategic_conditions()
                 .iter()
                 .find(|row| row.character_id == character_id)
-                .map_or_else(|| "unavailable".to_owned(), |row| row.status);
+                .map(|row| domain_incapacitation_status(row.status));
             self.event(
                 agent,
                 CoreLoopEventKind::AdministerPreparation,
@@ -1308,7 +1329,10 @@ impl LiveRunner {
                     intervention.public_score_micropoints,
                     intervention.storefront_quote.map_or_else(|| "not_required".to_owned(), |quote| quote.to_string()),
                     post_administration.alive,
-                    bounded_event_field(&post_administration_condition),
+                    bounded_event_field(
+                        post_administration_condition
+                            .map_or("unavailable", DomainIncapacitationStatus::as_str),
+                    ),
                     if post_administration.alive { "authoritative_reducer_accepted" } else { "authoritative_terminal_boundary" },
                 ),
             );
@@ -1317,7 +1341,7 @@ impl LiveRunner {
                 return Ok(false);
             }
 
-            let at_inn =
+            let rest_service =
                 medicated_rest_venue.expect("purchase choice requires an affordable venue");
             let medical_rest_started_at = self
                 .connection
@@ -1330,7 +1354,12 @@ impl LiveRunner {
             let result = reducer_call!(self, "medical_recovery_rest", |cb| self
                 .connection
                 .reducers
-                .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
+                .rest_at_settlement_hours_then(
+                    character_id,
+                    MINUTES_PER_DAY,
+                    stdb_settlement_action_service(rest_service),
+                    cb,
+                ));
             self.call(result)?;
             let medical_rest_ended_at = self
                 .connection
@@ -1358,7 +1387,7 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::Recover,
                 format!(
-                    "medical_rest_requested_minutes=1440;medical_rest_actual_minutes={actual_medical_rest_minutes};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
+                    "medical_rest_requested_minutes={MINUTES_PER_DAY};medical_rest_actual_minutes={actual_medical_rest_minutes};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
                     survival_before.thermal,
                     survival_after.thermal,
                     survival_before.wetness_bps,
@@ -1397,7 +1426,7 @@ impl LiveRunner {
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing condition after medical rest")?
                 .status;
-            if status == "ready" {
+            if domain_incapacitation_status(status) == DomainIncapacitationStatus::Ready {
                 let symptomatic_after = self
                     .connection
                     .db
@@ -1415,7 +1444,7 @@ impl LiveRunner {
                     CoreLoopEventKind::IllnessRecovered,
                     format!(
                         "recovery_context=public_symptoms;condition_before={};condition_after=ready;symptomatic_before={symptomatic};symptomatic_after={symptomatic_after}",
-                        condition.status,
+                        domain_incapacitation_status(condition.status),
                     ),
                 );
                 return Ok(true);
@@ -1452,7 +1481,8 @@ impl LiveRunner {
             let character_id = self.character_ids[agent as usize];
             let before = self.activity_observation(character_id)?;
             let profile = self.profiles[agent as usize].clone();
-            let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440);
+            let inn_cost =
+                adventuresim_core::strategic_economy::inn_full_board_cost(MINUTES_PER_DAY);
             let committed_reserve = visible_activity_committed_reserve(
                 before.personal_gold_coin,
                 u64::from(profile.cash_reserve_target),
@@ -1469,41 +1499,41 @@ impl LiveRunner {
             );
             self.install_activity_schedule(character_id, &schedule)?;
             let preferred_activity = format!("{:?}", profile.preferred_activity);
+            let activity_plan_diagnostic = ActivityPlanDiagnostic {
+                preferred_activity: &preferred_activity,
+                effective_activity,
+                schedule: &schedule,
+                fallback_reason,
+                committed_reserve,
+            };
             let Some(venue) = self.settlement_activity_venue(character_id, committed_reserve)?
             else {
                 self.event(
                     agent,
                     CoreLoopEventKind::Activity,
-                    format_deferred_activity_detail(
-                        &preferred_activity,
-                        effective_activity,
-                        &schedule,
-                        fallback_reason,
-                        committed_reserve,
-                        &before,
-                    ),
+                    format_deferred_activity_detail(activity_plan_diagnostic, &before),
                 );
                 continue;
+            };
+            let activity_diagnostic = ActivityExecutionDiagnostic {
+                plan: activity_plan_diagnostic,
+                venue,
             };
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
                 .connection
                 .reducers
-                .rest_at_settlement_hours_then(character_id, 1_440, venue.at_inn(), cb));
+                .rest_at_settlement_hours_then(
+                    character_id,
+                    MINUTES_PER_DAY,
+                    stdb_settlement_action_service(venue),
+                    cb,
+                ));
             if let Err(error) = result {
                 let error_category = safe_core_loop_failure(&error).0;
                 self.event(
                     agent,
                     CoreLoopEventKind::Activity,
-                    format_failed_activity_detail(
-                        &preferred_activity,
-                        effective_activity,
-                        &schedule,
-                        venue,
-                        fallback_reason,
-                        committed_reserve,
-                        &before,
-                        error_category,
-                    ),
+                    format_failed_activity_detail(activity_diagnostic, &before, error_category),
                 );
                 return self.call(Err(error));
             }
@@ -1514,16 +1544,7 @@ impl LiveRunner {
             self.event(
                 agent,
                 CoreLoopEventKind::Activity,
-                format_activity_detail(
-                    &preferred_activity,
-                    effective_activity,
-                    &schedule,
-                    venue,
-                    fallback_reason,
-                    committed_reserve,
-                    &before,
-                    &after,
-                ),
+                format_activity_detail(activity_diagnostic, &before, &after),
             );
             self.metrics.activity_days += 1;
             self.ensure_medically_safe(agent)?;
@@ -1556,15 +1577,18 @@ impl LiveRunner {
 
     pub(super) fn wait_for_safe_departure_at_settlement(
         &mut self,
-        character_id: u64,
-        agent: u32,
-        case_id: &str,
-        reason: &str,
-        wait_minutes: u64,
-        walking_minutes_per_day: u16,
-        travel_at_night: bool,
+        wait: SettlementDepartureWait<'_>,
     ) -> Result<bool, String> {
-        if !(60..=1_440).contains(&wait_minutes) {
+        let SettlementDepartureWait {
+            character_id,
+            agent,
+            case_id,
+            reason,
+            wait_minutes,
+            walking_minutes_per_day,
+            travel_at_night,
+        } = wait;
+        if !(60..=MINUTES_PER_DAY).contains(&wait_minutes) {
             return Ok(false);
         }
         let starting_party = self.party_for(character_id)?;
@@ -1601,7 +1625,7 @@ impl LiveRunner {
                 .find(|row| row.character_id == member_id)
                 .map_or(party_frontier, |row| row.minutes);
             let member_wait = target_minute.saturating_sub(member_minute);
-            if !(60..=1_440).contains(&member_wait) {
+            if !(60..=MINUTES_PER_DAY).contains(&member_wait) {
                 continue;
             }
             let Ok(Some(venue)) = self.settlement_activity_venue(member_id, 0) else {
@@ -1610,7 +1634,12 @@ impl LiveRunner {
             let result = reducer_call!(self, "wait_for_safe_departure", |cb| self
                 .connection
                 .reducers
-                .rest_at_settlement_hours_then(member_id, member_wait, venue.at_inn(), cb));
+                .rest_at_settlement_hours_then(
+                    member_id,
+                    member_wait,
+                    stdb_settlement_action_service(venue),
+                    cb,
+                ));
             self.call(result)?;
             if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
                 self.event(
@@ -1624,7 +1653,7 @@ impl LiveRunner {
                 );
                 return Ok(false);
             }
-            modes.push(venue.label());
+            modes.push(settlement_action_service_label(venue));
         }
         let actual_party_floor = self
             .living_party_member_ids(&party_id)
@@ -1676,8 +1705,6 @@ impl LiveRunner {
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
-                false,
-                0,
                 cb,
             ));
         self.call(result)?;
@@ -1884,12 +1911,17 @@ impl LiveRunner {
         if ready_at > now {
             let mut remaining = ready_at - now;
             while remaining > 0 {
-                let wait = remaining.min(1_440);
-                let at_inn = self.settlement_rest_at_inn(character_id)?;
+                let wait = remaining.min(MINUTES_PER_DAY);
+                let rest_service = self.settlement_rest_service(character_id)?;
                 let result = reducer_call!(self, "wait_for_repairs", |cb| self
                     .connection
                     .reducers
-                    .rest_at_settlement_hours_then(character_id, wait, at_inn, cb));
+                    .rest_at_settlement_hours_then(
+                        character_id,
+                        wait,
+                        stdb_settlement_action_service(rest_service),
+                        cb,
+                    ));
                 self.call(result)?;
                 self.metrics.repair_wait_minutes += wait;
                 self.event(

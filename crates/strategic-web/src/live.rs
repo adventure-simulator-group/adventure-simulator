@@ -63,7 +63,6 @@ use adventuresim_stdb_client::{
     party_inventory_state_table::PartyInventoryStateTableAccess,
     party_item_amount_table::PartyItemAmountTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
-    party_journey_itinerary_table::PartyJourneyItineraryTableAccess,
     party_journey_table::PartyJourneyTableAccess,
     party_leader_vote_table::PartyLeaderVoteTableAccess,
     party_member_table::PartyMemberTableAccess,
@@ -97,7 +96,6 @@ use crate::{
     session::Session,
     spacetimedb::{
         BackendCharacterCaseSiteLocation as HttpBackendCharacterCaseSiteLocation, Character, Party,
-        sql_string_literal,
     },
 };
 
@@ -120,7 +118,6 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "organization_presentation",
     "party",
     "party_journey",
-    "party_journey_itinerary",
     "party_member",
     "party_action_request",
     "party_join_request",
@@ -309,7 +306,6 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.organization_presentation());
         invalidate_on_view_changes!(state.0._connection.db.party());
         invalidate_on_view_changes!(state.0._connection.db.party_journey());
-        invalidate_on_changes!(state.0._connection.db.party_journey_itinerary());
         invalidate_on_changes!(state.0._connection.db.party_member());
         invalidate_on_view_changes!(state.0._connection.db.party_action_request());
         invalidate_on_changes!(state.0._connection.db.party_join_request());
@@ -431,7 +427,6 @@ impl LiveState {
             .add_query(|query| query.from.backend_weapon_holder_instances())
             .add_query(|query| query.from.organization_presentation())
             .add_query(|query| query.from.party_journey())
-            .add_query(|query| query.from.party_journey_itinerary())
             .add_query(|query| query.from.inventory_item())
             .add_query(|query| query.from.inventory_item_amount())
             .add_query(|query| query.from.inventory_object())
@@ -546,7 +541,6 @@ fn character_from_sdk(value: adventuresim_stdb_client::Character) -> crate::spac
         name: value.name,
         xp: value.xp,
         level: value.level,
-        gold: value.gold,
         current_settlement_id: value.current_settlement_id,
         current_case_site_id: None,
         party_id: value.party_id,
@@ -635,10 +629,7 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         if let Some(party_id) = character.party_id.as_deref()
             && state
                 .db
-                .query_one::<Party>(&format!(
-                    "SELECT * FROM party WHERE id = {}",
-                    sql_string_literal(party_id)
-                ))
+                .query_one::<Party>(&crate::spacetimedb::party_by_id(party_id))
                 .await
                 .ok()
                 .flatten()
@@ -723,7 +714,6 @@ mod tests {
                 "static table {excluded} must remain on demand"
             );
         }
-        assert!(STRATEGIC_CACHE_SUBSCRIPTIONS.contains(&"party_journey_itinerary"));
         // Private projections may be subscribed for live invalidation, but no
         // renderer-facing cache accessor may expose their rows.
         assert!(source.contains("backend_local_chat_messages"));

@@ -67,11 +67,11 @@ pub mod prelude {
     };
     pub use crate::scene_input::{
         EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
-        RockArchetype, RockLithology, RockRecipe, SceneEnvironment, SceneInputError, SceneObstacle,
-        SceneRepairReport, SceneSource, TACTICAL_SCENE_GENERATION_VERSION,
-        TACTICAL_SCENE_SCHEMA_VERSION, TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES,
-        TREE_TRUNK_RADIUS_METRES, TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod,
-        VistaSample,
+        RockArchetype, RockLithology, RockRecipe, SceneEnvironment, SceneEnvironmentFixture,
+        SceneInputError, SceneObstacle, SceneRepairReport, SceneSource,
+        TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
+        TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES,
+        TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod, VistaSample,
     };
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};

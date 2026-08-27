@@ -388,8 +388,9 @@ fn expected_location(
         .party_id()
         .find(party_id.to_owned())
         .ok_or("Camp terrain route not found")?;
-    let (longitude, latitude) = route_position_at_minute(&route, journey.completed_minutes)
-        .ok_or("Camp location is unavailable")?;
+    let (longitude, latitude) =
+        route_position_at_minute(&route, journey.completed_movement_minutes)
+            .ok_or("Camp location is unavailable")?;
     Ok(ForageVicinityAuthority {
         place: crate::strategic::current_journey_camp_place(ctx, party_id)?,
         context_kind: "camp".into(),
@@ -544,12 +545,20 @@ fn forage_terminal_minute(
     current_minute: u64,
     duration: u64,
 ) -> Result<Option<u64>, String> {
-    let (injury_safe, injury_terminal) =
-        crate::surgery::preview_injury_terminal_boundary(ctx, character_id, duration, false)?;
-    let (disease_safe, disease_terminal) =
-        crate::disease::preview_disease_terminal_boundary(ctx, character_id, injury_safe, false)?;
-    let safe = injury_safe.min(disease_safe);
-    if safe < duration || injury_terminal || disease_terminal {
+    let injury = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        duration,
+        crate::surgery::InjuryRecoveryMinutes::NONE,
+    )?;
+    let (disease_safe, disease_terminal) = crate::disease::preview_disease_terminal_boundary(
+        ctx,
+        character_id,
+        injury.elapsed,
+        false,
+    )?;
+    let safe = injury.elapsed.min(disease_safe);
+    if safe < duration || injury.terminal || disease_terminal {
         Ok(Some(current_minute.checked_add(safe).ok_or(
             "Foraging terminal time exceeds the strategic clock",
         )?))
@@ -591,7 +600,10 @@ fn environment_digest(
     hash.finalize().into()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn forage_authority_digest(
     character_id: u64,
     place: &StrategicPlaceId,
@@ -648,7 +660,10 @@ fn license_decisions(
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn build_forage_planner(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1045,8 +1060,12 @@ pub fn forage_current_vicinity(
                 u32::from(found.quantity),
             )?;
             for row_id in rows {
-                let object = crate::inventory_container::object_for_row(ctx, "personal", row_id)?
-                    .ok_or("Foraged material has no stable object identity")?;
+                let object = crate::inventory_container::object_for_row(
+                    ctx,
+                    adventuresim_core::physical_object::CarriedInventoryScope::Personal,
+                    row_id,
+                )?
+                .ok_or("Foraged material has no stable object identity")?;
                 let lot = ctx
                     .db
                     .food_lot()
@@ -1282,16 +1301,11 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn environment_digest").next())
             .expect("foraging terminal preview");
-        assert!(
-            preview
-                .contains("preview_injury_terminal_boundary(ctx, character_id, duration, false)")
-        );
-        assert!(
-            preview.contains(
-                "preview_disease_terminal_boundary(ctx, character_id, injury_safe, false)"
-            )
-        );
-        assert!(preview.contains("current_minute\n                .checked_add(safe)"));
+        assert!(preview.contains("preview_injury_boundary("));
+        assert!(preview.contains("InjuryRecoveryMinutes::NONE"));
+        assert!(preview.contains("preview_disease_terminal_boundary("));
+        assert!(preview.contains("injury.elapsed"));
+        assert!(preview.contains("current_minute.checked_add(safe)"));
 
         let reducer = source
             .split("pub fn forage_current_vicinity")

@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const strategicCalendar = require('./strategic-calendar-fixture.cjs');
+
+globalThis.strategicCalendar = strategicCalendar;
 
 const {
   activityKind, clock, signed, professionReward, wrappedFocusTarget, FOCUSABLE_SELECTOR,
@@ -23,15 +26,21 @@ test('preview formatting shows signed rounded outcomes', () => {
 });
 
 test('profession rewards use persisted accrual and authoritative tier thresholds', () => {
-  const eightHours = 8 * 60 * 1440;
+  const eightHours = 8 * 60 * strategicCalendar.minutesPerDay;
   assert.deepEqual(professionReward({
-    accrued: eightHours - 60 * 1440, threshold: eightHours, sign: -1, reward: 'gold',
+    accrued: eightHours - 60 * strategicCalendar.minutesPerDay,
+    threshold: eightHours,
+    sign: -1,
+    reward: 'gold',
   }, 60), { gold: -1, reputation: 0 });
   assert.deepEqual(professionReward({
     accrued: 0, threshold: eightHours, sign: 1, reward: 'gold',
   }, 7 * 60), { gold: 0, reputation: 0 });
   assert.deepEqual(professionReward({
-    accrued: 0, threshold: 2 * 60 * 1440, sign: 1, reward: 'fame',
+    accrued: 0,
+    threshold: 2 * 60 * strategicCalendar.minutesPerDay,
+    sign: 1,
+    reward: 'fame',
   }, 4 * 60), { gold: 0, reputation: 2 });
 });
 

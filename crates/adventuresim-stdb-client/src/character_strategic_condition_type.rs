@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::incapacitation_status_type::IncapacitationStatus;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CharacterStrategicCondition {
@@ -26,7 +28,7 @@ pub struct CharacterStrategicCondition {
     pub water_capacity_ml: u32,
     pub incapacitation: f32,
     pub check_multiplier: f32,
-    pub status: String,
+    pub status: IncapacitationStatus,
 }
 
 impl __sdk::InModule for CharacterStrategicCondition {
@@ -56,7 +58,7 @@ pub struct CharacterStrategicConditionCols {
     pub water_capacity_ml: __sdk::__query_builder::Col<CharacterStrategicCondition, u32>,
     pub incapacitation: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
     pub check_multiplier: __sdk::__query_builder::Col<CharacterStrategicCondition, f32>,
-    pub status: __sdk::__query_builder::Col<CharacterStrategicCondition, String>,
+    pub status: __sdk::__query_builder::Col<CharacterStrategicCondition, IncapacitationStatus>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterStrategicCondition {

@@ -4,12 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::settlement_action_service_type::SettlementActionService;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct RestAtSettlementHoursArgs {
     pub character_id: u64,
     pub requested_minutes: u64,
-    pub at_inn: bool,
+    pub service: SettlementActionService,
 }
 
 impl From<RestAtSettlementHoursArgs> for super::Reducer {
@@ -17,7 +19,7 @@ impl From<RestAtSettlementHoursArgs> for super::Reducer {
         Self::RestAtSettlementHours {
             character_id: args.character_id,
             requested_minutes: args.requested_minutes,
-            at_inn: args.at_inn,
+            service: args.service,
         }
     }
 }
@@ -41,9 +43,9 @@ pub trait rest_at_settlement_hours {
         &self,
         character_id: u64,
         requested_minutes: u64,
-        at_inn: bool,
+        service: SettlementActionService,
     ) -> __sdk::Result<()> {
-        self.rest_at_settlement_hours_then(character_id, requested_minutes, at_inn, |_, _| {})
+        self.rest_at_settlement_hours_then(character_id, requested_minutes, service, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `rest_at_settlement_hours` to run as soon as possible,
@@ -56,7 +58,7 @@ pub trait rest_at_settlement_hours {
         &self,
         character_id: u64,
         requested_minutes: u64,
-        at_inn: bool,
+        service: SettlementActionService,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,7 +73,7 @@ impl rest_at_settlement_hours for super::RemoteReducers {
         &self,
         character_id: u64,
         requested_minutes: u64,
-        at_inn: bool,
+        service: SettlementActionService,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -83,7 +85,7 @@ impl rest_at_settlement_hours for super::RemoteReducers {
             RestAtSettlementHoursArgs {
                 character_id,
                 requested_minutes,
-                at_inn,
+                service,
             },
             callback,
         )

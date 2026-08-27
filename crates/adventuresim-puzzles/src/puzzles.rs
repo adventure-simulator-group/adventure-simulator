@@ -1,3 +1,4 @@
+use fabelgeist_determinism::SplitMix64;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -442,9 +443,10 @@ impl TruthfulWitnessPuzzle {
 
     pub fn generate_with_spec(seed: u64, spec: TruthfulWitnessSpec) -> Result<Self, &'static str> {
         let spec = spec.validate()?;
-        let mut rng = PuzzleRng(seed ^ 0x7472_7574_685f_7769);
-        let solution_path = WitnessPath::ALL[(rng.next() as usize) % WitnessPath::ALL.len()];
-        let liar = Witness::ALL[(rng.next() as usize) % Witness::ALL.len()];
+        const TRUTHFUL_WITNESS_GENERATION_DOMAIN: u64 = 0x7472_7574_685f_7769;
+        let mut rng = SplitMix64::new(seed ^ TRUTHFUL_WITNESS_GENERATION_DOMAIN);
+        let solution_path = WitnessPath::ALL[rng.index(WitnessPath::ALL.len())];
+        let liar = Witness::ALL[rng.index(Witness::ALL.len())];
         let choices = Witness::ALL.map(|speaker| {
             let mut claims = witness_claims()
                 .into_iter()
@@ -777,7 +779,8 @@ impl RuneTransformationPuzzle {
         spec: RuneTransformationSpec,
     ) -> Result<Self, &'static str> {
         let spec = spec.validate()?;
-        let mut rng = PuzzleRng(seed ^ 0x7275_6e65_5f74_7261);
+        const RUNE_TRANSFORMATION_GENERATION_DOMAIN: u64 = 0x7275_6e65_5f74_7261;
+        let mut rng = SplitMix64::new(seed ^ RUNE_TRANSFORMATION_GENERATION_DOMAIN);
         let active_gates = RuneGate::ALL[..usize::from(spec.gate_count)].to_vec();
         let mut available_operations = RuneOperation::ALL.to_vec();
         shuffle(&mut available_operations, &mut rng);
@@ -788,17 +791,17 @@ impl RuneTransformationPuzzle {
             .map(|(index, gate)| RuneGateLaw {
                 gate,
                 operation: if spec.allow_repeated_operations {
-                    RuneOperation::ALL[(rng.next() as usize) % RuneOperation::ALL.len()]
+                    RuneOperation::ALL[rng.index(RuneOperation::ALL.len())]
                 } else {
                     available_operations[index]
                 },
             })
             .collect::<Vec<_>>();
-        let query = Sigil::ALL[(rng.next() as usize) % Sigil::ALL.len()];
+        let query = Sigil::ALL[rng.index(Sigil::ALL.len())];
         let mut route = Vec::with_capacity(usize::from(spec.route_length));
         if spec.allow_repeated_route_gates {
             for _ in 0..spec.route_length {
-                route.push(active_gates[(rng.next() as usize) % active_gates.len()]);
+                route.push(active_gates[rng.index(active_gates.len())]);
             }
         } else {
             let mut shuffled = active_gates.clone();
@@ -952,22 +955,10 @@ fn rune_gate_examples(
     })
 }
 
-pub(crate) fn shuffle<T>(values: &mut [T], rng: &mut PuzzleRng) {
+pub(crate) fn shuffle<T>(values: &mut [T], rng: &mut SplitMix64) {
     for end in (1..values.len()).rev() {
-        let selected = (rng.next() as usize) % (end + 1);
+        let selected = rng.index(end + 1);
         values.swap(end, selected);
-    }
-}
-
-pub(crate) struct PuzzleRng(pub(crate) u64);
-
-impl PuzzleRng {
-    pub(crate) fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut value = self.0;
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        value ^ (value >> 31)
     }
 }
 

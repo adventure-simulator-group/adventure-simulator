@@ -2,6 +2,7 @@
 
 use crate::prelude::*;
 use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
+use fabelgeist_determinism::SplitMix64;
 
 const MAX_COMBAT_ROUNDS: usize = 256;
 const MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
@@ -227,7 +228,7 @@ pub struct CombatWeapon {
     pub accuracy: f32,
     pub swing_precision: f32,
     pub stab_precision: f32,
-    pub preferred_melee_style: crate::equipment::MeleeAttackStyle,
+    pub preferred_melee_style: crate::combat_style::MeleeAttackStyle,
     pub weight: f32,
     pub penetration: f32,
     pub melee_reach: f32,
@@ -334,9 +335,9 @@ impl PlayerEquipment for CombatEquipment {
     fn weapon_stab_precision(&self) -> f32 {
         self.weapon.map_or(0.0, |weapon| weapon.stab_precision)
     }
-    fn weapon_preferred_melee_style(&self) -> crate::equipment::MeleeAttackStyle {
+    fn weapon_preferred_melee_style(&self) -> crate::combat_style::MeleeAttackStyle {
         self.weapon
-            .map_or(crate::equipment::MeleeAttackStyle::Swing, |weapon| {
+            .map_or(crate::combat_style::MeleeAttackStyle::Swing, |weapon| {
                 weapon.preferred_melee_style
             })
     }
@@ -753,9 +754,9 @@ pub fn authored_threat_combatant(
             0.8 + profile.precision_bonus
         },
         preferred_melee_style: if pierce && !slash {
-            crate::equipment::MeleeAttackStyle::Stab
+            crate::combat_style::MeleeAttackStyle::Stab
         } else {
-            crate::equipment::MeleeAttackStyle::Swing
+            crate::combat_style::MeleeAttackStyle::Swing
         },
         weight: if profile.rig == RigTopology::Quadruped {
             1.0
@@ -918,7 +919,10 @@ struct AttackEffect {
 }
 
 impl BattleRecorder {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "this domain boundary names each independent input explicitly"
+    )]
     fn record_attack(
         &mut self,
         phase: &str,
@@ -1743,31 +1747,6 @@ pub const fn body_part_index(part: BodyPart) -> usize {
     }
 }
 
-struct SplitMix64(u64);
-
-impl SplitMix64 {
-    fn new(seed: u64) -> Self {
-        Self(seed)
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut value = self.0;
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        value ^ (value >> 31)
-    }
-
-    fn unit_f32(&mut self) -> f32 {
-        (self.next_u64() >> 40) as f32 / (1_u32 << 24) as f32
-    }
-
-    fn index(&mut self, len: usize) -> usize {
-        debug_assert!(len > 0);
-        self.next_u64() as usize % len
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1817,7 +1796,7 @@ mod tests {
             accuracy: 1.5,
             swing_precision: if ranged { 0.0 } else { 1.5 },
             stab_precision: if ranged { 0.0 } else { 1.5 },
-            preferred_melee_style: crate::equipment::MeleeAttackStyle::Swing,
+            preferred_melee_style: crate::combat_style::MeleeAttackStyle::Swing,
             weight: 1.5,
             penetration: 1.0,
             melee_reach: if ranged { 0.0 } else { 1.0 },
@@ -1953,7 +1932,7 @@ mod tests {
         weapon.accuracy = 1.5;
         weapon.swing_precision = 1.5;
         weapon.stab_precision = 1.5;
-        weapon.preferred_melee_style = crate::equipment::MeleeAttackStyle::Swing;
+        weapon.preferred_melee_style = crate::combat_style::MeleeAttackStyle::Swing;
         weapon.weight = 1.5;
         weapon.melee_reach = 1.0;
         weapon.attack_interval_seconds = 1.0;

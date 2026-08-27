@@ -6,9 +6,7 @@ impl LiveRunner {
     ) -> bool {
         self.visible_npc_candidates(character_id, None, None)
             .into_iter()
-            .any(|candidate| {
-                candidate.resident_character_id == quest.issuer_resident_character_id
-            })
+            .any(|candidate| candidate.resident_character_id == quest.issuer_resident_character_id)
     }
 
     pub(super) fn defer_unavailable_contract_issuer(
@@ -27,10 +25,7 @@ impl LiveRunner {
                 bounded_event_field(provenance),
             ),
         );
-        if self
-            .party_by_id(party_id)?
-            .current_settlement_id
-            .as_deref()
+        if self.party_by_id(party_id)?.current_settlement_id.as_deref()
             == Some(quest.settlement_id.as_str())
         {
             self.settlement_activity_day(leader_agent)?;
@@ -287,15 +282,15 @@ impl LiveRunner {
                         ..
                     } => {
                         if party.current_settlement_id.is_some() {
-                            self.wait_for_safe_departure_at_settlement(
-                                leader,
-                                leader_agent,
-                                &quest.case_id,
+                            self.wait_for_safe_departure_at_settlement(SettlementDepartureWait {
+                                character_id: leader,
+                                agent: leader_agent,
+                                case_id: &quest.case_id,
                                 reason,
                                 wait_minutes,
                                 walking_minutes_per_day,
                                 travel_at_night,
-                            )?;
+                            })?;
                         }
                         return Ok(());
                     }
@@ -370,18 +365,22 @@ impl LiveRunner {
             let outbound_after = self.expedition_member_observations(party_id)?;
             let outbound_supplies_after = self.expedition_supplies(party_id);
             self.emit_expedition_diagnostics(
-                party_id,
-                "journey_leg",
-                "travel_to_case_site",
-                if outbound_after.iter().any(expedition_member_needs_recovery) {
-                    "quest_suppressed_member_not_ready_after_outbound_leg"
-                } else {
-                    "quest_leg_outbound_all_members_ready"
+                ExpeditionDiagnosticContext {
+                    party_id,
+                    phase: "journey_leg",
+                    action: "travel_to_case_site",
+                    reason: if outbound_after.iter().any(expedition_member_needs_recovery) {
+                        "quest_suppressed_member_not_ready_after_outbound_leg"
+                    } else {
+                        "quest_leg_outbound_all_members_ready"
+                    },
                 },
-                &outbound_before,
-                &outbound_after,
-                outbound_supplies_before,
-                outbound_supplies_after,
+                ExpeditionObservationChange {
+                    members_before: &outbound_before,
+                    members_after: &outbound_after,
+                    supplies_before: outbound_supplies_before,
+                    supplies_after: outbound_supplies_after,
+                },
             );
             self.event(
                 leader_agent,
@@ -889,84 +888,35 @@ impl LiveRunner {
                 .iter()
                 .any(|row| row.location == Some(EquipmentLocation::LeftHand))
             {
-                ItemSlot::LeftHolding
-            } else if !held
-                .iter()
-                .any(|row| row.location == Some(EquipmentLocation::RightHand))
-            {
-                ItemSlot::RightHolding
+                Slot::LeftHolding
             } else {
-                if let Some(displaced) = held
-                    .iter()
-                    .find(|row| row.location == Some(EquipmentLocation::RightHand))
-                    .map(|row| row.inventory_item_id)
-                {
-                    let result = reducer_call!(self, "unequip_upgrade_conflict", |cb| self
-                        .connection
-                        .reducers
-                        .equip_item_then(character_id, displaced, ItemSlot::None, cb));
-                    self.call(result)?;
-                }
-                ItemSlot::RightHolding
+                Slot::RightHolding
             }
         } else {
             candidate.slot
         };
-        let wearable = !candidate.equipment_placements.is_empty();
-        let placement_index = if wearable {
-            let (placement_index, placement) = candidate
-                .equipment_placements
-                .iter()
-                .enumerate()
-                .find(|(_, placement)| {
-                    placement.parents.is_empty()
-                        && placement.occupancy.iter().any(|requirement| {
-                            root_requirement_matches_slot(requirement, destination)
-                        })
-                })
-                .ok_or("wearable upgrade lacks a compatible authored root placement")?;
-            let conflicts = self
-                .connection
-                .db
-                .equipment_occupancy()
-                .iter()
-                .filter(|row| {
-                    row.character_id == character_id
-                        && placement.occupancy.iter().any(|requirement| {
-                            row.location == Some(requirement.location)
-                                && row.channel == requirement.channel
-                                && row.order == requirement.order
-                        })
-                })
-                .map(|row| row.inventory_item_id)
-                .collect::<HashSet<_>>();
-            for displaced in conflicts {
-                let result = reducer_call!(self, "unequip_wearable_upgrade_conflict", |cb| self
-                    .connection
-                    .reducers
-                    .equip_item_then(character_id, displaced, ItemSlot::None, cb));
-                self.call(result)?;
-            }
-            Some(placement_index as u16)
-        } else {
-            None
-        };
-        let result = if wearable {
-            reducer_call!(self, "equip_item_at_placement", |cb| self
-                .connection
-                .reducers
-                .equip_item_at_placement_then(
-                    character_id,
-                    inventory.id,
-                    placement_index.expect("wearable placement index"),
-                    cb
-                ))
-        } else {
-            reducer_call!(self, "equip_item", |cb| self
-                .connection
-                .reducers
-                .equip_item_then(character_id, inventory.id, destination, cb))
-        };
+        let placement_index = candidate
+            .equipment_placements
+            .iter()
+            .position(|placement| {
+                placement.parents.is_empty()
+                    && placement
+                        .occupancy
+                        .iter()
+                        .any(|requirement| root_requirement_matches_slot(requirement, destination))
+            })
+            .and_then(|index| u16::try_from(index).ok())
+            .ok_or("equipment upgrade lacks a compatible authored root placement")?;
+        let result = reducer_call!(self, "replace_item_at_placement", |cb| self
+            .connection
+            .reducers
+            .replace_item_at_placement_then(
+                character_id,
+                inventory.id,
+                placement_index,
+                Vec::new(),
+                cb,
+            ));
         self.call(result)?;
         let verified = self
             .connection

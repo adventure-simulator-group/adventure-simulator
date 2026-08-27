@@ -4,19 +4,29 @@ on:
   push:
     branches: ["main"]
     paths:
+      - "AGENTS.md"
+      - ".cargo/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/**"
+      - "rustfmt.toml"
       - "rust-toolchain.toml"
       - "justfile"
+      - "scripts/dev_stack.py"
+      - "scripts/tests/test_dev_stack.py"
       - ".github/workflows/rust-quality.yml"
   pull_request:
     paths:
+      - "AGENTS.md"
+      - ".cargo/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/**"
+      - "rustfmt.toml"
       - "rust-toolchain.toml"
       - "justfile"
+      - "scripts/dev_stack.py"
+      - "scripts/tests/test_dev_stack.py"
       - ".github/workflows/rust-quality.yml"
   workflow_dispatch:
 
@@ -25,6 +35,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  SPACETIMEDB_VERSION: "2.6.1"
 
 jobs:
   rust-quality:
@@ -39,6 +50,12 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+      - name: Install pinned SpacetimeDB CLI
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- -y
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/spacetime" version install "$SPACETIMEDB_VERSION"
+          "$HOME/.local/bin/spacetime" version use "$SPACETIMEDB_VERSION"
       - name: Install configured Linux linker
         run: >-
           sudo apt-get update && sudo apt-get install --no-install-recommends -y
@@ -49,7 +66,19 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --check
+          cargo fmt --manifest-path crates/fabelgeist-mhr/Cargo.toml -- --check
+          cargo fmt --manifest-path crates/fabelgeist-numpy-storage/Cargo.toml -- --check
+      - name: Test generated bindings verifier
+        run: >-
+          python3 -m unittest
+          scripts.tests.test_dev_stack.WorkflowTests.test_binding_diff_detects_changed_and_extra_files
+      - name: Verify generated SpacetimeDB bindings
+        run: python3 scripts/dev_stack.py verify-bindings
+      - name: Lint tactical client WASM target
+        run: cargo clippy --package adventuresim-tactical-client --lib --target wasm32-unknown-unknown -- -D warnings
       - name: Run Clippy with warnings denied
         run: |
-          cargo clippy --workspace --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
-          cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings
+          cargo clippy --manifest-path crates/fabelgeist-mhr/Cargo.toml --all-targets --all-features -- -D warnings
+          cargo clippy --manifest-path crates/fabelgeist-numpy-storage/Cargo.toml --all-targets --all-features -- -D warnings

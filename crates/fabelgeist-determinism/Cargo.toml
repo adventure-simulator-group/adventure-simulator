@@ -1,0 +1,9 @@
+[package]
+name = "fabelgeist-determinism"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

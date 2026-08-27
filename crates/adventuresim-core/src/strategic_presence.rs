@@ -4,7 +4,10 @@
 //! being joined through feature-specific strings or upgraded from a coarse
 //! settlement to an exact venue without explicit evidence.
 
-use crate::strategic_place::{PlaceIdentityError, StrategicPlaceId};
+use crate::{
+    strategic_place::{PlaceIdentityError, StrategicPlaceId},
+    strategic_time::MINUTES_PER_DAY,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResidencePresenceRole {
@@ -175,6 +178,10 @@ impl StrategicPresence {
 
     /// Presence granted by one live contextual membership at a case site.
     /// The expected revision prevents a stale projected context from joining.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "presence validation compares each authority fact explicitly"
+    )]
     pub fn case_context_membership(
         character_id: u64,
         place: StrategicPlaceId,
@@ -286,13 +293,15 @@ impl DailyPresenceWindow {
         context_suppressed: bool,
         health_suppressed: bool,
     ) -> Result<u64, PresenceError> {
-        if self.start_minute > 1_440 || self.end_minute > 1_440 {
+        if u64::from(self.start_minute) > MINUTES_PER_DAY
+            || u64::from(self.end_minute) > MINUTES_PER_DAY
+        {
             return Err(PresenceError::InvalidSchedule);
         }
         if context_suppressed || health_suppressed {
             return Err(PresenceError::Suppressed);
         }
-        let minute = personal_minute % 1_440;
+        let minute = personal_minute % MINUTES_PER_DAY;
         let start = u64::from(self.start_minute);
         let end = u64::from(self.end_minute);
         if start == end {
@@ -305,7 +314,7 @@ impl DailyPresenceWindow {
                 None
             }
         } else if minute >= start {
-            Some((1_440 - minute) + end)
+            Some((MINUTES_PER_DAY - minute) + end)
         } else if minute < end {
             Some(end - minute)
         } else {

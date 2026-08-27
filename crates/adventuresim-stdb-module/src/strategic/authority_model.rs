@@ -9,11 +9,11 @@ pub struct CaseAuthority {
     #[unique]
     pub investigation_case_id: String,
     /// Immutable private origin used by dialogue and objective authority.
-    pub provenance_kind: String,
+    pub provenance_kind: InvestigationProvenanceKind,
     pub generated_case_id: String,
     pub local_problem_id: Option<String>,
     pub objective_expression_json: String,
-    pub resolution_status: CaseResolutionStatus,
+    pub resolution_status: CaseStatus,
     pub resolved_by_party_id: Option<String>,
 }
 
@@ -152,7 +152,9 @@ pub struct Contract {
 
 impl Contract {
     /// Parse the flattened row before lifecycle-sensitive reducer logic uses it.
-    pub fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::ContractState, String> {
+    pub fn parsed_state(
+        &self,
+    ) -> Result<adventuresim_core::strategic_state::ContractState, String> {
         use adventuresim_core::strategic_state::FlatContractStatus as Flat;
         let status = match self.status {
             ContractStatus::Offered => Flat::Offered,
@@ -166,7 +168,8 @@ impl Contract {
             self.accepted_by.clone(),
             self.accepted_at_minute,
             self.paid_at_minute,
-        ).map_err(|error| error.to_string())
+        )
+        .map_err(|error| error.to_string())
     }
 }
 
@@ -225,11 +228,9 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                         .case_site_id_key()
                         .find(&site.id.value)
                         .filter(|group| {
-                            crate::investigation::canonical_case_site_place(
-                                &group.case_site_id_key,
-                            )
-                            .zip(group.case_site_id.to_place())
-                            .is_some_and(|(key_place, typed_place)| key_place == typed_place)
+                            crate::investigation::canonical_case_site_place(&group.case_site_id_key)
+                                .zip(group.case_site_id.to_place())
+                                .is_some_and(|(key_place, typed_place)| key_place == typed_place)
                                 && group.case_site_id == site.id
                         })
                 })
@@ -277,7 +278,7 @@ pub struct CaseOutcome {
     #[primary_key]
     pub case_id: String,
     pub party_id: String,
-    pub status: CaseResolutionStatus,
+    pub status: CaseStatus,
     pub winning_path_index: Option<u16>,
     pub resolved_at_minute: u64,
     pub selected_finale_id: String,
@@ -349,7 +350,7 @@ pub struct CaseFinaleAuthority {
     #[index(btree)]
     pub case_id: String,
     pub kind: FinaleKind,
-    pub resolution_status: CaseResolutionStatus,
+    pub resolution_status: CaseStatus,
     pub eligible_path_index: Option<u16>,
     pub priority: u16,
     pub status: FinaleStatus,
@@ -520,33 +521,17 @@ pub struct Party {
     /// the night window centered on midnight.
     #[default(false)]
     pub travel_at_night: bool,
-    /// Automatic camps clear every living member's carried fatigue. A fixed
-    /// duration preserves the leader's deliberate shorter or longer override.
-    #[default(CampDurationMode::Auto)]
-    pub camp_duration_mode: CampDurationMode,
-    #[default(0u16)]
-    pub fixed_camp_minutes: u16,
     /// A non-empty destination means the party is currently camped en route.
     #[default(None::<JourneyEndpoint>)]
     pub camp_destination: Option<JourneyEndpoint>,
     #[default(0u64)]
     pub camp_remaining_minutes: u64,
-    /// Water currently held in shared party-inventory waterskins.
-    #[default(0.0)]
-    pub pooled_water_ml: f32,
     #[default(0.0)]
     pub physiology_target: f32,
     #[default(0.0)]
     pub command_target: f32,
     #[default(0.0)]
     pub religion_target: f32,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, SpacetimeType)]
-pub enum CampDurationMode {
-    #[default]
-    Auto,
-    Fixed,
 }
 
 /// Party movement and case-site occupancy are visible only through the trusted
@@ -620,34 +605,19 @@ pub struct PartyJourney {
     pub gateway_bucket: u8,
     pub origin: JourneyEndpoint,
     pub destination: JourneyEndpoint,
-    pub total_minutes: u64,
-    pub completed_minutes: u64,
-    /// Cumulative journey minutes for camps the party has actually reached.
-    pub camp_stop_minutes: Vec<u64>,
-    /// Cumulative future camp estimates, recalculated after each camp rest.
-    pub forecast_camp_stop_minutes: Vec<u64>,
+    pub total_movement_minutes: u64,
+    pub completed_movement_minutes: u64,
+    /// Movement coordinates for camps the party has actually reached.
+    pub reached_camp_movement_minutes: Vec<u64>,
+    pub actual_camp_intervals: Vec<JourneyCampInterval>,
+    pub forecast_camp_intervals: Vec<JourneyCampInterval>,
     /// A journey keeps the leader's chosen threshold from departure.
     pub fatigue_percent: u8,
-    /// Zero identifies a pre elapsed-itinerary row requiring conservative
-    /// reconstruction from the party's current absolute time.
-    #[default(0u8)]
-    pub plan_version: u8,
-    /// Additive v2 itinerary coordinates. Legacy minute fields above remain
-    /// route-movement coordinates for compatibility.
-    #[default(0u64)]
     pub departure_minute: u64,
-    #[default(0u64)]
     pub total_elapsed_minutes: u64,
-    #[default(0u64)]
     pub completed_elapsed_minutes: u64,
-    #[default(480u16)]
     pub walking_minutes_per_day: u16,
-    #[default(false)]
     pub travel_at_night: bool,
-    #[default(CampDurationMode::Auto)]
-    pub camp_duration_mode: CampDurationMode,
-    #[default(0u16)]
-    pub fixed_camp_minutes: u16,
 }
 
 /// Private encounter authority. Public journey and encounter projections never
@@ -672,6 +642,12 @@ pub struct StrategicEncounterLoss {
     pub value_each: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum StrategicEncounterStatus {
+    AwaitingChoice,
+    Resolved,
+}
+
 /// Durable strategic interruption only. Tactical exchanges, positions, HP,
 /// and enemies remain transient and are committed only through final outcomes.
 #[derive(Clone, Debug)]
@@ -692,7 +668,7 @@ pub struct StrategicEncounter {
     pub party_aware: bool,
     pub enemy_aware: bool,
     pub available_choices: Vec<String>,
-    pub status: String,
+    pub status: StrategicEncounterStatus,
     pub revision: u32,
     pub selected_choice: Option<String>,
     pub selection_explanation: String,
@@ -717,17 +693,6 @@ pub struct StrategicEncounterResolutionReceipt {
     pub expected_revision: u32,
     pub resulting_revision: u32,
     pub outcome: String,
-}
-
-/// Typed elapsed-time camp coordinates for the journey tracker. Keeping these
-/// in an additive table avoids changing the movement-coordinate legacy rows.
-#[derive(Clone, Debug)]
-#[table(accessor = party_journey_itinerary, public)]
-pub struct PartyJourneyItinerary {
-    #[primary_key]
-    pub party_id: String,
-    pub actual_camp_intervals: Vec<JourneyCampInterval>,
-    pub forecast_camp_intervals: Vec<JourneyCampInterval>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -1202,16 +1167,34 @@ pub struct MissionAuthority {
 
 impl MissionAuthority {
     /// Parse the flattened storage representation into its valid sum type.
-    pub fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::MissionAttemptState, String> {
-        use adventuresim_core::strategic_state::{FlatMissionState, FlatMissionStatus as Status, FlatResolution as Resolution};
+    pub fn parsed_state(
+        &self,
+    ) -> Result<adventuresim_core::strategic_state::MissionAttemptState, String> {
+        use adventuresim_core::strategic_state::{
+            FlatMissionState, FlatMissionStatus as Status, FlatResolution as Resolution,
+        };
         adventuresim_core::strategic_state::MissionAttemptState::parse(FlatMissionState {
-            status: match self.status { MissionAttemptStatus::Bound => Status::Bound, MissionAttemptStatus::Committed => Status::Committed, MissionAttemptStatus::Failed => Status::Failed, MissionAttemptStatus::Cancelled => Status::Cancelled },
+            status: match self.status {
+                MissionAttemptStatus::Bound => Status::Bound,
+                MissionAttemptStatus::Committed => Status::Committed,
+                MissionAttemptStatus::Failed => Status::Failed,
+                MissionAttemptStatus::Cancelled => Status::Cancelled,
+            },
             case_site_id: self.case_site_id.as_ref().map(|id| id.value.clone()),
             hostile_group_id: self.hostile_group_id.clone(),
-            resolution: self.committed_resolution.map(|resolution| match resolution { HostileResolutionKind::Defeated => Resolution::Defeated, HostileResolutionKind::DrivenOff => Resolution::DrivenOff, HostileResolutionKind::Surrendered => Resolution::Surrendered, HostileResolutionKind::Captured => Resolution::Captured, HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled }),
+            resolution: self
+                .committed_resolution
+                .map(|resolution| match resolution {
+                    HostileResolutionKind::Defeated => Resolution::Defeated,
+                    HostileResolutionKind::DrivenOff => Resolution::DrivenOff,
+                    HostileResolutionKind::Surrendered => Resolution::Surrendered,
+                    HostileResolutionKind::Captured => Resolution::Captured,
+                    HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled,
+                }),
             subject_id: self.committed_capture_subject_id.clone(),
             custody_version: self.committed_capture_custody_version,
-        }).map_err(|error| error.to_string())
+        })
+        .map_err(|error| error.to_string())
     }
 }
 
@@ -1461,19 +1444,16 @@ pub struct HostileResolutionReceipt {
     pub capture_subject_id: Option<String>,
 }
 
-#[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq)]
 pub struct RecruitmentRequirements {
     pub melee: bool,
     pub ranged: bool,
-    pub precise: bool,
+    pub weapon_precision: f32,
     pub heavy: bool,
     pub quarter_armor: bool,
     pub half_armor: bool,
     pub three_quarter_armor: bool,
     pub full_armor: bool,
-    pub blunt: bool,
-    pub slash: bool,
-    pub pierce: bool,
     pub athletics: u8,
     pub endurance: u8,
     pub physiology: u8,
@@ -1487,12 +1467,7 @@ impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequir
         Self {
             melee: value.melee,
             ranged: value.ranged,
-            weapon_precision: adventuresim_core::capability::legacy_weapon_precision(
-                value.precise,
-                value.blunt,
-                value.slash,
-                value.pierce,
-            ),
+            weapon_precision: value.weapon_precision,
             heavy: value.heavy,
             quarter_armor: value.quarter_armor,
             half_armor: value.half_armor,
@@ -1519,8 +1494,6 @@ pub struct PartyRecruitmentRole {
     pub name: String,
     pub requirements: RecruitmentRequirements,
     pub quantity: u32,
-    #[default(0.0)]
-    pub weapon_precision: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -1533,8 +1506,6 @@ pub struct SavedRecruitmentRole {
     pub owner_character_id: u64,
     pub name: String,
     pub requirements: RecruitmentRequirements,
-    #[default(0.0)]
-    pub weapon_precision: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -1610,7 +1581,6 @@ enum ApprovedPartyAction {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
         save_role: bool,
     },
     UpdateRecruitmentRole {
@@ -1618,7 +1588,6 @@ enum ApprovedPartyAction {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
     },
     DeleteRecruitmentRole {
         role_id: u64,
@@ -1710,32 +1679,14 @@ impl ApprovedPartyAction {
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
                 save_role,
-            } => create_recruitment_role(
-                ctx,
-                leader_id,
-                name,
-                quantity,
-                requirements,
-                weapon_precision,
-                save_role,
-            ),
+            } => create_recruitment_role(ctx, leader_id, name, quantity, requirements, save_role),
             Self::UpdateRecruitmentRole {
                 role_id,
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
-            } => update_recruitment_role(
-                ctx,
-                leader_id,
-                role_id,
-                name,
-                quantity,
-                requirements,
-                weapon_precision,
-            ),
+            } => update_recruitment_role(ctx, leader_id, role_id, name, quantity, requirements),
             Self::DeleteRecruitmentRole { role_id } => {
                 delete_recruitment_role(ctx, leader_id, role_id)
             }
@@ -1794,3 +1745,4 @@ pub struct PartyLeaderVote {
     pub voter_id: u64,
     pub candidate_id: u64,
 }
+use adventuresim_core::investigation::InvestigationProvenanceKind;

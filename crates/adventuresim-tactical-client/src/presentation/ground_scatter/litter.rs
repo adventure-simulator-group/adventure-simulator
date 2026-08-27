@@ -11,11 +11,12 @@ use bevy::{
         Vec2, Vec3, default,
     },
 };
+use fabelgeist_determinism::splitmix64;
 use std::collections::BTreeMap;
 
 #[cfg(test)]
 use crate::presentation::generate_procedural_environment_assets;
-use crate::presentation::{ProceduralEnvironmentAssets, bps, leaf_material, splitmix64, unit_hash};
+use crate::presentation::{ProceduralEnvironmentAssets, bps, leaf_material, unit_hash};
 
 use super::{
     GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundScatterLayer,
@@ -432,7 +433,7 @@ pub(super) fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
     const CLUSTER_COUNT: u64 = 7;
     let clusters = (0..CLUSTER_COUNT)
         .map(|cluster| {
-            let hash = splitmix64(variant.rotate_left(17) ^ cluster as u64 ^ 0x5a9d_31c4);
+            let hash = splitmix64(variant.rotate_left(17) ^ cluster ^ 0x5a9d_31c4);
             Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 0.68
         })
         .collect::<Vec<_>>();
@@ -552,14 +553,14 @@ pub(super) fn woodland_plant_patch_mesh(variant: u64) -> Mesh {
         Color::srgb_u8(57, 91, 40),
         Color::srgb_u8(40, 68, 31),
     ];
-    let plant_count = 2 + (variant % 2) as u64;
+    let plant_count = 2 + variant % 2;
     for plant in 0..plant_count {
         let plant_hash = splitmix64(variant.rotate_left(23) ^ plant ^ 0x91e4_3bc7);
         let centre = Vec2::new(
             unit_hash(plant_hash) - 0.5,
             unit_hash(splitmix64(plant_hash ^ 1)) - 0.5,
         ) * 0.62;
-        let leaf_count = 5 + (plant_hash % 3) as u64;
+        let leaf_count = 5 + plant_hash % 3;
         let phase = unit_hash(splitmix64(plant_hash ^ 2)) * core::f32::consts::TAU;
         for leaf in 0..leaf_count {
             let hash = splitmix64(plant_hash ^ leaf.rotate_left(17));
@@ -637,7 +638,10 @@ impl GroundLitterMeshData {
         ]);
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "this domain boundary names each independent input explicitly"
+    )]
     fn append_bent_twig(
         &mut self,
         start: Vec3,
@@ -803,7 +807,7 @@ impl GroundLitterMeshData {
         for point in &mut leaf_positions {
             point.y += height - minimum_y - burial;
         }
-        let mut leaf_normals = vec![Vec3::ZERO; 9];
+        let mut leaf_normals = [Vec3::ZERO; 9];
         for outline_index in 0..8_usize {
             let left = 1 + outline_index;
             let right = 1 + (outline_index + 1) % 8;
@@ -1070,7 +1074,9 @@ mod tests {
         let mut contacting_leaves = 0;
         let mut seated_leaves = 0;
         let leaf_spans = leaf_positions
-            .chunks_exact(9)
+            .as_chunks::<9>()
+            .0
+            .iter()
             .map(|leaf| {
                 let minimum = leaf
                     .iter()
@@ -1112,13 +1118,13 @@ mod tests {
         assert!(!leaf_uvs.contains(&[0.0, 0.0]));
         assert!(!leaf_uvs.contains(&[1.0, 1.0]));
         let leaf_indices = leaves.indices().unwrap().iter().collect::<Vec<_>>();
-        for triangle in leaf_indices.chunks_exact(3) {
-            let a = Vec3::from_array(leaf_positions[triangle[0] as usize]);
-            let b = Vec3::from_array(leaf_positions[triangle[1] as usize]);
-            let c = Vec3::from_array(leaf_positions[triangle[2] as usize]);
-            let average_normal = (Vec3::from_array(leaf_normals[triangle[0] as usize])
-                + Vec3::from_array(leaf_normals[triangle[1] as usize])
-                + Vec3::from_array(leaf_normals[triangle[2] as usize]))
+        for triangle in leaf_indices.as_chunks::<3>().0 {
+            let a = Vec3::from_array(leaf_positions[triangle[0]]);
+            let b = Vec3::from_array(leaf_positions[triangle[1]]);
+            let c = Vec3::from_array(leaf_positions[triangle[2]]);
+            let average_normal = (Vec3::from_array(leaf_normals[triangle[0]])
+                + Vec3::from_array(leaf_normals[triangle[1]])
+                + Vec3::from_array(leaf_normals[triangle[2]]))
             .normalize();
             assert!((b - a).cross(c - a).dot(average_normal) > 0.0);
         }
@@ -1194,7 +1200,9 @@ mod tests {
             color[0] > color[1] && color[1] > color[2] && color[0] - color[2] < 0.58
         }));
         let pigments = colors
-            .chunks_exact(9)
+            .as_chunks::<9>()
+            .0
+            .iter()
             .map(|leaf| leaf[0])
             .collect::<Vec<_>>();
         assert!(pigments.windows(2).any(|pair| pair[0] != pair[1]));
@@ -1222,7 +1230,7 @@ mod tests {
             assert_eq!(mesh.indices().unwrap().len() / 3, expected_triangles);
             let mut edges = std::collections::BTreeMap::new();
             let indices = mesh.indices().unwrap().iter().collect::<Vec<_>>();
-            for triangle in indices.chunks_exact(3) {
+            for triangle in indices.as_chunks::<3>().0 {
                 for edge in [
                     (triangle[0], triangle[1]),
                     (triangle[1], triangle[2]),

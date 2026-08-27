@@ -4,7 +4,8 @@ use crate::data::Scan;
 use crate::data::gather::Gather;
 use crate::data::gpu::buffer::{Buffer, BufferDefinition};
 use crate::data::gpu::compute::{
-    GatherDefinition, MapDefinition, ScanDefinition, StreamDefinition,
+    GatherDefinition, MapDefinition, ScanDefinition, StreamDefinition, SurfaceExtractionSettings,
+    VertexCapacity,
 };
 use crate::globals::WgpuContext;
 use anyhow::Result;
@@ -301,13 +302,13 @@ impl MarchingCubes {
         context: &WgpuContext,
         definition: &MarchingCubesDefinition,
         sdf: &GpuResource,
-        grid: (u32, u32, u32),
-        threshold: f32,
-        max_vertices: u32,
-        scale: (f32, f32, f32),
-        offset: (f32, f32, f32),
+        settings: SurfaceExtractionSettings,
+        capacity: VertexCapacity,
     ) -> Result<(Buffer, Buffer, Buffer)> {
-        let grid_total = (grid.0 * grid.1 * grid.2) as u64;
+        let grid = settings.grid;
+        let threshold = settings.threshold.get();
+        let max_vertices = capacity.get();
+        let grid_total = grid.cell_count();
 
         // 1. Count Pass
         let counts_buffer = Buffer::new(
@@ -321,17 +322,17 @@ impl MarchingCubes {
         let counts_resource = GpuResource::Buffer(counts_buffer.clone());
 
         let mut count_params = PassParameters::new();
-        count_params.insert("grid_x", grid.0);
-        count_params.insert("grid_y", grid.1);
-        count_params.insert("grid_z", grid.2);
+        count_params.insert("grid_x", grid.width);
+        count_params.insert("grid_y", grid.height);
+        count_params.insert("grid_z", grid.depth);
         count_params.insert("max_vertices", max_vertices);
         count_params.insert("threshold", threshold);
-        count_params.insert("scale_x", scale.0);
-        count_params.insert("scale_y", scale.1);
-        count_params.insert("scale_z", scale.2);
-        count_params.insert("offset_x", offset.0);
-        count_params.insert("offset_y", offset.1);
-        count_params.insert("offset_z", offset.2);
+        count_params.insert("scale_x", settings.scale.x);
+        count_params.insert("scale_y", settings.scale.y);
+        count_params.insert("scale_z", settings.scale.z);
+        count_params.insert("offset_x", settings.offset.x);
+        count_params.insert("offset_y", settings.offset.y);
+        count_params.insert("offset_z", settings.offset.z);
         count_params.insert("tri_count_table", definition.tri_count_table_buffer.clone());
 
         Gather::execute_with_parameters(
@@ -387,17 +388,17 @@ impl MarchingCubes {
 
         // 4. Generate Pass (Stream)
         let mut gen_params = PassParameters::new();
-        gen_params.insert("grid_x", grid.0);
-        gen_params.insert("grid_y", grid.1);
-        gen_params.insert("grid_z", grid.2);
+        gen_params.insert("grid_x", grid.width);
+        gen_params.insert("grid_y", grid.height);
+        gen_params.insert("grid_z", grid.depth);
         gen_params.insert("max_vertices", max_vertices);
         gen_params.insert("threshold", threshold);
-        gen_params.insert("scale_x", scale.0);
-        gen_params.insert("scale_y", scale.1);
-        gen_params.insert("scale_z", scale.2);
-        gen_params.insert("offset_x", offset.0);
-        gen_params.insert("offset_y", offset.1);
-        gen_params.insert("offset_z", offset.2);
+        gen_params.insert("scale_x", settings.scale.x);
+        gen_params.insert("scale_y", settings.scale.y);
+        gen_params.insert("scale_z", settings.scale.z);
+        gen_params.insert("offset_x", settings.offset.x);
+        gen_params.insert("offset_y", settings.offset.y);
+        gen_params.insert("offset_z", settings.offset.z);
         gen_params.insert("triTable", definition.tri_table_buffer.clone());
         gen_params.insert("edgeTable", definition.edge_table_buffer.clone());
 
@@ -447,7 +448,7 @@ impl MarchingCubes {
         deinterleave_params.insert("out_normals", PassParameter::from(out_normals.clone()));
 
         let workgroups_x = max_vertices.div_ceil(64);
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             definition.deinterleave_pipeline.clone(),
             deinterleave_params,

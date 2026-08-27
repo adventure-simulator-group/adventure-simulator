@@ -100,10 +100,9 @@ fn social_action_label(
 }
 
 fn perceived_trait(
-    axis: crate::spacetimedb::BeliefAxis,
+    axis: adventuresim_core::social::PersonalityAxis,
     value: i8,
 ) -> (&'static str, &'static str) {
-    let axis = axis.core();
     axis.value_label(value)
         .map_or(("Personality", "Uncertain"), |value| (axis.label(), value))
 }
@@ -139,8 +138,11 @@ fn belief_style(confidence: f32) -> String {
     )
 }
 
-fn personality_reaction_hint(axis: crate::spacetimedb::BeliefAxis, value: i8) -> &'static str {
-    let axis = axis.core().slug();
+fn personality_reaction_hint(
+    axis: adventuresim_core::social::PersonalityAxis,
+    value: i8,
+) -> &'static str {
+    let axis = axis.slug();
     match (axis, value) {
         ("drive", 1) => {
             "Likely reaction: Rallying can motivate them after defeat; pity or flippancy may offend."
@@ -349,7 +351,7 @@ pub fn party_social_dialog(
                                     p class="social-addressed-status" { "Addressed by you" }
                                 }
                                 @if let Some(axis) = topic.and_then(adventuresim_core::social::axis_for_topic) {
-                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis.core() == axis) {
+                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == axis) {
                                         @let (axis_name, value) = perceived_trait(belief.axis, belief.perceived_value);
                                         p class="belief-copy" style=(belief_style(belief.confidence))
                                             tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
@@ -782,7 +784,7 @@ pub(super) fn inventory_rail(
                                     title=(tooltip) { "◀" }
                                 }
                             }
-                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-count" { (item.quantity) }
                             td class="inventory-weight" { "—" }
                             td class="inventory-gold" { "—" }
                         }
@@ -811,7 +813,7 @@ mod tests {
             id: 7,
             character_id: 1,
             item_id: "cooking_pot".into(),
-            qty: 1,
+            quantity: 1,
         }];
         let rendered = inventory_rail(None, &inventory, &[], &[], None, false).into_string();
         assert!(rendered.contains("data-inventory-browser=\"service-personal\""));
@@ -838,7 +840,6 @@ mod tests {
             name: name.into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: Some("lubeck".into()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -1015,7 +1016,6 @@ mod tests {
             name: name.into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: Some("lubeck".into()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -1142,7 +1142,7 @@ mod tests {
             id: "belief".into(),
             observer_id: 1,
             subject_id: 2,
-            axis: crate::spacetimedb::BeliefAxis::SelfRegard,
+            axis: adventuresim_core::social::PersonalityAxis::SelfRegard,
             perceived_value: 1,
             confidence: 0.64,
             observed_at_minute: 0,
@@ -1150,27 +1150,27 @@ mod tests {
         assert!(tooltip.contains("Confidence: 64%"));
         assert!(tooltip.contains("Injury is touchy"));
         assert_eq!(
-            perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, 1),
+            perceived_trait(adventuresim_core::social::PersonalityAxis::Inclination, 1),
             ("Inclination", "Attracted to men and women")
         );
         assert_eq!(
-            perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, 3),
+            perceived_trait(adventuresim_core::social::PersonalityAxis::Inclination, 3),
             ("Inclination", "Attracted to neither")
         );
         assert_eq!(
-            perceived_trait(crate::spacetimedb::BeliefAxis::Conscience, 2),
+            perceived_trait(adventuresim_core::social::PersonalityAxis::Conscience, 2),
             ("Conscience", "Callous")
         );
         assert_eq!(
-            perceived_trait(crate::spacetimedb::BeliefAxis::Conscience, 3),
+            perceived_trait(adventuresim_core::social::PersonalityAxis::Conscience, 3),
             ("Conscience", "Cruel")
         );
         assert_eq!(
-            perceived_trait(crate::spacetimedb::BeliefAxis::Presentation, 1),
+            perceived_trait(adventuresim_core::social::PersonalityAxis::Presentation, 1),
             ("Presentation", "Ambiguous")
         );
         assert_eq!(
-            perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, -1),
+            perceived_trait(adventuresim_core::social::PersonalityAxis::Inclination, -1),
             ("Personality", "Uncertain")
         );
     }
@@ -1266,7 +1266,6 @@ mod tests {
             name: "Visitor".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: Some("viabundus-1".into()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -1332,7 +1331,7 @@ mod tests {
         // Dark themes use the lightest possible 88% panel composite (over
         // white); light themes use the darkest possible composite (over
         // black). This brackets the image content beneath the translucent chat.
-        let legacy_palettes = [
+        let supported_palettes = [
             (
                 "Dark Arcanum",
                 [46, 49, 67],
@@ -1404,7 +1403,7 @@ mod tests {
                 [58, 122, 58],
             ),
         ];
-        for (palette, surface, primary, secondary, info, gold, dm, success) in legacy_palettes {
+        for (palette, surface, primary, secondary, info, gold, dm, success) in supported_palettes {
             let channels = [
                 ("Local", primary),
                 ("Party", mix(info, primary, 40)),

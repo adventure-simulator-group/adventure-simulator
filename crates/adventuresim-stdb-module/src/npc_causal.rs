@@ -275,13 +275,13 @@ fn settle_housing_decision(
                 NpcPolicyDecisionOutcome::HousingRecovered
             }
             crate::residence::NpcResidenceOutcome::Rented(tier) => match tier {
-                crate::residence::ResidenceTier::Cheap => {
+                adventuresim_core::courtship::HousingTier::Cheap => {
                     NpcPolicyDecisionOutcome::HousingRentedCheap
                 }
-                crate::residence::ResidenceTier::Moderate => {
+                adventuresim_core::courtship::HousingTier::Moderate => {
                     NpcPolicyDecisionOutcome::HousingRentedModerate
                 }
-                crate::residence::ResidenceTier::Fancy => {
+                adventuresim_core::courtship::HousingTier::Fancy => {
                     NpcPolicyDecisionOutcome::HousingRentedFancy
                 }
             },

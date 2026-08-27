@@ -11,6 +11,10 @@
 //! `--features remote-types` does, and nothing in the real
 //! `adventuresim-tactical-client` binary depends on this target.
 #![cfg(feature = "remote-types")]
+#![expect(
+    dead_code,
+    reason = "the reflection linker target compiles the client module tree solely to register derived types"
+)]
 
 pub mod animation;
 pub mod camera;

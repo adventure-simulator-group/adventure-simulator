@@ -278,9 +278,6 @@ pub(super) fn apply_active_environment_fog(
     mut fog: Single<&mut DistanceFog, With<Camera3d>>,
 ) {
     let Some(entity) = active.entity else {
-        if active.is_changed() {
-            **fog = scene_distance_fog(&legacy_scene_environment(&SceneId("default".into())));
-        }
         return;
     };
     let Ok(environment) = environments.get(entity) else {

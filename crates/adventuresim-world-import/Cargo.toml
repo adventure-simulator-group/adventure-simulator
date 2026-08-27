@@ -17,6 +17,7 @@ required-features = ["strategic-map-renderer"]
 [dependencies]
 adventuresim-world-schema.workspace = true
 adventuresim-terrain = { path = "../adventuresim-terrain" }
+fabelgeist-determinism.workspace = true
 blake3.workspace = true
 clap.workspace = true
 csv.workspace = true

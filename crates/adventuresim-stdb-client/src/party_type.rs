@@ -4,7 +4,6 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::camp_duration_mode_type::CampDurationMode;
 use super::case_site_id_type::CaseSiteId;
 use super::journey_endpoint_type::JourneyEndpoint;
 
@@ -22,11 +21,8 @@ pub struct Party {
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,
     pub travel_at_night: bool,
-    pub camp_duration_mode: CampDurationMode,
-    pub fixed_camp_minutes: u16,
     pub camp_destination: Option<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
-    pub pooled_water_ml: f32,
     pub physiology_target: f32,
     pub command_target: f32,
     pub religion_target: f32,
@@ -51,11 +47,8 @@ pub struct PartyCols {
     pub camp_fatigue_percent: __sdk::__query_builder::Col<Party, u8>,
     pub walking_minutes_per_day: __sdk::__query_builder::Col<Party, u16>,
     pub travel_at_night: __sdk::__query_builder::Col<Party, bool>,
-    pub camp_duration_mode: __sdk::__query_builder::Col<Party, CampDurationMode>,
-    pub fixed_camp_minutes: __sdk::__query_builder::Col<Party, u16>,
     pub camp_destination: __sdk::__query_builder::Col<Party, Option<JourneyEndpoint>>,
     pub camp_remaining_minutes: __sdk::__query_builder::Col<Party, u64>,
-    pub pooled_water_ml: __sdk::__query_builder::Col<Party, f32>,
     pub physiology_target: __sdk::__query_builder::Col<Party, f32>,
     pub command_target: __sdk::__query_builder::Col<Party, f32>,
     pub religion_target: __sdk::__query_builder::Col<Party, f32>,
@@ -88,14 +81,11 @@ impl __sdk::__query_builder::HasCols for Party {
                 "walking_minutes_per_day",
             ),
             travel_at_night: __sdk::__query_builder::Col::new(table_name, "travel_at_night"),
-            camp_duration_mode: __sdk::__query_builder::Col::new(table_name, "camp_duration_mode"),
-            fixed_camp_minutes: __sdk::__query_builder::Col::new(table_name, "fixed_camp_minutes"),
             camp_destination: __sdk::__query_builder::Col::new(table_name, "camp_destination"),
             camp_remaining_minutes: __sdk::__query_builder::Col::new(
                 table_name,
                 "camp_remaining_minutes",
             ),
-            pooled_water_ml: __sdk::__query_builder::Col::new(table_name, "pooled_water_ml"),
             physiology_target: __sdk::__query_builder::Col::new(table_name, "physiology_target"),
             command_target: __sdk::__query_builder::Col::new(table_name, "command_target"),
             religion_target: __sdk::__query_builder::Col::new(table_name, "religion_target"),

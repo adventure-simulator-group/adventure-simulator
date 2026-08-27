@@ -107,7 +107,7 @@ fn every_pattern_becomes_an_earned_observer_clue_and_executable_condition() {
                 TemplateFamily::DisappearanceOrLoss => {
                     assert!(producer.active_initially);
                 }
-                TemplateFamily::Outbreak => unreachable!("legacy pattern test families"),
+                TemplateFamily::Outbreak => unreachable!("outbreak is outside this test matrix"),
             }
             prelearning_blueprints.insert(format!(
                 "{:?}:{}:{}",

@@ -20,6 +20,7 @@ members = [
   "crates/strategic-web",
   "crates/fabelgeist-math",
   "crates/fabelgeist-animation",
+  "crates/fabelgeist-determinism",
   "crates/fabelgeist-timer",
   "crates/fabelgeist-fs",
   "crates/fabelgeist-gpu",
@@ -54,6 +55,7 @@ adventuresim-weapon-model = { version = "0.1.0", path = "crates/adventuresim-wea
 
 fabelgeist-math = { version = "0.1.0", path = "crates/fabelgeist-math" }
 fabelgeist-animation = { version = "0.1.0", path = "crates/fabelgeist-animation" }
+fabelgeist-determinism = { version = "0.1.0", path = "crates/fabelgeist-determinism" }
 fabelgeist-timer = { version = "0.1.0", path = "crates/fabelgeist-timer" }
 fabelgeist-fs = { version = "0.1.0", path = "crates/fabelgeist-fs" }
 fabelgeist-gpu = { version = "0.1.0", path = "crates/fabelgeist-gpu" }
@@ -134,10 +136,7 @@ spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"
 
 [workspace.lints.clippy]
-# These are retained for existing domain-facing APIs whose argument lists are
-# part of their explicit simulation contracts. New code should avoid them.
-type_complexity = "allow"
-too_many_arguments = "allow"
+all = { level = "warn", priority = -1 }
 
 [patch.crates-io]
 adventuresim-tactical-netcode = { path = "crates/adventuresim-tactical-netcode" }

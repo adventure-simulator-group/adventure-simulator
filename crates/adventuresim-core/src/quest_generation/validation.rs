@@ -174,14 +174,14 @@ fn validate_track_trails(case: &GeneratedCase, errors: &mut Vec<String>) {
             let valid_destination = destinations.len() == 1
                 && destinations.iter().any(|(stage, site_id)| {
                     if is_final {
-                        *stage == GeneratedDestinationStage::Exact
+                        *stage == DestinationKnowledgeStage::ExactBelieved
                             && site_id.is_some_and(|site_id| {
                                 case.sites
                                     .iter()
                                     .any(|site| site.id == *site_id && site.is_true_location)
                             })
                     } else {
-                        *stage == GeneratedDestinationStage::RouteSegment && site_id.is_none()
+                        *stage == DestinationKnowledgeStage::RouteSegment && site_id.is_none()
                     }
                 });
             if !valid_destination {
@@ -351,7 +351,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     matches!(
                         output,
                         GeneratedActionOutput::Destination {
-                            stage: GeneratedDestinationStage::Exact,
+                            stage: DestinationKnowledgeStage::ExactBelieved,
                             site_id: Some(site_id),
                         } if site_id == &outbreak.physical_source_site
                     )
@@ -415,8 +415,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     exposure.patient_ref.is_empty()
                         || exposure.patient_character_id == 0
                         || !case.witnesses.iter().any(|witness| {
-                            witness.resident_character_id
-                                == exposure.patient_character_id
+                            witness.resident_character_id == exposure.patient_character_id
                         })
                         || exposure.became_symptomatic_at
                             != exposure
@@ -451,30 +450,24 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                         practice: OutbreakSanitationPractice::UnwashedSharedBedding,
                     },
                     crate::disease::TransmissionVector::CloseContact,
-                )
-                | (
+                ) | (
                     OutbreakSource::Behavior {
-                        practice:
-                            OutbreakBehaviorPractice::CrowdedSleeping
+                        practice: OutbreakBehaviorPractice::CrowdedSleeping
                             | OutbreakBehaviorPractice::HandlingTheSick
                             | OutbreakBehaviorPractice::ReusingSoiledLinen,
                     },
                     crate::disease::TransmissionVector::CloseContact,
-                )
-                | (
+                ) | (
                     OutbreakSource::Sanitation {
-                        practice:
-                            OutbreakSanitationPractice::ContaminatedWell
+                        practice: OutbreakSanitationPractice::ContaminatedWell
                             | OutbreakSanitationPractice::WasteNearWater
                             | OutbreakSanitationPractice::TaintedFoodStorage,
                     },
                     crate::disease::TransmissionVector::FoodWater,
-                )
-                | (
+                ) | (
                     OutbreakSource::ThreatVector { .. },
                     crate::disease::TransmissionVector::Vermin,
-                )
-                | (
+                ) | (
                     OutbreakSource::Environmental { .. },
                     crate::disease::TransmissionVector::Environmental,
                 )
@@ -805,7 +798,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             .iter()
             .filter(|draft| draft.delivery == TestimonyDelivery::Withheld)
         {
-            if draft.destination_stage != "textual"
+            if draft.destination_stage != DestinationKnowledgeStage::Textual
                 || draft.site_id.is_some()
                 || !draft.referred_witness_ids.is_empty()
             {
@@ -944,7 +937,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     matches!(
                         output,
                         GeneratedActionOutput::Destination {
-                            stage: GeneratedDestinationStage::Exact,
+                            stage: DestinationKnowledgeStage::ExactBelieved,
                             site_id: Some(site_id),
                         } if Some(site_id) == true_site
                     )

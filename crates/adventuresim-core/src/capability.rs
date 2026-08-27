@@ -215,18 +215,6 @@ pub fn weapon_precision_tier_label(value: f32) -> Option<&'static str> {
     }
 }
 
-pub fn legacy_weapon_precision(precise: bool, blunt: bool, slash: bool, pierce: bool) -> f32 {
-    if precise {
-        WEAPON_PRECISION_RAPIER
-    } else if slash || pierce {
-        WEAPON_PRECISION_SWORD
-    } else if blunt {
-        WEAPON_PRECISION_CLUB
-    } else {
-        0.0
-    }
-}
-
 pub fn armor_tiers(equipment: &impl PlayerEquipment) -> (bool, bool, bool, bool) {
     let protected = |part| equipment.armor_coverage(part) > 0.0;
     let cuirass = protected(BodyPart::Chest) && protected(BodyPart::Stomach);
@@ -420,19 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn recommendations_combine_tags_and_rounded_ratings() {
-        assert_eq!(
-            legacy_weapon_precision(true, true, true, true),
-            WEAPON_PRECISION_RAPIER
-        );
-        assert_eq!(
-            legacy_weapon_precision(false, false, true, false),
-            WEAPON_PRECISION_SWORD
-        );
-        assert_eq!(
-            legacy_weapon_precision(false, true, false, false),
-            WEAPON_PRECISION_CLUB
-        );
+    fn recommendations_use_weapon_precision_and_rounded_ratings() {
         let capabilities = CharacterCapabilities {
             melee: true,
             weapon_precision: WEAPON_PRECISION_SWORD,

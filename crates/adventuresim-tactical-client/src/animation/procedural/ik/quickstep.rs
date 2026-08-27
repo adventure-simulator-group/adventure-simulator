@@ -176,13 +176,15 @@ pub(in crate::animation) fn apply(
                 &transforms.p0(),
             );
             if let Some(solution) = solve_two_bone_with_reach(
-                upper_snapshot.global.translation(),
-                lower_snapshot.global.translation(),
-                authored,
+                TwoBoneChain::new(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    authored,
+                    upper_length,
+                    lower_length,
+                    pole,
+                ),
                 target,
-                upper_length,
-                lower_length,
-                pole,
                 reach,
             ) {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);

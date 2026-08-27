@@ -65,20 +65,19 @@ mod legacy_tests {
 
     #[test]
     fn leaving_grounded_upright_plants_raised_movement() {
-        for body in [BodyState::Airborne] {
-            let mut state = SkeletonState::default()
-                .with_weapon_guard(WeaponGuardState::Raised)
-                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
+        let body = BodyState::Airborne;
+        let mut state = SkeletonState::default()
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
 
-            state.transition_body(body);
+        state.transition_body(body);
 
-            assert_eq!(state.body(), body);
-            assert_eq!(state.weapon_guard(), WeaponGuardState::Raised);
-            assert!(!state.raised_locomotion().is_moving());
-            let rebuilt = state
-                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 3.0));
-            assert!(!rebuilt.raised_locomotion().is_moving());
-        }
+        assert_eq!(state.body(), body);
+        assert_eq!(state.weapon_guard(), WeaponGuardState::Raised);
+        assert!(!state.raised_locomotion().is_moving());
+        let rebuilt =
+            state.with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 3.0));
+        assert!(!rebuilt.raised_locomotion().is_moving());
     }
 
     #[test]
@@ -87,15 +86,14 @@ mod legacy_tests {
             .with_weapon_guard(WeaponGuardState::Raised)
             .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0));
 
-        for body in [BodyState::Airborne] {
-            let mut wire = serde_json::to_value(&moving).unwrap();
-            wire["body"] = serde_json::to_value(body).unwrap();
-            let state: SkeletonState = serde_json::from_value(wire).unwrap();
+        let body = BodyState::Airborne;
+        let mut wire = serde_json::to_value(&moving).unwrap();
+        wire["body"] = serde_json::to_value(body).unwrap();
+        let state: SkeletonState = serde_json::from_value(wire).unwrap();
 
-            assert_eq!(state.body(), body);
-            assert_eq!(state.weapon_guard(), WeaponGuardState::Raised);
-            assert!(!state.raised_locomotion().is_moving());
-        }
+        assert_eq!(state.body(), body);
+        assert_eq!(state.weapon_guard(), WeaponGuardState::Raised);
+        assert!(!state.raised_locomotion().is_moving());
     }
 
     #[test]

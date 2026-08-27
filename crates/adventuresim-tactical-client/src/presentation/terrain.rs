@@ -3,6 +3,7 @@ use super::procedural_assets::{
     FOREST_SOIL_TILE_METRES,
 };
 use super::*;
+use fabelgeist_determinism::splitmix64;
 
 const DETAIL_PATCH_RADIUS_METRES: f32 = 20.0;
 const DETAIL_PATCH_MORPH_START_METRES: f32 = 15.5;
@@ -12,6 +13,9 @@ const DETAIL_PATCH_DEPTH_BIAS: f32 = 2.0;
 const DETAIL_PATCH_BASE_CUTOUT_RADIUS_METRES: f32 = 18.5;
 const DETAIL_RELIEF_MINIMUM_METRES: f32 = -0.075;
 const DETAIL_RELIEF_MAXIMUM_METRES: f32 = 0.105;
+const TREE_ROOT_SEED_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const TERRAIN_NOISE_X_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const TERRAIN_NOISE_Y_STRIDE: u64 = 0xbf58_476d_1ce4_e5b9;
 pub(in crate::presentation) const TACTICAL_DIRT_SRGB: [u8; 3] = [101, 82, 49];
 
 pub(super) fn scene_ground_color(environment: &SceneEnvironment) -> Color {
@@ -196,6 +200,11 @@ pub(in crate::presentation) fn on_game_scene_added(
         .insert(PendingTerrainPresentation);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the Bevy terrain system independently borrows source scenes, presentations, asset stores, and obstacle inputs"
+)]
 pub(in crate::presentation) fn present_pending_terrain(
     mut commands: Commands,
     query: Query<
@@ -203,7 +212,7 @@ pub(in crate::presentation) fn present_pending_terrain(
             Entity,
             &SceneId,
             &SceneTerrain,
-            Option<&SceneEnvironment>,
+            &SceneEnvironment,
             Option<&SceneGround>,
         ),
         With<PendingTerrainPresentation>,
@@ -235,13 +244,6 @@ pub(in crate::presentation) fn present_pending_terrain(
     let rock_influences = detail_rock_influences(&obstacles);
     let obstacle_signature = detail_obstacle_signature(&tree_positions, &rock_influences);
     for (entity, id, terrain, environment, ground) in &query {
-        let legacy_environment;
-        let environment = if let Some(environment) = environment {
-            environment
-        } else {
-            legacy_environment = legacy_scene_environment(id);
-            &legacy_environment
-        };
         let presented =
             if let (Some((_, handle)), Some((_, detail_handle, mut patch, mesh_handle))) = (
                 presentations.iter().find(|(source, _)| source.0 == entity),
@@ -539,6 +541,10 @@ struct TerrainShapeSample {
     concavity: f32,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "terrain relief keeps the sampled point, source layers, vista seam, and obstacle influences explicit"
+)]
 fn terrain_surface_relief(
     seed: u64,
     point: Vec2,
@@ -787,7 +793,7 @@ fn tree_root_relief(seed: u64, point: Vec2, tree_positions: &[Vec2]) -> f32 {
         let angle = offset.y.atan2(offset.x);
         let mut ridges = 0.0_f32;
         for root in 0..7_u64 {
-            let root_seed = splitmix64(tree_seed ^ root.wrapping_mul(0x9e37_79b9_7f4a_7c15));
+            let root_seed = splitmix64(tree_seed ^ root.wrapping_mul(TREE_ROOT_SEED_STRIDE));
             let origin = unit_hash(root_seed) * core::f32::consts::TAU;
             let phase = unit_hash(splitmix64(root_seed)) * core::f32::consts::TAU;
             let length = 4.8 + unit_hash(splitmix64(root_seed ^ 0x6c65_6e67)) * 2.9;
@@ -1017,7 +1023,9 @@ fn encode_canopy_floor_distance(
     let inner_radius = (2.2 / metres_per_pixel).ceil().max(1.0) as usize;
     let outer_radius = (4.8 / metres_per_pixel).ceil().max(1.0) as usize;
     let litter = pixels
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|pixel| pixel[0] == GroundCover::LeafLitter as u8)
         .collect::<Vec<_>>();
     let distance_to_litter =
@@ -1049,7 +1057,7 @@ fn ground_mask_noise(seed: u64, point: Vec2) -> f32 {
         let x = i64::from(coordinate.x as i32) as u64;
         let y = i64::from(coordinate.y as i32) as u64;
         unit_hash(splitmix64(
-            seed ^ x.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ y.wrapping_mul(0xbf58_476d_1ce4_e5b9),
+            seed ^ x.wrapping_mul(TERRAIN_NOISE_X_STRIDE) ^ y.wrapping_mul(TERRAIN_NOISE_Y_STRIDE),
         ))
     };
     let bottom = hash(Vec2::ZERO).lerp(hash(Vec2::X), curve.x);
@@ -1162,43 +1170,6 @@ fn ground_map_image(ground: Option<&SceneGround>, seed: u64) -> Image {
     image
 }
 
-pub(in crate::presentation) fn legacy_scene_environment(id: &SceneId) -> SceneEnvironment {
-    let (canopy_bps, hilly_bps, cultivation_bps) = match id.0.as_str() {
-        "hills" => (1_200, 7_000, 0),
-        "desert" => (0, 1_500, 0),
-        value => {
-            warn!("Unknown legacy scene: {value}");
-            (0, 0, 0)
-        }
-    };
-    SceneEnvironment {
-        scene_digest: id.0.clone(),
-        generation_version: TACTICAL_SCENE_GENERATION_VERSION,
-        latitude_microdegrees: 53_500_000,
-        longitude_microdegrees: 10_000_000,
-        absolute_minute: 12 * 60,
-        absolute_elevation_metres: 20,
-        weather: WeatherSnapshot {
-            rules_version: WEATHER_RULES_VERSION,
-            interval_start_minute: 0,
-            cell_latitude: 0,
-            cell_longitude: 0,
-            temperature_deci_c: 100,
-            wind_speed_bps: 1_500,
-            precipitation: Precipitation::Clear,
-            intensity_bps: 0,
-            ground_moisture_bps: 0,
-            snow_cover_bps: 0,
-            atmosphere: Default::default(),
-        },
-        canopy_bps,
-        wetland_bps: 0,
-        cultivation_bps,
-        water_bps: 0,
-        hilly_bps,
-    }
-}
-
 pub(super) fn on_environment_added(event: On<Add, SceneEnvironment>, mut commands: Commands) {
     commands
         .entity(event.entity)
@@ -1222,7 +1193,7 @@ mod tests {
 
     #[test]
     fn ordinary_dirt_uses_one_palette_color_regardless_of_canopy() {
-        let mut environment = legacy_scene_environment(&SceneId("dirt-palette".into()));
+        let mut environment = SceneEnvironmentFixture::TemperateHills.snapshot("dirt-palette");
         environment.weather.ground_moisture_bps = 0;
         environment.weather.snow_cover_bps = 0;
         environment.wetland_bps = 0;
@@ -1358,10 +1329,26 @@ mod tests {
             .spawn((
                 SceneId("lifecycle".into()),
                 SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).expect("valid terrain"),
-                legacy_scene_environment(&SceneId("lifecycle".into())),
                 ground,
             ))
             .id();
+        app.update();
+
+        assert!(
+            app.world()
+                .entity(scene)
+                .contains::<PendingTerrainPresentation>()
+        );
+        let mut presentation_query = app.world_mut().query::<&ScenePresentationOf>();
+        assert!(
+            presentation_query
+                .iter(app.world())
+                .all(|source| source.0 != scene)
+        );
+
+        app.world_mut()
+            .entity_mut(scene)
+            .insert(SceneEnvironmentFixture::TemperateHills.snapshot("lifecycle"));
         app.update();
 
         assert!(
@@ -1428,7 +1415,7 @@ mod tests {
     #[test]
     fn camera_local_detail_patch_is_bounded_deterministic_and_morphs_flat_at_its_edge() {
         let terrain = SceneTerrain::new(64, 64, 1.0, |point| point.x * 0.01 + point.y * 0.02);
-        let environment = legacy_scene_environment(&SceneId("detail-patch".into()));
+        let environment = SceneEnvironmentFixture::TemperateHills.snapshot("detail-patch");
         let vista = ActiveVistaSurface::default();
         let first =
             terrain_detail_patch_mesh(&terrain, None, &environment, &vista, Vec2::ZERO, &[], &[]);
@@ -1449,12 +1436,14 @@ mod tests {
             (39_000..=41_000).contains(&triangle_count),
             "{triangle_count}"
         );
-        assert!(
-            DETAIL_PATCH_RADIUS_METRES - DETAIL_PATCH_BASE_CUTOUT_RADIUS_METRES
-                > DETAIL_PATCH_SNAP_METRES * core::f32::consts::FRAC_1_SQRT_2
-                    + DETAIL_PATCH_SPACING_METRES * 2.0,
-            "the coarse cutout must stay inside the snapped circular patch"
-        );
+        const {
+            assert!(
+                DETAIL_PATCH_RADIUS_METRES - DETAIL_PATCH_BASE_CUTOUT_RADIUS_METRES
+                    > DETAIL_PATCH_SNAP_METRES * core::f32::consts::FRAC_1_SQRT_2
+                        + DETAIL_PATCH_SPACING_METRES * 2.0,
+                "the coarse cutout must stay inside the snapped circular patch"
+            );
+        }
 
         let mut minimum_relief = f32::INFINITY;
         let mut maximum_relief = f32::NEG_INFINITY;
@@ -1494,7 +1483,7 @@ mod tests {
     #[test]
     fn detail_relief_preserves_water_flatness_and_builds_a_crowned_rutted_road() {
         let terrain = SceneTerrain::new(16, 16, 1.0, |_| 0.0);
-        let environment = legacy_scene_environment(&SceneId("surface-processes".into()));
+        let environment = SceneEnvironmentFixture::TemperateHills.snapshot("surface-processes");
         let vista = ActiveVistaSurface::default();
         let water = SceneGround::uniform_for_terrain(
             &terrain,
@@ -1591,7 +1580,7 @@ mod tests {
             slope: 0.12,
             concavity: 0.0,
         };
-        let environment = legacy_scene_environment(&SceneId("directional-relief".into()));
+        let environment = SceneEnvironmentFixture::TemperateHills.snapshot("directional-relief");
         let along_flow = (0..20)
             .map(|step| {
                 drainage_relief(71, Vec2::new(step as f32 * 0.25, 0.0), shape, &environment)
@@ -1660,18 +1649,24 @@ mod tests {
         ];
         assert!(
             pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .all(|pixel| valid_surfaces.iter().any(|valid| pixel[..3] == valid[..3]))
         );
         assert!(
             pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .any(|pixel| pixel[0] == GroundCover::LeafLitter as u8 && pixel[3] > 180),
             "deep litter must encode an interior loam zone"
         );
         assert!(
             pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .any(|pixel| pixel[0] != GroundCover::LeafLitter as u8 && pixel[3] > 0),
             "open cover must retain an exterior canopy transition"
         );
@@ -1679,7 +1674,9 @@ mod tests {
         let first_leaf_litter_x = (0..depth as usize)
             .filter_map(|z| {
                 pixels
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .skip(z * width as usize)
                     .take(width as usize)
                     .position(|pixel| pixel[0] == 2)

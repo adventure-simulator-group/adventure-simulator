@@ -4,7 +4,6 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
         unresolved_encounter: false,
         active_destination: true,
         journey_count: 1,
-        itinerary_count: 1,
         destination_matches: true,
         active_interval_count: 0,
         actionable_actor: true,
@@ -151,7 +150,6 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
         "party_has_unresolved_public_encounter",
         "party_by_id",
         ".party_journey()",
-        ".party_journey_itinerary()",
         "projected_active_camp_interval_count",
         "classify_post_encounter_journey",
     ] {
@@ -162,7 +160,7 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
 #[test]
 fn narrative_encounter_policy_uses_safe_meaningful_choices_and_keeps_ignore_fallback() {
     let mut profile = generate_profile(42, 0);
-    profile.personality = crate::Personality::neutral();
+    profile.personality = adventuresim_core::personality::Personality::neutral();
     let presentation = adventuresim_core::road_encounter_catalog::EncounterPresentation {
         cast: Vec::new(),
         opening: Vec::new(),
@@ -221,11 +219,13 @@ fn narrative_encounter_policy_uses_safe_meaningful_choices_and_keeps_ignore_fall
     let missing_ignore = adventuresim_core::road_encounter_catalog::EncounterPresentation {
         cast: Vec::new(),
         opening: Vec::new(),
-        choices: vec![adventuresim_core::road_encounter_catalog::PresentationChoice {
-            id: "expose_charter".into(),
-            label: "Attempt a difficult checked action".into(),
-            available: true,
-        }],
+        choices: vec![
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "expose_charter".into(),
+                label: "Attempt a difficult checked action".into(),
+                available: true,
+            },
+        ],
         response: Vec::new(),
     };
     assert_eq!(
@@ -267,7 +267,10 @@ fn narrative_encounter_policy_uses_safe_meaningful_choices_and_keeps_ignore_fall
         "unconditional_check_free_noncombat_fallback"
     );
     assert!(selected.eligible_meaningful_alternatives.is_empty());
-    assert_eq!(selected.visible_alternatives, vec!["barter_rations", "ignore"]);
+    assert_eq!(
+        selected.visible_alternatives,
+        vec!["barter_rations", "ignore"]
+    );
 
     let selector = LIVE_CORE_SOURCE
         .split("fn select_public_narrative_encounter_choice")
@@ -332,10 +335,8 @@ fn post_rest_progress_accepts_only_explained_boundaries() {
 
 #[test]
 fn terminal_member_transitions_reclassify_short_and_zero_rest() {
-    let companion_death = public_alive_to_dead_ids(
-        &[(10, true), (20, true)],
-        &[(10, true), (20, false)],
-    );
+    let companion_death =
+        public_alive_to_dead_ids(&[(10, true), (20, true)], &[(10, true), (20, false)]);
     assert_eq!(companion_death, vec![20]);
     assert_eq!(
         public_terminal_rest_elapsed(
@@ -352,10 +353,8 @@ fn terminal_member_transitions_reclassify_short_and_zero_rest() {
         })
     );
 
-    let leader_death_with_successor = public_alive_to_dead_ids(
-        &[(10, true), (20, true)],
-        &[(10, false), (20, true)],
-    );
+    let leader_death_with_successor =
+        public_alive_to_dead_ids(&[(10, true), (20, true)], &[(10, false), (20, true)]);
     assert_eq!(leader_death_with_successor, vec![10]);
     assert_eq!(
         classify_post_rest_progress(1_000, 469, 1_469, 2_000, false, true),
@@ -425,11 +424,14 @@ fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
         .expect("post-rest continuation");
     for baseline_coherence in [
         "after_rest_journeys.as_slice()",
-        "after_rest_itineraries.as_slice()",
         "after_rest_party.camp_destination.as_ref()",
         "&after_rest_journey.destination == after_rest_destination",
+        "after_rest_journey.total_elapsed_minutes",
     ] {
-        assert!(post_rest.contains(baseline_coherence), "{baseline_coherence}");
+        assert!(
+            post_rest.contains(baseline_coherence),
+            "{baseline_coherence}"
+        );
     }
     assert!(interruption < strict_progress);
     assert!(strict_progress < completed_camp && completed_camp < continuation);
@@ -444,7 +446,7 @@ fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
         .expect("terminal reclassification branch");
     assert!(terminal_reclassification < continuation);
     let all_dead_teardown = post_rest
-        .find("(None, [], []) if terminal_state_change")
+        .find("(None, []) if terminal_state_change")
         .expect("all-dead public teardown projection");
     let all_dead_hold = post_rest
         .find("journey_stalled_after_terminal_rest")
@@ -488,12 +490,15 @@ fn between_camp_movement_is_validated_and_continues_until_a_recovery_boundary() 
         .expect("public journey camp state");
     for fail_closed_boundary in [
         "let [journey] = journeys.as_slice()",
-        "let [itinerary] = itineraries.as_slice()",
         "&journey.destination != destination",
         "journey.completed_elapsed_minutes >= journey.total_elapsed_minutes",
         "party.camp_remaining_minutes == 0",
+        "&journey.forecast_camp_intervals",
     ] {
-        assert!(projection.contains(fail_closed_boundary), "{fail_closed_boundary}");
+        assert!(
+            projection.contains(fail_closed_boundary),
+            "{fail_closed_boundary}"
+        );
     }
     assert!(projection.contains("classify_public_journey_camp_state("));
 
@@ -518,9 +523,8 @@ fn between_camp_movement_is_validated_and_continues_until_a_recovery_boundary() 
         .and_then(|tail| tail.split("fn generated_case_status").next())
         .expect("off-settlement recovery");
     assert!(
-        recovery.contains(
-            "let can_attempt_field_recovery = (camp_state.is_some() || at_case_site)"
-        )
+        recovery
+            .contains("let can_attempt_field_recovery = (camp_state.is_some() || at_case_site)")
     );
     assert!(recovery.contains("let at_case_site = party.current_case_site_id.is_some()"));
     assert!(recovery.contains("self.expedition_recovery_rest_actor(party_id)"));
@@ -572,7 +576,6 @@ fn camp_coherence_diagnostic_distinguishes_missing_and_overlapping_intervals() {
         "total_elapsed=",
         "forecast_count=",
         "journey_count=",
-        "itinerary_count=",
     ] {
         assert!(diagnostic.contains(field), "{field}");
     }
@@ -582,19 +585,22 @@ fn camp_coherence_diagnostic_distinguishes_missing_and_overlapping_intervals() {
         safe_failure_operation(
             "travel_camps failed: journey camp projection is incoherent: active_interval_count=0"
         ),
-        Some("travel_camps")
+        Some(FailureOperation::TravelCamps)
     );
 }
 
 #[test]
-fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
+fn travel_driver_uses_public_journey_and_observer_safe_provisioning() {
     let source = LIVE_CORE_SOURCE;
     let contributions = source
         .split("fn contribute_party_journey_currency")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn public_party_matchup_assessment").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn public_party_matchup_assessment")
+                .next()
+        })
         .expect("party journey contribution policy");
-    assert!(contributions.contains("row.status == \"ready\""));
+    assert!(contributions.contains("DomainIncapacitationStatus::Ready"));
     assert!(contributions.contains("!row.symptomatic && !row.critical"));
     assert!(contributions.contains("observable_medical_reserve"));
     assert!(contributions.contains("deposit_party_inventory_item_then"));
@@ -615,27 +621,28 @@ fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
                 .next()
         })
         .expect("shared coherent public camp helper");
-    for public_projection in [".party()", ".party_journey()", ".party_journey_itinerary()"] {
+    for public_projection in [".party()", ".party_journey()"] {
         assert!(
             coherent_camp.contains(public_projection),
             "{public_projection}"
         );
     }
     assert!(coherent_camp.contains("let [journey] = journeys.as_slice()"));
-    assert!(coherent_camp.contains("let [itinerary] = itineraries.as_slice()"));
     assert!(coherent_camp.contains("&journey.destination != camp_destination"));
     assert!(
         coherent_camp
             .contains("journey.completed_elapsed_minutes >= journey.total_elapsed_minutes")
     );
-    assert!(coherent_camp.contains("&itinerary.forecast_camp_intervals"));
+    assert!(coherent_camp.contains("&journey.forecast_camp_intervals"));
     assert!(coherent_camp.contains("projected_camp_rest_minutes("));
     assert!(travel.contains("let Some((travel_actor, travel_agent, _)) ="));
     assert!(travel.contains("self.expedition_recovery_actor(party_id)"));
     assert!(travel.contains("CoreLoopEventKind::Travel"));
     assert!(travel.contains("travel_agent,"));
     assert!(travel.contains("rest_at_camp_with_party_shelter"));
-    assert!(!travel.contains("rest_at_camp_with_party_shelter(\n                travel_actor,\n                1_440"));
+    assert!(!travel.contains(
+        "rest_at_camp_with_party_shelter(\n                travel_actor,\n                MINUTES_PER_DAY"
+    ));
     assert!(source.contains(
         "fn travel_camps(&mut self, party_id: &str) -> Result<JourneyTravelOutcome, String>"
     ));
@@ -669,7 +676,7 @@ fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
         .and_then(|tail| tail.split("fn public_expedition_return_settlement").next())
         .expect("public recovery actor selection");
     assert!(recovery_actor.contains("expedition_member_observations(party_id)"));
-    assert!(recovery_actor.contains("member.condition_status == \"ready\""));
+    assert!(recovery_actor.contains("Some(DomainIncapacitationStatus::Ready)"));
     assert!(recovery_actor.contains("!member.symptomatic"));
     assert!(recovery_actor.contains("!member.critical"));
     assert!(recovery_actor.contains("ready.sort_by_key"));
@@ -737,14 +744,16 @@ fn journey_holds_are_publicly_diagnosable_and_block_arrival_assumptions() {
     }
     assert!(hold.contains("bounded_event_field(reason)"));
     assert!(hold.contains(".party_journey()"));
-    assert!(hold.contains(".party_journey_itinerary()"));
     assert!(!hold.contains("infection_episode"));
     assert!(!hold.contains("disease"));
 
     let generated = source
         .split("fn advance_generated_case_inner")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn turn_in_ready_direct_contract")
+                .next()
+        })
         .expect("generated case driver");
     let travel_guard = generated
         .find("journey_outcome != JourneyTravelOutcome::Completed")
@@ -790,7 +799,7 @@ fn direct_contract_provisions_before_acceptance_then_abandons_after_one_defeat()
 
 #[test]
 fn direct_contract_acceptance_revalidates_the_publicly_present_issuer_before_spending_and_interaction()
-{
+ {
     let source = LIVE_CORE_SOURCE;
     let issuer = source
         .split("fn public_contract_issuer_available")
@@ -798,7 +807,9 @@ fn direct_contract_acceptance_revalidates_the_publicly_present_issuer_before_spe
         .and_then(|tail| tail.split("fn defer_unavailable_contract_issuer").next())
         .expect("public contract issuer availability policy");
     assert!(issuer.contains("visible_npc_candidates(character_id, None, None)"));
-    assert!(issuer.contains("candidate.resident_character_id == quest.issuer_resident_character_id"));
+    assert!(
+        issuer.contains("candidate.resident_character_id == quest.issuer_resident_character_id")
+    );
 
     let deferral = source
         .split("fn defer_unavailable_contract_issuer")
@@ -824,19 +835,25 @@ fn direct_contract_acceptance_revalidates_the_publicly_present_issuer_before_spe
         .collect::<Vec<_>>();
     assert_eq!(issuer_checks.len(), 2);
     let provision = cycle.find("provision_case_site_journey").unwrap();
-    let interaction = cycle.find("simulate_contract_issuer_interaction_then").unwrap();
+    let interaction = cycle
+        .find("simulate_contract_issuer_interaction_then")
+        .unwrap();
     assert!(issuer_checks[0] < provision);
     assert!(provision < issuer_checks[1] && issuer_checks[1] < interaction);
 }
 
 #[test]
 fn authoritative_contract_issuer_rejection_defers_accept_and_report_without_failure_metrics() {
-    assert!(contract_issuer_unavailable_failure(
-        "interact_accept_contract failed: Contract issuer is not available for interaction"
-    ));
-    assert!(contract_issuer_unavailable_failure(
-        "interact_report_contract failed: Contract issuer is not available for interaction"
-    ));
+    let coded = adventuresim_core::reducer_error::coded_reducer_error(
+        ReducerErrorCode::ContractIssuerUnavailable,
+        "wording is not part of the protocol",
+    );
+    assert!(contract_issuer_unavailable_failure(&format!(
+        "interact_accept_contract failed: {coded}"
+    )));
+    assert!(contract_issuer_unavailable_failure(&format!(
+        "interact_report_contract failed: {coded}"
+    )));
     assert!(!contract_issuer_unavailable_failure(
         "interact_accept_contract failed: Contract is not offered"
     ));

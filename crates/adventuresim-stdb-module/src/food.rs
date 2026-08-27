@@ -3,8 +3,13 @@
 use adventuresim_core::{
     disease::{self, DiseaseId},
     durability::{DamageBins, effective_weapon_stat},
-    food, herbalism,
-    physical_object::{OperationalCustody, PhysicalObjectId},
+    food::{self, CookingMethod, FoodPreparation, IngredientPreparationAction},
+    herbalism,
+    inventory_measurement::ConsumableFractionMicros,
+    material::Microliters,
+    physical_object::{
+        CarriedInventoryScope, InventoryLocation, OperationalCustody, PhysicalObjectId,
+    },
     prelude::{PlayerSkills, Skill, apply_direct_training},
     strategic_place::{StrategicFixtureId, StrategicPlaceId},
 };
@@ -23,32 +28,13 @@ use crate::{
     medicinal_component, party_item_amount,
     repair::{item_condition, item_condition__view as _},
     strategic::{
-        PartyInventoryItem, party_authority, party_authority__view as _, party_inventory_item,
-        party_inventory_item__view as _, party_item_condition, party_item_condition__view as _,
-        party_journey_authority, road_challenge_authority__view as _, settlement,
-        strategic_encounter__view as _,
+        PartyInventoryItem, StrategicEncounterStatus, party_authority, party_authority__view as _,
+        party_inventory_item, party_inventory_item__view as _, party_item_condition,
+        party_item_condition__view as _, party_journey_authority,
+        road_challenge_authority__view as _, settlement, strategic_encounter__view as _,
     },
     time::{character_time, character_time__view as _},
 };
-
-#[derive(Clone, Copy, Debug, PartialEq, SpacetimeType)]
-pub enum FoodPreparation {
-    Raw,
-    Cut,
-    Ground,
-    Preserved,
-    PanFried,
-    Stewed,
-    Roasted,
-    DriedSmoked,
-    Baked,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, SpacetimeType)]
-pub enum IngredientPreparationAction {
-    Cut,
-    Grind,
-}
 
 fn preparation_skill_check(
     ctx: &ReducerContext,
@@ -70,7 +56,10 @@ fn preparation_skill_check(
     Ok(skill.capped_training_rank(skills.effective_skill_hours(skill), &attributes))
 }
 
-fn carried_item_rows(ctx: &ReducerContext, character_id: u64) -> Vec<(String, u64, String)> {
+fn carried_item_rows(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Vec<(CarriedInventoryScope, u64, String)> {
     let Some(actor) = ctx.db.character().id().find(character_id) else {
         return Vec::new();
     };
@@ -80,7 +69,7 @@ fn carried_item_rows(ctx: &ReducerContext, character_id: u64) -> Vec<(String, u6
         .character_id()
         .filter(character_id)
         .filter(|row| {
-            crate::inventory_container::object_for_row(ctx, "personal", row.id)
+            crate::inventory_container::object_for_row(ctx, CarriedInventoryScope::Personal, row.id)
                 .ok()
                 .flatten()
                 .is_some_and(|object| {
@@ -89,7 +78,7 @@ fn carried_item_rows(ctx: &ReducerContext, character_id: u64) -> Vec<(String, u6
                         && !crate::inventory_container::ancestry_reaches_fireplace(ctx, object.id)
                 })
         })
-        .map(|row| ("personal".into(), row.id, row.item_id))
+        .map(|row| (CarriedInventoryScope::Personal, row.id, row.item_id))
         .collect::<Vec<_>>();
     if let Some(party_id) = ctx
         .db
@@ -104,20 +93,22 @@ fn carried_item_rows(ctx: &ReducerContext, character_id: u64) -> Vec<(String, u6
                 .party_id()
                 .filter(&party_id)
                 .filter(|row| {
-                    crate::inventory_container::object_for_row(ctx, "party", row.id)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|object| {
-                            crate::object_custody::require_actor_carried_object(
-                                ctx, &actor, &object,
-                            )
+                    crate::inventory_container::object_for_row(
+                        ctx,
+                        CarriedInventoryScope::Party,
+                        row.id,
+                    )
+                    .ok()
+                    .flatten()
+                    .is_some_and(|object| {
+                        crate::object_custody::require_actor_carried_object(ctx, &actor, &object)
                             .is_ok()
-                                && !crate::inventory_container::ancestry_reaches_fireplace(
-                                    ctx, object.id,
-                                )
-                        })
+                            && !crate::inventory_container::ancestry_reaches_fireplace(
+                                ctx, object.id,
+                            )
+                    })
                 })
-                .map(|row| ("party".into(), row.id, row.item_id)),
+                .map(|row| (CarriedInventoryScope::Party, row.id, row.item_id)),
         );
     }
     rows
@@ -131,26 +122,28 @@ fn qualifying_cutting_weapon_binding(ctx: &ReducerContext, character_id: u64) ->
             if !item.slash || item.accuracy < 0.5 {
                 return None;
             }
-            let damage = if scope == "personal" {
-                ctx.db
+            let damage = match scope {
+                CarriedInventoryScope::Personal => ctx
+                    .db
                     .item_condition()
                     .inventory_item_id()
                     .find(row_id)
-                    .map(|c| c.bins())
-            } else {
-                ctx.db
+                    .map(|c| c.bins()),
+                CarriedInventoryScope::Party => ctx
+                    .db
                     .party_item_condition()
                     .party_inventory_item_id()
                     .find(row_id)
                     .map(|c| {
                         DamageBins([c.tier_1, c.tier_2, c.tier_3, c.tier_4, c.tier_5]).normalized()
-                    })
+                    }),
             }
             .unwrap_or_default();
             (effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5).then(
                 || {
                     format!(
-                        "{scope}|{row_id}|{}|{}|{}|{:?}",
+                        "{}|{row_id}|{}|{}|{}|{:?}",
+                        scope.as_str(),
                         item.id,
                         item.accuracy.to_bits(),
                         item.edge_sensitivity.to_bits(),
@@ -166,7 +159,7 @@ fn grinding_tool_binding(ctx: &ReducerContext, character_id: u64) -> String {
     carried_item_rows(ctx, character_id)
         .into_iter()
         .filter(|(_, _, item_id)| item_id == "mortar_and_pestle")
-        .map(|(scope, row_id, item_id)| format!("{scope}|{row_id}|{item_id}"))
+        .map(|(scope, row_id, item_id)| format!("{}|{row_id}|{item_id}", scope.as_str()))
         .min()
         .unwrap_or_else(|| "hands".into())
 }
@@ -177,15 +170,23 @@ fn preparation_terminal_minute(
     current_minute: u64,
     duration: u64,
 ) -> Result<Option<u64>, String> {
-    let (injury_safe, injury_terminal) =
-        crate::surgery::preview_injury_terminal_boundary(ctx, character_id, duration, true)?;
+    let injury = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        duration,
+        crate::surgery::InjuryRecoveryMinutes::new(duration),
+    )?;
     let (disease_safe, disease_terminal) =
-        crate::disease::preview_disease_terminal_boundary(ctx, character_id, injury_safe, true)?;
-    let safe = injury_safe.min(disease_safe);
-    Ok((safe < duration || injury_terminal || disease_terminal)
+        crate::disease::preview_disease_terminal_boundary(ctx, character_id, injury.elapsed, true)?;
+    let safe = injury.elapsed.min(disease_safe);
+    Ok((safe < duration || injury.terminal || disease_terminal)
         .then_some(current_minute.saturating_add(safe)))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the idempotency key is defined by each explicit preparation coordinate"
+)]
 fn next_preparation_attempt_generation(
     ctx: &ReducerContext,
     character_id: u64,
@@ -245,7 +246,10 @@ fn preparation_attempt_state_key(
     encode_digest(&hash.finalize())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn record_preparation_attempt_state(
     ctx: &ReducerContext,
     character_id: u64,
@@ -290,6 +294,10 @@ fn record_preparation_attempt_state(
 /// Physically prepares one exact personal or party measured lot. Physical preparation
 /// does not change nutrition, flavor, contamination, or value.
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reducer ABI exposes each independently validated preparation input"
+)]
 pub fn prepare_ingredient_lot(
     ctx: &ReducerContext,
     character_id: u64,
@@ -567,9 +575,7 @@ pub fn prepare_ingredient_lot(
         || post.custody_binding != authority.custody_binding
         || post.material_source_digest != authority.material_source_digest
         || post.object.item_id != authority.object.item_id
-        || post.object.location_kind != authority.object.location_kind
-        || post.object.location_owner != authority.object.location_owner
-        || post.object.inventory_row_id != authority.object.inventory_row_id
+        || post.object.location != authority.object.location
         || post.skill != authority.skill
         || post.tool_binding != authority.tool_binding
         || post.duration != authority.duration
@@ -658,38 +664,21 @@ pub fn prepare_ingredient_lot(
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, SpacetimeType)]
-pub enum CookingMethod {
-    PanFry,
-    Stew,
-    Roast,
-    Bake,
+fn cooking_method_preparation(method: CookingMethod) -> FoodPreparation {
+    match method {
+        CookingMethod::PanFry => FoodPreparation::PanFried,
+        CookingMethod::Stew => FoodPreparation::Stewed,
+        CookingMethod::Roast => FoodPreparation::Roasted,
+        CookingMethod::Bake => FoodPreparation::Baked,
+    }
 }
 
-impl CookingMethod {
-    fn core(self) -> food::CookingMethod {
-        match self {
-            Self::PanFry => food::CookingMethod::PanFry,
-            Self::Stew => food::CookingMethod::Stew,
-            Self::Roast => food::CookingMethod::Roast,
-            Self::Bake => food::CookingMethod::Bake,
-        }
-    }
-    fn preparation(self) -> FoodPreparation {
-        match self {
-            Self::PanFry => FoodPreparation::PanFried,
-            Self::Stew => FoodPreparation::Stewed,
-            Self::Roast => FoodPreparation::Roasted,
-            Self::Bake => FoodPreparation::Baked,
-        }
-    }
-    fn name(self) -> &'static str {
-        match self {
-            Self::PanFry => "Pan-fried",
-            Self::Stew => "Stewed",
-            Self::Roast => "Roasted",
-            Self::Bake => "Baked",
-        }
+fn cooking_method_name(method: CookingMethod) -> &'static str {
+    match method {
+        CookingMethod::PanFry => "Pan-fried",
+        CookingMethod::Stew => "Stewed",
+        CookingMethod::Roast => "Roasted",
+        CookingMethod::Bake => "Baked",
     }
 }
 
@@ -744,6 +733,10 @@ pub struct FoodContaminationProvenance {
     pub contribution_digest: String,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "stable request identity frames every preparation coordinate explicitly"
+)]
 fn preparation_request_id(
     character_id: u64,
     inventory_scope: &str,
@@ -1068,7 +1061,10 @@ fn preparation_material_receipt(
     .map_err(|error| format!("Ingredient conservation failed: {error:?}"))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn load_preparation_authority(
     ctx: &ReducerContext,
     actor: &crate::Character,
@@ -1081,6 +1077,8 @@ fn load_preparation_authority(
     action: IngredientPreparationAction,
     current_minute: u64,
 ) -> Result<PreparationAuthority, String> {
+    let inventory_scope =
+        CarriedInventoryScope::try_from(inventory_scope).map_err(|error| error.to_string())?;
     let lot = ctx
         .db
         .food_lot()
@@ -1091,10 +1089,8 @@ fn load_preparation_authority(
         return Err("Ingredient preparation revision is stale".into());
     }
     let linked_row = match inventory_scope {
-        "personal" if lot.inventory_item_id == Some(inventory_item_id) => true,
-        "party" if lot.party_inventory_item_id == Some(inventory_item_id) => true,
-        "personal" | "party" => false,
-        _ => return Err("Ingredient preparation scope must be personal or party".into()),
+        CarriedInventoryScope::Personal => lot.inventory_item_id == Some(inventory_item_id),
+        CarriedInventoryScope::Party => lot.party_inventory_item_id == Some(inventory_item_id),
     };
     if !linked_row {
         return Err("Ingredient lot does not match the selected inventory row".into());
@@ -1155,7 +1151,7 @@ fn load_preparation_authority(
     )?;
     let material_receipt = preparation_material_receipt(&snapshot, request_id, action)?;
     Ok(PreparationAuthority {
-        inventory_scope: inventory_scope.into(),
+        inventory_scope: inventory_scope.as_str().into(),
         inventory_item_id,
         lot,
         object,
@@ -1294,7 +1290,10 @@ fn preparation_authority_digest(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn preparation_authority_digest_parts(
     actor: &crate::Character,
     inventory_scope: &str,
@@ -1347,9 +1346,9 @@ fn preparation_authority_digest_parts(
     frame(prefix.as_bytes());
     frame(tool_binding.as_bytes());
     frame(object.item_id.as_bytes());
-    frame(object.location_kind.as_bytes());
-    frame(object.location_owner.as_bytes());
-    frame(&object.inventory_row_id.to_le_bytes());
+    let location = serde_json::to_vec(&object.location)
+        .expect("inventory location serialization is infallible");
+    frame(&location);
     frame(&lot.mass_kg.to_bits().to_le_bytes());
     frame(&lot.nutrition_kcal.to_bits().to_le_bytes());
     frame(&lot.total_value.to_bits().to_le_bytes());
@@ -1431,15 +1430,23 @@ pub struct BackendIngredientPreparationPlan {
 
 fn view_object_for_row(
     ctx: &ViewContext,
-    scope: &str,
+    scope: CarriedInventoryScope,
     row_id: u64,
 ) -> Option<crate::InventoryObject> {
     let mut matches = ctx
         .db
         .inventory_object()
-        .location_kind()
-        .filter(scope)
-        .filter(|object| object.location_kind == scope && object.inventory_row_id == row_id);
+        .item_id()
+        .filter(""..)
+        .filter(|object| match (&object.location, scope) {
+            (InventoryLocation::Personal(location), CarriedInventoryScope::Personal) => {
+                location.row_id == row_id
+            }
+            (InventoryLocation::Party(location), CarriedInventoryScope::Party) => {
+                location.row_id == row_id
+            }
+            _ => false,
+        });
     let object = matches.next()?;
     matches.next().is_none().then_some(object)
 }
@@ -1451,7 +1458,7 @@ fn view_ancestry_reaches_fireplace(ctx: &ViewContext, object_id: u64) -> bool {
         let Some(object) = ctx.db.inventory_object().id().find(id) else {
             return true;
         };
-        if object.location_kind == "fireplace" {
+        if object.location.is_fireplace() {
             return true;
         }
         cursor = ctx
@@ -1467,19 +1474,26 @@ fn view_ancestry_reaches_fireplace(ctx: &ViewContext, object_id: u64) -> bool {
 fn view_carried_item_rows(
     ctx: &ViewContext,
     actor: &crate::Character,
-) -> Vec<(String, u64, String)> {
+) -> Vec<(CarriedInventoryScope, u64, String)> {
     let mut rows = ctx
         .db
         .inventory_item()
         .character_id()
         .filter(actor.id)
         .filter(|row| {
-            view_object_for_row(ctx, "personal", row.id).is_some_and(|object| {
-                !view_ancestry_reaches_fireplace(ctx, object.id)
-                    && view_carried_custody_is_fully_resolved(ctx, actor, "personal", &object)
-            })
+            view_object_for_row(ctx, CarriedInventoryScope::Personal, row.id).is_some_and(
+                |object| {
+                    !view_ancestry_reaches_fireplace(ctx, object.id)
+                        && view_carried_custody_is_fully_resolved(
+                            ctx,
+                            actor,
+                            CarriedInventoryScope::Personal,
+                            &object,
+                        )
+                },
+            )
         })
-        .map(|row| ("personal".into(), row.id, row.item_id))
+        .map(|row| (CarriedInventoryScope::Personal, row.id, row.item_id))
         .collect::<Vec<_>>();
     if let Some(party_id) = actor.party_id.as_deref() {
         rows.extend(
@@ -1488,12 +1502,19 @@ fn view_carried_item_rows(
                 .party_id()
                 .filter(party_id)
                 .filter(|row| {
-                    view_object_for_row(ctx, "party", row.id).is_some_and(|object| {
-                        !view_ancestry_reaches_fireplace(ctx, object.id)
-                            && view_carried_custody_is_fully_resolved(ctx, actor, "party", &object)
-                    })
+                    view_object_for_row(ctx, CarriedInventoryScope::Party, row.id).is_some_and(
+                        |object| {
+                            !view_ancestry_reaches_fireplace(ctx, object.id)
+                                && view_carried_custody_is_fully_resolved(
+                                    ctx,
+                                    actor,
+                                    CarriedInventoryScope::Party,
+                                    &object,
+                                )
+                        },
+                    )
                 })
-                .map(|row| ("party".into(), row.id, row.item_id)),
+                .map(|row| (CarriedInventoryScope::Party, row.id, row.item_id)),
         );
     }
     rows
@@ -1507,7 +1528,7 @@ fn view_cutting_weapon_binding(ctx: &ViewContext, actor: &crate::Character) -> O
             if !item.slash || item.accuracy < 0.5 {
                 return None;
             }
-            let damage = if scope == "personal" {
+            let damage = if scope == CarriedInventoryScope::Personal {
                 ctx.db
                     .item_condition()
                     .inventory_item_id()
@@ -1533,7 +1554,8 @@ fn view_cutting_weapon_binding(ctx: &ViewContext, actor: &crate::Character) -> O
             (effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5).then(
                 || {
                     format!(
-                        "{scope}|{row_id}|{}|{}|{}|{:?}",
+                        "{}|{row_id}|{}|{}|{}|{:?}",
+                        scope.as_str(),
                         item.id,
                         item.accuracy.to_bits(),
                         item.edge_sensitivity.to_bits(),
@@ -1562,49 +1584,48 @@ fn view_preparation_skill_check(ctx: &ViewContext, character_id: u64, skill: Ski
 fn view_carried_custody_is_fully_resolved(
     ctx: &ViewContext,
     actor: &crate::Character,
-    scope: &str,
+    scope: CarriedInventoryScope,
     object: &crate::InventoryObject,
 ) -> bool {
-    let expected_owner = match scope {
-        "personal" => actor.id.to_string(),
-        "party" => match actor.party_id.as_deref() {
-            Some(party_id) => party_id.into(),
-            None => return false,
-        },
-        _ => return false,
-    };
     let mut cursor = object.clone();
     for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
-        if cursor.location_kind != scope || cursor.location_owner != expected_owner {
-            return false;
-        }
-        if !view_object_for_row(ctx, scope, cursor.inventory_row_id)
-            .is_some_and(|unique| unique.id == cursor.id)
-        {
+        let row_id = match (&cursor.location, scope) {
+            (InventoryLocation::Personal(location), CarriedInventoryScope::Personal)
+                if location.character_id == actor.id =>
+            {
+                location.row_id
+            }
+            (InventoryLocation::Party(location), CarriedInventoryScope::Party)
+                if actor.party_id.as_deref() == Some(location.party_id.as_str()) =>
+            {
+                location.row_id
+            }
+            _ => return false,
+        };
+        if !view_object_for_row(ctx, scope, row_id).is_some_and(|unique| unique.id == cursor.id) {
             return false;
         }
         let row_matches = match scope {
-            "personal" => ctx
+            CarriedInventoryScope::Personal => ctx
                 .db
                 .inventory_item()
                 .id()
-                .find(cursor.inventory_row_id)
+                .find(row_id)
                 .is_some_and(|row| {
                     row.character_id == actor.id
                         && row.item_id == cursor.item_id
                         && row.quantity == 1
                 }),
-            "party" => ctx
+            CarriedInventoryScope::Party => ctx
                 .db
                 .party_inventory_item()
                 .id()
-                .find(cursor.inventory_row_id)
+                .find(row_id)
                 .is_some_and(|row| {
-                    row.party_id == expected_owner
+                    actor.party_id.as_deref() == Some(row.party_id.as_str())
                         && row.item_id == cursor.item_id
                         && row.quantity == 1
                 }),
-            _ => false,
         };
         if !row_matches {
             return false;
@@ -1627,7 +1648,7 @@ fn view_carried_custody_is_fully_resolved(
 fn view_direct_custody(
     ctx: &ViewContext,
     actor: &crate::Character,
-    scope: &str,
+    scope: CarriedInventoryScope,
     object: &crate::InventoryObject,
 ) -> Option<OperationalCustody> {
     if let Some(edge) = ctx
@@ -1641,12 +1662,15 @@ fn view_direct_custody(
             .map(OperationalCustody::Container);
     }
     match scope {
-        "personal" => OperationalCustody::character(actor.id).ok(),
-        "party" => OperationalCustody::party(actor.party_id.clone()?).ok(),
-        _ => None,
+        CarriedInventoryScope::Personal => OperationalCustody::character(actor.id).ok(),
+        CarriedInventoryScope::Party => OperationalCustody::party(actor.party_id.clone()?).ok(),
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the projection mirrors the authoritative preparation identity coordinates"
+)]
 fn view_next_preparation_generation(
     ctx: &ViewContext,
     actor_id: u64,
@@ -1692,7 +1716,9 @@ pub fn backend_ingredient_preparation_plans(
                         .strategic_encounter()
                         .party_id()
                         .find(party_id.to_string())
-                        .is_some_and(|encounter| encounter.status == "awaiting_choice")
+                        .is_some_and(|encounter| {
+                            encounter.status == StrategicEncounterStatus::AwaitingChoice
+                        })
                         || ctx
                             .db
                             .party_authority()
@@ -1734,7 +1760,7 @@ pub fn backend_ingredient_preparation_plans(
         let grinding_tool = carried
             .iter()
             .filter(|(_, _, item_id)| item_id == "mortar_and_pestle")
-            .map(|(scope, row_id, item_id)| format!("{scope}|{row_id}|{item_id}"))
+            .map(|(scope, row_id, item_id)| format!("{}|{row_id}|{item_id}", scope.as_str()))
             .min()
             .unwrap_or_else(|| "hands".into());
         for lot in ctx
@@ -1752,7 +1778,7 @@ pub fn backend_ingredient_preparation_plans(
                     .find(row_id)
                     .is_some_and(|row| row.character_id == actor.id && row.quantity == 1)
             {
-                Some(("personal", row_id))
+                Some((CarriedInventoryScope::Personal, row_id))
             } else if let Some(row_id) = lot.party_inventory_item_id
                 && actor.party_id.as_deref().is_some_and(|party_id| {
                     ctx.db
@@ -1762,7 +1788,7 @@ pub fn backend_ingredient_preparation_plans(
                         .is_some_and(|row| row.party_id == party_id && row.quantity == 1)
                 })
             {
-                Some(("party", row_id))
+                Some((CarriedInventoryScope::Party, row_id))
             } else {
                 None
             };
@@ -1821,7 +1847,7 @@ pub fn backend_ingredient_preparation_plans(
                 let Some(attempt_generation) = view_next_preparation_generation(
                     ctx,
                     actor.id,
-                    scope,
+                    scope.as_str(),
                     row_id,
                     lot.id,
                     object.id,
@@ -1837,13 +1863,13 @@ pub fn backend_ingredient_preparation_plans(
                 );
                 plans.push(BackendIngredientPreparationPlan {
                     actor_character_id: actor.id,
-                    inventory_scope: scope.into(),
+                    inventory_scope: scope.as_str().into(),
                     inventory_item_id: row_id,
                     food_lot_id: lot.id,
                     material_object_id: object.id,
                     request_id: preparation_request_id(
                         actor.id,
-                        scope,
+                        scope.as_str(),
                         row_id,
                         lot.id,
                         object.id,
@@ -1888,12 +1914,7 @@ pub struct FireplaceStation {
 fn dish_inventory_destination(
     source: &crate::PersistedOperationalCustody,
     dish_character_id: u64,
-    requested_scope: &str,
-    container_selector: bool,
-) -> Result<(&'static str, String), String> {
-    if !container_selector && !matches!(requested_scope, "personal" | "party") {
-        return Err("Invalid fireplace dish selector".into());
-    }
+) -> Result<OperationalCustody, String> {
     crate::object_custody::carried_destination(source, dish_character_id)
 }
 
@@ -2159,8 +2180,7 @@ pub(crate) fn cleanup_fireplace_custody_for_death(
             station_key: String,
             item_id: String,
             object_id: Option<u64>,
-            kind: &'static str,
-            owner: String,
+            destination: OperationalCustody,
         },
     }
 
@@ -2190,23 +2210,25 @@ pub(crate) fn cleanup_fireplace_custody_for_death(
                 .ok_or("Fireplace instrument return custody is missing")?,
             character_id,
         )?;
-        let exact_party = (recorded_destination.0 == "party")
-            .then_some(&recorded_destination.1)
-            .filter(|party_id| {
-                ctx.db
-                    .party_authority()
-                    .id()
-                    .find((*party_id).clone())
-                    .is_some()
-            });
+        let exact_party = match &recorded_destination {
+            OperationalCustody::Party(party_id) => Some(party_id),
+            _ => None,
+        }
+        .filter(|party_id| {
+            ctx.db
+                .party_authority()
+                .id()
+                .find(party_id.as_str().to_owned())
+                .is_some()
+        });
         let destination = if let Some(party_id) = exact_party {
-            Some(("party", party_id.clone()))
+            Some(OperationalCustody::party(party_id.as_str()).map_err(|error| error.to_string())?)
         } else if personal_estate_exists {
-            Some(("personal", character_id.to_string()))
+            Some(OperationalCustody::character(character_id).map_err(|error| error.to_string())?)
         } else {
             None
         };
-        let Some((kind, owner)) = destination else {
+        let Some(destination) = destination else {
             cleanup.push(StationCleanup::Abandon);
             continue;
         };
@@ -2220,14 +2242,13 @@ pub(crate) fn cleanup_fireplace_custody_for_death(
             if object.item_id != item_id {
                 return Err("Fireplace instrument conflicts with its physical object".into());
             }
-            crate::inventory_container::prevalidate_rehome_subtree(ctx, object_id, kind, &owner)?;
+            crate::inventory_container::prevalidate_rehome_subtree(ctx, object_id, &destination)?;
         }
         cleanup.push(StationCleanup::Return {
             station_key: station.key.clone(),
             item_id: item_id.into(),
             object_id: station.instrument_object_id,
-            kind,
-            owner,
+            destination,
         });
     }
 
@@ -2248,8 +2269,7 @@ pub(crate) fn cleanup_fireplace_custody_for_death(
             station_key,
             item_id,
             object_id,
-            kind,
-            owner,
+            destination,
         } = plan
         else {
             if let StationCleanup::Delete { station_key } = plan {
@@ -2259,26 +2279,30 @@ pub(crate) fn cleanup_fireplace_custody_for_death(
             continue;
         };
         if let Some(object_id) = object_id {
-            let row_id = if kind == "party" {
-                ctx.db
-                    .party_inventory_item()
-                    .insert(PartyInventoryItem {
-                        id: 0,
-                        party_id: owner.clone(),
-                        item_id: item_id.clone(),
-                        quantity: 1,
-                    })
-                    .id
-            } else {
-                ctx.db
-                    .inventory_item()
-                    .insert(crate::InventoryItem {
-                        id: 0,
-                        character_id,
-                        item_id: item_id.clone(),
-                        quantity: 1,
-                    })
-                    .id
+            let row_id = match &destination {
+                OperationalCustody::Party(party_id) => {
+                    ctx.db
+                        .party_inventory_item()
+                        .insert(PartyInventoryItem {
+                            id: 0,
+                            party_id: party_id.as_str().into(),
+                            item_id: item_id.clone(),
+                            quantity: 1,
+                        })
+                        .id
+                }
+                OperationalCustody::Character(character) => {
+                    ctx.db
+                        .inventory_item()
+                        .insert(crate::InventoryItem {
+                            id: 0,
+                            character_id: character.get(),
+                            item_id: item_id.clone(),
+                            quantity: 1,
+                        })
+                        .id
+                }
+                _ => return Err("Fireplace return destination is not carried inventory".into()),
             };
             let mut object = ctx
                 .db
@@ -2286,20 +2310,30 @@ pub(crate) fn cleanup_fireplace_custody_for_death(
                 .id()
                 .find(object_id)
                 .ok_or("Fireplace instrument object is missing")?;
-            object.location_kind = kind.into();
-            object.location_owner = owner.clone();
-            object.inventory_row_id = row_id;
+            object.location =
+                crate::inventory_container::carried_location_for_row(&destination, row_id)?;
             ctx.db.inventory_object().id().update(object);
-            crate::inventory_container::rehome_subtree(ctx, object_id, kind, &owner)?;
-        } else if kind == "party" {
-            crate::strategic::add_to_party_inventory_checked(ctx, &owner, &item_id, 1)?;
+            crate::inventory_container::rehome_subtree(ctx, object_id, &destination)?;
         } else {
-            ctx.db.inventory_item().insert(crate::InventoryItem {
-                id: 0,
-                character_id,
-                item_id,
-                quantity: 1,
-            });
+            match destination {
+                OperationalCustody::Party(party_id) => {
+                    crate::strategic::add_to_party_inventory_checked(
+                        ctx,
+                        party_id.as_str(),
+                        &item_id,
+                        1,
+                    )?;
+                }
+                OperationalCustody::Character(character) => {
+                    ctx.db.inventory_item().insert(crate::InventoryItem {
+                        id: 0,
+                        character_id: character.get(),
+                        item_id,
+                        quantity: 1,
+                    });
+                }
+                _ => return Err("Fireplace return destination is not carried inventory".into()),
+            }
         }
         ctx.db.fireplace_station().key().delete(station_key);
     }
@@ -2481,165 +2515,12 @@ fn method_for_instrument(item_id: Option<&str>) -> Result<CookingMethod, String>
     }
 }
 
-fn return_installed_tool(
-    ctx: &ReducerContext,
-    actor: &crate::Character,
-    station: &FireplaceStation,
-) -> Result<(), String> {
-    let Some(item_id) = station.instrument_item_id.as_deref() else {
-        return Ok(());
-    };
-    let custody = station
-        .instrument_return_custody
-        .as_ref()
-        .ok_or("The instrument's return custody is unknown; it remains installed")?;
-    match crate::object_custody::carried_destination(custody, actor.id)? {
-        ("personal", _) => {
-            ctx.db.inventory_item().insert(crate::InventoryItem {
-                id: 0,
-                character_id: actor.id,
-                item_id: item_id.into(),
-                quantity: 1,
-            });
-            Ok(())
-        }
-        ("party", party_id) => {
-            if ctx
-                .db
-                .party_authority()
-                .id()
-                .find(party_id.clone())
-                .is_none()
-            {
-                return Err("The original party inventory is no longer available; the instrument remains installed".into());
-            }
-            crate::strategic::add_to_party_inventory_checked(ctx, &party_id, item_id, 1)
-                .map_err(|_| "The original party inventory is no longer available; the instrument remains installed".to_string())
-        }
-        _ => Err(
-            "The instrument's return custody is not a carried inventory; it remains installed"
-                .into(),
-        ),
-    }
-}
-
-#[reducer]
-pub fn set_fireplace_instrument(
-    ctx: &ReducerContext,
-    character_id: u64,
-    fireplace_fixture_id: String,
-    inventory_scope: String,
-    inventory_item_id: Option<u64>,
-) -> Result<(), String> {
-    crate::strategic::require_strategic_gateway(ctx)?;
-    let actor = crate::character::require_living_character(ctx, character_id)?;
-    if actor.in_server {
-        return Err("Cooking is unavailable during a tactical encounter".into());
-    }
-    validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
-    if inventory_item_id.is_some() {
-        return Err("Cooking tools must be placed as containers over the fire".into());
-    }
-    let mut station = fireplace_station_for(ctx, character_id, &fireplace_fixture_id);
-    if ctx
-        .db
-        .fireplace_dish()
-        .station_key()
-        .find(station.key.clone())
-        .is_some()
-    {
-        return Err("Retrieve the current dish before changing instruments".into());
-    }
-    let replacement_custody = inventory_item_id
-        .is_some()
-        .then(|| crate::object_custody::carried_scope_custody(ctx, &actor, &inventory_scope))
-        .transpose()?
-        .as_ref()
-        .map(crate::object_custody::encode_custody);
-    let replacement = if let Some(id) = inventory_item_id {
-        let item_id = match inventory_scope.as_str() {
-            "personal" => {
-                let mut row = ctx
-                    .db
-                    .inventory_item()
-                    .id()
-                    .find(id)
-                    .ok_or("Instrument not found")?;
-                if row.character_id != character_id
-                    || crate::character::wearable_is_equipped(ctx, id)
-                {
-                    return Err("Equipped or foreign items cannot be installed".into());
-                }
-                method_for_instrument(Some(&row.item_id))?;
-                let item_id = row.item_id.clone();
-                if row.quantity == 1 {
-                    ctx.db.inventory_item().id().delete(id);
-                } else {
-                    row.quantity -= 1;
-                    ctx.db.inventory_item().id().update(row);
-                }
-                item_id
-            }
-            "party" => {
-                let party_id = actor
-                    .party_id
-                    .as_deref()
-                    .ok_or("Character has no party inventory")?;
-                let mut row = ctx
-                    .db
-                    .party_inventory_item()
-                    .id()
-                    .find(id)
-                    .ok_or("Instrument not found")?;
-                if row.party_id != party_id {
-                    return Err("Instrument is not in this party inventory".into());
-                }
-                method_for_instrument(Some(&row.item_id))?;
-                let item_id = row.item_id.clone();
-                if row.quantity == 1 {
-                    ctx.db.party_inventory_item().id().delete(id);
-                } else {
-                    row.quantity -= 1;
-                    ctx.db.party_inventory_item().id().update(row);
-                }
-                item_id
-            }
-            _ => return Err("Invalid inventory scope".into()),
-        };
-        Some(item_id)
-    } else {
-        None
-    };
-    // Reducer transactions make this return-and-replace sequence atomic. If
-    // stale source custody prevents a return, the staged replacement is rolled back.
-    return_installed_tool(ctx, &actor, &station)?;
-    station.instrument_item_id = replacement;
-    station.instrument_object_id = None;
-    station.instrument_return_custody = replacement_custody;
-    let existed = ctx
-        .db
-        .fireplace_station()
-        .key()
-        .find(station.key.clone())
-        .is_some();
-    if station.instrument_item_id.is_none() {
-        if existed {
-            ctx.db.fireplace_station().key().delete(station.key);
-        }
-    } else if existed {
-        ctx.db.fireplace_station().key().update(station);
-    } else {
-        ctx.db.fireplace_station().insert(station);
-    }
-    Ok(())
-}
-
 fn vessel_station_key(character_id: u64, fireplace_fixture_id: &str, object_id: u64) -> String {
     format!("{character_id}|{fireplace_fixture_id}|container:{object_id}")
 }
 
 /// Places one exact vessel and its entire subtree over this exact fireplace.
-/// The root legacy row is removed, so ordinary inventory/trade views cannot
+/// The root carried row is removed, so ordinary inventory/trade views cannot
 /// remotely transfer it. Children retain their stable object edges.
 #[reducer]
 pub fn place_fireplace_container(
@@ -2655,12 +2536,13 @@ pub fn place_fireplace_container(
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
-    let mut object = crate::inventory_container::ensure_object(
+    let inventory_scope = CarriedInventoryScope::try_from(inventory_scope.as_str())
+        .map_err(|error| error.to_string())?;
+    let mut object = crate::inventory_container::require_object(
         ctx,
         character_id,
-        &inventory_scope,
+        inventory_scope,
         inventory_item_id,
-        true,
     )?;
     if crate::inventory_container::object_is_nested(ctx, object.id) {
         return Err(
@@ -2669,29 +2551,23 @@ pub fn place_fireplace_container(
     }
     method_for_instrument(Some(&object.item_id))?;
     let source_custody =
-        crate::object_custody::carried_scope_custody(ctx, &actor, &inventory_scope)?;
+        crate::object_custody::carried_scope_custody(ctx, &actor, inventory_scope)?;
     let resolved = crate::object_custody::resolve_object_custody(ctx, &object)?;
     if resolved.root != source_custody {
         return Err("Container custody conflicts with the selected inventory".into());
     }
     let persisted_source = crate::object_custody::encode_custody(&source_custody);
-    let (source, _) = crate::object_custody::carried_destination(&persisted_source, character_id)?;
-    match source {
-        "personal" => {
-            ctx.db.inventory_item().id().delete(object.inventory_row_id);
+    match &object.location {
+        InventoryLocation::Personal(location) => {
+            ctx.db.inventory_item().id().delete(location.row_id);
         }
-        "party" => {
-            ctx.db
-                .party_inventory_item()
-                .id()
-                .delete(object.inventory_row_id);
+        InventoryLocation::Party(location) => {
+            ctx.db.party_inventory_item().id().delete(location.row_id);
         }
         _ => return Err("Container is not in carried inventory".into()),
     }
     let key = vessel_station_key(character_id, &fireplace_fixture_id, object.id);
-    object.location_kind = "fireplace".into();
-    object.location_owner = fireplace_fixture_id.clone();
-    object.inventory_row_id = 0;
+    object.location = InventoryLocation::fireplace(fireplace_fixture_id.clone());
     ctx.db.inventory_object().id().update(object.clone());
     ctx.db.fireplace_station().insert(FireplaceStation {
         key,
@@ -2742,30 +2618,24 @@ pub fn retrieve_fireplace_container(
         .instrument_return_custody
         .as_ref()
         .ok_or("Container return custody is unknown")?;
-    let (location_kind, location_owner) =
-        crate::object_custody::carried_destination(return_custody, character_id)?;
-    crate::inventory_container::prevalidate_rehome_subtree(
-        ctx,
-        container_object_id,
-        location_kind,
-        &location_owner,
-    )?;
-    let inventory_row_id = match location_kind {
-        "personal" => {
+    let destination = crate::object_custody::carried_destination(return_custody, character_id)?;
+    crate::inventory_container::prevalidate_rehome_subtree(ctx, container_object_id, &destination)?;
+    let inventory_row_id = match &destination {
+        OperationalCustody::Character(character) => {
             let row = ctx.db.inventory_item().insert(crate::InventoryItem {
                 id: 0,
-                character_id,
+                character_id: character.get(),
                 item_id: item_id.clone(),
                 quantity: 1,
             });
             row.id
         }
-        "party" => {
+        OperationalCustody::Party(party_id) => {
             if ctx
                 .db
                 .party_authority()
                 .id()
-                .find(location_owner.clone())
+                .find(party_id.as_str().to_owned())
                 .is_none()
             {
                 return Err("Original party inventory is unavailable".into());
@@ -2775,7 +2645,7 @@ pub fn retrieve_fireplace_container(
                 .party_inventory_item()
                 .insert(crate::strategic::PartyInventoryItem {
                     id: 0,
-                    party_id: location_owner.clone(),
+                    party_id: party_id.as_str().into(),
                     item_id: item_id.clone(),
                     quantity: 1,
                 });
@@ -2790,16 +2660,10 @@ pub fn retrieve_fireplace_container(
         .find(container_object_id)
         .ok_or("Container object is missing")?;
     crate::object_custody::require_object_at_fixture(ctx, &object, &fixture)?;
-    object.location_kind = location_kind.into();
-    object.location_owner = location_owner.clone();
-    object.inventory_row_id = inventory_row_id;
+    object.location =
+        crate::inventory_container::carried_location_for_row(&destination, inventory_row_id)?;
     ctx.db.inventory_object().id().update(object);
-    crate::inventory_container::rehome_subtree(
-        ctx,
-        container_object_id,
-        location_kind,
-        &location_owner,
-    )?;
+    crate::inventory_container::rehome_subtree(ctx, container_object_id, &destination)?;
     ctx.db.fireplace_station().key().delete(key);
     crate::inventory_container::merge_empty_container(ctx, container_object_id)?;
     Ok(())
@@ -2815,38 +2679,42 @@ fn current_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
 
 fn ensure_food_material_object(
     ctx: &ReducerContext,
-    scope: &str,
+    scope: CarriedInventoryScope,
     row_id: u64,
 ) -> Result<crate::InventoryObject, String> {
-    let (item_id, location_owner, quantity) = match scope {
-        "personal" => {
+    let (item_id, location, quantity) = match scope {
+        CarriedInventoryScope::Personal => {
             let row = ctx
                 .db
                 .inventory_item()
                 .id()
                 .find(row_id)
                 .ok_or("Food inventory row is missing")?;
-            (row.item_id, row.character_id.to_string(), row.quantity)
+            (
+                row.item_id,
+                InventoryLocation::personal(row.character_id, row.id),
+                row.quantity,
+            )
         }
-        "party" => {
+        CarriedInventoryScope::Party => {
             let row = ctx
                 .db
                 .party_inventory_item()
                 .id()
                 .find(row_id)
                 .ok_or("Party food inventory row is missing")?;
-            (row.item_id, row.party_id, row.quantity)
+            (
+                row.item_id,
+                InventoryLocation::party(row.party_id, row.id),
+                row.quantity,
+            )
         }
-        _ => return Err("Food material object requires carried custody".into()),
     };
     if quantity != 1 {
         return Err("Every food lot requires a quantity-one stable inventory object".into());
     }
     if let Some(object) = crate::inventory_container::object_for_row(ctx, scope, row_id)? {
-        if object.item_id != item_id
-            || object.location_kind != scope
-            || object.location_owner != location_owner
-        {
+        if object.item_id != item_id || object.location != location {
             return Err("Food inventory row has a mismatched stable object identity".into());
         }
         return Ok(object);
@@ -2854,9 +2722,7 @@ fn ensure_food_material_object(
     Ok(ctx.db.inventory_object().insert(crate::InventoryObject {
         id: 0,
         item_id,
-        location_kind: scope.into(),
-        location_owner,
-        inventory_row_id: row_id,
+        location,
     }))
 }
 
@@ -2869,7 +2735,7 @@ pub fn create_personal_food_lot(
 ) -> Result<FoodLot, String> {
     let definition = food::definition(item_id).ok_or("Food definition not found")?;
     let minute = current_minute(ctx, character_id);
-    ensure_food_material_object(ctx, "personal", inventory_item_id)?;
+    ensure_food_material_object(ctx, CarriedInventoryScope::Personal, inventory_item_id)?;
     let lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,
         inventory_item_id: Some(inventory_item_id),
@@ -2913,7 +2779,7 @@ pub fn create_party_food_lot(
     minute: u64,
 ) -> Option<FoodLot> {
     let definition = food::definition(item_id)?;
-    ensure_food_material_object(ctx, "party", inventory_item_id).ok()?;
+    ensure_food_material_object(ctx, CarriedInventoryScope::Party, inventory_item_id).ok()?;
     let lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,
         inventory_item_id: None,
@@ -3113,7 +2979,11 @@ pub fn split_lot(
         .food_lot_id()
         .find(source.id)
         .ok_or("Food contamination state not found")?;
-    ensure_food_material_object(ctx, "personal", destination_inventory_id)?;
+    ensure_food_material_object(
+        ctx,
+        CarriedInventoryScope::Personal,
+        destination_inventory_id,
+    )?;
     let child = ctx.db.food_lot().insert(child);
     split_food_contamination_provenance(ctx, source.id, child.id, ratio)?;
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
@@ -3176,7 +3046,7 @@ pub fn move_or_split_to_party(
         .food_lot_id()
         .find(source.id)
         .ok_or("Food contamination state not found")?;
-    ensure_food_material_object(ctx, "party", destination_party_id)?;
+    ensure_food_material_object(ctx, CarriedInventoryScope::Party, destination_party_id)?;
     let child = ctx.db.food_lot().insert(child);
     split_food_contamination_provenance(ctx, source.id, child.id, ratio)?;
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
@@ -3224,7 +3094,11 @@ pub fn move_or_split_to_personal(
         .food_lot_id()
         .find(source.id)
         .ok_or("Food contamination state not found")?;
-    ensure_food_material_object(ctx, "personal", destination_inventory_id)?;
+    ensure_food_material_object(
+        ctx,
+        CarriedInventoryScope::Personal,
+        destination_inventory_id,
+    )?;
     let child = ctx.db.food_lot().insert(child);
     split_food_contamination_provenance(ctx, source.id, child.id, ratio)?;
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
@@ -3381,13 +3255,16 @@ fn cooking_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, String>
     ) * limbs.head_health.clamp(0.0, 1.0))
 }
 
-fn stew_water_required_ml(amounts_milliunits: &[u32]) -> Option<f32> {
-    let total = amounts_milliunits
-        .iter()
-        .try_fold(0_u64, |sum, amount| sum.checked_add(u64::from(*amount)))?;
-    let required =
-        500.0 + total as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32 * 100.0;
-    required.is_finite().then_some(required)
+fn parse_consumable_fractions(
+    fractions_micros: Vec<u32>,
+) -> Result<Vec<ConsumableFractionMicros>, String> {
+    fractions_micros
+        .into_iter()
+        .map(|value| {
+            ConsumableFractionMicros::try_new(value)
+                .map_err(|_| "Ingredient fraction cannot exceed one whole".to_owned())
+        })
+        .collect()
 }
 
 #[reducer]
@@ -3397,7 +3274,7 @@ pub fn add_fireplace_ingredients(
     fireplace_fixture_id: String,
     inventory_scope: String,
     inventory_item_ids: Vec<u64>,
-    amounts_milliunits: Vec<u32>,
+    fractions_micros: Vec<u32>,
 ) -> Result<(), String> {
     add_fireplace_ingredients_at(
         ctx,
@@ -3405,7 +3282,7 @@ pub fn add_fireplace_ingredients(
         fireplace_fixture_id,
         inventory_scope,
         inventory_item_ids,
-        amounts_milliunits,
+        parse_consumable_fractions(fractions_micros)?,
         None,
     )
 }
@@ -3446,7 +3323,12 @@ pub fn start_fireplace_container_cooking(
         .instrument_return_custody
         .as_ref()
         .ok_or("Container return custody is unknown")?;
-    let (scope, _) = crate::object_custody::carried_destination(return_custody, character_id)?;
+    let destination = crate::object_custody::carried_destination(return_custody, character_id)?;
+    let scope = match destination {
+        OperationalCustody::Character(_) => CarriedInventoryScope::Personal,
+        OperationalCustody::Party(_) => CarriedInventoryScope::Party,
+        _ => return Err("Container return custody is not carried inventory".into()),
+    };
     let mut ids = Vec::new();
     let mut amounts = Vec::new();
     let mut consumed_objects = Vec::new();
@@ -3468,16 +3350,18 @@ pub fn start_fireplace_container_cooking(
         if !food::is_cookable_ingredient(&child.item_id) {
             continue;
         }
-        let (lot, amount) = match scope {
-            "personal" => (
-                personal_lot(ctx, child.inventory_row_id),
-                crate::inventory_amount::personal_amount(ctx, child.inventory_row_id),
+        let (row_id, lot, amount) = match (&child.location, scope) {
+            (InventoryLocation::Personal(location), CarriedInventoryScope::Personal) => (
+                location.row_id,
+                personal_lot(ctx, location.row_id),
+                crate::inventory_amount::personal_fraction(ctx, location.row_id),
             ),
-            "party" => (
-                party_lot(ctx, child.inventory_row_id),
-                crate::inventory_amount::party_amount(ctx, child.inventory_row_id),
+            (InventoryLocation::Party(location), CarriedInventoryScope::Party) => (
+                location.row_id,
+                party_lot(ctx, location.row_id),
+                crate::inventory_amount::party_fraction(ctx, location.row_id),
             ),
-            _ => (None, None),
+            _ => return Err("Contained food custody conflicts with its return inventory".into()),
         };
         let (Some(lot), Some(amount)) = (lot, amount) else {
             continue;
@@ -3491,7 +3375,7 @@ pub fn start_fireplace_container_cooking(
         ) {
             return Err("A cooked meal cannot be cooked again".into());
         }
-        ids.push(child.inventory_row_id);
+        ids.push(row_id);
         amounts.push(amount);
         consumed_objects.push(child.id);
     }
@@ -3502,7 +3386,7 @@ pub fn start_fireplace_container_cooking(
         ctx,
         character_id,
         fireplace_fixture_id,
-        scope.into(),
+        scope.as_str().into(),
         ids,
         amounts,
         Some(station),
@@ -3523,7 +3407,7 @@ fn add_fireplace_ingredients_at(
     fireplace_fixture_id: String,
     inventory_scope: String,
     inventory_item_ids: Vec<u64>,
-    amounts_milliunits: Vec<u32>,
+    fractions: Vec<ConsumableFractionMicros>,
     vessel_station: Option<FireplaceStation>,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
@@ -3532,6 +3416,8 @@ fn add_fireplace_ingredients_at(
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
+    let inventory_scope = CarriedInventoryScope::try_from(inventory_scope.as_str())
+        .map_err(|error| error.to_string())?;
     let is_vessel = vessel_station.is_some();
     let station = vessel_station
         .unwrap_or_else(|| fireplace_station_for(ctx, character_id, &fireplace_fixture_id));
@@ -3544,16 +3430,28 @@ fn add_fireplace_ingredients_at(
             .instrument_return_custody
             .clone()
             .ok_or("Container return custody is unknown")?;
-        let (kind, owner) = crate::object_custody::carried_destination(&custody, character_id)?;
-        if kind != inventory_scope {
+        let destination = crate::object_custody::carried_destination(&custody, character_id)?;
+        let destination_scope = match &destination {
+            OperationalCustody::Character(_) => CarriedInventoryScope::Personal,
+            OperationalCustody::Party(_) => CarriedInventoryScope::Party,
+            _ => return Err("Container return custody is not carried inventory".into()),
+        };
+        if destination_scope != inventory_scope {
             return Err("Container return custody conflicts with the cooking scope".into());
         }
-        if kind == "party" && ctx.db.party_authority().id().find(owner).is_none() {
+        if let OperationalCustody::Party(party_id) = destination
+            && ctx
+                .db
+                .party_authority()
+                .id()
+                .find(party_id.as_str().to_owned())
+                .is_none()
+        {
             return Err("Original party inventory is unavailable".into());
         }
         custody
     } else {
-        let custody = crate::object_custody::carried_scope_custody(ctx, &actor, &inventory_scope)?;
+        let custody = crate::object_custody::carried_scope_custody(ctx, &actor, inventory_scope)?;
         crate::object_custody::encode_custody(&custody)
     };
     if ctx
@@ -3566,7 +3464,7 @@ fn add_fireplace_ingredients_at(
         return Err("This fireplace already holds a dish".into());
     }
     if inventory_item_ids.is_empty()
-        || inventory_item_ids.len() != amounts_milliunits.len()
+        || inventory_item_ids.len() != fractions.len()
         || !is_vessel && inventory_item_ids.len() > 32
     {
         return Err("Select between one and 32 food lots".into());
@@ -3597,12 +3495,12 @@ fn add_fireplace_ingredients_at(
     let mut contamination_contribution_ids = Vec::new();
     let mut contamination_contribution_loads = Vec::new();
     let mut medicinal = std::collections::BTreeMap::<String, f32>::new();
-    for (&id, &amount) in inventory_item_ids.iter().zip(&amounts_milliunits) {
-        if amount == 0 || !seen.insert(id) {
+    for (&id, &fraction) in inventory_item_ids.iter().zip(&fractions) {
+        if fraction.is_zero() || !seen.insert(id) {
             return Err("Food lot selections must be unique and positive".into());
         }
-        let (item_id, available, lot) = match inventory_scope.as_str() {
-            "personal" => {
+        let (item_id, available, lot) = match inventory_scope {
+            CarriedInventoryScope::Personal => {
                 let row = ctx
                     .db
                     .inventory_item()
@@ -3616,12 +3514,12 @@ fn add_fireplace_ingredients_at(
                 }
                 (
                     row.item_id,
-                    crate::inventory_amount::personal_amount(ctx, id)
+                    crate::inventory_amount::personal_fraction(ctx, id)
                         .ok_or("Ingredient amount state is missing")?,
                     personal_lot(ctx, id).ok_or("Food lot metadata not found")?,
                 )
             }
-            "party" => {
+            CarriedInventoryScope::Party => {
                 let party_id = actor
                     .party_id
                     .as_deref()
@@ -3637,20 +3535,19 @@ fn add_fireplace_ingredients_at(
                 }
                 (
                     row.item_id,
-                    crate::inventory_amount::party_amount(ctx, id)
+                    crate::inventory_amount::party_fraction(ctx, id)
                         .ok_or("Ingredient amount state is missing")?,
                     party_lot(ctx, id).ok_or("Food lot metadata not found")?,
                 )
             }
-            _ => return Err("Invalid inventory scope".into()),
         };
-        if amount > available {
+        if fraction > available {
             return Err("Ingredient is not available in that amount".into());
         }
         if !food::is_cookable_ingredient(&item_id) {
             return Err("A cooked meal cannot be cooked again".into());
         }
-        let ratio = amount as f32 / available as f32;
+        let ratio = fraction.get() as f32 / available.get() as f32;
         if ![
             lot.mass_kg,
             lot.nutrition_kcal,
@@ -3732,7 +3629,7 @@ fn add_fireplace_ingredients_at(
         loads.push(selected_load);
         contamination_contribution_ids.push(format!("food-lot:{}", lot.id));
         contamination_contribution_loads.push(selected_load);
-        selected.push((id, amount, available, lot));
+        selected.push((id, fraction, available, lot));
     }
     let ingredient_mass = mass;
     let contained_water_ml = station
@@ -3745,80 +3642,28 @@ fn add_fireplace_ingredients_at(
         })
         .filter(|liquid| liquid.liquid_item_id == crate::inventory_container::WATER_ITEM_ID)
         .map_or(0, |liquid| liquid.water_ml);
-    let mut contained_water_materials = match station.instrument_object_id {
+    let contained_water_materials = match station.instrument_object_id {
         Some(object_id) if contained_water_ml > 0 => {
             crate::outbreak::contained_water_contamination(ctx, object_id, minute)?
         }
         _ => Vec::new(),
     };
-    let water_ml = if station.instrument_object_id.is_some() {
-        if method == CookingMethod::Stew && contained_water_ml == 0 {
-            return Err("Stew requires water inside the cooking pot".into());
-        }
-        contained_water_ml as f32
-    } else if method == CookingMethod::Stew {
-        stew_water_required_ml(&amounts_milliunits).ok_or("Stew water could not be calculated")?
-    } else {
-        0.0
-    };
-    let mut needs = ctx
-        .db
-        .character_needs()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character needs not found")?;
-    let pooled = actor
-        .party_id
-        .as_deref()
-        .and_then(|id| ctx.db.party_authority().id().find(id.to_string()))
-        .map_or(0.0, |p| p.pooled_water_ml);
-    if station.instrument_object_id.is_none() && pooled + needs.carried_water_ml < water_ml {
-        return Err("Stew requires enough pooled or carried water".into());
+    if method == CookingMethod::Stew && contained_water_ml == 0 {
+        return Err("Stew requires water inside the cooking pot".into());
     }
-    let pooled_water_used =
-        if station.instrument_object_id.is_none() && method == CookingMethod::Stew {
-            water_ml.min(pooled)
-        } else {
-            0.0
-        };
-    let personal_water_used =
-        if station.instrument_object_id.is_none() && method == CookingMethod::Stew {
-            water_ml - pooled_water_used
-        } else {
-            0.0
-        };
-    if let Some(party_id) = actor.party_id.as_deref()
-        && pooled_water_used > 0.0
-    {
-        contained_water_materials.extend(crate::outbreak::water_holding_contamination(
-            ctx,
-            "party",
-            party_id,
-            (pooled * 1_000.0).round() as u64,
-            (pooled_water_used * 1_000.0).round() as u64,
-            minute,
-        )?);
-    }
-    if personal_water_used > 0.0 {
-        contained_water_materials.extend(crate::outbreak::water_holding_contamination(
-            ctx,
-            "personal",
-            &character_id.to_string(),
-            (needs.carried_water_ml * 1_000.0).round() as u64,
-            (personal_water_used * 1_000.0).round() as u64,
-            minute,
-        )?);
-    }
+    let water_ml = contained_water_ml as f32;
     mass += water_ml / 1_000.0;
-    let contributed_water_ml = contained_water_materials
+    let contributed_water_microliters = contained_water_materials
         .iter()
-        .map(|row| row.3)
-        .sum::<u64>();
-    if contributed_water_ml > (water_ml * 1_000.0).round() as u64 {
+        .try_fold(Microliters::ZERO, |total, row| total.checked_add(row.3))
+        .ok_or("Contained water material volume overflow")?;
+    let public_water_microliters = Microliters::try_from_nonnegative_milliliters_rounded(water_ml)
+        .ok_or("Cooking water volume is invalid")?;
+    if contributed_water_microliters > public_water_microliters {
         return Err("Contained water material exceeds its public volume".into());
     }
-    for (material_lot_id, current, water_growth, amount_ml) in &contained_water_materials {
-        let water_mass_kg = *amount_ml as f32 / 1_000_000.0;
+    for (material_lot_id, current, water_growth, amount_microliters) in &contained_water_materials {
+        let water_mass_kg = amount_microliters.as_water_kilograms_f32();
         let water_load = current * water_mass_kg;
         loads.push(water_load);
         growth.push(*water_growth);
@@ -3826,9 +3671,9 @@ fn add_fireplace_ingredients_at(
         contamination_contribution_ids.push(format!("water-output-lot:{material_lot_id}"));
         contamination_contribution_loads.push(water_load);
     }
-    let target = food::cooking_duration_minutes_for_check(method.core(), &safety, mass, check)
+    let target = food::cooking_duration_minutes_for_check(method, &safety, mass, check)
         .ok_or("Cooking duration could not be calculated")?;
-    let flavor_quality = food::aggregate_flavor_quality(method.core(), flavors, mass);
+    let flavor_quality = food::aggregate_flavor_quality(method, flavors, mass);
     let quality = food::cooked_quality(
         food::chef_quality_tier(check),
         flavor_quality,
@@ -3843,64 +3688,12 @@ fn add_fireplace_ingredients_at(
             .container_liquid()
             .container_object_id()
             .delete(instrument_object_id);
-        crate::outbreak::delete_water_holding_contributions(
-            ctx,
-            "container",
-            &instrument_object_id.to_string(),
-        );
+        crate::outbreak::delete_container_water_contributions(ctx, instrument_object_id);
     }
-    if method == CookingMethod::Stew {
-        if let Some(object_id) = station.instrument_object_id {
-            let _ = object_id; // contained water was consumed above
-        } else if let Some(party_id) = actor.party_id.as_deref()
-            && let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string())
-        {
-            let used = pooled_water_used;
-            let sink = format!("stew:{}", station.key);
-            crate::outbreak::move_water_holding_contributions(
-                ctx,
-                "party",
-                party_id,
-                "cooking",
-                &sink,
-                (party.pooled_water_ml * 1_000.0).round() as u64,
-                (used * 1_000.0).round() as u64,
-            )?;
-            if personal_water_used > 0.0 {
-                crate::outbreak::move_water_holding_contributions(
-                    ctx,
-                    "personal",
-                    &character_id.to_string(),
-                    "cooking",
-                    &sink,
-                    (needs.carried_water_ml * 1_000.0).round() as u64,
-                    (personal_water_used * 1_000.0).round() as u64,
-                )?;
-            }
-            crate::outbreak::delete_water_holding_contributions(ctx, "cooking", &sink);
-            party.pooled_water_ml -= used;
-            ctx.db.party_authority().id().update(party);
-            needs.carried_water_ml -= personal_water_used;
-        } else {
-            let sink = format!("stew:{}", station.key);
-            crate::outbreak::move_water_holding_contributions(
-                ctx,
-                "personal",
-                &character_id.to_string(),
-                "cooking",
-                &sink,
-                (needs.carried_water_ml * 1_000.0).round() as u64,
-                (personal_water_used * 1_000.0).round() as u64,
-            )?;
-            crate::outbreak::delete_water_holding_contributions(ctx, "cooking", &sink);
-            needs.carried_water_ml -= water_ml;
-        }
-        ctx.db.character_needs().character_id().update(needs);
-    }
-    for (id, amount, available, mut lot) in selected {
-        if amount == available {
-            match inventory_scope.as_str() {
-                "personal" => {
+    for (id, fraction, available, mut lot) in selected {
+        if fraction == available {
+            match inventory_scope {
+                CarriedInventoryScope::Personal => {
                     ctx.db
                         .inventory_item_amount()
                         .inventory_item_id()
@@ -3908,7 +3701,7 @@ fn add_fireplace_ingredients_at(
                     ctx.db.inventory_item().id().delete(id);
                     delete_personal_food_lot(ctx, id);
                 }
-                "party" => {
+                CarriedInventoryScope::Party => {
                     ctx.db
                         .party_item_amount()
                         .party_inventory_item_id()
@@ -3916,50 +3709,42 @@ fn add_fireplace_ingredients_at(
                     ctx.db.party_inventory_item().id().delete(id);
                     delete_party_food_lot(ctx, id);
                 }
-                _ => unreachable!(),
             }
         } else {
-            retain_lot_fraction(&mut lot, 1.0 - amount as f32 / available as f32)?;
+            retain_lot_fraction(
+                &mut lot,
+                1.0 - fraction.get() as f32 / available.get() as f32,
+            )?;
+            let remaining = available
+                .checked_sub(fraction)
+                .expect("selected ingredient fraction cannot exceed availability");
             ctx.db.food_lot().id().update(lot);
-            match inventory_scope.as_str() {
-                "personal" => {
+            match inventory_scope {
+                CarriedInventoryScope::Personal => {
                     ctx.db.inventory_item_amount().inventory_item_id().update(
                         crate::InventoryItemAmount {
                             inventory_item_id: id,
-                            remaining_milliunits: available - amount,
+                            remaining_fraction_micros: remaining.get(),
                         },
                     );
                 }
-                "party" => {
+                CarriedInventoryScope::Party => {
                     ctx.db.party_item_amount().party_inventory_item_id().update(
                         crate::PartyItemAmount {
                             party_inventory_item_id: id,
-                            remaining_milliunits: available - amount,
+                            remaining_fraction_micros: remaining.get(),
                         },
                     );
                 }
-                _ => unreachable!(),
             };
         }
     }
     name_parts.sort();
     name_parts.dedup();
     let raw_contamination = food::microbial_concentration(loads.iter().sum(), mass);
-    // Preserve the legacy clean-water growth basis while allowing a tainted
-    // material lot to contribute its own growth rate and mass.
-    let growth_basis_mass = ingredient_mass
-        + if !contained_water_materials.is_empty() {
-            contributed_water_ml as f32 / 1_000_000.0
-        } else {
-            0.0
-        };
-    let raw_growth_per_hour = if growth_basis_mass > 0.0 {
-        growth_mass / growth_basis_mass
-    } else {
-        0.0
-    };
+    let raw_growth_per_hour = if mass > 0.0 { growth_mass / mass } else { 0.0 };
     let ready_nutrition_retention =
-        food::cooked_nutrition_retention(check) * food::method_nutrition_retention(method.core());
+        food::cooked_nutrition_retention(check) * food::method_nutrition_retention(method);
     ctx.db.fireplace_dish().insert(FireplaceDish {
         station_key: station.key.clone(),
         character_id,
@@ -3970,7 +3755,7 @@ fn add_fireplace_ingredients_at(
         cooking_check: check,
         started_at_minute: minute,
         target_minutes: target,
-        display_name: format!("{} {}", method.name(), name_parts.join(", ")),
+        display_name: format!("{} {}", cooking_method_name(method), name_parts.join(", ")),
         ingredient_item_ids: ingredient_ids,
         ingredient_quantities,
         salty_kg: flavors.salty,
@@ -3985,7 +3770,7 @@ fn add_fireplace_ingredients_at(
         ingredient_value: value,
         raw_contamination,
         raw_growth_per_hour,
-        cooked_growth_per_hour: food::cooked_growth_per_hour(&growth, method.core()),
+        cooked_growth_per_hour: food::cooked_growth_per_hour(&growth, method),
         contamination_contribution_digest: contamination_provenance_digest(
             &contamination_contribution_ids,
             &contamination_contribution_loads,
@@ -4013,7 +3798,7 @@ pub fn retrieve_fireplace_dish(
     ctx: &ReducerContext,
     character_id: u64,
     fireplace_fixture_id: String,
-    inventory_scope: String,
+    container_object_id: Option<u64>,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
     let actor = crate::character::require_living_character(ctx, character_id)?;
@@ -4021,13 +3806,6 @@ pub fn retrieve_fireplace_dish(
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
-    let container_object_id = match inventory_scope.strip_prefix("container:") {
-        Some(id) => Some(
-            id.parse::<u64>()
-                .map_err(|_| "Invalid fireplace dish selector")?,
-        ),
-        None => None,
-    };
     let key = container_object_id.map_or_else(
         || station_key(character_id, &fireplace_fixture_id),
         |object_id| vessel_station_key(character_id, &fireplace_fixture_id, object_id),
@@ -4042,18 +3820,13 @@ pub fn retrieve_fireplace_dish(
     if validate_persisted_dish_fixture(ctx, &dish)?.to_string() != fireplace_fixture_id {
         return Err("Dish custody conflicts with the requested canonical fixture".into());
     }
-    let (source_kind, source_owner) = dish_inventory_destination(
-        &dish.return_custody,
-        character_id,
-        &inventory_scope,
-        container_object_id.is_some(),
-    )?;
-    if source_kind == "party"
+    let destination = dish_inventory_destination(&dish.return_custody, character_id)?;
+    if let OperationalCustody::Party(party_id) = &destination
         && ctx
             .db
             .party_authority()
             .id()
-            .find(source_owner.clone())
+            .find(party_id.as_str().to_owned())
             .is_none()
     {
         return Err("Dish's original party inventory is unavailable".into());
@@ -4068,7 +3841,7 @@ pub fn retrieve_fireplace_dish(
     }
     let minute = current_minute(ctx, character_id);
     let elapsed = minute.saturating_sub(dish.started_at_minute);
-    let doneness = food::method_doneness_outcome(dish.method.core(), elapsed, dish.target_minutes);
+    let doneness = food::method_doneness_outcome(dish.method, elapsed, dish.target_minutes);
     let quality = dish
         .ready_quality
         .saturating_sub(doneness.quality_penalty)
@@ -4079,7 +3852,7 @@ pub fn retrieve_fireplace_dish(
         dish.ingredient_value * food::quality_value_multiplier(quality) * doneness.calorie_factor;
     let cooked_contamination = food::partially_cooked_contamination(
         dish.raw_contamination,
-        dish.method.core(),
+        dish.method,
         doneness.contamination_kill_progress,
     );
     let cooked_contribution_loads = food::scale_contamination_contributions(
@@ -4099,21 +3872,21 @@ pub fn retrieve_fireplace_dish(
         return Err("Cooked contamination contribution loads do not conserve".into());
     }
 
-    let (personal_id, party_id) = match source_kind {
-        "personal" => {
+    let (personal_id, party_id) = match &destination {
+        OperationalCustody::Character(character) => {
             let row = ctx.db.inventory_item().insert(crate::InventoryItem {
                 id: 0,
-                character_id,
+                character_id: character.get(),
                 item_id: "cooked_meal".into(),
                 quantity: 1,
             });
             crate::inventory_amount::initialize_personal(ctx, row.id);
             (Some(row.id), None)
         }
-        "party" => {
+        OperationalCustody::Party(party) => {
             let row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
                 id: 0,
-                party_id: source_owner.clone(),
+                party_id: party.as_str().into(),
                 item_id: "cooked_meal".into(),
                 quantity: 1,
             });
@@ -4127,9 +3900,7 @@ pub fn retrieve_fireplace_dish(
         let meal = ctx.db.inventory_object().insert(crate::InventoryObject {
             id: 0,
             item_id: "cooked_meal".into(),
-            location_kind: source_kind.into(),
-            location_owner: source_owner,
-            inventory_row_id: row_id,
+            location: crate::inventory_container::carried_location_for_row(&destination, row_id)?,
         });
         ctx.db
             .inventory_containment()
@@ -4139,10 +3910,10 @@ pub fn retrieve_fireplace_dish(
             });
     }
     if let Some(row_id) = personal_id {
-        ensure_food_material_object(ctx, "personal", row_id)?;
+        ensure_food_material_object(ctx, CarriedInventoryScope::Personal, row_id)?;
     }
     if let Some(row_id) = party_id {
-        ensure_food_material_object(ctx, "party", row_id)?;
+        ensure_food_material_object(ctx, CarriedInventoryScope::Party, row_id)?;
     }
     let lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,
@@ -4155,7 +3926,7 @@ pub fn retrieve_fireplace_dish(
         {
             FoodPreparation::DriedSmoked
         } else {
-            dish.method.preparation()
+            cooking_method_preparation(dish.method)
         },
         ingredient_item_ids: dish.ingredient_item_ids,
         ingredient_quantities: dish.ingredient_quantities,
@@ -4235,10 +4006,10 @@ pub fn preview_cooking(
     character_id: u64,
     method: CookingMethod,
     inventory_ids: &[u64],
-    amounts_milliunits: &[u32],
+    fractions: &[ConsumableFractionMicros],
 ) -> Result<u32, String> {
     if inventory_ids.is_empty()
-        || inventory_ids.len() != amounts_milliunits.len()
+        || inventory_ids.len() != fractions.len()
         || inventory_ids.len() > 32
     {
         return Err("Select between one and 32 food lots".into());
@@ -4249,8 +4020,8 @@ pub fn preview_cooking(
     let mut seen = std::collections::BTreeSet::new();
     let mut safety = Vec::new();
     let mut mass = 0.0;
-    for (&id, &amount) in inventory_ids.iter().zip(amounts_milliunits) {
-        if amount == 0 || !seen.insert(id) {
+    for (&id, &fraction) in inventory_ids.iter().zip(fractions) {
+        if fraction.is_zero() || !seen.insert(id) {
             return Err("Food lot selections must be unique and positive".into());
         }
         let inventory = ctx
@@ -4259,8 +4030,8 @@ pub fn preview_cooking(
             .id()
             .find(id)
             .ok_or("Ingredient inventory row not found")?;
-        let available = crate::inventory_amount::personal_amount(ctx, id).unwrap_or(0);
-        if inventory.character_id != character_id || amount > available {
+        let available = crate::inventory_amount::personal_fraction(ctx, id).unwrap_or_default();
+        if inventory.character_id != character_id || fraction > available {
             return Err("Ingredient is not available in that amount".into());
         }
         if !food::is_cookable_ingredient(&inventory.item_id) {
@@ -4270,10 +4041,10 @@ pub fn preview_cooking(
         safety.push(
             food::definition(&inventory.item_id).map_or(5, |definition| definition.cooking_minutes),
         );
-        mass += lot.mass_kg * amount as f32 / available as f32;
+        mass += lot.mass_kg * fraction.get() as f32 / available.get() as f32;
     }
     food::cooking_duration_minutes_for_check(
-        method.core(),
+        method,
         &safety,
         mass,
         cooking_check(ctx, character_id)?,
@@ -4310,6 +4081,10 @@ fn expose_to_dysentery(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the exposure boundary records each source and dose coordinate explicitly"
+)]
 pub(crate) fn expose_food_water_dysentery(
     ctx: &ReducerContext,
     character_id: u64,
@@ -4388,7 +4163,12 @@ fn consume_food_amount(
     if inventory.character_id != character_id {
         return Err("Food is not in this inventory".into());
     }
-    crate::inventory_container::reconcile_consumed_row(ctx, "personal", inventory_id, false)?;
+    crate::inventory_container::reconcile_consumed_row(
+        ctx,
+        CarriedInventoryScope::Personal,
+        inventory_id,
+        false,
+    )?;
     let mut lot = lot_for_inventory(ctx, inventory_id)?;
     let mut needs = ctx
         .db
@@ -4414,14 +4194,19 @@ fn consume_food_amount(
         lot.id,
         minute,
         current * ratio * lot.mass_kg,
-        (ratio * 10_000.0).round() as u16,
+        (ratio * f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)).round() as u16,
     )?;
     crate::herbalism::consume_food_medicine(ctx, character_id, lot.id, ratio)?;
     consume_food_contamination_provenance(ctx, lot.id, ratio);
     needs.food_balance_kcal += wanted;
     ctx.db.character_needs().character_id().update(needs);
     if ratio >= 0.999_999 {
-        crate::inventory_container::reconcile_consumed_row(ctx, "personal", inventory.id, true)?;
+        crate::inventory_container::reconcile_consumed_row(
+            ctx,
+            CarriedInventoryScope::Personal,
+            inventory.id,
+            true,
+        )?;
         ctx.db
             .inventory_item_amount()
             .inventory_item_id()
@@ -4438,14 +4223,20 @@ fn consume_food_amount(
             .ok_or("Food amount state is missing")?;
         retain_lot_fraction(&mut lot, retained)?;
         ctx.db.food_lot().id().update(lot);
+        let current = ConsumableFractionMicros::try_new(state.remaining_fraction_micros)
+            .expect("persisted consumable fraction must not exceed one whole");
+        let mut remaining = current
+            .try_scaled_floor(retained)
+            .map_err(|_| "Retained food fraction is invalid")?;
+        if remaining.is_zero() {
+            remaining = ConsumableFractionMicros::MINIMUM_NONZERO;
+        }
         ctx.db
             .inventory_item_amount()
             .inventory_item_id()
             .update(crate::InventoryItemAmount {
                 inventory_item_id: inventory.id,
-                remaining_milliunits: ((state.remaining_milliunits as f32) * retained)
-                    .floor()
-                    .max(1.0) as u32,
+                remaining_fraction_micros: remaining.get(),
             });
     }
     crate::capability::refresh_character_capability(ctx, character_id)?;
@@ -4467,7 +4258,11 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             .party_id()
             .filter(party_id)
             .filter(|inventory| {
-                !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", inventory.id)
+                !crate::inventory_container::row_is_fireplace_rooted(
+                    ctx,
+                    CarriedInventoryScope::Party,
+                    inventory.id,
+                )
             })
             .filter_map(|inventory| {
                 let lot = ctx
@@ -4480,7 +4275,12 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             .collect();
         candidates.sort_by_key(|row| (row.0, row.1));
         for (_, _, inventory, mut lot) in candidates {
-            crate::inventory_container::reconcile_consumed_row(ctx, "party", inventory.id, false)?;
+            crate::inventory_container::reconcile_consumed_row(
+                ctx,
+                CarriedInventoryScope::Party,
+                inventory.id,
+                false,
+            )?;
             let deficit = ctx
                 .db
                 .character_needs()
@@ -4500,7 +4300,8 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
                 lot.id,
                 minute,
                 current * ratio * lot.mass_kg,
-                (ratio * 10_000.0).round() as u16,
+                (ratio * f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)).round()
+                    as u16,
             )?;
             crate::herbalism::consume_food_medicine(ctx, character_id, lot.id, ratio)?;
             consume_food_contamination_provenance(ctx, lot.id, ratio);
@@ -4515,7 +4316,7 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             if ratio >= 0.999_999 {
                 crate::inventory_container::reconcile_consumed_row(
                     ctx,
-                    "party",
+                    CarriedInventoryScope::Party,
                     inventory.id,
                     true,
                 )?;
@@ -4536,12 +4337,18 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
                     .ok_or("Party food amount state is missing")?;
                 retain_lot_fraction(&mut lot, retained)?;
                 ctx.db.food_lot().id().update(lot);
+                let current = ConsumableFractionMicros::try_new(state.remaining_fraction_micros)
+                    .expect("persisted consumable fraction must not exceed one whole");
+                let mut remaining = current
+                    .try_scaled_floor(retained)
+                    .map_err(|_| "Retained party food fraction is invalid")?;
+                if remaining.is_zero() {
+                    remaining = ConsumableFractionMicros::MINIMUM_NONZERO;
+                }
                 ctx.db.party_item_amount().party_inventory_item_id().update(
                     crate::PartyItemAmount {
                         party_inventory_item_id: inventory.id,
-                        remaining_milliunits: ((state.remaining_milliunits as f32) * retained)
-                            .floor()
-                            .max(1.0) as u32,
+                        remaining_fraction_micros: remaining.get(),
                     },
                 );
             }
@@ -4553,7 +4360,11 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
         .character_id()
         .filter(character_id)
         .filter(|inventory| {
-            !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", inventory.id)
+            !crate::inventory_container::row_is_fireplace_rooted(
+                ctx,
+                CarriedInventoryScope::Personal,
+                inventory.id,
+            )
         })
         .filter_map(|inventory| {
             lot_for_inventory(ctx, inventory.id)
@@ -4609,17 +4420,12 @@ pub fn eat_food(
 mod tests {
     use super::*;
     #[test]
-    fn method_mapping_is_stable() {
-        assert_eq!(CookingMethod::Roast.core(), food::CookingMethod::Roast);
-    }
-
-    #[test]
     fn preparation_adapter_revalidates_and_persists_terminal_attempts() {
         let source = include_str!("food.rs");
         let reducer = source
             .split("pub fn prepare_ingredient_lot")
             .nth(1)
-            .and_then(|tail| tail.split("pub enum CookingMethod").next())
+            .and_then(|tail| tail.split("fn cooking_method_preparation").next())
             .expect("preparation reducer");
         assert!(reducer.contains("preparation_request_id"));
         assert!(reducer.matches("load_preparation_authority").count() >= 2);
@@ -4709,7 +4515,7 @@ mod tests {
         assert!(source.contains("current_minute.saturating_sub(row.anchor_minute)"));
         assert!(source.contains("preparation_terminal_minute("));
         assert!(source.contains("preview_disease_terminal_boundary"));
-        assert!(source.contains("preview_injury_terminal_boundary"));
+        assert!(source.contains("preview_injury_boundary"));
         assert!(source.contains("terminal_minute,"));
         assert!(source.contains("Ingredient preparation wait diverged"));
         let planner = source
@@ -4718,7 +4524,7 @@ mod tests {
             .and_then(|tail| tail.split("fn next_preparation_attempt_generation").next())
             .expect("terminal preview");
         assert!(!planner.contains("clip_elapsed_for_disease"));
-        assert!(!planner.contains("preview_elapsed_for_injuries"));
+        assert!(planner.contains("InjuryRecoveryMinutes::new(duration)"));
     }
 
     #[test]
@@ -4774,16 +4580,9 @@ mod tests {
     }
 
     #[test]
-    fn container_cooking_is_distinct_from_legacy_loose_roasting() {
+    fn container_cooking_is_distinct_from_loose_roasting() {
         let source = include_str!("food.rs");
-        let legacy = source
-            .split("pub fn set_fireplace_instrument")
-            .nth(1)
-            .unwrap()
-            .split("fn vessel_station_key")
-            .next()
-            .unwrap();
-        assert!(legacy.contains("Cooking tools must be placed as containers over the fire"));
+        assert!(!source.contains("pub fn set_fireplace_instrument"));
         let cooking = source
             .split("fn add_fireplace_ingredients_at")
             .nth(1)
@@ -4804,8 +4603,8 @@ mod tests {
             .next()
             .unwrap();
         assert!(reducer.contains("subtree_object_ids"));
-        assert!(reducer.contains("personal_lot(ctx, child.inventory_row_id)"));
-        assert!(reducer.contains("party_lot(ctx, child.inventory_row_id)"));
+        assert!(reducer.contains("InventoryLocation::Personal"));
+        assert!(reducer.contains("InventoryLocation::Party"));
         assert!(reducer.contains("let (Some(lot), Some(amount))"));
         assert!(reducer.contains("A cooked meal cannot be cooked again"));
     }
@@ -4813,8 +4612,9 @@ mod tests {
     #[test]
     fn eating_and_travel_reconcile_stable_container_objects() {
         let source = include_str!("food.rs");
-        assert!(source.contains("reconcile_consumed_row(ctx, \"personal\""));
-        assert!(source.contains("reconcile_consumed_row(ctx, \"party\""));
+        assert!(source.matches("reconcile_consumed_row(").count() >= 4);
+        assert!(source.contains("CarriedInventoryScope::Personal"));
+        assert!(source.contains("CarriedInventoryScope::Party"));
         assert!(source.contains("row_is_fireplace_rooted"));
     }
 
@@ -4863,10 +4663,6 @@ mod tests {
 
     #[test]
     fn stew_water_and_fireplace_escrow_contract_are_explicit() {
-        assert_eq!(
-            stew_water_required_ml(&[crate::inventory_amount::FULL_AMOUNT_MILLIUNITS]),
-            Some(600.0)
-        );
         let source = include_str!("food.rs");
         let cook = source
             .split("pub fn add_fireplace_ingredients")
@@ -4874,6 +4670,7 @@ mod tests {
             .and_then(|tail| tail.split("pub fn retrieve_fireplace_dish").next())
             .expect("fireplace ingredient reducer source");
         assert!(cook.contains("mass += water_ml / 1_000.0"));
+        assert!(cook.contains("contained_water_ml"));
         assert!(cook.contains("food::microbial_concentration(loads.iter().sum(), mass)"));
         assert!(cook.contains("if method == CookingMethod::Stew"));
         assert!(cook.contains("ctx.db.fireplace_dish().insert"));
@@ -4946,23 +4743,14 @@ mod tests {
             &adventuresim_core::physical_object::OperationalCustody::party("party-before-transfer")
                 .unwrap(),
         );
-        assert_eq!(
-            dish_inventory_destination(&party_source, 7, "party", false),
-            Ok(("party", "party-before-transfer".into()))
-        );
-        assert_eq!(
-            dish_inventory_destination(&party_source, 7, "personal", false),
-            Ok(("party", "party-before-transfer".into()))
-        );
-        assert_eq!(
-            dish_inventory_destination(&party_source, 7, "container:42", true),
-            Ok(("party", "party-before-transfer".into()))
-        );
+        let expected =
+            OperationalCustody::party("party-before-transfer").map_err(|error| error.to_string());
+        assert_eq!(dish_inventory_destination(&party_source, 7), expected);
 
         let personal_source = crate::object_custody::encode_custody(
             &adventuresim_core::physical_object::OperationalCustody::character(7).unwrap(),
         );
-        assert!(dish_inventory_destination(&personal_source, 8, "personal", false).is_err());
+        assert!(dish_inventory_destination(&personal_source, 8).is_err());
     }
 
     #[test]

@@ -1,10 +1,9 @@
 use crate::data::gpu::resource::GpuResource;
-use crate::data::matrix::Mat4;
 use crate::data::skeleton::Skeleton;
-use crate::data::transform::Transform;
-use crate::data::vector::{Vec3, Vec4};
 use crate::globals::WgpuContext;
 use anyhow::{Result, anyhow};
+use fabelgeist_math::Mat4;
+use fabelgeist_math::{Transform, Vec3, Vec4};
 
 pub use fabelgeist_animation::skeleton::build_skinning_matrices;
 
@@ -24,13 +23,13 @@ impl Pose {
     pub fn from_locals(
         context: &WgpuContext,
         skeleton: &Skeleton,
-        locals: &[crate::data::animation::JointTransform],
+        locals: &[fabelgeist_animation::JointTransform],
     ) -> Result<Self> {
         if locals.len() != skeleton.joints.len() {
             return Err(anyhow!("Pose joint count mismatch with skeleton"));
         }
 
-        let world_transforms: Vec<Mat4> = crate::data::animation::model_pose(skeleton, locals)
+        let world_transforms: Vec<Mat4> = fabelgeist_animation::model_pose(skeleton, locals)
             .into_iter()
             .map(|transform| transform.to_mat4())
             .collect();
@@ -52,14 +51,14 @@ impl Pose {
 
     /// Samples an engine-native clip onto a skeleton.
     ///
-    /// `binding` comes from [`Animation::bind`](crate::data::animation::Animation::bind)
+    /// `binding` comes from [`Animation::bind`](fabelgeist_animation::Animation::bind)
     /// and should be kept across frames; it is what makes per-frame sampling
     /// free of name lookups.
     pub fn from_clip(
         context: &WgpuContext,
         skeleton: &Skeleton,
-        clip: &crate::data::animation::Animation,
-        binding: &crate::data::animation::ClipBinding,
+        clip: &fabelgeist_animation::Animation,
+        binding: &fabelgeist_animation::animation::ClipBinding,
         time: f32,
     ) -> Result<Self> {
         let locals = clip.sample(binding, clip.loop_time(time));
@@ -295,7 +294,7 @@ impl Pose {
         context: &WgpuContext,
         skeleton: &Skeleton,
         joint_index: usize,
-        rotation: crate::data::vector::Vec3,
+        rotation: fabelgeist_math::Vec3,
     ) -> Result<()> {
         let transform = self.get_joint(joint_index)?;
         let rotation_transform = Transform::from_rotation(rotation);

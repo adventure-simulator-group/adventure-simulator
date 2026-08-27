@@ -50,12 +50,6 @@ impl RepairService {
     }
 }
 
-/// One legacy durable stack keeps its original row and needs this many new
-/// physical-instance rows. Keeping the original ID preserves equip references.
-pub fn durable_stack_split_count(quantity: u32) -> u32 {
-    quantity.saturating_sub(1)
-}
-
 /// Choose durable rows for deletion, preferring spare instances and using IDs
 /// only as a stable tie-breaker.
 pub fn durable_removal_ids(mut instances: Vec<(u64, bool)>, remove: u32) -> Vec<u64> {
@@ -65,10 +59,6 @@ pub fn durable_removal_ids(mut instances: Vec<(u64, bool)>, remove: u32) -> Vec<
         .take(remove as usize)
         .map(|(id, _)| id)
         .collect()
-}
-
-pub fn legacy_durable_row_is_invalid(quantity: u32) -> bool {
-    quantity == 0
 }
 
 /// Stable workshop quote for the complete portion of a job this smith can do.
@@ -135,7 +125,7 @@ impl DamageBins {
                 0.0
             };
         }
-        // Preserve deeper structural damage first if malformed legacy input
+        // Preserve deeper structural damage first if malformed input
         // exceeds the bar's capacity. Never proportionally shrink every bin.
         let mut remaining = 1.0;
         for value in self.0.iter_mut().rev() {
@@ -401,13 +391,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_stack_split_preserves_one_original_instance() {
-        assert_eq!(durable_stack_split_count(0), 0);
-        assert_eq!(durable_stack_split_count(1), 0);
-        assert_eq!(durable_stack_split_count(4), 3);
-    }
-
-    #[test]
     fn durable_removal_prefers_spares_before_equipped_instances() {
         assert_eq!(
             durable_removal_ids(vec![(10, true), (12, false), (11, false)], 2),
@@ -417,12 +400,6 @@ mod tests {
             durable_removal_ids(vec![(10, true), (11, false)], 2),
             vec![11, 10]
         );
-    }
-
-    #[test]
-    fn zero_quantity_legacy_durable_rows_are_invalid() {
-        assert!(legacy_durable_row_is_invalid(0));
-        assert!(!legacy_durable_row_is_invalid(1));
     }
 
     #[test]

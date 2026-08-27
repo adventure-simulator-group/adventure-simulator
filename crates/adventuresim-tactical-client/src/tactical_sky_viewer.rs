@@ -6,6 +6,7 @@ use std::{
 };
 
 use adventuresim_tactical_core::prelude::*;
+use adventuresim_world_schema::coordinates::{LatitudeMicrodegrees, LongitudeMicrodegrees};
 use bevy::{
     app::AppExit,
     asset::AssetPlugin,
@@ -34,8 +35,8 @@ use crate::{
 
 const VIEW_WIDTH: u32 = 1600;
 const VIEW_HEIGHT: u32 = 900;
-const LATITUDE_MICRODEGREES: i32 = 53_500_000;
-const LONGITUDE_MICRODEGREES: i32 = 10_000_000;
+const LATITUDE: LatitudeMicrodegrees = LatitudeMicrodegrees::new(53_500_000).unwrap();
+const LONGITUDE: LongitudeMicrodegrees = LongitudeMicrodegrees::new(10_000_000).unwrap();
 
 #[derive(Resource)]
 struct CaptureState {
@@ -229,11 +230,7 @@ fn sky_view_configuration(view: SkyView) -> SkyViewConfiguration {
         | SkyView::CloudOvercast
         | SkyView::CloudStorm => 172 * MINUTES_PER_DAY + 15 * 60,
     };
-    let celestial = celestial_directions(
-        absolute_minute,
-        LATITUDE_MICRODEGREES,
-        LONGITUDE_MICRODEGREES,
-    );
+    let celestial = celestial_directions(absolute_minute, LATITUDE, LONGITUDE);
     let sun = to_bevy_direction(celestial.sun);
     let moon = to_bevy_direction(celestial.moon);
     let view_direction = match view {
@@ -324,8 +321,8 @@ fn setup_view(world: &mut World, view: SkyView) {
         SceneEnvironment {
             scene_digest: format!("sky-{view:?}"),
             generation_version: TACTICAL_SCENE_GENERATION_VERSION,
-            latitude_microdegrees: LATITUDE_MICRODEGREES,
-            longitude_microdegrees: LONGITUDE_MICRODEGREES,
+            latitude_microdegrees: LATITUDE.get(),
+            longitude_microdegrees: LONGITUDE.get(),
             absolute_minute,
             absolute_elevation_metres: 20,
             weather: WeatherSnapshot {

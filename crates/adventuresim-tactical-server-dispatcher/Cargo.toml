@@ -13,6 +13,8 @@ adventuresim-stdb-client = { path = "../adventuresim-stdb-client" }
 adventuresim-core.workspace = true
 adventuresim-tactical-core.workspace = true
 adventuresim-terrain = { path = "../adventuresim-terrain" }
+adventuresim-world-schema.workspace = true
+fabelgeist-determinism.workspace = true
 rand.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

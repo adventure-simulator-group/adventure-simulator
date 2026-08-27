@@ -1,6 +1,6 @@
 use crate::{
     attribute::*, bestiary::BestiaryCategory, body::*, capability::bestiary_knowledge_check,
-    combat::*, equipment::*, essential::*, skill::*,
+    combat::*, combat_style::*, equipment::*, essential::*, skill::*,
 };
 
 /// A composite type that holds all aspects of a player's state.
@@ -317,6 +317,10 @@ where
         2.0 + check.clamp(0.0, 5.0)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "combat resolution names each independent decision input explicitly"
+    )]
     pub fn resolve_melee_attack(
         &self,
         side: BodySide,

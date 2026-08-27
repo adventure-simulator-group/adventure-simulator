@@ -406,24 +406,49 @@ fn quest_fixture_designates_the_strongest_publicly_safe_party_stably() {
         party_power_milli: power,
         enemy_power_milli: 100,
     };
+    let candidate = |leader_id, party_id: &str, assessment| FixturePartyCandidate {
+        identity: FixturePartyIdentity {
+            leader_id,
+            party_id: party_id.into(),
+        },
+        assessment,
+    };
     let selected = select_strongest_fixture_party(vec![
-        (10, "party-z".into(), assessment(200, true)),
-        (20, "party-a".into(), assessment(300, true)),
+        candidate(10, "party-z", assessment(200, true)),
+        candidate(20, "party-a", assessment(300, true)),
     ])
     .unwrap();
-    assert_eq!(selected.0, (20, "party-a".into()));
-    assert_eq!(selected.1, (10, "party-z".into()));
+    assert_eq!(
+        selected.direct,
+        FixturePartyIdentity {
+            leader_id: 20,
+            party_id: "party-a".into(),
+        }
+    );
+    assert_eq!(
+        selected.generated,
+        FixturePartyIdentity {
+            leader_id: 10,
+            party_id: "party-z".into(),
+        }
+    );
 
     let tied = select_strongest_fixture_party(vec![
-        (20, "party-z".into(), assessment(300, true)),
-        (10, "party-a".into(), assessment(300, true)),
+        candidate(20, "party-z", assessment(300, true)),
+        candidate(10, "party-a", assessment(300, true)),
     ])
     .unwrap();
-    assert_eq!(tied.0, (10, "party-a".into()));
+    assert_eq!(
+        tied.direct,
+        FixturePartyIdentity {
+            leader_id: 10,
+            party_id: "party-a".into(),
+        }
+    );
     assert!(
         select_strongest_fixture_party(vec![
-            (10, "party-a".into(), assessment(0, false)),
-            (20, "party-b".into(), assessment(0, false)),
+            candidate(10, "party-a", assessment(0, false)),
+            candidate(20, "party-b", assessment(0, false)),
         ])
         .is_err()
     );

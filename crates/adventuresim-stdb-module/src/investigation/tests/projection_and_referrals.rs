@@ -84,13 +84,7 @@ fn bounded_progress_history_is_exact_contiguous_and_nontransferable() {
     let mut malformed = failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false);
     malformed.private_resolution_json = "{}".into();
     assert_eq!(
-        contiguous_failed_attempts(
-            "cap-a",
-            7,
-            "reacquire_tracks",
-            3,
-            [malformed],
-        ),
+        contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, [malformed],),
         0,
         "malformed private receipts fail closed"
     );
@@ -114,7 +108,7 @@ fn bounded_failure_wording_snapshots_progress_and_live_alternate_truthfully() {
             assistance_bps: 0,
             familiarity_bps: 0,
         },
-        weather: action::WeatherAuthority::Unavailable,
+        weather: action::WeatherAuthority::Clear { snow_cover_bps: 0 },
     };
     let progress = (0..u64::MAX)
         .find_map(|seed| {
@@ -186,8 +180,14 @@ fn bounded_progress_covers_every_generated_kind_and_replay_precedes_history() {
         action::InvestigationActionKind::LayAmbush,
         action::InvestigationActionKind::ApproachLead,
     ] {
-        assert!(capability_uses_bounded_progress("generated", kind));
-        assert!(!capability_uses_bounded_progress("manual", kind));
+        assert!(capability_uses_bounded_progress(
+            InvestigationProvenanceKind::Generated,
+            kind,
+        ));
+        assert!(!capability_uses_bounded_progress(
+            InvestigationProvenanceKind::Manual,
+            kind,
+        ));
     }
     assert!(reducer.contains("\"attempt_number\""));
     assert!(reducer.contains("\"persistent_progress_bps\""));
@@ -278,11 +278,11 @@ fn exact_site_provenance_accepts_only_valid_manual_or_generated_tuples() {
     let generated_case = crate::strategic::CaseAuthority {
         id: manifest.canonical_case_id.clone(),
         investigation_case_id: manifest.canonical_case_id.clone(),
-        provenance_kind: "generated".into(),
+        provenance_kind: InvestigationProvenanceKind::Generated,
         generated_case_id: manifest.canonical_case_id.clone(),
         local_problem_id: Some(manifest.problem_id.clone()),
         objective_expression_json: serde_json::to_string(&manifest.objectives).unwrap(),
-        resolution_status: crate::strategic::CaseResolutionStatus::Open,
+        resolution_status: crate::strategic::CaseStatus::Open,
         resolved_by_party_id: None,
     };
     assert_eq!(
@@ -305,11 +305,11 @@ fn exact_site_provenance_accepts_only_valid_manual_or_generated_tuples() {
     let manual = crate::strategic::CaseAuthority {
         id: "manual-case".into(),
         investigation_case_id: "manual-case".into(),
-        provenance_kind: "manual".into(),
+        provenance_kind: InvestigationProvenanceKind::Manual,
         generated_case_id: String::new(),
         local_problem_id: None,
         objective_expression_json: "{}".into(),
-        resolution_status: crate::strategic::CaseResolutionStatus::Open,
+        resolution_status: crate::strategic::CaseStatus::Open,
         resolved_by_party_id: None,
     };
     assert_eq!(

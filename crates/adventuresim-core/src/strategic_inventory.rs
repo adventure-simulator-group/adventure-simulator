@@ -1,7 +1,7 @@
 //! Pure planning and validation rules for strategic inventory commerce.
 //!
-//! Persistent identifiers and reducer arguments remain wire-compatible raw values. Reducers
-//! parse them into these types before applying authoritative database mutations.
+//! Persistent identifiers and reducer arguments enter as raw wire values. Reducers parse them
+//! into these types before applying authoritative database mutations.
 
 use std::{
     fmt,

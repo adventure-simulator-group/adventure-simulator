@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::limb_region_type::LimbRegion;
+use super::body_region_type::BodyRegion;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct LimbInjury {
     pub id: String,
     pub character_id: u64,
-    pub limb: LimbRegion,
+    pub limb: BodyRegion,
     pub cut_damage: f32,
     pub bruise_damage: f32,
     pub frostbite_damage: f32,
@@ -36,7 +36,7 @@ impl __sdk::InModule for LimbInjury {
 pub struct LimbInjuryCols {
     pub id: __sdk::__query_builder::Col<LimbInjury, String>,
     pub character_id: __sdk::__query_builder::Col<LimbInjury, u64>,
-    pub limb: __sdk::__query_builder::Col<LimbInjury, LimbRegion>,
+    pub limb: __sdk::__query_builder::Col<LimbInjury, BodyRegion>,
     pub cut_damage: __sdk::__query_builder::Col<LimbInjury, f32>,
     pub bruise_damage: __sdk::__query_builder::Col<LimbInjury, f32>,
     pub frostbite_damage: __sdk::__query_builder::Col<LimbInjury, f32>,

@@ -3,19 +3,36 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
 };
+#[path = "src/combat_style.rs"]
+mod combat_style;
+#[expect(
+    dead_code,
+    reason = "the build script imports the shared item schema but does not exercise runtime helpers"
+)]
 #[path = "src/item_catalog_schema.rs"]
 mod item_catalog_schema;
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the build script imports the shared item validator but exercises only its preflight surface"
+)]
 #[path = "src/item_catalog_validation.rs"]
 mod item_catalog_validation;
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the build script imports shared item references but reads only the validation subset"
+)]
 #[path = "src/item_references.rs"]
 mod item_references;
 #[path = "src/organization_catalog_validation.rs"]
 mod organization_catalog_validation;
 #[path = "src/quest_catalog_validation.rs"]
 mod quest_catalog_validation;
-#[allow(unexpected_cfgs, dead_code, unused_imports)]
+#[expect(
+    unexpected_cfgs,
+    dead_code,
+    unused_imports,
+    reason = "the shared runtime encounter module is also compiled as a build-script schema"
+)]
 #[path = "src/road_encounter_catalog.rs"]
 mod road_encounter_catalog;
 #[path = "src/threat_escalation_limits.rs"]

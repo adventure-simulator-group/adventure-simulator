@@ -1,6 +1,9 @@
+use fabelgeist_determinism::SplitMix64;
 use serde::{Deserialize, Serialize};
 
-use crate::{PuzzleRng, shuffle};
+use crate::shuffle;
+
+const LOGIC_GRID_GENERATION_DOMAIN: u64 = 0x6c6f_6769_635f_6772;
 
 pub const LOGIC_GRID_RULES_VERSION: u16 = 1;
 pub const MAX_GRID_SIZE: usize = 4;
@@ -115,7 +118,7 @@ impl LogicGridPuzzle {
     pub fn generate_with_spec(seed: u64, spec: LogicGridSpec) -> Result<Self, &'static str> {
         let spec = spec.validate()?;
         let size = usize::from(spec.size);
-        let mut rng = PuzzleRng(seed ^ 0x6c6f_6769_635f_6772);
+        let mut rng = SplitMix64::new(seed ^ LOGIC_GRID_GENERATION_DOMAIN);
         let mut token_order = (0..spec.size).collect::<Vec<_>>();
         let mut road_order = (0..spec.size).collect::<Vec<_>>();
         shuffle(&mut token_order, &mut rng);

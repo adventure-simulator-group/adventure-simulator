@@ -1,4 +1,5 @@
 use super::*;
+use fabelgeist_determinism::splitmix64;
 
 const TEXTURE_SIZE: u32 = 256;
 const OAK_BARK_TEXTURE_SIZE: u32 = 1024;
@@ -21,7 +22,7 @@ pub(super) struct LeafTextureSet {
     pub(super) back_albedo: Handle<Image>,
     pub(super) front_normal: Handle<Image>,
     pub(super) back_normal: Handle<Image>,
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) height: Handle<Image>,
     pub(super) arm: Handle<Image>,
 }
@@ -30,7 +31,7 @@ pub(super) struct LeafTextureSet {
 pub(super) struct SurfaceTextureSet {
     pub(super) albedo: Handle<Image>,
     pub(super) normal_gl: Handle<Image>,
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) height: Handle<Image>,
     pub(super) arm: Handle<Image>,
 }
@@ -440,6 +441,7 @@ fn generate_leaf_textures(images: &mut Assets<Image>, recipe: LeafRecipe) -> Lea
     let mut back = Vec::with_capacity(pixel_count * 4);
     let mut normal_front = Vec::with_capacity(pixel_count * 4);
     let mut normal_back = Vec::with_capacity(pixel_count * 4);
+    #[cfg(test)]
     let mut height_map = Vec::with_capacity(pixel_count * 4);
     let mut arm = Vec::with_capacity(pixel_count * 4);
     let texel = 1.0 / TEXTURE_SIZE as f32;
@@ -482,8 +484,16 @@ fn generate_leaf_textures(images: &mut Assets<Image>, recipe: LeafRecipe) -> Lea
             } else {
                 255
             };
-            let encoded_height = (height * 255.0).clamp(0.0, 255.0) as u8;
-            height_map.extend_from_slice(&[encoded_height, encoded_height, encoded_height, 255]);
+            #[cfg(test)]
+            {
+                let encoded_height = (height * 255.0).clamp(0.0, 255.0) as u8;
+                height_map.extend_from_slice(&[
+                    encoded_height,
+                    encoded_height,
+                    encoded_height,
+                    255,
+                ]);
+            }
             arm.extend_from_slice(&[ao, recipe.roughness, 0, 255]);
         }
     }
@@ -493,6 +503,7 @@ fn generate_leaf_textures(images: &mut Assets<Image>, recipe: LeafRecipe) -> Lea
         back_albedo: images.add(image_rgba(back, true, false, false)),
         front_normal: images.add(image_rgba(normal_front, false, false, true)),
         back_normal: images.add(image_rgba(normal_back, false, false, true)),
+        #[cfg(test)]
         height: images.add(image_rgba(height_map, false, false, true)),
         arm: images.add(image_rgba(arm, false, false, false)),
     }
@@ -520,16 +531,9 @@ const OAK_BARK_VALLEY_WIDTH_SPAN: f32 = 0.010;
 const OAK_BARK_CROWN_HEIGHT_MIN: f32 = 0.10;
 const OAK_BARK_CROWN_HEIGHT_SPAN: f32 = 0.12;
 
-fn bark_hash(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
-}
-
 fn bark_random(cell_x: i32, cell_y: i32, salt: u64) -> f32 {
-    let hash = bark_hash(bark_cell_id(cell_x, cell_y) | salt.rotate_left(21));
-    ((hash >> 40) as u32) as f32 / 16_777_215.0
+    let hash = splitmix64(bark_cell_id(cell_x, cell_y) | salt.rotate_left(21));
+    unit_hash(hash)
 }
 
 fn bark_cell_id(cell_x: i32, cell_y: i32) -> u64 {
@@ -546,8 +550,8 @@ fn bark_edge_random(first: (i32, i32), second: (i32, i32), salt: u64) -> f32 {
     } else {
         (second, first)
     };
-    let hash = bark_hash(lower | (upper << 16) | salt.rotate_left(37));
-    ((hash >> 40) as u32) as f32 / 16_777_215.0
+    let hash = splitmix64(lower | (upper << 16) | salt.rotate_left(37));
+    unit_hash(hash)
 }
 
 fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
@@ -886,6 +890,7 @@ fn generate_surface_textures(
         .collect::<Vec<_>>();
     let mut albedo = Vec::with_capacity(pixel_count * 4);
     let mut normal = Vec::with_capacity(pixel_count * 4);
+    #[cfg(test)]
     let mut height_map = Vec::with_capacity(pixel_count * 4);
     let mut arm = Vec::with_capacity(pixel_count * 4);
     for y in 0..TEXTURE_SIZE {
@@ -907,14 +912,23 @@ fn generate_surface_textures(
             let ao = (height_field_ao(recipe, &heights, TEXTURE_SIZE, x as i32, y as i32) * 255.0)
                 .round()
                 .clamp(0.0, 255.0) as u8;
-            let encoded_height = ((height + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
-            height_map.extend_from_slice(&[encoded_height, encoded_height, encoded_height, 255]);
+            #[cfg(test)]
+            {
+                let encoded_height = ((height + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
+                height_map.extend_from_slice(&[
+                    encoded_height,
+                    encoded_height,
+                    encoded_height,
+                    255,
+                ]);
+            }
             arm.extend_from_slice(&[ao, roughness, 0, 255]);
         }
     }
     SurfaceTextureSet {
         albedo: images.add(image_rgba(albedo, true, true, false)),
         normal_gl: images.add(image_rgba(normal, false, true, true)),
+        #[cfg(test)]
         height: images.add(image_rgba(height_map, false, true, true)),
         arm: images.add(image_rgba(arm, false, true, false)),
     }
@@ -959,8 +973,8 @@ fn generate_oak_bark_texture(images: &mut Assets<Image>) -> BarkTextureSet {
 fn soil_random(cell_x: i32, cell_y: i32, period: i32, salt: u64) -> f32 {
     let wrapped_x = cell_x.rem_euclid(period) as u64;
     let wrapped_y = cell_y.rem_euclid(period) as u64;
-    let hash = bark_hash(wrapped_x | (wrapped_y << 16) | salt.rotate_left(33));
-    ((hash >> 40) as u32) as f32 / 16_777_215.0
+    let hash = splitmix64(wrapped_x | (wrapped_y << 16) | salt.rotate_left(33));
+    unit_hash(hash)
 }
 
 fn soil_value_noise(point: Vec2, frequency: i32, salt: u64) -> f32 {
@@ -1290,7 +1304,9 @@ mod tests {
             .data
             .as_deref()
             .expect("generated image data")
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|pixel| [pixel[0], pixel[1], pixel[2], pixel[3]])
             .collect()
     }

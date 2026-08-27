@@ -8,17 +8,18 @@ use std::{
 
 use adventuresim_core::{
     strategic_schedule::DailySchedule,
-    strategic_time::{CampDurationPolicy, ItineraryMember, ItinerarySegment, forecast_itinerary},
+    strategic_time::{
+        ItineraryMember, ItinerarySegment, OVERLAND_WALKING_SPEED_KM_PER_HOUR, forecast_itinerary,
+    },
 };
 use serde::Deserialize;
 
 use crate::spacetimedb::{
-    CampDurationMode, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
-    CharacterTrainingSchedule, ContractPresentation, Party, ScheduleAllocation, Settlement,
+    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime, CharacterTrainingSchedule,
+    ContractPresentation, DestinationKnowledgeStage, Party, ScheduleAllocation, Settlement,
     TravelEdge,
 };
 
-const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 const TERRAIN_PLAN_TIMEOUT: Duration = Duration::from_secs(10);
 const TERRAIN_PLAN_CACHE_ENTRIES: usize = 128;
 
@@ -247,11 +248,15 @@ pub enum CaseSiteKnowledgePresentation {
 }
 
 impl CaseSiteKnowledgePresentation {
-    pub fn from_stage(stage: &str) -> Option<Self> {
+    pub fn from_stage(stage: DestinationKnowledgeStage) -> Option<Self> {
         match stage {
-            "exact_believed" => Some(Self::ReportedExactLocation),
-            "visited" => Some(Self::VisitedCaseSite),
-            _ => None,
+            DestinationKnowledgeStage::ExactBelieved => Some(Self::ReportedExactLocation),
+            DestinationKnowledgeStage::Visited => Some(Self::VisitedCaseSite),
+            DestinationKnowledgeStage::Unknown
+            | DestinationKnowledgeStage::Textual
+            | DestinationKnowledgeStage::Landmark
+            | DestinationKnowledgeStage::ApproximateArea
+            | DestinationKnowledgeStage::RouteSegment => None,
         }
     }
 
@@ -287,7 +292,7 @@ pub struct TravelDestination {
     pub provision_forecast: Option<TravelProvisionForecast>,
     pub terrain_route: Option<adventuresim_terrain::RoutePlan>,
     pub return_terrain_route: Option<adventuresim_terrain::RoutePlan>,
-    pub route_fallback: bool,
+    pub uses_straight_line_estimate: bool,
 }
 
 impl TravelDestination {
@@ -339,7 +344,7 @@ pub(crate) fn settlement_destination(
         provision_forecast: None,
         terrain_route: None,
         return_terrain_route: None,
-        route_fallback: true,
+        uses_straight_line_estimate: true,
     }
 }
 
@@ -351,7 +356,7 @@ pub(crate) async fn apply_terrain_route(
     profile: adventuresim_terrain::TerrainSkillProfile,
 ) {
     let Some(terrain) = terrain else {
-        destination.route_fallback = true;
+        destination.uses_straight_line_estimate = true;
         return;
     };
     match terrain.plan_with_profile(start, goal, profile).await {
@@ -360,8 +365,8 @@ pub(crate) async fn apply_terrain_route(
                 match terrain.plan_with_profile(goal, start, profile).await {
                     Ok(plan) => Some(plan),
                     Err(error) => {
-                        tracing::warn!(%error, destination=%destination.id, "return terrain route unavailable; using explicitly marked legacy estimate");
-                        destination.route_fallback = true;
+                        tracing::warn!(%error, destination=%destination.id, "return terrain route unavailable; using explicitly marked straight-line estimate");
+                        destination.uses_straight_line_estimate = true;
                         return;
                     }
                 }
@@ -381,11 +386,11 @@ pub(crate) async fn apply_terrain_route(
             };
             destination.terrain_route = Some(plan);
             destination.return_terrain_route = return_plan;
-            destination.route_fallback = false;
+            destination.uses_straight_line_estimate = false;
         }
         Err(error) => {
-            tracing::warn!(%error, destination=%destination.id, "bounded terrain route unavailable; using explicitly marked legacy estimate");
-            destination.route_fallback = true;
+            tracing::warn!(%error, destination=%destination.id, "bounded terrain route unavailable; using explicitly marked straight-line estimate");
+            destination.uses_straight_line_estimate = true;
         }
     }
 }
@@ -408,16 +413,29 @@ fn camp_schedule(allocation: &ScheduleAllocation) -> DailySchedule {
     }
 }
 
+pub(crate) struct ItineraryForecastSources<'a> {
+    pub(crate) party_members: &'a [u64],
+    pub(crate) attributes: &'a [CharacterAttributes],
+    pub(crate) limbs: &'a [CharacterLimbs],
+    pub(crate) stats: &'a [CharacterStats],
+    pub(crate) times: &'a [CharacterTime],
+    pub(crate) schedules: &'a [CharacterTrainingSchedule],
+    pub(crate) party: &'a Party,
+}
+
 pub(crate) fn populate_itinerary_forecasts(
     destinations: &mut [TravelDestination],
-    party_members: &[u64],
-    attributes: &[CharacterAttributes],
-    limbs: &[CharacterLimbs],
-    stats: &[CharacterStats],
-    times: &[CharacterTime],
-    schedules: &[CharacterTrainingSchedule],
-    party: &Party,
+    sources: ItineraryForecastSources<'_>,
 ) {
+    let ItineraryForecastSources {
+        party_members,
+        attributes,
+        limbs,
+        stats,
+        times,
+        schedules,
+        party,
+    } = sources;
     let members: Option<Vec<_>> = party_members
         .iter()
         .map(|id| {
@@ -441,17 +459,12 @@ pub(crate) fn populate_itinerary_forecasts(
         .map(|row| row.minutes)
         .max()
         .unwrap_or(0);
-    let policy = match party.camp_duration_mode {
-        CampDurationMode::Auto => CampDurationPolicy::Auto,
-        CampDurationMode::Fixed => CampDurationPolicy::FixedMinutes(party.fixed_camp_minutes),
-    };
     for destination in destinations {
         if let Some(forecast) = forecast_itinerary(
             departure,
             destination.forecast_minutes(),
             party.walking_minutes_per_day,
             party.travel_at_night,
-            policy,
             &members,
         ) {
             destination.departure_minute = departure;
@@ -549,14 +562,14 @@ pub(crate) fn connected_destinations(
 fn journey_minutes(distance_m: u64) -> u64 {
     distance_m
         .saturating_mul(60)
-        .div_ceil(WALKING_SPEED_KM_PER_HOUR * 1_000)
+        .div_ceil(OVERLAND_WALKING_SPEED_KM_PER_HOUR * 1_000)
         .max(1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spacetimedb::ContractPresentationStatus;
+    use crate::spacetimedb::ContractStatus;
     use adventuresim_world_schema::{FallbackIndustry, IndustryEvidence, InferredIndustryProfile};
 
     #[test]
@@ -639,11 +652,7 @@ mod tests {
         }
     }
 
-    fn quest(
-        id: &str,
-        settlement_id: &str,
-        status: ContractPresentationStatus,
-    ) -> ContractPresentation {
+    fn quest(id: &str, settlement_id: &str, status: ContractStatus) -> ContractPresentation {
         ContractPresentation {
             id: id.to_string(),
             case_id: format!("case:{id}"),
@@ -669,8 +678,24 @@ mod tests {
     }
 
     #[test]
+    fn only_exact_destination_stages_have_case_site_presentations() {
+        assert_eq!(
+            CaseSiteKnowledgePresentation::from_stage(DestinationKnowledgeStage::ExactBelieved),
+            Some(CaseSiteKnowledgePresentation::ReportedExactLocation)
+        );
+        assert_eq!(
+            CaseSiteKnowledgePresentation::from_stage(DestinationKnowledgeStage::Visited),
+            Some(CaseSiteKnowledgePresentation::VisitedCaseSite)
+        );
+        assert_eq!(
+            CaseSiteKnowledgePresentation::from_stage(DestinationKnowledgeStage::RouteSegment),
+            None
+        );
+    }
+
+    #[test]
     fn active_quest_tooltip_includes_encounter_summary() {
-        let mut quest = quest("crypt", "riverdale", ContractPresentationStatus::Accepted);
+        let mut quest = quest("crypt", "riverdale", ContractStatus::Accepted);
         quest.description = "A necromancer has raised the dead.".into();
         quest.opposition_count_wording = "perhaps eleven".into();
         quest.opposition_wording = "walking dead".into();

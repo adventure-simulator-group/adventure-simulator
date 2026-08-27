@@ -10,7 +10,6 @@ pub struct CharacterNeeds {
     pub character_id: u64,
     pub food_balance_kcal: f32,
     pub water_balance_ml: f32,
-    pub carried_water_ml: f32,
 }
 
 impl __sdk::InModule for CharacterNeeds {
@@ -24,7 +23,6 @@ pub struct CharacterNeedsCols {
     pub character_id: __sdk::__query_builder::Col<CharacterNeeds, u64>,
     pub food_balance_kcal: __sdk::__query_builder::Col<CharacterNeeds, f32>,
     pub water_balance_ml: __sdk::__query_builder::Col<CharacterNeeds, f32>,
-    pub carried_water_ml: __sdk::__query_builder::Col<CharacterNeeds, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterNeeds {
@@ -34,7 +32,6 @@ impl __sdk::__query_builder::HasCols for CharacterNeeds {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             food_balance_kcal: __sdk::__query_builder::Col::new(table_name, "food_balance_kcal"),
             water_balance_ml: __sdk::__query_builder::Col::new(table_name, "water_balance_ml"),
-            carried_water_ml: __sdk::__query_builder::Col::new(table_name, "carried_water_ml"),
         }
     }
 }

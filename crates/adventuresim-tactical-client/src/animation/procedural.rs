@@ -84,6 +84,10 @@ pub(super) fn restore_procedural_look_base(
 /// Procedural facing is an additive post-FK layer. Sparse authored clips do not
 /// necessarily rewrite every torso bone, so retain the pre-look local rotation
 /// and reuse it when the same logical pose reaches this pass again.
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy ParamSet must expose separate read-only and mutable transform queries"
+)]
 pub(super) fn apply_head_and_torso_look(
     mut commands: Commands,
     owners: Query<(Entity, &CharacterLook, &PresentedSkeleton)>,
@@ -894,13 +898,15 @@ pub(super) fn apply_landing_leg_compression(
                 &transforms.p0(),
             );
             if let Some(solution) = solve_landing_two_bone(
-                upper_snapshot.global.translation(),
-                lower_snapshot.global.translation(),
-                foot_snapshot.global.translation(),
+                TwoBoneChain::new(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_snapshot.global.translation(),
+                    upper_length,
+                    lower_length,
+                    pole,
+                ),
                 target,
-                upper_length,
-                lower_length,
-                pole,
                 landing_compression,
             ) {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
@@ -1012,14 +1018,14 @@ use ik::{
     slope_aligned_world_rotation, sole_is_at_contact, solve_two_bone,
     terrain_conformed_guard_target, terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
+use ik::{
+    TwoBoneChain, apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
+    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
+};
 pub(super) use ik::{
     apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_ordinary_locomotion_ik,
     apply_quickstep_ik, apply_terrain_leg_ik, enforce_anatomical_knee_yaw,
     refresh_raised_support_after_propagation,
-};
-use ik::{
-    apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
-    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
 };
 
 #[cfg(test)]
@@ -1087,7 +1093,7 @@ mod contract_tests {
 }
 
 #[cfg(test)]
-mod legacy_tests {
+mod ik_tests {
     use super::*;
 
     fn apply_test_two_bone(
@@ -1118,7 +1124,11 @@ mod legacy_tests {
         let knee = Vec3::new(0.0, -1.0, 0.15);
         let end = Vec3::new(0.0, -2.0, 0.0);
         let target = Vec3::new(0.3, -1.85, 0.0);
-        let solved = solve_two_bone(root, knee, end, target, 1.0, 1.0, Vec3::NEG_Z).unwrap();
+        let solved = solve_two_bone(
+            TwoBoneChain::new(root, knee, end, 1.0, 1.0, Vec3::NEG_Z),
+            target,
+        )
+        .unwrap();
         assert!((root.distance(solved.knee) - 1.0).abs() < 0.0001);
         assert!((solved.knee.distance(solved.end) - 1.0).abs() < 0.0001);
         assert!(solved.end.abs_diff_eq(target, 0.0001));
@@ -1127,13 +1137,15 @@ mod legacy_tests {
     #[test]
     fn two_bone_solver_clamps_unreachable_target_without_nan() {
         let solved = solve_two_bone(
-            Vec3::ZERO,
-            Vec3::new(0.0, -1.0, 0.1),
-            Vec3::new(0.0, -2.0, 0.0),
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.0, -1.0, 0.1),
+                Vec3::new(0.0, -2.0, 0.0),
+                1.0,
+                1.0,
+                Vec3::NEG_Z,
+            ),
             Vec3::new(0.0, -20.0, 0.0),
-            1.0,
-            1.0,
-            Vec3::NEG_Z,
         )
         .unwrap();
         assert!(solved.knee.is_finite() && solved.end.is_finite());
@@ -1143,13 +1155,15 @@ mod legacy_tests {
     #[test]
     fn straight_chain_uses_rig_bind_space_knee_pole() {
         let solved = solve_two_bone(
-            Vec3::ZERO,
-            Vec3::NEG_Y,
-            Vec3::NEG_Y * 2.0,
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::NEG_Y,
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::Z,
+            ),
             Vec3::new(0.0, -1.8, 0.0),
-            1.0,
-            1.0,
-            Vec3::Z,
         )
         .unwrap();
         assert!(solved.knee.z > 0.0);
@@ -1159,13 +1173,15 @@ mod legacy_tests {
     #[test]
     fn stable_pole_overrides_an_authored_knee_in_the_opposite_hemisphere() {
         let solved = solve_two_bone(
-            Vec3::ZERO,
-            Vec3::new(0.0, -1.0, 0.1),
-            Vec3::NEG_Y * 2.0,
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.0, -1.0, 0.1),
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::NEG_Z,
+            ),
             Vec3::new(0.0, -1.8, 0.0),
-            1.0,
-            1.0,
-            Vec3::NEG_Z,
         )
         .unwrap();
         assert!(solved.knee.z < 0.0);
@@ -1174,13 +1190,15 @@ mod legacy_tests {
     #[test]
     fn authored_knee_bend_is_preserved_within_the_stable_pole_hemisphere() {
         let solved = solve_two_bone(
-            Vec3::ZERO,
-            Vec3::new(0.1, -1.0, 0.1),
-            Vec3::NEG_Y * 2.0,
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.1, -1.0, 0.1),
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::Z,
+            ),
             Vec3::new(0.0, -1.8, 0.0),
-            1.0,
-            1.0,
-            Vec3::Z,
         )
         .unwrap();
         assert!(solved.knee.x > 0.0);
@@ -1458,8 +1476,11 @@ mod legacy_tests {
         let target = compressed_foot + Vec3::Y * 0.05;
         let upper = root.distance(knee);
         let lower = knee.distance(compressed_foot);
-        let solution = solve_two_bone(root, knee, compressed_foot, target, upper, lower, Vec3::Z)
-            .expect("compressed leg should reach its pre-compression foot");
+        let solution = solve_two_bone(
+            TwoBoneChain::new(root, knee, compressed_foot, upper, lower, Vec3::Z),
+            target,
+        )
+        .expect("compressed leg should reach its pre-compression foot");
         let flexion = 180.0
             - (root - solution.knee)
                 .angle_between(solution.end - solution.knee)
@@ -1539,13 +1560,8 @@ mod legacy_tests {
             let root = Vec3::Y * (authored_reach - compression);
             let current_end = Vec3::NEG_Y * compression;
             let solution = solve_landing_two_bone(
-                root,
-                current_knee,
-                current_end,
+                TwoBoneChain::new(root, current_knee, current_end, upper, lower, Vec3::Z),
                 target,
-                upper,
-                lower,
-                Vec3::Z,
                 compression,
             )
             .expect("late landing recovery should remain solvable");
@@ -1820,13 +1836,15 @@ mod legacy_tests {
             .run_system_cached_with(test_joint_pose, (lower, end))
             .unwrap();
         let solution = solve_two_bone(
-            Vec3::ZERO,
-            Vec3::NEG_Y,
-            Vec3::NEG_Y * 2.0,
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::NEG_Y,
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::NEG_Z,
+            ),
             Vec3::new(0.45, -1.75, 0.0),
-            1.0,
-            1.0,
-            Vec3::NEG_Z,
         )
         .unwrap();
         world
@@ -1913,13 +1931,15 @@ mod legacy_tests {
     fn leg_solver_keeps_minimum_flexion_and_anatomical_hemisphere() {
         let pole = canonical_knee_pole(-1.0);
         let solved = solve_two_bone(
-            Vec3::ZERO,
-            Vec3::new(0.0, -1.0, -0.1),
-            Vec3::NEG_Y * 2.0,
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.0, -1.0, -0.1),
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                pole,
+            ),
             Vec3::NEG_Y * 20.0,
-            1.0,
-            1.0,
-            pole,
         )
         .unwrap();
         assert!(solved.end.length() <= maximum_reach(1.0, 1.0) + 0.0001);

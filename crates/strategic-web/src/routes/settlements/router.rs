@@ -1,10 +1,9 @@
 use adventuresim_core::{
     durability::RepairService,
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
-    prelude::{
-        PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
-        STRATEGIC_TRAVEL_KCAL_PER_DAY, Skill,
-    },
+    item_references::{STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID},
+    physical_object::{InventoryLocation, OperationalCustody},
+    prelude::{PartyProvisioningInputs, STRATEGIC_TRAVEL_KCAL_PER_DAY, Skill},
     strategic_schedule::{CombatTrainingProfile, EquippedCombatItem},
     strategic_time::{is_walking_time, minutes_until_next_walking_start},
 };
@@ -200,9 +199,10 @@ mod building_query_tests {
         assert!(!source.contains(&private_station));
         assert!(!source.contains(&private_dish));
         assert!(source.contains("party.camp_destination.as_ref() == Some(&journey.destination)"));
-        assert!(source.contains("matches!(journey.plan_version, 1 | 2)"));
-        assert!(source.contains("journey.completed_minutes < journey.total_minutes"));
-        assert!(source.contains("camp_stop_minutes"));
+        assert!(
+            source.contains("journey.completed_movement_minutes < journey.total_movement_minutes")
+        );
+        assert!(source.contains("reached_camp_movement_minutes"));
         assert!(source.contains("service_npc_location_available"));
         assert!(source.contains("chapter_has_standalone_building"));
         assert!(source.contains("StrategicFixtureId::fireplace"));
@@ -216,36 +216,37 @@ use super::inventory_forms::{
 };
 use super::redirect_to_local;
 use super::travel::{
-    CaseSiteKnowledgePresentation, TravelDestination, TravelForm, TravelProvisionForecast,
-    active_contract_tooltip, connected_destinations, populate_itinerary_forecasts,
+    CaseSiteKnowledgePresentation, ItineraryForecastSources, TravelDestination, TravelForm,
+    TravelProvisionForecast, active_contract_tooltip, connected_destinations,
+    populate_itinerary_forecasts,
 };
 use super::{
     AppState, PartyAction, PartyActionOutcome, SocialActionId, SocialDuration,
     execute_or_request_party_action,
 };
 use crate::session::Session;
-use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge,
     BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendContextCharacter,
     BackendCorpse, BackendFamilyChild, BackendFireplaceDish, BackendFireplaceStation,
     BackendIngredientPreparationPlan, BackendLocalProblemTradeEffect,
     BackendPhysiologyAdministration, BackendPhysiologyChart, BackendRoadChallenge,
-    BackendTinctureStatus, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
-    CharacterCondition, CharacterEquipmentGraph, CharacterEquippedItem, CharacterFamiliarity,
-    CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterPersonality,
-    CharacterSettlementReputation, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, ContainerLiquid, ContractPresentation,
-    ContractPresentationStatus, EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy,
-    FoodLot, InventoryContainment, InventoryItem, InventoryItemAmount, InventoryObject,
-    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
-    LimbRegion, Party, PartyInventoryItem, PartyItemAmount, PartyJourney, PartyJourneyItinerary,
+    BackendTinctureStatus, BodyRegion, Character, CharacterAffinity, CharacterAttributes,
+    CharacterCapability, CharacterCondition, CharacterEquipmentGraph, CharacterEquippedItem,
+    CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
+    CharacterPersonality, CharacterSettlementReputation, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContainerLiquid,
+    ContractPresentation, ContractStatus, EquipmentAnchorKind, EquipmentAttachmentTarget,
+    EquipmentOccupancy, FoodLot, HousingTier, InventoryContainment, InventoryItem,
+    InventoryItemAmount, InventoryObject, InventoryQuantityTarget, ItemCondition, ItemDefinition,
+    ItemKind, LimbInjury, Party, PartyInventoryItem, PartyItemAmount, PartyJourney,
     PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer,
-    RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, ResidenceTier,
+    RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
     RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
     SettlementResidenceOffer, SettlementSmith, SocialAddress, SocialBelief, SocialChatOutcome,
-    StrategicEncounter, TravelEdge,
+    StrategicEncounter, StrategicEncounterStatus, TravelEdge,
 };
+use crate::spacetimedb::{party_by_id, settlement_by_id, sql_string_literal};
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, ChildPresentation, LocationKind, LocationView,
     MerchantShop, RelationshipPresentation, RestSummary, SoapRestPreview, SocialPresentation,
@@ -255,6 +256,53 @@ use crate::templates::settlement::{
     settlement_overview_page, settlement_residence_page, settlement_resident_location_page,
     surgery_dialog,
 };
+
+fn contained_water_ml_for_custody(
+    objects: &[InventoryObject],
+    containment: &[InventoryContainment],
+    liquids: &[ContainerLiquid],
+    custody: &OperationalCustody,
+) -> u64 {
+    liquids.iter().fold(0_u64, |total, liquid| {
+        let mut cursor = liquid.container_object_id;
+        let mut visited = std::collections::BTreeSet::new();
+        let root =
+            (0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH).find_map(|_| {
+                if !visited.insert(cursor) {
+                    return Some(None);
+                }
+                let object = objects.iter().find(|object| object.id == cursor)?;
+                match containment
+                    .iter()
+                    .find(|edge| edge.child_object_id == cursor)
+                {
+                    Some(edge) => {
+                        cursor = edge.parent_object_id;
+                        None
+                    }
+                    None => Some(Some(object)),
+                }
+            });
+        let held = root.flatten().is_some_and(|root| {
+            matches!(
+                (&root.location, custody),
+                (
+                    InventoryLocation::Personal(location),
+                    OperationalCustody::Character(character_id)
+                ) if location.character_id == character_id.get()
+            ) || matches!(
+                (&root.location, custody),
+                (InventoryLocation::Party(location), OperationalCustody::Party(party_id))
+                    if location.party_id == party_id.as_str()
+            )
+        });
+        if held {
+            total.saturating_add(liquid.water_ml)
+        } else {
+            total
+        }
+    })
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -270,7 +318,6 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/fireplace", get(settlement_fireplace))
         .route("/locations/settlement/{id}/fireplace/ingredients", post(settlement_fireplace_ingredients))
-        .route("/locations/settlement/{id}/fireplace/instrument", post(settlement_fireplace_instrument))
         .route("/locations/settlement/{id}/fireplace/retrieve", post(settlement_fireplace_retrieve))
         .route("/locations/settlement/{id}/fireplace/container/place", post(settlement_fireplace_container_place))
         .route("/locations/settlement/{id}/fireplace/container/start", post(settlement_fireplace_container_start))
@@ -292,7 +339,6 @@ pub fn routes() -> Router<AppState> {
         .route("/camp", get(camp))
         .route("/camp/fireplace", get(camp_fireplace_page))
         .route("/camp/fireplace/ingredients", post(camp_fireplace_ingredients))
-        .route("/camp/fireplace/instrument", post(camp_fireplace_instrument))
         .route("/camp/fireplace/retrieve", post(camp_fireplace_retrieve))
         .route("/camp/fireplace/container/place", post(camp_fireplace_container_place))
         .route("/camp/fireplace/container/start", post(camp_fireplace_container_start))
@@ -300,8 +346,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/inventory/containers", get(inventory_containers))
         .route("/api/inventory/containers/move", post(move_inventory_container_item))
         .route("/api/inventory/containers/remove", post(remove_inventory_container_item))
-        .route("/api/inventory/containers/pour", post(pour_inventory_container_water))
-        .route("/api/inventory/containers/drain", post(drain_inventory_container_water))
+        .route("/api/inventory/containers/discard-water", post(discard_inventory_container_water))
         .route("/api/inventory/containers/tincture-spirit", post(pour_inventory_container_tincture_spirit))
         .route("/api/inventory/containers/tincture-start", post(start_inventory_container_tincture))
         .route("/api/inventory/containers/tincture-refresh", post(refresh_inventory_container_tincture))

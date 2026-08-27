@@ -9,17 +9,18 @@ test = false
 doctest = false
 
 [dependencies]
-adventuresim-core.workspace = true
+adventuresim-core = { workspace = true, features = ["spacetimedb"] }
 adventuresim-dialogue.workspace = true
+adventuresim-puzzles.workspace = true
 adventuresim-world-schema = { workspace = true, features = ["spacetimedb"] }
 adventuresim-weapon-model.workspace = true
+fabelgeist-determinism.workspace = true
 log = "0.4"
 spacetimedb.workspace = true
 petname = { version = "2.0.2", default-features = false, features = ["default-words"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-strum = { version = "0.28", features = ["derive"] }
 
 [lints]
 workspace = true

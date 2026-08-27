@@ -76,6 +76,10 @@ pub fn reading_rate(medium_effective_rank: f32) -> f32 {
 /// training-speed multiplier. Aptitude remains an effective-rank cap.
 ///
 /// `hours_for_rank` must describe the target leaf's direct-hours curve.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the training boundary names each independent rule input explicitly"
+)]
 pub fn apply_bounded_book_training(
     direct_hours: &mut f32,
     effective_target_rank: f32,
@@ -142,6 +146,10 @@ pub fn apply_bounded_book_training(
 
 /// Integrate Written study with its changing correlated medium literacy and
 /// its direct-zero target gate.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the written-study boundary names each independent rule input explicitly"
+)]
 pub fn apply_written_book_training(
     hours: &mut adventuresim_world_schema::WrittenLanguageHours,
     medium: adventuresim_world_schema::WrittenLanguage,

@@ -1,20 +1,31 @@
 //! Framework-neutral strategic filth, exposure, and automatic washing rules.
 
 use crate::disease::{DiseaseId, TransmissionVector, definition};
+use crate::strategic_time::MINUTES_PER_DAY;
+use serde::{Deserialize, Serialize};
 
 /// The character sheet meter is deliberately bounded and deposits are clipped.
 pub const MAX_FILTH: u16 = 100;
 /// One whole unit of soft soap removes this much filth. Unused capacity is lost.
 pub const SOAP_CLEANSING_CAPACITY: u16 = 25;
 /// Blood remains visible, but its disease exposure falls linearly to zero after two days.
-pub const BLOOD_INFECTIOUS_MINUTES: u64 = 2 * 1_440;
+pub const BLOOD_INFECTIOUS_MINUTES: u64 = 2 * MINUTES_PER_DAY;
 pub const TRAVEL_DIRT_PER_DAY: f32 = 8.0;
 pub const COMBAT_DIRT: u16 = 10;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Substance {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FilthSubstance {
     Dirt,
     Blood,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FilthOrigin {
+    Own,
+    Foreign,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +38,7 @@ pub struct DiseaseSnapshot {
 pub struct Deposit {
     pub id: u64,
     pub character_id: u64,
-    pub substance: Substance,
+    pub substance: FilthSubstance,
     pub source_character_id: Option<u64>,
     pub amount: u16,
     pub deposited_at: u64,
@@ -36,11 +47,12 @@ pub struct Deposit {
 
 impl Deposit {
     pub fn foreign_blood(&self) -> bool {
-        self.substance == Substance::Blood && self.source_character_id != Some(self.character_id)
+        self.substance == FilthSubstance::Blood
+            && self.source_character_id != Some(self.character_id)
     }
 
     pub fn compatible_diseased_blood(&self) -> bool {
-        self.substance == Substance::Blood
+        self.substance == FilthSubstance::Blood
             && self
                 .diseases
                 .iter()
@@ -53,7 +65,7 @@ pub fn bounded_deposit_amount(existing: u16, requested: u16) -> u16 {
 }
 
 pub fn travel_dirt(minutes: u64) -> u16 {
-    ((minutes as f32 / 1_440.0) * TRAVEL_DIRT_PER_DAY).round() as u16
+    ((minutes as f32 / MINUTES_PER_DAY as f32) * TRAVEL_DIRT_PER_DAY).round() as u16
 }
 
 /// Carries exact travel-dirt progress between movement chunks. The remainder is
@@ -61,8 +73,9 @@ pub fn travel_dirt(minutes: u64) -> u16 {
 pub fn travel_dirt_accrual(remainder_numerator: u16, minutes: u64) -> (u16, u16) {
     let numerator =
         u128::from(remainder_numerator).saturating_add(u128::from(minutes).saturating_mul(8));
-    let dirt = u16::try_from(numerator / 1_440).unwrap_or(u16::MAX);
-    (dirt, (numerator % 1_440) as u16)
+    let minutes_per_day = u128::from(MINUTES_PER_DAY);
+    let dirt = u16::try_from(numerator / minutes_per_day).unwrap_or(u16::MAX);
+    (dirt, (numerator % minutes_per_day) as u16)
 }
 
 pub fn infectious_fraction(deposited_at: u64, now: u64) -> f32 {
@@ -186,7 +199,7 @@ pub fn blood_exposure_for_vector(
     }
     let dose = deposits
         .iter()
-        .filter(|d| d.substance == Substance::Blood && d.foreign_blood())
+        .filter(|d| d.substance == FilthSubstance::Blood && d.foreign_blood())
         .filter(|d| d.diseases.iter().any(|s| s.disease_id == disease_id))
         .map(|d| {
             f32::from(d.amount) / f32::from(MAX_FILTH) * infectious_fraction(d.deposited_at, now)
@@ -226,7 +239,7 @@ fn cleaning_rank(d: &Deposit, has_cut: bool) -> u8 {
         1
     } else if d.foreign_blood() {
         2
-    } else if d.substance == Substance::Blood {
+    } else if d.substance == FilthSubstance::Blood {
         3
     } else {
         4
@@ -318,7 +331,9 @@ pub fn plan_wash(deposits: &[Deposit], stacks: &[WashStack], has_cut: bool) -> W
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn d(id: u64, kind: Substance, source: Option<u64>, amount: u16) -> Deposit {
+    use crate::strategic_time::MINUTES_PER_YEAR;
+
+    fn d(id: u64, kind: FilthSubstance, source: Option<u64>, amount: u16) -> Deposit {
         Deposit {
             id,
             character_id: 7,
@@ -339,7 +354,7 @@ mod tests {
     #[test]
     fn soap_rounds_up_and_uses_personal_stacks_first() {
         let plan = plan_wash(
-            &[d(1, Substance::Dirt, None, 26)],
+            &[d(1, FilthSubstance::Dirt, None, 26)],
             &[
                 stack(SoapSource::Party, 9, 4),
                 stack(SoapSource::Personal, 3, 1),
@@ -370,15 +385,20 @@ mod tests {
 
     #[test]
     fn wash_is_input_order_invariant_and_prioritizes_foreign_blood() {
-        let a = d(2, Substance::Dirt, None, 25);
-        let b = d(1, Substance::Blood, Some(8), 25);
+        let a = d(2, FilthSubstance::Dirt, None, 25);
+        let b = d(1, FilthSubstance::Blood, Some(8), 25);
         let stacks = [stack(SoapSource::Personal, 4, 1)];
         assert_eq!(
             plan_wash(&[a.clone(), b.clone()], &stacks, true),
             plan_wash(&[b, a.clone()], &stacks, true)
         );
         assert_eq!(
-            plan_wash(&[a, d(1, Substance::Blood, Some(8), 25)], &stacks, true).cleaned_deposits[0]
+            plan_wash(
+                &[a, d(1, FilthSubstance::Blood, Some(8), 25)],
+                &stacks,
+                true
+            )
+            .cleaned_deposits[0]
                 .0,
             1
         );
@@ -387,7 +407,7 @@ mod tests {
     #[test]
     fn equal_numeric_ids_from_personal_and_party_tables_remain_distinct() {
         let plan = plan_wash(
-            &[d(1, Substance::Dirt, None, 40)],
+            &[d(1, FilthSubstance::Dirt, None, 40)],
             &[
                 stack(SoapSource::Party, 7, 1),
                 stack(SoapSource::Personal, 7, 1),
@@ -417,13 +437,13 @@ mod tests {
 
     #[test]
     fn scarce_shared_soap_priority_is_risk_first_and_deterministic() {
-        let mut dangerous = d(1, Substance::Blood, Some(99), 10);
+        let mut dangerous = d(1, FilthSubstance::Blood, Some(99), 10);
         dangerous.character_id = 20;
         dangerous.diseases.push(DiseaseSnapshot {
             disease_id: DiseaseId::Plague,
             episode_id: 5,
         });
-        let safe = d(2, Substance::Dirt, None, 100);
+        let safe = d(2, FilthSubstance::Dirt, None, 100);
         let priorities = [
             wash_priority(7, &[safe], false, 0.0),
             wash_priority(20, &[dangerous], true, 0.4),
@@ -438,7 +458,7 @@ mod tests {
 
     #[test]
     fn travel_dirt_is_invariant_to_elapsed_time_chunking() {
-        let one_chunk = travel_dirt_accrual(0, 1_440);
+        let one_chunk = travel_dirt_accrual(0, MINUTES_PER_DAY);
         let mut accumulated = 0_u16;
         let mut remainder = 0_u16;
         for _ in 0..24 {
@@ -452,15 +472,15 @@ mod tests {
 
     #[test]
     fn long_clean_and_expired_blood_intervals_have_no_scan_windows() {
-        let year = 365 * 1_440;
+        let year = MINUTES_PER_YEAR;
         assert!(blood_infectious_windows(&[], DiseaseId::Plague, 0, year).is_empty());
-        let mut own = d(2, Substance::Blood, Some(7), 20);
+        let mut own = d(2, FilthSubstance::Blood, Some(7), 20);
         own.diseases.push(DiseaseSnapshot {
             disease_id: DiseaseId::Plague,
             episode_id: 3,
         });
         assert!(blood_infectious_windows(&[own], DiseaseId::Plague, 0, year).is_empty());
-        let mut expired = d(1, Substance::Blood, Some(8), 20);
+        let mut expired = d(1, FilthSubstance::Blood, Some(8), 20);
         expired.deposited_at = 10;
         expired.diseases.push(DiseaseSnapshot {
             disease_id: DiseaseId::Plague,
@@ -479,13 +499,13 @@ mod tests {
 
     #[test]
     fn active_blood_work_is_bounded_to_two_days() {
-        let mut blood = d(1, Substance::Blood, Some(8), 20);
+        let mut blood = d(1, FilthSubstance::Blood, Some(8), 20);
         blood.deposited_at = 100;
         blood.diseases.push(DiseaseSnapshot {
             disease_id: DiseaseId::Plague,
             episode_id: 4,
         });
-        let windows = blood_infectious_windows(&[blood], DiseaseId::Plague, 0, 365 * 1_440);
+        let windows = blood_infectious_windows(&[blood], DiseaseId::Plague, 0, MINUTES_PER_YEAR);
         assert_eq!(windows, vec![(100, 100 + BLOOD_INFECTIOUS_MINUTES - 1)]);
         assert_eq!(windows[0].1 - windows[0].0 + 1, BLOOD_INFECTIOUS_MINUTES);
     }
@@ -530,7 +550,7 @@ mod tests {
             infectious_fraction(100, 100 + BLOOD_INFECTIOUS_MINUTES),
             0.0
         );
-        let blood = d(1, Substance::Blood, Some(8), 20);
+        let blood = d(1, FilthSubstance::Blood, Some(8), 20);
         assert_eq!(blood.amount, 20);
     }
 
@@ -543,7 +563,7 @@ mod tests {
 
     #[test]
     fn only_blood_compatible_disease_snapshots_create_exposure() {
-        let mut blood = d(1, Substance::Blood, Some(8), 50);
+        let mut blood = d(1, FilthSubstance::Blood, Some(8), 50);
         blood.diseases.push(DiseaseSnapshot {
             disease_id: DiseaseId::Influenza,
             episode_id: 44,

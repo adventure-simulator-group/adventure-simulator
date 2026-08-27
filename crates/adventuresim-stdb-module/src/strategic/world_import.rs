@@ -1,18 +1,4 @@
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContractStatus {
-    Offered,
-    Accepted,
-    ReadyToReport,
-    Paid,
-    Withdrawn,
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CaseResolutionStatus {
-    Open,
-    Resolved,
-    Failed,
-}
+pub use adventuresim_core::case::{CaseStatus, ContractStatus};
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FinaleStatus {

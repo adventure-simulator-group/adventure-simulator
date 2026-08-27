@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+globalThis.strategicCalendar = require("./strategic-calendar-fixture.cjs");
+
 const {
   formatClock,
   formatDuration,
@@ -169,7 +171,7 @@ test("controls remount when raw DOM patches repeatedly replace only their descen
     constructor() { this.signal = { aborted: false }; }
     abort() { this.signal.aborted = true; }
   }
-  const window = { strategicCharacterMinutes: 480 };
+  const window = { strategicCalendar: globalThis.strategicCalendar, strategicCharacterMinutes: 480 };
   class Event {
     constructor(type, options = {}) { this.type = type; Object.assign(this, options); }
     preventDefault() { this.defaultPrevented = true; }

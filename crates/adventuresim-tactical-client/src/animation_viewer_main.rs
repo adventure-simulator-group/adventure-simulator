@@ -2,7 +2,10 @@
 
 // This binary reuses the full gameplay presentation modules while installing
 // only the deterministic capture path.
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "the deterministic viewer compiles the gameplay module graph but exercises only its capture path"
+)]
 
 mod animation;
 mod animation_viewer;

@@ -399,7 +399,10 @@ fn encounter_resolution_requires_character_authority_and_uses_private_entropy() 
     let encounter = source
         .split("pub struct StrategicEncounter")
         .nth(1)
-        .and_then(|tail| tail.split("pub struct PartyJourneyItinerary").next())
+        .and_then(|tail| {
+            tail.split("pub struct StrategicEncounterResolutionReceipt")
+                .next()
+        })
         .expect("public encounter schema");
     assert!(!encounter.contains("pub seed:"));
 }
@@ -440,7 +443,7 @@ fn final_encounter_resolution_establishes_only_the_exact_incomplete_journey_stop
         .and_then(|tail| tail.split("/// Award conserved terrain exposure").next())
         .expect("resolved encounter camp helper");
     for gate in [
-        "encounter.status != \"resolved\"",
+        "encounter.status != StrategicEncounterStatus::Resolved",
         "let Some(party)",
         "let Some(mut journey)",
         "party.id == encounter.party_id",
@@ -448,17 +451,16 @@ fn final_encounter_resolution_establishes_only_the_exact_incomplete_journey_stop
         "party.current_settlement_id.is_none()",
         "party.current_case_site_id.is_none()",
         "party.camp_destination.as_ref() == Some(&journey.destination)",
-        "journey_plan_version_is_canonical(journey.plan_version)",
-        "journey.completed_minutes < journey.total_minutes",
-        "encounter.journey_movement_minute == journey.completed_minutes",
-        "camp_stop_minutes",
-        ".contains(&journey.completed_minutes)",
+        "journey.completed_movement_minutes < journey.total_movement_minutes",
+        "encounter.journey_movement_minute == journey.completed_movement_minutes",
+        "reached_camp_movement_minutes",
+        ".contains(&journey.completed_movement_minutes)",
     ] {
         assert!(helper.contains(gate), "missing resolved-stop gate {gate}");
     }
     assert_eq!(
         helper
-            .matches("journey.camp_stop_minutes.push(journey.completed_minutes)")
+            .matches(".push(journey.completed_movement_minutes)")
             .count(),
         1
     );
@@ -787,7 +789,7 @@ fn all_dead_party_teardown_clears_only_strategic_ghost_state() {
     let teardown = source
         .split("pub(crate) fn teardown_all_dead_strategic_party")
         .nth(1)
-        .and_then(|tail| tail.split("/// Lazily backfills").next())
+        .and_then(|tail| tail.split("/// Reconcile leadership").next())
         .expect("all-dead teardown");
     for required in [
         "party.camp_destination = None",

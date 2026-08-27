@@ -5,12 +5,11 @@ mod materials;
 mod presentation;
 
 pub(in crate::presentation) use geometry::{
-    BLACKTHORN_BARK, BLACKTHORN_PARAMETERS, COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS,
-    COMMON_HAWTHORN_BARK, COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS,
-    ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE, OakGnarlingParameters, TREE_PRIMARY_GROUP_COUNT,
-    TreeBranchSegment, TreeLeaf, WoodyBranchMeshQuality, procedural_oak_bud_group_mesh,
-    procedural_oak_bud_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaf_card_mesh,
-    procedural_oak_leaves, procedural_oak_skeleton_with_gnarling,
+    BLACKTHORN_PARAMETERS, COMMON_BEECH_PARAMETERS, COMMON_HAWTHORN_PARAMETERS,
+    COMMON_HAZEL_PARAMETERS, OAK_GNARLING_SHOWCASE, OakGnarlingParameters,
+    TREE_PRIMARY_GROUP_COUNT, TreeBranchSegment, TreeLeaf, WoodyBranchMeshQuality,
+    procedural_oak_bud_group_mesh, procedural_oak_bud_mesh, procedural_oak_leaf_card_group_mesh,
+    procedural_oak_leaf_card_mesh, procedural_oak_leaves, procedural_oak_skeleton_with_gnarling,
     procedural_oak_textured_leaf_group_mesh, procedural_oak_textured_leaf_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
     procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh, procedural_woody_crown_mesh,

@@ -1,3 +1,7 @@
+#[expect(
+    clippy::too_many_arguments,
+    reason = "effect application keeps each authoritative dialogue coordinate explicit"
+)]
 fn apply_dialogue_effect(
     ctx: &ReducerContext,
     character_id: u64,
@@ -356,7 +360,7 @@ fn apply_dialogue_investigation_action(
         .id()
         .find(&binding.case_id)
         .ok_or("Dialogue investigation case no longer exists")?;
-    if case.resolution_status != CaseResolutionStatus::Open {
+    if case.resolution_status != CaseStatus::Open {
         return Err("Dialogue investigation case is no longer open".into());
     }
     let expression: adventuresim_core::case::ObjectiveExpression =
@@ -556,6 +560,10 @@ fn player_conversation_parties(
     Ok((sender_party.to_string(), subject_party.to_string()))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the predicate compares each independent conversation authority coordinate"
+)]
 fn npc_conversation_authority_matches(
     settlement_id: &str,
     npc_home_settlement_id: &str,
@@ -568,7 +576,7 @@ fn npc_conversation_authority_matches(
     presence_end_minute: u16,
     minute: u64,
 ) -> bool {
-    let minute = (minute % 1_440) as u16;
+    let minute = (minute % adventuresim_core::strategic_time::MINUTES_PER_DAY) as u16;
     npc_home_settlement_id == settlement_id
         && presence_resident_character_id == resident_character_id
         && presence_settlement_id == settlement_id

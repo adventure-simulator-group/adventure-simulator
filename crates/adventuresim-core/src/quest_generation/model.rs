@@ -4,8 +4,10 @@ use crate::{
         AssetId, Objective, ObjectiveExpression, ObjectiveId, ObjectivePath, ObjectiveRequirement,
         SubjectId,
     },
+    encounter::EncounterArchetype,
+    investigation::DestinationKnowledgeStage,
     investigation_action::{InvestigationActionKind, Terrain},
-    local_problem::{Effects, EncounterArchetype, Scope, Symptom},
+    local_problem::{Effects, Scope, Symptom},
 };
 use adventuresim_world_schema::BestiaryCategory;
 use serde::{Deserialize, Serialize};
@@ -77,7 +79,10 @@ macro_rules! open_catalog_id {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name { len: u8, bytes: [u8; 63] }
         impl $name {
-            $(#[allow(non_upper_case_globals)]
+            $(#[allow(
+                non_upper_case_globals,
+                reason = "the macro emits PascalCase constants as enum-like open-catalog values"
+            )]
             pub const $constant: Self = Self::from_static($value);)+
             pub const fn from_static(value: &str) -> Self {
                 let source = value.as_bytes();
@@ -661,7 +666,7 @@ pub struct TestimonyDraft {
     /// Required claim-specific lines authored alongside the testimony.
     /// The client has no generic fallback.
     pub challenge_responses: TestimonyChallengeResponses,
-    pub destination_stage: String,
+    pub destination_stage: DestinationKnowledgeStage,
     pub site_id: Option<SiteId>,
     /// Proposition superseded by this claim. Set only on the later correction.
     pub corrects_proposition_id: Option<String>,
@@ -897,9 +902,8 @@ pub fn player_visible_testimony_sequence(
     let mut delivered_witnesses = BTreeSet::new();
     let mut output = Vec::new();
     while let Some(witness) = generated.witnesses.iter().find(|witness| {
-            visible_witnesses.contains(&witness.id) && !delivered_witnesses.contains(&witness.id)
-        })
-    {
+        visible_witnesses.contains(&witness.id) && !delivered_witnesses.contains(&witness.id)
+    }) {
         delivered_witnesses.insert(witness.id.clone());
         for (_, statement) in initial_testimony_projection(witness) {
             for referred in &statement.referred_witness_ids {
@@ -984,7 +988,7 @@ pub fn transition_referred_contact_action(
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GeneratedActionOutput {
     Destination {
-        stage: GeneratedDestinationStage,
+        stage: DestinationKnowledgeStage,
         site_id: Option<SiteId>,
     },
     Evidence {
@@ -1023,17 +1027,6 @@ pub enum GeneratedPatternCondition {
         profession: String,
     },
     BroadSurvey,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GeneratedDestinationStage {
-    Unknown,
-    Textual,
-    Landmark,
-    ApproximateArea,
-    RouteSegment,
-    Exact,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -72,7 +72,7 @@ impl Reshape {
             _ => 1,
         };
 
-        crate::data::gpu::compute::ComputePass::new(context, pipeline, parameters, wg_x, 1, 1)?;
+        crate::data::gpu::compute::ComputePass::execute(context, pipeline, parameters, wg_x, 1, 1)?;
 
         Ok(())
     }

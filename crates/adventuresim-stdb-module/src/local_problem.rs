@@ -14,8 +14,9 @@ use crate::{
     },
     time::{character_time, character_time__view, world_clock},
 };
-use adventuresim_core::local_problem as lp;
+use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use adventuresim_core::threat_escalation::bounded_public_threat_candidates as bounded_public_candidates;
+use adventuresim_core::{encounter::EncounterArchetype, local_problem as lp};
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
 use std::cmp::Reverse;
@@ -38,7 +39,7 @@ pub struct LocalProblemAuthority {
     pub buy_bps: i32,
     pub sell_penalty_bps: i32,
     pub encounter_frequency_bps: u16,
-    pub encounter_archetype: String,
+    pub encounter_archetype: Option<EncounterArchetype>,
     pub disease_intensity: u16,
     pub disease_id: String,
     pub starts_at: u64,
@@ -256,15 +257,6 @@ fn route_mechanism(value: lp::Symptom) -> &'static str {
         lp::Symptom::VanishedLivestock => "route_livestock_losses",
     }
 }
-fn archetype_name(value: Option<lp::EncounterArchetype>) -> &'static str {
-    match value {
-        Some(lp::EncounterArchetype::Bandits) => "bandits",
-        Some(lp::EncounterArchetype::Goblins) => "goblins",
-        Some(lp::EncounterArchetype::Undead) => "undead",
-        None => "",
-    }
-}
-
 fn is_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
@@ -403,7 +395,7 @@ pub(crate) fn materialize_generated_problem(
     let ends_at = if recurring_hostile {
         u64::MAX
     } else {
-        starts_at.saturating_add(30 * 1_440)
+        starts_at.saturating_add(30 * MINUTES_PER_DAY)
     };
     let mechanism = match consequence.symptom {
         lp::Symptom::MissingCaravans => "supply_disruption",
@@ -425,7 +417,7 @@ pub(crate) fn materialize_generated_problem(
             buy_bps: consequence.effects.buy_bps,
             sell_penalty_bps: consequence.effects.sell_penalty_bps,
             encounter_frequency_bps: consequence.effects.encounter_frequency_bps,
-            encounter_archetype: archetype_name(consequence.effects.encounter_archetype).into(),
+            encounter_archetype: consequence.effects.encounter_archetype,
             disease_intensity: consequence.effects.disease_intensity,
             disease_id: case.outbreak.as_ref().map_or_else(
                 || {
@@ -770,7 +762,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
     {
         return Ok(());
     }
-    let cycle = minute / (30 * 1_440);
+    let cycle = minute / (30 * MINUTES_PER_DAY);
     let private_entropy = ctx.random::<u64>();
     let context = lp::GenerationContext {
         seed: format!("private:{private_entropy:016x}:cycle:{cycle}"),
@@ -796,7 +788,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
             buy_bps: problem.effects.buy_bps,
             sell_penalty_bps: problem.effects.sell_penalty_bps,
             encounter_frequency_bps: problem.effects.encounter_frequency_bps,
-            encounter_archetype: archetype_name(problem.effects.encounter_archetype).into(),
+            encounter_archetype: problem.effects.encounter_archetype,
             disease_intensity: problem.effects.disease_intensity,
             disease_id: disease_id.into(),
             starts_at: problem.starts_at,
@@ -849,7 +841,7 @@ pub fn ensure_route_problem(
     {
         return Ok(());
     }
-    let cycle = minute / (30 * 1_440);
+    let cycle = minute / (30 * MINUTES_PER_DAY);
     let private_entropy = ctx.random::<u64>();
     let context = lp::GenerationContext {
         seed: format!("private:{private_entropy:016x}:route-cycle:{cycle}"),
@@ -870,7 +862,7 @@ pub fn ensure_route_problem(
             buy_bps: 0,
             sell_penalty_bps: 0,
             encounter_frequency_bps: problem.effects.encounter_frequency_bps,
-            encounter_archetype: archetype_name(problem.effects.encounter_archetype).into(),
+            encounter_archetype: problem.effects.encounter_archetype,
             disease_intensity: 0,
             disease_id: String::new(),
             starts_at: problem.starts_at,
@@ -900,10 +892,15 @@ fn is_active(row: &LocalProblemAuthority, minute: u64) -> bool {
     minute >= row.starts_at
         && (row.recurring_hostile || minute < row.ends_at)
         && row.resolved_at.is_none_or(|at| minute < at)
-        && row.mitigation_bps < 10_000
+        && row.mitigation_bps < adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
 }
 fn scaled(value: i32, mitigation: u16) -> i32 {
-    (i64::from(value) * i64::from(10_000u16.saturating_sub(mitigation.min(10_000))) / 10_000) as i32
+    (i64::from(value)
+        * i64::from(
+            adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
+                .saturating_sub(mitigation.min(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)),
+        )
+        / i64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)) as i32
 }
 pub fn settlement_effects(
     ctx: &ReducerContext,
@@ -956,13 +953,8 @@ pub fn route_encounter_influence(
         .min(u32::from(lp::MAX_ENCOUNTER_BPS)) as u16;
     let archetype = rows
         .iter()
-        .filter(|r| r.encounter_frequency_bps > 0)
-        .find_map(|r| match r.encounter_archetype.as_str() {
-            "bandits" => Some(adventuresim_core::encounter::EncounterArchetype::Bandits),
-            "goblins" => Some(adventuresim_core::encounter::EncounterArchetype::Goblins),
-            "undead" => Some(adventuresim_core::encounter::EncounterArchetype::Undead),
-            _ => None,
-        });
+        .filter(|row| row.encounter_frequency_bps > 0)
+        .find_map(|row| row.encounter_archetype);
     (frequency > 0).then_some(adventuresim_core::encounter::LocalProblemInfluence {
         frequency_bonus_basis_points: frequency,
         archetype,
@@ -977,7 +969,6 @@ pub(crate) struct LocalProblemOutcomeInput {
     pub mitigation_bps: u16,
     pub resolve: bool,
 }
-#[allow(dead_code, reason = "typed internal boundary consumed by issue #186")]
 pub(crate) fn apply_outcome(
     ctx: &ReducerContext,
     problem_id: &str,
@@ -985,7 +976,7 @@ pub(crate) fn apply_outcome(
 ) -> Result<(), String> {
     if input.source_outcome_id.is_empty()
         || input.source_outcome_id.len() > 160
-        || input.mitigation_bps > 10_000
+        || input.mitigation_bps > adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
     {
         return Err("Invalid source outcome ID".into());
     }
@@ -1025,7 +1016,8 @@ pub(crate) fn apply_outcome(
         .local_problem_authority()
         .id()
         .update(problem.clone());
-    if (input.resolve || problem.mitigation_bps == 10_000)
+    if (input.resolve
+        || problem.mitigation_bps == adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)
         && let Some(mut symptom) = ctx
             .db
             .local_problem_symptom()
@@ -1261,6 +1253,10 @@ fn public_threat_in_hearing_range(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "threat publication keeps each authority and timing input explicit"
+)]
 fn surface_public_threat(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1481,6 +1477,10 @@ fn surface_public_threat(
     Ok(true)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "problem publication keeps each authority and timing input explicit"
+)]
 fn surface_new_problem(
     ctx: &ReducerContext,
     problem: &LocalProblemAuthority,
@@ -1878,7 +1878,8 @@ pub fn surface_problem(
                 summary: incident.public_summary.clone(),
                 source_label: "local report".into(),
                 confidence_bps: 5_000,
-                destination_stage: "unknown".into(),
+                destination_stage:
+                    adventuresim_core::investigation::DestinationKnowledgeStage::Unknown,
                 directions: String::new(),
                 exact_location_id: String::new(),
                 latitude_e7: 0,

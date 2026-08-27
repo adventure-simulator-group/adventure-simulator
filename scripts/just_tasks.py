@@ -351,7 +351,7 @@ def verified_world_identity(world_input: Path) -> tuple[str, str]:
 
 
 def strategic_sim(
-    seed: str, population: str, cycles: str, duration_days: str, party_size: str,
+    seed: str, population: str, cycles: str, duration_days: str | None, party_size: str,
     spacetime_url: str, module_dir: Path, output_dir: Path,
     world_input: Path | None = None,
     require_quest_coverage: bool = False,
@@ -415,12 +415,14 @@ def strategic_sim(
                     executable("cargo"), "run", "-p", "adventuresim-strategic-sim", "--",
                     "core-loop", "--host", spacetime_url, "--database", database,
                     "--run-nonce", nonce, "--seed", seed, "--population", population,
-                    "--cycles", cycles, "--duration-days", duration_days,
-                    "--party-size", party_size, "--output", str(output_dir / "report.json"),
+                    "--cycles", cycles, "--party-size", party_size,
+                    "--output", str(output_dir / "report.json"),
                     "--failure-output", str(output_dir / "failure.json"),
                     "--imported-world", "--expected-world-manifest-digest",
                     world_manifest_digest,
                 ]
+                if duration_days is not None:
+                    command.extend(["--duration-days", duration_days])
                 result_code = run(command, env=environment)
                 metadata["status"] = (
                     "completed" if result_code == 0 else "simulator_failed"
@@ -431,10 +433,12 @@ def strategic_sim(
                 executable("cargo"), "run", "-p", "adventuresim-strategic-sim", "--",
                 "core-loop", "--host", spacetime_url, "--database", database,
                 "--run-nonce", nonce, "--seed", seed, "--population", population,
-                "--cycles", cycles, "--duration-days", duration_days,
-                "--party-size", party_size, "--output", str(output_dir / "report.json"),
+                "--cycles", cycles, "--party-size", party_size,
+                "--output", str(output_dir / "report.json"),
                 "--failure-output", str(output_dir / "failure.json"),
             ]
+            if duration_days is not None:
+                command.extend(["--duration-days", duration_days])
             if require_quest_coverage:
                 command.append("--require-quest-coverage")
             result_code = run(command, env=environment)
@@ -589,9 +593,9 @@ def parser() -> argparse.ArgumentParser:
     simulation.add_argument("seed")
     simulation.add_argument("population")
     simulation.add_argument("cycles")
-    simulation.add_argument("duration_days")
     simulation.add_argument("party_size")
     simulation.add_argument("output_dir")
+    simulation.add_argument("--duration-days")
     simulation.add_argument("--spacetime-url", default=SPACETIME_URL)
     simulation.add_argument("--module-dir", default=str(MODULE_DIR))
     simulation.add_argument("--world-input")

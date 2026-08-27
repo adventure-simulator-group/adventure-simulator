@@ -8,8 +8,8 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    ForestCover, PotentialVegetation, PotentialVegetationClass, PotentialVegetationPosterior,
-    SuitabilityBasisPoints,
+    BASIS_POINTS_PER_WHOLE, ForestCover, PotentialVegetation, PotentialVegetationClass,
+    PotentialVegetationPosterior, SuitabilityBasisPoints,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -427,7 +427,8 @@ fn enrich_verified(
         if values.iter().all(Option::is_some) {
             let q = |i: usize| {
                 SuitabilityBasisPoints::new(
-                    (f64::from(values[i].unwrap()) * 10_000.0).round() as u16
+                    (f64::from(values[i].unwrap()) * f64::from(BASIS_POINTS_PER_WHOLE)).round()
+                        as u16,
                 )
                 .unwrap()
             };

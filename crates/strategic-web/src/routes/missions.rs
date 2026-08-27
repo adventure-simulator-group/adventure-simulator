@@ -50,10 +50,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
 
     let parties: Vec<Party> = state
         .db
-        .query(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(party_id)
-        ))
+        .query(&crate::spacetimedb::party_by_id(party_id))
         .await
         .unwrap_or_default();
 
@@ -305,7 +302,6 @@ mod tests {
             name: "viewer".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: None,
             current_case_site_id: None,
             party_id: Some(party_id.into()),

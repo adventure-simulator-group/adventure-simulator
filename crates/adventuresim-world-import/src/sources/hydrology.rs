@@ -837,12 +837,14 @@ fn read_geopackage(
         read_feature_table(
             &connection,
             path,
-            &table,
-            &geometry_column,
-            z,
-            m,
-            kind,
-            bounds,
+            FeatureTableSpec {
+                table: &table,
+                geometry_column: &geometry_column,
+                z_requirement: z,
+                m_requirement: m,
+                kind,
+                bounds,
+            },
             decoded_coordinates,
             output,
         )?;
@@ -862,18 +864,31 @@ fn feature_kind(table: &str) -> Option<FeatureKind> {
     }
 }
 
-fn read_feature_table(
-    connection: &Connection,
-    path: &Path,
-    table: &str,
-    geometry_column: &str,
+#[derive(Clone, Copy)]
+struct FeatureTableSpec<'a> {
+    table: &'a str,
+    geometry_column: &'a str,
     z_requirement: i64,
     m_requirement: i64,
     kind: FeatureKind,
     bounds: Option<Bounds>,
+}
+
+fn read_feature_table(
+    connection: &Connection,
+    path: &Path,
+    spec: FeatureTableSpec<'_>,
     decoded_coordinates: &mut usize,
     output: &mut Vec<WaterFeature>,
 ) -> Result<()> {
+    let FeatureTableSpec {
+        table,
+        geometry_column,
+        z_requirement,
+        m_requirement,
+        kind,
+        bounds,
+    } = spec;
     let layout = table_layout(connection, path, table)?;
     let value = |name: &str| {
         if layout

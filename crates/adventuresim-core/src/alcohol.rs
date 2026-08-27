@@ -1,12 +1,14 @@
 //! Deterministic fixed-point alcohol rules shared by strategic simulation and UI.
 
-pub const MINUTES_PER_DAY: u64 = 1_440;
+use crate::strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY};
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+
 pub const EVENING_BOUNDARY_MINUTE: u64 = 18 * 60;
 pub const MODEST_ETHANOL_ML: u32 = 15;
 pub const HEAVY_ETHANOL_ML: u32 = 45;
 pub const ROLLING_WEEK_DAYS: u64 = 7;
 pub const LOW_MORALE_THRESHOLD: f32 = -10.0;
-pub const MAX_ALCOHOL_INTERVAL_MINUTES: u64 = 365 * MINUTES_PER_DAY;
+pub const MAX_ALCOHOL_INTERVAL_MINUTES: u64 = DAYS_PER_YEAR * MINUTES_PER_DAY;
 pub const NIGHT_END_MINUTE: u64 = 8 * 60;
 pub const ALCOHOL_SURGERY_CONTROL_DIVISOR: f32 = 25.0;
 pub const NIGHTLY_MORALE_SOURCE_ID: &str = "alcohol-nightly";
@@ -89,32 +91,31 @@ pub struct AlcoholProperties {
 }
 
 pub const fn ethanol_ml(properties: AlcoholProperties) -> u32 {
-    if properties.abv_basis_points > 10_000 {
+    if properties.abv_basis_points > BASIS_POINTS_PER_WHOLE {
         return 0;
     }
     properties
         .serving_ml
         .saturating_mul(properties.abv_basis_points as u32)
-        / 10_000
+        / BASIS_POINTS_PER_WHOLE as u32
 }
 
 pub const fn water_content_ml(properties: AlcoholProperties) -> u32 {
-    if properties.abv_basis_points > 10_000 {
+    if properties.abv_basis_points > BASIS_POINTS_PER_WHOLE {
         return 0;
     }
-    properties
-        .serving_ml
-        .saturating_mul(10_000_u32.saturating_sub(properties.abv_basis_points as u32))
-        / 10_000
+    properties.serving_ml.saturating_mul(
+        (BASIS_POINTS_PER_WHOLE as u32).saturating_sub(properties.abv_basis_points as u32),
+    ) / BASIS_POINTS_PER_WHOLE as u32
 }
 
 pub const fn properties_valid(properties: AlcoholProperties) -> bool {
-    properties.abv_basis_points <= 10_000
+    properties.abv_basis_points <= BASIS_POINTS_PER_WHOLE
         && properties.net_hydration_ml <= water_content_ml(properties)
 }
 
 pub const fn emergency_hydration_ml(properties: AlcoholProperties) -> u32 {
-    if properties.potable && properties.abv_basis_points <= 10_000 {
+    if properties.potable && properties.abv_basis_points <= BASIS_POINTS_PER_WHOLE {
         let water = water_content_ml(properties);
         if properties.net_hydration_ml < water {
             properties.net_hydration_ml
@@ -456,7 +457,7 @@ mod tests {
             crossed_evenings(0, MAX_ALCOHOL_INTERVAL_MINUTES)
                 .unwrap()
                 .count(),
-            365
+            usize::try_from(DAYS_PER_YEAR).unwrap()
         );
     }
 

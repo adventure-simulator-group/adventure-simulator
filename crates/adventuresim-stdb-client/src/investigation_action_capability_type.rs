@@ -4,13 +4,15 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::investigation_provenance_kind_type::InvestigationProvenanceKind;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct InvestigationActionCapability {
     pub id: String,
     pub owner_character_id: u64,
     pub case_id: String,
-    pub provenance_kind: String,
+    pub provenance_kind: InvestigationProvenanceKind,
     pub generated_case_id: String,
     pub method: String,
     pub version: u32,
@@ -40,7 +42,8 @@ pub struct InvestigationActionCapabilityCols {
     pub id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub owner_character_id: __sdk::__query_builder::Col<InvestigationActionCapability, u64>,
     pub case_id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
-    pub provenance_kind: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
+    pub provenance_kind:
+        __sdk::__query_builder::Col<InvestigationActionCapability, InvestigationProvenanceKind>,
     pub generated_case_id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub method: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub version: __sdk::__query_builder::Col<InvestigationActionCapability, u32>,

@@ -1,5 +1,4 @@
 use std::{
-    f64::consts::PI,
     fs,
     path::{Path, PathBuf},
 };
@@ -7,10 +6,73 @@ use std::{
 use adventuresim_core::weather::{WORLD_WEATHER_SEED, weather_at};
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_terrain::{Cell, Surface, TerrainPack};
+use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, coordinates::Wgs84CoordinateE7};
+use fabelgeist_determinism::mix64;
 use sha2::{Digest, Sha256};
 
 const PLAYABLE_SIDE: u16 = 101;
 const PLAYABLE_SPACING_METRES: f32 = 1.0;
+const PERCENT_PER_WHOLE: u16 = 100;
+const BASIS_POINTS_PER_PERCENT: u16 = BASIS_POINTS_PER_WHOLE / PERCENT_PER_WHOLE;
+const VISTA_LOD_SPECS: [VistaLodSpec; 3] = [
+    VistaLodSpec::new(0, 50.0, 41),
+    VistaLodSpec::new(1, 250.0, 17),
+    VistaLodSpec::new(2, 1_000.0, 51),
+];
+const METRES_PER_LATITUDE_DEGREE: f64 = 111_320.0;
+const MIN_LONGITUDE_SCALE: f64 = 0.01;
+const PEAK_SAMPLE_RADIUS_FACTOR: f64 = 0.4;
+const HILLY_DETAIL_AMPLITUDE_METRES: f32 = 0.45;
+const RANDOM_DETAIL_SCALE: u64 = 10_000;
+const RANDOM_DETAIL_BUCKETS: u64 = RANDOM_DETAIL_SCALE * 2 + 1;
+
+#[derive(Clone, Copy)]
+struct VistaLodSpec {
+    level: u8,
+    spacing_metres: f32,
+    side: u16,
+}
+
+impl VistaLodSpec {
+    const fn new(level: u8, spacing_metres: f32, side: u16) -> Self {
+        Self {
+            level,
+            spacing_metres,
+            side,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct GridDimensions {
+    width: u16,
+    depth: u16,
+}
+
+impl GridDimensions {
+    const fn square(side: u16) -> Self {
+        Self {
+            width: side,
+            depth: side,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ElevationSampling {
+    AddLocalDetail,
+    PreservePeaks,
+}
+
+#[derive(Clone, Copy)]
+struct GridSampleRequest {
+    center: Wgs84CoordinateE7,
+    dimensions: GridDimensions,
+    spacing_metres: f32,
+    center_elevation_metres: f32,
+    elevation_sampling: ElevationSampling,
+    seed: u64,
+}
 
 pub fn build_imported_scene(
     pack: &TerrainPack,
@@ -20,47 +82,50 @@ pub fn build_imported_scene(
     longitude_e7: i32,
     absolute_minute: u64,
 ) -> Result<TacticalSceneInput, String> {
-    let latitude = f64::from(latitude_e7) / 10_000_000.0;
-    let longitude = f64::from(longitude_e7) / 10_000_000.0;
+    let coordinates = Wgs84CoordinateE7::new(latitude_e7, longitude_e7)
+        .ok_or("mission coordinate is outside the WGS84 bounds")?;
     let center = pack
-        .cell(latitude, longitude)
+        .cell(
+            coordinates.latitude().degrees(),
+            coordinates.longitude().degrees(),
+        )
         .map_err(|error| error.to_string())?
         .ok_or("mission coordinate is outside the final terrain pack")?;
     let seed = deterministic_seed(mission_id);
     let playable = sample_grid(
         pack,
-        latitude,
-        longitude,
-        PLAYABLE_SIDE,
-        PLAYABLE_SIDE,
-        PLAYABLE_SPACING_METRES,
-        f32::from(center.elevation_m),
-        false,
-        seed,
+        GridSampleRequest {
+            center: coordinates,
+            dimensions: GridDimensions::square(PLAYABLE_SIDE),
+            spacing_metres: PLAYABLE_SPACING_METRES,
+            center_elevation_metres: f32::from(center.elevation_m),
+            elevation_sampling: ElevationSampling::AddLocalDetail,
+            seed,
+        },
     )?;
     let vista = VistaSample {
         // The near regional ring needs enough spatial frequency to preserve
         // forest boundaries, rolling ground, and the transition from geometric
         // grass. Coarser rings then expand rapidly to the 50-km horizon.
-        lods: [(0, 50.0, 41), (1, 250.0, 17), (2, 1_000.0, 51)]
+        lods: VISTA_LOD_SPECS
             .into_iter()
-            .map(|(level, spacing, side)| {
+            .map(|spec| {
                 let grid = sample_grid(
                     pack,
-                    latitude,
-                    longitude,
-                    side,
-                    side,
-                    spacing,
-                    f32::from(center.elevation_m),
-                    true,
-                    seed ^ u64::from(level),
+                    GridSampleRequest {
+                        center: coordinates,
+                        dimensions: GridDimensions::square(spec.side),
+                        spacing_metres: spec.spacing_metres,
+                        center_elevation_metres: f32::from(center.elevation_m),
+                        elevation_sampling: ElevationSampling::PreservePeaks,
+                        seed: seed ^ u64::from(spec.level),
+                    },
                 )?;
                 Ok(VistaLod {
-                    level,
-                    spacing_metres: spacing,
-                    width: side,
-                    depth: side,
+                    level: spec.level,
+                    spacing_metres: spec.spacing_metres,
+                    width: spec.side,
+                    depth: spec.side,
                     origin_east_metres: 0.0,
                     origin_north_metres: 0.0,
                     heights_metres: grid.heights_metres,
@@ -75,8 +140,8 @@ pub fn build_imported_scene(
         seed,
         scene_key: scene_key.into(),
         source: SceneSource::ImportedPackage(pack.digest().into()),
-        latitude_microdegrees: latitude_e7 / 10,
-        longitude_microdegrees: longitude_e7 / 10,
+        latitude_microdegrees: coordinates.latitude().to_microdegrees().get(),
+        longitude_microdegrees: coordinates.longitude().to_microdegrees().get(),
         absolute_minute,
         absolute_elevation_metres: center.elevation_m,
         playable,
@@ -84,8 +149,8 @@ pub fn build_imported_scene(
         weather: weather_at(
             WORLD_WEATHER_SEED,
             absolute_minute,
-            latitude_e7 / 10,
-            longitude_e7 / 10,
+            coordinates.latitude().to_microdegrees().get(),
+            coordinates.longitude().to_microdegrees().get(),
             center.elevation_m,
         ),
     };
@@ -120,32 +185,30 @@ pub fn materialize_scene_input(
 
 fn sample_grid(
     pack: &TerrainPack,
-    latitude: f64,
-    longitude: f64,
-    width: u16,
-    depth: u16,
-    spacing: f32,
-    center_elevation: f32,
-    preserve_peaks: bool,
-    seed: u64,
+    request: GridSampleRequest,
 ) -> Result<TerrainSampleGrid, String> {
+    let GridDimensions { width, depth } = request.dimensions;
     let center_x = f64::from(width - 1) * 0.5;
     let center_z = f64::from(depth - 1) * 0.5;
     let mut heights = Vec::with_capacity(usize::from(width) * usize::from(depth));
     let mut environment = Vec::with_capacity(heights.capacity());
     for z in 0..depth {
         for x in 0..width {
-            let east = (f64::from(x) - center_x) * f64::from(spacing);
-            let north = (f64::from(z) - center_z) * f64::from(spacing);
-            let (sample_latitude, sample_longitude) =
-                offset_coordinate(latitude, longitude, east, north);
+            let east = (f64::from(x) - center_x) * f64::from(request.spacing_metres);
+            let north = (f64::from(z) - center_z) * f64::from(request.spacing_metres);
+            let (sample_latitude, sample_longitude) = offset_coordinate(
+                request.center.latitude().degrees(),
+                request.center.longitude().degrees(),
+                east,
+                north,
+            );
             let cell = pack
                 .cell(sample_latitude, sample_longitude)
                 .map_err(|error| error.to_string())?
                 .ok_or("requested scene window leaves the final terrain pack")?;
             let mut elevation = f32::from(cell.elevation_m);
-            if preserve_peaks {
-                let radius = f64::from(spacing) * 0.4;
+            if matches!(request.elevation_sampling, ElevationSampling::PreservePeaks) {
+                let radius = f64::from(request.spacing_metres) * PEAK_SAMPLE_RADIUS_FACTOR;
                 for (sample_east, sample_north) in [
                     (-radius, -radius),
                     (0.0, -radius),
@@ -169,20 +232,20 @@ fn sample_grid(
                     }
                 }
             } else {
-                let detail = deterministic_detail(seed, x, z)
+                let detail = deterministic_detail(request.seed, x, z)
                     * f32::from(cell.hilly_fraction_percent)
-                    / 100.0
-                    * 0.45;
+                    / f32::from(PERCENT_PER_WHOLE)
+                    * HILLY_DETAIL_AMPLITUDE_METRES;
                 elevation += detail;
             }
-            heights.push(elevation - center_elevation);
+            heights.push(elevation - request.center_elevation_metres);
             environment.push(environment_sample(cell));
         }
     }
     Ok(TerrainSampleGrid {
         width,
         depth,
-        spacing_metres: spacing,
+        spacing_metres: request.spacing_metres,
         heights_metres: heights,
         environment,
     })
@@ -190,16 +253,24 @@ fn sample_grid(
 
 fn environment_sample(cell: Cell) -> EnvironmentalSample {
     EnvironmentalSample {
-        canopy_bps: u16::from(cell.canopy_percent) * 100,
-        wetland_bps: u16::from(cell.wetland_fraction_percent) * 100,
-        cultivation_bps: if cell.cultivated { 10_000 } else { 0 },
-        water_bps: if cell.surface == Surface::Water && !cell.crossing {
-            10_000
+        canopy_bps: u16::from(cell.canopy_percent) * BASIS_POINTS_PER_PERCENT,
+        wetland_bps: u16::from(cell.wetland_fraction_percent) * BASIS_POINTS_PER_PERCENT,
+        cultivation_bps: if cell.cultivated {
+            BASIS_POINTS_PER_WHOLE
         } else {
             0
         },
-        hilly_bps: u16::from(cell.hilly_fraction_percent) * 100,
-        crossing_bps: if cell.crossing { 10_000 } else { 0 },
+        water_bps: if cell.surface == Surface::Water && !cell.crossing {
+            BASIS_POINTS_PER_WHOLE
+        } else {
+            0
+        },
+        hilly_bps: u16::from(cell.hilly_fraction_percent) * BASIS_POINTS_PER_PERCENT,
+        crossing_bps: if cell.crossing {
+            BASIS_POINTS_PER_WHOLE
+        } else {
+            0
+        },
         surface: match cell.surface {
             Surface::Road => TacticalSurface::Road,
             Surface::Open => TacticalSurface::Open,
@@ -212,9 +283,9 @@ fn environment_sample(cell: Cell) -> EnvironmentalSample {
 }
 
 fn offset_coordinate(latitude: f64, longitude: f64, east: f64, north: f64) -> (f64, f64) {
-    let latitude_delta = north / 111_320.0;
-    let longitude_scale = (latitude * PI / 180.0).cos().abs().max(0.01);
-    let longitude_delta = east / (111_320.0 * longitude_scale);
+    let latitude_delta = north / METRES_PER_LATITUDE_DEGREE;
+    let longitude_scale = latitude.to_radians().cos().abs().max(MIN_LONGITUDE_SCALE);
+    let longitude_delta = east / (METRES_PER_LATITUDE_DEGREE * longitude_scale);
     (latitude + latitude_delta, longitude + longitude_delta)
 }
 
@@ -224,13 +295,8 @@ fn deterministic_seed(mission_id: &str) -> u64 {
 }
 
 fn deterministic_detail(seed: u64, x: u16, z: u16) -> f32 {
-    let mut value = seed ^ (u64::from(x) << 32) ^ u64::from(z);
-    value ^= value >> 30;
-    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value ^= value >> 27;
-    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^= value >> 31;
-    (value % 20_001) as f32 / 10_000.0 - 1.0
+    let value = mix64(seed ^ (u64::from(x) << 32) ^ u64::from(z));
+    (value % RANDOM_DETAIL_BUCKETS) as f32 / RANDOM_DETAIL_SCALE as f32 - 1.0
 }
 
 #[cfg(test)]

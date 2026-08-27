@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct PartyItemAmount {
     pub party_inventory_item_id: u64,
-    pub remaining_milliunits: u32,
+    pub remaining_fraction_micros: u32,
 }
 
 impl __sdk::InModule for PartyItemAmount {
@@ -20,7 +20,7 @@ impl __sdk::InModule for PartyItemAmount {
 /// Provides typed access to columns for query building.
 pub struct PartyItemAmountCols {
     pub party_inventory_item_id: __sdk::__query_builder::Col<PartyItemAmount, u64>,
-    pub remaining_milliunits: __sdk::__query_builder::Col<PartyItemAmount, u32>,
+    pub remaining_fraction_micros: __sdk::__query_builder::Col<PartyItemAmount, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyItemAmount {
@@ -31,9 +31,9 @@ impl __sdk::__query_builder::HasCols for PartyItemAmount {
                 table_name,
                 "party_inventory_item_id",
             ),
-            remaining_milliunits: __sdk::__query_builder::Col::new(
+            remaining_fraction_micros: __sdk::__query_builder::Col::new(
                 table_name,
-                "remaining_milliunits",
+                "remaining_fraction_micros",
             ),
         }
     }

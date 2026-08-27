@@ -19,6 +19,81 @@ pub trait DomainConservationPolicy: Clone + fmt::Debug + Eq {}
 pub trait DomainMaterialReceipt: Clone + fmt::Debug + Eq {}
 pub trait PublicMaterialPresentation: Clone + fmt::Debug + Eq {}
 
+/// Exact volume measured in microliters.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Microliters(u64);
+
+impl Microliters {
+    pub const MICROLITERS_PER_MILLILITER: u64 = 1_000;
+    pub const MICROLITERS_PER_LITER: u64 = 1_000_000;
+    pub const ZERO: Self = Self(0);
+
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub fn try_from_milliliters(milliliters: u64) -> Result<Self, MaterialError> {
+        milliliters
+            .checked_mul(Self::MICROLITERS_PER_MILLILITER)
+            .map(Self)
+            .ok_or(MaterialError::Overflow)
+    }
+
+    pub fn try_from_nonnegative_milliliters_rounded(milliliters: f32) -> Option<Self> {
+        if !milliliters.is_finite() || milliliters < 0.0 {
+            return None;
+        }
+        let microliters = (milliliters * Self::MICROLITERS_PER_MILLILITER as f32).round();
+        (microliters <= u64::MAX as f32).then_some(Self(microliters as u64))
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    pub const fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
+    pub const fn min(self, other: Self) -> Self {
+        Self(if self.0 < other.0 { self.0 } else { other.0 })
+    }
+
+    pub const fn checked_add(self, other: Self) -> Option<Self> {
+        match self.0.checked_add(other.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    pub const fn checked_sub(self, other: Self) -> Option<Self> {
+        match self.0.checked_sub(other.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    pub fn as_milliliters_f32(self) -> f32 {
+        self.0 as f32 / Self::MICROLITERS_PER_MILLILITER as f32
+    }
+
+    pub fn as_water_kilograms_f32(self) -> f32 {
+        self.0 as f32 / Self::MICROLITERS_PER_LITER as f32
+    }
+}
+
+impl From<u64> for Microliters {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<Microliters> for u64 {
+    fn from(value: Microliters) -> Self {
+        value.get()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MaterialLotId(NonZeroU64);
 
@@ -1201,6 +1276,18 @@ impl std::error::Error for MaterialError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn microliters_make_water_volume_conversions_explicit() {
+        let volume = Microliters::try_from_milliliters(150).unwrap();
+        assert_eq!(volume.get(), 150_000);
+        assert_eq!(volume.as_milliliters_f32(), 150.0);
+        assert_eq!(volume.as_water_kilograms_f32(), 0.15);
+        assert_eq!(
+            Microliters::try_from_nonnegative_milliliters_rounded(-1.0),
+            None
+        );
+    }
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     enum Preparation {

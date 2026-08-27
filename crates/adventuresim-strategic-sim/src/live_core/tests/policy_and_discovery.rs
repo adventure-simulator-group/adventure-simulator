@@ -91,11 +91,11 @@ fn disabled_crime_reallocation_leaves_labor_and_prayer_unchanged_without_crime()
 fn settlement_activity_venue_prefers_fed_temple_then_reserve_aware_inn() {
     assert_eq!(
         select_settlement_activity_venue(true, true, true, 2, 0, Some(2)),
-        Some(SettlementActivityVenue::Temple)
+        Some(DomainSettlementActionService::Temple)
     );
     assert_eq!(
         select_settlement_activity_venue(true, true, false, 4, 2, Some(2)),
-        Some(SettlementActivityVenue::Inn)
+        Some(DomainSettlementActionService::Inn)
     );
     assert_eq!(
         select_settlement_activity_venue(false, true, false, 0, 0, Some(2)),
@@ -111,7 +111,7 @@ fn settlement_activity_venue_prefers_fed_temple_then_reserve_aware_inn() {
     );
     assert_eq!(
         select_settlement_activity_venue(true, false, false, 4, 2, Some(2)),
-        Some(SettlementActivityVenue::Inn)
+        Some(DomainSettlementActionService::Inn)
     );
 }
 
@@ -154,7 +154,10 @@ fn unaffordable_generated_window_wait_defers_without_camp_or_reducer_error_allow
     let wait = source
         .split("fn wait_for_generated_investigation_window")
         .nth(1)
-        .and_then(|tail| tail.split("fn return_completed_generated_party_to_origin").next())
+        .and_then(|tail| {
+            tail.split("fn return_completed_generated_party_to_origin")
+                .next()
+        })
         .expect("generated night-window wait");
     let unavailable = wait.find("settlement_venue.is_none()").unwrap();
     let suppressed = wait.find("reason=insufficient_visible_resources").unwrap();
@@ -249,7 +252,9 @@ fn settlement_activity_stops_when_an_incident_relocates_the_party() {
         .find("party_is_still_at_original_settlement")
         .map(|offset| activity_rest + offset)
         .unwrap();
-    let post_activity_observation = activity.find("let after = self.activity_observation").unwrap();
+    let post_activity_observation = activity
+        .find("let after = self.activity_observation")
+        .unwrap();
     assert!(activity_rest < post_rest_location_check);
     assert!(post_rest_location_check < post_activity_observation);
     assert!(
@@ -289,39 +294,39 @@ fn each_active_cycle_advances_world_time_before_refreshing_npc_activity() {
 #[test]
 fn quest_decision_detail_is_bounded_and_stably_formatted() {
     assert_eq!(
-        format_quest_decision_detail(
-            7,
-            true,
-            0.25,
-            0.75,
-            Some("lubeck"),
-            2,
-            1,
-            1,
-            3,
-            "generated_open_case",
-            true,
-            true,
-            "none",
-        ),
+        format_quest_decision_detail(QuestDecisionObservation {
+            cycle: 7,
+            wants_quest: true,
+            selector: 0.25,
+            quest_propensity: 0.75,
+            settlement_id: Some("lubeck"),
+            offered_contracts: 2,
+            safe_offered_contracts: 1,
+            open_generated_cases: 1,
+            projected_investigation_actions: 3,
+            quest_path: "generated_open_case",
+            quest_intended: true,
+            quest_selected: true,
+            selection_reason: "none",
+        }),
         "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;safe_offered_contracts=1;open_generated_cases=1;projected_investigation_actions=3;quest_path=generated_open_case;quest_intended=true;quest_selected=true;selection_reason=none"
     );
     assert_eq!(
-        format_quest_decision_detail(
-            8,
-            false,
-            0.25,
-            0.75,
-            None,
-            0,
-            0,
-            0,
-            0,
-            "activity",
-            false,
-            false,
-            "policy_prefers_activity",
-        ),
+        format_quest_decision_detail(QuestDecisionObservation {
+            cycle: 8,
+            wants_quest: false,
+            selector: 0.25,
+            quest_propensity: 0.75,
+            settlement_id: None,
+            offered_contracts: 0,
+            safe_offered_contracts: 0,
+            open_generated_cases: 0,
+            projected_investigation_actions: 0,
+            quest_path: "activity",
+            quest_intended: false,
+            quest_selected: false,
+            selection_reason: "policy_prefers_activity",
+        }),
         "cycle=8;wants_quest=false;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;safe_offered_contracts=0;open_generated_cases=0;projected_investigation_actions=0;quest_path=activity;quest_intended=false;quest_selected=false;selection_reason=policy_prefers_activity"
     );
 }
@@ -401,7 +406,9 @@ fn generated_case_selection_is_public_chronological_and_shared_by_both_paths() {
         .nth(1)
         .expect("core-loop case selection");
     assert_eq!(
-        bootstrap.matches("select_owned_open_generated_case(leader)").count(),
+        bootstrap
+            .matches("select_owned_open_generated_case(leader)")
+            .count(),
         2,
         "continuation and post-discovery must share the same fair selector"
     );
@@ -427,7 +434,10 @@ fn generated_case_no_progress_is_bounded_and_publicly_diagnosable() {
     let driver = LIVE_CORE_SOURCE
         .split("pub(super) fn advance_generated_case")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn turn_in_ready_direct_contract")
+                .next()
+        })
         .expect("generated-case driver");
     assert!(driver.contains(
         "emit_generated_case_no_progress(character_id, agent, cycle, case_id, &actions)"
@@ -439,7 +449,10 @@ fn generated_case_tries_bounded_distinct_public_witnesses_before_stalling() {
     let driver = LIVE_CORE_SOURCE
         .split("pub(super) fn advance_generated_case")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn turn_in_ready_direct_contract")
+                .next()
+        })
         .expect("generated-case driver");
     let witness_pass = driver
         .split("let mut witnesses")
@@ -773,10 +786,7 @@ fn discovery_prioritizes_new_referrals_and_retries_unresolved_public_referrals()
     newer_unresolved.lead_id = "lead:other-referral".into();
     let priority_before = HashMap::from([
         (original.lead_id.clone(), original),
-        (
-            newer_unresolved.lead_id.clone(),
-            newer_unresolved.clone(),
-        ),
+        (newer_unresolved.lead_id.clone(), newer_unresolved.clone()),
     ]);
     assert_eq!(
         public_discovery_referral_to_follow(
@@ -815,7 +825,7 @@ fn semantic_dialogue_lead() -> PublicDialogueLeadSemantic {
         summary: "A witness may know more.".into(),
         source_label: "local testimony".into(),
         confidence_bps: 6_000,
-        destination_stage: "referred_contact".into(),
+        destination_stage: CoreDestinationKnowledgeStage::Textual,
         directions: "Ask at the inn.".into(),
         exact_location_id: String::new(),
         latitude_e7: 0,
@@ -828,6 +838,18 @@ fn semantic_dialogue_lead() -> PublicDialogueLeadSemantic {
         contradiction_group: "witness:agnes".into(),
         corrected_by: String::new(),
     }
+}
+
+#[test]
+fn generated_destination_stages_cross_into_the_canonical_domain_type() {
+    assert_eq!(
+        core_destination_knowledge_stage(DestinationKnowledgeStage::ExactBelieved),
+        CoreDestinationKnowledgeStage::ExactBelieved
+    );
+    assert_eq!(
+        core_destination_knowledge_stage(DestinationKnowledgeStage::Visited),
+        CoreDestinationKnowledgeStage::Visited
+    );
 }
 
 fn semantic_dialogue_action() -> PublicDialogueActionSemantic {
@@ -918,7 +940,10 @@ fn repeated_testimony_metadata_does_not_count_as_dialogue_progress() {
     let fingerprint_source = LIVE_CORE_SOURCE
         .split("pub(super) fn public_dialogue_progress_fingerprint")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn generated_actor_ready_after_time").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn generated_actor_ready_after_time")
+                .next()
+        })
         .expect("public dialogue progress fingerprint");
     for publication_field in [
         "latest_update_at",
@@ -944,7 +969,10 @@ fn policy_relevant_lead_and_action_changes_count_as_dialogue_progress() {
     };
     let mut changed_lead = baseline.clone();
     changed_lead.leads[0].confidence_bps = 8_000;
-    assert!(public_dialogue_topic_made_progress(&baseline, &changed_lead));
+    assert!(public_dialogue_topic_made_progress(
+        &baseline,
+        &changed_lead
+    ));
 
     let mut changed_action = baseline.clone();
     changed_action.actions[0].weather_available = false;

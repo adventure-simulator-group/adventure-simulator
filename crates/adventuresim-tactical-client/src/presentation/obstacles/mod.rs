@@ -2,6 +2,7 @@ pub(super) mod rock;
 pub(super) mod tree;
 
 use super::*;
+use fabelgeist_determinism::splitmix64;
 use rock::{TacticalRockMaterial, procedural_rock_mesh, rock_material};
 use tree::{PendingTreePresentation, canopy_competition};
 
@@ -34,7 +35,6 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
 
 // The presentation facade is compiled into several binaries, while only the
 // deterministic scene viewer consumes this review-specimen helper.
-#[allow(dead_code)]
 pub(crate) fn oak_review_terminal_specimen(
     root: Vec3,
     canopy_bps: u16,

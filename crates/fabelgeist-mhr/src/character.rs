@@ -9,11 +9,11 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail};
 
-use crate::fbx::{Object, Scene};
 use crate::math::{
     Mat4, Quat, Transform, affine_inverse, mat4_from_column_major, quat_from_euler_degrees,
     quat_mul, rotation_order,
 };
+use fabelgeist_fbx::{Object, Scene};
 
 /// Momentum allows at most eight joint influences per vertex.
 pub const MAX_SKIN_JOINTS: usize = 8;
@@ -222,16 +222,20 @@ fn triangulate(polygon_vertex_index: &[i64]) -> Result<Vec<[u32; 3]>> {
     Ok(faces)
 }
 
-fn parse_uvs(geometry: &Object, polygon_count: usize) -> (Vec<[f32; 2]>, Vec<i64>) {
+fn parse_uvs(geometry: &Object, polygon_count: usize) -> Result<(Vec<[f32; 2]>, Vec<i64>)> {
     let Some(layer) = geometry.node.child("LayerElementUV") else {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
     let Some(values) = layer.child("UV").and_then(|n| n.f64_array()) else {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
+    let (uv_pairs, remainder) = values.as_chunks::<2>();
+    if !remainder.is_empty() {
+        bail!("FBX UV array contains an incomplete coordinate pair");
+    }
     // FBX texture coordinates are bottom-up.
-    let texcoords: Vec<[f32; 2]> = values
-        .chunks_exact(2)
+    let texcoords: Vec<[f32; 2]> = uv_pairs
+        .iter()
         .map(|uv| [uv[0] as f32, 1.0 - uv[1] as f32])
         .collect();
 
@@ -248,7 +252,7 @@ fn parse_uvs(geometry: &Object, polygon_count: usize) -> (Vec<[f32; 2]>, Vec<i64
     } else {
         (0..polygon_count as i64).collect()
     };
-    (texcoords, indices)
+    Ok((texcoords, indices))
 }
 
 /// Re-splits UV indices onto the polygon boundaries of the vertex index stream.
@@ -449,12 +453,17 @@ impl Character {
             .child_of_kind(mesh_model.id, "Geometry", "Mesh")
             .context("mesh model has no geometry")?;
 
-        let vertices: Vec<[f32; 3]> = geometry
+        let vertex_values = geometry
             .node
             .child("Vertices")
             .and_then(|n| n.f64_array())
-            .context("mesh geometry has no vertices")?
-            .chunks_exact(3)
+            .context("mesh geometry has no vertices")?;
+        let (vertex_triples, remainder) = vertex_values.as_chunks::<3>();
+        if !remainder.is_empty() {
+            bail!("FBX vertex array contains an incomplete three-axis position");
+        }
+        let vertices: Vec<[f32; 3]> = vertex_triples
+            .iter()
             .map(|v| [v[0] as f32, v[1] as f32, v[2] as f32])
             .collect();
         let polygon_vertex_index = geometry
@@ -464,7 +473,7 @@ impl Character {
             .context("mesh geometry has no polygons")?;
 
         let faces = triangulate(&polygon_vertex_index)?;
-        let (texcoords, texcoord_indices) = parse_uvs(geometry, polygon_vertex_index.len());
+        let (texcoords, texcoord_indices) = parse_uvs(geometry, polygon_vertex_index.len())?;
         let texcoord_faces = triangulate_texcoords(&polygon_vertex_index, &texcoord_indices);
 
         let blend_shapes = if load_blend_shapes {

@@ -1,3 +1,5 @@
+use adventuresim_core::strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY};
+use adventuresim_world_schema::SettlementActionService;
 use maud::{Markup, html};
 
 use super::trade::service_page;
@@ -119,6 +121,10 @@ fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the rest result page boundary composes independent inventory, party, and recovery projections"
+)]
 pub fn rest_result_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
@@ -127,33 +133,26 @@ pub fn rest_result_page(
     food_lots: &[FoodLot],
     party_members: &[Character],
     logged_in_as: Option<&str>,
-    at_inn: bool,
-    at_residence: bool,
+    public_service: Option<SettlementActionService>,
     summary: &RestSummary,
     soap_preview: SoapRestPreview,
 ) -> Markup {
     service_page(
         settlement,
-        if at_inn {
-            "inn"
-        } else if at_residence {
-            "residences"
-        } else {
-            "religion"
+        match public_service {
+            Some(SettlementActionService::Inn) => "inn",
+            Some(SettlementActionService::Temple) => "religion",
+            None => "residences",
         },
-        if at_inn {
-            "The Inn"
-        } else if at_residence {
-            "Home"
-        } else {
-            "Church"
+        match public_service {
+            Some(SettlementActionService::Inn) => "The Inn",
+            Some(SettlementActionService::Temple) => "Church",
+            None => "Home",
         },
-        if at_inn {
-            "Innkeeper"
-        } else if at_residence {
-            "Household"
-        } else {
-            "Priest"
+        match public_service {
+            Some(SettlementActionService::Inn) => "Innkeeper",
+            Some(SettlementActionService::Temple) => "Priest",
+            None => "Household",
         },
         "",
         active_character,
@@ -193,23 +192,9 @@ pub(crate) fn rest_service_menu(
         }
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
                 @let minutes = default_minutes.unwrap_or(0);
-                @let unit = if minutes >= 1_440 { "days" } else { "hours" };
-                @let initial_minutes = if minutes == 0 { 1_440 } else { minutes.max(1_440) };
+                @let unit = if minutes >= MINUTES_PER_DAY { "days" } else { "hours" };
+                @let initial_minutes = if minutes == 0 { MINUTES_PER_DAY } else { minutes.max(MINUTES_PER_DAY) };
                 (settlement_rest_duration_control(initial_minutes, unit))
-                /*
-                div class="rest-days-control" {
-                    button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest days"
-                        onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
-                    input type="number" name="days" value="0" min="0" max="365" aria-label="Rest days"
-                        oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0;";
-                    span class="rest-days-unit" { "days" }
-                    button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest days"
-                        onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 365), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
-                    button type="button" class="rest-days-heal" aria-label="Rest until fully healed"
-                        title="Set the rest duration needed to fully heal"
-                        onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
-                }
-                */
                 button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[unit == "hours"] title="Rest for the selected duration" {
                     (decorative_game_icon("night-sleep"))
                     span class="sr-only" { "Rest" }
@@ -254,7 +239,14 @@ pub(crate) fn rest_service_menu(
 }
 
 fn settlement_rest_duration_control(initial_minutes: u64, unit: &str) -> Markup {
-    wake_time_rest_duration_control("settlement-rest", initial_minutes, unit, 1_440, None, None)
+    wake_time_rest_duration_control(
+        "settlement-rest",
+        initial_minutes,
+        unit,
+        MINUTES_PER_DAY,
+        None,
+        None,
+    )
 }
 
 fn wake_time_rest_duration_control(
@@ -270,7 +262,7 @@ fn wake_time_rest_duration_control(
     let value = if hours_active {
         format!("{:02}:{:02}", initial_minutes / 60, initial_minutes % 60)
     } else {
-        initial_minutes.div_ceil(1_440).max(1).to_string()
+        initial_minutes.div_ceil(MINUTES_PER_DAY).max(1).to_string()
     };
     html! {
         div class="rest-duration-control settlement-rest-duration" data-rest-duration data-wake-time
@@ -300,7 +292,7 @@ fn wake_time_rest_duration_control(
                 input type=(if hours_active { "text" } else { "number" }) name="duration"
                     value=(value)
                     inputmode=(if hours_active { "text" } else { "numeric" })
-                    pattern="[0-9]+:[0-5][0-9]" min="1" max="365" step="1"
+                    pattern="[0-9]+:[0-5][0-9]" min="1" max=(DAYS_PER_YEAR) step="1"
                     aria-label="Rest duration" data-rest-duration-input;
                 span class="rest-days-unit" data-rest-unit-label { (unit) }
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
@@ -313,8 +305,8 @@ fn wake_time_rest_duration_control(
 }
 
 fn format_rest_duration(minutes: u64) -> String {
-    let days = minutes / 1_440;
-    let hours = minutes % 1_440 / 60;
+    let days = minutes / MINUTES_PER_DAY;
+    let hours = minutes % MINUTES_PER_DAY / 60;
     let minutes = minutes % 60;
     let mut parts = Vec::new();
     if days > 0 {
@@ -355,9 +347,9 @@ pub(crate) fn rest_default_minutes(
     smith_wait_minutes: u64,
 ) -> Option<u64> {
     let healing_days = limbs.map(days_to_full_health).unwrap_or(0);
-    let healing_minutes = u64::from(healing_days) * 1_440;
+    let healing_minutes = u64::from(healing_days) * MINUTES_PER_DAY;
     let fatigue_minutes = stats
-        .map(|stats| ((stats.calories_used / 2_000.0) * 1_440.0).ceil() as u64)
+        .map(|stats| ((stats.calories_used / 2_000.0) * MINUTES_PER_DAY as f32).ceil() as u64)
         .unwrap_or(0);
     let blood_recovery_minutes = condition.map_or(0, blood_recovery_minutes);
     (limbs.is_some() || stats.is_some() || condition.is_some()).then_some(
@@ -369,9 +361,6 @@ pub(crate) fn rest_default_minutes(
     )
 }
 
-/// This must match the strategic module's `BLOOD_RECOVERY_FRACTION_PER_DAY`.
-const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
-
 fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
     if condition.maximum_blood_ml <= 0.0 {
         return 0;
@@ -379,7 +368,9 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
     let missing_fraction = ((condition.maximum_blood_ml - condition.current_blood_ml)
         / condition.maximum_blood_ml)
         .clamp(0.0, 1.0);
-    (missing_fraction / BLOOD_RECOVERY_FRACTION_PER_DAY * 1_440.0).ceil() as u64
+    (missing_fraction / adventuresim_core::morale::BLOOD_RECOVERY_FRACTION_PER_DAY
+        * MINUTES_PER_DAY as f32)
+        .ceil() as u64
 }
 
 #[cfg(test)]
@@ -437,7 +428,7 @@ mod tests {
 
     #[test]
     fn settlement_wake_control_is_accessible_and_defaults_to_eight() {
-        let markup = settlement_rest_duration_control(1_440, "hours").into_string();
+        let markup = settlement_rest_duration_control(MINUTES_PER_DAY, "hours").into_string();
         assert!(markup.contains("data-wake-time"));
         assert!(markup.contains("type=\"range\""));
         assert!(markup.contains("step=\"60\""));
@@ -491,7 +482,7 @@ mod tests {
 
     #[test]
     fn days_recommendation_keeps_slider_disabled_and_minimum_one() {
-        let markup = settlement_rest_duration_control(3 * 1_440, "days").into_string();
+        let markup = settlement_rest_duration_control(3 * MINUTES_PER_DAY, "days").into_string();
         assert!(markup.contains("value=\"days\" checked"));
         assert!(markup.contains("aria-disabled=\"true\""));
         assert!(
@@ -500,7 +491,7 @@ mod tests {
             )
         );
         assert!(markup.contains("type=\"number\" name=\"duration\" value=\"3\""));
-        assert!(markup.contains("min=\"1\" max=\"365\" step=\"1\""));
+        assert!(markup.contains(&format!("min=\"1\" max=\"{DAYS_PER_YEAR}\" step=\"1\"")));
         assert!(markup.contains("name=\"requested_minutes\" disabled"));
     }
 

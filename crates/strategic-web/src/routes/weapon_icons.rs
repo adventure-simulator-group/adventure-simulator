@@ -5,6 +5,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+use adventuresim_core::physical_object::{CarriedInventoryScope, InventoryLocation};
 use adventuresim_weapon_model::{
     DesignHash, GENERATOR_VERSION, HOLDER_GENERATOR_VERSION, ICON_RENDERER_VERSION, WeaponIconSpec,
     decode, decode_holder, design_hash, generate_holder_icon, generate_icon, holder_design_hash,
@@ -21,10 +22,7 @@ use axum::{
 use crate::{
     routes::AppState,
     session::Session,
-    spacetimedb::{
-        BackendWeaponHolderInstance, BackendWeaponInstance, Character, InventoryObject,
-        sql_string_literal,
-    },
+    spacetimedb::{BackendWeaponHolderInstance, BackendWeaponInstance, Character, InventoryObject},
 };
 
 const ICON_SIZE: u16 = 96;
@@ -64,7 +62,10 @@ async fn weapon_icon(
     else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if !matches!(scope.as_str(), "personal" | "party") || row_id == 0 {
+    let Ok(scope) = CarriedInventoryScope::try_from(scope.as_str()) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if row_id == 0 {
         return StatusCode::NOT_FOUND.into_response();
     }
     let Some(actor_id) = session.character_id_u64() else {
@@ -86,39 +87,37 @@ async fn weapon_icon(
     };
     let objects = match state
         .db
-        .query::<InventoryObject>(&format!(
-            "SELECT * FROM inventory_object WHERE location_kind = {} AND inventory_row_id = {row_id}",
-            sql_string_literal(&scope)
-        ))
+        .query::<InventoryObject>("SELECT * FROM inventory_object")
         .await
     {
-        Ok(objects) => objects,
+        Ok(objects) => objects
+            .into_iter()
+            .filter(|object| carried_row_matches(&object.location, scope, row_id))
+            .collect::<Vec<_>>(),
         Err(error) => {
-            tracing::error!(%error, %scope, row_id, "failed to resolve weapon-icon object");
+            tracing::error!(%error, scope = scope.as_str(), row_id, "failed to resolve weapon-icon object");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
     let [object] = objects.as_slice() else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let owner_party =
-        if scope == "personal" && object.location_owner.parse::<u64>().ok() != Some(actor.id) {
-            match object.location_owner.parse::<u64>() {
-                Ok(owner_id) => match state
-                    .db
-                    .query_one::<Character>(&format!(
-                        "SELECT * FROM backend_characters WHERE id = {owner_id}"
-                    ))
-                    .await
-                {
-                    Ok(Some(owner)) => owner.party_id,
-                    _ => None,
-                },
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
+    let owner_party = match &object.location {
+        InventoryLocation::Personal(location) if location.character_id != actor.id => state
+            .db
+            .query_one::<Character>(&format!(
+                "SELECT * FROM backend_characters WHERE id = {}",
+                location.character_id
+            ))
+            .await
+            .ok()
+            .flatten()
+            .and_then(|owner| owner.party_id),
+        InventoryLocation::Personal(_)
+        | InventoryLocation::Party(_)
+        | InventoryLocation::Fireplace(_)
+        | InventoryLocation::Repair(_) => None,
+    };
     if !custody_visible(
         actor.id,
         actor.party_id.as_deref(),
@@ -183,19 +182,46 @@ async fn weapon_icon(
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
+fn carried_row_matches(
+    location: &InventoryLocation,
+    scope: CarriedInventoryScope,
+    row_id: u64,
+) -> bool {
+    match (scope, location) {
+        (CarriedInventoryScope::Personal, InventoryLocation::Personal(location)) => {
+            location.row_id == row_id
+        }
+        (CarriedInventoryScope::Party, InventoryLocation::Party(location)) => {
+            location.row_id == row_id
+        }
+        (
+            CarriedInventoryScope::Personal,
+            InventoryLocation::Party(_)
+            | InventoryLocation::Fireplace(_)
+            | InventoryLocation::Repair(_),
+        )
+        | (
+            CarriedInventoryScope::Party,
+            InventoryLocation::Personal(_)
+            | InventoryLocation::Fireplace(_)
+            | InventoryLocation::Repair(_),
+        ) => false,
+    }
+}
+
 fn custody_visible(
     actor_id: u64,
     actor_party: Option<&str>,
     object: &InventoryObject,
     personal_owner_party: Option<&str>,
 ) -> bool {
-    match object.location_kind.as_str() {
-        "personal" => {
-            object.location_owner.parse::<u64>().ok() == Some(actor_id)
+    match &object.location {
+        InventoryLocation::Personal(location) => {
+            location.character_id == actor_id
                 || actor_party.is_some_and(|party| Some(party) == personal_owner_party)
         }
-        "party" => actor_party == Some(object.location_owner.as_str()),
-        _ => false,
+        InventoryLocation::Party(location) => actor_party == Some(location.party_id.as_str()),
+        InventoryLocation::Fireplace(_) | InventoryLocation::Repair(_) => false,
     }
 }
 
@@ -314,48 +340,51 @@ mod tests {
     use super::*;
     use adventuresim_weapon_model::{default_design, default_holder_design, encode, encode_holder};
 
-    fn object(kind: &str, owner: &str) -> InventoryObject {
+    fn object(location: InventoryLocation) -> InventoryObject {
         InventoryObject {
             id: 7,
             item_id: "longsword".into(),
-            location_kind: kind.into(),
-            location_owner: owner.into(),
-            inventory_row_id: 9,
+            location,
         }
     }
 
     #[test]
     fn custody_gate_allows_self_and_party_but_not_foreign_rows() {
-        assert!(custody_visible(3, None, &object("personal", "3"), None));
+        assert!(custody_visible(
+            3,
+            None,
+            &object(InventoryLocation::personal(3, 9)),
+            None
+        ));
         assert!(custody_visible(
             3,
             Some("party-a"),
-            &object("personal", "4"),
+            &object(InventoryLocation::personal(4, 9)),
             Some("party-a")
         ));
         assert!(custody_visible(
             3,
             Some("party-a"),
-            &object("party", "party-a"),
+            &object(InventoryLocation::party("party-a", 9)),
             None
         ));
         assert!(!custody_visible(
             3,
             Some("party-a"),
-            &object("personal", "4"),
+            &object(InventoryLocation::personal(4, 9)),
             Some("party-b")
         ));
         assert!(!custody_visible(
             3,
             Some("party-a"),
-            &object("repair", "smithy"),
+            &object(InventoryLocation::repair("smithy", 9)),
             None
         ));
     }
 
     #[test]
     fn icon_cache_authenticates_before_a_warm_hit() {
-        let object = object("personal", "3");
+        let object = object(InventoryLocation::personal(3, 9));
         let design = default_design("longsword").unwrap();
         let hash = design_hash(&design);
         let recipe = encode(&design).unwrap();
@@ -379,7 +408,7 @@ mod tests {
 
     #[test]
     fn holder_icon_cache_authenticates_before_a_warm_hit() {
-        let mut object = object("personal", "3");
+        let mut object = object(InventoryLocation::personal(3, 9));
         object.item_id = "scabbard".into();
         let weapon = default_design("longsword").unwrap();
         let design = default_holder_design(&weapon).unwrap();

@@ -2,7 +2,6 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::camp_duration_mode_type::CampDurationMode;
 use super::case_site_id_type::CaseSiteId;
 use super::journey_endpoint_type::JourneyEndpoint;
 use super::party_type::Party;

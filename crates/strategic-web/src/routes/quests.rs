@@ -10,6 +10,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use adventuresim_world_schema::coordinates::{UnboundedCoordinateE7, Wgs84CoordinateE7};
+
+#[cfg(test)]
+use crate::spacetimedb::DestinationKnowledgeStage;
+
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     participates_in_party_readiness,
@@ -18,8 +23,8 @@ use super::{
         travel_rest_minutes,
     },
     travel::{
-        TravelDestination, TravelForm, apply_terrain_route, populate_itinerary_forecasts,
-        settlement_destination,
+        ItineraryForecastSources, TravelDestination, TravelForm, apply_terrain_route,
+        populate_itinerary_forecasts, settlement_destination,
     },
 };
 use crate::session::Session;
@@ -29,8 +34,8 @@ use crate::spacetimedb::{
     BackendCorpse, BackendHostileNegotiation, BackendHostileSurrender, BackendInvestigationAction,
     BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
-    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
-    PartyInventoryItem, PartyStake, Settlement,
+    ContractStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem,
+    PartyStake, Settlement,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, HostileNegotiationPresentation,
@@ -69,10 +74,6 @@ pub fn routes() -> Router<AppState> {
             post(answer_hostile_surrender_offer),
         )
         .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
-        .route(
-            "/locations/case-site/{id}/loot",
-            get(quest_location_legacy_loot),
-        )
         .route(
             "/locations/case-site/{id}/rest",
             post(rest_at_quest_location),
@@ -121,7 +122,6 @@ async fn call_hostile_surrender(
         Ok(()) => {
             Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
         }
-        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
@@ -192,7 +192,6 @@ async fn negotiate_hostile_withdrawal(
         Ok(()) => {
             Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
         }
-        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
@@ -393,16 +392,8 @@ async fn travel_to_case_site(
     }
 }
 
-fn safe_case_site_travel_error(error: &str) -> &'static str {
-    if error.contains("incapacitated") {
-        "An incapacitated party member must recover before the party can travel."
-    } else if error.contains("current journey") || error.contains("camped") {
-        "Finish or change the party's current journey before starting another."
-    } else if error.contains("party leader") {
-        "Only the party leader can begin this journey immediately."
-    } else {
-        "The exact destination or the party's travel readiness changed. Review the journal before trying again."
-    }
+fn safe_case_site_travel_error(_error: &str) -> &'static str {
+    "The exact destination or the party's travel readiness changed. Review the journal before trying again."
 }
 
 async fn track_case_site(
@@ -540,7 +531,7 @@ enum QuestLocationTab {
 
 fn case_site_page_presentation(
     site: &BackendCaseSitePin,
-    legacy_quest: Option<&ContractPresentation>,
+    manual_contract: Option<&ContractPresentation>,
 ) -> Option<CaseSitePagePresentation> {
     if site.generated_case {
         if site.display_title.is_empty() {
@@ -552,7 +543,7 @@ fn case_site_page_presentation(
             allow_tactical_combat: false,
         })
     } else {
-        let quest = legacy_quest?;
+        let quest = manual_contract?;
         Some(CaseSitePagePresentation {
             title: quest.title.clone(),
             action_id: quest.id.clone(),
@@ -563,7 +554,7 @@ fn case_site_page_presentation(
 
 fn case_site_combat_permitted(
     site: &BackendCaseSitePin,
-    legacy_quest: Option<&ContractPresentation>,
+    manual_contract: Option<&ContractPresentation>,
     active_contract_id: Option<&str>,
     can_control: bool,
     party_ready: bool,
@@ -574,8 +565,8 @@ fn case_site_combat_permitted(
     if site.generated_case {
         site.combat_available
     } else {
-        legacy_quest.is_some_and(|quest| {
-            quest.status == ContractPresentationStatus::Accepted
+        manual_contract.is_some_and(|quest| {
+            quest.status == ContractStatus::Accepted
                 && active_contract_id == Some(quest.id.as_str())
         })
     }
@@ -619,9 +610,10 @@ fn case_site_recovery_notice(
     let incapacitated = members
         .iter()
         .filter_map(|member| {
-            let condition = conditions
-                .iter()
-                .find(|row| row.character_id == member.id && row.status == "incapacitated")?;
+            let condition = conditions.iter().find(|row| {
+                row.character_id == member.id
+                    && row.status == adventuresim_core::morale::IncapacitationStatus::Incapacitated
+            })?;
             Some((member, condition))
         })
         .collect::<Vec<_>>();
@@ -815,10 +807,6 @@ async fn perform_corpse_action(
     super::redirect_to_local(&form.return_to, "/")
 }
 
-async fn quest_location_legacy_loot(Path(id): Path<String>) -> Redirect {
-    Redirect::to(&format!("/locations/case-site/{id}/enemy"))
-}
-
 async fn rest_at_quest_location(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -878,7 +866,7 @@ async fn rest_at_quest_location_with_redirect(
     }
     let requested_minutes = match travel_rest_minutes(&form) {
         Ok(minutes) => minutes,
-        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
+        Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     };
     let shelter = match super::settlements::field_shelter_argument(&form) {
         Ok(shelter) => shelter,
@@ -935,7 +923,7 @@ async fn render_quest_location(
         )
             .into_response();
     };
-    let legacy_quest = if site.generated_case {
+    let manual_contract = if site.generated_case {
         None
     } else {
         state
@@ -949,7 +937,7 @@ async fn render_quest_location(
             .into_iter()
             .next()
     };
-    let Some(mut presentation) = case_site_page_presentation(site, legacy_quest.as_ref()) else {
+    let Some(mut presentation) = case_site_page_presentation(site, manual_contract.as_ref()) else {
         return (
             StatusCode::NOT_FOUND,
             Html(
@@ -968,10 +956,7 @@ async fn render_quest_location(
     let party = if let Some(party_id) = character.as_ref().and_then(|c| c.party_id.as_ref()) {
         state
             .db
-            .query::<Party>(&format!(
-                "SELECT * FROM party WHERE id = {}",
-                sql_string_literal(party_id)
-            ))
+            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -1027,6 +1012,7 @@ async fn render_quest_location(
         && let Some(settlement) = settlements
             .iter()
             .find(|settlement| settlement.id == destination.id)
+        && let Some((longitude, latitude)) = case_site_position(site)
     {
         let terrain_profile = if let Some(character) = character.as_ref() {
             crate::routes::party_terrain_profile(&state, character)
@@ -1039,10 +1025,7 @@ async fn render_quest_location(
         apply_terrain_route(
             destination,
             state.terrain.as_deref(),
-            (
-                f64::from(site.latitude_e7) / 10_000_000.0,
-                f64::from(site.longitude_e7) / 10_000_000.0,
-            ),
+            (latitude, longitude),
             (settlement.coord_y, settlement.coord_x),
             terrain_profile,
         )
@@ -1203,13 +1186,15 @@ async fn render_quest_location(
             .collect();
         populate_itinerary_forecasts(
             &mut nearby,
-            &member_ids,
-            &attributes,
-            &limbs,
-            &stats,
-            &times,
-            &schedules,
-            party,
+            ItineraryForecastSources {
+                party_members: &member_ids,
+                attributes: &attributes,
+                limbs: &limbs,
+                stats: &stats,
+                times: &times,
+                schedules: &schedules,
+                party,
+            },
         );
         for destination in &mut nearby {
             destination.provision_forecast = super::settlements::travel_provision_forecast(
@@ -1233,7 +1218,7 @@ async fn render_quest_location(
     );
     let can_fight = case_site_combat_permitted(
         site,
-        legacy_quest.as_ref(),
+        manual_contract.as_ref(),
         party
             .as_ref()
             .and_then(|party| party.active_contract_id.as_deref()),
@@ -1437,7 +1422,8 @@ async fn party_readiness(
             .await;
         match condition {
             Ok(Some(condition)) => {
-                ready &= condition.status != "incapacitated";
+                ready &= condition.status
+                    != adventuresim_core::morale::IncapacitationStatus::Incapacitated;
                 conditions.push(condition);
             }
             _ => ready = false,
@@ -1449,10 +1435,7 @@ async fn party_readiness(
 async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantityTarget> {
     let party = state
         .db
-        .query::<Party>(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(party_id)
-        ))
+        .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -1555,9 +1538,22 @@ pub(crate) fn offroad_journey_minutes(distance_m: u64) -> u64 {
     ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64
 }
 
+fn case_site_position(site: &BackendCaseSitePin) -> Option<(f64, f64)> {
+    if site.coordinates_are_geographic {
+        Wgs84CoordinateE7::new(site.latitude_e7, site.longitude_e7)
+            .map(Wgs84CoordinateE7::longitude_latitude_degrees)
+    } else {
+        Some((
+            UnboundedCoordinateE7::from_raw(site.longitude_e7).coordinate_units(),
+            UnboundedCoordinateE7::from_raw(site.latitude_e7).coordinate_units(),
+        ))
+    }
+}
+
 pub(crate) fn straight_line_distance_m(site: &BackendCaseSitePin, settlement: &Settlement) -> u64 {
-    let longitude = f64::from(site.longitude_e7) / 10_000_000.0;
-    let latitude = f64::from(site.latitude_e7) / 10_000_000.0;
+    let Some((longitude, latitude)) = case_site_position(site) else {
+        return u64::MAX;
+    };
     if site.coordinates_are_geographic && settlement.source_node_id.is_some() {
         let lat1 = latitude.to_radians();
         let lat2 = settlement.coord_y.to_radians();
@@ -1604,7 +1600,7 @@ mod quest_route_tests {
             latitude_e7: 0,
             coordinates_are_geographic: false,
             distance_m: 4_000,
-            knowledge_stage: "visited".into(),
+            knowledge_stage: DestinationKnowledgeStage::Visited,
             tracked: false,
             display_title: "Travellers have gone missing".into(),
             generated_case,
@@ -1619,7 +1615,7 @@ mod quest_route_tests {
         ContractPresentation {
             id: "contract:one".into(),
             case_id: "case:one".into(),
-            title: "Legacy bounty".into(),
+            title: "Manual bounty".into(),
             description: String::new(),
             difficulty: 1,
             gold_reward: 10,
@@ -1627,7 +1623,7 @@ mod quest_route_tests {
             settlement_id: "settlement".into(),
             service_id: "tavern".into(),
             issuer_resident_character_id: "npc:issuer".into(),
-            status: ContractPresentationStatus::Accepted,
+            status: ContractStatus::Accepted,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),
             opposition_count_wording: "unknown number".into(),
@@ -1660,7 +1656,6 @@ mod quest_route_tests {
             name: "Ada".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: None,
             current_case_site_id: case_site_id.map(str::to_owned),
             party_id: Some("party".into()),
@@ -1686,11 +1681,8 @@ mod quest_route_tests {
             camp_fatigue_percent: 50,
             walking_minutes_per_day: 480,
             travel_at_night: false,
-            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
-            fixed_camp_minutes: 0,
             camp_destination: None,
             camp_remaining_minutes: 0,
-            pooled_water_ml: 0.0,
             physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,
@@ -1699,7 +1691,7 @@ mod quest_route_tests {
 
     fn strategic_condition(
         character_id: u64,
-        status: &str,
+        status: adventuresim_core::morale::IncapacitationStatus,
         hunger: f32,
         thirst: f32,
         pain: f32,
@@ -1726,7 +1718,7 @@ mod quest_route_tests {
             water_capacity_ml: 0,
             incapacitation: hunger + thirst + pain + blood_loss + fatigue,
             check_multiplier: 0.0,
-            status: status.into(),
+            status,
         }
     }
 
@@ -1752,7 +1744,7 @@ mod quest_route_tests {
             provision_forecast: None,
             terrain_route: None,
             return_terrain_route: None,
-            route_fallback: true,
+            uses_straight_line_estimate: true,
         }
     }
 
@@ -1783,7 +1775,7 @@ mod quest_route_tests {
     fn case_site_travel_errors_are_safe_and_actionable() {
         assert_eq!(
             safe_case_site_travel_error("An incapacitated member cannot act"),
-            "An incapacitated party member must recover before the party can travel."
+            "The exact destination or the party's travel readiness changed. Review the journal before trying again."
         );
         assert_eq!(
             safe_case_site_travel_error("private canonical site mismatch: site:secret"),
@@ -1819,8 +1811,8 @@ mod quest_route_tests {
         assert!(case_site_page_presentation(&manual, None).is_none());
         let contract = accepted_contract();
         let manual_presentation =
-            case_site_page_presentation(&manual, Some(&contract)).expect("legacy presentation");
-        assert_eq!(manual_presentation.title, "Legacy bounty");
+            case_site_page_presentation(&manual, Some(&contract)).expect("manual presentation");
+        assert_eq!(manual_presentation.title, "Manual bounty");
         assert!(manual_presentation.allow_tactical_combat);
         assert!(case_site_combat_permitted(
             &manual,
@@ -1905,7 +1897,7 @@ mod quest_route_tests {
             std::slice::from_ref(&member),
             &[strategic_condition(
                 member.id,
-                "incapacitated",
+                adventuresim_core::morale::IncapacitationStatus::Incapacitated,
                 4.0,
                 26.0,
                 0.0,
@@ -1929,7 +1921,7 @@ mod quest_route_tests {
             std::slice::from_ref(&member),
             &[strategic_condition(
                 member.id,
-                "incapacitated",
+                adventuresim_core::morale::IncapacitationStatus::Incapacitated,
                 0.0,
                 0.0,
                 0.2,
@@ -1950,7 +1942,15 @@ mod quest_route_tests {
         assert!(
             case_site_recovery_notice(
                 &[member],
-                &[strategic_condition(7, "ready", 0.0, 0.0, 0.0, 0.0, 0.0,)],
+                &[strategic_condition(
+                    7,
+                    adventuresim_core::morale::IncapacitationStatus::Ready,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                )],
                 "site:known",
                 Some(&destination),
             )

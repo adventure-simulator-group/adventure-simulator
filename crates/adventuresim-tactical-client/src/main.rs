@@ -16,8 +16,6 @@ use bevy::asset::AssetPlugin;
 #[cfg(not(target_family = "wasm"))]
 use bevy::asset::io::AssetSourceBuilder;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
-#[cfg(not(target_family = "wasm"))]
-use bevy::image::BevyDefault;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
@@ -31,19 +29,32 @@ use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
-#[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
+#[expect(
+    dead_code,
+    reason = "this binary shares animation APIs whose remaining entry points belong to the capture viewer"
+)]
 mod animation;
 #[cfg(target_family = "wasm")]
 mod browser_runtime;
-#[allow(dead_code)] // Viewer-only camera diagnostics are compiled into this binary.
+#[expect(
+    dead_code,
+    reason = "the shared camera module includes diagnostics consumed only by capture viewers"
+)]
 mod camera;
 #[cfg(feature = "debug")]
 mod debug;
 #[cfg(not(target_family = "wasm"))]
 mod diagnostics;
 mod equipment;
-#[allow(dead_code)] // Viewer-only input diagnostics are compiled into this binary.
+#[expect(
+    dead_code,
+    reason = "the shared player module includes input diagnostics consumed only by capture viewers"
+)]
 mod player;
+#[expect(
+    dead_code,
+    reason = "the gameplay binary shares presentation review data with the native capture viewers"
+)]
 mod presentation;
 mod ui;
 
@@ -381,7 +392,7 @@ fn configure_headless_render_target(
         let image = images.add(Image::new_target_texture(
             HEADLESS_SCREENSHOT_SIZE.0,
             HEADLESS_SCREENSHOT_SIZE.1,
-            bevy::render::render_resource::TextureFormat::bevy_default(),
+            bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
             None,
         ));
         commands

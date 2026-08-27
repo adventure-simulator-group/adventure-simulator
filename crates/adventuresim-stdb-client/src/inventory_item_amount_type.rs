@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct InventoryItemAmount {
     pub inventory_item_id: u64,
-    pub remaining_milliunits: u32,
+    pub remaining_fraction_micros: u32,
 }
 
 impl __sdk::InModule for InventoryItemAmount {
@@ -20,7 +20,7 @@ impl __sdk::InModule for InventoryItemAmount {
 /// Provides typed access to columns for query building.
 pub struct InventoryItemAmountCols {
     pub inventory_item_id: __sdk::__query_builder::Col<InventoryItemAmount, u64>,
-    pub remaining_milliunits: __sdk::__query_builder::Col<InventoryItemAmount, u32>,
+    pub remaining_fraction_micros: __sdk::__query_builder::Col<InventoryItemAmount, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for InventoryItemAmount {
@@ -28,9 +28,9 @@ impl __sdk::__query_builder::HasCols for InventoryItemAmount {
     fn cols(table_name: &'static str) -> Self::Cols {
         InventoryItemAmountCols {
             inventory_item_id: __sdk::__query_builder::Col::new(table_name, "inventory_item_id"),
-            remaining_milliunits: __sdk::__query_builder::Col::new(
+            remaining_fraction_micros: __sdk::__query_builder::Col::new(
                 table_name,
-                "remaining_milliunits",
+                "remaining_fraction_micros",
             ),
         }
     }

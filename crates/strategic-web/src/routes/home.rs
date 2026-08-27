@@ -9,7 +9,7 @@ use axum::{
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, redirect_with_session_cookie};
-use crate::spacetimedb::Character;
+use crate::spacetimedb::{Character, party_by_id};
 use serde_json::json;
 
 pub fn routes() -> Router<AppState> {
@@ -117,16 +117,16 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
     let party_is_camping = match character.party_id.as_deref() {
         Some(party_id) => match state.live.cached_party_has_camp(party_id) {
             Some(value) => value,
-            None => state
-                .db
-                .query_one::<crate::spacetimedb::Party>(&format!(
-                    "SELECT * FROM party WHERE id = '{}'",
-                    party_id.replace('\'', "''")
-                ))
-                .await
-                .ok()
-                .flatten()
-                .is_some_and(|party| party.camp_destination.is_some()),
+            None => {
+                let query = party_by_id(party_id);
+                state
+                    .db
+                    .query_one::<crate::spacetimedb::Party>(query.as_str())
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some_and(|party| party.camp_destination.is_some())
+            }
         },
         None => false,
     };
@@ -143,7 +143,6 @@ mod tests {
             name: "Ada".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: None,
             current_case_site_id: None,
             party_id: Some("party-1".into()),

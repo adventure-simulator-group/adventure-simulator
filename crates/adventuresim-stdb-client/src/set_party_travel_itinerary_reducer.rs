@@ -10,8 +10,6 @@ pub(super) struct SetPartyTravelItineraryArgs {
     pub character_id: u64,
     pub walking_minutes_per_day: u16,
     pub travel_at_night: bool,
-    pub automatic_camp_duration: bool,
-    pub fixed_camp_minutes: u16,
 }
 
 impl From<SetPartyTravelItineraryArgs> for super::Reducer {
@@ -20,8 +18,6 @@ impl From<SetPartyTravelItineraryArgs> for super::Reducer {
             character_id: args.character_id,
             walking_minutes_per_day: args.walking_minutes_per_day,
             travel_at_night: args.travel_at_night,
-            automatic_camp_duration: args.automatic_camp_duration,
-            fixed_camp_minutes: args.fixed_camp_minutes,
         }
     }
 }
@@ -46,15 +42,11 @@ pub trait set_party_travel_itinerary {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
     ) -> __sdk::Result<()> {
         self.set_party_travel_itinerary_then(
             character_id,
             walking_minutes_per_day,
             travel_at_night,
-            automatic_camp_duration,
-            fixed_camp_minutes,
             |_, _| {},
         )
     }
@@ -70,8 +62,6 @@ pub trait set_party_travel_itinerary {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -87,8 +77,6 @@ impl set_party_travel_itinerary for super::RemoteReducers {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -101,8 +89,6 @@ impl set_party_travel_itinerary for super::RemoteReducers {
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
-                automatic_camp_duration,
-                fixed_camp_minutes,
             },
             callback,
         )

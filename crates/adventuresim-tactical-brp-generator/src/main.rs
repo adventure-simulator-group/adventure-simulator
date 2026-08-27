@@ -24,7 +24,10 @@ use resolve::{Resolver, StructKind};
 // `bevy_enhanced_input` action components need type data registered by hand
 // to be BRP-visible at all, matching what the real client also does.
 use adventuresim_tactical_client::debug::register_input_mock_types;
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "linking this crate registers its reflected types through macro-generated startup hooks"
+)]
 use adventuresim_tactical_server as _pull_in_server_reflect_types;
 
 fn main() {

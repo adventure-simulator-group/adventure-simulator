@@ -3,6 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
+globalThis.strategicCalendar = require("./strategic-calendar-fixture.cjs");
+
 const {
   calculateLeisurePreview,
   createLatestSaveQueue,

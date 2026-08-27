@@ -6,13 +6,11 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-#[derive(Copy, Eq, Hash)]
-pub enum CampDurationMode {
-    Auto,
-
-    Fixed,
+pub struct PersonalInventoryLocation {
+    pub character_id: u64,
+    pub row_id: u64,
 }
 
-impl __sdk::InModule for CampDurationMode {
+impl __sdk::InModule for PersonalInventoryLocation {
     type Module = super::RemoteModule;
 }

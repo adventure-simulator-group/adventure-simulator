@@ -11,11 +11,11 @@ use std::{
 };
 
 use adventuresim_world_schema::{
-    AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, MineralSoil,
-    MineralSoilTexture, OrganicSoil, PotentialVegetationClass, RockOutcropSoil, SoilAcidity,
-    SoilBasisPoints, SoilEvidence, SoilFertility, SoilPrediction, SoilProfile, SoilProperties,
-    SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology,
-    TopsoilOrganicCarbon, WrbReferenceGroup,
+    AgriculturalLimitation, AvailableWaterCapacity, BASIS_POINTS_PER_WHOLE, CationExchangeCapacity,
+    MineralSoil, MineralSoilTexture, OrganicSoil, PotentialVegetationClass, RockOutcropSoil,
+    SoilAcidity, SoilBasisPoints, SoilEvidence, SoilFertility, SoilPrediction, SoilProfile,
+    SoilProperties, SoilSubstrate, SoilWaterRegime, StoneContentPercent, SurfaceGeology,
+    SurfaceLithology, TopsoilOrganicCarbon, WrbReferenceGroup,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -1013,7 +1013,7 @@ fn fertility(c: f64, soc: f64, ph: f64) -> SoilFertility {
 fn uncertainty(q05: Option<f64>, q95: Option<f64>) -> SoilBasisPoints {
     match (q05, q95) {
         (Some(a), Some(b)) if b >= a => {
-            bp((10_000.0 / (1.0 + (b - a).abs() / 100.0)).round() as u16)
+            bp((f64::from(BASIS_POINTS_PER_WHOLE) / (1.0 + (b - a).abs() / 100.0)).round() as u16)
         }
         _ => bp(2500),
     }

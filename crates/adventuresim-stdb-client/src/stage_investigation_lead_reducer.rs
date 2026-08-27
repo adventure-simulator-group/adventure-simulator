@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::destination_knowledge_stage_type::DestinationKnowledgeStage;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct StageInvestigationLeadArgs {
@@ -13,7 +15,7 @@ pub(super) struct StageInvestigationLeadArgs {
     pub summary: String,
     pub safe_source_label: String,
     pub confidence_bps: u16,
-    pub destination_stage: String,
+    pub destination_stage: DestinationKnowledgeStage,
     pub directions: String,
     pub exact_location_id: String,
     pub latitude_e_7: i32,
@@ -65,7 +67,7 @@ pub trait stage_investigation_lead {
         summary: String,
         safe_source_label: String,
         confidence_bps: u16,
-        destination_stage: String,
+        destination_stage: DestinationKnowledgeStage,
         directions: String,
         exact_location_id: String,
         latitude_e_7: i32,
@@ -105,7 +107,7 @@ pub trait stage_investigation_lead {
         summary: String,
         safe_source_label: String,
         confidence_bps: u16,
-        destination_stage: String,
+        destination_stage: DestinationKnowledgeStage,
         directions: String,
         exact_location_id: String,
         latitude_e_7: i32,
@@ -130,7 +132,7 @@ impl stage_investigation_lead for super::RemoteReducers {
         summary: String,
         safe_source_label: String,
         confidence_bps: u16,
-        destination_stage: String,
+        destination_stage: DestinationKnowledgeStage,
         directions: String,
         exact_location_id: String,
         latitude_e_7: i32,

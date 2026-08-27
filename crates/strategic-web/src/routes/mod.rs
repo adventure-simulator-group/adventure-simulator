@@ -72,9 +72,6 @@ pub(crate) struct BackendSettlementResidentRow {
     pub profession: String,
     pub household: String,
     pub local_role: String,
-    /// Retained so this fail-closed transport mirrors the complete public row;
-    /// service-provider routes currently deserialize their own minimal DTO.
-    #[allow(dead_code)]
     pub service_id: String,
     pub organization_id: String,
     pub conversation_id: String,
@@ -269,10 +266,7 @@ pub(crate) async fn execute_or_request_party_action(
     let party_id = character.party_id.ok_or("Character has no party")?;
     let party = state
         .db
-        .query_one::<Party>(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(&party_id)
-        ))
+        .query_one::<Party>(&crate::spacetimedb::party_by_id(&party_id))
         .await
         .map_err(|e| e.to_string())?
         .ok_or("Party not found")?;
@@ -312,7 +306,7 @@ pub(crate) async fn execute_or_request_party_action(
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("Party member condition not found")?;
-            if condition.status == "incapacitated" {
+            if condition.status == adventuresim_core::morale::IncapacitationStatus::Incapacitated {
                 return Err(
                     "An incapacitated party member must recover before the party can act".into(),
                 );
@@ -566,10 +560,7 @@ async fn planned_travel_call(
         PartyAction::TravelToSettlement { settlement_id } => {
             let destination = state
                 .db
-                .query_one::<Settlement>(&format!(
-                    "SELECT * FROM settlement WHERE id = {}",
-                    sql_string_literal(settlement_id)
-                ))
+                .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(settlement_id))
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("Settlement not found")?;
@@ -601,10 +592,7 @@ async fn planned_travel_call(
     let origin = if let Some(id) = character.current_settlement_id.as_deref() {
         let settlement = state
             .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(id)
-            ))
+            .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(id))
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Origin settlement not found")?;
@@ -642,7 +630,7 @@ async fn planned_travel_call(
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Camp terrain route not found")?;
-        persisted_route_position(&route, journey.completed_minutes)
+        persisted_route_position(&route, journey.completed_movement_minutes)
             .ok_or("Camp terrain route position is unavailable")?
     } else {
         return Ok(None);
@@ -845,7 +833,7 @@ mod terrain_route_payload_tests {
 #[cfg(test)]
 mod readiness_tests {
     use super::{PartyAction, action_requires_ready_party, participates_in_party_readiness};
-    use crate::spacetimedb::{CampDurationMode, CaseSiteId, Party};
+    use crate::spacetimedb::{CaseSiteId, Party};
 
     fn party(case_site_id: Option<&str>) -> Party {
         Party {
@@ -861,11 +849,8 @@ mod readiness_tests {
             camp_fatigue_percent: 50,
             walking_minutes_per_day: 480,
             travel_at_night: false,
-            camp_duration_mode: CampDurationMode::Auto,
-            fixed_camp_minutes: 0,
             camp_destination: None,
             camp_remaining_minutes: 0,
-            pooled_water_ml: 0.0,
             physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,

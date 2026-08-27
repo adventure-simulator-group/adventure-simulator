@@ -39,11 +39,11 @@ fn simulation_quest_fixture_exposes_ordinary_provisioning_to_both_paths() {
     );
     for (item_id, kind) in [
         (
-            adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID,
+            adventuresim_core::item_references::STANDARD_TRAVEL_RATION_ID,
             CatalogKind::Food,
         ),
         (
-            adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
+            adventuresim_core::item_references::STANDARD_WATERSKIN_ID,
             CatalogKind::Simple,
         ),
     ] {
@@ -212,11 +212,12 @@ fn dialogue_case_provenance_fails_closed_for_generated_authority_damage() {
     let generated_case = CaseAuthority {
         id: generated.canonical_case_id.clone(),
         investigation_case_id: generated.canonical_case_id.clone(),
-        provenance_kind: "generated".into(),
+        provenance_kind:
+            adventuresim_core::investigation::InvestigationProvenanceKind::Generated,
         generated_case_id: generated.canonical_case_id.clone(),
         local_problem_id: Some(generated.problem_id.clone()),
         objective_expression_json: serde_json::to_string(&generated.objectives).unwrap(),
-        resolution_status: CaseResolutionStatus::Open,
+        resolution_status: CaseStatus::Open,
         resolved_by_party_id: None,
     };
     let context = adventuresim_core::quest_generation::GenerationContext {
@@ -360,11 +361,11 @@ fn dialogue_case_provenance_fails_closed_for_generated_authority_damage() {
     let manual = CaseAuthority {
         id: "manual-case".into(),
         investigation_case_id: "manual-case".into(),
-        provenance_kind: "manual".into(),
+        provenance_kind: adventuresim_core::investigation::InvestigationProvenanceKind::Manual,
         generated_case_id: String::new(),
         local_problem_id: None,
         objective_expression_json: "{}".into(),
-        resolution_status: CaseResolutionStatus::Open,
+        resolution_status: CaseStatus::Open,
         resolved_by_party_id: None,
     };
     assert_eq!(
@@ -528,8 +529,7 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
                 candidate.resolution == HostileResolutionKind::DrivenOff && candidate.weight == 30
             }));
             assert!(candidates.iter().any(|candidate| {
-                candidate.resolution == HostileResolutionKind::Surrendered
-                    && candidate.weight == 20
+                candidate.resolution == HostileResolutionKind::Surrendered && candidate.weight == 20
             }));
         }
     }
@@ -572,11 +572,12 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
     let case = CaseAuthority {
         id: generated.canonical_case_id.clone(),
         investigation_case_id: generated.canonical_case_id.clone(),
-        provenance_kind: "generated".into(),
+        provenance_kind:
+            adventuresim_core::investigation::InvestigationProvenanceKind::Generated,
         generated_case_id: generated.canonical_case_id.clone(),
         local_problem_id: Some(generated.problem_id.clone()),
         objective_expression_json: serde_json::to_string(&generated.objectives).unwrap(),
-        resolution_status: CaseResolutionStatus::Open,
+        resolution_status: CaseStatus::Open,
         resolved_by_party_id: None,
     };
     let group = HostileGroupAuthority {
@@ -606,7 +607,7 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
             id: format!("finale:{}:{path_index}", generated.canonical_case_id),
             case_id: generated.canonical_case_id.clone(),
             kind: FinaleKind::RecordResolution,
-            resolution_status: CaseResolutionStatus::Resolved,
+            resolution_status: CaseStatus::Resolved,
             eligible_path_index: Some(path_index as u16),
             priority: 100,
             status: FinaleStatus::Available,
@@ -825,7 +826,7 @@ fn generated_activity_is_contract_free_and_counted_by_open_case_authority() {
     assert!(activity.contains(".filter(&settlement_id.to_string())"));
     assert!(!activity.contains("quest_generation_authority()\n            .iter()"));
     assert!(activity.contains("validated.context.settlement_id != settlement_id"));
-    assert!(activity.contains("CaseResolutionStatus::Open"));
+    assert!(activity.contains("CaseStatus::Open"));
     let resolution = source
         .split("pub(crate) fn ingest_case_outcome_fact")
         .nth(1)
@@ -931,8 +932,8 @@ fn world_import_persists_settlement_facts_without_activating_gameplay() {
 fn outcome_ingestion_preflights_provenance_before_any_mutation() {
     let source = STRATEGIC_SOURCE;
     let helper = source
-        .split("fn validated_case_outcome_provenance")
-        .nth(1)
+        .rsplit("fn validated_case_outcome_provenance")
+        .next()
         .and_then(|tail| tail.split("pub(crate) fn ingest_case_outcome_fact").next())
         .unwrap();
     for required in [
@@ -946,8 +947,8 @@ fn outcome_ingestion_preflights_provenance_before_any_mutation() {
         assert!(helper.contains(required), "{required}");
     }
     let ingestion = source
-        .split("pub(crate) fn ingest_case_outcome_fact")
-        .nth(1)
+        .rsplit("pub(crate) fn ingest_case_outcome_fact")
+        .next()
         .and_then(|tail| tail.split("fn select_case_finale").next())
         .unwrap();
     let preflight = ingestion.find("validated_case_outcome_provenance").unwrap();
@@ -961,15 +962,18 @@ fn outcome_ingestion_preflights_provenance_before_any_mutation() {
 }
 
 #[test]
-fn generated_noncombat_resolution_closes_problem_without_contract_authority() {
+fn generated_noncombat_resolution_uses_preflighted_quest_authority() {
     let source = STRATEGIC_SOURCE;
     let finale = source
-        .split("fn execute_case_finale")
-        .nth(1)
+        .rsplit("fn execute_case_finale")
+        .next()
         .and_then(|tail| tail.split("fn hostile_resolution_for_objective").next())
         .unwrap();
     assert!(finale.contains("case.local_problem_id"));
-    assert!(finale.contains("crate::local_problem::apply_outcome("));
+    assert!(finale.contains("generated_provenance"));
+    assert!(finale.contains("crate::world_event::commit_generated_case_resolution("));
+    assert!(!finale.contains("crate::local_problem::apply_outcome("));
+    assert!(!finale.contains(".or_else("));
     assert!(!finale.contains("contract_authority()"));
     assert!(!finale.contains("active_contract_id"));
 }

@@ -23,7 +23,10 @@ impl LiveRunner {
                     .backend_character_strategic_conditions()
                     .iter()
                     .find(|row| row.character_id == character.id)
-                    .is_some_and(|row| row.status == "ready");
+                    .is_some_and(|row| {
+                        domain_incapacitation_status(row.status)
+                            == DomainIncapacitationStatus::Ready
+                    });
                 let illness_safe = self
                     .connection
                     .db
@@ -118,7 +121,10 @@ impl LiveRunner {
                     .backend_character_strategic_conditions()
                     .iter()
                     .find(|row| row.character_id == capability.character_id)
-                    .is_some_and(|row| row.status == "ready");
+                    .is_some_and(|row| {
+                        domain_incapacitation_status(row.status)
+                            == DomainIncapacitationStatus::Ready
+                    });
                 let illness_safe = self
                     .connection
                     .db
@@ -216,7 +222,7 @@ impl LiveRunner {
             .item()
             .iter()
             .find(|row| {
-                row.id == adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID
+                row.id == adventuresim_core::item_references::STANDARD_TRAVEL_RATION_ID
                     && row.nutrition_kcal > 0.0
             })
             .ok_or("journey provisioning projection is incoherent")?;
@@ -226,7 +232,7 @@ impl LiveRunner {
             .item()
             .iter()
             .find(|row| {
-                row.id == adventuresim_core::provisioning::STANDARD_WATERSKIN_ID
+                row.id == adventuresim_core::item_references::STANDARD_WATERSKIN_ID
                     && row.water_capacity_ml > 0
             })
             .ok_or("journey provisioning projection is incoherent")?;
@@ -326,8 +332,7 @@ impl LiveRunner {
             food_reserve_kcal,
             food_lot_kcal,
             water_reserve_ml,
-            ration_count: count_item(adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID),
-            waterskin_count: count_item(adventuresim_core::provisioning::STANDARD_WATERSKIN_ID),
+            waterskin_count: count_item(adventuresim_core::item_references::STANDARD_WATERSKIN_ID),
             ration_kcal: ration.nutrition_kcal,
             waterskin_capacity_ml: waterskin.water_capacity_ml,
             emergency_alcohol_hydration_ml: 0,
@@ -390,7 +395,10 @@ impl LiveRunner {
                     .backend_character_strategic_conditions()
                     .iter()
                     .find(|row| row.character_id == member.id)
-                    .is_some_and(|row| row.status == "ready")
+                    .is_some_and(|row| {
+                        domain_incapacitation_status(row.status)
+                            == DomainIncapacitationStatus::Ready
+                    })
                     && self
                         .connection
                         .db
@@ -639,17 +647,7 @@ impl LiveRunner {
             .iter()
             .filter(|journey| journey.party_id == party_id)
             .collect::<Vec<_>>();
-        let itineraries = self
-            .connection
-            .db
-            .party_journey_itinerary()
-            .iter()
-            .filter(|itinerary| itinerary.party_id == party_id)
-            .collect::<Vec<_>>();
         let [journey] = journeys.as_slice() else {
-            return None;
-        };
-        let [itinerary] = itineraries.as_slice() else {
             return None;
         };
         if &journey.destination != camp_destination
@@ -660,7 +658,7 @@ impl LiveRunner {
         let (active_interval_start, active_interval_minutes) = projected_camp_rest_minutes(
             journey.completed_elapsed_minutes,
             journey.total_elapsed_minutes,
-            &itinerary.forecast_camp_intervals,
+            &journey.forecast_camp_intervals,
         )?;
         (active_interval_minutes > 0).then_some(PublicActiveCampObservation {
             completed_elapsed_minutes: journey.completed_elapsed_minutes,
@@ -712,20 +710,10 @@ impl LiveRunner {
             .iter()
             .filter(|journey| journey.party_id == party_id)
             .collect::<Vec<_>>();
-        let itineraries = self
-            .connection
-            .db
-            .party_journey_itinerary()
-            .iter()
-            .filter(|itinerary| itinerary.party_id == party_id)
-            .collect::<Vec<_>>();
         let [journey] = journeys.as_slice() else {
             return Err(self.public_camp_coherence_error(party_id, "no_unique_public_journey"));
         };
-        let [itinerary] = itineraries.as_slice() else {
-            return Err(self.public_camp_coherence_error(party_id, "no_unique_public_itinerary"));
-        };
-        if &journey.destination != destination || itinerary.party_id != party_id {
+        if &journey.destination != destination {
             return Err(
                 self.public_camp_coherence_error(party_id, "public_journey_destination_mismatch")
             );
@@ -737,7 +725,7 @@ impl LiveRunner {
         classify_public_journey_camp_state(projected_active_camp_interval_count(
             journey.completed_elapsed_minutes,
             journey.total_elapsed_minutes,
-            &itinerary.forecast_camp_intervals,
+            &journey.forecast_camp_intervals,
         ))
         .map_err(|reason| self.public_camp_coherence_error(party_id, reason))
     }
@@ -750,13 +738,6 @@ impl LiveRunner {
             .iter()
             .filter(|journey| journey.party_id == party_id)
             .collect::<Vec<_>>();
-        let itineraries = self
-            .connection
-            .db
-            .party_journey_itinerary()
-            .iter()
-            .filter(|itinerary| itinerary.party_id == party_id)
-            .collect::<Vec<_>>();
         let completed_elapsed = journeys.first().map_or_else(
             || "none".into(),
             |journey| {
@@ -767,19 +748,19 @@ impl LiveRunner {
             || "none".into(),
             |journey| bounded_public_journey_diagnostic(journey.total_elapsed_minutes).to_string(),
         );
-        let forecast_count = itineraries.first().map_or_else(
+        let forecast_count = journeys.first().map_or_else(
             || "none".into(),
-            |itinerary| {
-                bounded_public_forecast_count(itinerary.forecast_camp_intervals.len()).to_string()
+            |journey| {
+                bounded_public_forecast_count(journey.forecast_camp_intervals.len()).to_string()
             },
         );
-        let active_interval_count: String = journeys.first().zip(itineraries.first()).map_or_else(
+        let active_interval_count: String = journeys.first().map_or_else(
             || "unavailable".to_string(),
-            |(journey, itinerary)| {
+            |journey| {
                 match projected_active_camp_interval_count(
                     journey.completed_elapsed_minutes,
                     journey.total_elapsed_minutes,
-                    &itinerary.forecast_camp_intervals,
+                    &journey.forecast_camp_intervals,
                 ) {
                     0 => "0",
                     1 => "1",
@@ -789,10 +770,9 @@ impl LiveRunner {
             },
         );
         format!(
-            "travel_camps failed: journey camp projection is incoherent: reason={};active_interval_count={active_interval_count};completed_elapsed={completed_elapsed};total_elapsed={total_elapsed};forecast_count={forecast_count};journey_count={};itinerary_count={}",
+            "travel_camps failed: journey camp projection is incoherent: reason={};active_interval_count={active_interval_count};completed_elapsed={completed_elapsed};total_elapsed={total_elapsed};forecast_count={forecast_count};journey_count={}",
             bounded_event_field(reason),
             journeys.len(),
-            itineraries.len(),
         )
     }
 
@@ -812,25 +792,14 @@ impl LiveRunner {
             .iter()
             .filter(|journey| journey.party_id == party_id)
             .collect::<Vec<_>>();
-        let itineraries = self
-            .connection
-            .db
-            .party_journey_itinerary()
-            .iter()
-            .filter(|itinerary| itinerary.party_id == party_id)
-            .collect::<Vec<_>>();
         let destination_matches = party.camp_destination.as_ref().is_some_and(|destination| {
-            matches!(
-                (journeys.as_slice(), itineraries.as_slice()),
-                ([journey], [itinerary])
-                    if &journey.destination == destination && itinerary.party_id == party_id
-            )
+            matches!(journeys.as_slice(), [journey] if &journey.destination == destination)
         });
-        let active_interval_count = match (journeys.as_slice(), itineraries.as_slice()) {
-            ([journey], [itinerary]) => projected_active_camp_interval_count(
+        let active_interval_count = match journeys.as_slice() {
+            [journey] => projected_active_camp_interval_count(
                 journey.completed_elapsed_minutes,
                 journey.total_elapsed_minutes,
-                &itinerary.forecast_camp_intervals,
+                &journey.forecast_camp_intervals,
             ),
             _ => 0,
         };
@@ -838,7 +807,6 @@ impl LiveRunner {
             unresolved_encounter,
             active_destination: party.camp_destination.is_some(),
             journey_count: journeys.len(),
-            itinerary_count: itineraries.len(),
             destination_matches,
             active_interval_count,
             actionable_actor,
@@ -853,7 +821,10 @@ impl LiveRunner {
             .db
             .strategic_encounter()
             .iter()
-            .any(|row| row.party_id == party_id && row.status == "awaiting_choice")
+            .any(|row| {
+                row.party_id == party_id
+                    && row.status == StrategicEncounterStatus::AwaitingChoice
+            })
     }
 
     pub(super) fn active_public_narrative_challenge(
@@ -993,7 +964,10 @@ impl LiveRunner {
                 let table = self.connection.db.strategic_encounter();
                 table
                     .iter()
-                    .find(|row| row.party_id == party_id && row.status == "awaiting_choice")
+                    .find(|row| {
+                        row.party_id == party_id
+                            && row.status == StrategicEncounterStatus::AwaitingChoice
+                    })
             };
             if let Some(encounter) = pending_encounter {
                 self.metrics.encounters += 1;
@@ -1138,14 +1112,20 @@ impl LiveRunner {
                         let leg_members_after = self.expedition_member_observations(party_id)?;
                         let leg_supplies_after = self.expedition_supplies(party_id);
                         self.emit_expedition_diagnostics(
-                            party_id,
-                            "journey_leg",
-                            "continue_camp_travel",
-                            &format!("quest_leg_resumed_after_{choice}_{continue_actor_role}"),
-                            &leg_members_before,
-                            &leg_members_after,
-                            leg_supplies_before,
-                            leg_supplies_after,
+                            ExpeditionDiagnosticContext {
+                                party_id,
+                                phase: "journey_leg",
+                                action: "continue_camp_travel",
+                                reason: &format!(
+                                    "quest_leg_resumed_after_{choice}_{continue_actor_role}"
+                                ),
+                            },
+                            ExpeditionObservationChange {
+                                members_before: &leg_members_before,
+                                members_after: &leg_members_after,
+                                supplies_before: leg_supplies_before,
+                                supplies_after: leg_supplies_after,
+                            },
                         );
                         if self.current_leader(party_id).is_none() {
                             return self.record_journey_hold(
@@ -1179,14 +1159,18 @@ impl LiveRunner {
                 let leg_members_after = self.expedition_member_observations(party_id)?;
                 let leg_supplies_after = self.expedition_supplies(party_id);
                 self.emit_expedition_diagnostics(
-                    party_id,
-                    "journey_leg",
-                    "continue_camp_travel",
-                    "continue_between_forecast_camps",
-                    &leg_members_before,
-                    &leg_members_after,
-                    leg_supplies_before,
-                    leg_supplies_after,
+                    ExpeditionDiagnosticContext {
+                        party_id,
+                        phase: "journey_leg",
+                        action: "continue_camp_travel",
+                        reason: "continue_between_forecast_camps",
+                    },
+                    ExpeditionObservationChange {
+                        members_before: &leg_members_before,
+                        members_after: &leg_members_after,
+                        supplies_before: leg_supplies_before,
+                        supplies_after: leg_supplies_after,
+                    },
                 );
                 self.event(
                     travel_agent,
@@ -1254,20 +1238,24 @@ impl LiveRunner {
                 .collect::<Vec<_>>();
             let camp_supplies_after = self.expedition_supplies(party_id);
             self.emit_expedition_diagnostics(
-                party_id,
-                "journey_camp",
-                "rest_at_camp",
-                if terminal_state_change {
-                    "journey_terminal_state_reclassified"
-                } else if unsafe_after_rest.is_empty() {
-                    "quest_leg_rest_complete"
-                } else {
-                    "quest_suppressed_member_not_ready_after_camp"
+                ExpeditionDiagnosticContext {
+                    party_id,
+                    phase: "journey_camp",
+                    action: "rest_at_camp",
+                    reason: if terminal_state_change {
+                        "journey_terminal_state_reclassified"
+                    } else if unsafe_after_rest.is_empty() {
+                        "quest_leg_rest_complete"
+                    } else {
+                        "quest_suppressed_member_not_ready_after_camp"
+                    },
                 },
-                &camp_members_before,
-                &camp_members_after,
-                camp_supplies_before,
-                camp_supplies_after,
+                ExpeditionObservationChange {
+                    members_before: &camp_members_before,
+                    members_after: &camp_members_after,
+                    supplies_before: camp_supplies_before,
+                    supplies_after: camp_supplies_after,
+                },
             );
             let after_rest_party = self.party_by_id(party_id)?;
             let after_rest_journeys = self
@@ -1277,28 +1265,19 @@ impl LiveRunner {
                 .iter()
                 .filter(|row| row.party_id == party_id)
                 .collect::<Vec<_>>();
-            let after_rest_itineraries = self
-                .connection
-                .db
-                .party_journey_itinerary()
-                .iter()
-                .filter(|row| row.party_id == party_id)
-                .collect::<Vec<_>>();
             let (after_completed_elapsed, after_total_elapsed) = match (
                 after_rest_party.camp_destination.as_ref(),
                 after_rest_journeys.as_slice(),
-                after_rest_itineraries.as_slice(),
             ) {
-                (Some(after_rest_destination), [after_rest_journey], [after_rest_itinerary])
-                    if &after_rest_journey.destination == after_rest_destination
-                        && after_rest_itinerary.party_id == party_id =>
+                (Some(after_rest_destination), [after_rest_journey])
+                    if &after_rest_journey.destination == after_rest_destination =>
                 {
                     (
                         after_rest_journey.completed_elapsed_minutes,
                         after_rest_journey.total_elapsed_minutes,
                     )
                 }
-                (None, [], []) if terminal_state_change => {
+                (None, []) if terminal_state_change => {
                     let terminal_rest_elapsed = terminal_rest_elapsed.ok_or(
                         "journey camp projection is incoherent: terminal rest elapsed is unavailable",
                     )?;
@@ -1417,14 +1396,18 @@ impl LiveRunner {
                 "quest_leg_resumed_all_members_ready".into()
             };
             self.emit_expedition_diagnostics(
-                party_id,
-                "journey_leg",
-                "continue_camp_travel",
-                &leg_reason,
-                &leg_members_before,
-                &leg_members_after,
-                leg_supplies_before,
-                leg_supplies_after,
+                ExpeditionDiagnosticContext {
+                    party_id,
+                    phase: "journey_leg",
+                    action: "continue_camp_travel",
+                    reason: &leg_reason,
+                },
+                ExpeditionObservationChange {
+                    members_before: &leg_members_before,
+                    members_after: &leg_members_after,
+                    supplies_before: leg_supplies_before,
+                    supplies_after: leg_supplies_after,
+                },
             );
             let after = self.party_by_id(party_id)?;
             if after.camp_destination.is_some() && after.camp_remaining_minutes >= remaining_before

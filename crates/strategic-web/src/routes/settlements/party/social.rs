@@ -485,17 +485,8 @@ pub(super) async fn chat_with_party_member(
     .into_response()
 }
 
-pub(super) fn social_action_error_feedback(error: &str) -> &'static str {
-    if error.contains("needs time before it can be tried again") {
-        "cooldown"
-    } else if error.contains("Morale source is stale")
-        || error.contains("Only current, negative, recognized morale sources")
-        || error.contains("Morale source is not actionable")
-    {
-        "stale"
-    } else {
-        "unavailable"
-    }
+pub(super) fn social_action_error_feedback(_error: &str) -> &'static str {
+    "unavailable"
 }
 
 pub(super) fn social_action_blocked_by_actor(
@@ -503,8 +494,9 @@ pub(super) fn social_action_blocked_by_actor(
     personality: Option<&CharacterPersonality>,
     action: adventuresim_core::social::SocialActionKind,
 ) -> bool {
-    use adventuresim_core::social::{
-        Courtship as CoreCourtship, Mirth as CoreMirth, actor_allows_social_action,
+    use adventuresim_core::{
+        personality::{Courtship as CoreCourtship, Mirth as CoreMirth},
+        social::actor_allows_social_action,
     };
 
     if !personality_available {

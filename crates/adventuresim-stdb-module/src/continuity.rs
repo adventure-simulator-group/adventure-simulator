@@ -503,18 +503,20 @@ fn transfer_personal_estate(
         .inventory_object()
         .iter()
         .filter(|object| {
-            object.location_kind == "personal" && object.location_owner == decedent_id.to_string()
+            matches!(
+                &object.location,
+                adventuresim_core::physical_object::InventoryLocation::Personal(location)
+                    if location.character_id == decedent_id
+            )
         })
         .filter(|object| !crate::inventory_container::object_is_nested(ctx, object.id))
         .map(|object| object.id)
         .collect::<Vec<_>>();
     for object_id in object_roots {
-        crate::inventory_container::rehome_subtree(
-            ctx,
-            object_id,
-            "personal",
-            &heir_id.to_string(),
-        )?;
+        let destination =
+            adventuresim_core::physical_object::OperationalCustody::character(heir_id)
+                .map_err(|error| error.to_string())?;
+        crate::inventory_container::rehome_subtree(ctx, object_id, &destination)?;
     }
     let mut inventory = ctx
         .db
@@ -726,10 +728,14 @@ pub fn backend_family_children(ctx: &ViewContext) -> Vec<BackendFamilyChild> {
                 .saturating_sub(i128::from(birth.birth_minute))
                 .max(0) as u128;
             let maturity = elapsed
-                .saturating_mul(10_000)
+                .saturating_mul(u128::from(
+                    adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
+                ))
                 .checked_div(u128::from(ADULT_AGE_YEARS) * u128::from(MINUTES_PER_YEAR))
                 .unwrap_or(0)
-                .min(10_000) as u16;
+                .min(u128::from(
+                    adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
+                )) as u16;
             let adult_playable = age >= ADULT_AGE_YEARS
                 && ctx
                     .db

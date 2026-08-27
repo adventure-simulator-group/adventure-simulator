@@ -299,7 +299,7 @@ pub struct ConnectedPlayerItem {
     pub item: Item,
     pub selected_placement_id: Option<String>,
     pub occupancies: Vec<ConnectedEquipmentOccupancy>,
-    pub protected_body_parts: Vec<crate::item::EquipmentBodyPart>,
+    pub protected_body_parts: Vec<adventuresim_core::item_catalog::EquipmentBodyPart>,
     pub condition: Option<ItemCondition>,
     pub weapon_appearance: Option<crate::weapon_instance::ConnectedWeaponAppearance>,
     pub weapon_holder_appearance: Option<crate::weapon_instance::ConnectedWeaponAppearance>,
@@ -309,10 +309,10 @@ pub struct ConnectedPlayerItem {
 pub struct ConnectedEquipmentOccupancy {
     pub id: String,
     pub anchor_kind: crate::character::EquipmentAnchorKind,
-    pub location: Option<crate::item::EquipmentLocation>,
+    pub location: Option<adventuresim_core::item_catalog::EquipmentLocation>,
     pub parent_inventory_item_id: Option<u64>,
     pub attachment_point_id: Option<String>,
-    pub channel: crate::item::EquipmentChannel,
+    pub channel: adventuresim_core::item_catalog::EquipmentChannel,
     pub order: u16,
     pub requirement_index: u16,
     pub capacity_index: u16,
@@ -368,12 +368,14 @@ pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
                 attrs,
                 stats,
                 enemy_difficulty: server.as_ref().map_or(1, |server| server.enemy_difficulty),
-                enemy_combat_scale_bps: server
-                    .as_ref()
-                    .map_or(10_000, |server| server.enemy_combat_scale_bps),
-                countermeasure_multiplier_bps: server
-                    .as_ref()
-                    .map_or(10_000, |server| server.countermeasure_multiplier_bps),
+                enemy_combat_scale_bps: server.as_ref().map_or(
+                    u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+                    |server| server.enemy_combat_scale_bps,
+                ),
+                countermeasure_multiplier_bps: server.as_ref().map_or(
+                    u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+                    |server| server.countermeasure_multiplier_bps,
+                ),
                 party_has_surprise: server
                     .as_ref()
                     .is_some_and(|server| server.party_has_surprise),
@@ -782,7 +784,9 @@ pub fn request_tactical_server(
             required_enemy_kills: mission.enemy_count,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
-            countermeasure_multiplier_bps: 10_000,
+            countermeasure_multiplier_bps: u32::from(
+                adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
+            ),
             normalized_combat_power: mission.normalized_combat_power,
             enemy_character_ids,
             party_has_surprise: !mission.contacted_before_combat,
@@ -864,6 +868,10 @@ pub fn create_tactical_server_for_request(
 ///
 /// Should be called by a server instance, since its identity will be
 /// the identity of the [`TacticalServer`] in DB.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "server registration persists each independently authenticated endpoint field"
+)]
 fn insert_tactical_server(
     ctx: &ReducerContext,
     mission_id: String,
@@ -960,15 +968,15 @@ pub fn end_tactical_server(
     end_tactical_server_by_instance(ctx, server, resolution, receipt)
 }
 
-fn receipt_limb(body_part: TacticalReceiptBodyPart) -> crate::surgery::LimbRegion {
+fn receipt_limb(body_part: TacticalReceiptBodyPart) -> adventuresim_core::physiology::BodyRegion {
     match body_part {
-        TacticalReceiptBodyPart::LeftArm => crate::surgery::LimbRegion::LeftArm,
-        TacticalReceiptBodyPart::RightArm => crate::surgery::LimbRegion::RightArm,
-        TacticalReceiptBodyPart::LeftLeg => crate::surgery::LimbRegion::LeftLeg,
-        TacticalReceiptBodyPart::RightLeg => crate::surgery::LimbRegion::RightLeg,
-        TacticalReceiptBodyPart::Chest => crate::surgery::LimbRegion::Chest,
-        TacticalReceiptBodyPart::Stomach => crate::surgery::LimbRegion::Stomach,
-        TacticalReceiptBodyPart::Head => crate::surgery::LimbRegion::Head,
+        TacticalReceiptBodyPart::LeftArm => adventuresim_core::physiology::BodyRegion::LeftArm,
+        TacticalReceiptBodyPart::RightArm => adventuresim_core::physiology::BodyRegion::RightArm,
+        TacticalReceiptBodyPart::LeftLeg => adventuresim_core::physiology::BodyRegion::LeftLeg,
+        TacticalReceiptBodyPart::RightLeg => adventuresim_core::physiology::BodyRegion::RightLeg,
+        TacticalReceiptBodyPart::Chest => adventuresim_core::physiology::BodyRegion::Chest,
+        TacticalReceiptBodyPart::Stomach => adventuresim_core::physiology::BodyRegion::Abdomen,
+        TacticalReceiptBodyPart::Head => adventuresim_core::physiology::BodyRegion::Head,
     }
 }
 
@@ -1035,10 +1043,10 @@ fn validate_tactical_receipt(
             .collect();
         let held = occupancy
             .iter()
-            .any(|row| row.channel == crate::item::EquipmentChannel::Held);
+            .any(|row| row.channel == adventuresim_core::item_catalog::EquipmentChannel::Held);
         let worn = occupancy.iter().any(|row| {
             row.anchor_kind == crate::character::EquipmentAnchorKind::CharacterLocation
-                && row.channel != crate::item::EquipmentChannel::Held
+                && row.channel != adventuresim_core::item_catalog::EquipmentChannel::Held
         });
         let definition = ctx
             .db
@@ -1146,7 +1154,7 @@ fn apply_tactical_receipt(
         crate::filth::deposit_now(
             ctx,
             consequence.character_id,
-            crate::filth::FilthSubstance::Dirt,
+            adventuresim_core::filth::FilthSubstance::Dirt,
             None,
             1,
         )?;

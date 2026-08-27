@@ -23,8 +23,7 @@ fn action_graph_covers_all_methods_and_enforces_authoritative_boundaries() {
     assert!(source.contains("require_party_ready(ctx, party_id)?"));
     assert!(source.contains("require_no_unresolved_encounter(ctx, party_id)?"));
     assert!(source.contains("synchronize_party_activity_time"));
-    assert!(source.contains("started_at % 1_440 < 360"));
-    assert!(source.contains("started_at % 1_440 >= 1_200"));
+    assert!(source.contains("started_at % adventuresim_core::strategic_time::MINUTES_PER_DAY"));
     assert!(source.contains("validate_pickup_custody"));
     assert!(source.contains("current.holder_kind != CustodyHolderKind::Site"));
     assert!(source.contains("resolution.risk_triggered"));
@@ -224,10 +223,10 @@ fn generated_physical_and_social_reveals_execute_from_known_origins() {
         .and_then(|tail| tail.split("pub fn generate").next())
         .expect("generated disappearance graph");
     assert!(disappearance.contains("\"locate_contact\""));
-    assert!(disappearance.contains("GeneratedDestinationStage::ApproximateArea"));
+    assert!(disappearance.contains("DestinationKnowledgeStage::ApproximateArea"));
     assert!(disappearance.contains("\"approach_social\""));
     assert!(disappearance.contains("\"route\""));
-    assert!(disappearance.contains("GeneratedDestinationStage::Exact"));
+    assert!(disappearance.contains("DestinationKnowledgeStage::ExactBelieved"));
     assert!(disappearance.contains("\"resolve_social\""));
     assert!(disappearance.contains("\"site\""));
 }
@@ -243,7 +242,7 @@ fn generated_pattern_actions_require_the_exact_earned_clue() {
     assert!(validator.contains("GeneratedActionOutput::PatternCondition"));
     assert!(validator.contains("investigation_evidence_knowledge()"));
     assert!(validator.contains("knowledge.evidence_id.as_str() == evidence_id.as_str()"));
-    assert!(validator.contains("started_at % 1_440"));
+    assert!(validator.contains("started_at % adventuresim_core::strategic_time::MINUTES_PER_DAY"));
     assert!(validator.contains("capability.target_kind != \"route\""));
     assert!(validator.contains("InvestigationActionKind::SearchArea"));
     assert!(validator.contains("investigation_pattern_target_authority()"));
@@ -427,7 +426,7 @@ fn generated_pattern_authority_fails_closed_and_manual_actions_remain_permissive
         id: observer_scoped_id(&context, "capability", &format!("7:{}", generated.id.0)),
         owner_character_id: 7,
         case_id: manifest.public_case_id.clone(),
-        provenance_kind: "generated".into(),
+        provenance_kind: InvestigationProvenanceKind::Generated,
         generated_case_id: manifest.canonical_case_id.clone(),
         method: action_method(generated.kind).into(),
         version: 0,
@@ -583,7 +582,7 @@ fn generated_pattern_authority_fails_closed_and_manual_actions_remain_permissive
     let manual = InvestigationActionCapability {
         id: "manual".into(),
         case_id: "manual-case".into(),
-        provenance_kind: "manual".into(),
+        provenance_kind: InvestigationProvenanceKind::Manual,
         generated_case_id: String::new(),
         ..capability
     };
@@ -742,7 +741,9 @@ fn generated_testimony_persists_every_proposition_and_corrections_gate_pins() {
     assert!(generated.contains("draft.proposition_id.clone()"));
     assert!(generated.contains("draft.corrects_proposition_id"));
     assert!(generated.contains("belief.proposition_id == *proposition_id"));
-    assert!(generated.contains("let exact = draft.destination_stage == \"exact_believed\""));
+    assert!(generated.contains(
+        "let exact = draft.destination_stage == DestinationKnowledgeStage::ExactBelieved"
+    ));
     assert!(generated.contains(".filter(|_| exact)"));
     assert!(generated.contains("prior.corrected_by = lead_id.clone()"));
     assert!(generated.contains("prior.proposition_id == *corrected_proposition"));
@@ -803,7 +804,7 @@ fn exact_generated_testimony_requires_matching_private_site_authority() {
     .unwrap();
     let generated_site = &generated.sites[0];
     let mut draft = generated.witnesses[0].testimony[0].clone();
-    draft.destination_stage = "exact_believed".into();
+    draft.destination_stage = DestinationKnowledgeStage::ExactBelieved;
     draft.site_id = Some(generated_site.id.clone());
     let site = CaseSiteAuthority {
         id_key: generated_site.id.0.clone(),
@@ -833,7 +834,7 @@ fn exact_generated_testimony_requires_matching_private_site_authority() {
     missing_site.site_id = Some(SiteId::try_new("missing-site").unwrap());
     assert!(validate_generated_testimony_site(&generated, &missing_site, Some(&site)).is_err());
     let mut non_exact = draft;
-    non_exact.destination_stage = "approximate_area".into();
+    non_exact.destination_stage = DestinationKnowledgeStage::ApproximateArea;
     non_exact.site_id = None;
     assert!(validate_generated_testimony_site(&generated, &non_exact, None).is_ok());
 }
@@ -941,7 +942,9 @@ fn exact_site_actions_replan_typed_effects_without_replacing_replay_or_private_r
         .split("pub(crate) fn perform_investigation_action_authorized")
         .nth(1)
         .expect("action reducer");
-    let replay = reducer.find("investigation_action_attempt().id().find").unwrap();
+    let replay = reducer
+        .find("investigation_action_attempt().id().find")
+        .unwrap();
     let living_actor = reducer.find("require_living_character").unwrap();
     let rights = reducer.find("decide_investigation_rights").unwrap();
     let plan = reducer.find("site_bound_investigation_plan").unwrap();

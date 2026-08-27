@@ -1,8 +1,11 @@
-use crate::item_catalog_schema::{EquipmentBodyPart, EquipmentChannel, EquipmentLocation};
 use crate::skill::Skill;
 use crate::{
     body::{BodyPart, BodyParts, BodySide, LimbWeights, PlayerBody},
     prelude::{LimbAttribute, PlayerAttributes},
+};
+use crate::{
+    combat_style::MeleeAttackStyle,
+    item_catalog_schema::{EquipmentBodyPart, EquipmentChannel, EquipmentLocation},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -483,17 +486,6 @@ const ARMOR_PENALTY_EXPONENT: i32 = 3;
 pub struct EncumbranceSummary {
     pub burden_kg: f32,
     pub capacity_kg: f32,
-}
-
-/// The two mechanically distinct melee paths exposed by direct controls.
-/// `Swing` covers cuts, chops, and swung impact/pick attacks; `Stab` covers
-/// punches and point-first thrusts.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MeleeAttackStyle {
-    #[default]
-    Swing,
-    Stab,
 }
 
 impl EncumbranceSummary {

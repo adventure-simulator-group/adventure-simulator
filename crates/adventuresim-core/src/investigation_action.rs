@@ -4,6 +4,8 @@
 //! private target to an opaque capability and supplies only authoritative
 //! environmental and party inputs.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use fabelgeist_determinism::mix64;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -22,6 +24,10 @@ use crate::{
     },
     strategic_place::StrategicPlaceId,
 };
+
+const INVESTIGATION_ACTION_ROLL_DOMAIN: u64 = 0x494e_5645_5354_4143;
+const INVESTIGATION_ATTEMPT_SHIFT: u32 = 17;
+const INVESTIGATION_KIND_SHIFT: u32 = 41;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -93,8 +99,6 @@ pub enum TimeOfDay {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeatherAuthority {
-    /// Compatibility state for non-strategic callers; applies no modifier.
-    Unavailable,
     Clear {
         snow_cover_bps: u16,
     },
@@ -704,7 +708,7 @@ pub fn resolve(input: ResolutionInput) -> Resolution {
         input
             .current_uncertainty_bps
             .saturating_add(change)
-            .min(10_000)
+            .min(BASIS_POINTS_PER_WHOLE)
     };
     let risk_bps = if success { 500 } else { 1_500 };
     Resolution {
@@ -727,30 +731,32 @@ pub fn resolve(input: ResolutionInput) -> Resolution {
 /// Contact-finding and approach remain social/navigation actions.
 pub fn weather_modifier_bps(kind: InvestigationActionKind, weather: WeatherAuthority) -> i32 {
     let (precipitation_penalty, snow_cover, snowfall) = match weather {
-        WeatherAuthority::Unavailable | WeatherAuthority::Clear { snow_cover_bps: 0 } => {
-            (0, 0, false)
+        WeatherAuthority::Clear { snow_cover_bps: 0 } => (0, 0, false),
+        WeatherAuthority::Clear { snow_cover_bps } => {
+            (0, snow_cover_bps.min(BASIS_POINTS_PER_WHOLE), false)
         }
-        WeatherAuthority::Clear { snow_cover_bps } => (0, snow_cover_bps.min(10_000), false),
         WeatherAuthority::Rain {
             intensity_bps,
             snow_cover_bps,
         } => (
-            -i32::from(intensity_bps.min(10_000)) * 1_200 / 10_000,
-            snow_cover_bps.min(10_000),
+            -i32::from(intensity_bps.min(BASIS_POINTS_PER_WHOLE)) * 1_200
+                / i32::from(BASIS_POINTS_PER_WHOLE),
+            snow_cover_bps.min(BASIS_POINTS_PER_WHOLE),
             false,
         ),
         WeatherAuthority::Snow {
             intensity_bps,
             snow_cover_bps,
         } => (
-            -i32::from(intensity_bps.min(10_000)) * 1_000 / 10_000,
-            snow_cover_bps.min(10_000),
+            -i32::from(intensity_bps.min(BASIS_POINTS_PER_WHOLE)) * 1_000
+                / i32::from(BASIS_POINTS_PER_WHOLE),
+            snow_cover_bps.min(BASIS_POINTS_PER_WHOLE),
             true,
         ),
     };
     match kind {
         InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks => {
-            let cover_bonus = i32::from(snow_cover) * 900 / 10_000;
+            let cover_bonus = i32::from(snow_cover) * 900 / i32::from(BASIS_POINTS_PER_WHOLE);
             // Active snowfall obscures the older prints it also makes visible.
             cover_bonus
                 + if snowfall {
@@ -779,7 +785,7 @@ pub fn resolve_with_bounded_progress(
     let progress = u32::from(GENERATED_ACTION_PROGRESS_BPS_PER_FAILURE).saturating_mul(prior);
     let success_threshold_bps = u32::from(resolution.effective_skill_bps)
         .saturating_add(progress)
-        .min(10_000) as u16;
+        .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16;
     let success = domain_roll(input.seed, input.attempt_index, input.kind) < success_threshold_bps;
     if success != resolution.success {
         resolution.success = success;
@@ -802,7 +808,7 @@ pub fn resolve_with_bounded_progress(
     BoundedProgressResolution {
         resolution,
         attempt_number: prior.saturating_add(1),
-        persistent_progress_bps: progress.min(10_000) as u16,
+        persistent_progress_bps: progress.min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16,
         success_threshold_bps,
         guaranteed_by_attempt: GENERATED_ACTION_ATTEMPT_BOUND,
     }
@@ -827,13 +833,11 @@ fn result_kind(kind: InvestigationActionKind, success: bool) -> ActionResultKind
 }
 
 fn domain_roll(seed: u64, attempt: u32, kind: InvestigationActionKind) -> u16 {
-    let mut value =
-        seed ^ 0x494e_5645_5354_4143 ^ (u64::from(attempt) << 17) ^ ((kind as u64) << 41);
-    value ^= value >> 30;
-    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value ^= value >> 27;
-    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
-    ((value ^ (value >> 31)) % 10_000) as u16
+    (mix64(
+        seed ^ INVESTIGATION_ACTION_ROLL_DOMAIN
+            ^ (u64::from(attempt) << INVESTIGATION_ATTEMPT_SHIFT)
+            ^ ((kind as u64) << INVESTIGATION_KIND_SHIFT),
+    ) % u64::from(BASIS_POINTS_PER_WHOLE)) as u16
 }
 
 #[cfg(test)]
@@ -857,7 +861,7 @@ mod tests {
                 assistance_bps: 9_000,
                 familiarity_bps: 3_000,
             },
-            weather: WeatherAuthority::Unavailable,
+            weather: WeatherAuthority::Clear { snow_cover_bps: 0 },
         }
     }
 
@@ -1039,12 +1043,15 @@ mod tests {
     }
 
     #[test]
-    fn assistance_is_bounded_and_weather_is_explicitly_unavailable() {
+    fn assistance_is_bounded_and_weather_is_explicitly_clear() {
         let capped = resolve(input(InvestigationActionKind::InspectSite));
         let mut exact_cap = input(InvestigationActionKind::InspectSite);
         exact_cap.skills.assistance_bps = 2_000;
         assert_eq!(capped, resolve(exact_cap));
-        assert_eq!(exact_cap.weather, WeatherAuthority::Unavailable);
+        assert_eq!(
+            exact_cap.weather,
+            WeatherAuthority::Clear { snow_cover_bps: 0 }
+        );
     }
 
     #[test]

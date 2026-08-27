@@ -1,6 +1,12 @@
 //! Deterministic native capture harness for generated tactical environments.
 
-#![allow(dead_code)]
+#![cfg_attr(
+    not(target_family = "wasm"),
+    expect(
+        dead_code,
+        reason = "the native scene viewer compiles shared gameplay presentation but exercises only deterministic capture paths"
+    )
+)]
 
 #[cfg(not(target_family = "wasm"))]
 mod camera;

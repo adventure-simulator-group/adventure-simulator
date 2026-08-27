@@ -1,5 +1,6 @@
 //! Dependency-light validation shared by the item build compiler and tests.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1220,7 +1221,11 @@ fn validate_capabilities(
             .get("net_hydration_ml")
             .and_then(Value::as_u64)
             .unwrap_or(u64::MAX);
-        if serving == 0 || serving > 10_000 || abv > 10_000 || hydration > serving {
+        if serving == 0
+            || serving > 10_000
+            || abv > u64::from(BASIS_POINTS_PER_WHOLE)
+            || hydration > serving
+        {
             errors.push(format!(
                 "{file}: {path}.capabilities.alcohol: invalid ml/ABV values"
             ));

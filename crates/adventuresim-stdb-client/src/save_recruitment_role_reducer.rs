@@ -12,7 +12,6 @@ pub(super) struct SaveRecruitmentRoleArgs {
     pub owner_id: u64,
     pub name: String,
     pub requirements: RecruitmentRequirements,
-    pub weapon_precision: f32,
 }
 
 impl From<SaveRecruitmentRoleArgs> for super::Reducer {
@@ -21,7 +20,6 @@ impl From<SaveRecruitmentRoleArgs> for super::Reducer {
             owner_id: args.owner_id,
             name: args.name,
             requirements: args.requirements,
-            weapon_precision: args.weapon_precision,
         }
     }
 }
@@ -46,9 +44,8 @@ pub trait save_recruitment_role {
         owner_id: u64,
         name: String,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
     ) -> __sdk::Result<()> {
-        self.save_recruitment_role_then(owner_id, name, requirements, weapon_precision, |_, _| {})
+        self.save_recruitment_role_then(owner_id, name, requirements, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `save_recruitment_role` to run as soon as possible,
@@ -62,7 +59,6 @@ pub trait save_recruitment_role {
         owner_id: u64,
         name: String,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -78,7 +74,6 @@ impl save_recruitment_role for super::RemoteReducers {
         owner_id: u64,
         name: String,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -91,7 +86,6 @@ impl save_recruitment_role for super::RemoteReducers {
                 owner_id,
                 name,
                 requirements,
-                weapon_precision,
             },
             callback,
         )

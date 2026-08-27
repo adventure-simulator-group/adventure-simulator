@@ -1,5 +1,9 @@
 use super::*;
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each observer resource and query as an independent system parameter"
+)]
 pub(super) fn resolve_melee_attack(
     event: On<MeleeAttackIntent>,
     mut cmd: Commands,

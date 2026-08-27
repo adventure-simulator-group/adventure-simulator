@@ -169,11 +169,33 @@ pub enum FoodClass {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum CookingMethod {
     PanFry,
     Stew,
     Roast,
     Bake,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum FoodPreparation {
+    Raw,
+    Cut,
+    Ground,
+    Preserved,
+    PanFried,
+    Stewed,
+    Roasted,
+    DriedSmoked,
+    Baked,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum IngredientPreparationAction {
+    Cut,
+    Grind,
 }
 
 /// Flavor potency in mass-equivalent kilograms. A value of 0.1 means enough
@@ -294,8 +316,14 @@ pub fn definition(id: &str) -> Option<&'static FoodDefinition> {
     FOOD_CATALOG.iter().find(|food| food.id == id)
 }
 
+const INITIAL_CONTAMINATION_SEED_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const INITIAL_CONTAMINATION_DOMAIN: u64 = 0xd1b5_4a32_d192_ed03;
+
 pub fn deterministic_initial_contamination(seed: u64) -> f32 {
-    let mixed = seed.wrapping_mul(0x9E3779B97F4A7C15).rotate_left(27) ^ 0xD1B54A32D192ED03;
+    let mixed = seed
+        .wrapping_mul(INITIAL_CONTAMINATION_SEED_STRIDE)
+        .rotate_left(27)
+        ^ INITIAL_CONTAMINATION_DOMAIN;
     let unit = (mixed >> 11) as f64 / ((1_u64 << 53) as f64);
     let log_min = (MIN_INITIAL_CONTAMINATION as f64).ln();
     let log_max = (MAX_INITIAL_CONTAMINATION as f64).ln();

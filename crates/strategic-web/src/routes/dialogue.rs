@@ -393,7 +393,7 @@ fn npc_location_is_navigable(
 }
 
 fn npc_presence_contains(start_minute: u16, end_minute: u16, minute: u64) -> bool {
-    let minute = minute % 1_440;
+    let minute = minute % adventuresim_core::strategic_time::MINUTES_PER_DAY;
     let start = u64::from(start_minute);
     let end = u64::from(end_minute);
     if start == end {
@@ -740,10 +740,7 @@ async fn location_npcs(
     }
     let settlement = state
         .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&settlement_id)
-        ))
+        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&settlement_id))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -796,7 +793,7 @@ async fn location_npcs(
         .ok()
         .flatten()
         .map_or(720, |time| time.minutes)
-        % 1_440;
+        % adventuresim_core::strategic_time::MINUTES_PER_DAY;
     let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && npc_presence_contains(presence.start_minute, presence.end_minute, minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| {
             npc.character_id == presence.character_id
@@ -830,10 +827,7 @@ async fn social_npc_in_scope(
     }
     let settlement = state
         .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(settlement_id)
-        ))
+        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(settlement_id))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -901,7 +895,7 @@ async fn available_social_npc(
         .ok()
         .flatten()
         .map_or(720, |time| time.minutes)
-        % 1_440;
+        % adventuresim_core::strategic_time::MINUTES_PER_DAY;
     let present = state
         .db
         .query::<NpcPresenceRow>(&format!(
@@ -978,7 +972,7 @@ async fn npc_social_view(
             .wedding_effective_minute
             .unwrap_or(actor_minute)
             .saturating_sub(actor_minute)
-            .div_ceil(1_440)
+            .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY)
     });
     let affinity = relationship
         .as_ref()
@@ -1535,9 +1529,8 @@ async fn start(
         .ok_or(StatusCode::BAD_REQUEST)?;
     let settlement = state
         .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&npc.home_settlement_id)
+        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(
+            &npc.home_settlement_id,
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?

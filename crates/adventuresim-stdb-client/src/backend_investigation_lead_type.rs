@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::destination_knowledge_stage_type::DestinationKnowledgeStage;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendInvestigationLead {
@@ -13,7 +15,7 @@ pub struct BackendInvestigationLead {
     pub summary: String,
     pub source_label: String,
     pub confidence_bps: u16,
-    pub destination_stage: String,
+    pub destination_stage: DestinationKnowledgeStage,
     pub directions: String,
     pub exact_location_id: String,
     pub latitude_e_7: i32,
@@ -42,7 +44,8 @@ pub struct BackendInvestigationLeadCols {
     pub summary: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub source_label: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub confidence_bps: __sdk::__query_builder::Col<BackendInvestigationLead, u16>,
-    pub destination_stage: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
+    pub destination_stage:
+        __sdk::__query_builder::Col<BackendInvestigationLead, DestinationKnowledgeStage>,
     pub directions: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub exact_location_id: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub latitude_e_7: __sdk::__query_builder::Col<BackendInvestigationLead, i32>,

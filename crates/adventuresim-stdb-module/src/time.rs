@@ -1,13 +1,14 @@
 use adventuresim_core::activity::{ActivityLocation, LocationActivity};
 use adventuresim_core::strategic_schedule::{
     ActivityOutcomeInputs, DailySchedule, SkillHours, SocializingSociability,
-    apply_organization_training, apply_religion_training, apply_schedule_training_for_personality,
+    apply_organization_training, apply_religion_training, apply_schedule_training,
     settlement_activity_outcome,
 };
 use adventuresim_core::strategic_time::{
-    MINUTES_PER_DAY, MINUTES_PER_YEAR, WORLD_START_MINUTE, allocated_schedule_minutes,
+    MAX_SETTLEMENT_REST_MINUTES, MINUTES_PER_DAY, WORLD_START_MINUTE, allocated_schedule_minutes,
     epoch_micros_for_official_minute, official_minutes as calculate_official_minutes,
 };
+use adventuresim_core::survival::{ExposureShelter, FieldShelter};
 use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -18,8 +19,7 @@ use crate::disease::character_illness_status as _;
 use crate::investigation::case_site_authority as _;
 use crate::organization::organization_membership as _;
 use crate::personality::{
-    Sociability as CharacterSociability, Transparency as CharacterTransparency,
-    character_personality,
+    Sociability as CharacterSociability, Transparency, character_personality,
 };
 use crate::relationship::{
     CommitmentStatus, CourtshipStatus, MarriageStatus, character_kinship as _, courtship as _,
@@ -30,11 +30,12 @@ use crate::strategic::{
     party_authority, party_inventory_item as _, party_journey_encounter_authority as _,
     party_member as _, road_challenge_authority as _, strategic_incident as _,
 };
+use crate::surgery::InjuryRecoveryMinutes;
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_limbs,
     character_skills, character_stats, settlement,
 };
-use adventuresim_world_schema::{OfficialReligion, OralLanguage};
+use adventuresim_world_schema::{OfficialReligion, OralLanguage, SettlementActionService};
 use std::collections::BTreeMap;
 
 /// Natural recovery without useful medical support while taking full
@@ -45,7 +46,6 @@ pub const BASE_HEALTH_RECOVERED_PER_DAY: f32 = 0.01;
 pub const HEALTH_RECOVERED_PER_PHYSIOLOGY_CHECK_PER_DAY: f32 = 0.01;
 pub const INN_GOLD_PER_DAY: u32 = adventuresim_core::strategic_economy::INN_FULL_BOARD_GOLD_PER_DAY;
 const MIN_SETTLEMENT_REST_MINUTES: u64 = 60;
-const MAX_SETTLEMENT_REST_MINUTES: u64 = MINUTES_PER_YEAR;
 /// The current authoritative strategic time. `official_minutes` is absolute;
 /// calendar presentation wraps it into years without making comparisons wrap.
 #[derive(Clone, Debug)]
@@ -84,22 +84,6 @@ pub struct ScheduleAllocation {
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,
     pub raiding_minutes: u16,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, SpacetimeType)]
-pub enum FieldShelter {
-    #[default]
-    Bivouac,
-    Tent,
-}
-
-impl FieldShelter {
-    fn core(self) -> adventuresim_core::survival::FieldShelter {
-        match self {
-            Self::Bivouac => adventuresim_core::survival::FieldShelter::Bivouac,
-            Self::Tent => adventuresim_core::survival::FieldShelter::Tent,
-        }
-    }
 }
 
 /// An explicit settlement activity selected by the player.  Profession
@@ -453,11 +437,17 @@ pub fn advance_character_time(
         }
         return advance_character_time(ctx, character_id, minutes.saturating_sub(first));
     }
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        minutes,
+        InjuryRecoveryMinutes::NONE,
+    )?
+    .elapsed;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    let settled =
+        crate::surgery::settle_injuries(ctx, character_id, elapsed, InjuryRecoveryMinutes::NONE)?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
     ctx.db
@@ -470,7 +460,7 @@ pub fn advance_character_time(
         starting_minute,
         elapsed,
         true,
-        adventuresim_core::survival::FieldShelter::Bivouac,
+        ExposureShelter::Field(FieldShelter::Bivouac),
     )?;
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
@@ -522,8 +512,13 @@ fn advance_character_time_in_plan(
             plan,
         );
     }
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        minutes,
+        InjuryRecoveryMinutes::NONE,
+    )?
+    .elapsed;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
         ctx,
         character_id,
@@ -531,7 +526,8 @@ fn advance_character_time_in_plan(
         false,
         plan,
     )?;
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    let settled =
+        crate::surgery::settle_injuries(ctx, character_id, elapsed, InjuryRecoveryMinutes::NONE)?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
     ctx.db
@@ -562,8 +558,13 @@ pub fn preview_travel_time(
     character_id: u64,
     requested: u64,
 ) -> Result<u64, String> {
-    let injury = crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
-    crate::disease::preview_elapsed_for_disease(ctx, character_id, injury, false)
+    let injury = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        requested,
+        InjuryRecoveryMinutes::NONE,
+    )?;
+    crate::disease::preview_elapsed_for_disease(ctx, character_id, injury.elapsed, false)
 }
 
 pub fn preview_travel_time_in_plan(
@@ -572,8 +573,19 @@ pub fn preview_travel_time_in_plan(
     requested: u64,
     plan: &crate::disease::PartyDiseaseIntervalPlan,
 ) -> Result<u64, String> {
-    let injury = crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
-    crate::disease::preview_elapsed_for_disease_in_plan(ctx, character_id, injury, false, plan)
+    let injury = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        requested,
+        InjuryRecoveryMinutes::NONE,
+    )?;
+    crate::disease::preview_elapsed_for_disease_in_plan(
+        ctx,
+        character_id,
+        injury.elapsed,
+        false,
+        plan,
+    )
 }
 
 /// Commit a terminal injury or disease event that falls exactly on the
@@ -892,11 +904,21 @@ pub fn advance_character_wait_time(
         }
         return advance_character_wait_time(ctx, character_id, minutes.saturating_sub(first));
     }
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        minutes,
+        InjuryRecoveryMinutes::new(minutes),
+    )?
+    .elapsed;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
+    let settled = crate::surgery::settle_injuries(
+        ctx,
+        character_id,
+        elapsed,
+        InjuryRecoveryMinutes::new(elapsed),
+    )?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
     let at_settlement = ctx
@@ -912,9 +934,9 @@ pub fn advance_character_wait_time(
         settled.elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Indoor
+            ExposureShelter::Indoor
         } else {
-            adventuresim_core::survival::FieldShelter::Bivouac
+            ExposureShelter::Field(FieldShelter::Bivouac)
         },
     )?;
     crate::organization::settle_membership_dues(ctx, character_id)?;
@@ -971,8 +993,13 @@ pub fn advance_character_wait_time_in_plan(
             plan,
         );
     }
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        minutes,
+        InjuryRecoveryMinutes::new(minutes),
+    )?
+    .elapsed;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
         ctx,
         character_id,
@@ -980,7 +1007,12 @@ pub fn advance_character_wait_time_in_plan(
         true,
         plan,
     )?;
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
+    let settled = crate::surgery::settle_injuries(
+        ctx,
+        character_id,
+        elapsed,
+        InjuryRecoveryMinutes::new(elapsed),
+    )?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
     crate::organization::settle_membership_dues(ctx, character_id)?;
@@ -1209,14 +1241,8 @@ fn apply_training(
         );
     let transparency = personality
         .as_ref()
-        .map_or(Transparency::Neutral, |personality| {
-            match personality.transparency {
-                CharacterTransparency::Neutral => Transparency::Neutral,
-                CharacterTransparency::Open => Transparency::Open,
-                CharacterTransparency::Guarded => Transparency::Guarded,
-            }
-        });
-    let mut excess = apply_schedule_training_for_personality(
+        .map_or(Transparency::Neutral, |value| value.transparency);
+    let mut excess = apply_schedule_training(
         &mut hours,
         core_schedule(schedule),
         elapsed,
@@ -1260,7 +1286,8 @@ fn apply_training(
         ] {
             excess += adventuresim_core::skill::apply_language_training(
                 skills.oral_languages.direct_mut(language),
-                exposure * f32::from(coefficient) / 10_000.0,
+                exposure * f32::from(coefficient)
+                    / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
                 attributes.instinct,
             )
             .excess_effective_hours;
@@ -1829,16 +1856,6 @@ fn apply_activity_outcomes_inner(
             interval_end_minute,
             core_schedule(schedule),
         )?;
-        crate::relationship::apply_spouse_leisure_morale(
-            ctx,
-            character_id,
-            interval_end_minute,
-            adventuresim_core::strategic_schedule::restorative_leisure_minutes(
-                core_schedule(schedule),
-                interval_end_minute.saturating_sub(elapsed),
-                elapsed,
-            ),
-        )?;
     }
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
@@ -1941,11 +1958,17 @@ pub fn perform_immediate_activity(
         .find(character_id)
         .ok_or("Character time record not found")?;
     let starting_minute = character_time.minutes;
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, false)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        requested_minutes,
+        InjuryRecoveryMinutes::NONE,
+    )?
+    .elapsed;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    let settled =
+        crate::surgery::settle_injuries(ctx, character_id, elapsed, InjuryRecoveryMinutes::NONE)?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time
         .minutes
@@ -1969,9 +1992,9 @@ pub fn perform_immediate_activity(
         elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Indoor
+            ExposureShelter::Indoor
         } else {
-            adventuresim_core::survival::FieldShelter::Bivouac
+            ExposureShelter::Field(FieldShelter::Bivouac)
         },
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
@@ -2153,40 +2176,11 @@ fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, physiology_che
 
 /// Spend completed game days at a settlement. Injuries receive all selected
 /// rest first; only the remaining time is eligible for scheduled training.
-///
-/// The boolean entry points predate residences and remain for existing clients.
-/// New callers that need a home should use `rest_at_residence_hours`, which
-/// carries an explicit provision rather than pretending a residence is an inn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SettlementRestProvision {
-    Temple,
-    Inn,
+pub(crate) enum SettlementRestProvision {
+    PublicService(SettlementActionService),
     Residence,
-}
-
-#[reducer]
-pub fn rest_at_settlement(
-    ctx: &ReducerContext,
-    character_id: u64,
-    requested_days: u16,
-    at_inn: bool,
-) -> Result<(), String> {
-    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
-    require_character_rest_service(ctx, character_id, at_inn)?;
-    rest_for_minutes(
-        ctx,
-        character_id,
-        u64::from(requested_days) * MINUTES_PER_DAY,
-        if at_inn {
-            SettlementRestProvision::Inn
-        } else {
-            SettlementRestProvision::Temple
-        },
-        true,
-        true,
-        None,
-    )
-    .map(|_| ())
+    PrivateDowntime,
 }
 
 /// Spend an exact number of settlement minutes. This intentionally keeps
@@ -2197,19 +2191,15 @@ pub fn rest_at_settlement_hours(
     ctx: &ReducerContext,
     character_id: u64,
     requested_minutes: u64,
-    at_inn: bool,
+    service: SettlementActionService,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
-    require_character_rest_service(ctx, character_id, at_inn)?;
+    require_character_rest_service(ctx, character_id, service)?;
     rest_for_minutes(
         ctx,
         character_id,
         requested_minutes,
-        if at_inn {
-            SettlementRestProvision::Inn
-        } else {
-            SettlementRestProvision::Temple
-        },
+        SettlementRestProvision::PublicService(service),
         true,
         true,
         None,
@@ -2253,7 +2243,7 @@ fn patient_publicly_needs_rest(ctx: &ReducerContext, patient_id: u64) -> Result<
         .character_id()
         .find(patient_id)
         .is_some_and(|illness| illness.symptomatic || illness.critical);
-    Ok(condition.status != "ready" || publicly_ill)
+    Ok(condition.status != adventuresim_core::morale::IncapacitationStatus::Ready || publicly_ill)
 }
 
 /// Pay an inn directly for one day of a co-located party member's medically
@@ -2294,7 +2284,7 @@ pub fn sponsor_party_member_inn_rest(
     {
         return Err("Payer and patient must be together at the named settlement".into());
     }
-    require_character_rest_service(ctx, patient_id, true)?;
+    require_character_rest_service(ctx, patient_id, SettlementActionService::Inn)?;
     if !patient_publicly_needs_rest(ctx, patient_id)? {
         return Err("Sponsored inn rest requires a patient who publicly needs recovery".into());
     }
@@ -2314,7 +2304,7 @@ pub fn sponsor_party_member_inn_rest(
         ctx,
         patient_id,
         MINUTES_PER_DAY,
-        SettlementRestProvision::Inn,
+        SettlementRestProvision::PublicService(SettlementActionService::Inn),
         true,
         true,
         Some(payer_id),
@@ -2324,14 +2314,10 @@ pub fn sponsor_party_member_inn_rest(
 
 fn require_settlement_rest_service(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
-    at_inn: bool,
+    service: SettlementActionService,
 ) -> Result<(), String> {
-    use adventuresim_core::settlement_economy::{
-        SettlementDowntimeAccess, action_service_available, required_settlement_rest_service,
-    };
-    let service =
-        required_settlement_rest_service(SettlementDowntimeAccess::PublicService { at_inn })
-            .ok_or("Public settlement rest has no configured service")?;
+    use adventuresim_core::settlement_economy::action_service_available;
+
     if action_service_available(profile, service) {
         Ok(())
     } else {
@@ -2342,7 +2328,7 @@ fn require_settlement_rest_service(
 fn require_character_rest_service(
     ctx: &ReducerContext,
     character_id: u64,
-    at_inn: bool,
+    service: SettlementActionService,
 ) -> Result<(), String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
     let settlement_id = character
@@ -2355,7 +2341,7 @@ fn require_character_rest_service(
         .id()
         .find(settlement_id.to_owned())
         .ok_or("Character's settlement not found")?;
-    require_settlement_rest_service(&settlement.economy, at_inn)
+    require_settlement_rest_service(&settlement.economy, service)
 }
 
 fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
@@ -2440,7 +2426,10 @@ fn rest_for_minutes(
     validate_settlement_rest_minutes(requested_minutes)?;
 
     let requested_cost = inn_stay_cost(requested_minutes)?;
-    if provision == SettlementRestProvision::Inn {
+    if matches!(
+        provision,
+        SettlementRestProvision::PublicService(SettlementActionService::Inn)
+    ) {
         let patient_funds = crate::item::personal_currency_total(ctx, character_id);
         let sponsor_gap = requested_cost.saturating_sub(patient_funds);
         let payment_available = if sponsor_gap == 0 {
@@ -2466,12 +2455,13 @@ fn rest_for_minutes(
         starting_minute,
         requested_minutes,
     );
-    let injury_limit = crate::surgery::preview_elapsed_for_injuries_with_rest_minutes(
+    let injury_limit = crate::surgery::preview_injury_boundary(
         ctx,
         character_id,
         requested_minutes,
-        requested_recovery,
-    )?;
+        InjuryRecoveryMinutes::new(requested_recovery),
+    )?
+    .elapsed;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let physiology_check = party_physiology_check(ctx, character_id)?;
@@ -2482,11 +2472,11 @@ fn rest_for_minutes(
     );
     let convalescing =
         convalescence_minutes(ctx, character_id, physiology_check).min(recovery_elapsed);
-    let settled = crate::surgery::settle_injuries_with_rest_minutes(
+    let settled = crate::surgery::settle_injuries(
         ctx,
         character_id,
         elapsed,
-        recovery_elapsed,
+        InjuryRecoveryMinutes::new(recovery_elapsed),
     )?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time
@@ -2503,9 +2493,12 @@ fn rest_for_minutes(
         starting_minute,
         elapsed,
         false,
-        adventuresim_core::survival::FieldShelter::Indoor,
+        ExposureShelter::Indoor,
     )?;
-    if provision == SettlementRestProvision::Inn {
+    if matches!(
+        provision,
+        SettlementRestProvision::PublicService(SettlementActionService::Inn)
+    ) {
         let elapsed_cost = inn_stay_cost(elapsed)?;
         let patient_contribution =
             crate::item::personal_currency_total(ctx, character_id).min(elapsed_cost);
@@ -2519,12 +2512,7 @@ fn rest_for_minutes(
         }
     }
     crate::social::settle_shared_party_time(ctx, character_id);
-    crate::condition::apply_settlement_rest_elapsed_needs(
-        ctx,
-        character_id,
-        elapsed,
-        provision != SettlementRestProvision::Temple,
-    )?;
+    crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, provision)?;
     crate::condition::apply_settlement_leisure_condition(
         ctx,
         character_id,
@@ -2653,17 +2641,11 @@ pub(crate) fn spend_private_settlement_downtime(
     requested_minutes: u64,
     explicit: bool,
 ) -> Result<(), String> {
-    debug_assert_eq!(
-        adventuresim_core::settlement_economy::required_settlement_rest_service(
-            adventuresim_core::settlement_economy::SettlementDowntimeAccess::PrivateSystem,
-        ),
-        None
-    );
     rest_for_minutes(
         ctx,
         character_id,
         requested_minutes,
-        SettlementRestProvision::Temple,
+        SettlementRestProvision::PrivateDowntime,
         explicit,
         true,
         None,
@@ -2687,7 +2669,7 @@ fn spend_private_settlement_downtime_deferred_social(
         ctx,
         character_id,
         requested_minutes,
-        SettlementRestProvision::Temple,
+        SettlementRestProvision::PrivateDowntime,
         false,
         false,
         None,
@@ -2807,12 +2789,23 @@ fn advance_personal_camp_time(
         .find(member_id)
         .ok_or("Character time record not found")?;
     let starting_minute = time.minutes;
-    let injury_limit = crate::surgery::preview_elapsed_for_injuries(ctx, member_id, elapsed, true)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        member_id,
+        elapsed,
+        InjuryRecoveryMinutes::new(elapsed),
+    )?
+    .elapsed;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit, true)?;
     let convalescing =
         convalescence_minutes(ctx, member_id, party_physiology_check(ctx, member_id)?).min(elapsed);
-    let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
+    let settled = crate::surgery::settle_injuries(
+        ctx,
+        member_id,
+        elapsed,
+        InjuryRecoveryMinutes::new(elapsed),
+    )?;
     let elapsed = settled.elapsed;
     time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
@@ -2822,7 +2815,7 @@ fn advance_personal_camp_time(
         starting_minute,
         elapsed,
         false,
-        shelter.core(),
+        ExposureShelter::Field(shelter),
     )?;
     crate::organization::settle_membership_dues(ctx, member_id)?;
     crate::social::settle_shared_party_time(ctx, member_id);
@@ -3044,9 +3037,13 @@ pub fn rest_at_camp(
                 true,
                 &disease_plan,
             )?;
-            let injury =
-                crate::surgery::preview_elapsed_for_injuries(ctx, *member_id, limit, true)?;
-            Ok::<u64, String>(limit.min(disease).min(injury))
+            let injury = crate::surgery::preview_injury_boundary(
+                ctx,
+                *member_id,
+                limit,
+                InjuryRecoveryMinutes::new(limit),
+            )?;
+            Ok::<u64, String>(limit.min(disease).min(injury.elapsed))
         })?;
     let fatigue_before = party_fatigue_summary(ctx, &members)?;
     let language_snapshot: Vec<_> = members
@@ -3096,8 +3093,13 @@ pub fn rest_at_camp(
             true,
             &disease_plan,
         )?;
-        let settled =
-            crate::surgery::settle_injuries(ctx, member_id, elapsed.min(disease_elapsed), true)?;
+        let injury_elapsed = elapsed.min(disease_elapsed);
+        let settled = crate::surgery::settle_injuries(
+            ctx,
+            member_id,
+            injury_elapsed,
+            InjuryRecoveryMinutes::new(injury_elapsed),
+        )?;
         let member_elapsed = settled.elapsed;
         time.minutes = time.minutes.saturating_add(member_elapsed);
         let interval_end_minute = time.minutes;
@@ -3108,7 +3110,7 @@ pub fn rest_at_camp(
             interval_end_minute.saturating_sub(member_elapsed),
             member_elapsed,
             false,
-            shelter.core(),
+            ExposureShelter::Field(shelter),
         )?;
         crate::organization::settle_membership_dues(ctx, member_id)?;
         crate::social::settle_shared_party_time(ctx, member_id);
@@ -3373,8 +3375,13 @@ pub(crate) fn advance_stationary_character_to(
             character_id,
         )
     };
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
+    let injury_limit = crate::surgery::preview_injury_boundary(
+        ctx,
+        character_id,
+        requested_elapsed,
+        InjuryRecoveryMinutes::new(requested_elapsed),
+    )?
+    .elapsed;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let convalescing = convalescence_minutes(
@@ -3383,7 +3390,12 @@ pub(crate) fn advance_stationary_character_to(
         party_physiology_check(ctx, character_id)?,
     )
     .min(elapsed);
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
+    let settled = crate::surgery::settle_injuries(
+        ctx,
+        character_id,
+        elapsed,
+        InjuryRecoveryMinutes::new(elapsed),
+    )?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
     ctx.db
@@ -3398,9 +3410,9 @@ pub(crate) fn advance_stationary_character_to(
         elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Indoor
+            ExposureShelter::Indoor
         } else {
-            adventuresim_core::survival::FieldShelter::Bivouac
+            ExposureShelter::Field(FieldShelter::Bivouac)
         },
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
@@ -3745,7 +3757,7 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn inn_stay_cost").next())
             .expect("settlement rest implementation");
-        assert!(rest.contains("FieldShelter::Indoor"));
+        assert!(rest.contains("ExposureShelter::Indoor"));
         assert!(!rest.contains("FieldShelter::Tent"));
     }
 
@@ -3768,22 +3780,24 @@ mod tests {
                 .nth(1)
                 .and_then(|tail| tail.split(end).next())
                 .expect(start);
-            assert!(body.contains("FieldShelter::Indoor"), "{start}");
+            assert!(body.contains("ExposureShelter::Indoor"), "{start}");
             assert!(body.contains("FieldShelter::Bivouac"), "{start}");
         }
     }
 
     #[test]
     fn settlement_rest_rejects_unavailable_inn_and_temple_services() {
-        use adventuresim_world_schema::SettlementService;
+        use adventuresim_world_schema::{SettlementActionService, SettlementService};
 
         let mut profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
-        assert!(require_settlement_rest_service(&profile, true).is_ok());
-        assert!(require_settlement_rest_service(&profile, false).is_err());
+        assert!(require_settlement_rest_service(&profile, SettlementActionService::Inn).is_ok());
+        assert!(
+            require_settlement_rest_service(&profile, SettlementActionService::Temple).is_err()
+        );
         profile.services.clear();
-        assert!(require_settlement_rest_service(&profile, true).is_err());
+        assert!(require_settlement_rest_service(&profile, SettlementActionService::Inn).is_err());
         profile.services.push(SettlementService::Temple);
-        assert!(require_settlement_rest_service(&profile, false).is_ok());
+        assert!(require_settlement_rest_service(&profile, SettlementActionService::Temple).is_ok());
     }
 
     #[test]
@@ -3878,7 +3892,7 @@ mod tests {
             "same party",
             "current party membership",
             "named settlement",
-            "require_character_rest_service(ctx, patient_id, true)",
+            "require_character_rest_service(ctx, patient_id, SettlementActionService::Inn)",
             "patient_publicly_needs_rest(ctx, patient_id)",
             "expected_cost != authoritative_cost",
             "Patient can afford ordinary inn rest",
@@ -3915,10 +3929,9 @@ mod tests {
         assert_eq!(rest.matches("inn_stay_cost(elapsed)?").count(), 1);
         assert!(
             rest.find("personal_currency_total").unwrap()
-                < rest
-                    .find("preview_elapsed_for_injuries_with_rest_minutes")
-                    .unwrap()
+                < rest.find("preview_injury_boundary").unwrap()
         );
+        assert!(rest.contains("InjuryRecoveryMinutes::new(requested_recovery)"));
         assert!(
             rest.find("inn_stay_cost(elapsed)?").unwrap()
                 < rest
@@ -4148,6 +4161,8 @@ mod tests {
                     ..Default::default()
                 },
             },
+            SocializingSociability::Neutral,
+            Transparency::Neutral,
             &adventuresim_core::stub::StubAttributes,
         );
         assert!((hours.sword - 0.046875).abs() < f32::EPSILON);

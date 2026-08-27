@@ -8,7 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use adventuresim_core::equipment::MeleeAttackStyle;
+use adventuresim_core::combat_style::MeleeAttackStyle;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 

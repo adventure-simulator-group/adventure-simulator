@@ -24,7 +24,7 @@ pub struct BackendInvestigationLead {
     pub summary: String,
     pub source_label: String,
     pub confidence_bps: u16,
-    pub destination_stage: String,
+    pub destination_stage: DestinationKnowledgeStage,
     pub directions: String,
     pub exact_location_id: String,
     pub latitude_e7: i32,
@@ -111,9 +111,9 @@ fn journal_case_resolution(ctx: &ViewContext, public_case_id: &str) -> (String, 
         return ("open".into(), 0);
     };
     let status = match case.resolution_status {
-        crate::strategic::CaseResolutionStatus::Open => "open",
-        crate::strategic::CaseResolutionStatus::Resolved => "completed",
-        crate::strategic::CaseResolutionStatus::Failed => "failed",
+        crate::strategic::CaseStatus::Open => "open",
+        crate::strategic::CaseStatus::Resolved => "completed",
+        crate::strategic::CaseStatus::Failed => "failed",
     };
     let resolved_at = ctx
         .db
@@ -190,7 +190,7 @@ pub struct BackendCaseSitePin {
     pub latitude_e7: i32,
     pub coordinates_are_geographic: bool,
     pub distance_m: u64,
-    pub knowledge_stage: String,
+    pub knowledge_stage: DestinationKnowledgeStage,
     pub tracked: bool,
     /// Observer-safe problem wording from a fully validated generated manifest,
     /// or the ordinary site name for a manual case.
@@ -439,7 +439,7 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                 kind: "news".into(),
                 summary: notice.summary,
                 source_label: notice.source_label,
-                confidence_bps: 10_000,
+                confidence_bps: adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
                 contradiction_group: String::new(),
                 corrected_by: String::new(),
                 supersedes: String::new(),
@@ -527,9 +527,11 @@ fn projected_action_public_case_id(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
 ) -> Option<String> {
-    match capability.provenance_kind.as_str() {
-        "manual" if capability.generated_case_id.is_empty() => Some(capability.case_id.clone()),
-        "generated" if !capability.generated_case_id.is_empty() => {
+    match capability.provenance_kind {
+        InvestigationProvenanceKind::Manual if capability.generated_case_id.is_empty() => {
+            Some(capability.case_id.clone())
+        }
+        InvestigationProvenanceKind::Generated if !capability.generated_case_id.is_empty() => {
             let (manifest_json, _) = generated_authority_view(ctx, capability).ok()??;
             let manifest =
                 serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
@@ -671,15 +673,15 @@ fn generated_pattern_authority(
     authority: Option<(&str, &str)>,
     persisted_outputs_json: Option<&str>,
 ) -> GeneratedPatternAuthority {
-    match capability.provenance_kind.as_str() {
-        "manual" if capability.generated_case_id.is_empty() => {
+    match capability.provenance_kind {
+        InvestigationProvenanceKind::Manual if capability.generated_case_id.is_empty() => {
             return if authority.is_none() && persisted_outputs_json.is_none() {
                 GeneratedPatternAuthority::Manual
             } else {
                 GeneratedPatternAuthority::Invalid
             };
         }
-        "generated" if !capability.generated_case_id.is_empty() => {}
+        InvestigationProvenanceKind::Generated if !capability.generated_case_id.is_empty() => {}
         _ => return GeneratedPatternAuthority::Invalid,
     }
     let Some((manifest_json, context_json)) = authority else {
@@ -836,9 +838,11 @@ fn generated_authority_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
 ) -> Result<Option<(String, String)>, ()> {
-    match capability.provenance_kind.as_str() {
-        "manual" if capability.generated_case_id.is_empty() => return Ok(None),
-        "generated" if !capability.generated_case_id.is_empty() => {}
+    match capability.provenance_kind {
+        InvestigationProvenanceKind::Manual if capability.generated_case_id.is_empty() => {
+            return Ok(None);
+        }
+        InvestigationProvenanceKind::Generated if !capability.generated_case_id.is_empty() => {}
         _ => return Err(()),
     }
     let mut candidates = Vec::new();
@@ -874,9 +878,11 @@ fn generated_authority_reducer(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
 ) -> Result<Option<(String, String)>, ()> {
-    match capability.provenance_kind.as_str() {
-        "manual" if capability.generated_case_id.is_empty() => return Ok(None),
-        "generated" if !capability.generated_case_id.is_empty() => {}
+    match capability.provenance_kind {
+        InvestigationProvenanceKind::Manual if capability.generated_case_id.is_empty() => {
+            return Ok(None);
+        }
+        InvestigationProvenanceKind::Generated if !capability.generated_case_id.is_empty() => {}
         _ => return Err(()),
     }
     let mut candidates = Vec::new();
@@ -912,14 +918,17 @@ fn reducer_action_public_case_id(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
 ) -> Option<String> {
-    match capability.provenance_kind.as_str() {
-        "manual" if capability.generated_case_id.is_empty() => Some(capability.case_id.clone()),
-        "generated" if !capability.generated_case_id.is_empty() => {
+    match capability.provenance_kind {
+        InvestigationProvenanceKind::Manual if capability.generated_case_id.is_empty() => {
+            Some(capability.case_id.clone())
+        }
+        InvestigationProvenanceKind::Generated if !capability.generated_case_id.is_empty() => {
             let (manifest_json, _) = generated_authority_reducer(ctx, capability).ok()??;
-            let manifest = serde_json::from_str::<
-                adventuresim_core::quest_generation::GeneratedCase,
-            >(&manifest_json)
-            .ok()?;
+            let manifest =
+                serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                    &manifest_json,
+                )
+                .ok()?;
             (manifest.canonical_case_id == capability.generated_case_id
                 && (capability.case_id == manifest.canonical_case_id
                     || capability.case_id == manifest.public_case_id))
@@ -955,7 +964,12 @@ fn apply_investigability_to_route_skills(
     let modifier = i32::from(adventuresim_core::threat_escalation::check_modifier_milli(
         investigability,
     )) * 2;
-    let adjust = |value: u16| (i32::from(value) + modifier).clamp(0, 10_000) as u16;
+    let adjust = |value: u16| {
+        (i32::from(value) + modifier).clamp(
+            0,
+            i32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+        ) as u16
+    };
     skills.terrain_bps = adjust(skills.terrain_bps);
     skills.awareness_bps = adjust(skills.awareness_bps);
     skills.stealth_bps = adjust(skills.stealth_bps);
@@ -1167,7 +1181,7 @@ fn capability_has_live_support_view(
             .filter(capability.owner_character_id)
             .any(|lead| {
                 lead.case_id == observer_case_id
-                    && lead.destination_stage == "approximate_area"
+                    && lead.destination_stage == DestinationKnowledgeStage::ApproximateArea
                     && lead.corrected_by.is_empty()
             })
     {
@@ -1192,10 +1206,7 @@ fn exact_action_site_for_observer(
         .find(|lead| {
             lead.exact_location_id == capability.target_id
                 && lead.corrected_by.is_empty()
-                && matches!(
-                    lead.destination_stage.as_str(),
-                    "exact_believed" | "visited"
-                )
+                && lead.destination_stage.is_exact()
         })?;
     let site = ctx
         .db
@@ -1203,9 +1214,9 @@ fn exact_action_site_for_observer(
         .id_key()
         .find(&lead.exact_location_id)?;
     let generated_aliases = case_site_provenance_view(ctx, &site)?;
-    match (&generated_aliases, capability.provenance_kind.as_str()) {
-        (None, "manual") if capability.generated_case_id.is_empty() => {}
-        (Some((canonical, public)), "generated")
+    match (&generated_aliases, capability.provenance_kind) {
+        (None, InvestigationProvenanceKind::Manual) if capability.generated_case_id.is_empty() => {}
+        (Some((canonical, public)), InvestigationProvenanceKind::Generated)
             if capability.generated_case_id == canonical.as_str()
                 && (capability.case_id == canonical.as_str()
                     || capability.case_id == public.as_str()) => {}
@@ -1216,7 +1227,7 @@ fn exact_action_site_for_observer(
         &capability.target_id,
         &lead.case_id,
         &lead.exact_location_id,
-        &lead.destination_stage,
+        lead.destination_stage,
         &lead.corrected_by,
         &site.case_id,
         &site.id.value,
@@ -1227,12 +1238,16 @@ fn exact_action_site_for_observer(
     .then_some(lead.exact_location_id)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the predicate compares each independent authority coordinate explicitly"
+)]
 fn exact_site_knowledge_is_live(
     capability_case_id: &str,
     capability_target_id: &str,
     lead_case_id: &str,
     lead_exact_location_id: &str,
-    lead_destination_stage: &str,
+    lead_destination_stage: DestinationKnowledgeStage,
     lead_corrected_by: &str,
     authority_case_id: &str,
     authority_site_id: &str,
@@ -1254,7 +1269,7 @@ fn exact_site_knowledge_is_live(
     cases_match
         && capability_target_id == lead_exact_location_id
         && capability_target_id == authority_site_id
-        && matches!(lead_destination_stage, "exact_believed" | "visited")
+        && lead_destination_stage.is_exact()
         && lead_corrected_by.is_empty()
         && coordinates_match
 }
@@ -1332,10 +1347,15 @@ fn public_contact_schedule_wait_minutes(
     if presence.context_suppressed || presence.health_suppressed {
         return None;
     }
-    let current = minute % 1_440;
+    let current = minute % adventuresim_core::strategic_time::MINUTES_PER_DAY;
     let start = u64::from(presence.start_minute);
-    let wait = (start + 1_440 - current) % 1_440;
-    Some(if wait == 0 { 1_440 } else { wait } as u32)
+    let wait = (start + adventuresim_core::strategic_time::MINUTES_PER_DAY - current)
+        % adventuresim_core::strategic_time::MINUTES_PER_DAY;
+    Some(if wait == 0 {
+        adventuresim_core::strategic_time::MINUTES_PER_DAY
+    } else {
+        wait
+    } as u32)
 }
 
 fn referred_contact_target_matches(
@@ -1373,10 +1393,9 @@ fn referred_contact_is_current_view(
     let Some((_, context_json)) = generated_authority_view(ctx, capability).ok().flatten() else {
         return false;
     };
-    let Ok(context) = serde_json::from_str::<
-        adventuresim_core::quest_generation::GenerationContext,
-    >(&context_json)
-    else {
+    let Ok(context) = serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+        &context_json,
+    ) else {
         return false;
     };
     let Some(expected) = context
@@ -1425,8 +1444,7 @@ fn projected_contact_presence_availability(
     settlement_id: Option<&str>,
     started_at: Option<u64>,
 ) -> Option<ProjectedActionAvailability> {
-    if kind != action::InvestigationActionKind::LocateContact
-        || capability.target_kind != "contact"
+    if kind != action::InvestigationActionKind::LocateContact || capability.target_kind != "contact"
     {
         return None;
     }
@@ -1468,12 +1486,10 @@ fn projected_contact_presence_availability(
 }
 
 fn night_window_wait_minutes(minute: u64) -> u32 {
-    let minute = minute % 1_440;
-    if (360..1_200).contains(&minute) {
-        (1_200 - minute) as u32
-    } else {
-        0
-    }
+    u32::from(
+        adventuresim_core::strategic_time::StrategicMinuteOfDay::from_absolute(minute)
+            .minutes_until_night(),
+    )
 }
 
 fn projected_party_activity_minute(ctx: &ViewContext, party_id: &str) -> Option<u64> {
@@ -1714,7 +1730,10 @@ fn action_unavailable_reason_view(
                 .character_strategic_condition()
                 .character_id()
                 .find(member.id)
-                .is_some_and(|condition| condition.status == "incapacitated")
+                .is_some_and(|condition| {
+                    condition.status
+                        == adventuresim_core::morale::IncapacitationStatus::Incapacitated
+                })
         });
     let occupying_required_site = !required_case_site_id.is_empty()
         && ctx
@@ -1736,10 +1755,9 @@ fn action_unavailable_reason_view(
     ) {
         return availability;
     }
-    let temporal_wait_minutes = projected_started_at
-        .map_or(0, |started_at| {
-            projected_night_window_wait_minutes(ctx, capability, started_at)
-        });
+    let temporal_wait_minutes = projected_started_at.map_or(0, |started_at| {
+        projected_night_window_wait_minutes(ctx, capability, started_at)
+    });
     if !victim_cohort_is_current_view(ctx, capability, kind) {
         return projected_target_changed_availability();
     }

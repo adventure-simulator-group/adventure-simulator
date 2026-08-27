@@ -1,6 +1,9 @@
+use fabelgeist_determinism::SplitMix64;
 use serde::{Deserialize, Serialize};
 
-use crate::{PuzzleRng, shuffle};
+use crate::shuffle;
+
+const RESOURCE_ALLOCATION_GENERATION_DOMAIN: u64 = 0x7265_736f_7572_6365;
 
 pub const RESOURCE_ALLOCATION_RULES_VERSION: u16 = 1;
 
@@ -187,7 +190,7 @@ impl ResourceAllocationPuzzle {
         spec: ResourceAllocationSpec,
     ) -> Result<Self, &'static str> {
         let spec = spec.validate()?;
-        let mut rng = PuzzleRng(seed ^ 0x7265_736f_7572_6365);
+        let mut rng = SplitMix64::new(seed ^ RESOURCE_ALLOCATION_GENERATION_DOMAIN);
         for _ in 0..512 {
             let mut provisions = ProvisionId::ALL.to_vec();
             let mut hazards = JourneyHazard::ALL.to_vec();

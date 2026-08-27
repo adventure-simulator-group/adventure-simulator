@@ -653,12 +653,23 @@
     return null;
   }
 
+  function inventoryLocationSelector(location) {
+    if (location?.Personal) return { scope: "personal", rowId: String(location.Personal.row_id) };
+    if (location?.Party) return { scope: "party", rowId: String(location.Party.row_id) };
+    return null;
+  }
+
+  function inventoryLocationRowKey(location) {
+    const selector = inventoryLocationSelector(location);
+    return selector ? `${selector.scope}:${selector.rowId}` : null;
+  }
+
   function ensureMoveIntoControl(row, rowRef, snapshot) {
     const { actions } = ensureRowActionRail(row);
     if (!actions || actions.querySelector("[data-container-move-into]")) return;
     const candidates = snapshot.objects.filter((object) =>
       ["cooking_pan", "cooking_pot", "portable_oven"].includes(object.item_id)
-        && String(object.id) !== String(rowRef) && object.location_kind !== "fireplace")
+        && String(object.id) !== String(rowRef) && !object.location?.Fireplace)
       .map((object) => ({ id: String(object.id), item_id: object.item_id }));
     document.querySelectorAll("tr.trade-inventory-row").forEach((candidateRow) => {
       const label = candidateRow.querySelector("[data-container-capacity-ml]");
@@ -704,20 +715,13 @@
     const objects = new Map(snapshot.objects.map((object) => [object.id, object]));
     const parents = new Map(snapshot.edges.map((edge) => [edge.child_object_id, edge.parent_object_id]));
     const liquids = new Map(snapshot.liquids.map((liquid) => [liquid.container_object_id, Number(liquid.water_ml)]));
-    const byRow = new Map(snapshot.objects.map((object) => [`${object.location_kind}:${object.inventory_row_id}`, object]));
+    const byRow = new Map(snapshot.objects.flatMap((object) => {
+      const rowKey = inventoryLocationRowKey(object.location);
+      return rowKey ? [[rowKey, object]] : [];
+    }));
     root.querySelectorAll?.("tr.trade-inventory-row").forEach((row) => {
       const object = byRow.get(rowInventoryKey(row));
-      const rowKey = rowInventoryKey(row);
-      if (!object) {
-        if (rowKey && !row.dataset.containerDragBound) {
-          row.draggable = true; row.dataset.containerDragBound = "true";
-          row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
-            "application/x-adventuresim-inventory-object", rowKey,
-          ));
-        }
-        if (rowKey) ensureMoveIntoControl(row, rowKey, snapshot);
-        return;
-      }
+      if (!object) return;
       row.dataset.containerObjectId = String(object.id);
       ensureMoveIntoControl(row, String(object.id), snapshot);
       row.tabIndex = 0;
@@ -751,7 +755,10 @@
       let used = liquids.get(object.id) || 0;
       snapshot.edges.filter((edge) => edge.parent_object_id === object.id).forEach((edge) => {
         const child = objects.get(edge.child_object_id);
-        const childRow = child && root.querySelector(`tr[data-${child.location_kind}-inventory-id="${child.inventory_row_id}"]`);
+        const childSelector = inventoryLocationSelector(child?.location);
+        const childRow = childSelector && root.querySelector(
+          `tr[data-${childSelector.scope}-inventory-id="${childSelector.rowId}"]`,
+        );
         used += Number(childRow?.querySelector("[data-exterior-volume-ml]")?.dataset.exteriorVolumeMl || 0);
       });
       row.dataset.containerUsedMl = String(used);
@@ -876,7 +883,7 @@
     if (!water) {
       water = document.createElement("div"); water.dataset.containerWaterActions = "true";
       water.className = "inventory-container-water-actions";
-      water.innerHTML = '<span data-container-tincture-status></span><button type="button" data-container-pour>Pour water in</button><button type="button" data-container-drain>Pour water out</button><button type="button" data-container-spirit>Pour tincture spirit</button><button type="button" data-container-tincture>Start tincture</button><button type="button" data-container-tincture-refresh>Refresh tincture</button><button type="button" data-container-tincture-dose>Take 10% dose</button>';
+      water.innerHTML = '<span data-container-tincture-status></span><button type="button" data-container-discard-water>Discard water</button><button type="button" data-container-spirit>Pour tincture spirit</button><button type="button" data-container-tincture>Start tincture</button><button type="button" data-container-tincture-refresh>Refresh tincture</button><button type="button" data-container-tincture-dose>Take 10% dose</button>';
       close.after(water);
     }
     water.hidden = !/^\d+$/.test(id);
@@ -982,12 +989,12 @@
           .catch((error) => global.alert?.(error.message));
         return;
       }
-      const waterAction = event.target.closest("[data-container-pour],[data-container-drain]");
+      const waterAction = event.target.closest("[data-container-discard-water]");
       if (waterAction) {
         event.preventDefault();
         const requested = global.prompt?.("Milliliters", "1000");
         if (requested && Number(requested) > 0) postContainer(
-          waterAction.matches("[data-container-pour]") ? "/api/inventory/containers/pour" : "/api/inventory/containers/drain",
+          "/api/inventory/containers/discard-water",
           { container_object_id: browser.dataset.openContainerObjectId, requested_ml: requested },
         ).catch((error) => global.alert?.(error.message));
         return;
@@ -1010,7 +1017,7 @@
           tinctureLifecycleAction.matches("[data-container-tincture-dose]")
             ? "/api/inventory/containers/tincture-dose"
             : "/api/inventory/containers/tincture-refresh",
-          { container_object_id: browser.dataset.openContainerObjectId, amount_milliunits: 100 },
+          { container_object_id: browser.dataset.openContainerObjectId, dose_milliunits: 100 },
         ).catch((error) => global.alert?.(error.message));
         return;
       }
@@ -1083,7 +1090,7 @@
         }
       }, { once: true });
       probe.addEventListener("error", () => {
-        // The authored catalog SVG remains for legacy or non-instanced equipment.
+          // The authored catalog SVG remains for non-instanced equipment.
       }, { once: true });
       probe.src = url;
     });
@@ -1111,15 +1118,9 @@
     global.addEventListener("popstate", () => mountAll());
     global.document.addEventListener("strategic-page-mounted", () => { mountAll(); hydrateContainerState(); });
     global.document.addEventListener("inventory-container-move", (event) => {
-      const raw = String(event.detail.child);
-      const legacy = raw.match(/^(personal|party):(\d+)$/);
-      const parentRaw = String(event.detail.parent);
-      const parentLegacy = parentRaw.match(/^(personal|party):(\d+)$/);
       postContainer("/api/inventory/containers/move", {
-        child_object_id: legacy ? "0" : raw,
-        child_scope: legacy?.[1] || "", child_row_id: legacy?.[2] || "0",
-        parent_object_id: parentLegacy ? "0" : parentRaw,
-        parent_scope: parentLegacy?.[1] || "", parent_row_id: parentLegacy?.[2] || "0",
+        child_object_id: String(event.detail.child),
+        parent_object_id: String(event.detail.parent),
       }).catch((error) => global.alert?.(error.message));
     });
   }

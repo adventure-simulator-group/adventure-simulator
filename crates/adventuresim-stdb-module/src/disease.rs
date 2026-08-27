@@ -6,6 +6,7 @@ use adventuresim_core::disease::{
     self, DiseaseEventKind, DiseaseId, InfectionEpisode, TerminalFailure, TransmissionVector,
 };
 use adventuresim_core::physiology::{self, BodyRegion, InterventionRoute};
+use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::capability::{character_capability, character_capability__view};
@@ -120,9 +121,9 @@ pub struct PhysiologyAdministration {
     pub patient_id: u64,
     pub preparation_id: String,
     pub profile_version: u16,
-    pub route: String,
-    pub amount_milliunits: u32,
-    pub region: Option<String>,
+    pub route: InterventionRoute,
+    pub dose_milliunits: u32,
+    pub region: Option<BodyRegion>,
     pub administered_at: u64,
     pub stopped_at: Option<u64>,
     pub sensitivity_bps: i16,
@@ -165,9 +166,9 @@ pub struct BackendPhysiologyAdministration {
     pub patient_id: u64,
     pub preparation_id: String,
     pub profile_version: u16,
-    pub route: String,
-    pub amount_milliunits: u32,
-    pub region: Option<String>,
+    pub route: InterventionRoute,
+    pub dose_milliunits: u32,
+    pub region: Option<BodyRegion>,
     pub administered_at: u64,
     pub stopped_at: Option<u64>,
 }
@@ -189,7 +190,7 @@ fn is_strategic_gateway(ctx: &ViewContext) -> bool {
         .is_some_and(|authority| authority.identity == ctx.sender())
 }
 
-const PHYSIOLOGY_CHART_MAX_RANGE_MINUTES: u64 = 30 * 1_440;
+const PHYSIOLOGY_CHART_MAX_RANGE_MINUTES: u64 = 30 * MINUTES_PER_DAY;
 const PHYSIOLOGY_CHART_MAX_ROWS: usize = 1_024;
 const PHYSIOLOGY_CHART_MAX_CAUSAL_SPANS: usize = 1_024;
 const PHYSIOLOGY_CHART_MAX_PATIENT_CAUSES: usize = 256;
@@ -220,7 +221,7 @@ pub fn backend_physiology_administrations(
             preparation_id: row.preparation_id,
             profile_version: row.profile_version,
             route: row.route,
-            amount_milliunits: row.amount_milliunits,
+            dose_milliunits: row.dose_milliunits,
             region: row.region,
             administered_at: row.administered_at,
             stopped_at: row.stopped_at,
@@ -428,6 +429,10 @@ struct VisibleHumourReading {
     mix: [f32; physiology::HUMOUR_COUNT],
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "chart derivation keeps its keyed observation inputs explicit"
+)]
 fn derive_chart_reading(
     key: &[u8],
     key_version: u16,
@@ -555,7 +560,7 @@ fn derive_possible_diseases(
         .last()
         .map_or([0.25; physiology::HUMOUR_COUNT], |reading| reading.mix);
     let reliability_by_band = [0.12, 0.24, 0.42, 0.62, 0.80, 0.94];
-    let time_factor = (observation_minutes as f32 / (8.0 * 1_440.0)).clamp(0.0, 1.0);
+    let time_factor = (observation_minutes as f32 / (8.0 * MINUTES_PER_DAY as f32)).clamp(0.0, 1.0);
     let reliability = reliability_by_band[usize::from(band.min(5))] * (0.25 + 0.75 * time_factor);
 
     let mut fits = adventuresim_core::disease::STARTER_DISEASES
@@ -596,7 +601,9 @@ fn derive_possible_diseases(
             BackendPhysiologyDifferential {
                 disease_id: disease_key(definition.id).to_owned(),
                 label: definition.period_name.to_owned(),
-                likelihood_bps: (likelihood * 10_000.0).round() as u16,
+                likelihood_bps: (likelihood
+                    * f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+                .round() as u16,
             }
         })
         .collect::<Vec<_>>();
@@ -931,7 +938,10 @@ fn try_party_physiology_check_at(
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
+#[expect(
+    dead_code,
+    reason = "focused disease fixtures share this protected-exposure helper"
+)]
 pub(crate) fn protected_exposure_at(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1239,7 +1249,7 @@ pub fn plan_party_disease_interval(
                 .filter(|row| {
                     !row.disease_id.is_empty()
                         && row.disease_intensity > 0
-                        && row.mitigation_bps < 10_000
+                        && row.mitigation_bps < adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
                 })
                 .collect::<Vec<_>>();
             problems.sort_by(|left, right| left.id.cmp(&right.id));
@@ -1360,7 +1370,10 @@ pub fn plan_party_disease_interval(
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
+#[expect(
+    dead_code,
+    reason = "focused disease fixtures build party-contact episodes through this helper"
+)]
 fn party_contact_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1451,7 +1464,7 @@ fn party_contact_episodes_through(
                         character_id,
                         minute,
                         TransmissionVector::CloseContact,
-                        infectiousness / 1_440.0,
+                        infectiousness / MINUTES_PER_DAY as f32,
                     );
                     let prior = disease::acquired_immunity(
                         &target_episodes,
@@ -1483,9 +1496,15 @@ fn party_contact_episodes_through(
     Ok(merge_acquisition_proposals(Vec::new(), proposals))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 #[cfg(test)]
-#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
+#[expect(
+    dead_code,
+    reason = "focused disease fixtures search protected presence exposure boundaries through this helper"
+)]
 fn first_protected_presence_exposure_minute(
     ctx: &ReducerContext,
     episodes: &[InfectionEpisode],
@@ -1546,7 +1565,10 @@ pub fn effective_attributes(
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
+#[expect(
+    dead_code,
+    reason = "focused disease fixtures build outbreak episodes through this helper"
+)]
 fn outbreak_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1627,7 +1649,9 @@ fn outbreak_episodes_through(
         let overlap_to = to
             .min(problem.ends_at)
             .min(problem.resolved_at.unwrap_or(u64::MAX));
-        if overlap_to <= overlap_from || problem.mitigation_bps >= 10_000 {
+        if overlap_to <= overlap_from
+            || problem.mitigation_bps >= adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
+        {
             continue;
         }
         let disease_id = parse_id(&problem.disease_id)?;
@@ -1703,7 +1727,10 @@ fn persist_acquisition_episodes(
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
+#[expect(
+    dead_code,
+    reason = "focused disease fixtures merge independently generated acquisition proposals"
+)]
 fn merge_acquisition_proposals(
     mut proposals: Vec<InfectionEpisode>,
     additional: impl IntoIterator<Item = InfectionEpisode>,
@@ -1753,9 +1780,10 @@ fn administration(row: &PhysiologyAdministration) -> Result<physiology::Administ
         patient_id: row.patient_id,
         preparation_id: row.preparation_id.clone(),
         profile_version: row.profile_version,
-        route: parse_route(&row.route)?,
-        amount_milliunits: row.amount_milliunits,
-        region: parse_region(row.region.as_deref())?,
+        route: row.route,
+        dose: physiology::DoseMilliunits::try_new(row.dose_milliunits)
+            .map_err(|_| "Persisted intervention dose exceeds the supported maximum")?,
+        region: row.region,
         administered_at: row.administered_at,
         stopped_at: row.stopped_at,
         sensitivity_bps: row.sensitivity_bps,
@@ -2124,22 +2152,6 @@ pub(crate) fn disease_key(id: DiseaseId) -> &'static str {
     }
 }
 
-fn parse_route(value: &str) -> Result<InterventionRoute, String> {
-    match value {
-        "oral" => Ok(InterventionRoute::Oral),
-        "topical" => Ok(InterventionRoute::Topical),
-        "inhaled" => Ok(InterventionRoute::Inhaled),
-        "injected" => Ok(InterventionRoute::Injected),
-        _ => Err("Unknown intervention route".into()),
-    }
-}
-
-fn parse_region(value: Option<&str>) -> Result<Option<BodyRegion>, String> {
-    value
-        .map(|region| BodyRegion::parse(region).ok_or_else(|| "Unknown intervention region".into()))
-        .transpose()
-}
-
 fn private_variation(
     ctx: &ReducerContext,
     patient_id: u64,
@@ -2216,15 +2228,19 @@ fn commit_terminal_at_boundary(
 }
 
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reducer ABI exposes each validated administration input"
+)]
 pub fn administer_preparation(
     ctx: &ReducerContext,
     actor_id: u64,
     patient_id: u64,
     inventory_item_id: u64,
     profile_version: u16,
-    route: String,
-    amount_milliunits: u32,
-    region: Option<String>,
+    route: InterventionRoute,
+    dose_milliunits: u32,
+    region: Option<BodyRegion>,
 ) -> Result<(), String> {
     require_intervention_relationship(ctx, actor_id, patient_id)?;
     administer_preparation_inner(
@@ -2233,26 +2249,25 @@ pub fn administer_preparation(
         inventory_item_id,
         profile_version,
         route,
-        amount_milliunits,
+        dose_milliunits,
         region,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn administer_preparation_inner(
     ctx: &ReducerContext,
     patient_id: u64,
     inventory_item_id: u64,
     profile_version: u16,
-    route: String,
-    amount_milliunits: u32,
-    region: Option<String>,
+    route: InterventionRoute,
+    dose_milliunits: u32,
+    region: Option<BodyRegion>,
 ) -> Result<(), String> {
-    if amount_milliunits == 0 || amount_milliunits > 8_000 {
-        return Err("Intervention amount must be between 1 and 8000 milliunits".into());
+    let dose = physiology::DoseMilliunits::try_new(dose_milliunits)
+        .map_err(|_| "Intervention dose must be between 1 and 8000 milliunits")?;
+    if dose.is_zero() {
+        return Err("Intervention dose must be between 1 and 8000 milliunits".into());
     }
-    let route_value = parse_route(&route)?;
-    let region_value = parse_region(region.as_deref())?;
     let inventory = ctx
         .db
         .inventory_item()
@@ -2264,7 +2279,7 @@ fn administer_preparation_inner(
     }
     let profile = physiology::intervention_profile(&inventory.item_id, profile_version)
         .ok_or("Unknown preparation profile version")?;
-    if profile.route != route_value {
+    if profile.route != route {
         return Err("Preparation does not support that route".into());
     }
     let now = ctx
@@ -2285,8 +2300,8 @@ fn administer_preparation_inner(
             preparation_id: inventory.item_id,
             profile_version,
             route,
-            amount_milliunits,
-            region: region_value.map(|region| region.as_str().to_owned()),
+            dose_milliunits: dose.get(),
+            region,
             administered_at: now,
             stopped_at: None,
             sensitivity_bps,
@@ -2299,17 +2314,17 @@ fn administer_preparation_inner(
     Ok(())
 }
 
-/// Applies a pinned generic intervention component without consuming a legacy
-/// medication item. Shared carriers (notably food lots) call this with the
+/// Applies a pinned generic intervention component without consuming a
+/// standalone medication item. Shared carriers (notably food lots) call this with the
 /// exact proportional amount they consumed.
 pub(crate) fn administer_intervention_component(
     ctx: &ReducerContext,
     patient_id: u64,
     preparation_id: &str,
     profile_version: u16,
-    amount_milliunits: u32,
+    dose: physiology::DoseMilliunits,
 ) -> Result<(), String> {
-    if amount_milliunits == 0 {
+    if dose.is_zero() {
         return Ok(());
     }
     let profile = physiology::intervention_profile(preparation_id, profile_version)
@@ -2333,8 +2348,8 @@ pub(crate) fn administer_intervention_component(
             patient_id,
             preparation_id: preparation_id.into(),
             profile_version,
-            route: "oral".into(),
-            amount_milliunits,
+            route: InterventionRoute::Oral,
+            dose_milliunits: dose.get(),
             region: None,
             administered_at: now,
             stopped_at: None,
@@ -2701,10 +2716,22 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         }
     }
     let key_version = physiology_key(ctx)?.version;
-    for (administered_at, stopped_at, amount_milliunits) in [
-        (FIXTURE_NOW - 6 * DAY, Some(FIXTURE_NOW - 5 * DAY), 750),
-        (FIXTURE_NOW - 4 * DAY, Some(FIXTURE_NOW - 3 * DAY), 1_000),
-        (FIXTURE_NOW - 2 * DAY, None, 1_250),
+    for (administered_at, stopped_at, dose) in [
+        (
+            FIXTURE_NOW - 6 * DAY,
+            Some(FIXTURE_NOW - 5 * DAY),
+            physiology::DoseMilliunits::try_new(750).unwrap(),
+        ),
+        (
+            FIXTURE_NOW - 4 * DAY,
+            Some(FIXTURE_NOW - 3 * DAY),
+            physiology::DoseMilliunits::STANDARD,
+        ),
+        (
+            FIXTURE_NOW - 2 * DAY,
+            None,
+            physiology::DoseMilliunits::try_new(1_250).unwrap(),
+        ),
     ] {
         let (sensitivity_bps, adverse_bps) =
             private_variation(ctx, patient_h, administered_at, "oral_rehydration_draught")?;
@@ -2715,8 +2742,8 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
                 patient_id: patient_h,
                 preparation_id: "oral_rehydration_draught".into(),
                 profile_version: 1,
-                route: "oral".into(),
-                amount_milliunits,
+                route: InterventionRoute::Oral,
+                dose_milliunits: dose.get(),
                 region: None,
                 administered_at,
                 stopped_at,

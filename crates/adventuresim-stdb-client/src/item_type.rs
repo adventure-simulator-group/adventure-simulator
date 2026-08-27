@@ -7,7 +7,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 use super::equipment_attachment_point_type::EquipmentAttachmentPoint;
 use super::equipment_placement_type::EquipmentPlacement;
 use super::item_kind_type::ItemKind;
-use super::item_slot_type::ItemSlot;
+use super::melee_attack_style_type::MeleeAttackStyle;
+use super::slot_type::Slot;
 use super::weapon_skill_distribution_type::WeaponSkillDistribution;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -16,7 +17,7 @@ pub struct Item {
     pub id: String,
     pub weight: f32,
     pub exterior_volume_ml: u32,
-    pub slot: ItemSlot,
+    pub slot: Slot,
     pub kind: ItemKind,
     pub equipment_placements: Vec<EquipmentPlacement>,
     pub attachment_tags: Vec<String>,
@@ -25,7 +26,7 @@ pub struct Item {
     pub accuracy: f32,
     pub swing_precision: f32,
     pub stab_precision: f32,
-    pub prefers_stab: bool,
+    pub preferred_melee_style: MeleeAttackStyle,
     pub reach: f32,
     pub block: f32,
     pub coverage: f32,
@@ -72,7 +73,7 @@ pub struct ItemCols {
     pub id: __sdk::__query_builder::Col<Item, String>,
     pub weight: __sdk::__query_builder::Col<Item, f32>,
     pub exterior_volume_ml: __sdk::__query_builder::Col<Item, u32>,
-    pub slot: __sdk::__query_builder::Col<Item, ItemSlot>,
+    pub slot: __sdk::__query_builder::Col<Item, Slot>,
     pub kind: __sdk::__query_builder::Col<Item, ItemKind>,
     pub equipment_placements: __sdk::__query_builder::Col<Item, Vec<EquipmentPlacement>>,
     pub attachment_tags: __sdk::__query_builder::Col<Item, Vec<String>>,
@@ -81,7 +82,7 @@ pub struct ItemCols {
     pub accuracy: __sdk::__query_builder::Col<Item, f32>,
     pub swing_precision: __sdk::__query_builder::Col<Item, f32>,
     pub stab_precision: __sdk::__query_builder::Col<Item, f32>,
-    pub prefers_stab: __sdk::__query_builder::Col<Item, bool>,
+    pub preferred_melee_style: __sdk::__query_builder::Col<Item, MeleeAttackStyle>,
     pub reach: __sdk::__query_builder::Col<Item, f32>,
     pub block: __sdk::__query_builder::Col<Item, f32>,
     pub coverage: __sdk::__query_builder::Col<Item, f32>,
@@ -136,7 +137,10 @@ impl __sdk::__query_builder::HasCols for Item {
             accuracy: __sdk::__query_builder::Col::new(table_name, "accuracy"),
             swing_precision: __sdk::__query_builder::Col::new(table_name, "swing_precision"),
             stab_precision: __sdk::__query_builder::Col::new(table_name, "stab_precision"),
-            prefers_stab: __sdk::__query_builder::Col::new(table_name, "prefers_stab"),
+            preferred_melee_style: __sdk::__query_builder::Col::new(
+                table_name,
+                "preferred_melee_style",
+            ),
             reach: __sdk::__query_builder::Col::new(table_name, "reach"),
             block: __sdk::__query_builder::Col::new(table_name, "block"),
             coverage: __sdk::__query_builder::Col::new(table_name, "coverage"),

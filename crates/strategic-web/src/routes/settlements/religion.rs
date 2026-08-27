@@ -18,10 +18,7 @@ pub(super) async fn religion_dialogue(
 ) -> Json<ReligionDialogue> {
     let settlement = state
         .db
-        .query::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query::<Settlement>(&crate::spacetimedb::settlement_by_id(&id))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -31,7 +28,7 @@ pub(super) async fn religion_dialogue(
         .filter(|settlement| {
             settlement_action_service_available(
                 &settlement.economy,
-                adventuresim_core::settlement_economy::SettlementActionService::Temple,
+                adventuresim_world_schema::SettlementActionService::Temple,
             )
         })
         .map(|settlement| settlement.religion_id.clone())
@@ -41,7 +38,7 @@ pub(super) async fn religion_dialogue(
         .filter(|settlement| {
             settlement_action_service_available(
                 &settlement.economy,
-                adventuresim_core::settlement_economy::SettlementActionService::Temple,
+                adventuresim_world_schema::SettlementActionService::Temple,
             )
         })
         .map(|s| {
@@ -64,7 +61,7 @@ pub(super) async fn religion_dialogue(
     let can_choose = settlement.as_ref().is_some_and(|settlement| {
         settlement_action_service_available(
             &settlement.economy,
-            adventuresim_core::settlement_economy::SettlementActionService::Temple,
+            adventuresim_world_schema::SettlementActionService::Temple,
         )
     }) && character.current_settlement_id.as_deref() == Some(id.as_str());
     let condition = state
@@ -101,10 +98,7 @@ pub(super) async fn set_religion(
     let religion_id = form.religion_id.trim();
     let settlement = state
         .db
-        .query::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query::<Settlement>(&crate::spacetimedb::settlement_by_id(&id))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -118,7 +112,7 @@ pub(super) async fn set_religion(
     };
     if !settlement_action_service_available(
         &settlement.economy,
-        adventuresim_core::settlement_economy::SettlementActionService::Temple,
+        adventuresim_world_schema::SettlementActionService::Temple,
     ) {
         return Json(ReligionChange {
             changed: false,
@@ -188,8 +182,17 @@ pub(super) async fn renounce_religion(
             .db
             .call("set_character_religion", &[json!(character_id), json!("")])
             .await
-        {
-            tracing::warn!(%error, character_id, "failed to renounce character religion");
-        }
-    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await)
+    {
+        tracing::warn!(%error, character_id, "failed to renounce character religion");
+    }
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!("/locations/{kind}/{id}/party/{character_id}"),
+            )
+            .await,
+    )
 }

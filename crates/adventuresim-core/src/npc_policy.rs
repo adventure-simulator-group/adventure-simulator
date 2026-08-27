@@ -4,7 +4,13 @@
 //! authoritative scheduler supplies a bounded snapshot, records the selected
 //! outcome, and only then advances personal time.
 
+use fabelgeist_determinism::mix64;
+
 use crate::strategic_schedule::DailySchedule;
+
+const NPC_POLICY_ACTOR_ID_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const NPC_POLICY_DAY_STRIDE: u64 = 0xbf58_476d_1ce4_e5b9;
+const NPC_POLICY_CANDIDATE_STRIDE: u64 = 0x94d0_49bb_1331_11eb;
 
 pub const NPC_ROMANCE_CANDIDATE_CAP: usize = 16;
 pub const NPC_SCHEDULE_QUANTUM_MINUTES: u16 = 15;
@@ -69,15 +75,11 @@ pub const fn npc_courtship_route(inputs: NpcCourtshipEligibility) -> NpcCourtshi
 /// Stable mixer used only for policy ordering. It has no platform or
 /// collection iteration dependency.
 pub const fn npc_policy_hash(seed: u64, actor_id: u64, day: u64, value: u64) -> u64 {
-    let mut mixed = seed
-        ^ actor_id.wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ day.wrapping_mul(0xBF58_476D_1CE4_E5B9)
-        ^ value.wrapping_mul(0x94D0_49BB_1331_11EB);
-    mixed ^= mixed >> 30;
-    mixed = mixed.wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    mixed ^= mixed >> 27;
-    mixed = mixed.wrapping_mul(0x94D0_49BB_1331_11EB);
-    mixed ^ (mixed >> 31)
+    mix64(
+        seed ^ actor_id.wrapping_mul(NPC_POLICY_ACTOR_ID_STRIDE)
+            ^ day.wrapping_mul(NPC_POLICY_DAY_STRIDE)
+            ^ value.wrapping_mul(NPC_POLICY_CANDIDATE_STRIDE),
+    )
 }
 
 /// Returns a bounded permutation-independent candidate order.

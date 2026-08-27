@@ -1,6 +1,6 @@
-use adventuresim_tactical_core::prelude::TREE_TRUNK_HEIGHT_METRES;
 #[cfg(test)]
-use bevy::math::Vec2;
+use crate::presentation::unit_hash;
+use adventuresim_tactical_core::prelude::TREE_TRUNK_HEIGHT_METRES;
 use bevy::{
     asset::RenderAssetUsages,
     math::{FloatExt, Vec3, Vec3Swizzles},
@@ -8,9 +8,14 @@ use bevy::{
     prelude::Mesh,
 };
 
-use super::{
-    BarkRecipe, ENGLISH_OAK_BARK, TreeBranchSegment, branch_frame, transport_branch_frame,
-};
+#[cfg(test)]
+use super::{BarkRecipe, ENGLISH_OAK_BARK};
+use super::{TreeBranchSegment, branch_frame, transport_branch_frame};
+
+#[cfg(test)]
+const BRANCH_HASH_INDEX_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+#[cfg(test)]
+const BRANCH_HASH_MULTIPLIER: u64 = 0xbf58_476d_1ce4_e5b9;
 
 /// Geometry budgets for live woody branch sweeps.
 ///
@@ -83,18 +88,16 @@ pub(in crate::presentation) fn procedural_tree_branch_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
 ) -> Mesh {
-    procedural_woody_branch_mesh(branches, maximum_depth, ENGLISH_OAK_BARK)
+    procedural_woody_branch_mesh(branches, maximum_depth)
 }
 
 pub(in crate::presentation) fn procedural_woody_branch_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
-    bark: BarkRecipe,
 ) -> Mesh {
     procedural_woody_branch_mesh_with_quality(
         branches,
         maximum_depth,
-        bark,
         WoodyBranchMeshQuality::FullDetail,
     )
 }
@@ -108,7 +111,6 @@ pub(in crate::presentation) fn procedural_woody_branch_mesh(
 /// visually muddy.
 pub(in crate::presentation) fn procedural_woody_mid_trunk_mesh(
     branches: &[TreeBranchSegment],
-    bark: BarkRecipe,
 ) -> Mesh {
     let upright_bole = branches
         .iter()
@@ -124,7 +126,6 @@ pub(in crate::presentation) fn procedural_woody_mid_trunk_mesh(
     procedural_woody_branch_mesh_with_quality(
         &upright_bole,
         0,
-        bark,
         WoodyBranchMeshQuality::MidDistanceTrunk,
     )
 }
@@ -132,7 +133,6 @@ pub(in crate::presentation) fn procedural_woody_mid_trunk_mesh(
 fn procedural_woody_branch_mesh_with_quality(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
-    _bark: BarkRecipe,
     quality: WoodyBranchMeshQuality,
 ) -> Mesh {
     let mut positions = Vec::new();
@@ -255,7 +255,6 @@ pub(in crate::presentation) fn procedural_woody_branch_bake_mesh(
 pub(in crate::presentation) fn procedural_woody_crown_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
-    bark: BarkRecipe,
     quality: WoodyBranchMeshQuality,
 ) -> Mesh {
     let crown = branches
@@ -263,7 +262,7 @@ pub(in crate::presentation) fn procedural_woody_crown_mesh(
         .filter(|branch| branch.depth > 0 && branch.depth <= maximum_depth)
         .copied()
         .collect::<Vec<_>>();
-    procedural_woody_branch_mesh_with_quality(&crown, maximum_depth, bark, quality)
+    procedural_woody_branch_mesh_with_quality(&crown, maximum_depth, quality)
 }
 
 #[derive(Clone)]
@@ -378,22 +377,6 @@ impl RootFlareField {
         self.macro_distance(point)
     }
 
-    fn normal(&self, point: Vec3) -> Vec3 {
-        let epsilon = self.cell * 0.45;
-        Vec3::new(
-            self.distance(point + Vec3::X * epsilon) - self.distance(point - Vec3::X * epsilon),
-            self.distance(point + Vec3::Y * epsilon) - self.distance(point - Vec3::Y * epsilon),
-            self.distance(point + Vec3::Z * epsilon) - self.distance(point - Vec3::Z * epsilon),
-        )
-        .normalize_or_zero()
-    }
-
-    fn displaced_surface(&self, point: Vec3) -> (Vec3, Vec3) {
-        let outward = self.normal(point);
-        let lobed = point + outward * self.root_profile_relief(point, outward);
-        (lobed, outward)
-    }
-
     fn root_profile_relief(&self, point: Vec3, outward: Vec3) -> f32 {
         if self.bark.root_lobe_height_metres <= 0.0 {
             return 0.0;
@@ -411,25 +394,6 @@ impl RootFlareField {
             .fold(f32::INFINITY, f32::min);
         let height_fade = (1.0 - ((point.y - base) / 1.35).clamp(0.0, 1.0)).powi(2);
         self.bark.root_lobe_height_metres * alignment * height_fade
-    }
-
-    fn uv(&self, point: Vec3) -> Vec2 {
-        let segment = self
-            .segments
-            .iter()
-            .min_by(|left, right| {
-                capsule_distance(point, left).total_cmp(&capsule_distance(point, right))
-            })
-            .expect("root flare has source segments");
-        let axis = segment.end - segment.start;
-        let length = axis.length();
-        let tangent = axis / length;
-        let along = ((point - segment.start).dot(tangent) / length).clamp(0.0, 1.0);
-        let center = segment.start.lerp(segment.end, along);
-        let (right, forward) = branch_frame(tangent);
-        let radial = point - center;
-        let theta = radial.dot(forward).atan2(radial.dot(right));
-        Vec2::new(theta / core::f32::consts::TAU, (length * along) / 2.0)
     }
 }
 
@@ -645,13 +609,12 @@ fn bark_phase_from_branches(branches: &[TreeBranchSegment]) -> f32 {
         let bits = u64::from(branch.end.x.to_bits())
             ^ u64::from(branch.end.y.to_bits()).rotate_left(17)
             ^ u64::from(branch.end.z.to_bits()).rotate_left(33)
-            ^ (index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+            ^ (index as u64).wrapping_mul(BRANCH_HASH_INDEX_STRIDE);
         hash ^= bits;
-        hash = hash.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        hash = hash.wrapping_mul(BRANCH_HASH_MULTIPLIER);
         hash ^= hash >> 29;
     }
-    let unit = ((hash >> 40) as u32) as f32 / ((1_u32 << 24) - 1) as f32;
-    unit * core::f32::consts::TAU
+    unit_hash(hash) * core::f32::consts::TAU
 }
 
 #[cfg(test)]
@@ -661,177 +624,6 @@ fn smooth_min(left: f32, right: f32, blend: f32) -> f32 {
     }
     let h = (0.5 + 0.5 * (right - left) / blend).clamp(0.0, 1.0);
     right.lerp(left, h) - blend * h * (1.0 - h)
-}
-
-#[cfg(test)]
-const CUBE_CORNERS: [Vec3; 8] = [
-    Vec3::new(0.0, 0.0, 0.0),
-    Vec3::new(1.0, 0.0, 0.0),
-    Vec3::new(1.0, 1.0, 0.0),
-    Vec3::new(0.0, 1.0, 0.0),
-    Vec3::new(0.0, 0.0, 1.0),
-    Vec3::new(1.0, 0.0, 1.0),
-    Vec3::new(1.0, 1.0, 1.0),
-    Vec3::new(0.0, 1.0, 1.0),
-];
-#[cfg(test)]
-const CUBE_TETRAHEDRA: [[usize; 4]; 6] = [
-    [0, 5, 1, 6],
-    [0, 1, 2, 6],
-    [0, 2, 3, 6],
-    [0, 3, 7, 6],
-    [0, 7, 4, 6],
-    [0, 4, 5, 6],
-];
-
-#[cfg(test)]
-fn append_root_flare_mesh(
-    field: &RootFlareField,
-    positions: &mut Vec<[f32; 3]>,
-    normals: &mut Vec<[f32; 3]>,
-    uvs: &mut Vec<[f32; 2]>,
-    indices: &mut Vec<u32>,
-) {
-    let size = field.maximum - field.minimum;
-    let dimensions = (size / field.cell).ceil().as_uvec3();
-    for z in 0..dimensions.z {
-        for y in 0..dimensions.y {
-            for x in 0..dimensions.x {
-                let origin = field.minimum + Vec3::new(x as f32, y as f32, z as f32) * field.cell;
-                let points = CUBE_CORNERS.map(|corner| origin + corner * field.cell);
-                let values = points.map(|point| field.distance(point));
-                for tetrahedron in CUBE_TETRAHEDRA {
-                    polygonize_tetrahedron(
-                        field,
-                        tetrahedron.map(|i| points[i]),
-                        tetrahedron.map(|i| values[i]),
-                        positions,
-                        normals,
-                        uvs,
-                        indices,
-                    );
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-fn polygonize_tetrahedron(
-    field: &RootFlareField,
-    points: [Vec3; 4],
-    values: [f32; 4],
-    positions: &mut Vec<[f32; 3]>,
-    normals: &mut Vec<[f32; 3]>,
-    uvs: &mut Vec<[f32; 2]>,
-    indices: &mut Vec<u32>,
-) {
-    let inside = (0..4)
-        .filter(|&index| values[index] < 0.0)
-        .collect::<Vec<_>>();
-    let outside = (0..4)
-        .filter(|&index| values[index] >= 0.0)
-        .collect::<Vec<_>>();
-    let edge = |a: usize, b: usize| {
-        let t = (values[a] / (values[a] - values[b])).clamp(0.0, 1.0);
-        points[a].lerp(points[b], t)
-    };
-    let triangles = match inside.len() {
-        0 | 4 => return,
-        1 => vec![[
-            edge(inside[0], outside[0]),
-            edge(inside[0], outside[1]),
-            edge(inside[0], outside[2]),
-        ]],
-        3 => vec![[
-            edge(outside[0], inside[0]),
-            edge(outside[0], inside[2]),
-            edge(outside[0], inside[1]),
-        ]],
-        2 => {
-            let ac = edge(inside[0], outside[0]);
-            let ad = edge(inside[0], outside[1]);
-            let bc = edge(inside[1], outside[0]);
-            let bd = edge(inside[1], outside[1]);
-            vec![[ac, bc, bd], [ac, bd, ad]]
-        }
-        _ => unreachable!(),
-    };
-    if triangles.is_empty() {
-        return;
-    }
-    for vertices in triangles {
-        append_subdivided_flare_triangle(field, vertices, 0, positions, normals, uvs, indices);
-    }
-}
-
-#[cfg(test)]
-fn append_subdivided_flare_triangle(
-    field: &RootFlareField,
-    vertices: [Vec3; 3],
-    subdivisions: u8,
-    positions: &mut Vec<[f32; 3]>,
-    normals: &mut Vec<[f32; 3]>,
-    uvs: &mut Vec<[f32; 2]>,
-    indices: &mut Vec<u32>,
-) {
-    if subdivisions > 0 {
-        let midpoint = |left: Vec3, right: Vec3| {
-            let point = (left + right) * 0.5;
-            point - field.normal(point) * field.distance(point)
-        };
-        let ab = midpoint(vertices[0], vertices[1]);
-        let bc = midpoint(vertices[1], vertices[2]);
-        let ca = midpoint(vertices[2], vertices[0]);
-        for triangle in [
-            [vertices[0], ab, ca],
-            [ab, vertices[1], bc],
-            [ca, bc, vertices[2]],
-            [ab, bc, ca],
-        ] {
-            append_subdivided_flare_triangle(
-                field,
-                triangle,
-                subdivisions - 1,
-                positions,
-                normals,
-                uvs,
-                indices,
-            );
-        }
-    } else {
-        let mut displaced = vertices.map(|vertex| field.displaced_surface(vertex));
-        let positions_for_face = displaced.map(|(position, _)| position);
-        let face = (positions_for_face[1] - positions_for_face[0])
-            .cross(positions_for_face[2] - positions_for_face[0]);
-        let mean_normal = displaced.iter().map(|(_, normal)| *normal).sum::<Vec3>();
-        if face.dot(mean_normal) < 0.0 {
-            displaced.swap(1, 2);
-        }
-        let base = positions.len() as u32;
-        let mut triangle_uvs = displaced.map(|(vertex, _)| field.uv(vertex));
-        let minimum_u = triangle_uvs
-            .iter()
-            .map(|uv| uv.x)
-            .fold(f32::INFINITY, f32::min);
-        let maximum_u = triangle_uvs
-            .iter()
-            .map(|uv| uv.x)
-            .fold(f32::NEG_INFINITY, f32::max);
-        if maximum_u - minimum_u > 0.5 {
-            for uv in &mut triangle_uvs {
-                if uv.x < 0.0 {
-                    uv.x += 1.0;
-                }
-            }
-        }
-        for ((vertex, normal), uv) in displaced.into_iter().zip(triangle_uvs) {
-            positions.push(vertex.to_array());
-            normals.push(normal.to_array());
-            uvs.push(uv.to_array());
-        }
-        indices.extend_from_slice(&[base, base + 1, base + 2]);
-    }
 }
 
 pub(in crate::presentation) fn procedural_tree_branch_group_mesh(
@@ -1144,36 +936,16 @@ mod tests {
     #[test]
     fn aggregate_wood_quality_tiers_reduce_representative_geometry_without_invalid_surface_data() {
         let branches = procedural_tree_skeleton(42, 0.0);
-        let full_lod1 = procedural_woody_crown_mesh(
-            &branches,
-            2,
-            ENGLISH_OAK_BARK,
-            WoodyBranchMeshQuality::FullDetail,
-        );
-        let aggregate_lod1 = procedural_woody_crown_mesh(
-            &branches,
-            2,
-            ENGLISH_OAK_BARK,
-            WoodyBranchMeshQuality::AggregateLod1,
-        );
-        let full_lod2 = procedural_woody_crown_mesh(
-            &branches,
-            1,
-            ENGLISH_OAK_BARK,
-            WoodyBranchMeshQuality::FullDetail,
-        );
-        let aggregate_lod2 = procedural_woody_crown_mesh(
-            &branches,
-            1,
-            ENGLISH_OAK_BARK,
-            WoodyBranchMeshQuality::AggregateLod2,
-        );
-        let repeated_lod1 = procedural_woody_crown_mesh(
-            &branches,
-            2,
-            ENGLISH_OAK_BARK,
-            WoodyBranchMeshQuality::AggregateLod1,
-        );
+        let full_lod1 =
+            procedural_woody_crown_mesh(&branches, 2, WoodyBranchMeshQuality::FullDetail);
+        let aggregate_lod1 =
+            procedural_woody_crown_mesh(&branches, 2, WoodyBranchMeshQuality::AggregateLod1);
+        let full_lod2 =
+            procedural_woody_crown_mesh(&branches, 1, WoodyBranchMeshQuality::FullDetail);
+        let aggregate_lod2 =
+            procedural_woody_crown_mesh(&branches, 1, WoodyBranchMeshQuality::AggregateLod2);
+        let repeated_lod1 =
+            procedural_woody_crown_mesh(&branches, 2, WoodyBranchMeshQuality::AggregateLod1);
 
         for mesh in [&aggregate_lod1, &aggregate_lod2] {
             let positions = mesh
@@ -1289,8 +1061,8 @@ mod tests {
     fn mid_distance_trunk_reduces_the_upright_bole_with_valid_deterministic_geometry() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let full = procedural_tree_branch_mesh(&branches, 0);
-        let mid = procedural_woody_mid_trunk_mesh(&branches, ENGLISH_OAK_BARK);
-        let repeated = procedural_woody_mid_trunk_mesh(&branches, ENGLISH_OAK_BARK);
+        let mid = procedural_woody_mid_trunk_mesh(&branches);
+        let repeated = procedural_woody_mid_trunk_mesh(&branches);
         let positions = mid
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)

@@ -12,7 +12,7 @@ use crate::{
     },
     relationship::character_birth__view,
     strategic::{
-        party_authority, party_authority__view, road_challenge_authority,
+        StrategicEncounterStatus, party_authority, party_authority__view, road_challenge_authority,
         road_challenge_authority__view, strategic_encounter, strategic_encounter__view,
         strategic_gateway_authority__view,
     },
@@ -228,7 +228,7 @@ pub fn backend_context_characters(ctx: &ViewContext) -> Vec<BackendContextCharac
                         .find(&party.id)
                         .filter(|encounter| {
                             encounter.encounter_id == row.context_id
-                                && encounter.status == "awaiting_choice"
+                                && encounter.status == StrategicEncounterStatus::AwaitingChoice
                         })
                         .map(|encounter| {
                             (encounter.party_id, row.context_id.clone(), character.alive)
@@ -276,21 +276,24 @@ pub fn backend_context_characters(ctx: &ViewContext) -> Vec<BackendContextCharac
                 ContextualDecisionState::Refused => BackendContextualDecision::Refused,
                 ContextualDecisionState::Unavailable => BackendContextualDecision::Unavailable,
             };
-            let treatment_limb = crate::surgery::LimbRegion::ALL.into_iter().find(|limb| {
-                ctx.db
-                    .limb_injury()
-                    .character_id()
-                    .filter(row.character_id)
-                    .find(|injury| injury.limb == *limb)
-                    .is_some_and(|injury| injury.cut_damage > 0.0 && !injury.bandaged)
-            });
+            let treatment_limb = adventuresim_core::physiology::BodyRegion::ALL
+                .into_iter()
+                .find(|limb| {
+                    ctx.db
+                        .limb_injury()
+                        .character_id()
+                        .filter(row.character_id)
+                        .find(|injury| injury.limb == *limb)
+                        .is_some_and(|injury| injury.cut_damage > 0.0 && !injury.bandaged)
+                });
             let incapacitated = ctx
                 .db
                 .character_strategic_condition()
                 .character_id()
                 .find(row.character_id)
                 .is_some_and(|condition| {
-                    condition.incapacitation >= 1.0 || condition.status == "incapacitated"
+                    condition.status
+                        == adventuresim_core::morale::IncapacitationStatus::Incapacitated
                 });
             let emergency_bandage = row.treatment_decision != ContextualDecisionState::Refused
                 && treatment_limb.is_some_and(|limb| {
@@ -657,10 +660,7 @@ fn exact_case_site_visible_to_observer_view(
                         .is_some_and(|aliases| lead.case_id == aliases.1.as_str()))
                 && lead.latitude_e7 == site.latitude_e7
                 && lead.longitude_e7 == site.longitude_e7
-                && matches!(
-                    lead.destination_stage.as_str(),
-                    "exact_believed" | "visited"
-                )
+                && lead.destination_stage.is_exact()
                 && (lead.corrected_by.is_empty()
                     || ctx
                         .db
@@ -790,7 +790,7 @@ pub(crate) fn materialize_road_encounter_cast(
             crate::surgery::seed_field_cut(
                 ctx,
                 character_id,
-                crate::surgery::LimbRegion::LeftArm,
+                adventuresim_core::physiology::BodyRegion::LeftArm,
                 0.35,
                 absolute_minute,
             );
@@ -887,7 +887,7 @@ pub(crate) fn characters_are_contextually_present(
                         .find(party_id)
                         .is_some_and(|encounter| {
                             encounter.encounter_id == row.context_id
-                                && encounter.status == "awaiting_choice"
+                                && encounter.status == StrategicEncounterStatus::AwaitingChoice
                         })
                 })
             }
@@ -1038,7 +1038,7 @@ pub(crate) fn contextual_treatment_decision(
     ctx: &ReducerContext,
     actor_id: u64,
     patient_id: u64,
-    limb: crate::surgery::LimbRegion,
+    limb: adventuresim_core::physiology::BodyRegion,
     procedure: &str,
     claim: Option<&ContextualTreatmentClaim>,
 ) -> adventuresim_core::strategic_action::ContextualActionDecision {
@@ -1122,7 +1122,9 @@ pub(crate) fn contextual_treatment_decision(
         .character_strategic_condition()
         .character_id()
         .find(patient_id)
-        .is_some_and(|row| row.incapacitation >= 1.0 || row.status == "incapacitated");
+        .is_some_and(|row| {
+            row.status == adventuresim_core::morale::IncapacitationStatus::Incapacitated
+        });
     let injury = crate::surgery::injury_for(ctx, patient_id, limb);
     let emergency_bandage = adventuresim_core::strategic_action::emergency_bandage_is_necessary(
         incapacitated,
@@ -1148,7 +1150,7 @@ pub(crate) fn contextual_nonemergency_treatment_decision(
         ctx,
         actor_id,
         patient_id,
-        crate::surgery::LimbRegion::LeftArm,
+        adventuresim_core::physiology::BodyRegion::LeftArm,
         "intervention",
         None,
     )
@@ -1159,10 +1161,12 @@ pub(crate) fn context_patient_is_treated(ctx: &ReducerContext, context_id: &str)
         .into_iter()
         .find(|row| row.role == CharacterContextRole::Patient)
         .is_some_and(|row| {
-            crate::surgery::LimbRegion::ALL.into_iter().any(|limb| {
-                let injury = crate::surgery::injury_for(ctx, row.character_id, limb);
-                injury.cut_damage > 0.0 && injury.bandaged
-            })
+            adventuresim_core::physiology::BodyRegion::ALL
+                .into_iter()
+                .any(|limb| {
+                    let injury = crate::surgery::injury_for(ctx, row.character_id, limb);
+                    injury.cut_damage > 0.0 && injury.bandaged
+                })
         })
 }
 
@@ -1289,7 +1293,8 @@ pub fn contact_context_character(
                 .ok_or("Contact requires an active party")?,
         )
         .filter(|encounter| {
-            encounter.encounter_id == membership.context_id && encounter.status == "awaiting_choice"
+            encounter.encounter_id == membership.context_id
+                && encounter.status == StrategicEncounterStatus::AwaitingChoice
         });
     let contact_id = party_context_contact_id(&party_id, &membership.context_id);
     let existing_contact = ctx

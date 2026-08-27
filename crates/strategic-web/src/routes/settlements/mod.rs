@@ -84,6 +84,7 @@ mod rest_preview {
         ItemDefinition, PartyInventoryItem, PartyItemAmount,
     };
     use crate::templates::settlement::SoapRestPreview;
+    use adventuresim_core::item_references::SOFT_SOAP_ID;
     include!("rest_preview.rs");
 }
 
@@ -110,19 +111,18 @@ use medical::{
 use overview::settlement_map;
 use party::{
     LocationLookup, camp_fireplace_container_place, camp_fireplace_container_remove,
-    camp_fireplace_container_start, camp_fireplace_ingredients, camp_fireplace_instrument,
-    camp_fireplace_page, camp_fireplace_retrieve, character_is_at_location, chat_with_party_member,
-    deposit_party_inventory, discard_inventory_items, dose_inventory_container_tincture,
-    drain_inventory_container_water, finalize_merchant_offer, finalize_party_offer,
+    camp_fireplace_container_start, camp_fireplace_ingredients, camp_fireplace_page,
+    camp_fireplace_retrieve, character_is_at_location, chat_with_party_member,
+    deposit_party_inventory, discard_inventory_container_water, discard_inventory_items,
+    dose_inventory_container_tincture, finalize_merchant_offer, finalize_party_offer,
     inventory_containers, liquidate_party_assets, merchants, move_inventory_container_item,
     party_member, party_personal, party_pool_inventory, party_social, party_stats,
     perform_immediate_activity, perform_social_action, pour_inventory_container_tincture_spirit,
-    pour_inventory_container_water, prepare_ingredient_lot, refresh_inventory_container_tincture,
-    remove_inventory_container_item, remove_party_member, render_party_personal,
-    render_party_stats, resolve_location, set_automatic_social_chat, set_equipment,
-    set_inventory_target, settlement_fireplace, settlement_fireplace_container_place,
-    settlement_fireplace_container_remove, settlement_fireplace_container_start,
-    settlement_fireplace_ingredients, settlement_fireplace_instrument,
+    prepare_ingredient_lot, refresh_inventory_container_tincture, remove_inventory_container_item,
+    remove_party_member, render_party_personal, render_party_stats, resolve_location,
+    set_automatic_social_chat, set_equipment, set_inventory_target, settlement_fireplace,
+    settlement_fireplace_container_place, settlement_fireplace_container_remove,
+    settlement_fireplace_container_start, settlement_fireplace_ingredients,
     settlement_fireplace_retrieve, start_inventory_container_tincture, stop_preparation,
     transfer_party_item, update_training_schedule, withdraw_party_inventory,
 };
@@ -136,7 +136,9 @@ use rest::{
     travel, weapons,
 };
 #[cfg(test)]
-use rest_preview::{calculate_rest_supply_availability, calculate_soap_rest_preview};
+use rest_preview::{
+    RestSupplySources, calculate_rest_supply_availability, calculate_soap_rest_preview,
+};
 use service_quests::{
     begin_service_apprenticeship, clear_presented_organization, service_quest_offers,
     update_organization_presentation,

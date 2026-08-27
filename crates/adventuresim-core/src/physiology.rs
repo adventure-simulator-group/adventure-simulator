@@ -7,11 +7,76 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::strategic_time::MINUTES_PER_DAY;
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+
 pub const PHYSIOLOGY_RULESET_VERSION: u16 = 1;
 pub const PHENOTYPE_KEY_VERSION: u16 = 1;
 pub const METER_COUNT: usize = 10;
 pub const REGION_COUNT: usize = 7;
 pub const HUMOUR_COUNT: usize = 4;
+
+/// Fixed-point medicinal dose where 1,000 milliunits is one standard dose.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DoseMilliunits(u32);
+
+impl DoseMilliunits {
+    pub const MILLIUNITS_PER_STANDARD_DOSE: u32 = 1_000;
+    pub const MAX: Self = Self(8 * Self::MILLIUNITS_PER_STANDARD_DOSE);
+    pub const MINIMUM_NONZERO: Self = Self(1);
+    pub const ZERO: Self = Self(0);
+    pub const STANDARD: Self = Self(Self::MILLIUNITS_PER_STANDARD_DOSE);
+
+    pub const fn try_new(milliunits: u32) -> Result<Self, DoseError> {
+        if milliunits > Self::MAX.0 {
+            return Err(DoseError::ExceedsMaximum);
+        }
+        Ok(Self(milliunits))
+    }
+
+    pub fn try_from_standard_doses_rounded(standard_doses: f32) -> Result<Self, DoseError> {
+        if !standard_doses.is_finite() || standard_doses < 0.0 {
+            return Err(DoseError::InvalidMagnitude);
+        }
+        let milliunits = (standard_doses * Self::MILLIUNITS_PER_STANDARD_DOSE as f32).round();
+        if milliunits > Self::MAX.0 as f32 {
+            return Err(DoseError::ExceedsMaximum);
+        }
+        Ok(Self(milliunits as u32))
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    pub const fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn as_standard_doses(self) -> f32 {
+        self.0 as f32 / Self::MILLIUNITS_PER_STANDARD_DOSE as f32
+    }
+}
+
+impl TryFrom<u32> for DoseMilliunits {
+    type Error = DoseError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::try_new(value)
+    }
+}
+
+impl From<DoseMilliunits> for u32 {
+    fn from(value: DoseMilliunits) -> Self {
+        value.get()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DoseError {
+    InvalidMagnitude,
+    ExceedsMaximum,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,6 +151,7 @@ impl Meter {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum BodyRegion {
@@ -96,6 +162,12 @@ pub enum BodyRegion {
     Chest,
     Abdomen,
     Head,
+}
+
+impl std::fmt::Display for BodyRegion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 impl BodyRegion {
@@ -123,6 +195,22 @@ impl BodyRegion {
             Self::Abdomen => "abdomen",
             Self::Head => "head",
         }
+    }
+
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::LeftArm => "left-arm",
+            Self::RightArm => "right-arm",
+            Self::LeftLeg => "left-leg",
+            Self::RightLeg => "right-leg",
+            Self::Chest => "chest",
+            Self::Abdomen => "abdomen",
+            Self::Head => "head",
+        }
+    }
+
+    pub fn parse_slug(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|region| region.slug() == value)
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -183,7 +271,10 @@ pub fn humour_disclosure(humour: Humour) -> String {
 /// Relationship portion of intervention authorization. Identity authority and
 /// living-state checks remain reducer-owned; this predicate makes the
 /// direct-caller party and co-location boundary independently testable.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub fn intervention_relationship_allowed(
     actor_id: u64,
     patient_id: u64,
@@ -319,12 +410,30 @@ pub fn piecewise(curve: &MeterCurve, age: u64) -> f32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "snake_case")]
 pub enum InterventionRoute {
     Oral,
     Topical,
     Inhaled,
     Injected,
+}
+
+impl InterventionRoute {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Oral => "oral",
+            Self::Topical => "topical",
+            Self::Inhaled => "inhaled",
+            Self::Injected => "injected",
+        }
+    }
+}
+
+impl std::fmt::Display for InterventionRoute {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -533,7 +642,7 @@ pub struct Administration {
     pub preparation_id: String,
     pub profile_version: u16,
     pub route: InterventionRoute,
-    pub amount_milliunits: u32,
+    pub dose: DoseMilliunits,
     pub region: Option<BodyRegion>,
     pub administered_at: u64,
     pub stopped_at: Option<u64>,
@@ -564,9 +673,11 @@ impl Administration {
         if now >= end {
             return MeterVector::ZERO;
         }
-        let dose = (self.amount_milliunits.min(8_000) as f32 / 1_000.0)
-            * (1.0 + self.sensitivity_bps.clamp(-2_500, 2_500) as f32 / 10_000.0);
-        let adverse = dose * self.adverse_bps.min(2_500) as f32 / 10_000.0;
+        let dose = self.dose.as_standard_doses()
+            * (1.0
+                + self.sensitivity_bps.clamp(-2_500, 2_500) as f32
+                    / f32::from(BASIS_POINTS_PER_WHOLE));
+        let adverse = dose * self.adverse_bps.min(2_500) as f32 / f32::from(BASIS_POINTS_PER_WHOLE);
         let mut result = profile.loss_delta_per_unit.scaled(dose);
         result.add_bounded(profile.adverse_delta_per_unit.scaled(adverse));
         result
@@ -754,7 +865,7 @@ pub enum ChartEntry {
 }
 
 pub const fn observation_cadence_minutes(_physiology_band: u8) -> u64 {
-    1_440
+    MINUTES_PER_DAY
 }
 
 pub fn quantize_humours(values: [f32; HUMOUR_COUNT], physiology_band: u8) -> [i16; HUMOUR_COUNT] {
@@ -767,19 +878,27 @@ pub fn quantize_humours(values: [f32; HUMOUR_COUNT], physiology_band: u8) -> [i1
         _ => 25,
     };
     values.map(|value| {
-        let bps = (finite_or_zero(value).clamp(-1.0, 1.0) * 10_000.0).round() as i32;
+        let bps = (finite_or_zero(value).clamp(-1.0, 1.0) * f32::from(BASIS_POINTS_PER_WHOLE))
+            .round() as i32;
         let rounded = if bps >= 0 {
             (bps + step / 2) / step * step
         } else {
             (bps - step / 2) / step * step
         };
-        rounded.clamp(-10_000, 10_000) as i16
+        rounded.clamp(
+            -i32::from(BASIS_POINTS_PER_WHOLE),
+            i32::from(BASIS_POINTS_PER_WHOLE),
+        ) as i16
     })
 }
 
 /// Stable observer error that changes smoothly from one strategic day to the
 /// next. It is presentation-only: the keyed wobble never changes private
 /// meters, treatment effects, injury, or death.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "observer noise is keyed by each independent domain discriminator"
+)]
 pub fn observation_noise(
     secret: &[u8],
     key_version: u16,
@@ -790,8 +909,8 @@ pub fn observation_noise(
     minute: u64,
     physiology_band: u8,
 ) -> f32 {
-    let day = minute / 1_440;
-    let fraction = (minute % 1_440) as f32 / 1_440.0;
+    let day = minute / MINUTES_PER_DAY;
+    let fraction = (minute % MINUTES_PER_DAY) as f32 / MINUTES_PER_DAY as f32;
     let discriminator = (region as u8)
         .saturating_mul(HUMOUR_COUNT as u8)
         .saturating_add(humour as u8);
@@ -807,6 +926,19 @@ pub fn observation_noise(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn medicinal_dose_uses_one_thousand_milliunits_per_standard_dose() {
+        assert_eq!(DoseMilliunits::STANDARD.as_standard_doses(), 1.0);
+        assert_eq!(
+            DoseMilliunits::try_from_standard_doses_rounded(0.75),
+            DoseMilliunits::try_new(750)
+        );
+        assert_eq!(
+            DoseMilliunits::try_new(DoseMilliunits::MAX.get() + 1),
+            Err(DoseError::ExceedsMaximum)
+        );
+    }
 
     #[test]
     fn catalogue_is_bounded_and_humours_are_many_to_one() {
@@ -835,7 +967,7 @@ mod tests {
             preparation_id: "oral_rehydration_draught".into(),
             profile_version: 1,
             route: InterventionRoute::Oral,
-            amount_milliunits: 1_000,
+            dose: DoseMilliunits::STANDARD,
             region: None,
             administered_at: 10,
             stopped_at: None,
@@ -915,8 +1047,10 @@ mod tests {
     fn body_regions_round_trip_through_the_canonical_persistence_name() {
         for region in BodyRegion::ALL {
             assert_eq!(BodyRegion::parse(region.as_str()), Some(region));
+            assert_eq!(BodyRegion::parse_slug(region.slug()), Some(region));
         }
         assert_eq!(BodyRegion::parse("stomach"), None);
+        assert_eq!(BodyRegion::parse_slug("stomach"), None);
         assert_eq!(BodyRegion::parse("Abdomen"), None);
     }
 

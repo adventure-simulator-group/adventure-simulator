@@ -605,6 +605,10 @@ fn deterministic_witness_order(context: &GenerationContext) -> Vec<usize> {
     indices
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "generated actions combine independent solved quest facets"
+)]
 fn build_actions(
     prefix: &str,
     family: TemplateFamily,
@@ -718,7 +722,7 @@ fn build_actions(
                 false,
                 "Approach the last reported incident.",
                 vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::ApproximateArea,
+                    stage: DestinationKnowledgeStage::ApproximateArea,
                     site_id: None,
                 }],
             ),
@@ -747,7 +751,7 @@ fn build_actions(
                 false,
                 early_tracking_summary,
                 vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::RouteSegment,
+                    stage: DestinationKnowledgeStage::RouteSegment,
                     site_id: None,
                 }],
             ),
@@ -762,7 +766,7 @@ fn build_actions(
                 false,
                 "Follow the recovered trail to its source.",
                 vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::Exact,
+                    stage: DestinationKnowledgeStage::ExactBelieved,
                     site_id: Some(finale.clone()),
                 }],
             ),
@@ -790,7 +794,7 @@ fn build_actions(
                 "Watch where incidents recur.",
                 vec![
                     GeneratedActionOutput::Destination {
-                        stage: GeneratedDestinationStage::Textual,
+                        stage: DestinationKnowledgeStage::Textual,
                         site_id: None,
                     },
                     GeneratedActionOutput::Evidence {
@@ -814,7 +818,7 @@ fn build_actions(
                         condition: pattern_condition.clone(),
                     },
                     GeneratedActionOutput::Destination {
-                        stage: GeneratedDestinationStage::RouteSegment,
+                        stage: DestinationKnowledgeStage::RouteSegment,
                         site_id: Some(finale.clone()),
                     },
                 ],
@@ -830,7 +834,7 @@ fn build_actions(
                 false,
                 "Approach the site along the learned route.",
                 vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::Exact,
+                    stage: DestinationKnowledgeStage::ExactBelieved,
                     site_id: Some(finale.clone()),
                 }],
             ),
@@ -885,7 +889,7 @@ fn build_actions(
                 false,
                 early_tracking_summary,
                 vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::RouteSegment,
+                    stage: DestinationKnowledgeStage::RouteSegment,
                     site_id: None,
                 }],
             ),
@@ -900,7 +904,7 @@ fn build_actions(
                 false,
                 "Follow the recovered trail to its source.",
                 vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::Exact,
+                    stage: DestinationKnowledgeStage::ExactBelieved,
                     site_id: Some(finale.clone()),
                 }],
             ),
@@ -916,7 +920,7 @@ fn build_actions(
                 "Find the referred witness.",
                 vec![
                     GeneratedActionOutput::Destination {
-                        stage: GeneratedDestinationStage::ApproximateArea,
+                        stage: DestinationKnowledgeStage::ApproximateArea,
                         site_id: None,
                     },
                     GeneratedActionOutput::Evidence {
@@ -940,7 +944,7 @@ fn build_actions(
                         condition: pattern_condition,
                     },
                     GeneratedActionOutput::Destination {
-                        stage: GeneratedDestinationStage::Exact,
+                        stage: DestinationKnowledgeStage::ExactBelieved,
                         site_id: Some(finale.clone()),
                     },
                 ],

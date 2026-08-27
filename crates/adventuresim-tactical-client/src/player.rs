@@ -253,6 +253,10 @@ fn on_new_player_added_hook(
 /// of it before that despawn — which recursively despawns children — can take
 /// them with it. Excludes the locally controlled player, which never spawns
 /// any body meshes to fade (see [`on_new_player_added_hook`]).
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query selects remote combatants only when their combat state changes"
+)]
 fn start_fade_on_incapacitation(
     mut commands: Commands,
     q: Query<
@@ -365,6 +369,10 @@ fn predict_local_body_facing(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects combat state, collision, camera, and scene-item access as independent system parameters"
+)]
 fn update_attack_state_system(
     mut cmd: Commands,
     spatial: SpatialQuery,

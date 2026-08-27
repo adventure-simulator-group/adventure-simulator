@@ -11,7 +11,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use adventuresim_world_schema::{LandUseFraction, LandUseProfile, SourceProvenance};
+use adventuresim_world_schema::{
+    BASIS_POINTS_PER_WHOLE, LandUseFraction, LandUseProfile, SourceProvenance,
+};
 use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
@@ -304,13 +306,14 @@ fn profile_from_fractions(
             *fraction /= total;
         }
     }
-    let mut basis_points = fractions.map(|fraction| (fraction * 10_000.0).round() as u16);
+    let mut basis_points =
+        fractions.map(|fraction| (fraction * f64::from(BASIS_POINTS_PER_WHOLE)).round() as u16);
     let managed = basis_points
         .iter()
         .map(|value| u32::from(*value))
         .sum::<u32>();
-    if managed > 10_000 {
-        let excess = (managed - 10_000) as u16;
+    if managed > u32::from(BASIS_POINTS_PER_WHOLE) {
+        let excess = (managed - u32::from(BASIS_POINTS_PER_WHOLE)) as u16;
         let largest = basis_points
             .iter()
             .enumerate()
@@ -319,7 +322,7 @@ fn profile_from_fractions(
             .expect("three managed components");
         basis_points[largest] -= excess;
     }
-    let natural = 10_000 - basis_points.iter().sum::<u16>();
+    let natural = BASIS_POINTS_PER_WHOLE - basis_points.iter().sum::<u16>();
     Ok((
         LandUseProfile::new(
             LandUseFraction::new(basis_points[0]).expect("bounded cropland"),
@@ -337,7 +340,7 @@ fn fallback_profile(settlement: &ElevatedSettlementDraft) -> LandUseProfile {
     let cropland = 1_500 + (seed % 1_501) as u16;
     let grazing = 1_000 + ((seed / 7) % 1_501) as u16;
     let built_up = (settlement.settlement.population_level.max(1) as u16) * 20;
-    let natural = 10_000 - cropland - grazing - built_up;
+    let natural = BASIS_POINTS_PER_WHOLE - cropland - grazing - built_up;
     LandUseProfile::new(
         LandUseFraction::new(cropland).unwrap(),
         LandUseFraction::new(grazing).unwrap(),
@@ -626,6 +629,8 @@ fn require_hyde_time_axis(
     time: &netcdf_reader::NcVariable,
     values: &[f64],
 ) -> Result<()> {
+    const HYDE_CALENDAR: &str = "365_day";
+
     let units = time
         .attribute("units")
         .and_then(|attribute| attribute.value.as_string());
@@ -633,7 +638,7 @@ fn require_hyde_time_axis(
         .attribute("calendar")
         .and_then(|attribute| attribute.value.as_string());
     if units.as_deref() != Some("days since 1-5-1 00:00:00")
-        || calendar.as_deref() != Some("365_day")
+        || calendar.as_deref() != Some(HYDE_CALENDAR)
     {
         return Err(invalid(
             path,
@@ -649,7 +654,9 @@ fn require_hyde_time_axis(
 }
 
 fn hyde_calendar_year(path: &Path, days: f64) -> Result<i32> {
-    let years = days / 365.0;
+    const HYDE_DAYS_PER_YEAR: f64 = 365.0;
+
+    let years = days / HYDE_DAYS_PER_YEAR;
     let rounded = years.round();
     if !days.is_finite() || (years - rounded).abs() > AXIS_EPSILON {
         return Err(invalid(

@@ -1,5 +1,5 @@
+#[cfg(not(target_family = "wasm"))]
 use super::*;
-
 #[cfg(not(target_family = "wasm"))]
 use std::io::{BufWriter, Write};
 #[cfg(not(target_family = "wasm"))]
@@ -28,7 +28,6 @@ pub(crate) struct AnimationDiagnosticLog {
 }
 
 #[cfg(not(target_family = "wasm"))]
-#[allow(dead_code)] // The gameplay client records render telemetry; the viewer only reads animation logs.
 #[derive(Resource, Clone, Debug)]
 pub(crate) struct RenderScheduleTelemetry(Arc<RenderScheduleShared>);
 
@@ -41,7 +40,6 @@ struct RenderScheduleShared {
 }
 
 #[cfg(not(target_family = "wasm"))]
-#[allow(dead_code)] // Construction and recording are native gameplay diagnostics entry points.
 impl RenderScheduleTelemetry {
     pub(crate) fn new() -> Self {
         Self(Arc::new(RenderScheduleShared {
@@ -86,6 +84,10 @@ impl AnimationDiagnosticLog {
 }
 
 #[cfg(not(target_family = "wasm"))]
+#[expect(
+    clippy::type_complexity,
+    reason = "the diagnostic Bevy query reads one exact snapshot of player animation components"
+)]
 pub(super) fn log_animation_diagnostics(
     time: Res<Time>,
     mut log: Option<ResMut<AnimationDiagnosticLog>>,

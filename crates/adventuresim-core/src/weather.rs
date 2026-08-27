@@ -4,7 +4,11 @@
 //! intentionally calculation-only: callers snapshot the result when a stable
 //! journey or incident needs to outlive later rules changes.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use fabelgeist_determinism::mix64;
 use serde::{Deserialize, Serialize};
+
+use crate::strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY};
 
 pub const WEATHER_RULES_VERSION: u16 = 3;
 /// One domain seed shared by every authoritative and player-visible weather
@@ -16,6 +20,7 @@ const HISTORY_INTERVALS: u64 = 16;
 const FIELD_FRACTION: i64 = 65_536;
 const SYNOPTIC_SPATIAL_CELLS: i64 = 8;
 const SYNOPTIC_TIME_INTERVALS: i64 = 4;
+const WEATHER_INTERVAL_HASH_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -203,8 +208,8 @@ pub fn weather_at(
         wind_speed_bps: current.wind_speed_bps,
         precipitation: current.precipitation,
         intensity_bps: current.intensity_bps,
-        ground_moisture_bps: moisture.min(10_000) as u16,
-        snow_cover_bps: snow.min(10_000) as u16,
+        ground_moisture_bps: moisture.min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16,
+        snow_cover_bps: snow.min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16,
         atmosphere: current.atmosphere,
     }
 }
@@ -301,13 +306,13 @@ fn interval_weather(
         cell_longitude,
         elevation_m,
     );
-    let low_pressure_bps = 10_000u16.saturating_sub(pressure_field);
+    let low_pressure_bps = BASIS_POINTS_PER_WHOLE.saturating_sub(pressure_field);
     let relative_humidity_bps = (3_200u32
-        + u32::from(moisture_field) * 5_000 / 10_000
-        + u32::from(low_pressure_bps) * 1_800 / 10_000)
-        .min(10_000) as u16;
-    let dew_point_deci_c =
-        temperature_deci_c - i32::from(10_000u16.saturating_sub(relative_humidity_bps)) / 50;
+        + u32::from(moisture_field) * 5_000 / u32::from(BASIS_POINTS_PER_WHOLE)
+        + u32::from(low_pressure_bps) * 1_800 / u32::from(BASIS_POINTS_PER_WHOLE))
+    .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16;
+    let dew_point_deci_c = temperature_deci_c
+        - i32::from(BASIS_POINTS_PER_WHOLE.saturating_sub(relative_humidity_bps)) / 50;
     let sea_level_pressure_deci_hpa =
         (10_132 + (i32::from(pressure_field) - 5_000) * 250 / 5_000) as u16;
 
@@ -341,11 +346,11 @@ fn interval_weather(
     );
     let east_gradient = i32::from(pressure_east) - i32::from(pressure_west);
     let north_gradient = i32::from(pressure_north) - i32::from(pressure_south);
-    let pressure_gradient =
-        (east_gradient.unsigned_abs() + north_gradient.unsigned_abs()).min(10_000);
+    let pressure_gradient = (east_gradient.unsigned_abs() + north_gradient.unsigned_abs())
+        .min(u32::from(BASIS_POINTS_PER_WHOLE));
     let wind_direction_degrees = wind_direction(east_gradient, north_gradient);
-    let wind_speed_bps =
-        (700u32 + pressure_gradient * 5 + u32::from(low_pressure_bps) / 5).min(10_000) as u16;
+    let wind_speed_bps = (700u32 + pressure_gradient * 5 + u32::from(low_pressure_bps) / 5)
+        .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16;
     let shear_field = correlated_field(
         world_seed,
         0x5348_4541,
@@ -353,17 +358,20 @@ fn interval_weather(
         cell_latitude,
         cell_longitude,
     );
-    let wind_shear_bps = ((u32::from(shear_field) + pressure_gradient * 3) / 4).min(10_000) as u16;
+    let wind_shear_bps = ((u32::from(shear_field) + pressure_gradient * 3) / 4)
+        .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16;
 
     let hour = interval * WEATHER_INTERVAL_MINUTES / 60 % 24;
     let daylight_heating = triangle_wave_bps((hour + 21) % 24, 24).max(0) as u32;
     let instability_bps = (u32::from(convective_field) * 5 / 10
         + u32::from(relative_humidity_bps) * 2 / 10
         + daylight_heating * 3 / 10)
-        .min(10_000) as u16;
-    let frontal_lift = (pressure_gradient as i32 * 3).min(10_000);
-    let lift_bps =
-        ((i32::from(low_pressure_bps) - 4_700) * 2 + frontal_lift).clamp(-10_000, 10_000) as i16;
+        .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16;
+    let frontal_lift = (pressure_gradient as i32 * 3).min(i32::from(BASIS_POINTS_PER_WHOLE));
+    let lift_bps = ((i32::from(low_pressure_bps) - 4_700) * 2 + frontal_lift).clamp(
+        -i32::from(BASIS_POINTS_PER_WHOLE),
+        i32::from(BASIS_POINTS_PER_WHOLE),
+    ) as i16;
     let lcl_metres =
         ((temperature_deci_c - dew_point_deci_c).max(0) * 25 / 2).clamp(120, 2_500) as u16;
 
@@ -392,7 +400,7 @@ fn interval_weather(
         + u32::from(occurrence_field) / 3;
     let is_precipitating = precipitating_cloud && precipitation_signal >= 15_000;
     let intensity_bps = if is_precipitating {
-        ((precipitation_signal - 14_000) * 2).clamp(1_000, 10_000) as u16
+        ((precipitation_signal - 14_000) * 2).clamp(1_000, u32::from(BASIS_POINTS_PER_WHOLE)) as u16
     } else {
         0
     };
@@ -416,8 +424,12 @@ fn interval_weather(
         if !low_cloud.is_some_and(|layer| matches!(layer.form, CloudForm::Cumulonimbus)) {
             middle_cloud = Some(cloud_layer(
                 CloudForm::Nimbostratus,
-                8_000u16.saturating_add(intensity_bps / 5).min(10_000),
-                7_500u16.saturating_add(intensity_bps / 4).min(10_000),
+                8_000u16
+                    .saturating_add(intensity_bps / 5)
+                    .min(BASIS_POINTS_PER_WHOLE),
+                7_500u16
+                    .saturating_add(intensity_bps / 4)
+                    .min(BASIS_POINTS_PER_WHOLE),
                 1_800,
                 5_800,
             ));
@@ -566,7 +578,8 @@ fn coverage_from_signal(signal: u32, onset: u32, span: u32) -> u16 {
     if signal <= onset {
         0
     } else {
-        ((signal - onset) * 10_000 / span).min(10_000) as u16
+        ((signal - onset) * u32::from(BASIS_POINTS_PER_WHOLE) / span)
+            .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16
     }
 }
 
@@ -577,12 +590,13 @@ fn temperature_deci_c(
     cell_longitude: i32,
     elevation_m: i16,
 ) -> i32 {
-    let day = (interval * WEATHER_INTERVAL_MINUTES / 1_440) % 365;
+    let day = (interval * WEATHER_INTERVAL_MINUTES / MINUTES_PER_DAY) % DAYS_PER_YEAR;
     let hour = (interval * WEATHER_INTERVAL_MINUTES / 60) % 24;
     let latitude_degrees = cell_latitude * WEATHER_CELL_MICRODEGREES / 1_000_000;
     let mean = 95 - (latitude_degrees.abs() - 53).abs() * 4;
-    let seasonal = triangle_wave_bps((day + 343) % 365, 365) * 105 / 10_000;
-    let diurnal = triangle_wave_bps((hour + 21) % 24, 24) * 25 / 10_000;
+    let seasonal = triangle_wave_bps((day + 343) % DAYS_PER_YEAR, DAYS_PER_YEAR) * 105
+        / i32::from(BASIS_POINTS_PER_WHOLE);
+    let diurnal = triangle_wave_bps((hour + 21) % 24, 24) * 25 / i32::from(BASIS_POINTS_PER_WHOLE);
     let synoptic = (i32::from(correlated_field(
         world_seed,
         0x5445_4d50,
@@ -598,8 +612,8 @@ fn temperature_deci_c(
 
 fn triangle_wave_bps(phase: u64, period: u64) -> i32 {
     let doubled = phase % period * 20_000 / period;
-    if doubled <= 10_000 {
-        doubled as i32 * 2 - 10_000
+    if doubled <= u64::from(BASIS_POINTS_PER_WHOLE) {
+        doubled as i32 * 2 - i32::from(BASIS_POINTS_PER_WHOLE)
     } else {
         30_000 - doubled as i32 * 2
     }
@@ -652,27 +666,24 @@ fn fade_fraction(remainder: i64, scale: i64) -> u32 {
 fn lerp_bps(a: u16, b: u16, fraction: u32) -> u16 {
     let a = i64::from(a);
     let delta = i64::from(b) - a;
-    (a + delta * i64::from(fraction) / 65_535).clamp(0, 10_000) as u16
+    (a + delta * i64::from(fraction) / 65_535).clamp(0, i64::from(BASIS_POINTS_PER_WHOLE)) as u16
 }
 
 fn weather_hash(seed: u64, interval: i64, lat: i64, lon: i64) -> u64 {
-    let mut value = seed
-        ^ (u64::from(WEATHER_RULES_VERSION) << 48)
-        ^ (interval as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
-        ^ (lat as u64).rotate_left(17)
-        ^ (lon as u64).rotate_left(39);
-    value ^= value >> 30;
-    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value ^= value >> 27;
-    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
+    mix64(
+        seed ^ (u64::from(WEATHER_RULES_VERSION) << 48)
+            ^ (interval as u64).wrapping_mul(WEATHER_INTERVAL_HASH_STRIDE)
+            ^ (lat as u64).rotate_left(17)
+            ^ (lon as u64).rotate_left(39),
+    )
 }
 
 /// Supplement an underlying terrain check with the Snow overlay.
 pub fn snow_overlay_check(underlying_bps: u16, snow_bps: u16, cover_bps: u16) -> u16 {
-    let cover = u32::from(cover_bps.min(10_000));
-    (((u32::from(underlying_bps) * (10_000 - cover)) + (u32::from(snow_bps) * cover)) / 10_000)
-        as u16
+    let whole_bps = u32::from(BASIS_POINTS_PER_WHOLE);
+    let cover = u32::from(cover_bps.min(BASIS_POINTS_PER_WHOLE));
+    (((u32::from(underlying_bps) * (whole_bps - cover)) + (u32::from(snow_bps) * cover))
+        / whole_bps) as u16
 }
 
 /// Split travel practice without replacing the underlying biome exposure.
@@ -681,16 +692,21 @@ pub fn snow_training_exposure(
     snow_cover_bps: u16,
     road_discount_bps: u16,
 ) -> (u32, u32) {
+    let whole_bps = u64::from(BASIS_POINTS_PER_WHOLE);
     let discounted = u64::from(travel_minutes)
-        * u64::from(10_000u16.saturating_sub(road_discount_bps.min(10_000)))
-        / 10_000;
-    let snow_minutes = discounted * u64::from(snow_cover_bps.min(10_000)) / 10_000;
+        * u64::from(
+            BASIS_POINTS_PER_WHOLE.saturating_sub(road_discount_bps.min(BASIS_POINTS_PER_WHOLE)),
+        )
+        / whole_bps;
+    let snow_minutes =
+        discounted * u64::from(snow_cover_bps.min(BASIS_POINTS_PER_WHOLE)) / whole_bps;
     ((discounted - snow_minutes) as u32, snow_minutes as u32)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::strategic_time::MINUTES_PER_YEAR;
 
     #[test]
     fn replay_is_stable_within_an_interval_and_cells_are_coarse() {
@@ -724,7 +740,7 @@ mod tests {
                 < temperature_deci_c(7, summer_interval, 212, 40, 0)
         );
         let mut found = false;
-        for interval in 0..1_460 {
+        for interval in 0..DAYS_PER_YEAR * (MINUTES_PER_DAY / WEATHER_INTERVAL_MINUTES) {
             let low = interval_weather(7, interval, 212, 40, 0);
             let high = interval_weather(7, interval, 212, 40, 2_000);
             if low.precipitation == Precipitation::Rain && high.precipitation == Precipitation::Snow
@@ -739,14 +755,14 @@ mod tests {
     #[test]
     fn initialized_world_uses_late_summer_temperature() {
         let interval = crate::strategic_time::WORLD_START_MINUTE / WEATHER_INTERVAL_MINUTES;
-        let day = interval * WEATHER_INTERVAL_MINUTES / 1_440 % 365;
+        let day = interval * WEATHER_INTERVAL_MINUTES / MINUTES_PER_DAY % DAYS_PER_YEAR;
         assert_eq!(day, 231);
         assert!(temperature_deci_c(7, interval, 214, 40, 0) > 100);
     }
 
     #[test]
     fn moisture_and_snow_are_bounded_and_have_memory() {
-        for minute in (0..525_600).step_by(360) {
+        for minute in (0..MINUTES_PER_YEAR).step_by(360) {
             let sample = weather_at(19, minute, 53_500_000, 10_000_000, 80);
             assert!(sample.ground_moisture_bps <= 10_000);
             assert!(sample.snow_cover_bps <= 10_000);

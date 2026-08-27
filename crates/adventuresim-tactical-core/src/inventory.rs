@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use adventuresim_core::{
     body::{BodyPart, BodySide},
-    equipment::MeleeAttackStyle,
+    combat_style::MeleeAttackStyle,
     item_catalog::{EquipmentChannel, EquipmentLocation},
     prelude::PlayerEquipment,
 };
@@ -152,7 +152,7 @@ pub struct EquipmentTopologyOccupancy {
     pub capacity_index: u16,
 }
 
-/// Recomputes the legacy combat hand caches after an ownership root is
+/// Recomputes the derived combat hand indexes after an ownership root is
 /// rebound. Relationship hooks maintain the item list, but changing `ItemOf`
 /// alone does not rerun the `EquipSlot` hooks that populate these caches.
 pub fn rebuild_inventory_holding_cache(world: &mut World, root: Entity) {

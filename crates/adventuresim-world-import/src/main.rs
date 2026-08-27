@@ -4,7 +4,7 @@ use std::{
 };
 
 use adventuresim_world_import::{
-    Error, Result, WorldBuilder, derive_owda_profiles, validate_world,
+    Error, Result, WorldBuilder, WorldSourcePaths, derive_owda_profiles, validate_world,
 };
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, CompiledWorld,
@@ -32,7 +32,7 @@ const MAX_REDUCER_REQUEST_BYTES: usize = 512 * 1024;
 #[derive(Debug, Parser)]
 #[command(about = "Compile source datasets into the Fabelgeist strategic world")]
 struct Args {
-    #[arg(long, alias = "raw-dir", default_value_os_t = default_viabundus_directory())]
+    #[arg(long, default_value_os_t = default_viabundus_directory())]
     viabundus_dir: PathBuf,
     #[arg(long, default_value_os_t = default_elevation_directory())]
     elevation_dir: PathBuf,
@@ -160,17 +160,19 @@ fn run(args: Args) -> Result<()> {
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
         .with_playable_bounds()
         .build_from_sources_with_base_terrain(
-            &args.viabundus_dir,
-            &args.elevation_dir,
-            &args.land_use_dir,
-            &args.forest_cover_dir,
-            &args.potential_vegetation_dir,
-            &args.tree_species_archive,
-            &args.soilgrids_dir,
-            &args.geology_geopackage,
-            &args.religion_regions,
-            &args.drought_netcdf,
-            &args.hydrology_dir,
+            WorldSourcePaths {
+                viabundus: &args.viabundus_dir,
+                elevation: &args.elevation_dir,
+                land_use: &args.land_use_dir,
+                forest_cover: &args.forest_cover_dir,
+                potential_vegetation: &args.potential_vegetation_dir,
+                tree_species: &args.tree_species_archive,
+                soilgrids: &args.soilgrids_dir,
+                geology: &args.geology_geopackage,
+                religion_regions: &args.religion_regions,
+                drought: &args.drought_netcdf,
+                hydrology: &args.hydrology_dir,
+            },
             &base_terrain,
         )?;
     let output = args

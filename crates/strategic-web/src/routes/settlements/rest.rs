@@ -22,6 +22,15 @@ pub(crate) fn field_shelter_argument(form: &RestForm) -> Result<serde_json::Valu
     }
 }
 
+pub(crate) fn settlement_action_service_argument(
+    service: adventuresim_world_schema::SettlementActionService,
+) -> serde_json::Value {
+    match service {
+        adventuresim_world_schema::SettlementActionService::Inn => json!({ "inn": {} }),
+        adventuresim_world_schema::SettlementActionService::Temple => json!({ "temple": {} }),
+    }
+}
+
 pub(super) fn deserialize_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -33,61 +42,109 @@ where
         .transpose()
 }
 
-pub(super) const MAX_SETTLEMENT_REST_MINUTES: u64 = 365 * 1_440;
+pub(super) use adventuresim_core::strategic_time::MAX_SETTLEMENT_REST_MINUTES;
 
-pub(super) fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RestDurationError {
+    SettlementBelowMinimum,
+    SettlementAboveMaximum,
+    TravelBelowMinimum,
+    TravelAboveMaximum,
+    MinutesNotWhole,
+    ClockFormat,
+    ClockMinuteOutOfRange,
+    DurationOverflow,
+    WakeTimeMismatch,
+    DaysNotWhole,
+    UnknownUnit,
+}
+
+impl std::fmt::Display for RestDurationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use adventuresim_core::strategic_time::DAYS_PER_YEAR;
+
+        match self {
+            Self::SettlementBelowMinimum => {
+                formatter.write_str("Settlement rest must last at least one day")
+            }
+            Self::SettlementAboveMaximum => write!(
+                formatter,
+                "Settlement rest cannot exceed {DAYS_PER_YEAR} days"
+            ),
+            Self::TravelBelowMinimum => formatter.write_str("Rest must last at least one minute"),
+            Self::TravelAboveMaximum => {
+                write!(formatter, "Rest cannot exceed {DAYS_PER_YEAR} days")
+            }
+            Self::MinutesNotWhole => formatter.write_str("Rest minutes must be a whole number"),
+            Self::ClockFormat => formatter.write_str("Rest duration must use HH:MM"),
+            Self::ClockMinuteOutOfRange => {
+                formatter.write_str("Rest duration minutes must be between 00 and 59")
+            }
+            Self::DurationOverflow => formatter.write_str("Rest duration is too large"),
+            Self::WakeTimeMismatch => {
+                formatter.write_str("Rest duration does not match the selected wake time")
+            }
+            Self::DaysNotWhole => formatter.write_str("Rest days must be a whole number"),
+            Self::UnknownUnit => formatter.write_str("Unknown rest duration unit"),
+        }
+    }
+}
+
+impl std::error::Error for RestDurationError {}
+
+pub(super) fn settlement_rest_minutes(form: &RestForm) -> Result<u64, RestDurationError> {
     let minutes = parsed_rest_minutes(form)?;
-    if minutes < 1_440 {
-        return Err("Settlement rest must last at least one day");
+    if minutes < adventuresim_core::strategic_time::MINUTES_PER_DAY {
+        return Err(RestDurationError::SettlementBelowMinimum);
     }
     if minutes > MAX_SETTLEMENT_REST_MINUTES {
-        return Err("Settlement rest cannot exceed 365 days");
+        return Err(RestDurationError::SettlementAboveMaximum);
     }
     Ok(minutes)
 }
 
-pub(crate) fn travel_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
+pub(crate) fn travel_rest_minutes(form: &RestForm) -> Result<u64, RestDurationError> {
     let minutes = parsed_rest_minutes(form)?;
     if minutes == 0 {
-        return Err("Rest must last at least one minute");
+        return Err(RestDurationError::TravelBelowMinimum);
     }
     if minutes > MAX_SETTLEMENT_REST_MINUTES {
-        return Err("Rest cannot exceed 365 days");
+        return Err(RestDurationError::TravelAboveMaximum);
     }
     Ok(minutes)
 }
 
-pub(super) fn parsed_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
+pub(super) fn parsed_rest_minutes(form: &RestForm) -> Result<u64, RestDurationError> {
     Ok(match form.unit.as_str() {
         "minutes" => form
             .duration
             .parse::<u64>()
-            .map_err(|_| "Rest minutes must be a whole number")?,
+            .map_err(|_| RestDurationError::MinutesNotWhole)?,
         "hours" => {
             let (hours, minutes) = form
                 .duration
                 .split_once(':')
-                .ok_or("Rest duration must use HH:MM")?;
+                .ok_or(RestDurationError::ClockFormat)?;
             if minutes.len() != 2 || !minutes.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err("Rest duration must use HH:MM");
+                return Err(RestDurationError::ClockFormat);
             }
             let hours = hours
                 .parse::<u64>()
-                .map_err(|_| "Rest duration must use HH:MM")?;
+                .map_err(|_| RestDurationError::ClockFormat)?;
             let minutes = minutes
                 .parse::<u64>()
-                .map_err(|_| "Rest duration must use HH:MM")?;
+                .map_err(|_| RestDurationError::ClockFormat)?;
             if minutes >= 60 {
-                return Err("Rest duration minutes must be between 00 and 59");
+                return Err(RestDurationError::ClockMinuteOutOfRange);
             }
             let duration_minutes = hours
                 .checked_mul(60)
                 .and_then(|value| value.checked_add(minutes))
-                .ok_or("Rest duration is too large")?;
+                .ok_or(RestDurationError::DurationOverflow)?;
             if let Some(requested_minutes) = form.requested_minutes
                 && requested_minutes != duration_minutes
             {
-                return Err("Rest duration does not match the selected wake time");
+                return Err(RestDurationError::WakeTimeMismatch);
             }
             form.requested_minutes.unwrap_or(duration_minutes)
         }
@@ -95,19 +152,15 @@ pub(super) fn parsed_rest_minutes(form: &RestForm) -> Result<u64, &'static str> 
             let days = form
                 .duration
                 .parse::<u64>()
-                .map_err(|_| "Rest days must be a whole number")?;
-            days.saturating_mul(1_440)
+                .map_err(|_| RestDurationError::DaysNotWhole)?;
+            days.saturating_mul(adventuresim_core::strategic_time::MINUTES_PER_DAY)
         }
-        _ => return Err("Unknown rest duration unit"),
+        _ => return Err(RestDurationError::UnknownUnit),
     })
 }
 
-pub(super) fn safe_rest_error(error: &str) -> &'static str {
-    if error.contains("Not enough coin") {
-        "You do not have enough coin for that inn stay."
-    } else {
-        "The rest could not be completed. Review the duration and try again."
-    }
+pub(super) fn safe_rest_error(_error: &str) -> &'static str {
+    "The rest could not be completed. Review the duration and try again."
 }
 
 pub(super) async fn rest(
@@ -116,10 +169,10 @@ pub(super) async fn rest(
     session: Session,
     form: Result<Form<RestForm>, FormRejection>,
 ) -> Response {
-    let (at_inn, at_residence) = match kind.as_str() {
-        "inn" => (true, false),
-        "temple" => (false, false),
-        "residence" => (false, true),
+    let public_service = match kind.as_str() {
+        "inn" => Some(adventuresim_world_schema::SettlementActionService::Inn),
+        "temple" => Some(adventuresim_world_schema::SettlementActionService::Temple),
+        "residence" => None,
         _ => return Html("<h1>Rest service not found</h1>".to_string()).into_response(),
     };
     let Some(character_id) = session.character_id_u64() else {
@@ -139,28 +192,24 @@ pub(super) async fn rest(
             return error.into_response();
         }
     };
+    let settlement_query = settlement_by_id(&id);
     let settlements: Vec<Settlement> = state
         .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query(settlement_query.as_str())
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.first() else {
         return Html("<h1>Settlement not found</h1>".to_string()).into_response();
     };
-    let service = if at_inn {
-        adventuresim_core::settlement_economy::SettlementActionService::Inn
-    } else {
-        adventuresim_core::settlement_economy::SettlementActionService::Temple
-    };
-    if !at_residence && !settlement_action_service_available(&settlement.economy, service) {
+    if public_service
+        .is_some_and(|service| !settlement_action_service_available(&settlement.economy, service))
+    {
         return Html("<h1>Rest service unavailable</h1>".to_string()).into_response();
     }
     let requested_minutes = match settlement_rest_minutes(&form) {
         Ok(minutes) => minutes,
-        Err(message) => {
+        Err(error) => {
+            let message = error.to_string();
             let unit = match form.unit.as_str() {
                 "hours" => "hours",
                 "days" => "days",
@@ -170,11 +219,11 @@ pub(super) async fn rest(
                 character_id,
                 requested_settlement_id = %id,
                 requested_minutes = ?form.requested_minutes,
-                at_inn,
-                service = kind.as_str(),
+                public_service = ?public_service,
+                route_service = kind.as_str(),
                 unit,
                 duration_length = form.duration.len(),
-                reason = message,
+                reason = message.as_str(),
                 "settlement rest duration validation rejected request"
             );
             return (
@@ -182,10 +231,17 @@ pub(super) async fn rest(
                 Html(
                     crate::templates::strategic_notice_page(
                         "Unable to rest",
-                        message,
+                        &message,
                         &format!(
                             "/settlements/{id}/{}",
-                            if at_inn { "inn" } else { "religion" }
+                            match public_service {
+                                Some(adventuresim_world_schema::SettlementActionService::Inn) =>
+                                    "inn",
+                                Some(
+                                    adventuresim_world_schema::SettlementActionService::Temple,
+                                ) => "religion",
+                                None => "places/residences",
+                            }
                         ),
                         "Return to rest service",
                         None,
@@ -212,15 +268,17 @@ pub(super) async fn rest(
         .as_ref()
         .and_then(|(character, _)| character.current_settlement_id.as_deref())
         .unwrap_or("<none>");
-    let reducer = if at_residence {
-        "rest_at_residence_hours"
-    } else {
-        "rest_at_settlement_hours"
+    let reducer = match public_service {
+        Some(_) => "rest_at_settlement_hours",
+        None => "rest_at_residence_hours",
     };
-    let reducer_arguments = if at_residence {
-        vec![json!(character_id), json!(requested_minutes)]
-    } else {
-        vec![json!(character_id), json!(requested_minutes), json!(at_inn)]
+    let reducer_arguments = match public_service {
+        Some(service) => vec![
+            json!(character_id),
+            json!(requested_minutes),
+            settlement_action_service_argument(service),
+        ],
+        None => vec![json!(character_id), json!(requested_minutes)],
     };
     if let Err(error) = state.db.call(reducer, &reducer_arguments).await {
         tracing::warn!(
@@ -228,8 +286,8 @@ pub(super) async fn rest(
             requested_settlement_id = %id,
             character_settlement_id,
             requested_minutes,
-            at_inn,
-            service = kind.as_str(),
+            public_service = ?public_service,
+            route_service = kind.as_str(),
             error = %error,
             "settlement rest reducer rejected request"
         );
@@ -241,12 +299,11 @@ pub(super) async fn rest(
                     safe_rest_error(&error.to_string()),
                     &format!(
                         "/settlements/{id}/{}",
-                        if at_inn {
-                            "inn"
-                        } else if at_residence {
-                            "places/residences"
-                        } else {
-                            "religion"
+                        match public_service {
+                            Some(adventuresim_world_schema::SettlementActionService::Inn) => "inn",
+                            Some(adventuresim_world_schema::SettlementActionService::Temple) =>
+                                "religion",
+                            None => "places/residences",
                         }
                     ),
                     "Return to rest service",
@@ -296,24 +353,24 @@ pub(super) async fn rest(
         );
     }
     let after_reputation = query_local_reputation(&state, character_id, &id).await;
-    let summary = rest_summary(
-        before_character
+    let summary = rest_summary(RestSummaryObservation {
+        before_inventory: before_character
             .as_ref()
             .map_or(&[], |(_, inventory)| inventory.as_slice()),
-        active_character
+        after_inventory: active_character
             .as_ref()
             .map_or(&[], |(_, inventory)| inventory.as_slice()),
-        before_limbs.as_ref(),
-        after_limbs.as_ref(),
-        before_skills.as_ref(),
-        after_skills.as_ref(),
-        before_time.as_ref(),
-        after_time.as_ref(),
-        before_reputation.as_ref(),
-        after_reputation.as_ref(),
-        at_inn,
+        before_limbs: before_limbs.as_ref(),
+        after_limbs: after_limbs.as_ref(),
+        before_skills: before_skills.as_ref(),
+        after_skills: after_skills.as_ref(),
+        before_time: before_time.as_ref(),
+        after_time: after_time.as_ref(),
+        before_reputation: before_reputation.as_ref(),
+        after_reputation: after_reputation.as_ref(),
+        public_service,
         requested_minutes,
-    );
+    });
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -348,8 +405,7 @@ pub(super) async fn rest(
             &food_lots,
             &party_members,
             logged_in_as.as_deref(),
-            at_inn,
-            at_residence,
+            public_service,
             &summary,
             soap_preview,
         )
@@ -391,20 +447,36 @@ pub(super) async fn query_local_reputation(
         .next()
 }
 
-pub(super) fn rest_summary(
-    before_inventory: &[InventoryItem],
-    after_inventory: &[InventoryItem],
-    before_limbs: Option<&CharacterLimbs>,
-    after_limbs: Option<&CharacterLimbs>,
-    before_skills: Option<&CharacterSkills>,
-    after_skills: Option<&CharacterSkills>,
-    before_time: Option<&crate::spacetimedb::CharacterTime>,
-    after_time: Option<&crate::spacetimedb::CharacterTime>,
-    before_reputation: Option<&CharacterSettlementReputation>,
-    after_reputation: Option<&CharacterSettlementReputation>,
-    at_inn: bool,
+pub(super) struct RestSummaryObservation<'a> {
+    before_inventory: &'a [InventoryItem],
+    after_inventory: &'a [InventoryItem],
+    before_limbs: Option<&'a CharacterLimbs>,
+    after_limbs: Option<&'a CharacterLimbs>,
+    before_skills: Option<&'a CharacterSkills>,
+    after_skills: Option<&'a CharacterSkills>,
+    before_time: Option<&'a crate::spacetimedb::CharacterTime>,
+    after_time: Option<&'a crate::spacetimedb::CharacterTime>,
+    before_reputation: Option<&'a CharacterSettlementReputation>,
+    after_reputation: Option<&'a CharacterSettlementReputation>,
+    public_service: Option<adventuresim_world_schema::SettlementActionService>,
     requested_minutes: u64,
-) -> RestSummary {
+}
+
+pub(super) fn rest_summary(observation: RestSummaryObservation<'_>) -> RestSummary {
+    let RestSummaryObservation {
+        before_inventory,
+        after_inventory,
+        before_limbs,
+        after_limbs,
+        before_skills,
+        after_skills,
+        before_time,
+        after_time,
+        before_reputation,
+        after_reputation,
+        public_service,
+        requested_minutes,
+    } = observation;
     let minutes = before_time.zip(after_time).map_or(0, |(before, after)| {
         after.minutes.saturating_sub(before.minutes)
     });
@@ -412,14 +484,14 @@ pub(super) fn rest_summary(
         inventory
             .iter()
             .filter(|item| adventuresim_core::strategic_currency::is_currency_id(&item.item_id))
-            .map(|item| item.qty)
+            .map(|item| item.quantity)
             .sum()
     };
     let before_currency = currency_total(before_inventory);
     let after_currency = currency_total(after_inventory);
     let gold_spent = before_currency.saturating_sub(after_currency);
     let (full_board_gold_spent, additional_gold_spent) =
-        rest_spending_breakdown(gold_spent, at_inn, requested_minutes);
+        rest_spending_breakdown(gold_spent, public_service, requested_minutes);
     let gold_earned = after_currency.saturating_sub(before_currency);
     let fame_gained = after_reputation.map_or(0.0, |after| {
         (after.fame - before_reputation.map_or(0, |before| before.fame)) as f32 / 100.0
@@ -449,10 +521,13 @@ pub(super) fn rest_summary(
 
 pub(super) fn rest_spending_breakdown(
     total_gold_spent: u32,
-    at_inn: bool,
+    public_service: Option<adventuresim_world_schema::SettlementActionService>,
     requested_minutes: u64,
 ) -> (u32, u32) {
-    let full_board = if at_inn {
+    let full_board = if matches!(
+        public_service,
+        Some(adventuresim_world_schema::SettlementActionService::Inn)
+    ) {
         adventuresim_core::strategic_economy::inn_full_board_cost(requested_minutes)
             .and_then(|cost| u32::try_from(cost).ok())
             .unwrap_or(u32::MAX)
@@ -712,7 +787,7 @@ pub(super) async fn religion(
         state,
         id,
         session,
-        adventuresim_core::settlement_economy::SettlementActionService::Temple,
+        adventuresim_world_schema::SettlementActionService::Temple,
         religion_page,
     )
     .await
@@ -720,7 +795,7 @@ pub(super) async fn religion(
 
 pub(super) fn settlement_action_service_available(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
-    service: adventuresim_core::settlement_economy::SettlementActionService,
+    service: adventuresim_world_schema::SettlementActionService,
 ) -> bool {
     adventuresim_core::settlement_economy::action_service_available(profile, service)
 }
@@ -728,10 +803,10 @@ pub(super) fn settlement_action_service_available(
 #[cfg(test)]
 mod service_availability_tests {
     use super::{SETTLEMENTS_SOURCE, settlement_action_service_available};
-    use adventuresim_core::settlement_economy::{
-        SettlementActionService, player_visible_npc_tabs, visible_npc_tab,
+    use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+    use adventuresim_world_schema::{
+        SettlementActionService, SettlementEconomyProfile, SettlementService,
     };
-    use adventuresim_world_schema::{SettlementEconomyProfile, SettlementService};
 
     #[test]
     fn direct_routes_reject_unadvertised_church_inn_and_armoury() {

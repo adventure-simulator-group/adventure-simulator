@@ -1,12 +1,18 @@
 //! Stable language types and deterministic playable-world inference.
 
+use fabelgeist_determinism::splitmix64;
 use serde::{Deserialize, Serialize};
 
-use crate::{PLAYABLE_BOUNDS, coordinates_in_bounds};
+use crate::{
+    PLAYABLE_BOUNDS,
+    coordinates::{LatitudeMicrodegrees, LongitudeMicrodegrees},
+    coordinates_in_bounds,
+};
 
-pub const LANGUAGE_DISTRIBUTION_TOTAL_BP: u16 = 10_000;
 pub const YIDDISH_LOCAL_GERMAN_FLUENCY: f32 = 0.8;
 pub const ORAL_FLUENCY_HOURS: f32 = 5_000.0;
+
+const YIDDISH_INCIDENCE_DOMAIN: u64 = 0x0059_4944_4449_5348;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LanguageDescriptor {
@@ -494,7 +500,7 @@ impl SettlementLanguageProfile {
         self.east_central_bp as u32 + self.west_central_bp as u32 + self.low_bp as u32
     }
     pub const fn is_valid(self) -> bool {
-        self.german_total_bp() == LANGUAGE_DISTRIBUTION_TOTAL_BP as u32
+        self.german_total_bp() == crate::BASIS_POINTS_PER_WHOLE as u32
             && self.yiddish_incidence_bp <= 1_000
     }
     pub const fn dominant_german(self) -> OralLanguage {
@@ -521,16 +527,25 @@ pub fn infer_settlement_language_profile(
     const SOUTH: i64 = 50_877_000;
     const EAST: i64 = 11_110_000;
     const NORTH: i64 = 52_211_000;
-    let lon = (longitude * 1_000_000.0).round() as i64;
-    let lat = (latitude * 1_000_000.0).round() as i64;
-    let x_bp = ((lon - WEST) * 10_000 / (EAST - WEST)).clamp(0, 10_000);
-    let y_bp = ((lat - SOUTH) * 10_000 / (NORTH - SOUTH)).clamp(0, 10_000);
-    let northern = ((y_bp - 2_200) * 10_000 / 7_000).clamp(0, 10_000) as i128;
+    let lon = i64::from(
+        LongitudeMicrodegrees::from_degrees(longitude)
+            .ok_or("longitude must be a finite WGS84 coordinate")?
+            .get(),
+    );
+    let lat = i64::from(
+        LatitudeMicrodegrees::from_degrees(latitude)
+            .ok_or("latitude must be a finite WGS84 coordinate")?
+            .get(),
+    );
+    let whole_bps = i64::from(crate::BASIS_POINTS_PER_WHOLE);
+    let x_bp = ((lon - WEST) * whole_bps / (EAST - WEST)).clamp(0, whole_bps);
+    let y_bp = ((lat - SOUTH) * whole_bps / (NORTH - SOUTH)).clamp(0, whole_bps);
+    let northern = ((y_bp - 2_200) * whole_bps / 7_000).clamp(0, whole_bps) as i128;
     let low = ((9_000_i128 * northern * northern + 50_000_000) / 100_000_000) as u16;
-    let central = 10_000_u16 - low;
+    let central = crate::BASIS_POINTS_PER_WHOLE - low;
     let east_share_bp =
-        (800 + 7_800 * x_bp / 10_000 + 1_800 * (10_000 - y_bp) / 10_000).clamp(500, 9_500);
-    let east_central = ((i64::from(central) * east_share_bp + 5_000) / 10_000) as u16;
+        (800 + 7_800 * x_bp / whole_bps + 1_800 * (whole_bps - y_bp) / whole_bps).clamp(500, 9_500);
+    let east_central = ((i64::from(central) * east_share_bp + 5_000) / whole_bps) as u16;
     let west_central = central - east_central;
     Ok(SettlementLanguageProfile {
         east_central_bp: east_central,
@@ -540,13 +555,6 @@ pub fn infer_settlement_language_profile(
     })
 }
 
-fn stable_mix(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e3779b97f4a7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
-    value ^ (value >> 31)
-}
-
 /// Initialize direct oral hours from the character's final settlement.
 /// Yiddish is an individual deterministic incidence, never a settlement-wide replacement.
 pub fn initial_oral_languages(
@@ -554,7 +562,7 @@ pub fn initial_oral_languages(
     character_id: u64,
     npc: bool,
 ) -> OralLanguageHours {
-    let roll = (stable_mix(character_id) % 10_000) as u16;
+    let roll = (splitmix64(character_id) % u64::from(crate::BASIS_POINTS_PER_WHOLE)) as u16;
     let german = if roll < profile.east_central_bp {
         OralLanguage::EastCentral
     } else if roll
@@ -567,7 +575,8 @@ pub fn initial_oral_languages(
         OralLanguage::Low
     };
     let yiddish = npc
-        && (stable_mix(character_id ^ 0x0059_4944_4449_5348) % 10_000)
+        && (splitmix64(character_id ^ YIDDISH_INCIDENCE_DOMAIN)
+            % u64::from(crate::BASIS_POINTS_PER_WHOLE))
             < u64::from(profile.yiddish_incidence_bp);
     let mut hours = OralLanguageHours::default();
     *hours.direct_mut(german) = if yiddish {

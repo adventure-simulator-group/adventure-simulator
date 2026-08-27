@@ -1,4 +1,3 @@
-use super::geometry::BarkRecipe;
 use super::impostor::{
     BEECH_TREE_BAKE_STYLE, OAK_TREE_BAKE_STYLE, TREE_LEAF_HANDOFF_END, TREE_LEAF_HANDOFF_START,
     TreeBakeStyle, TreeImpostorProvenance, TreeLodBake, bake_tree_lod, bake_tree_lod_with_style,
@@ -6,8 +5,8 @@ use super::impostor::{
     tree_mid_trunk_visibility, tree_trunk_visibility, validate_tree_bake_provenance,
 };
 use super::{
-    COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS, ENGLISH_OAK_BARK, OAK_GNARLING_SHOWCASE,
-    OakGnarlingParameters, PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
+    COMMON_BEECH_PARAMETERS, OAK_GNARLING_SHOWCASE, OakGnarlingParameters,
+    PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
     PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
     PlayableTreeMidTrunk, PlayableTreeTrunk, TacticalTreeAggregateBarkMaterial,
     TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
@@ -17,12 +16,12 @@ use super::{
     procedural_oak_bud_group_mesh, procedural_oak_leaf_card_group_mesh, procedural_oak_leaves,
     procedural_oak_skeleton_with_gnarling, procedural_oak_textured_leaf_group_mesh,
     procedural_tree_branch_group_mesh, procedural_tree_branch_mesh, procedural_tree_skeleton,
-    procedural_woody_branch_mesh, procedural_woody_crown_mesh, procedural_woody_mid_trunk_mesh,
-    procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
+    procedural_woody_crown_mesh, procedural_woody_mid_trunk_mesh, procedural_woody_plant_leaves,
+    procedural_woody_plant_skeleton,
 };
 use crate::presentation::{
     ActiveTacticalScene, ActiveVistaSurface, ProceduralEnvironmentAssets, SceneEnvironment,
-    obstacle_seed, splitmix64, unit_hash,
+    obstacle_seed, unit_hash,
 };
 use adventuresim_tactical_core::prelude::{SceneGround, SceneObstacle, SceneTerrain};
 use bevy::{
@@ -30,6 +29,7 @@ use bevy::{
     light::NotShadowCaster,
     prelude::*,
 };
+use fabelgeist_determinism::splitmix64;
 
 #[cfg(test)]
 use super::TREE_PRIMARY_GROUP_COUNT;
@@ -41,7 +41,6 @@ pub(in crate::presentation) struct PendingTreePresentation;
 /// Stored when the CPU mesh is built because production meshes intentionally
 /// relinquish their main-world vertex data after render extraction.
 #[derive(Component, Clone, Copy, Debug)]
-#[allow(dead_code)]
 pub(crate) struct TreeLeafTriangleCount(pub(crate) usize);
 
 #[derive(Resource, Default)]
@@ -211,24 +210,6 @@ pub(in crate::presentation) fn tree_species_for_site(
     } else {
         TreePresentationSpecies::EnglishOak
     }
-}
-
-fn procedural_species_branch_group_mesh(
-    branches: &[super::TreeBranchSegment],
-    maximum_depth: u8,
-    primary_group: u8,
-    bark: BarkRecipe,
-) -> Mesh {
-    let group = branches
-        .iter()
-        .filter(|branch| {
-            branch.depth > 0
-                && branch.depth <= maximum_depth
-                && branch.primary_group == primary_group
-        })
-        .copied()
-        .collect::<Vec<_>>();
-    procedural_woody_branch_mesh(&group, maximum_depth, bark)
 }
 
 /// Root marker for a fully presented playable tree.
@@ -589,17 +570,8 @@ fn ensure_detailed_tree_assets_resident(
         .expect("detailed crown cache was initialized")
     {
         if cluster.detailed_branch_mesh.is_none() {
-            let mesh = match cached.species {
-                TreePresentationSpecies::EnglishOak => {
-                    procedural_tree_branch_group_mesh(&cached.branches, 3, cluster.primary_group)
-                }
-                TreePresentationSpecies::CommonBeech => procedural_species_branch_group_mesh(
-                    &cached.branches,
-                    3,
-                    cluster.primary_group,
-                    COMMON_BEECH_BARK,
-                ),
-            };
+            let mesh =
+                procedural_tree_branch_group_mesh(&cached.branches, 3, cluster.primary_group);
             diagnostics.detailed_branch_vertices += mesh.count_vertices();
             cluster.detailed_branch_mesh = Some(meshes.add(mesh));
         }
@@ -633,7 +605,6 @@ fn ensure_detailed_tree_assets_resident(
     diagnostics.generated_lod_mask |= 1 << 1;
 }
 
-#[allow(clippy::too_many_arguments)]
 fn ensure_tree_assets_resident(
     cached: &mut CachedTreePresentation,
     mask: u8,
@@ -645,24 +616,12 @@ fn ensure_tree_assets_resident(
 ) {
     let started = web_time::Instant::now();
     if mask & 1 != 0 && cached.trunk_mesh.is_none() {
-        let mesh = match cached.species {
-            TreePresentationSpecies::EnglishOak => procedural_tree_branch_mesh(&cached.branches, 0),
-            TreePresentationSpecies::CommonBeech => {
-                procedural_woody_branch_mesh(&cached.branches, 0, COMMON_BEECH_BARK)
-            }
-        };
+        let mesh = procedural_tree_branch_mesh(&cached.branches, 0);
         diagnostics.detailed_trunk_vertices += mesh.count_vertices();
         cached.trunk_mesh = Some(meshes.add(mesh));
     }
     if mask & 1 != 0 && cached.mid_trunk_mesh.is_none() {
-        let mesh = match cached.species {
-            TreePresentationSpecies::EnglishOak => {
-                procedural_woody_mid_trunk_mesh(&cached.branches, ENGLISH_OAK_BARK)
-            }
-            TreePresentationSpecies::CommonBeech => {
-                procedural_woody_mid_trunk_mesh(&cached.branches, COMMON_BEECH_BARK)
-            }
-        };
+        let mesh = procedural_woody_mid_trunk_mesh(&cached.branches);
         diagnostics.mid_trunk_vertices += mesh.count_vertices();
         cached.mid_trunk_mesh = Some(meshes.add(mesh));
     }
@@ -684,14 +643,7 @@ fn ensure_tree_assets_resident(
             } else {
                 (1, WoodyBranchMeshQuality::AggregateLod2)
             };
-            let mesh = match cached.species {
-                TreePresentationSpecies::EnglishOak => {
-                    procedural_woody_crown_mesh(&cached.branches, depth, ENGLISH_OAK_BARK, quality)
-                }
-                TreePresentationSpecies::CommonBeech => {
-                    procedural_woody_crown_mesh(&cached.branches, depth, COMMON_BEECH_BARK, quality)
-                }
-            };
+            let mesh = procedural_woody_crown_mesh(&cached.branches, depth, quality);
             let aggregate_index = lod as usize - 1;
             let vertices = mesh.count_vertices();
             let triangles = mesh
@@ -718,6 +670,10 @@ fn ensure_tree_assets_resident(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects tree streaming state and each independently borrowed asset store as system parameters"
+)]
 pub(in crate::presentation) fn stream_tree_lod_children(
     mut commands: Commands,
     camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
@@ -822,7 +778,6 @@ fn tree_cluster_aabb(center: Vec3, radius: f32) -> Aabb {
     Aabb::from_min_max(center - extent, center + extent)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::presentation) fn ensure_vista_tree_variant(
     variant_seed: u64,
     competition: f32,
@@ -871,7 +826,10 @@ pub(in crate::presentation) fn ensure_vista_tree_variant(
     cached
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(in crate::presentation) fn present_pending_trees(
     mut commands: Commands,
     pending: Query<(Entity, &Transform), With<PendingTreePresentation>>,
@@ -1371,8 +1329,7 @@ mod tests {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
         let mut vertex_count = procedural_tree_branch_mesh(&branches, 0).count_vertices();
-        vertex_count +=
-            procedural_woody_mid_trunk_mesh(&branches, ENGLISH_OAK_BARK).count_vertices();
+        vertex_count += procedural_woody_mid_trunk_mesh(&branches).count_vertices();
         for primary_group in 0..TREE_PRIMARY_GROUP_COUNT {
             vertex_count +=
                 procedural_tree_branch_group_mesh(&branches, 3, primary_group).count_vertices();
@@ -1389,8 +1346,7 @@ mod tests {
         ]
         .into_iter()
         .map(|(depth, quality)| {
-            procedural_woody_crown_mesh(&branches, depth, ENGLISH_OAK_BARK, quality)
-                .count_vertices()
+            procedural_woody_crown_mesh(&branches, depth, quality).count_vertices()
         })
         .sum::<usize>();
         assert!(vertex_count > 0);

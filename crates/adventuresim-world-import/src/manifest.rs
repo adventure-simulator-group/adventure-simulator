@@ -41,8 +41,7 @@ struct ViabundusFile {
     name: String,
     sha256: String,
     url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    size: Option<u64>,
+    size: u64,
 }
 
 pub(crate) fn sha256_file(path: &Path) -> Result<String> {
@@ -70,7 +69,10 @@ fn sha256_json(path: &Path) -> Result<String> {
     Ok(format!("{:x}", Sha256::digest(canonical)))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn source(
     id: &str,
     name: &str,
@@ -162,7 +164,6 @@ pub(crate) fn viabundus(directory: &Path) -> Result<SourceProvenance> {
         sidecar
             .files
             .sort_by(|left, right| left.name.cmp(&right.name));
-        let mut fully_sized = true;
         for required in VIABUNDUS_FILES {
             let entry = sidecar
                 .files
@@ -171,23 +172,14 @@ pub(crate) fn viabundus(directory: &Path) -> Result<SourceProvenance> {
                 .expect("checked inventory");
             let path = directory.join(required);
             let actual_size = fs::metadata(&path)?.len();
-            if entry.size.is_some_and(|size| size != actual_size)
-                || sha256_file(&path)? != entry.sha256
-            {
+            if entry.size != actual_size || sha256_file(&path)? != entry.sha256 {
                 return Err(Error::Validation(format!(
                     "Viabundus sidecar identity mismatch for {required}"
                 )));
             }
-            fully_sized &= entry.size.is_some();
         }
-        if fully_sized {
-            SourceContentIdentity::PreparedSnapshotSha256 {
-                sha256: format!("{:x}", Sha256::digest(serde_json::to_vec(&sidecar)?)),
-            }
-        } else {
-            SourceContentIdentity::ReleaseBlocked {
-                reason: "legacy Viabundus sidecar lacks verified byte sizes".into(),
-            }
+        SourceContentIdentity::PreparedSnapshotSha256 {
+            sha256: format!("{:x}", Sha256::digest(serde_json::to_vec(&sidecar)?)),
         }
     } else {
         SourceContentIdentity::ReleaseBlocked {
@@ -842,7 +834,7 @@ mod tests {
                     name: (*name).into(),
                     sha256: format!("{:x}", Sha256::digest(name.as_bytes())),
                     url: format!("https://example.invalid/{name}"),
-                    size: Some(name.len() as u64),
+                    size: name.len() as u64,
                 }
             })
             .collect();
@@ -1097,7 +1089,7 @@ mod tests {
             name: sidecar.files[0].name.clone(),
             sha256: "a".repeat(64),
             url: "https://example.invalid/duplicate".into(),
-            size: Some(1),
+            size: 1,
         });
         write_viabundus(&root, &sidecar);
         assert!(
@@ -1111,7 +1103,7 @@ mod tests {
             name: "unused.csv".into(),
             sha256: "a".repeat(64),
             url: "https://example.invalid/unused.csv".into(),
-            size: Some(1),
+            size: 1,
         });
         write_viabundus(&root, &sidecar);
         assert!(viabundus(&root).unwrap().content_identity.is_reproducible());

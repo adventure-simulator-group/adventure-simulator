@@ -1,3 +1,37 @@
+#[derive(Clone, Copy, Debug)]
+pub(super) struct GeneratedDialogueTopicRequest<'a> {
+    character_id: u64,
+    agent: u32,
+    cycle: u32,
+    case_id: &'a str,
+    subject: &'a str,
+    topics: &'a [&'a str],
+    preferred_name: Option<&'a str>,
+    preferred_location: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct GeneratedInvestigationAttempt<'a> {
+    party_id: &'a str,
+    character_id: u64,
+    agent: u32,
+    case_id: &'a str,
+    subject: &'a str,
+    action: &'a BackendInvestigationAction,
+    attempt: &'a str,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct GeneratedInvestigationWindow<'a> {
+    party_id: &'a str,
+    owner_character_id: u64,
+    agent: u32,
+    case_id: &'a str,
+    action_id: &'a str,
+    reason_code: &'a str,
+    wait_minutes: u32,
+}
+
 impl LiveRunner {
     pub(super) fn owned_open_generated_cases(&self, character_id: u64) -> Vec<(String, String)> {
         stable_owned_open_cases(
@@ -18,11 +52,7 @@ impl LiveRunner {
         )
     }
 
-    fn generated_case_has_public_actionable_step(
-        &self,
-        character_id: u64,
-        case_id: &str,
-    ) -> bool {
+    fn generated_case_has_public_actionable_step(&self, character_id: u64, case_id: &str) -> bool {
         self.connection
             .db
             .backend_investigation_actions()
@@ -69,7 +99,9 @@ impl LiveRunner {
         }
         let active_case_id = self.generated_active_cases.get(&character_id).cloned();
         let active_is_actionable = active_case_id.as_deref().is_some_and(|case_id| {
-            cases.iter().any(|(open_case_id, _)| open_case_id == case_id)
+            cases
+                .iter()
+                .any(|(open_case_id, _)| open_case_id == case_id)
                 && self.generated_case_has_public_actionable_step(character_id, case_id)
         });
         let selected_index = fair_open_case_index(
@@ -96,13 +128,17 @@ impl LiveRunner {
         case_id: &str,
         before: &PublicDialogueProgressFingerprint,
     ) {
-        let still_open = self.generated_case_status(character_id, case_id).as_deref() == Some("open");
+        let still_open =
+            self.generated_case_status(character_id, case_id).as_deref() == Some("open");
         let progressed = still_open
             && self.public_dialogue_progress_fingerprint(character_id, case_id) != *before;
         if progressed && self.generated_case_has_public_actionable_step(character_id, case_id) {
             self.generated_active_cases
                 .insert(character_id, case_id.to_owned());
-        } else if self.generated_active_cases.get(&character_id).map(String::as_str)
+        } else if self
+            .generated_active_cases
+            .get(&character_id)
+            .map(String::as_str)
             == Some(case_id)
         {
             self.generated_active_cases.remove(&character_id);
@@ -125,11 +161,8 @@ impl LiveRunner {
         let wait_actions = actions
             .iter()
             .filter(|row| {
-                projected_investigation_wait_minutes(
-                    &row.unavailable_reason_code,
-                    row.wait_minutes,
-                )
-                .is_some()
+                projected_investigation_wait_minutes(&row.unavailable_reason_code, row.wait_minutes)
+                    .is_some()
             })
             .count();
         let mut action_versions = actions
@@ -164,11 +197,7 @@ impl LiveRunner {
                     &lead.current_learned_location
                 };
                 !self
-                    .visible_npc_candidates(
-                        character_id,
-                        Some(&lead.witness_name),
-                        Some(location),
-                    )
+                    .visible_npc_candidates(character_id, Some(&lead.witness_name), Some(location))
                     .is_empty()
             })
             .count();
@@ -198,7 +227,11 @@ impl LiveRunner {
             .iter()
             .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
             .collect::<Vec<_>>();
-        let latest_outcome_at = outcomes.iter().map(|row| row.recorded_at).max().unwrap_or(0);
+        let latest_outcome_at = outcomes
+            .iter()
+            .map(|row| row.recorded_at)
+            .max()
+            .unwrap_or(0);
         let pins = self
             .connection
             .db
@@ -725,16 +758,16 @@ impl LiveRunner {
             } else {
                 &referral.current_learned_location
             };
-            if self.try_generated_dialogue_topic(
+            if self.try_generated_dialogue_topic(GeneratedDialogueTopicRequest {
                 character_id,
                 agent,
                 cycle,
-                &referral.case_id,
-                &referral.summary,
-                &["referred-testimony"],
-                Some(&referral.witness_name),
-                Some(preferred_location),
-            )? {
+                case_id: &referral.case_id,
+                subject: &referral.summary,
+                topics: &["referred-testimony"],
+                preferred_name: Some(&referral.witness_name),
+                preferred_location: Some(preferred_location),
+            })? {
                 after = self.owned_open_generated_cases(character_id);
                 discovered = after
                     .iter()
@@ -821,15 +854,18 @@ impl LiveRunner {
 
     pub(super) fn try_generated_dialogue_topic(
         &mut self,
-        character_id: u64,
-        agent: u32,
-        cycle: u32,
-        case_id: &str,
-        subject: &str,
-        topics: &[&str],
-        preferred_name: Option<&str>,
-        preferred_location: Option<&str>,
+        request: GeneratedDialogueTopicRequest<'_>,
     ) -> Result<bool, String> {
+        let GeneratedDialogueTopicRequest {
+            character_id,
+            agent,
+            cycle,
+            case_id,
+            subject,
+            topics,
+            preferred_name,
+            preferred_location,
+        } = request;
         let mut candidates =
             self.visible_npc_candidates(character_id, preferred_name, preferred_location);
         if let Some(name) = preferred_name {
@@ -977,7 +1013,7 @@ impl LiveRunner {
                 summary: row.summary,
                 source_label: row.source_label,
                 confidence_bps: row.confidence_bps,
-                destination_stage: row.destination_stage,
+                destination_stage: core_destination_knowledge_stage(row.destination_stage),
                 directions: row.directions,
                 exact_location_id: row.exact_location_id,
                 latitude_e7: row.latitude_e_7,
@@ -1037,7 +1073,7 @@ impl LiveRunner {
             .map(|row| {
                 (
                     row.case_site_id,
-                    row.knowledge_stage,
+                    core_destination_knowledge_stage(row.knowledge_stage),
                     row.tracked,
                     row.case_resolved,
                     row.combat_available,
@@ -1095,15 +1131,16 @@ impl LiveRunner {
             else {
                 return Ok(false);
             };
-            let medically_critical = self.living_party_member_ids(party_id).into_iter().any(
-                |character_id| {
-                    self.connection
-                        .db
-                        .character_illness_status()
-                        .iter()
-                        .any(|row| row.character_id == character_id && row.critical)
-                },
-            );
+            let medically_critical =
+                self.living_party_member_ids(party_id)
+                    .into_iter()
+                    .any(|character_id| {
+                        self.connection
+                            .db
+                            .character_illness_status()
+                            .iter()
+                            .any(|row| row.character_id == character_id && row.critical)
+                    });
             if medically_critical {
                 if self.generated_action_return_thermal_decision(party_id, &pin, 0)
                     == OnSiteActionDecision::ReturnNow
@@ -1173,10 +1210,14 @@ impl LiveRunner {
                 return Ok(false);
             }
         }
-        let result = reducer_call!(self, "resynchronize_party_after_generated_preflight", |cb| self
-            .connection
-            .reducers
-            .synchronize_party_for_activity_then(owner_character_id, cb));
+        let result = reducer_call!(
+            self,
+            "resynchronize_party_after_generated_preflight",
+            |cb| self
+                .connection
+                .reducers
+                .synchronize_party_for_activity_then(owner_character_id, cb)
+        );
         self.call(result)?;
         self.observe_deaths();
         if !party_medically_ready {
@@ -1251,14 +1292,17 @@ impl LiveRunner {
 
     pub(super) fn emit_generated_investigation_attempt(
         &mut self,
-        party_id: &str,
-        character_id: u64,
-        agent: u32,
-        case_id: &str,
-        subject: &str,
-        action: &BackendInvestigationAction,
-        attempt: &str,
+        attempt: GeneratedInvestigationAttempt<'_>,
     ) -> Result<(), String> {
+        let GeneratedInvestigationAttempt {
+            party_id,
+            character_id,
+            agent,
+            case_id,
+            subject,
+            action,
+            attempt,
+        } = attempt;
         let actor_time = self
             .connection
             .db
@@ -1323,14 +1367,17 @@ impl LiveRunner {
 
     pub(super) fn wait_for_generated_investigation_window(
         &mut self,
-        party_id: &str,
-        owner_character_id: u64,
-        agent: u32,
-        case_id: &str,
-        action_id: &str,
-        reason_code: &str,
-        wait_minutes: u32,
+        window: GeneratedInvestigationWindow<'_>,
     ) -> Result<bool, String> {
+        let GeneratedInvestigationWindow {
+            party_id,
+            owner_character_id,
+            agent,
+            case_id,
+            action_id,
+            reason_code,
+            wait_minutes,
+        } = window;
         let wait_minutes = projected_investigation_wait_minutes(reason_code, wait_minutes)
             .ok_or("projected investigation wait hint was invalid")?;
         let at_settlement = self
@@ -1359,15 +1406,14 @@ impl LiveRunner {
                 self.connection.reducers.rest_at_settlement_hours_then(
                     owner_character_id,
                     u64::from(wait_minutes),
-                    venue.at_inn(),
+                    stdb_settlement_action_service(venue),
                     cb,
                 )
             });
             self.call(result)?;
-            if venue.at_inn() {
-                "settlement_inn"
-            } else {
-                "settlement_temple"
+            match venue {
+                DomainSettlementActionService::Inn => "settlement_inn",
+                DomainSettlementActionService::Temple => "settlement_temple",
             }
         } else {
             let shelter = self.rest_at_camp_with_party_shelter(
@@ -1611,7 +1657,8 @@ impl LiveRunner {
                 let recovery_action_index = ready_action_index.or_else(|| {
                     actions.iter().position(|action| {
                         action.available
-                            && self.connection
+                            && self
+                                .connection
                                 .db
                                 .backend_case_site_pins()
                                 .iter()
@@ -1656,14 +1703,11 @@ impl LiveRunner {
                     ) {
                         OnSiteActionDecision::Ready => {}
                         OnSiteActionDecision::RestThenRetry(minutes) => {
-                            if !(1..=1_440).contains(&minutes) {
+                            if !(1..=MINUTES_PER_DAY).contains(&minutes) {
                                 return Ok(false);
                             }
-                            let recovery_key = (
-                                character_id,
-                                case_id.to_owned(),
-                                action.action_id.clone(),
-                            );
+                            let recovery_key =
+                                (character_id, case_id.to_owned(), action.action_id.clone());
                             if self.generated_case_site_recoveries.contains(&recovery_key) {
                                 self.event(
                                     agent,
@@ -1753,15 +1797,15 @@ impl LiveRunner {
                     .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
                     .map(|row| row.outcome_id)
                     .collect::<HashSet<_>>();
-                self.emit_generated_investigation_attempt(
+                self.emit_generated_investigation_attempt(GeneratedInvestigationAttempt {
                     party_id,
                     character_id,
                     agent,
                     case_id,
                     subject,
-                    &action,
-                    "initial",
-                )?;
+                    action: &action,
+                    attempt: "initial",
+                })?;
                 let action_elapsed_before = self.public_party_elapsed_max(party_id);
                 let result = reducer_call!(self, "perform_investigation_action", |cb| self
                     .connection
@@ -1965,55 +2009,58 @@ impl LiveRunner {
                     let mut followed_safe_wait = false;
                     loop {
                         match readiness {
-                        DepartureReadiness::Ready => {}
-                        DepartureReadiness::ReadyWithItinerary {
-                            walking_minutes_per_day,
-                            travel_at_night,
-                            case_site_recovery_minutes,
-                        } => {
-                            planned_case_site_recovery_minutes = case_site_recovery_minutes;
-                            self.configure_safe_departure_itinerary(
-                                character_id,
+                            DepartureReadiness::Ready => {}
+                            DepartureReadiness::ReadyWithItinerary {
                                 walking_minutes_per_day,
                                 travel_at_night,
-                            )?;
-                        }
-                        DepartureReadiness::WaitForSafeDeparture {
-                            reason,
-                            wait_minutes,
-                            walking_minutes_per_day,
-                            travel_at_night,
-                            ..
-                        } => {
-                            if !followed_safe_wait
-                                && route_origin.current_settlement_id.is_some()
-                                && self.wait_for_safe_departure_at_settlement(
+                                case_site_recovery_minutes,
+                            } => {
+                                planned_case_site_recovery_minutes = case_site_recovery_minutes;
+                                self.configure_safe_departure_itinerary(
                                     character_id,
-                                    agent,
-                                    case_id,
-                                    reason,
-                                    wait_minutes,
                                     walking_minutes_per_day,
                                     travel_at_night,
-                                )?
-                            {
-                                followed_safe_wait = true;
-                                if !self.ensure_medically_safe(agent)?
-                                    || matches!(
-                                        self.validate_party_departure_readiness(party_id),
-                                        DepartureReadiness::Deferred(_)
-                                    )
-                                {
-                                    return Ok(false);
-                                }
-                                readiness = self
-                                    .validate_case_site_thermal_readiness(party_id, agent, &pin);
-                                continue;
+                                )?;
                             }
-                            return Ok(false);
-                        }
-                        DepartureReadiness::Deferred(reason) => {
-                            self.event(
+                            DepartureReadiness::WaitForSafeDeparture {
+                                reason,
+                                wait_minutes,
+                                walking_minutes_per_day,
+                                travel_at_night,
+                                ..
+                            } => {
+                                if !followed_safe_wait
+                                    && route_origin.current_settlement_id.is_some()
+                                    && self.wait_for_safe_departure_at_settlement(
+                                        SettlementDepartureWait {
+                                            character_id,
+                                            agent,
+                                            case_id,
+                                            reason,
+                                            wait_minutes,
+                                            walking_minutes_per_day,
+                                            travel_at_night,
+                                        },
+                                    )?
+                                {
+                                    followed_safe_wait = true;
+                                    if !self.ensure_medically_safe(agent)?
+                                        || matches!(
+                                            self.validate_party_departure_readiness(party_id),
+                                            DepartureReadiness::Deferred(_)
+                                        )
+                                    {
+                                        return Ok(false);
+                                    }
+                                    readiness = self.validate_case_site_thermal_readiness(
+                                        party_id, agent, &pin,
+                                    );
+                                    continue;
+                                }
+                                return Ok(false);
+                            }
+                            DepartureReadiness::Deferred(reason) => {
+                                self.event(
                                 agent,
                                 CoreLoopEventKind::QuestSuppressed,
                                 format!(
@@ -2021,8 +2068,8 @@ impl LiveRunner {
                                     bounded_event_field(case_id),
                                 ),
                             );
-                            return Ok(false);
-                        }
+                                return Ok(false);
+                            }
                         }
                         break;
                     }
@@ -2065,11 +2112,7 @@ impl LiveRunner {
                     self.metrics.generated_case_site_traveled += 1;
                 }
                 if planned_case_site_recovery_minutes > 0 {
-                    let recovery_key = (
-                        character_id,
-                        case_id.to_owned(),
-                        action.action_id.clone(),
-                    );
+                    let recovery_key = (character_id, case_id.to_owned(), action.action_id.clone());
                     if self.generated_case_site_recoveries.contains(&recovery_key) {
                         return Ok(false);
                     }
@@ -2122,15 +2165,15 @@ impl LiveRunner {
                 )
                 .map(|wait_minutes| (action, wait_minutes))
             }) {
-                if !self.wait_for_generated_investigation_window(
+                if !self.wait_for_generated_investigation_window(GeneratedInvestigationWindow {
                     party_id,
-                    character_id,
+                    owner_character_id: character_id,
                     agent,
                     case_id,
-                    &action.action_id,
-                    &action.unavailable_reason_code,
+                    action_id: &action.action_id,
+                    reason_code: &action.unavailable_reason_code,
                     wait_minutes,
-                )? {
+                })? {
                     return Ok(false);
                 }
                 // Rest may clip at a disease/injury boundary or synchronize a
@@ -2169,17 +2212,16 @@ impl LiveRunner {
                         break;
                     }
                     attempted_witnesses.insert(witness_key);
-                    if self.try_generated_dialogue_topic(
+                    if self.try_generated_dialogue_topic(GeneratedDialogueTopicRequest {
                         character_id,
                         agent,
                         cycle,
                         case_id,
                         subject,
-                        &["referred-testimony"],
-                        Some(&witness.witness_name),
-                        Some(&location),
-                    )?
-                    {
+                        topics: &["referred-testimony"],
+                        preferred_name: Some(&witness.witness_name),
+                        preferred_location: Some(&location),
+                    })? {
                         witness_progressed = true;
                         break;
                     }
@@ -2187,16 +2229,16 @@ impl LiveRunner {
                 if witness_progressed {
                     continue;
                 }
-                if self.try_generated_dialogue_topic(
+                if self.try_generated_dialogue_topic(GeneratedDialogueTopicRequest {
                     character_id,
                     agent,
                     cycle,
                     case_id,
                     subject,
-                    &["return-recovered-property", "expose-false-account"],
-                    None,
-                    None,
-                )? {
+                    topics: &["return-recovered-property", "expose-false-account"],
+                    preferred_name: None,
+                    preferred_location: None,
+                })? {
                     continue;
                 }
             }
@@ -2283,10 +2325,15 @@ impl LiveRunner {
                             ),
                         );
                         let settlement_id = pin.origin_settlement_id.clone();
-                        let result = reducer_call!(self, "generated_unsafe_combat_retreat", |cb| self
-                            .connection
-                            .reducers
-                            .travel_to_settlement_then(character_id, settlement_id.clone(), cb));
+                        let result =
+                            reducer_call!(self, "generated_unsafe_combat_retreat", |cb| self
+                                .connection
+                                .reducers
+                                .travel_to_settlement_then(
+                                    character_id,
+                                    settlement_id.clone(),
+                                    cb
+                                ));
                         self.call(result)?;
                         let _ = self.travel_camps(party_id)?;
                         return Ok(false);

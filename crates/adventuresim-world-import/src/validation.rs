@@ -713,7 +713,10 @@ fn historical_report_matches(
         )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn hydrology_counts_are_consistent(
     files: usize,
     features: usize,

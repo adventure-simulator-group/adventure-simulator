@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
+use super::starting_age_tier_type::StartingAgeTier;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,7 +14,7 @@ pub struct StartingCharacterClaim {
     pub owner_key: String,
     pub generator_version: u16,
     pub seed: String,
-    pub age_tier: StartingAgeTierCoordinate,
+    pub age_tier: StartingAgeTier,
     pub slot: u8,
 }
 
@@ -31,7 +31,7 @@ pub struct StartingCharacterClaimCols {
     pub owner_key: __sdk::__query_builder::Col<StartingCharacterClaim, String>,
     pub generator_version: __sdk::__query_builder::Col<StartingCharacterClaim, u16>,
     pub seed: __sdk::__query_builder::Col<StartingCharacterClaim, String>,
-    pub age_tier: __sdk::__query_builder::Col<StartingCharacterClaim, StartingAgeTierCoordinate>,
+    pub age_tier: __sdk::__query_builder::Col<StartingCharacterClaim, StartingAgeTier>,
     pub slot: __sdk::__query_builder::Col<StartingCharacterClaim, u8>,
 }
 

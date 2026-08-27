@@ -14,7 +14,6 @@ pub(super) struct UpdateRecruitmentRoleArgs {
     pub name: String,
     pub quantity: u32,
     pub requirements: RecruitmentRequirements,
-    pub weapon_precision: f32,
 }
 
 impl From<UpdateRecruitmentRoleArgs> for super::Reducer {
@@ -25,7 +24,6 @@ impl From<UpdateRecruitmentRoleArgs> for super::Reducer {
             name: args.name,
             quantity: args.quantity,
             requirements: args.requirements,
-            weapon_precision: args.weapon_precision,
         }
     }
 }
@@ -52,7 +50,6 @@ pub trait update_recruitment_role {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
     ) -> __sdk::Result<()> {
         self.update_recruitment_role_then(
             leader_id,
@@ -60,7 +57,6 @@ pub trait update_recruitment_role {
             name,
             quantity,
             requirements,
-            weapon_precision,
             |_, _| {},
         )
     }
@@ -78,7 +74,6 @@ pub trait update_recruitment_role {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -96,7 +91,6 @@ impl update_recruitment_role for super::RemoteReducers {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -111,7 +105,6 @@ impl update_recruitment_role for super::RemoteReducers {
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
             },
             callback,
         )

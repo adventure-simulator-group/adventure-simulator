@@ -11,6 +11,11 @@
 //! second time. Only `--features remote-types` does, and nothing in the
 //! real `adventuresim-tactical-server` binary depends on this target.
 #![cfg(feature = "remote-types")]
+#![expect(
+    dead_code,
+    unused_imports,
+    reason = "the reflection linker target compiles the server module tree solely to register derived types"
+)]
 
 pub mod bot;
 pub mod combat;

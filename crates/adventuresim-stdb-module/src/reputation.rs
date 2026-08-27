@@ -248,6 +248,10 @@ pub fn aggregate_id(character_id: u64, settlement_id: &str) -> String {
 /// event ID is a successful no-op so reducer retries cannot double-award it.
 /// SpacetimeDB reducers commit the event and every aggregate mutation in one
 /// transaction, so per-destination idempotency rows are unnecessary.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "reputation events expose each immutable event coordinate explicitly"
+)]
 pub fn record_event(
     ctx: &ReducerContext,
     event_id: String,

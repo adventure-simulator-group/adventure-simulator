@@ -5,8 +5,9 @@
 //! same result, provided the same minute snapshots are supplied.
 
 use crate::weather::{Precipitation, WeatherSnapshot};
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 
-pub const MAX_WETNESS_BPS: u16 = 10_000;
+pub const MAX_WETNESS_BPS: u16 = BASIS_POINTS_PER_WHOLE;
 pub const MAX_THERMAL_STRAIN: i32 = 10_000;
 pub const LEATHER_WEATHERPROOF_RESISTANCE: f32 = 20.0;
 pub const PADDING_INSULATION_BPS_PER_POINT: f32 = 80.0;
@@ -41,25 +42,40 @@ pub struct ClothingExposure {
     pub peripheral_protection_bps: [u16; 4],
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Shelter available at an outdoor field camp.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
 pub enum FieldShelter {
     #[default]
     Bivouac,
     Tent,
-    /// A settlement building whose interior protects occupants from ambient
-    /// thermal loading as well as precipitation and wind.
+}
+
+/// The environment governing weather exposure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExposureShelter {
+    Field(FieldShelter),
+    /// A settlement building protects occupants from ambient thermal loading
+    /// as well as precipitation and wind.
     Indoor,
 }
 
-impl FieldShelter {
+impl Default for ExposureShelter {
+    fn default() -> Self {
+        Self::Field(FieldShelter::default())
+    }
+}
+
+impl ExposureShelter {
     pub const fn blocks_rain(self) -> bool {
-        matches!(self, Self::Tent | Self::Indoor)
+        matches!(self, Self::Field(FieldShelter::Tent) | Self::Indoor)
     }
 
     pub const fn wind_multiplier_bps(self) -> u16 {
         match self {
-            Self::Bivouac => 10_000,
-            Self::Tent => 2_500,
+            Self::Field(FieldShelter::Bivouac) => BASIS_POINTS_PER_WHOLE,
+            Self::Field(FieldShelter::Tent) => 2_500,
             Self::Indoor => 0,
         }
     }
@@ -94,7 +110,7 @@ pub fn weatherproofing_from_outer_layer(resistance: f32, coverage: f32) -> u16 {
     (resistance.max(0.0) / LEATHER_WEATHERPROOF_RESISTANCE)
         .min(1.0)
         .mul_add(coverage.clamp(0.0, 1.0), 0.0)
-        .mul_add(10_000.0, 0.0)
+        .mul_add(f32::from(BASIS_POINTS_PER_WHOLE), 0.0)
         .round() as u16
 }
 
@@ -108,7 +124,7 @@ pub fn advance_exposure(
     mut state: SurvivalState,
     weather: impl IntoIterator<Item = WeatherSnapshot>,
     clothing: ClothingExposure,
-    shelter: FieldShelter,
+    shelter: ExposureShelter,
 ) -> ExposureOutcome {
     let mut frostbite_event_offsets = Vec::new();
     for (offset, snapshot) in weather.into_iter().enumerate() {
@@ -140,12 +156,14 @@ fn next_wetness(
     wetness: u16,
     weather: WeatherSnapshot,
     clothing: ClothingExposure,
-    shelter: FieldShelter,
+    shelter: ExposureShelter,
 ) -> u16 {
     let rain = matches!(weather.precipitation, Precipitation::Rain) && !shelter.blocks_rain();
     let gain = if rain {
         let protection = u32::from(clothing.weatherproofing_bps) * 9 / 10;
-        u32::from(weather.intensity_bps) * (10_000u32.saturating_sub(protection)) / 500_000
+        u32::from(weather.intensity_bps)
+            * (u32::from(BASIS_POINTS_PER_WHOLE).saturating_sub(protection))
+            / 500_000
     } else {
         0
     };
@@ -154,9 +172,10 @@ fn next_wetness(
         0
     } else {
         let warmth = weather.temperature_deci_c.saturating_add(100).max(10) as u32;
-        let wind =
-            u32::from(weather.wind_speed_bps) * u32::from(shelter.wind_multiplier_bps()) / 10_000;
-        let trapped = 10_000u32.saturating_sub(u32::from(clothing.insulation_bps) * 3 / 4);
+        let wind = u32::from(weather.wind_speed_bps) * u32::from(shelter.wind_multiplier_bps())
+            / u32::from(BASIS_POINTS_PER_WHOLE);
+        let trapped = u32::from(BASIS_POINTS_PER_WHOLE)
+            .saturating_sub(u32::from(clothing.insulation_bps) * 3 / 4);
         (warmth + wind / 250) * trapped / 100_000
     };
     u32::from(wetness)
@@ -170,27 +189,28 @@ fn next_thermal_strain(
     wetness: u16,
     weather: WeatherSnapshot,
     clothing: ClothingExposure,
-    shelter: FieldShelter,
+    shelter: ExposureShelter,
 ) -> i32 {
     // Settlement downtime happens inside a building rather than in a tent
     // pitched outdoors. Ignore the exterior temperature while indoors and
     // let any existing strain recover at the same bounded neutral rate used
     // for comfortable weather.
-    if shelter == FieldShelter::Indoor {
+    if shelter == ExposureShelter::Indoor {
         return strain - strain.signum();
     }
     const COMFORT_DECI_C: i32 = 180;
-    let wind =
-        i32::from(weather.wind_speed_bps) * i32::from(shelter.wind_multiplier_bps()) / 10_000;
+    let wind = i32::from(weather.wind_speed_bps) * i32::from(shelter.wind_multiplier_bps())
+        / i32::from(BASIS_POINTS_PER_WHOLE);
     let wind_chill_deci_c = wind / 180;
     let wet_chill_deci_c = i32::from(wetness) / 160;
     let insulation = i32::from(clothing.insulation_bps);
     let cold_delta =
         (COMFORT_DECI_C - weather.temperature_deci_c + wind_chill_deci_c + wet_chill_deci_c).max(0);
     let heat_delta = (weather.temperature_deci_c - 240).max(0);
-    let cold_rate = cold_delta * (10_000 - insulation) / 50_000;
+    let whole_bps = i32::from(BASIS_POINTS_PER_WHOLE);
+    let cold_rate = cold_delta * (whole_bps - insulation) / 50_000;
     // Insulation reduces sweat evaporation and therefore worsens heat.
-    let heat_rate = heat_delta * (10_000 + insulation / 2) / 50_000;
+    let heat_rate = heat_delta * (whole_bps + insulation / 2) / 50_000;
     let next = match (cold_rate, heat_rate) {
         (cold, 0) if cold > 0 => strain.saturating_sub(cold.max(1)),
         (0, heat) if heat > 0 => strain.saturating_add(heat.max(1)),
@@ -259,19 +279,19 @@ mod tests {
             SurvivalState::default(),
             samples.iter().copied(),
             ClothingExposure::default(),
-            FieldShelter::Bivouac,
+            ExposureShelter::Field(FieldShelter::Bivouac),
         );
         let first = advance_exposure(
             SurvivalState::default(),
             samples[..333].iter().copied(),
             ClothingExposure::default(),
-            FieldShelter::Bivouac,
+            ExposureShelter::Field(FieldShelter::Bivouac),
         );
         let second = advance_exposure(
             first.state,
             samples[333..].iter().copied(),
             ClothingExposure::default(),
-            FieldShelter::Bivouac,
+            ExposureShelter::Field(FieldShelter::Bivouac),
         );
         assert_eq!(whole.state, second.state);
         assert_eq!(
@@ -297,13 +317,13 @@ mod tests {
             SurvivalState::default(),
             [cold_rain; 60],
             ClothingExposure::default(),
-            FieldShelter::Bivouac,
+            ExposureShelter::Field(FieldShelter::Bivouac),
         );
         let tented = advance_exposure(
             SurvivalState::default(),
             [cold_rain; 60],
             ClothingExposure::default(),
-            FieldShelter::Tent,
+            ExposureShelter::Field(FieldShelter::Tent),
         );
         assert!(exposed.state.wetness_bps > tented.state.wetness_bps);
         assert!(exposed.state.thermal_strain < tented.state.thermal_strain);
@@ -312,7 +332,7 @@ mod tests {
                 SurvivalState::default(),
                 [weather(180, 0, false); 60],
                 ClothingExposure::default(),
-                FieldShelter::Tent,
+                ExposureShelter::Field(FieldShelter::Tent),
             )
             .state
             .thermal_strain,
@@ -327,7 +347,7 @@ mod tests {
                 SurvivalState::default(),
                 [weather; 1_440],
                 ClothingExposure::default(),
-                FieldShelter::Indoor,
+                ExposureShelter::Indoor,
             );
             assert_eq!(outcome.state.thermal_strain, 0);
             assert_eq!(thermal_incapacitation(outcome.state.thermal_strain), 0.0);
@@ -342,7 +362,7 @@ mod tests {
             },
             [weather(-800, 10_000, true); 60],
             ClothingExposure::default(),
-            FieldShelter::Indoor,
+            ExposureShelter::Indoor,
         );
         assert!(recovering.state.wetness_bps < MAX_WETNESS_BPS);
         assert!(recovering.state.thermal_strain > COLD_STAGGER_STRAIN);

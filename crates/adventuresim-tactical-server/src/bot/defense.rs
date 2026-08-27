@@ -1,5 +1,19 @@
 use super::*;
 
+type DefensiveBotQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static CharacterLook,
+        &'static Transform,
+        &'static TacticalCombatSide,
+        &'static TacticalCombatState,
+        Option<&'static DefenseChances>,
+    ),
+    With<OffensiveCombatAi>,
+>;
+
 const FRONTAL_FLANKING_MAX: f32 = 0.01;
 /// Must land shortly before the attacker's weapon windup (see
 /// `PlayerEquipment::weapon_windup_secs`, 300ms by default - the delay
@@ -79,17 +93,7 @@ pub(super) fn on_attack_started(
     event: On<FromClient<MeleeActionRequest>>,
     mut cmd: Commands,
     q_character: Query<(&CharacterLook, &Transform, &TacticalCombatSide)>,
-    q_bots: Query<
-        (
-            Entity,
-            &CharacterLook,
-            &Transform,
-            &TacticalCombatSide,
-            &TacticalCombatState,
-            Option<&DefenseChances>,
-        ),
-        With<OffensiveCombatAi>,
-    >,
+    q_bots: DefensiveBotQuery<'_, '_>,
 ) {
     if !matches!(**event, MeleeActionRequest::Start { .. }) {
         return;

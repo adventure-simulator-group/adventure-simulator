@@ -1,11 +1,15 @@
 use adventuresim_core::errantry::{
-    FeyPresenterCatalogId, FeySpeechPart, PuzzleProjection, PuzzleSubmission, Sigil, WitnessPath,
-    fey_clue_text, fey_puzzle_speech,
+    FeyPresenterCatalogId, FeySpeechPart, fey_clue_text, fey_puzzle_speech,
 };
+use adventuresim_puzzles::{PuzzleProjection, PuzzleSubmission, Sigil, WitnessPath};
 use maud::{Markup, html};
 
 use super::journal_layout;
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the challenge page renders independent authoritative puzzle and submission projections"
+)]
 pub fn puzzle_page(
     challenge_id: &str,
     case_id: &str,
@@ -359,11 +363,11 @@ pub fn parse_witness_path(value: &str) -> Result<WitnessPath, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_core::errantry::PuzzleAuthority;
+    use adventuresim_puzzles::PuzzleAuthority;
 
     #[test]
     fn every_puzzle_is_a_no_js_shared_chat_visual_without_private_truth() {
-        for kind in adventuresim_core::errantry::PuzzleKind::ALL {
+        for kind in adventuresim_puzzles::PuzzleKind::ALL {
             let puzzle = PuzzleAuthority::generate(kind, 4);
             let markup = puzzle_page(
                 "challenge:test",
@@ -393,10 +397,8 @@ mod tests {
 
     #[test]
     fn submitted_answer_remains_in_the_solved_chat_until_the_player_leaves() {
-        let puzzle = PuzzleAuthority::generate(
-            adventuresim_core::errantry::PuzzleKind::RuneTransformation,
-            4,
-        );
+        let puzzle =
+            PuzzleAuthority::generate(adventuresim_puzzles::PuzzleKind::RuneTransformation, 4);
         let submission = PuzzleSubmission::RuneTransformation {
             result: Sigil::Sword,
         };
@@ -429,10 +431,8 @@ mod tests {
 
     #[test]
     fn rune_prompt_requires_three_inferred_gate_laws_in_route_order() {
-        let puzzle = PuzzleAuthority::generate(
-            adventuresim_core::errantry::PuzzleKind::RuneTransformation,
-            19,
-        );
+        let puzzle =
+            PuzzleAuthority::generate(adventuresim_puzzles::PuzzleKind::RuneTransformation, 19);
         let markup = puzzle_page(
             "challenge:test",
             "case:test",
@@ -459,8 +459,7 @@ mod tests {
 
     #[test]
     fn new_puzzle_families_are_fully_chat_native() {
-        let grid =
-            PuzzleAuthority::generate(adventuresim_core::errantry::PuzzleKind::LogicGrid, 41);
+        let grid = PuzzleAuthority::generate(adventuresim_puzzles::PuzzleKind::LogicGrid, 41);
         let grid_markup = puzzle_page(
             "challenge:grid",
             "case:test",
@@ -479,10 +478,8 @@ mod tests {
         assert!(grid_markup.contains("grid_token_0"));
         assert!(grid_markup.contains("grid_road_0"));
 
-        let allocation = PuzzleAuthority::generate(
-            adventuresim_core::errantry::PuzzleKind::ResourceAllocation,
-            42,
-        );
+        let allocation =
+            PuzzleAuthority::generate(adventuresim_puzzles::PuzzleKind::ResourceAllocation, 42);
         let allocation_markup = puzzle_page(
             "challenge:allocation",
             "case:test",

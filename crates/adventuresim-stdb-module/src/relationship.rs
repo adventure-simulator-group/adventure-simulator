@@ -8,9 +8,9 @@ use adventuresim_core::courtship::{
     FORMAL_FATHER_APPROVAL_AFFINITY, GESTATION_MINUTES, LeisureInterval, MinuteSpan,
     SPOUSE_LEISURE_MORALE_SPEC, WEDDING_NOTICE_MINUTES, coded_courtship_rejection,
     conception_quantum_plan, deterministic_child_seeds, informal_affinity_threshold,
-    joint_leisure_minutes, refresh_bounded_leisure_morale, select_daily_location_target,
-    spouse_leisure_earned_milli, stable_lifecycle_hash, succeeds_daily_trial,
-    uncovered_minute_spans,
+    joint_leisure_minutes, parse_courtship_rejection, refresh_bounded_leisure_morale,
+    select_daily_location_target, spouse_leisure_earned_milli, stable_lifecycle_hash,
+    succeeds_daily_trial, uncovered_minute_spans,
 };
 use adventuresim_core::strategic_schedule::{DailySchedule, restorative_leisure_spans};
 use adventuresim_core::strategic_time::{MINUTES_PER_DAY, MINUTES_PER_YEAR};
@@ -2312,7 +2312,8 @@ fn settle_spouse_leisure_pair(
             let entropy = (stable_lifecycle_hash(
                 "spouse-conception",
                 &[&first_id.to_string(), &second_id.to_string(), &ordinal],
-            ) % 10_000) as u16;
+            ) % u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+                as u16;
             let parents = conception_parents(ctx, first_id, second_id, minute)?;
             let succeeded = parents.is_some()
                 && succeeds_daily_trial(entropy, CONCEPTION_CHANCE_PER_TEN_THOUSAND)
@@ -2442,20 +2443,6 @@ pub fn apply_spouse_leisure_conception(
         }
     }
     settle_spouse_leisure_pair(ctx, character_id, spouse_id)
-}
-
-/// Colocated spouses refresh a durable morale benefit from qualifying Leisure.
-/// The source is pair-stable, so repeated leisure refreshes rather than stacks
-/// unbounded events and remains independent of a residence comfort bonus.
-pub fn apply_spouse_leisure_morale(
-    _ctx: &ReducerContext,
-    _character_id: u64,
-    _interval_end: u64,
-    _qualifying_leisure_minutes: u64,
-) -> Result<(), String> {
-    // Compatibility seam: conception registration now settles the conserved
-    // overlap and refreshes the bounded benefit for both spouses exactly once.
-    Ok(())
 }
 
 /// Materialize due children as ordinary full Characters under NPC policy.
@@ -3344,8 +3331,10 @@ pub fn settle_secret_courtship_discovery_for_pair(
         }
         let insight = baseline.observer_insight;
         let deception = courtship.weaker_deception_baseline;
-        let entropy =
-            ((first ^ second ^ observer_id ^ day.rotate_left(19)) % 10_000) as f32 / 10_000.0;
+        let entropy = ((first ^ second ^ observer_id ^ day.rotate_left(19))
+            % u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+            as f32
+            / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE);
         let discovery_chance = ((insight - deception) * 0.08 + 0.15).clamp(0.02, 0.85);
         let succeeded = entropy < discovery_chance;
         ctx.db.courtship_discovery().insert(CourtshipDiscovery {
@@ -3854,7 +3843,16 @@ pub fn begin_formal_courtship(
     partner_id: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, suitor_id)?;
-    let minute = validate_canonical_courtship_pair(ctx, suitor_id, partner_id)?;
+    let minute = match validate_canonical_courtship_pair(ctx, suitor_id, partner_id) {
+        Ok(minute) => minute,
+        Err(error)
+            if parse_courtship_rejection(&error)
+                == Some(CourtshipRejectionCode::ExclusiveCommitment) =>
+        {
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
     let suitor = ctx
         .db
         .character_personality()
@@ -3930,11 +3928,7 @@ pub fn prepare_development_courtship(
         .and_then(|character| character.current_settlement_id)
         .ok_or("Development courtship requires a current settlement")?;
     crate::item::credit_personal_currency(ctx, suitor_id, &settlement_id, 10_000)?;
-    let minute = match validate_canonical_courtship_pair(ctx, suitor_id, partner_id) {
-        Ok(minute) => minute,
-        Err(error) if error.contains("exclusive romantic commitment") => return Ok(()),
-        Err(error) => return Err(error),
-    };
+    let minute = validate_canonical_courtship_pair(ctx, suitor_id, partner_id)?;
     crate::social::put_affinity_at(ctx, partner_id, suitor_id, 100.0, minute);
     if let Some(father_id) = father_of_at(ctx, partner_id, minute)? {
         crate::social::put_affinity_at(ctx, father_id, suitor_id, 100.0, minute);
@@ -4847,7 +4841,7 @@ mod tests {
             .split("pub fn transition_character_to_dead")
             .nth(1)
             .unwrap()
-            .split("/// Non-destructive upgrade path")
+            .split("/// [`Character`] attributes")
             .next()
             .unwrap();
         assert!(death.contains("settle_relationship_lifecycle_for_death"));

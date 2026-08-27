@@ -105,7 +105,7 @@ pub(super) async fn rest_at_settlement_map(
     }
     let requested_minutes = match travel_rest_minutes(&form) {
         Ok(minutes) => minutes,
-        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
+        Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     };
     let shelter = match field_shelter_argument(&form) {
         Ok(shelter) => shelter,

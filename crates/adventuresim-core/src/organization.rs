@@ -555,9 +555,9 @@ pub fn service_npc_location_available(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
     service_id: &str,
 ) -> bool {
-    use crate::settlement_economy::{
-        SettlementActionService, Storefront, action_service_available, storefront_available,
-    };
+    use adventuresim_world_schema::SettlementActionService;
+
+    use crate::settlement_economy::{Storefront, action_service_available, storefront_available};
     match service_id {
         "merchants" => storefront_available(profile, Storefront::General),
         "weapons" => storefront_available(profile, Storefront::Weapons),

@@ -22,6 +22,21 @@ pub struct WorldBuilder {
     bounds: Option<[f64; 4]>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct WorldSourcePaths<'a> {
+    pub viabundus: &'a Path,
+    pub elevation: &'a Path,
+    pub land_use: &'a Path,
+    pub forest_cover: &'a Path,
+    pub potential_vegetation: &'a Path,
+    pub tree_species: &'a Path,
+    pub soilgrids: &'a Path,
+    pub geology: &'a Path,
+    pub religion_regions: &'a Path,
+    pub drought: &'a Path,
+    pub hydrology: &'a Path,
+}
+
 /// Viabundus-only enrichment output used to inspect source-boundary behavior
 /// without fabricating values for the required environmental stages.
 #[derive(Debug)]
@@ -65,102 +80,49 @@ impl WorldBuilder {
         })
     }
 
-    pub fn build_from_sources(
-        self,
-        viabundus_directory: &Path,
-        elevation_directory: &Path,
-        land_use_directory: &Path,
-        forest_cover_directory: &Path,
-        potential_vegetation_directory: &Path,
-        tree_species_archive: &Path,
-        soilgrids_directory: &Path,
-        geology_geopackage: &Path,
-        religion_regions: &Path,
-        drought_netcdf: &Path,
-        hydrology_directory: &Path,
-    ) -> Result<CompiledWorld> {
-        self.build_from_sources_inner(
-            viabundus_directory,
-            elevation_directory,
-            land_use_directory,
-            forest_cover_directory,
-            potential_vegetation_directory,
-            tree_species_archive,
-            soilgrids_directory,
-            geology_geopackage,
-            religion_regions,
-            drought_netcdf,
-            hydrology_directory,
-            None,
-        )
+    pub fn build_from_sources(self, sources: WorldSourcePaths<'_>) -> Result<CompiledWorld> {
+        self.build_from_sources_inner(sources, None)
     }
 
     /// Compile with terrain-aware road gap filling against an immutable base
     /// pack containing documented Viabundus roads only.
-    #[allow(clippy::too_many_arguments)]
     pub fn build_from_sources_with_base_terrain(
         self,
-        viabundus_directory: &Path,
-        elevation_directory: &Path,
-        land_use_directory: &Path,
-        forest_cover_directory: &Path,
-        potential_vegetation_directory: &Path,
-        tree_species_archive: &Path,
-        soilgrids_directory: &Path,
-        geology_geopackage: &Path,
-        religion_regions: &Path,
-        drought_netcdf: &Path,
-        hydrology_directory: &Path,
+        sources: WorldSourcePaths<'_>,
         base_terrain: &adventuresim_terrain::TerrainPack,
     ) -> Result<CompiledWorld> {
-        self.build_from_sources_inner(
-            viabundus_directory,
-            elevation_directory,
-            land_use_directory,
-            forest_cover_directory,
-            potential_vegetation_directory,
-            tree_species_archive,
-            soilgrids_directory,
-            geology_geopackage,
-            religion_regions,
-            drought_netcdf,
-            hydrology_directory,
-            Some(base_terrain),
-        )
+        self.build_from_sources_inner(sources, Some(base_terrain))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn build_from_sources_inner(
         self,
-        viabundus_directory: &Path,
-        elevation_directory: &Path,
-        land_use_directory: &Path,
-        forest_cover_directory: &Path,
-        potential_vegetation_directory: &Path,
-        tree_species_archive: &Path,
-        soilgrids_directory: &Path,
-        geology_geopackage: &Path,
-        religion_regions: &Path,
-        drought_netcdf: &Path,
-        hydrology_directory: &Path,
+        sources: WorldSourcePaths<'_>,
         base_terrain: Option<&adventuresim_terrain::TerrainPack>,
     ) -> Result<CompiledWorld> {
-        let draft = viabundus::compile(
-            viabundus_directory,
-            self.year,
-            self.spatial_grid,
-            self.bounds,
-        )?;
-        let draft = elevation::enrich(draft, elevation_directory)?;
-        let draft = land_use::enrich(draft, land_use_directory)?;
-        let draft = forest_cover::enrich(draft, forest_cover_directory)?;
-        let draft = potential_vegetation::enrich(draft, potential_vegetation_directory)?;
-        let draft = tree_species::enrich(draft, tree_species_archive)?;
-        let draft = soil::predict(draft, soilgrids_directory)?;
-        let draft = geology::enrich(draft, geology_geopackage)?;
+        let WorldSourcePaths {
+            viabundus,
+            elevation,
+            land_use,
+            forest_cover,
+            potential_vegetation,
+            tree_species,
+            soilgrids,
+            geology,
+            religion_regions,
+            drought,
+            hydrology,
+        } = sources;
+        let draft = viabundus::compile(viabundus, self.year, self.spatial_grid, self.bounds)?;
+        let draft = elevation::enrich(draft, elevation)?;
+        let draft = land_use::enrich(draft, land_use)?;
+        let draft = forest_cover::enrich(draft, forest_cover)?;
+        let draft = potential_vegetation::enrich(draft, potential_vegetation)?;
+        let draft = tree_species::enrich(draft, tree_species)?;
+        let draft = soil::predict(draft, soilgrids)?;
+        let draft = geology::enrich(draft, geology)?;
         let draft = religion::enrich(draft, religion_regions)?;
-        let draft = drought::enrich(draft, drought_netcdf)?;
-        let draft = hydrology::enrich(draft, hydrology_directory)?;
+        let draft = drought::enrich(draft, drought)?;
+        let draft = hydrology::enrich(draft, hydrology)?;
         let draft = soil::finalize(draft)?;
         let world = environment_synthesis::finalize(draft)?;
         let world = if let Some(terrain) = base_terrain {
@@ -168,7 +130,7 @@ impl WorldBuilder {
         } else {
             world
         };
-        let world = route_terrain::enrich(world, elevation_directory)?;
+        let world = route_terrain::enrich(world, elevation)?;
         let world = industries::enrich(world)?;
         let world = economies::enrich(world)?;
         validation::validate(&world)?;

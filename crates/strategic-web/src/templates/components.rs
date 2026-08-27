@@ -83,13 +83,10 @@ pub struct SceneInteractableLink<'a> {
     pub action_label: Option<&'a str>,
 }
 
-#[allow(dead_code)] // Client-rendered evidence and server-rendered remains share this vocabulary next.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SceneInteractableKind {
     Fixture,
     Service,
-    Evidence,
-    Remains,
 }
 
 impl SceneInteractableKind {
@@ -97,8 +94,6 @@ impl SceneInteractableKind {
         match self {
             Self::Fixture => "fixture",
             Self::Service => "service",
-            Self::Evidence => "evidence",
-            Self::Remains => "remains",
         }
     }
 }
@@ -132,7 +127,7 @@ pub fn scene_interactable_link(view: SceneInteractableLink<'_>) -> Markup {
 /// Exact icon name for a seeded item. Unknown/modded items get a real fallback
 /// asset rather than a URL derived from untrusted data.
 pub fn item_icon_name(item_id: &str) -> &'static str {
-    // Legacy synthetic settlement-balance rows are not catalog items.
+    // Synthetic settlement-balance coin rows are not catalog items.
     if item_id == "coin" {
         return "coins";
     }

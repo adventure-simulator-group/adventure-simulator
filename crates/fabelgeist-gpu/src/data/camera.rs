@@ -1,9 +1,8 @@
-use crate::data::Transform;
-use crate::data::Vec2;
 use crate::data::gpu::texture::{Texture2d, TextureFormat};
 use crate::data::view::View;
 use crate::globals::WgpuContext;
 use anyhow::Result;
+use fabelgeist_math::{Mat4, Transform, Vec2};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Camera {
@@ -51,7 +50,7 @@ impl Camera {
     ) -> Result<Self> {
         let view = view.unwrap_or_else(|| {
             View::new(
-                super::Mat4::perspective(45.0, resolution.x / resolution.y, 0.1, 1000.0),
+                Mat4::perspective(45.0, resolution.x / resolution.y, 0.1, 1000.0),
                 Transform::identity(),
             )
         });
@@ -60,9 +59,9 @@ impl Camera {
             resolution,
             color_format.unwrap_or(TextureFormat::Rgba8Unorm),
         )?;
-        color.clear_raw(context, crate::data::vector::Vec4::new(0.0, 0.0, 0.0, 0.0))?;
+        color.clear_raw(context, fabelgeist_math::Vec4::new(0.0, 0.0, 0.0, 0.0))?;
         let depth = Texture2d::create(context, resolution, TextureFormat::Depth32Float)?;
-        depth.clear_raw(context, crate::data::vector::Vec4::new(1.0, 0.0, 0.0, 0.0))?;
+        depth.clear_raw(context, fabelgeist_math::Vec4::new(1.0, 0.0, 0.0, 0.0))?;
         Ok(Self {
             view,
             color,

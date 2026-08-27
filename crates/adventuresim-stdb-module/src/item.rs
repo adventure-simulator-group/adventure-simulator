@@ -1,8 +1,11 @@
 use crate::{
     inventory_amount::inventory_item_amount, repair::item_condition, strategic::settlement,
 };
+use adventuresim_core::{
+    combat_style::MeleeAttackStyle,
+    item_catalog::{EquipmentBodyPart, EquipmentChannel, EquipmentLocation, Slot},
+};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
-use strum::{EnumCount, VariantArray};
 
 pub use adventuresim_core::strategic_currency::CURRENCY_IDS;
 
@@ -106,107 +109,6 @@ impl WeaponSkillDistribution {
     }
 }
 
-#[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]
-pub enum ItemSlot {
-    #[default]
-    None,
-    // Holding for whats in character hands
-    LeftHolding,
-    RightHolding,
-    // Armor
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Stomach,
-    Head,
-    // Any slots for equip targets
-    AnyHolding,
-    AnyArm,
-    AnyLeg,
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum EquipmentChannel {
-    Held,
-    BaseClothing,
-    Padding,
-    FlexibleArmor,
-    RigidArmor,
-    Outerwear,
-    Accessory,
-    Mount,
-    Containment,
-}
-
-impl EquipmentChannel {
-    pub const fn order(self) -> u8 {
-        match self {
-            Self::Held => 0,
-            Self::BaseClothing => 10,
-            Self::Padding => 20,
-            Self::FlexibleArmor => 30,
-            Self::RigidArmor => 40,
-            Self::Outerwear => 50,
-            Self::Accessory => 60,
-            Self::Mount => 70,
-            Self::Containment => 80,
-        }
-    }
-
-    pub const fn singleton_per_location(self) -> bool {
-        matches!(
-            self,
-            Self::Held
-                | Self::BaseClothing
-                | Self::Padding
-                | Self::FlexibleArmor
-                | Self::RigidArmor
-                | Self::Outerwear
-        )
-    }
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum EquipmentLocation {
-    Head,
-    Face,
-    Neck,
-    Chest,
-    Stomach,
-    Back,
-    LeftShoulder,
-    RightShoulder,
-    LeftArm,
-    RightArm,
-    LeftHand,
-    RightHand,
-    LeftLeg,
-    RightLeg,
-    LeftFoot,
-    RightFoot,
-    LeftBelt,
-    RightBelt,
-    FrontBelt,
-    BackBelt,
-    LeftPocket,
-    RightPocket,
-    BackLeftPocket,
-    BackRightPocket,
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EquipmentBodyPart {
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Stomach,
-    Head,
-}
-
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EquipmentOccupancyRequirement {
     pub location: EquipmentLocation,
@@ -246,7 +148,7 @@ pub struct Item {
     pub weight: f32,
     /// Exterior displacement for generic inventory containment.
     pub exterior_volume_ml: u32,
-    pub slot: ItemSlot,
+    pub slot: Slot,
     pub kind: ItemKind,
     pub equipment_placements: Vec<EquipmentPlacement>,
     pub attachment_tags: Vec<String>,
@@ -256,7 +158,7 @@ pub struct Item {
     pub accuracy: f32,
     pub swing_precision: f32,
     pub stab_precision: f32,
-    pub prefers_stab: bool,
+    pub preferred_melee_style: MeleeAttackStyle,
     pub reach: f32,
     pub block: f32,
     pub coverage: f32,
@@ -303,80 +205,16 @@ pub struct Item {
     pub handling_sensitivity: f32,
 }
 
-/// Projects a typed authored definition into the intentionally flattened
-/// SpacetimeDB ABI used by strategic persistence and existing clients.
+/// Projects a typed authored definition into the authoritative strategic
+/// persistence schema.
 fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefinition) -> Item {
-    use adventuresim_core::item_catalog::{
-        DamageType, EquipmentBodyPart as B, EquipmentChannel as C, EquipmentLocation as L,
-        ItemKind as K, Slot,
-    };
+    use adventuresim_core::item_catalog::{DamageType, ItemKind as K};
     let mut item = Item {
         id: definition.id.clone(),
         weight: definition.weight_kg,
         exterior_volume_ml: definition.exterior_volume_ml,
         base_value: Some(definition.base_value),
         ..Item::default()
-    };
-    let slot = |slot| match slot {
-        Slot::None => ItemSlot::None,
-        Slot::LeftHolding => ItemSlot::LeftHolding,
-        Slot::RightHolding => ItemSlot::RightHolding,
-        Slot::LeftArm => ItemSlot::LeftArm,
-        Slot::RightArm => ItemSlot::RightArm,
-        Slot::LeftLeg => ItemSlot::LeftLeg,
-        Slot::RightLeg => ItemSlot::RightLeg,
-        Slot::Chest => ItemSlot::Chest,
-        Slot::Stomach => ItemSlot::Stomach,
-        Slot::Head => ItemSlot::Head,
-        Slot::AnyHolding => ItemSlot::AnyHolding,
-        Slot::AnyArm => ItemSlot::AnyArm,
-        Slot::AnyLeg => ItemSlot::AnyLeg,
-    };
-    let location = |location| match location {
-        L::Head => EquipmentLocation::Head,
-        L::Face => EquipmentLocation::Face,
-        L::Neck => EquipmentLocation::Neck,
-        L::Chest => EquipmentLocation::Chest,
-        L::Stomach => EquipmentLocation::Stomach,
-        L::Back => EquipmentLocation::Back,
-        L::LeftShoulder => EquipmentLocation::LeftShoulder,
-        L::RightShoulder => EquipmentLocation::RightShoulder,
-        L::LeftArm => EquipmentLocation::LeftArm,
-        L::RightArm => EquipmentLocation::RightArm,
-        L::LeftHand => EquipmentLocation::LeftHand,
-        L::RightHand => EquipmentLocation::RightHand,
-        L::LeftLeg => EquipmentLocation::LeftLeg,
-        L::RightLeg => EquipmentLocation::RightLeg,
-        L::LeftFoot => EquipmentLocation::LeftFoot,
-        L::RightFoot => EquipmentLocation::RightFoot,
-        L::LeftBelt => EquipmentLocation::LeftBelt,
-        L::RightBelt => EquipmentLocation::RightBelt,
-        L::FrontBelt => EquipmentLocation::FrontBelt,
-        L::BackBelt => EquipmentLocation::BackBelt,
-        L::LeftPocket => EquipmentLocation::LeftPocket,
-        L::RightPocket => EquipmentLocation::RightPocket,
-        L::BackLeftPocket => EquipmentLocation::BackLeftPocket,
-        L::BackRightPocket => EquipmentLocation::BackRightPocket,
-    };
-    let channel = |channel| match channel {
-        C::Held => EquipmentChannel::Held,
-        C::BaseClothing => EquipmentChannel::BaseClothing,
-        C::Padding => EquipmentChannel::Padding,
-        C::FlexibleArmor => EquipmentChannel::FlexibleArmor,
-        C::RigidArmor => EquipmentChannel::RigidArmor,
-        C::Outerwear => EquipmentChannel::Outerwear,
-        C::Accessory => EquipmentChannel::Accessory,
-        C::Mount => EquipmentChannel::Mount,
-        C::Containment => EquipmentChannel::Containment,
-    };
-    let body_part = |part| match part {
-        B::LeftArm => EquipmentBodyPart::LeftArm,
-        B::RightArm => EquipmentBodyPart::RightArm,
-        B::LeftLeg => EquipmentBodyPart::LeftLeg,
-        B::RightLeg => EquipmentBodyPart::RightLeg,
-        B::Chest => EquipmentBodyPart::Chest,
-        B::Stomach => EquipmentBodyPart::Stomach,
-        B::Head => EquipmentBodyPart::Head,
     };
     if let Some(equipment) = &definition.equipment {
         item.attachment_tags = equipment.attachment_tags.clone();
@@ -389,8 +227,8 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
                     .occupancy
                     .iter()
                     .map(|requirement| EquipmentOccupancyRequirement {
-                        location: location(requirement.location),
-                        channel: channel(requirement.channel),
+                        location: requirement.location,
+                        channel: requirement.channel,
                         order: requirement.order,
                     })
                     .collect(),
@@ -398,16 +236,11 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
                     .parents
                     .iter()
                     .map(|parent| EquipmentParentRequirement {
-                        channel: channel(parent.channel),
+                        channel: parent.channel,
                         order: parent.order,
                     })
                     .collect(),
-                protection: placement
-                    .protection
-                    .iter()
-                    .copied()
-                    .map(body_part)
-                    .collect(),
+                protection: placement.protection.clone(),
             })
             .collect();
         item.attachment_points = equipment
@@ -415,7 +248,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             .iter()
             .map(|point| EquipmentAttachmentPoint {
                 id: point.id.clone(),
-                channel: channel(point.channel),
+                channel: point.channel,
                 capacity: point.capacity,
                 order: point.order,
                 accepts_tags: point.accepts_tags.clone(),
@@ -435,7 +268,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             slot: authored_slot,
         } => {
             item.kind = ItemKind::Container;
-            item.slot = slot(*authored_slot);
+            item.slot = *authored_slot;
         }
         K::Currency => item.kind = ItemKind::Currency,
         K::Ingredient => item.kind = ItemKind::Ingredient,
@@ -449,7 +282,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             block,
         } => {
             item.kind = ItemKind::Shield;
-            item.slot = slot(*authored_slot);
+            item.slot = *authored_slot;
             item.block = *block;
         }
         K::Armor {
@@ -461,7 +294,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             range_of_motion,
         } => {
             item.kind = ItemKind::Armor;
-            item.slot = slot(*authored_slot);
+            item.slot = *authored_slot;
             item.coverage = *coverage;
             item.resistance = *resistance;
             item.padding = *padding;
@@ -485,14 +318,11 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             skills,
         } => {
             item.kind = ItemKind::Weapon;
-            item.slot = slot(*authored_slot);
+            item.slot = *authored_slot;
             item.accuracy = *accuracy;
             item.swing_precision = *swing_precision;
             item.stab_precision = *stab_precision;
-            item.prefers_stab = matches!(
-                preferred_attack,
-                adventuresim_core::item_catalog::MeleeAttackStyle::Stab
-            );
+            item.preferred_melee_style = *preferred_attack;
             item.reach = *reach_m;
             item.penetration = *penetration;
             item.balance = *balance;
@@ -567,7 +397,11 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 pub(crate) fn upsert_surgery_items(ctx: &ReducerContext) {
-    for id in ["surgery_kit", "splint", crate::filth::SOAP_ITEM_ID] {
+    for id in [
+        "surgery_kit",
+        "splint",
+        adventuresim_core::item_references::SOFT_SOAP_ID,
+    ] {
         let definition = adventuresim_core::item_catalog::definition(id)
             .expect("validated surgery item reference");
         let item = project_definition(definition);
@@ -593,6 +427,21 @@ pub(crate) fn inventory_food_definition(
     }
 }
 
+pub(crate) fn requires_stable_object(
+    definition: Option<&Item>,
+    food: bool,
+    measured: bool,
+) -> bool {
+    food || measured
+        || definition.is_some_and(|definition| {
+            definition.repairable
+                || definition.kind == ItemKind::Medication
+                || (definition.kind == ItemKind::Weapon && definition.melee)
+                || definition.container_capacity_ml > 0
+                || !definition.attachment_points.is_empty()
+        })
+}
+
 pub(crate) fn add_inventory_item_checked(
     ctx: &ReducerContext,
     character_id: u64,
@@ -606,13 +455,15 @@ pub(crate) fn add_inventory_item_checked(
     let definition = ctx.db.item().id().find(item_id.to_owned());
     let kind = definition.as_ref().map(|definition| definition.kind);
     let food_definition = inventory_food_definition(kind, item_id)?;
-    let durable = definition.is_some_and(|definition| definition.repairable);
+    let durable = definition
+        .as_ref()
+        .is_some_and(|definition| definition.repairable);
     let food = food_definition.is_some();
     let measured = crate::inventory_amount::is_measured_item(ctx, item_id);
     // Every food unit is its own non-fungible batch. A partly consumed unit
     // remains quantity one while its authoritative lot mass/value/provenance
     // shrink, so it can never be merged back into fresh stock.
-    let individual = durable || kind == Some(ItemKind::Medication) || measured;
+    let individual = requires_stable_object(definition.as_ref(), food, measured);
     let count = if individual { quantity } else { 1 };
     let mut first = None;
     for _ in 0..count {
@@ -622,6 +473,9 @@ pub(crate) fn add_inventory_item_checked(
             item_id: item_id.to_string(),
             quantity: if individual { 1 } else { quantity },
         });
+        if individual {
+            crate::inventory_container::insert_personal_object(ctx, &item)?;
+        }
         if durable {
             crate::repair::initialize_item_condition(ctx, &item);
         }
@@ -849,8 +703,11 @@ pub fn change_inventory_item(
                     crate::character::unequip_wearable(ctx, id);
                     equipment_changed = true;
                 }
-                if !crate::inventory_container::delete_carried_object_for_row(ctx, "personal", id)?
-                {
+                if !crate::inventory_container::delete_carried_object_for_row(
+                    ctx,
+                    adventuresim_core::physical_object::CarriedInventoryScope::Personal,
+                    id,
+                )? {
                     ctx.db.inventory_item().id().delete(id);
                     ctx.db.item_condition().inventory_item_id().delete(id);
                 }
@@ -1100,7 +957,7 @@ mod tests {
             projected
                 .iter()
                 .filter(|definition| {
-                    definition.kind == ItemKind::Armor && definition.slot == ItemSlot::Head
+                    definition.kind == ItemKind::Armor && definition.slot == Slot::Head
                 })
                 .count(),
             8
@@ -1120,7 +977,7 @@ mod tests {
 
             match definition.kind {
                 ItemKind::Weapon => {
-                    assert_eq!(definition.slot, ItemSlot::AnyHolding);
+                    assert_eq!(definition.slot, Slot::AnyHolding);
                     assert!(definition.accuracy > 0.0);
                     assert!(definition.reach > 0.0);
                     assert!(definition.blunt || definition.slash || definition.pierce);
@@ -1129,11 +986,7 @@ mod tests {
                 ItemKind::Armor => {
                     assert!(matches!(
                         definition.slot,
-                        ItemSlot::AnyArm
-                            | ItemSlot::AnyLeg
-                            | ItemSlot::Chest
-                            | ItemSlot::Stomach
-                            | ItemSlot::Head
+                        Slot::AnyArm | Slot::AnyLeg | Slot::Chest | Slot::Stomach | Slot::Head
                     ));
                     assert!((0.0..=1.0).contains(&definition.coverage));
                     assert!(definition.resistance > 0.0);
@@ -1142,7 +995,7 @@ mod tests {
                     assert!((0.0..=1.0).contains(&definition.range_of_motion));
                 }
                 ItemKind::Shield => {
-                    assert_eq!(definition.slot, ItemSlot::AnyHolding);
+                    assert_eq!(definition.slot, Slot::AnyHolding);
                     assert!((1.0..=5.0).contains(&definition.block));
                 }
                 _ => unreachable!("equipment catalog contains a non-equipment item"),
@@ -1155,7 +1008,7 @@ mod tests {
         let waterskin =
             project_definition(adventuresim_core::item_catalog::definition("waterskin").unwrap());
         assert_eq!(waterskin.kind, ItemKind::Container);
-        assert_eq!(waterskin.slot, ItemSlot::None);
+        assert_eq!(waterskin.slot, Slot::None);
         assert!(!waterskin.repairable);
 
         let sword = project_definition(

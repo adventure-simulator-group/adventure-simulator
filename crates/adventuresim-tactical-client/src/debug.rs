@@ -91,6 +91,11 @@ struct DebugRay {
     handle: Handle<GizmoAsset>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the debug Bevy system independently borrows control resources and the exact collider query it visualizes"
+)]
 fn toggle_debug_visuals(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut config: ResMut<DebugVisualsConfig>,

@@ -2,6 +2,21 @@ use bevy::ecs::entity::MapEntities;
 
 use super::*;
 
+type OffensiveAiQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static Transform,
+        &'static TacticalCombatSide,
+        &'static mut CharacterLook,
+        &'static mut input::AccumulatedInput,
+        &'static mut OffensiveCombatAi,
+        &'static TacticalCombatState,
+        &'static SkeletonState,
+    ),
+>;
+
 const AI_HIT_PRECISION: f32 = 1.0;
 const AI_BODY_PART: BodyPart = BodyPart::Chest;
 const AI_WINDUP_SECS: f32 = 0.5;
@@ -84,16 +99,7 @@ pub(super) fn drive_offensive_combat_ai(
         ),
         With<Player>,
     >,
-    mut ai: Query<(
-        Entity,
-        &Transform,
-        &TacticalCombatSide,
-        &mut CharacterLook,
-        &mut input::AccumulatedInput,
-        &mut OffensiveCombatAi,
-        &TacticalCombatState,
-        &SkeletonState,
-    )>,
+    mut ai: OffensiveAiQuery<'_, '_>,
 ) {
     for (entity, transform, side, mut look, mut input, mut controller, state, skeleton) in &mut ai {
         if state.is_incapacitated() {

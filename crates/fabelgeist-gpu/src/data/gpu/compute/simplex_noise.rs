@@ -9,8 +9,8 @@ impl RenderSimplex {
     pub fn execute(
         context: &WgpuContext,
         output: &GpuResource,
-        scale: crate::data::vector::Vec3,
-        offset: crate::data::vector::Vec3,
+        scale: fabelgeist_math::Vec3,
+        offset: fabelgeist_math::Vec3,
         octaves: u32,
         lacunarity: f32,
         gain: f32,

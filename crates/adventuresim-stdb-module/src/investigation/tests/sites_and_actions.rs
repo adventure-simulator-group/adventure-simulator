@@ -8,7 +8,7 @@ fn non_exact_rows_are_sanitized_without_coordinates() {
         summary: "somewhere north".into(),
         source_label: "witness".into(),
         confidence_bps: 5000,
-        destination_stage: "approximate_area".into(),
+        destination_stage: DestinationKnowledgeStage::ApproximateArea,
         directions: "north wood".into(),
         exact_location_id: "hidden-cave".into(),
         latitude_e7: 12,
@@ -37,7 +37,7 @@ fn journal_cross_scope_references_degrade_to_safe_chronology() {
         summary: "An uncertain account".into(),
         source_label: "the miller".into(),
         confidence_bps: 5000,
-        destination_stage: "textual".into(),
+        destination_stage: DestinationKnowledgeStage::Textual,
         directions: String::new(),
         exact_location_id: String::new(),
         latitude_e7: 0,
@@ -115,12 +115,38 @@ fn journal_cross_scope_references_degrade_to_safe_chronology() {
 
 #[test]
 fn destination_validation_is_bidirectional_and_bounded() {
-    assert!(validate_destination("exact_believed", "cave", 900_000_000, -1_800_000_000).is_ok());
-    assert!(validate_destination("visited", "", 1, 2).is_err());
-    assert!(validate_destination("exact_believed", "cave", 900_000_001, 0).is_err());
-    assert!(validate_destination("exact_believed", "cave", 0, -1_800_000_001).is_err());
-    assert!(validate_destination("approximate_area", "hidden", 0, 0).is_err());
-    assert!(validate_destination("textual", "", 0, 0).is_ok());
+    assert!(
+        validate_destination(
+            DestinationKnowledgeStage::ExactBelieved,
+            "cave",
+            900_000_000,
+            -1_800_000_000,
+        )
+        .is_ok()
+    );
+    assert!(validate_destination(DestinationKnowledgeStage::Visited, "", 1, 2).is_err());
+    assert!(
+        validate_destination(
+            DestinationKnowledgeStage::ExactBelieved,
+            "cave",
+            900_000_001,
+            0,
+        )
+        .is_err()
+    );
+    assert!(
+        validate_destination(
+            DestinationKnowledgeStage::ExactBelieved,
+            "cave",
+            0,
+            -1_800_000_001,
+        )
+        .is_err()
+    );
+    assert!(
+        validate_destination(DestinationKnowledgeStage::ApproximateArea, "hidden", 0, 0,).is_err()
+    );
+    assert!(validate_destination(DestinationKnowledgeStage::Textual, "", 0, 0).is_ok());
 }
 
 #[test]
@@ -166,7 +192,7 @@ fn case_site_projection_requires_exact_unrevised_observer_knowledge() {
         })
         .expect("case-site projection body");
     assert!(projection.contains("lead.corrected_by.is_empty()"));
-    assert!(projection.contains("\"exact_believed\" | \"visited\""));
+    assert!(projection.contains("destination_stage.is_exact()"));
     assert!(projection.contains("owner_character_id: lead.owner_character_id"));
     assert!(projection.contains("case_site_authority()"));
     assert!(!projection.contains("destination_stage.as_str(), \"textual\""));
@@ -222,7 +248,7 @@ fn exact_witness_belief_projects_a_pin_without_route_completion() {
         summary: "I saw it enter the old croft.".into(),
         source_label: "the referred local witness".into(),
         confidence_bps: 5_000,
-        destination_stage: "exact_believed".into(),
+        destination_stage: DestinationKnowledgeStage::ExactBelieved,
         directions: String::new(),
         exact_location_id: site.id.value.clone(),
         latitude_e7: site.latitude_e7,
@@ -242,7 +268,7 @@ fn exact_witness_belief_projects_a_pin_without_route_completion() {
         Some("public-case")
     ));
     let mut approximate = lead.clone();
-    approximate.destination_stage = "approximate_area".into();
+    approximate.destination_stage = DestinationKnowledgeStage::ApproximateArea;
     assert!(!lead_projects_exact_case_site_pin(
         &approximate,
         &site,
@@ -322,7 +348,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "case",
         "site",
-        "exact_believed",
+        DestinationKnowledgeStage::ExactBelieved,
         "",
         "case",
         "site",
@@ -335,7 +361,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "case",
         "site",
-        "exact_believed",
+        DestinationKnowledgeStage::ExactBelieved,
         "newer-lead",
         "case",
         "site",
@@ -348,7 +374,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "public",
         "site",
-        "visited",
+        DestinationKnowledgeStage::Visited,
         "",
         "canonical",
         "site",
@@ -361,7 +387,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "collision",
         "site",
-        "visited",
+        DestinationKnowledgeStage::Visited,
         "",
         "canonical",
         "site",
@@ -374,7 +400,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "public",
         "other-site",
-        "visited",
+        DestinationKnowledgeStage::Visited,
         "",
         "canonical",
         "site",
@@ -419,7 +445,10 @@ fn case_site_transport_and_presence_adapters_fail_closed() {
     let occupancy = source
         .split("pub(crate) fn case_site_presence_for_observer")
         .nth(1)
-        .and_then(|tail| tail.split("pub(crate) fn case_context_presence_for_observer").next())
+        .and_then(|tail| {
+            tail.split("pub(crate) fn case_context_presence_for_observer")
+                .next()
+        })
         .expect("observer-safe case occupancy adapter");
     assert!(occupancy.contains("exact_case_site_for_observer_at"));
     assert!(occupancy.contains("character_case_site_occupancy_at"));
@@ -455,7 +484,7 @@ fn corrected_contact_referral_is_not_live_at_any_action_boundary() {
         summary: "Ask the cooper what she saw.".into(),
         source_label: "local rumor".into(),
         confidence_bps: 5_000,
-        destination_stage: "textual".into(),
+        destination_stage: DestinationKnowledgeStage::Textual,
         directions: "Public square".into(),
         exact_location_id: String::new(),
         latitude_e7: 0,
@@ -531,7 +560,10 @@ fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() 
     let recovery = source
         .split("fn capability_has_live_support_reducer")
         .nth(1)
-        .and_then(|tail| tail.split("fn capability_has_live_pattern_support_reducer").next())
+        .and_then(|tail| {
+            tail.split("fn capability_has_live_pattern_support_reducer")
+                .next()
+        })
         .expect("reducer live support");
     assert!(recovery.contains("reducer_action_public_case_id(ctx, capability)"));
     assert!(recovery.contains("&observer_case_id"));
@@ -540,7 +572,10 @@ fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() 
     let execution = source
         .split("fn validate_live_action_prerequisites")
         .nth(1)
-        .and_then(|tail| tail.split("fn case_objective_contains_custody_target").next())
+        .and_then(|tail| {
+            tail.split("fn case_objective_contains_custody_target")
+                .next()
+        })
         .expect("action execution prerequisites");
     assert!(execution.contains("reducer_action_public_case_id(ctx, capability)"));
     assert!(execution.contains("&observer_case_id"));
@@ -549,14 +584,20 @@ fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() 
     let pattern_projection = source
         .split("fn capability_has_live_pattern_support_view")
         .nth(1)
-        .and_then(|tail| tail.split("fn tracking_capability_chain_is_coherent").next())
+        .and_then(|tail| {
+            tail.split("fn tracking_capability_chain_is_coherent")
+                .next()
+        })
         .expect("pattern projection support");
     assert!(pattern_projection.contains("projected_action_public_case_id(ctx, capability)"));
     assert!(pattern_projection.contains("&observer_case_id"));
     let pattern_recovery = source
         .split("fn capability_has_live_pattern_support_reducer")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_capability_blueprint_reducer").next())
+        .and_then(|tail| {
+            tail.split("fn validate_capability_blueprint_reducer")
+                .next()
+        })
         .expect("pattern reducer support");
     assert!(pattern_recovery.contains("reducer_action_public_case_id(ctx, capability)"));
     assert!(pattern_recovery.contains("&observer_case_id"));
@@ -685,8 +726,14 @@ fn locate_contact_projection_mirrors_public_scheduled_presence() {
         context_suppressed: false,
         health_suppressed: false,
     };
-    assert_eq!(public_contact_schedule_wait_minutes(&presence, 600), Some(0));
-    assert_eq!(public_contact_schedule_wait_minutes(&presence, 1_020), Some(900));
+    assert_eq!(
+        public_contact_schedule_wait_minutes(&presence, 600),
+        Some(0)
+    );
+    assert_eq!(
+        public_contact_schedule_wait_minutes(&presence, 1_020),
+        Some(900)
+    );
 
     let mut suppressed = presence.clone();
     suppressed.health_suppressed = true;
@@ -749,7 +796,9 @@ fn locate_contact_stale_target_beats_off_hours_schedule_wait() {
         .and_then(|tail| tail.split("fn night_window_wait_minutes").next())
         .expect("locate-contact projection");
     let validates_target = projection.find("referred_contact_is_current_view").unwrap();
-    let computes_wait = projection.find("public_contact_schedule_wait_minutes").unwrap();
+    let computes_wait = projection
+        .find("public_contact_schedule_wait_minutes")
+        .unwrap();
     assert!(validates_target < computes_wait);
 }
 

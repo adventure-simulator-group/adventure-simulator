@@ -7,14 +7,34 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum CaseResolutionStatus {
-    Open,
+pub enum Slot {
+    None,
 
-    Resolved,
+    LeftHolding,
 
-    Failed,
+    RightHolding,
+
+    LeftArm,
+
+    RightArm,
+
+    LeftLeg,
+
+    RightLeg,
+
+    Chest,
+
+    Stomach,
+
+    Head,
+
+    AnyHolding,
+
+    AnyArm,
+
+    AnyLeg,
 }
 
-impl __sdk::InModule for CaseResolutionStatus {
+impl __sdk::InModule for Slot {
     type Module = super::RemoteModule;
 }

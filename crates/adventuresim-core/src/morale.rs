@@ -3,6 +3,8 @@
 //! The strategic layer persists the inputs to these calculations. Short-lived
 //! combat imbalance, breath exhaustion, and knockdown remain tactical state.
 
+use serde::{Deserialize, Serialize};
+
 /// Minimum Will check used as a divisor for negative morale.
 pub const MINIMUM_WILL_CHECK: f32 = 0.25;
 /// Surplus morale which produces roughly 63% of a character's maximum ally bonus.
@@ -22,6 +24,8 @@ pub const MAX_RELIGIOUS_NEGLECT_MORALE: f32 = 8.0;
 pub const RELIGIOUS_NEGLECT_COMMAND_RELIEF: f32 = 1.6;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
+/// Fraction of missing blood volume naturally recovered per strategic day.
+pub const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 /// Shared upper bound for enjoyment from training already-mastered skills.
 pub const MASTERY_ENJOYMENT_LIMIT: f32 = 4.0;
 /// Excess effective hours needed to traverse one e-fold of the mastery curve.
@@ -65,11 +69,29 @@ pub fn mastery_enjoyment_decay(age_minutes: u64, duration_minutes: u64) -> f32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
 pub enum IncapacitationStatus {
     Ready,
     Staggered,
     Incapacitated,
+}
+
+impl IncapacitationStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Staggered => "staggered",
+            Self::Incapacitated => "incapacitated",
+        }
+    }
+}
+
+impl std::fmt::Display for IncapacitationStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

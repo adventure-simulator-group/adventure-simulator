@@ -54,12 +54,12 @@ mod legacy_tests {
                 .unwrap();
             skeleton.advance_action(tick);
             let presented = PresentedSkeleton::new(skeleton.clone(), None);
-            let legacy = AnimationEvaluation::from_skeleton(&skeleton);
+            let direct = AnimationEvaluation::from_skeleton(&skeleton);
             let routed = route(skeleton);
 
             assert_eq!(routed.path, SemanticRoutePath::RaisedGuardAttack);
             assert!(routed.runtime_evaluated);
-            assert_eq!(routed.evaluation, legacy);
+            assert_eq!(routed.evaluation, direct);
             assert!((routed.inputs.gait_phase - presented.gait_phase).abs() < f32::EPSILON);
             assert!((routed.evaluation.action_phase - expected_phase).abs() < f32::EPSILON);
         }

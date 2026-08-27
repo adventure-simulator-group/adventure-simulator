@@ -16,3 +16,6 @@ memmap2 = "0.9"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [workspace]
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

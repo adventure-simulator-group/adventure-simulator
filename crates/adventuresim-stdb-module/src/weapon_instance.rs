@@ -1,5 +1,6 @@
 //! Durable parametric weapon recipes keyed by stable physical-object identity.
 
+use adventuresim_core::physical_object::{CarriedInventoryScope, InventoryLocation};
 use adventuresim_weapon_model::{
     GENERATOR_VERSION, HOLDER_GENERATOR_VERSION, WeaponDesign, WeaponHolderDesign, decode,
     decode_holder, default_design, default_holder_design, derive_holder_properties,
@@ -11,7 +12,7 @@ use crate::inventory_container::inventory_object__view;
 use crate::item::item;
 use crate::strategic::PartyInventoryItem;
 use crate::strategic::strategic_gateway_authority__view;
-use crate::{InventoryItem, InventoryObject, ItemKind, inventory_object};
+use crate::{InventoryItem, ItemKind, inventory_object};
 
 pub const MAX_WEAPON_RECIPE_BYTES: usize = 16 * 1024;
 
@@ -58,16 +59,25 @@ pub fn backend_weapon_instances(ctx: &ViewContext) -> Vec<WeaponInstance> {
         return Vec::new();
     }
     let mut instances = Vec::new();
-    for kind in ["personal", "party"] {
-        for object in ctx.db.inventory_object().location_kind().filter(kind) {
-            if let Some(instance) = ctx
-                .db
-                .weapon_instance()
-                .physical_object_id()
-                .find(object.id)
-            {
-                instances.push(instance);
-            }
+    for object in ctx
+        .db
+        .inventory_object()
+        .item_id()
+        .filter(""..)
+        .filter(|object| {
+            matches!(
+                &object.location,
+                InventoryLocation::Personal(_) | InventoryLocation::Party(_)
+            )
+        })
+    {
+        if let Some(instance) = ctx
+            .db
+            .weapon_instance()
+            .physical_object_id()
+            .find(object.id)
+        {
+            instances.push(instance);
         }
     }
     instances
@@ -83,16 +93,25 @@ pub fn backend_weapon_holder_instances(ctx: &ViewContext) -> Vec<WeaponHolderIns
         return Vec::new();
     }
     let mut instances = Vec::new();
-    for kind in ["personal", "party"] {
-        for object in ctx.db.inventory_object().location_kind().filter(kind) {
-            if let Some(instance) = ctx
-                .db
-                .weapon_holder_instance()
-                .physical_object_id()
-                .find(object.id)
-            {
-                instances.push(instance);
-            }
+    for object in ctx
+        .db
+        .inventory_object()
+        .item_id()
+        .filter(""..)
+        .filter(|object| {
+            matches!(
+                &object.location,
+                InventoryLocation::Personal(_) | InventoryLocation::Party(_)
+            )
+        })
+    {
+        if let Some(instance) = ctx
+            .db
+            .weapon_holder_instance()
+            .physical_object_id()
+            .find(object.id)
+        {
+            instances.push(instance);
         }
     }
     instances
@@ -158,22 +177,6 @@ fn holder_instance_for_design(
     })
 }
 
-fn insert_object(
-    ctx: &ReducerContext,
-    item_id: &str,
-    location_kind: &str,
-    location_owner: String,
-    inventory_row_id: u64,
-) -> InventoryObject {
-    ctx.db.inventory_object().insert(InventoryObject {
-        id: 0,
-        item_id: item_id.into(),
-        location_kind: location_kind.into(),
-        location_owner,
-        inventory_row_id,
-    })
-}
-
 pub(crate) fn initialize_personal_weapon(
     ctx: &ReducerContext,
     inventory: &InventoryItem,
@@ -190,13 +193,12 @@ pub(crate) fn initialize_personal_weapon(
     if inventory.quantity != 1 {
         return Err("Parametric weapons must be individual inventory rows".into());
     }
-    let object = insert_object(
+    let object = crate::inventory_container::object_for_row(
         ctx,
-        &inventory.item_id,
-        "personal",
-        inventory.character_id.to_string(),
+        CarriedInventoryScope::Personal,
         inventory.id,
-    );
+    )?
+    .ok_or("Parametric weapon has no stable physical object identity")?;
     replace_design(ctx, object.id, &design)?;
     Ok(())
 }
@@ -217,13 +219,12 @@ pub(crate) fn initialize_party_weapon(
     if inventory.quantity != 1 {
         return Err("Parametric weapons must be individual party inventory rows".into());
     }
-    let object = insert_object(
+    let object = crate::inventory_container::object_for_row(
         ctx,
-        &inventory.item_id,
-        "party",
-        inventory.party_id.clone(),
+        CarriedInventoryScope::Party,
         inventory.id,
-    );
+    )?
+    .ok_or("Parametric party weapon has no stable physical object identity")?;
     replace_design(ctx, object.id, &design)?;
     Ok(())
 }
@@ -245,16 +246,18 @@ pub(crate) fn fit_personal_holder(
     holder_inventory_row_id: u64,
     weapon_inventory_row_id: u64,
 ) -> Result<(), String> {
-    let holder_object = crate::inventory_container::ensure_object(
+    let holder_object = crate::inventory_container::require_object(
         ctx,
         character_id,
-        "personal",
+        CarriedInventoryScope::Personal,
         holder_inventory_row_id,
-        false,
     )?;
-    let weapon_object =
-        crate::inventory_container::object_for_row(ctx, "personal", weapon_inventory_row_id)?
-            .ok_or("Fitted weapon has no physical identity")?;
+    let weapon_object = crate::inventory_container::object_for_row(
+        ctx,
+        CarriedInventoryScope::Personal,
+        weapon_inventory_row_id,
+    )?
+    .ok_or("Fitted weapon has no physical identity")?;
     let weapon = ctx
         .db
         .weapon_instance()
@@ -387,8 +390,14 @@ pub(crate) fn connected_appearance(
     let mut objects = ctx
         .db
         .inventory_object()
-        .location_and_row()
-        .filter(("personal", inventory_row_id))
+        .item_id()
+        .filter(""..)
+        .filter(|object| {
+            matches!(
+                &object.location,
+                InventoryLocation::Personal(location) if location.row_id == inventory_row_id
+            )
+        })
         .filter(|object| object.item_id == item_id);
     let object = objects.next()?;
     if objects.next().is_some() {
@@ -423,8 +432,14 @@ pub(crate) fn connected_holder_appearance(
     let mut objects = ctx
         .db
         .inventory_object()
-        .location_and_row()
-        .filter(("personal", inventory_row_id))
+        .item_id()
+        .filter(""..)
+        .filter(|object| {
+            matches!(
+                &object.location,
+                InventoryLocation::Personal(location) if location.row_id == inventory_row_id
+            )
+        })
         .filter(|object| object.item_id == item_id);
     let object = objects.next()?;
     if objects.next().is_some() {

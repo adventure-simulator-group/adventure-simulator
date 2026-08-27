@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::case_resolution_status_type::CaseResolutionStatus;
+use super::case_status_type::CaseStatus;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CaseOutcome {
     pub case_id: String,
     pub party_id: String,
-    pub status: CaseResolutionStatus,
+    pub status: CaseStatus,
     pub winning_path_index: Option<u16>,
     pub resolved_at_minute: u64,
     pub selected_finale_id: String,
@@ -28,7 +28,7 @@ impl __sdk::InModule for CaseOutcome {
 pub struct CaseOutcomeCols {
     pub case_id: __sdk::__query_builder::Col<CaseOutcome, String>,
     pub party_id: __sdk::__query_builder::Col<CaseOutcome, String>,
-    pub status: __sdk::__query_builder::Col<CaseOutcome, CaseResolutionStatus>,
+    pub status: __sdk::__query_builder::Col<CaseOutcome, CaseStatus>,
     pub winning_path_index: __sdk::__query_builder::Col<CaseOutcome, Option<u16>>,
     pub resolved_at_minute: __sdk::__query_builder::Col<CaseOutcome, u64>,
     pub selected_finale_id: __sdk::__query_builder::Col<CaseOutcome, String>,

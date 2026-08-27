@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::limb_region_type::LimbRegion;
+use super::body_region_type::BodyRegion;
 use super::projectile_kind_type::ProjectileKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -12,7 +12,7 @@ use super::projectile_kind_type::ProjectileKind;
 pub struct RetainedProjectile {
     pub id: u64,
     pub character_id: u64,
-    pub limb: LimbRegion,
+    pub limb: BodyRegion,
     pub kind: ProjectileKind,
     pub extraction_dc: f32,
     pub source_damage: f32,
@@ -28,7 +28,7 @@ impl __sdk::InModule for RetainedProjectile {
 pub struct RetainedProjectileCols {
     pub id: __sdk::__query_builder::Col<RetainedProjectile, u64>,
     pub character_id: __sdk::__query_builder::Col<RetainedProjectile, u64>,
-    pub limb: __sdk::__query_builder::Col<RetainedProjectile, LimbRegion>,
+    pub limb: __sdk::__query_builder::Col<RetainedProjectile, BodyRegion>,
     pub kind: __sdk::__query_builder::Col<RetainedProjectile, ProjectileKind>,
     pub extraction_dc: __sdk::__query_builder::Col<RetainedProjectile, f32>,
     pub source_damage: __sdk::__query_builder::Col<RetainedProjectile, f32>,

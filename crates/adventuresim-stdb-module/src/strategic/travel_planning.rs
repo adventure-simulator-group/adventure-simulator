@@ -1,3 +1,59 @@
+use adventuresim_world_schema::coordinates::{
+    LatitudeE7, LatitudeMicrodegrees, UnboundedCoordinateE7, Wgs84CoordinateE7,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StrategicPositionE7 {
+    longitude_e7: i32,
+    latitude_e7: i32,
+}
+
+/// Encodes the hybrid strategic-location wire representation. Geographic
+/// positions are validated as WGS84; explicitly abstract positions preserve
+/// their unbounded planar coordinate convention.
+fn encode_position_e7(
+    longitude: f64,
+    latitude: f64,
+    coordinates_are_geographic: bool,
+) -> Option<StrategicPositionE7> {
+    if coordinates_are_geographic {
+        let coordinate = Wgs84CoordinateE7::from_longitude_latitude_degrees(longitude, latitude)?;
+        Some(StrategicPositionE7 {
+            longitude_e7: coordinate.longitude().get(),
+            latitude_e7: coordinate.latitude().get(),
+        })
+    } else {
+        let longitude = UnboundedCoordinateE7::from_coordinate_units(longitude)?;
+        let latitude = UnboundedCoordinateE7::from_coordinate_units(latitude)?;
+        Some(StrategicPositionE7 {
+            longitude_e7: longitude.raw(),
+            latitude_e7: latitude.raw(),
+        })
+    }
+}
+
+/// Decodes the hybrid strategic-location wire representation. Invalid WGS84
+/// values fail closed instead of entering distance or route calculations.
+fn decode_position_e7(
+    longitude_e7: i32,
+    latitude_e7: i32,
+    coordinates_are_geographic: bool,
+) -> Option<(f64, f64)> {
+    if coordinates_are_geographic {
+        Wgs84CoordinateE7::new(latitude_e7, longitude_e7)
+            .map(|coordinate| coordinate.longitude_latitude_degrees())
+    } else {
+        Some((
+            UnboundedCoordinateE7::from_raw(longitude_e7).coordinate_units(),
+            UnboundedCoordinateE7::from_raw(latitude_e7).coordinate_units(),
+        ))
+    }
+}
+
+fn wgs84_route_coordinate(point: &JourneyRoutePoint) -> Option<Wgs84CoordinateE7> {
+    Wgs84CoordinateE7::new(point.latitude_e7, point.longitude_e7)
+}
+
 fn travel_neighbors(ctx: &ReducerContext, node: u64) -> Vec<(u64, u32)> {
     let mut neighbors: Vec<_> = ctx
         .db
@@ -54,7 +110,10 @@ fn connected_settlement_distances(ctx: &ReducerContext, source_node_id: u64) -> 
 fn journey_minutes(distance_m: u64) -> u64 {
     distance_m
         .saturating_mul(MINUTES_PER_HOUR)
-        .div_ceil(WALKING_SPEED_KM_PER_HOUR * METERS_PER_KILOMETER)
+        .div_ceil(
+            adventuresim_core::strategic_time::OVERLAND_WALKING_SPEED_KM_PER_HOUR
+                * METERS_PER_KILOMETER,
+        )
         .max(1)
 }
 
@@ -88,10 +147,12 @@ fn validate_journey_route_payload(
         return Err("Terrain route has an invalid package digest".into());
     }
     if route.weather_rules_version != adventuresim_core::weather::WEATHER_RULES_VERSION
-        || !route.weather_interval_start.is_multiple_of(adventuresim_core::weather::WEATHER_INTERVAL_MINUTES)
-        || route.intensity_bps > 10_000
-        || route.ground_moisture_bps > 10_000
-        || route.snow_cover_bps > 10_000
+        || !route
+            .weather_interval_start
+            .is_multiple_of(adventuresim_core::weather::WEATHER_INTERVAL_MINUTES)
+        || route.intensity_bps > adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
+        || route.ground_moisture_bps > adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
+        || route.snow_cover_bps > adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
         || (route.precipitation == JourneyPrecipitation::Clear && route.intensity_bps != 0)
     {
         return Err("Terrain route has an invalid weather departure snapshot".into());
@@ -106,29 +167,31 @@ fn validate_journey_route_payload(
     {
         return Err("Terrain route exceeds its collection or aggregate bounds".into());
     }
-    let coordinate = |point: &JourneyRoutePoint| {
-        (
-            f64::from(point.longitude_e7) / 10_000_000.0,
-            f64::from(point.latitude_e7) / 10_000_000.0,
-        )
-    };
-    if route.points.iter().any(|point| {
-        !(-900_000_000..=900_000_000).contains(&point.latitude_e7)
-            || !(-1_800_000_000..=1_800_000_000).contains(&point.longitude_e7)
-    }) {
+    let Some(coordinates) = route
+        .points
+        .iter()
+        .map(wgs84_route_coordinate)
+        .collect::<Option<Vec<_>>>()
+    else {
         return Err("Terrain route contains an invalid coordinate".into());
-    }
-    let first = coordinate(route.points.first().expect("bounded nonempty route"));
-    let last = coordinate(route.points.last().expect("bounded nonempty route"));
+    };
+    let first = coordinates
+        .first()
+        .expect("bounded nonempty route")
+        .longitude_latitude_degrees();
+    let last = coordinates
+        .last()
+        .expect("bounded nonempty route")
+        .longitude_latitude_degrees();
     if straight_line_distance_m(first.0, first.1, origin.0, origin.1, true) > 500
         || straight_line_distance_m(last.0, last.1, destination.0, destination.1, true) > 500
     {
         return Err("Terrain route endpoints do not match the current journey".into());
     }
     let mut physical = 0_u64;
-    for pair in route.points.windows(2) {
-        let from = coordinate(&pair[0]);
-        let to = coordinate(&pair[1]);
+    for pair in coordinates.windows(2) {
+        let from = pair[0].longitude_latitude_degrees();
+        let to = pair[1].longitude_latitude_degrees();
         let segment = straight_line_distance_m(from.0, from.1, to.0, to.1, true);
         if segment == 0 || segment > 100_000 {
             return Err("Terrain route points are not a bounded continuous path".into());
@@ -268,19 +331,17 @@ pub(crate) fn coordinate_distance_e7_m(
     to_latitude_e7: i32,
     coordinates_are_geographic: bool,
 ) -> Option<u64> {
-    if coordinates_are_geographic
-        && (!(-900_000_000..=900_000_000).contains(&from_latitude_e7)
-            || !(-1_800_000_000..=1_800_000_000).contains(&from_longitude_e7)
-            || !(-900_000_000..=900_000_000).contains(&to_latitude_e7)
-            || !(-1_800_000_000..=1_800_000_000).contains(&to_longitude_e7))
-    {
-        return None;
-    }
+    let from = decode_position_e7(
+        from_longitude_e7,
+        from_latitude_e7,
+        coordinates_are_geographic,
+    )?;
+    let to = decode_position_e7(to_longitude_e7, to_latitude_e7, coordinates_are_geographic)?;
     Some(straight_line_distance_m(
-        f64::from(from_longitude_e7) / 10_000_000.0,
-        f64::from(from_latitude_e7) / 10_000_000.0,
-        f64::from(to_longitude_e7) / 10_000_000.0,
-        f64::from(to_latitude_e7) / 10_000_000.0,
+        from.0,
+        from.1,
+        to.0,
+        to.1,
         coordinates_are_geographic,
     ))
 }

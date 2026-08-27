@@ -1,7 +1,10 @@
 (() => {
-  const DAY = 1440;
-  const DAYS_PER_YEAR = 365;
-  const LUNAR_CYCLE = 42524;
+  const {
+    minutesPerDay: DAY,
+    daysPerYear: DAYS_PER_YEAR,
+    lunarCycleMinutes: LUNAR_CYCLE,
+  } = globalThis.strategicCalendar;
+  const MAX_TARGET_SURPLUS_DAYS = DAYS_PER_YEAR;
   const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -336,7 +339,11 @@
     const targetDisplay = document.querySelector("[data-target-surplus-display]");
     const targetFromUrl = Number(new URLSearchParams(location.search).get("target_surplus"));
     if (targetInput && targetDisplay && Number.isFinite(targetFromUrl)) {
-      const initialTarget = clamp(targetFromUrl, -365, 365);
+      const initialTarget = clamp(
+        targetFromUrl,
+        -MAX_TARGET_SURPLUS_DAYS,
+        MAX_TARGET_SURPLUS_DAYS,
+      );
       targetInput.value = String(initialTarget);
       targetDisplay.textContent = String(initialTarget);
     }
@@ -390,14 +397,14 @@
       name: planner.dataset.journeyDestinationName || planner.dataset.selectedName,
       origin: planner.dataset.journeyOriginName || "Start",
       oneWay: Number(planner.dataset.journeyTurnaroundMinutes) || selectedOneWay,
-      movementTotal: Number(planner.dataset.journeyTotalMinutes) || (Number(planner.dataset.provisionPlanningMinutes) > selectedOneWay ? selectedOneWay * 2 : selectedOneWay),
+      movementTotal: Number(planner.dataset.journeyTotalMovementMinutes) || (Number(planner.dataset.provisionPlanningMinutes) > selectedOneWay ? selectedOneWay * 2 : selectedOneWay),
       elapsedTotal: Number(planner.dataset.totalElapsedMinutes) || Number(planner.dataset.provisionPlanningMinutes),
       completedElapsed: Number(planner.dataset.completedElapsedMinutes) || 0,
       departure: Number(planner.dataset.departureMinute) || 0,
       segments: selectedSegments,
       description: planner.dataset.selectedDescription,
-      roundTrip: Number(planner.dataset.journeyTotalMinutes) > 0
-        ? Number(planner.dataset.journeyTotalMinutes) > (Number(planner.dataset.journeyTurnaroundMinutes) || selectedOneWay)
+      roundTrip: Number(planner.dataset.journeyTotalMovementMinutes) > 0
+        ? Number(planner.dataset.journeyTotalMovementMinutes) > (Number(planner.dataset.journeyTurnaroundMinutes) || selectedOneWay)
         : planner.dataset.selectedRoundTrip === "true",
     });
 
@@ -410,7 +417,11 @@
       const ordinaryWaterDays = Number(planner.dataset.provisionOrdinaryWaterDays);
       const emergencyAlcoholDays = Number(planner.dataset.provisionEmergencyAlcoholDays);
       if (![total, members, foodDays, waterDays].every(Number.isFinite) || total <= 0 || members <= 0) return;
-      const target = clamp(Number(targetInput?.value || 0), -365, 365);
+      const target = clamp(
+        Number(targetInput?.value || 0),
+        -MAX_TARGET_SURPLUS_DAYS,
+        MAX_TARGET_SURPLUS_DAYS,
+      );
       const returnUrl = new URL(location.href);
       if (target) returnUrl.searchParams.set("target_surplus", String(Number(target.toFixed(2))));
       else returnUrl.searchParams.delete("target_surplus");
@@ -458,8 +469,8 @@
         parse: parseDays,
         format: formatDays,
         step: .25,
-        minimum: -365,
-        maximum: 365,
+        minimum: -MAX_TARGET_SURPLUS_DAYS,
+        maximum: MAX_TARGET_SURPLUS_DAYS,
         groupLabel: "Edit target surplus",
         inputLabel: "Target surplus in days",
         increaseLabel: "Increase target surplus by one quarter day",

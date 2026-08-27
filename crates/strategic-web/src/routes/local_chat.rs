@@ -89,7 +89,7 @@ fn npc_authority_matches(
     requested_location_id: &str,
     minute: u64,
 ) -> bool {
-    let minute = (minute % 1_440) as u16;
+    let minute = (minute % adventuresim_core::strategic_time::MINUTES_PER_DAY) as u16;
     npc.character_id == presence.character_id
         && npc.home_settlement_id == settlement_id
         && presence.settlement_id == settlement_id
@@ -148,10 +148,7 @@ async fn actor_and_selector(
                 .ok_or("NPC is not local")?;
             let settlement_authority = state
                 .db
-                .query_one::<Settlement>(&format!(
-                    "SELECT * FROM settlement WHERE id = {}",
-                    sql_string_literal(settlement)
-                ))
+                .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(settlement))
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("NPC is not local")?;
@@ -475,7 +472,7 @@ mod tests {
             settlement_id: "riverdale".into(),
             location_id: "inn".into(),
             start_minute: 0,
-            end_minute: 1_440,
+            end_minute: adventuresim_core::strategic_time::MINUTES_PER_DAY as u16,
         };
         assert!(npc_authority_matches(
             "riverdale",
@@ -502,7 +499,7 @@ mod tests {
             "inn",
             720
         ));
-        presence.end_minute = 1_440;
+        presence.end_minute = adventuresim_core::strategic_time::MINUTES_PER_DAY as u16;
         assert!(!npc_authority_matches(
             "riverdale",
             &npc,

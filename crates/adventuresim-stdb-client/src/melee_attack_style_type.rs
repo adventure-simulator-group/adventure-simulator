@@ -7,34 +7,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum ItemSlot {
-    None,
+pub enum MeleeAttackStyle {
+    Swing,
 
-    LeftHolding,
-
-    RightHolding,
-
-    LeftArm,
-
-    RightArm,
-
-    LeftLeg,
-
-    RightLeg,
-
-    Chest,
-
-    Stomach,
-
-    Head,
-
-    AnyHolding,
-
-    AnyArm,
-
-    AnyLeg,
+    Stab,
 }
 
-impl __sdk::InModule for ItemSlot {
+impl __sdk::InModule for MeleeAttackStyle {
     type Module = super::RemoteModule;
 }

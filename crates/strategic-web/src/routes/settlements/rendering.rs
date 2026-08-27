@@ -21,9 +21,9 @@ pub(super) async fn merchant_shop(
     shop: MerchantShop,
 ) -> Html<String> {
     let settlement_literal = sql_string_literal(&id);
-    let settlement_sql = format!("SELECT * FROM settlement WHERE id = {settlement_literal}");
+    let settlement_sql = settlement_by_id(&id);
     let (settlements, active_character) = tokio::join!(
-        state.db.query::<Settlement>(&settlement_sql),
+        state.db.query::<Settlement>(settlement_sql.as_str()),
         get_active_character(&state, session.character_id_u64()),
     );
     let settlements = settlements.unwrap_or_default();
@@ -222,10 +222,7 @@ pub(super) async fn inventory_trade_context(
         let personal = state.db.query(&personal_sql).await.unwrap_or_default();
         return (personal, Vec::new(), Vec::new());
     };
-    let party_sql = format!(
-        "SELECT * FROM party WHERE id = {}",
-        sql_string_literal(party_id)
-    );
+    let party_sql = crate::spacetimedb::party_by_id(party_id);
     let (personal, party) = tokio::join!(
         state.db.query(&personal_sql),
         state.db.query::<Party>(&party_sql),
@@ -265,13 +262,10 @@ pub(super) async fn render_service_page(
     state: AppState,
     id: String,
     session: Session,
-    required_service: adventuresim_core::settlement_economy::SettlementActionService,
+    required_service: adventuresim_world_schema::SettlementActionService,
     render: ServiceRenderer,
 ) -> Html<String> {
-    let settlement_sql = format!(
-        "SELECT * FROM settlement WHERE id = {}",
-        sql_string_literal(&id)
-    );
+    let settlement_sql = crate::spacetimedb::settlement_by_id(&id);
     let (settlements, active_character) = tokio::join!(
         state.db.query::<Settlement>(&settlement_sql),
         get_active_character(&state, session.character_id_u64()),

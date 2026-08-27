@@ -5,10 +5,11 @@
 - Keep tactical tick state, including positions, damage, HP, and enemies, in the
   transient Bevy server. Persisting it to SpacetimeDB would violate the
   strategic/tactical authority boundary.
-- Development schemas and character data are disposable before launch. Implement
-  the clean final schema without migrations, compatibility fields, dual paths,
-  or legacy fallbacks unless the user identifies a player-bearing environment
-  that requires migration.
+- Backward compatibility is intentionally unsupported. Always implement the
+  clean final schema and API directly; never add migrations, compatibility
+  shims or fields, deprecated forwarding APIs, dual paths, compatibility
+  aliases, or legacy fallbacks. Remove any such path encountered within the
+  work's scope rather than preserving or extending it.
 - Disposable data does not make destructive operations generally safe. Reset and
   reseed only through the isolated development workflows; never delete a public
   or player-bearing database without explicit approval.
@@ -43,6 +44,11 @@
   If the collection lacks an appropriate icon, add one from Game-Icons.net via
   Iconify and update both the collection's `ATTRIBUTION.md` and the repository's
   `THIRD_PARTY_NOTICES.md`.
+
+## Rust style and maintainability
+
+- Before editing Rust source or Cargo manifests, also follow
+  `crates/AGENTS.md`.
 
 ## Bounded debugging
 

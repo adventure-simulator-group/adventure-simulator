@@ -34,21 +34,26 @@ fn encounter_body_weight_is_authoritative_but_sanitized() {
 
 #[test]
 fn unready_members_keep_their_burden_but_lose_carrying_capacity() {
-    assert_eq!(carrying_capacity_multiplier_for_condition("ready"), 1.0);
-    assert_eq!(carrying_capacity_multiplier_for_condition("staggered"), 0.5);
+    use adventuresim_core::morale::IncapacitationStatus;
+
     assert_eq!(
-        carrying_capacity_multiplier_for_condition("incapacitated"),
-        0.0
+        carrying_capacity_multiplier_for_condition(IncapacitationStatus::Ready),
+        1.0
     );
     assert_eq!(
-        carrying_capacity_multiplier_for_condition("unavailable"),
+        carrying_capacity_multiplier_for_condition(IncapacitationStatus::Staggered),
+        0.5
+    );
+    assert_eq!(
+        carrying_capacity_multiplier_for_condition(IncapacitationStatus::Incapacitated),
         0.0
     );
 
     let unchanged_body_and_load_burden = 95.0;
-    let ready_capacity = 100.0 * carrying_capacity_multiplier_for_condition("ready");
-    let incapacitated_capacity =
-        100.0 * carrying_capacity_multiplier_for_condition("incapacitated");
+    let ready_capacity =
+        100.0 * carrying_capacity_multiplier_for_condition(IncapacitationStatus::Ready);
+    let incapacitated_capacity = 100.0
+        * carrying_capacity_multiplier_for_condition(IncapacitationStatus::Incapacitated);
     assert!(ready_capacity >= unchanged_body_and_load_burden);
     assert!(incapacitated_capacity < unchanged_body_and_load_burden);
 }
@@ -169,8 +174,8 @@ fn case_reputation_separates_canonical_and_public_battle_identity() {
         .expect("case finale");
     assert!(finale.contains("crate::world_event::commit_generated_case_resolution"));
     assert!(finale.contains("&case.id"));
-    assert!(finale.contains("&authority.public_case_id"));
-    assert!(finale.contains("&authority.settlement_id"));
+    assert!(finale.contains("&validated.manifest.public_case_id"));
+    assert!(finale.contains("&validated.context.settlement_id"));
     let unified = finale
         .find("crate::world_event::commit_generated_case_resolution")
         .expect("unified consequence boundary");
@@ -518,8 +523,7 @@ fn case_blocker_authority_paths_remain_reachable_and_private() {
 #[test]
 fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
     use adventuresim_core::{
-        settlement_economy::Storefront,
-        strategic_inventory::MerchantStorefrontRoute,
+        settlement_economy::Storefront, strategic_inventory::MerchantStorefrontRoute,
     };
 
     assert_eq!(
@@ -595,7 +599,10 @@ fn atomic_personal_storefront_purchase_validates_before_funding() {
     let body = source
         .split("pub fn purchase_personal_storefront_with_party_stake")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_personal_storefront_purchase").next())
+        .and_then(|tail| {
+            tail.split("fn validate_personal_storefront_purchase")
+                .next()
+        })
         .expect("atomic personal storefront reducer");
     let validation = body.find("validate_personal_storefront_purchase").unwrap();
     let transfer = body.find("transfer_party_currency_to_personal").unwrap();
@@ -612,7 +619,10 @@ fn fully_personal_storefront_purchase_does_not_require_a_stake_row() {
     let body = STRATEGIC_SOURCE
         .split("pub fn purchase_personal_storefront_with_party_stake")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_personal_storefront_purchase").next())
+        .and_then(|tail| {
+            tail.split("fn validate_personal_storefront_purchase")
+                .next()
+        })
         .expect("atomic personal storefront reducer");
     let stake_branch = body.find("if stake_payment > 0").unwrap();
     let stake_lookup = body.find(".party_stake()").unwrap();
@@ -705,7 +715,10 @@ fn authority_arrest_action_projection_is_gateway_only_exact_and_redacted() {
         "authority_fine_for_charges",
         "affordable: funds >= fine",
     ] {
-        assert!(projection.contains(exact_filter), "missing exact filter: {exact_filter}");
+        assert!(
+            projection.contains(exact_filter),
+            "missing exact filter: {exact_filter}"
+        );
     }
     assert!(!projection.contains("strategic_incident__view(ctx).iter()"));
 
@@ -725,8 +738,18 @@ fn authority_arrest_action_projection_is_gateway_only_exact_and_redacted() {
     ] {
         assert!(row.contains(field), "missing public field: {field}");
     }
-    for private_field in ["incident_id", "source_id", "hostile", "offense", "severity", "created_minute"] {
-        assert!(!row.contains(private_field), "private field leaked: {private_field}");
+    for private_field in [
+        "incident_id",
+        "source_id",
+        "hostile",
+        "offense",
+        "severity",
+        "created_minute",
+    ] {
+        assert!(
+            !row.contains(private_field),
+            "private field leaked: {private_field}"
+        );
     }
     assert!(projection.contains("action_token: incident.action_token"));
     assert!(!projection.contains("action_token: incident.id"));

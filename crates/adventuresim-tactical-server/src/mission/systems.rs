@@ -143,6 +143,10 @@ pub(crate) fn finish_terminal_presentation(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each mission resource and query as an independent system parameter"
+)]
 pub(crate) fn check_terminal_combat_outcome(
     mut commands: Commands,
     time: Res<Time>,

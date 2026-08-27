@@ -4,6 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::body_region_type::BodyRegion;
+use super::intervention_route_type::InterventionRoute;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct AdministerPreparationArgs {
@@ -11,9 +14,9 @@ pub(super) struct AdministerPreparationArgs {
     pub patient_id: u64,
     pub inventory_item_id: u64,
     pub profile_version: u16,
-    pub route: String,
-    pub amount_milliunits: u32,
-    pub region: Option<String>,
+    pub route: InterventionRoute,
+    pub dose_milliunits: u32,
+    pub region: Option<BodyRegion>,
 }
 
 impl From<AdministerPreparationArgs> for super::Reducer {
@@ -24,7 +27,7 @@ impl From<AdministerPreparationArgs> for super::Reducer {
             inventory_item_id: args.inventory_item_id,
             profile_version: args.profile_version,
             route: args.route,
-            amount_milliunits: args.amount_milliunits,
+            dose_milliunits: args.dose_milliunits,
             region: args.region,
         }
     }
@@ -51,9 +54,9 @@ pub trait administer_preparation {
         patient_id: u64,
         inventory_item_id: u64,
         profile_version: u16,
-        route: String,
-        amount_milliunits: u32,
-        region: Option<String>,
+        route: InterventionRoute,
+        dose_milliunits: u32,
+        region: Option<BodyRegion>,
     ) -> __sdk::Result<()> {
         self.administer_preparation_then(
             actor_id,
@@ -61,7 +64,7 @@ pub trait administer_preparation {
             inventory_item_id,
             profile_version,
             route,
-            amount_milliunits,
+            dose_milliunits,
             region,
             |_, _| {},
         )
@@ -79,9 +82,9 @@ pub trait administer_preparation {
         patient_id: u64,
         inventory_item_id: u64,
         profile_version: u16,
-        route: String,
-        amount_milliunits: u32,
-        region: Option<String>,
+        route: InterventionRoute,
+        dose_milliunits: u32,
+        region: Option<BodyRegion>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -98,9 +101,9 @@ impl administer_preparation for super::RemoteReducers {
         patient_id: u64,
         inventory_item_id: u64,
         profile_version: u16,
-        route: String,
-        amount_milliunits: u32,
-        region: Option<String>,
+        route: InterventionRoute,
+        dose_milliunits: u32,
+        region: Option<BodyRegion>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -115,7 +118,7 @@ impl administer_preparation for super::RemoteReducers {
                 inventory_item_id,
                 profile_version,
                 route,
-                amount_milliunits,
+                dose_milliunits,
                 region,
             },
             callback,

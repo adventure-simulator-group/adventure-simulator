@@ -11,21 +11,46 @@ use bevy::{
     mesh::{Indices, VertexAttributeValues},
     prelude::{Mesh, Vec2, Vec3, Vec4},
 };
+use fabelgeist_determinism::splitmix64;
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TreeAtlasRegion {
+    pub(super) tile_size: u32,
+    pub(super) atlas_width: u32,
+    pub(super) atlas_height: u32,
+    pub(super) tile_x: u32,
+    pub(super) tile_y: u32,
+}
+
+struct TreeRasterTarget<'a> {
+    region: TreeAtlasRegion,
+    pixels: &'a mut [u8],
+    depth: &'a mut [f32],
+}
+
+#[derive(Clone, Copy)]
+struct TreeRasterSample {
+    x: u32,
+    y: u32,
+    depth: f32,
+    color: [u8; 4],
+}
 
 pub(super) fn render_tree_card(
     card: TreeBakeCard,
     branches: &[TreeBranchSegment],
     leaves: &[TreeLeaf],
     lod: u8,
-    tile_size: u32,
-    atlas_width: u32,
-    atlas_height: u32,
-    tile_x: u32,
-    tile_y: u32,
+    region: TreeAtlasRegion,
     pixels: &mut [u8],
     style: TreeBakeStyle,
 ) {
-    let mut depth = vec![f32::NEG_INFINITY; (tile_size * tile_size) as usize];
+    let mut depth = vec![f32::NEG_INFINITY; (region.tile_size * region.tile_size) as usize];
+    let mut target = TreeRasterTarget {
+        region,
+        pixels,
+        depth: &mut depth,
+    };
     let source_branches = branches
         .iter()
         .filter(|branch| card.includes_branch(branch))
@@ -36,13 +61,7 @@ pub(super) fn render_tree_card(
         card,
         &branch_mesh,
         TreeSourceMaterial::Bark,
-        tile_size,
-        atlas_width,
-        atlas_height,
-        tile_x,
-        tile_y,
-        pixels,
-        &mut depth,
+        &mut target,
         style,
     );
     let (leaf_stride, leaf_scale) = style.aggregate_leaf_recipe(lod);
@@ -62,13 +81,7 @@ pub(super) fn render_tree_card(
         card,
         &leaf_mesh,
         TreeSourceMaterial::Leaf,
-        tile_size,
-        atlas_width,
-        atlas_height,
-        tile_x,
-        tile_y,
-        pixels,
-        &mut depth,
+        &mut target,
         style,
     );
 }
@@ -103,7 +116,7 @@ fn stratified_tree_bake_leaves(
             end += 1;
         }
         let shoot = &included[start..end];
-        let phase_hash = crate::presentation::splitmix64(
+        let phase_hash = splitmix64(
             u64::from(shoot_id) ^ u64::from(card.source_group).rotate_left(23) ^ 0x1eaf_5a6d,
         );
         if shoot.len() >= stride {
@@ -137,15 +150,10 @@ fn raster_source_mesh(
     card: TreeBakeCard,
     mesh: &Mesh,
     material: TreeSourceMaterial,
-    tile_size: u32,
-    atlas_width: u32,
-    atlas_height: u32,
-    tile_x: u32,
-    tile_y: u32,
-    pixels: &mut [u8],
-    depth: &mut [f32],
+    target: &mut TreeRasterTarget<'_>,
     style: TreeBakeStyle,
 ) {
+    let tile_size = target.region.tile_size;
     let positions = mesh
         .attribute(Mesh::ATTRIBUTE_POSITION)
         .and_then(VertexAttributeValues::as_float3)
@@ -161,7 +169,7 @@ fn raster_source_mesh(
     let Indices::U32(indices) = mesh.indices().expect("procedural tree mesh is indexed") else {
         unreachable!("procedural tree mesh uses u32 indices")
     };
-    for triangle in indices.chunks_exact(3) {
+    for triangle in indices.as_chunks::<3>().0 {
         let vertex_indices = [
             triangle[0] as usize,
             triangle[1] as usize,
@@ -223,17 +231,13 @@ fn raster_source_mesh(
                     }
                 };
                 write_tree_pixel(
-                    x,
-                    y,
-                    z,
-                    color,
-                    tile_size,
-                    atlas_width,
-                    atlas_height,
-                    tile_x,
-                    tile_y,
-                    pixels,
-                    depth,
+                    TreeRasterSample {
+                        x,
+                        y,
+                        depth: z,
+                        color,
+                    },
+                    target,
                 );
             }
         }
@@ -265,29 +269,25 @@ pub(super) fn project_to_tile(card: TreeBakeCard, point: Vec3, tile_size: u32) -
         relative.dot(card.normal()),
     )
 }
-pub(super) fn write_tree_pixel(
-    x: u32,
-    y: u32,
-    z: f32,
-    color: [u8; 4],
-    tile_size: u32,
-    atlas_width: u32,
-    atlas_height: u32,
-    tile_x: u32,
-    tile_y: u32,
-    pixels: &mut [u8],
-    depth: &mut [f32],
-) {
+fn write_tree_pixel(sample: TreeRasterSample, target: &mut TreeRasterTarget<'_>) {
+    let TreeRasterSample { x, y, depth, color } = sample;
+    let TreeAtlasRegion {
+        tile_size,
+        atlas_width,
+        atlas_height,
+        tile_x,
+        tile_y,
+    } = target.region;
     let local_index = (y * tile_size + x) as usize;
-    if z <= depth[local_index] {
+    if depth <= target.depth[local_index] {
         return;
     }
-    depth[local_index] = z;
+    target.depth[local_index] = depth;
     let atlas_x = tile_x * tile_size + x;
     let atlas_y = tile_y * tile_size + y;
     debug_assert!(atlas_x < atlas_width && atlas_y < atlas_height);
     let index = ((atlas_y * atlas_width + atlas_x) * 4) as usize;
-    pixels[index..index + 4].copy_from_slice(&color);
+    target.pixels[index..index + 4].copy_from_slice(&color);
 }
 
 #[cfg(test)]
@@ -296,13 +296,13 @@ mod tests {
         BEECH_TREE_BAKE_STYLE, fit_tree_bake_card, tree_bake_cards, tree_bake_cards_with_style,
     };
     use super::*;
+    use crate::presentation::obstacle_seed;
     use crate::presentation::obstacles::tree::presentation::oak_gnarling_for_test_site;
     use crate::presentation::obstacles::tree::{
         COMMON_BEECH_PARAMETERS, OAK_GNARLING_SHOWCASE, procedural_oak_leaves,
         procedural_oak_skeleton_with_gnarling, procedural_tree_skeleton,
         procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
     };
-    use crate::presentation::{obstacle_seed, splitmix64};
     use adventuresim_tactical_core::prelude::{Precipitation, SceneEnvironment, WeatherSnapshot};
 
     #[derive(Clone, Copy, Debug)]
@@ -438,7 +438,7 @@ mod tests {
             unreachable!("procedural leaf mesh uses u32 indices")
         };
         let mut occupied = vec![false; GRID * GRID];
-        for triangle in indices.chunks_exact(3) {
+        for triangle in indices.as_chunks::<3>().0 {
             let projected = [triangle[0], triangle[1], triangle[2]].map(|index| {
                 let relative = Vec3::from_array(positions[index as usize]) - reference.center;
                 Vec2::new(
@@ -494,17 +494,21 @@ mod tests {
                 branches,
                 leaves,
                 1,
-                TILE,
-                TILE,
-                TILE,
-                0,
-                0,
+                TreeAtlasRegion {
+                    tile_size: TILE,
+                    atlas_width: TILE,
+                    atlas_height: TILE,
+                    tile_x: 0,
+                    tile_y: 0,
+                },
                 &mut pixels,
                 style,
             );
             tile_alpha.push(
                 pixels
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .map(|pixel| pixel[3])
                     .collect::<Vec<_>>(),
             );

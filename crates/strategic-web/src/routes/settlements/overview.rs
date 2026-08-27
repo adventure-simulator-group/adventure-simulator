@@ -40,10 +40,7 @@ pub(super) async fn settlement_map(
     {
         state
             .db
-            .query::<Party>(&format!(
-                "SELECT * FROM party WHERE id = {}",
-                sql_string_literal(party_id)
-            ))
+            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -81,7 +78,7 @@ pub(super) async fn settlement_map(
                 id: site.case_site_id.clone(),
                 name: site.name.clone(),
                 description: site.description.clone(),
-                summary: CaseSiteKnowledgePresentation::from_stage(&site.knowledge_stage)
+                summary: CaseSiteKnowledgePresentation::from_stage(site.knowledge_stage)
                     .map(|knowledge| knowledge.label().to_string()),
                 travel_action: format!("/case-sites/{}/travel", site.case_site_id),
                 track_action: Some(format!("/case-sites/{}/track", site.case_site_id)),
@@ -98,7 +95,7 @@ pub(super) async fn settlement_map(
                 itinerary_segments: Vec::new(),
                 round_trip_destination: true,
                 case_site_knowledge: CaseSiteKnowledgePresentation::from_stage(
-                    &site.knowledge_stage,
+                    site.knowledge_stage,
                 ),
                 active_contract_destination: case_site_has_active_contract(
                     &site.case_id,
@@ -107,7 +104,7 @@ pub(super) async fn settlement_map(
                 provision_forecast: None,
                 terrain_route: None,
                 return_terrain_route: None,
-                route_fallback: true,
+                uses_straight_line_estimate: true,
             });
         }
     }
@@ -164,48 +161,51 @@ pub(super) async fn settlement_map(
         .iter()
         .filter_map(|member| stats.iter().find(|row| row.character_id == member.id))
         .map(|row| {
-            (row.calories_used.max(0.0) / STRATEGIC_TRAVEL_KCAL_PER_DAY * 1_440.0).ceil() as u64
+            (row.calories_used.max(0.0) / STRATEGIC_TRAVEL_KCAL_PER_DAY
+                * adventuresim_core::strategic_time::MINUTES_PER_DAY as f32)
+                .ceil() as u64
         })
         .max()
         .unwrap_or(0)
         .max(1);
-    if can_travel
-        && let Some(party) = active_party.as_ref() {
-            let attributes: Vec<CharacterAttributes> = state
-                .db
-                .query("SELECT * FROM backend_character_attributes")
-                .await
-                .unwrap_or_default();
-            let limbs: Vec<CharacterLimbs> = state
-                .db
-                .query("SELECT * FROM backend_character_limbs")
-                .await
-                .unwrap_or_default();
-            let times: Vec<CharacterTime> = state
-                .db
-                .query("SELECT * FROM backend_character_times")
-                .await
-                .unwrap_or_default();
-            let schedules: Vec<CharacterTrainingSchedule> = state
-                .db
-                .query("SELECT * FROM backend_character_training_schedules")
-                .await
-                .unwrap_or_default();
-            let member_ids: Vec<_> = living_party_members
-                .iter()
-                .map(|member| member.id)
-                .collect();
-            populate_itinerary_forecasts(
-                &mut destinations,
-                &member_ids,
-                &attributes,
-                &limbs,
-                &stats,
-                &times,
-                &schedules,
+    if can_travel && let Some(party) = active_party.as_ref() {
+        let attributes: Vec<CharacterAttributes> = state
+            .db
+            .query("SELECT * FROM backend_character_attributes")
+            .await
+            .unwrap_or_default();
+        let limbs: Vec<CharacterLimbs> = state
+            .db
+            .query("SELECT * FROM backend_character_limbs")
+            .await
+            .unwrap_or_default();
+        let times: Vec<CharacterTime> = state
+            .db
+            .query("SELECT * FROM backend_character_times")
+            .await
+            .unwrap_or_default();
+        let schedules: Vec<CharacterTrainingSchedule> = state
+            .db
+            .query("SELECT * FROM backend_character_training_schedules")
+            .await
+            .unwrap_or_default();
+        let member_ids: Vec<_> = living_party_members
+            .iter()
+            .map(|member| member.id)
+            .collect();
+        populate_itinerary_forecasts(
+            &mut destinations,
+            ItineraryForecastSources {
+                party_members: &member_ids,
+                attributes: &attributes,
+                limbs: &limbs,
+                stats: &stats,
+                times: &times,
+                schedules: &schedules,
                 party,
-            );
-        }
+            },
+        );
+    }
     if can_travel {
         for destination in &mut destinations {
             destination.provision_forecast = travel_provision_forecast(
@@ -287,7 +287,7 @@ pub(super) fn can_abandon_active_contract(
     contract: &ContractPresentation,
     current_case_site_id: Option<&str>,
 ) -> bool {
-    contract.status == ContractPresentationStatus::Accepted && current_case_site_id.is_none()
+    contract.status == ContractStatus::Accepted && current_case_site_id.is_none()
 }
 
 #[cfg(test)]
@@ -315,7 +315,7 @@ mod map_quest_tests {
         assert!(!settlement_html_travel_available(true, false));
     }
 
-    fn quest(status: ContractPresentationStatus) -> ContractPresentation {
+    fn quest(status: ContractStatus) -> ContractPresentation {
         ContractPresentation {
             id: "active".into(),
             case_id: "case:active".into(),
@@ -337,22 +337,22 @@ mod map_quest_tests {
     #[test]
     fn accepted_active_quest_can_only_be_abandoned_before_reaching_its_location() {
         assert!(can_abandon_active_contract(
-            &quest(ContractPresentationStatus::Accepted),
+            &quest(ContractStatus::Accepted),
             None
         ));
         assert!(!can_abandon_active_contract(
-            &quest(ContractPresentationStatus::Accepted),
+            &quest(ContractStatus::Accepted),
             Some("active")
         ));
         assert!(!can_abandon_active_contract(
-            &quest(ContractPresentationStatus::ReadyToReport),
+            &quest(ContractStatus::ReadyToReport),
             None
         ));
     }
 
     #[test]
     fn case_site_badge_requires_an_explicit_active_contract_case_match() {
-        let active = quest(ContractPresentationStatus::Accepted);
+        let active = quest(ContractStatus::Accepted);
 
         assert!(case_site_has_active_contract("case:active", Some(&active)));
         assert!(!case_site_has_active_contract(

@@ -1,4 +1,4 @@
-use adventuresim_core::errantry::{PuzzleProjection, PuzzleSubmission};
+use adventuresim_puzzles::{PuzzleProjection, PuzzleSubmission};
 use axum::{
     Form, Router,
     extract::{Path, State},
@@ -163,7 +163,7 @@ fn submission_for(
             ];
             let assignments = (0..puzzle.travelers.len())
                 .map(|traveler| {
-                    Ok(adventuresim_core::errantry::LogicGridAssignment {
+                    Ok(adventuresim_puzzles::LogicGridAssignment {
                         traveler: traveler as u8,
                         token: parse_projected_label(&puzzle.tokens, required(tokens[traveler])?)?,
                         road: parse_projected_label(&puzzle.roads, required(roads[traveler])?)?,
@@ -248,7 +248,6 @@ async fn submit(
     {
         Ok(()) => Redirect::to(&format!("/quests/{}/challenges/{}", case_id, challenge_id))
             .into_response(),
-        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
         Err(error) => {
             tracing::warn!(%error, character_id, "challenge submission rejected");
             StatusCode::UNPROCESSABLE_ENTITY.into_response()
@@ -259,7 +258,7 @@ async fn submit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_core::errantry::{PuzzleAuthority, PuzzleKind};
+    use adventuresim_puzzles::{PuzzleAuthority, PuzzleKind};
 
     #[test]
     fn route_is_server_rendered_post_redirect_get() {

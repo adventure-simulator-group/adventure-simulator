@@ -3,11 +3,12 @@ use crate::data::gpu::parameters::{PassParameter, PassParameters};
 use crate::data::gpu::resource::GpuResource;
 use crate::data::gpu::texture::Texture3d;
 use crate::prelude::*;
+use fabelgeist_math::Vec3;
 
 pub struct DistanceField;
 
 impl DistanceField {
-    pub fn new(context: &WgpuContext, size: Vec3) -> Result<Texture3d> {
+    pub fn create(context: &WgpuContext, size: Vec3) -> Result<Texture3d> {
         Texture3d::new(
             context,
             size,
@@ -61,7 +62,7 @@ impl DistanceField {
         // Copy the original data to a temp texture.
         let temp_tex = Texture3d::new(
             context,
-            crate::data::vector::Vec3::new(io.size.0 as f32, io.size.1 as f32, io.size.2 as f32),
+            fabelgeist_math::Vec3::new(io.size.0 as f32, io.size.1 as f32, io.size.2 as f32),
             io.format,
         )?;
 
@@ -144,7 +145,7 @@ impl DistanceField {
         // Copy the original data to a temp texture.
         let temp_tex = Texture3d::new(
             context,
-            crate::data::vector::Vec3::new(io.size.0 as f32, io.size.1 as f32, io.size.2 as f32),
+            fabelgeist_math::Vec3::new(io.size.0 as f32, io.size.1 as f32, io.size.2 as f32),
             io.format,
         )?;
 

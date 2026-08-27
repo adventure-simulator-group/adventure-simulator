@@ -125,12 +125,7 @@ pub(crate) fn register_development_scenario(
         primary_character_id,
         entry_route: entry_route.into(),
     };
-    if let Some(existing) = ctx
-        .db
-        .development_scenario()
-        .slug()
-        .find(slug.to_owned())
-    {
+    if let Some(existing) = ctx.db.development_scenario().slug().find(slug.to_owned()) {
         if existing.primary_character_id != primary_character_id {
             return Err("Development scenario slug conflicts with another primary".into());
         }
@@ -209,18 +204,19 @@ fn ensure_scenario_settlement(ctx: &ReducerContext, id: &str, name: &str) -> Res
 
 pub(crate) fn ensure_foraging_demo_settlement(ctx: &ReducerContext) -> Result<(), String> {
     const ID: &str = "dev-scenario-foraging";
-    let (mut settlement, exists) = if let Some(existing) = ctx.db.settlement().id().find(ID.to_owned()) {
-        (existing, true)
-    } else {
-        (
-            ctx.db
-                .settlement()
-                .id()
-                .find("riverdale".to_owned())
-                .ok_or("Foraging demo settlement template is missing")?,
-            false,
-        )
-    };
+    let (mut settlement, exists) =
+        if let Some(existing) = ctx.db.settlement().id().find(ID.to_owned()) {
+            (existing, true)
+        } else {
+            (
+                ctx.db
+                    .settlement()
+                    .id()
+                    .find("riverdale".to_owned())
+                    .ok_or("Foraging demo settlement template is missing")?,
+                false,
+            )
+        };
     // Empirically sampled from the pinned final terrain pack: uncultivated
     // deep woods with no crossing or wetland fraction.
     settlement.id = ID.into();
@@ -282,11 +278,11 @@ fn ensure_recurring_threat_provisions(
         .ok_or("Recurring-threat scenario character has no party")?;
     for (item_id, target_quantity) in [
         (
-            adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID,
+            adventuresim_core::item_references::STANDARD_TRAVEL_RATION_ID,
             RECURRING_THREAT_RATIONS,
         ),
         (
-            adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
+            adventuresim_core::item_references::STANDARD_WATERSKIN_ID,
             RECURRING_THREAT_WATERSKINS,
         ),
         (
@@ -329,31 +325,99 @@ fn ensure_recurring_threat_offer_awareness(
 
 /// Register every fixture from the one strategic bootstrap and materialize
 /// feature states against distinct primary characters.
-pub(crate) fn materialize_development_scenario_gallery(
-    ctx: &ReducerContext,
-) -> Result<(), String> {
+pub(crate) fn materialize_development_scenario_gallery(ctx: &ReducerContext) -> Result<(), String> {
     let static_scenarios = [
-        ("health-disease-party", "Health", "Disease diagnosis party", "Diagnose a party containing every authored disease stage.", 9_999_999_999_999_998, "/characters"),
-        ("health-wounded-party", "Health", "Wounds and surgery", "Treat wounds, retained projectiles, splints, and damaged equipment.", 9_999_999_999_999_999, "/characters"),
-        ("knowledge-religion", "Knowledge", "Religion knowledge", "Inspect the complete bounded religion skill presentation.", 9_999_999_999_999_988, "/characters"),
-        ("knowledge-bestiary", "Knowledge", "Bestiary knowledge", "Inspect broad bestiary category knowledge and evidence.", 9_999_999_999_999_987, "/characters"),
-        ("knowledge-herbalism", "Knowledge", "Herbalism and foraging", "Exercise every bounded herbalism method, public grade, and the terrain-backed foraging flow.", 9_999_999_999_999_986, "/characters"),
-        ("social-affinity", "Social", "Affinity and courtship", "Exercise visible affinity, belief, morale, and social actions.", 9_999_999_999_999_977, "/characters"),
-        ("social-prayer", "Social", "Zealous prayer", "Exercise conviction-sensitive prayer interactions.", 9_999_999_999_999_975, "/characters"),
+        (
+            "health-disease-party",
+            "Health",
+            "Disease diagnosis party",
+            "Diagnose a party containing every authored disease stage.",
+            9_999_999_999_999_998,
+            "/characters",
+        ),
+        (
+            "health-wounded-party",
+            "Health",
+            "Wounds and surgery",
+            "Treat wounds, retained projectiles, splints, and damaged equipment.",
+            9_999_999_999_999_999,
+            "/characters",
+        ),
+        (
+            "knowledge-religion",
+            "Knowledge",
+            "Religion knowledge",
+            "Inspect the complete bounded religion skill presentation.",
+            9_999_999_999_999_988,
+            "/characters",
+        ),
+        (
+            "knowledge-bestiary",
+            "Knowledge",
+            "Bestiary knowledge",
+            "Inspect broad bestiary category knowledge and evidence.",
+            9_999_999_999_999_987,
+            "/characters",
+        ),
+        (
+            "knowledge-herbalism",
+            "Knowledge",
+            "Herbalism and foraging",
+            "Exercise every bounded herbalism method, public grade, and the terrain-backed foraging flow.",
+            9_999_999_999_999_986,
+            "/characters",
+        ),
+        (
+            "social-affinity",
+            "Social",
+            "Affinity and courtship",
+            "Exercise visible affinity, belief, morale, and social actions.",
+            9_999_999_999_999_977,
+            "/characters",
+        ),
+        (
+            "social-prayer",
+            "Social",
+            "Zealous prayer",
+            "Exercise conviction-sensitive prayer interactions.",
+            9_999_999_999_999_975,
+            "/characters",
+        ),
     ];
     for (slug, category, label, description, character_id, route) in static_scenarios {
-        register_development_scenario(ctx, slug, category, label, description, character_id, route)?;
+        register_development_scenario(
+            ctx,
+            slug,
+            category,
+            label,
+            description,
+            character_id,
+            route,
+        )?;
     }
 
     const AUTOPSY_ID: u64 = 9_999_999_999_999_960;
     ensure_scenario_character(ctx, AUTOPSY_ID, "Anatomist Demo")?;
     crate::corpse::seed_autopsy_demo(ctx, AUTOPSY_ID)?;
-    register_development_scenario(ctx, "health-autopsy", "Health", "Autopsy", "Examine a deterministic corpse through the ordinary settlement UI.", AUTOPSY_ID, "/characters")?;
+    register_development_scenario(
+        ctx,
+        "health-autopsy",
+        "Health",
+        "Autopsy",
+        "Examine a deterministic corpse through the ordinary settlement UI.",
+        AUTOPSY_ID,
+        "/characters",
+    )?;
 
     const OUTBREAK_ID: u64 = 9_999_999_999_999_959;
     const OUTBREAK_SETTLEMENT: &str = "dev-scenario-outbreak";
     ensure_scenario_settlement(ctx, OUTBREAK_SETTLEMENT, "Outbreak Scenario Hamlet")?;
-    ensure_scenario_character_at(ctx, OUTBREAK_ID, "Outbreak Investigator", OUTBREAK_SETTLEMENT)?;
+    ensure_scenario_character_at(
+        ctx,
+        OUTBREAK_ID,
+        "Outbreak Investigator",
+        OUTBREAK_SETTLEMENT,
+    )?;
     let outbreak_problem_id = seed_outbreak_demo(ctx, OUTBREAK_ID)?;
     crate::local_problem::discover_development_problem(
         ctx,
@@ -361,8 +425,21 @@ pub(crate) fn materialize_development_scenario_gallery(
         &outbreak_problem_id,
         "quest-outbreak",
     )?;
-    register_development_scenario(ctx, "quest-outbreak", "Quests", "Discovered outbreak", "Continue a deterministic outbreak from its ordinary rumor-derived journal entry, referral, and investigation actions.", OUTBREAK_ID, "/quests")?;
-    register_development_subject(ctx, "quest-outbreak", "generated_problem", &outbreak_problem_id)?;
+    register_development_scenario(
+        ctx,
+        "quest-outbreak",
+        "Quests",
+        "Discovered outbreak",
+        "Continue a deterministic outbreak from its ordinary rumor-derived journal entry, referral, and investigation actions.",
+        OUTBREAK_ID,
+        "/quests",
+    )?;
+    register_development_subject(
+        ctx,
+        "quest-outbreak",
+        "generated_problem",
+        &outbreak_problem_id,
+    )?;
 
     const THREAT_ID: u64 = 9_999_999_999_999_958;
     const THREAT_SETTLEMENT: &str = "dev-scenario-recurring-threat";
@@ -390,10 +467,8 @@ pub(crate) fn materialize_development_scenario_gallery(
     }
     ensure_recurring_threat_provisions(ctx, THREAT_ID)?;
     debug_assert!(
-        adventuresim_core::strategic_action::assess_negotiated_withdrawal(
-            5.0, 1.0, 0.0, 50,
-        )
-        .accepted
+        adventuresim_core::strategic_action::assess_negotiated_withdrawal(5.0, 1.0, 0.0, 50,)
+            .accepted
     );
     debug_assert!(
         adventuresim_core::strategic_action::assess_hostile_surrender(5.0, 1.0, 0.0, 50, 6_000)
@@ -412,29 +487,50 @@ pub(crate) fn materialize_development_scenario_gallery(
         &threat_problem_id,
         "quest-recurring-threat",
     )?;
-    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Combat, withdrawal, or surrender", "Follow a deterministic sapient hostile threat to its case site, then resolve it through ordinary combat, negotiated withdrawal, or whole-group pre-combat surrender.", THREAT_ID, "/quests")?;
-    register_development_subject(ctx, "quest-recurring-threat", "generated_problem", &threat_problem_id)?;
+    register_development_scenario(
+        ctx,
+        "quest-recurring-threat",
+        "Quests",
+        "Combat, withdrawal, or surrender",
+        "Follow a deterministic sapient hostile threat to its case site, then resolve it through ordinary combat, negotiated withdrawal, or whole-group pre-combat surrender.",
+        THREAT_ID,
+        "/quests",
+    )?;
+    register_development_subject(
+        ctx,
+        "quest-recurring-threat",
+        "generated_problem",
+        &threat_problem_id,
+    )?;
 
     for (offset, kind) in [
-        ErrantryPuzzleKind::OrderedSigils,
-        ErrantryPuzzleKind::TruthfulWitnesses,
-        ErrantryPuzzleKind::RuneTransformation,
-        ErrantryPuzzleKind::LogicGrid,
-        ErrantryPuzzleKind::ResourceAllocation,
+        PuzzleKind::OrderedSigils,
+        PuzzleKind::TruthfulWitnesses,
+        PuzzleKind::RuneTransformation,
+        PuzzleKind::LogicGrid,
+        PuzzleKind::ResourceAllocation,
     ]
     .into_iter()
     .enumerate()
     {
-        let slug = format!("puzzle-{}", kind.core().slug());
+        let slug = format!("puzzle-{}", kind.slug());
         let character_id = 9_999_999_999_999_950 - offset as u64;
-        ensure_scenario_character(ctx, character_id, &format!("{} Puzzle Tester", kind.core().slug()))?;
+        ensure_scenario_character(ctx, character_id, &format!("{} Puzzle Tester", kind.slug()))?;
         let materialized = materialize_order_errantry(
             ctx,
             character_id,
             None,
             ErrantryLaunch::DirectDemoCamp(kind),
         )?;
-        register_development_scenario(ctx, &slug, "Puzzles", &format!("{} puzzle", kind.core().slug().replace('-', " ")), "Solve this puzzle from its ordinary journey-camp entry state.", character_id, "/camp")?;
+        register_development_scenario(
+            ctx,
+            &slug,
+            "Puzzles",
+            &format!("{} puzzle", kind.slug().replace('-', " ")),
+            "Solve this puzzle from its ordinary journey-camp entry state.",
+            character_id,
+            "/camp",
+        )?;
         register_development_subject(ctx, &slug, "case", &materialized.case_id)?;
     }
 
@@ -445,19 +541,37 @@ pub(crate) fn materialize_development_scenario_gallery(
         let scenario_slug = format!("road-{}", definition.id);
         let character_id = 9_999_999_999_990_000_u64.saturating_sub(ordinal as u64);
         ensure_scenario_character(ctx, character_id, &format!("Road Tester {}", ordinal + 1))?;
-        let occurrence_id = materialize_development_road_encounter(ctx, character_id, &definition.id)?;
-        let label = definition
-            .cast
-            .first()
-            .map_or_else(|| definition.id.replace(['-', '_'], " "), |speaker| format!("Encounter with {}", speaker.name));
-        register_development_scenario(ctx, &scenario_slug, "Road encounters", &label, "Play this compiled encounter through its ordinary journey-camp presentation.", character_id, "/camp")?;
+        let occurrence_id =
+            materialize_development_road_encounter(ctx, character_id, &definition.id)?;
+        let label = definition.cast.first().map_or_else(
+            || definition.id.replace(['-', '_'], " "),
+            |speaker| format!("Encounter with {}", speaker.name),
+        );
+        register_development_scenario(
+            ctx,
+            &scenario_slug,
+            "Road encounters",
+            &label,
+            "Play this compiled encounter through its ordinary journey-camp presentation.",
+            character_id,
+            "/camp",
+        )?;
         register_development_subject(ctx, &scenario_slug, "road_encounter", &occurrence_id)?;
     }
 
     // Postcondition validation makes a partial gallery abort transactionally.
     for scenario in ctx.db.development_scenario().iter() {
-        if ctx.db.character().id().find(scenario.primary_character_id).is_none() {
-            return Err(format!("Scenario {} has no primary character", scenario.slug));
+        if ctx
+            .db
+            .character()
+            .id()
+            .find(scenario.primary_character_id)
+            .is_none()
+        {
+            return Err(format!(
+                "Scenario {} has no primary character",
+                scenario.slug
+            ));
         }
     }
     Ok(())
@@ -539,9 +653,8 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
             .problem_id()
             .find(problem.id.clone())
             .map_or_else(|| "Not publicly described".into(), |row| row.public_summary);
-        let supports_incident_action = !scenario_slug.is_empty()
-            && problem.recurring_hostile
-            && problem.resolved_at.is_none();
+        let supports_incident_action =
+            !scenario_slug.is_empty() && problem.recurring_hostile && problem.resolved_at.is_none();
         rows.push(BackendDevelopmentQuest {
             scenario_slug,
             quest_kind: "generated problem".into(),
@@ -616,11 +729,16 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
             subject_id: challenge.id,
             canonical_case_id: challenge.case_id,
             title: challenge.catalog_id,
-            status: if challenge.open { "open".into() } else { "resolved".into() },
+            status: if challenge.open {
+                "open".into()
+            } else {
+                "resolved".into()
+            },
             incident_count: 0,
             public_awareness_bps: 0,
             supports_incident_action: false,
-            player_safe_summary: "Catalog-authored encounter bound to this scenario's ordinary journey camp.".into(),
+            player_safe_summary:
+                "Catalog-authored encounter bound to this scenario's ordinary journey camp.".into(),
         });
     }
     rows.sort_by(|left, right| {
@@ -661,7 +779,9 @@ pub fn trigger_development_scenario_incident(
         .development_scenario_subject()
         .scenario_slug()
         .filter(&scenario_slug)
-        .any(|subject| subject.subject_kind == "generated_problem" && subject.subject_id == problem_id);
+        .any(|subject| {
+            subject.subject_kind == "generated_problem" && subject.subject_id == problem_id
+        });
     if !registered {
         return Err("Generated problem is not a subject of this development scenario".into());
     }

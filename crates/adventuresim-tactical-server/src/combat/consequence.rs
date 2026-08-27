@@ -1,18 +1,24 @@
 use super::*;
 
+type EquipmentContactQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static ItemOf,
+        &'static EquipSlot,
+        &'static crate::player_projection::TacticalInventoryItemId,
+        Option<&'static WeaponItem>,
+        Option<&'static ShieldItem>,
+        Option<&'static ArmorItem>,
+    ),
+>;
+
 pub(super) fn apply_melee_attack_result(
     event: On<ApplyMeleeAttackResult>,
     mut combatants: Query<(&mut Limbs, &mut TacticalCombatState)>,
     metadata: Query<(&TacticalCombatSide, &CharacterId)>,
     mut consequences: ResMut<TacticalConsequenceAccumulator>,
-    items: Query<(
-        &ItemOf,
-        &EquipSlot,
-        &crate::player_projection::TacticalInventoryItemId,
-        Option<&WeaponItem>,
-        Option<&ShieldItem>,
-        Option<&ArmorItem>,
-    )>,
+    items: EquipmentContactQuery<'_, '_>,
 ) {
     let Ok([attacker, defender]) = combatants.get_many_mut([event.attacker, event.target]) else {
         return;
@@ -169,7 +175,10 @@ pub(super) fn attacker_weapon_contact_matches(
     owner == attacker && slot == authoritative_slot && is_weapon
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(super) fn defender_equipment_contact_matches(
     defender: Entity,
     owner: Entity,

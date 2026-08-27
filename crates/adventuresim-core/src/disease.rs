@@ -3,7 +3,11 @@
 //! An infection is completely described by its identity, associations and two
 //! character-local timestamps. Everything else in this module is derived.
 
-use crate::physiology::{self, BodyRegion, CurvePoint, Humour, Meter, MeterCurve, MeterVector};
+use crate::{
+    physiology::{self, BodyRegion, CurvePoint, Humour, Meter, MeterCurve, MeterVector},
+    strategic_time::MINUTES_PER_DAY,
+};
+use fabelgeist_determinism::mix64;
 use serde::{Deserialize, Serialize};
 
 pub const DISEASE_RULESET_VERSION: u16 = 1;
@@ -304,23 +308,23 @@ pub struct DiseaseEvidenceHook {
 pub fn diagnostic_pattern(id: DiseaseId) -> DiagnosticPattern {
     match id {
         DiseaseId::Mahrdruck => DiagnosticPattern {
-            minimum_observation_minutes: 2 * 1_440,
+            minimum_observation_minutes: 2 * MINUTES_PER_DAY,
             longitudinal_weight: 0.42,
         },
         DiseaseId::ShroudFever => DiagnosticPattern {
-            minimum_observation_minutes: 8 * 1_440,
+            minimum_observation_minutes: 8 * MINUTES_PER_DAY,
             longitudinal_weight: 0.38,
         },
         DiseaseId::Bilwisschuss => DiagnosticPattern {
-            minimum_observation_minutes: 2 * 1_440,
+            minimum_observation_minutes: 2 * MINUTES_PER_DAY,
             longitudinal_weight: 0.44,
         },
         DiseaseId::Kobeldunst => DiagnosticPattern {
-            minimum_observation_minutes: 1_440,
+            minimum_observation_minutes: MINUTES_PER_DAY,
             longitudinal_weight: 0.40,
         },
         _ => DiagnosticPattern {
-            minimum_observation_minutes: 8 * 1_440,
+            minimum_observation_minutes: 8 * MINUTES_PER_DAY,
             longitudinal_weight: 0.0,
         },
     }
@@ -601,6 +605,10 @@ pub fn add_bounded_work(work: &mut u64, amount: u64, max: u64) -> Result<(), &'s
 /// Resolve route exposure attempts and contact transmission in one absolute-
 /// minute timeline. Acquisitions at a minute are simultaneous and become
 /// eligible contact sources only on the following minute.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the acquisition timeline receives independent authority inputs"
+)]
 pub fn resolve_acquisition_timeline(
     target_ids: &std::collections::BTreeSet<u64>,
     initial: &std::collections::BTreeMap<u64, Vec<InfectionEpisode>>,
@@ -738,7 +746,7 @@ pub fn resolve_acquisition_timeline(
             let prior =
                 acquired_immunity(target_episodes, source.disease_id, minute, target_immunity);
             let mut source_definition = *definition(source.disease_id);
-            source_definition.base_acquisition = source.base_acquisition / 1_440.0;
+            source_definition.base_acquisition = source.base_acquisition / MINUTES_PER_DAY as f32;
             let exposure = residual_exposure(
                 source.intensity,
                 source.vector,
@@ -790,7 +798,8 @@ pub fn resolve_acquisition_timeline(
                         continue;
                     }
                     let exposure = residual_exposure(
-                        close_contact_infectiousness(*source_episode, minute) / 1_440.0,
+                        close_contact_infectiousness(*source_episode, minute)
+                            / MINUTES_PER_DAY as f32,
                         TransmissionVector::CloseContact,
                         physiology_check_at(target_id, minute),
                     );
@@ -910,7 +919,7 @@ pub fn resolve_acquisition_timeline(
     Ok(result)
 }
 
-const DAY: u64 = 1_440;
+const DAY: u64 = MINUTES_PER_DAY;
 const RESP: VitalImpairment = VitalImpairment {
     sanguine: 0.0,
     phlegmatic: 0.55,
@@ -1258,6 +1267,10 @@ const VZ: VitalImpairment = VitalImpairment {
     choleric: 0.,
     melancholic: 0.,
 };
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the const catalog constructor exposes every authored disease field"
+)]
 const fn d(
     id: DiseaseId,
     period_name: &'static str,
@@ -1351,13 +1364,11 @@ pub fn contact_exposure_seed(
     source_episode_id: u64,
     minute: u64,
 ) -> u64 {
-    let mut value = outbreak_exposure_seed(
+    let value = outbreak_exposure_seed(
         target_id,
         &format!("party:{source_id}:{source_episode_id}:{minute}"),
     );
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
+    mix64(value)
 }
 
 /// True while an episode of the same disease remains unresolved at the
@@ -1384,6 +1395,10 @@ pub fn has_unresolved_disease(
 pub fn infection_occurs_through(episode: InfectionEpisode, through: u64) -> bool {
     episode.contracted_at <= through
 }
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the exposure calculation names each independent epidemiology input"
+)]
 pub fn first_presence_exposure_minute(
     character_id: u64,
     outbreak_id: &str,
@@ -1402,7 +1417,7 @@ pub fn first_presence_exposure_minute(
         acquisition_succeeds(
             outbreak_exposure_seed(character_id, &key),
             &DiseaseDefinition {
-                base_acquisition: base_acquisition / 1_440.0,
+                base_acquisition: base_acquisition / MINUTES_PER_DAY as f32,
                 ..*definition(DiseaseId::Influenza)
             },
             immunity,
@@ -1416,6 +1431,10 @@ pub fn first_presence_exposure_minute(
 /// disease. Eligibility and acquired immunity are evaluated at each candidate
 /// minute so a long interval behaves like equivalent smaller updates when an
 /// earlier episode resolves partway through it.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the exposure calculation names each independent epidemiology input"
+)]
 pub fn first_eligible_presence_exposure_minute(
     episodes: &[InfectionEpisode],
     disease_id: DiseaseId,
@@ -1439,7 +1458,7 @@ pub fn first_eligible_presence_exposure_minute(
         acquisition_succeeds(
             outbreak_exposure_seed(character_id, &key),
             &DiseaseDefinition {
-                base_acquisition: base_acquisition / 1_440.0,
+                base_acquisition: base_acquisition / MINUTES_PER_DAY as f32,
                 ..*definition(DiseaseId::Influenza)
             },
             immunity,
@@ -1449,7 +1468,10 @@ pub fn first_eligible_presence_exposure_minute(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub fn first_eligible_protected_presence_exposure_minute(
     episodes: &[InfectionEpisode],
     disease_id: DiseaseId,
@@ -1475,7 +1497,7 @@ pub fn first_eligible_protected_presence_exposure_minute(
         acquisition_succeeds(
             outbreak_exposure_seed(character_id, &key),
             &DiseaseDefinition {
-                base_acquisition: base_acquisition / 1_440.0,
+                base_acquisition: base_acquisition / MINUTES_PER_DAY as f32,
                 ..*definition(disease_id)
             },
             immunity,
@@ -1485,7 +1507,10 @@ pub fn first_eligible_protected_presence_exposure_minute(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub fn protected_presence_exposure_source(
     disease_id: DiseaseId,
     character_id: u64,
@@ -1545,7 +1570,8 @@ pub fn exposure_threshold_minute(
     prior_immunity: f32,
 ) -> Option<u64> {
     let resistance = ((immunity / 5.0).clamp(0.0, 1.0) * 0.72 + prior_immunity).clamp(0.0, 0.98);
-    let hazard = (intensity.max(0.0) * base_acquisition.max(0.0) * (1.0 - resistance)) / 1_440.0;
+    let hazard = (intensity.max(0.0) * base_acquisition.max(0.0) * (1.0 - resistance))
+        / MINUTES_PER_DAY as f32;
     if hazard <= 0.0 {
         return None;
     }
@@ -2359,6 +2385,8 @@ pub fn acquired_immunity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::strategic_time::MINUTES_PER_YEAR;
+
     fn e(id: u64, disease_id: DiseaseId) -> InfectionEpisode {
         InfectionEpisode {
             id,
@@ -3275,7 +3303,7 @@ mod tests {
         let targets = [7].into_iter().collect();
         let immunity = [(7, 0.0)].into_iter().collect();
         let initial = std::collections::BTreeMap::new();
-        let through = 365 * DAY;
+        let through = MINUTES_PER_YEAR;
         let source = protected_presence_exposure_source(
             DiseaseId::Influenza,
             7,
@@ -3654,7 +3682,7 @@ mod tests {
                 preparation_id: profile.preparation_id.to_owned(),
                 profile_version: profile.version,
                 route: profile.route,
-                amount_milliunits: 1_000,
+                dose: physiology::DoseMilliunits::STANDARD,
                 region: None,
                 administered_at: 100,
                 stopped_at: None,
@@ -3681,7 +3709,7 @@ mod tests {
             preparation_id: poppy.preparation_id.to_owned(),
             profile_version: poppy.version,
             route: poppy.route,
-            amount_milliunits: 1_000,
+            dose: physiology::DoseMilliunits::STANDARD,
             region: None,
             administered_at: 100,
             stopped_at: None,

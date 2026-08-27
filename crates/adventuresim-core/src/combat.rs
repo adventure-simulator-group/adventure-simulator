@@ -164,6 +164,10 @@ pub fn flanking_from_dir(attacker_dir: (f32, f32), defender_dir: (f32, f32)) -> 
 ///
 /// Returns the outcome including damage values. Damage is not yet
 /// applied to any body part — the caller is responsible for that.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "combat resolution receives independent attacker and defender facets"
+)]
 pub fn resolve_melee_attack_by_parts(
     attacker_skills: &impl PlayerSkills,
     attacker_attr: &impl PlayerAttributes,
@@ -171,7 +175,7 @@ pub fn resolve_melee_attack_by_parts(
     attacker_essentials: &impl PlayerEssentials,
     attacker_equip: &impl PlayerEquipment,
     attacker_side: BodySide,
-    attack_style: crate::equipment::MeleeAttackStyle,
+    attack_style: crate::combat_style::MeleeAttackStyle,
     hit_precision: f32,
     precision_damage_multiplier_cap: f32,
     flanking: f32,
@@ -300,6 +304,10 @@ pub fn resolve_melee_attack_by_parts(
 /// Resolve a ranged attack using the same defense, armor, and damage model as
 /// melee combat. Ranged accuracy uses the attacker's Ranged check and the
 /// weapon's projectile energy rather than muscular striking force.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "combat resolution receives independent attacker and defender facets"
+)]
 pub fn resolve_ranged_attack_by_parts(
     attacker_skills: &impl PlayerSkills,
     attacker_attr: &impl PlayerAttributes,
@@ -446,6 +454,10 @@ fn attack_force(
     upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_mass_kg
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "damage resolution receives independent attack and defense facets"
+)]
 fn calculate_damage(
     attack: f32,
     attacker_attr: &impl PlayerAttributes,

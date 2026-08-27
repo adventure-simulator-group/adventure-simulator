@@ -352,6 +352,10 @@ pub fn demand_hostile_surrender(
 }
 
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reducer ABI exposes each independently validated surrender field"
+)]
 pub fn answer_hostile_surrender_offer(
     ctx: &ReducerContext,
     actor_id: u64,

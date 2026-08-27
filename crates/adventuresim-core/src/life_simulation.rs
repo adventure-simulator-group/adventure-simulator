@@ -6,18 +6,18 @@
 
 use crate::attribute::PlayerAttributes;
 use crate::organization::{OrganizationDefinition, Requirement, TrainingEntry, TrainingTarget};
+use crate::personality::Transparency;
 use crate::skill::{Skill, apply_language_training};
 use crate::strategic_schedule::{
-    ActivityTrainingProfile, DailySchedule, SkillHours, apply_curriculum_training,
-    apply_religion_training, apply_schedule_training,
+    ActivityTrainingProfile, DailySchedule, SkillHours, SocializingSociability,
+    apply_curriculum_training, apply_religion_training, apply_schedule_training,
 };
-use crate::strategic_time::MINUTES_PER_DAY;
+use crate::strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY, MINUTES_PER_YEAR};
 use adventuresim_world_schema::{
     OfficialReligion, OralLanguageHours, WrittenLanguage, WrittenLanguageHours,
 };
 
 pub const TRAINING_START_AGE: u16 = 6;
-const MINUTES_PER_YEAR: u64 = 365 * MINUTES_PER_DAY;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LifePhaseKind {
@@ -168,7 +168,7 @@ pub fn simulate_life<A: PlayerAttributes>(
             LifePhaseKind::StudentOrApprentice,
             HistoricalActivity::StudentStudy,
             &student_curriculum,
-            daily_curriculum_hours * 365.0 * f32::from(student_end - 12),
+            daily_curriculum_hours * DAYS_PER_YEAR as f32 * f32::from(student_end - 12),
             &input,
         );
         if let Some(language) = input.literacy {
@@ -199,7 +199,7 @@ pub fn simulate_life<A: PlayerAttributes>(
                 LifePhaseKind::Professional,
                 HistoricalActivity::ProfessionalPractice,
                 &curriculum,
-                8.0 * 365.0 * f32::from(years),
+                8.0 * DAYS_PER_YEAR as f32 * f32::from(years),
                 &input,
             );
         }
@@ -222,6 +222,8 @@ fn apply_common_phase<A: PlayerAttributes>(
         schedule,
         elapsed,
         input.activity_profile,
+        SocializingSociability::Neutral,
+        Transparency::Neutral,
         input.attributes,
     );
     apply_religion_training(

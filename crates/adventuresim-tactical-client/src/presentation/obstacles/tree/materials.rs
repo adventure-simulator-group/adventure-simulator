@@ -719,7 +719,9 @@ mod tests {
         assert!((oak_occlusion - 0.37).abs() < 0.01);
         assert!((OAK_LEAF_DIFFUSE_TRANSMISSION - 0.46).abs() < f32::EPSILON);
         assert!(oak_occlusion < OAK_LEAF_DIFFUSE_TRANSMISSION);
-        assert!(OAK_LEAF_DIFFUSE_TRANSMISSION < 0.5);
+        const {
+            assert!(OAK_LEAF_DIFFUSE_TRANSMISSION < 0.5);
+        }
 
         let darkest_authored_visibility = 1.0 + oak_occlusion * (0.32 - 1.0);
         assert!((0.73..=0.75).contains(&darkest_authored_visibility));

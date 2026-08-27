@@ -1,8 +1,13 @@
 use crate::FORMAT_VERSION;
+use adventuresim_core::strategic_time::DAYS_PER_YEAR;
 use serde::{Deserialize, Serialize};
 
 pub const MAX_POPULATION: u32 = 10_000;
-pub const MAX_DAYS: u32 = 365 * 100;
+const MAX_SIMULATION_YEARS: u32 = 100;
+pub const DEFAULT_SIMULATION_DAYS: u32 = DAYS_PER_YEAR as u32 * 3;
+pub const DEFAULT_MATCHED_DAYS: u32 = DAYS_PER_YEAR as u32;
+pub const DEFAULT_CORE_LOOP_DURATION_DAYS: u32 = DAYS_PER_YEAR as u32;
+pub const MAX_DAYS: u32 = DAYS_PER_YEAR as u32 * MAX_SIMULATION_YEARS;
 pub const MAX_DECISIONS: u64 = 100_000_000;
 pub const MAX_TRACE_EVENTS: u32 = 100_000;
 pub const MAX_SNAPSHOTS: u32 = 100_000;
@@ -27,7 +32,7 @@ impl Default for SimulationConfig {
             version: FORMAT_VERSION,
             seed: 1,
             population: 100,
-            days: 365 * 3,
+            days: DEFAULT_SIMULATION_DAYS,
             max_decisions: 1_000_000,
             max_trace_events: 10_000,
             snapshot_interval_days: 30,

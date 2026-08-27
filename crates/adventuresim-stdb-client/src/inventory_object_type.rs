@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::inventory_location_type::InventoryLocation;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct InventoryObject {
     pub id: u64,
     pub item_id: String,
-    pub location_kind: String,
-    pub location_owner: String,
-    pub inventory_row_id: u64,
+    pub location: InventoryLocation,
 }
 
 impl __sdk::InModule for InventoryObject {
@@ -24,9 +24,7 @@ impl __sdk::InModule for InventoryObject {
 pub struct InventoryObjectCols {
     pub id: __sdk::__query_builder::Col<InventoryObject, u64>,
     pub item_id: __sdk::__query_builder::Col<InventoryObject, String>,
-    pub location_kind: __sdk::__query_builder::Col<InventoryObject, String>,
-    pub location_owner: __sdk::__query_builder::Col<InventoryObject, String>,
-    pub inventory_row_id: __sdk::__query_builder::Col<InventoryObject, u64>,
+    pub location: __sdk::__query_builder::Col<InventoryObject, InventoryLocation>,
 }
 
 impl __sdk::__query_builder::HasCols for InventoryObject {
@@ -35,9 +33,7 @@ impl __sdk::__query_builder::HasCols for InventoryObject {
         InventoryObjectCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             item_id: __sdk::__query_builder::Col::new(table_name, "item_id"),
-            location_kind: __sdk::__query_builder::Col::new(table_name, "location_kind"),
-            location_owner: __sdk::__query_builder::Col::new(table_name, "location_owner"),
-            inventory_row_id: __sdk::__query_builder::Col::new(table_name, "inventory_row_id"),
+            location: __sdk::__query_builder::Col::new(table_name, "location"),
         }
     }
 }
@@ -47,7 +43,7 @@ impl __sdk::__query_builder::HasCols for InventoryObject {
 /// Provides typed access to indexed columns for query building.
 pub struct InventoryObjectIxCols {
     pub id: __sdk::__query_builder::IxCol<InventoryObject, u64>,
-    pub location_kind: __sdk::__query_builder::IxCol<InventoryObject, String>,
+    pub item_id: __sdk::__query_builder::IxCol<InventoryObject, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for InventoryObject {
@@ -55,7 +51,7 @@ impl __sdk::__query_builder::HasIxCols for InventoryObject {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InventoryObjectIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            location_kind: __sdk::__query_builder::IxCol::new(table_name, "location_kind"),
+            item_id: __sdk::__query_builder::IxCol::new(table_name, "item_id"),
         }
     }
 }

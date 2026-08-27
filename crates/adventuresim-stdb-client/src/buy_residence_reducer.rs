@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::residence_tier_type::ResidenceTier;
+use super::housing_tier_type::HousingTier;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct BuyResidenceArgs {
     pub character_id: u64,
     pub settlement_id: String,
-    pub tier: ResidenceTier,
+    pub tier: HousingTier,
 }
 
 impl From<BuyResidenceArgs> for super::Reducer {
@@ -43,7 +43,7 @@ pub trait buy_residence {
         &self,
         character_id: u64,
         settlement_id: String,
-        tier: ResidenceTier,
+        tier: HousingTier,
     ) -> __sdk::Result<()> {
         self.buy_residence_then(character_id, settlement_id, tier, |_, _| {})
     }
@@ -58,7 +58,7 @@ pub trait buy_residence {
         &self,
         character_id: u64,
         settlement_id: String,
-        tier: ResidenceTier,
+        tier: HousingTier,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -73,7 +73,7 @@ impl buy_residence for super::RemoteReducers {
         &self,
         character_id: u64,
         settlement_id: String,
-        tier: ResidenceTier,
+        tier: HousingTier,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,

@@ -1,6 +1,14 @@
-use crate::rng::{StableRng, sub_seed};
-use adventuresim_core::strategic_schedule::{DailySchedule, SkillHours};
+use crate::rng::sub_seed;
+use adventuresim_core::{
+    personality::{
+        Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve, Outlook,
+        Personality, Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance,
+        Transparency,
+    },
+    strategic_schedule::{DailySchedule, SkillHours},
+};
 use adventuresim_world_schema::{BestiaryHours, ReligionHours};
+use fabelgeist_determinism::SplitMix64;
 use serde::{Deserialize, Serialize};
 
 const PROFILE_DOMAIN: u64 = 0x5052_4f46_494c_4501;
@@ -41,180 +49,6 @@ pub enum EquipmentStyle {
     Light,
     Heavy,
     Ranged,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Nerve {
-    Neutral,
-    Brave,
-    Fearful,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Drive {
-    Neutral,
-    Ambitious,
-    Content,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Outlook {
-    Neutral,
-    Sanguine,
-    Brooding,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Sociability {
-    Neutral,
-    Gregarious,
-    Solitary,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Conscience {
-    Neutral,
-    Compassionate,
-    Callous,
-    Cruel,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SelfRegard {
-    Neutral,
-    Proud,
-    Humble,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Conviction {
-    Neutral,
-    Zealous,
-    Irreverent,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Hygiene {
-    Neutral,
-    Slovenly,
-    Cleanly,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Temperance {
-    Neutral,
-    Temperate,
-    Drunkard,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Mirth {
-    Neutral,
-    Merry,
-    Grave,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Courtship {
-    Neutral,
-    Amorous,
-    Proper,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Transparency {
-    Neutral,
-    Open,
-    Guarded,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SelfKnowledge {
-    Neutral,
-    Introspective,
-    SelfDeceiving,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Inclination {
-    Men,
-    Either,
-    Women,
-    Neither,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Presentation {
-    Man,
-    Ambiguous,
-    Woman,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Sex {
-    Female,
-    Male,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Personality {
-    pub nerve: Nerve,
-    pub drive: Drive,
-    pub outlook: Outlook,
-    pub sociability: Sociability,
-    pub conscience: Conscience,
-    pub self_regard: SelfRegard,
-    pub conviction: Conviction,
-    pub hygiene: Hygiene,
-    pub temperance: Temperance,
-    pub mirth: Mirth,
-    pub courtship: Courtship,
-    pub transparency: Transparency,
-    pub self_knowledge: SelfKnowledge,
-    pub inclination: Inclination,
-    pub presentation: Presentation,
-    pub sex: Sex,
-}
-
-impl Personality {
-    pub fn neutral() -> Self {
-        Self {
-            nerve: Nerve::Neutral,
-            drive: Drive::Neutral,
-            outlook: Outlook::Neutral,
-            sociability: Sociability::Neutral,
-            conscience: Conscience::Neutral,
-            self_regard: SelfRegard::Neutral,
-            conviction: Conviction::Neutral,
-            hygiene: Hygiene::Neutral,
-            temperance: Temperance::Neutral,
-            mirth: Mirth::Neutral,
-            courtship: Courtship::Neutral,
-            transparency: Transparency::Neutral,
-            self_knowledge: SelfKnowledge::Neutral,
-            inclination: Inclination::Women,
-            presentation: Presentation::Man,
-            sex: Sex::Male,
-        }
-    }
-
-    pub fn non_neutral_count(&self) -> usize {
-        usize::from(self.nerve != Nerve::Neutral)
-            + usize::from(self.drive != Drive::Neutral)
-            + usize::from(self.outlook != Outlook::Neutral)
-            + usize::from(self.sociability != Sociability::Neutral)
-            + usize::from(self.conscience != Conscience::Neutral)
-            + usize::from(self.self_regard != SelfRegard::Neutral)
-            + usize::from(self.conviction != Conviction::Neutral)
-            + usize::from(self.hygiene != Hygiene::Neutral)
-            + usize::from(self.temperance != Temperance::Neutral)
-            + usize::from(self.mirth != Mirth::Neutral)
-            + usize::from(self.courtship != Courtship::Neutral)
-            + usize::from(self.transparency != Transparency::Neutral)
-            + usize::from(self.self_knowledge != SelfKnowledge::Neutral)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -266,19 +100,19 @@ pub struct AgentProfile {
     pub spending_propensity: f32,
 }
 
-fn bounded(base: f32, spread: f32, rng: &mut StableRng) -> f32 {
-    (base + rng.range(-spread, spread)).clamp(0.5, 5.0)
+fn bounded(base: f32, spread: f32, rng: &mut SplitMix64) -> f32 {
+    (base + rng.range_f32(-spread, spread)).clamp(0.5, 5.0)
 }
 
 pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
     let profile_seed = sub_seed(seed, PROFILE_DOMAIN, u64::from(agent_id));
-    let mut rng = StableRng::new(profile_seed);
+    let mut rng = SplitMix64::new(profile_seed);
     // Shared latent factors create plausible correlations while limb-specific noise
     // prevents profiles from being merely scalar copies of one another.
-    let physique = rng.range(1.3, 4.4);
-    let coordination = rng.range(1.2, 4.5);
-    let cognition = rng.range(1.0, 4.6);
-    let resilience = rng.range(1.0, 4.6);
+    let physique = rng.range_f32(1.3, 4.4);
+    let coordination = rng.range_f32(1.2, 4.5);
+    let cognition = rng.range_f32(1.0, 4.6);
+    let resilience = rng.range_f32(1.0, 4.6);
     let attributes = Attributes {
         endurance: bounded((physique + resilience) * 0.5, 0.35, &mut rng),
         immunity: bounded(resilience, 0.45, &mut rng),
@@ -319,7 +153,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         BuildRole::Civilian => EquipmentStyle::Unarmored,
     };
     let schedule = generated_schedule(&mut rng, preferred_activity, build.role);
-    let initial = |rng: &mut StableRng| rng.range(200.0, 2_000.0);
+    let initial = |rng: &mut SplitMix64| rng.range_f32(200.0, 2_000.0);
     let mut initial_skills = SkillHours {
         polearm: initial(&mut rng),
         axe: initial(&mut rng),
@@ -361,7 +195,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         tailoring: initial(&mut rng),
         smithing: initial(&mut rng),
     };
-    let specialty = rng.range(2_500.0, 5_000.0);
+    let specialty = rng.range_f32(2_500.0, 5_000.0);
     match build.role {
         BuildRole::FrontLine => {
             initial_skills.sword = specialty;
@@ -384,7 +218,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
     let quest_propensity = if build.activity_only {
         0.0
     } else {
-        let base: f32 = rng.range(0.2, 0.7);
+        let base: f32 = rng.range_f32(0.2, 0.7);
         (base
             + if personality.drive == Drive::Ambitious {
                 0.25
@@ -393,7 +227,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
             })
         .clamp(0.0, 1.0)
     };
-    let risk_tolerance = (rng.range(0.25, 0.65)
+    let risk_tolerance = (rng.range_f32(0.25, 0.65)
         + if personality.nerve == Nerve::Brave {
             0.2
         } else if personality.nerve == Nerve::Fearful {
@@ -416,23 +250,23 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         recovery_health_threshold: if risk_tolerance < 0.35 {
             0.9
         } else {
-            rng.range(0.65, 0.85)
+            rng.range_f32(0.65, 0.85)
         },
         equipment: EquipmentPreferences {
             style,
-            protection_weight: rng.unit(),
-            mobility_weight: rng.unit(),
-            price_weight: rng.unit(),
-            reach_weight: rng.unit(),
+            protection_weight: rng.unit_f32(),
+            mobility_weight: rng.unit_f32(),
+            price_weight: rng.unit_f32(),
+            reach_weight: rng.unit_f32(),
         },
         provision_days_target: 1 + (rng.next_u64() % 31) as u16,
         cash_reserve_target: (rng.next_u64() % 501) as u32,
-        spending_propensity: rng.unit(),
+        spending_propensity: rng.unit_f32(),
     }
 }
 
 fn generated_schedule(
-    rng: &mut StableRng,
+    rng: &mut SplitMix64,
     preferred: ActivityPreference,
     role: BuildRole,
 ) -> DailySchedule {
@@ -459,7 +293,7 @@ fn generated_schedule(
     s
 }
 
-fn generated_personality(rng: &mut StableRng) -> Personality {
+fn generated_personality(rng: &mut SplitMix64) -> Personality {
     let mut p = Personality::neutral();
     let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     for index in (1..axes.len()).rev() {

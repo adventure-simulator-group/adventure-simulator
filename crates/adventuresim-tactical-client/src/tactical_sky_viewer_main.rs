@@ -1,6 +1,12 @@
 //! Deterministic native capture harness for tactical sky presentation.
 
-#![allow(dead_code)]
+#![cfg_attr(
+    not(target_family = "wasm"),
+    expect(
+        dead_code,
+        reason = "the native sky viewer compiles shared presentation but exercises only deterministic sky capture paths"
+    )
+)]
 
 #[cfg(not(target_family = "wasm"))]
 mod presentation;

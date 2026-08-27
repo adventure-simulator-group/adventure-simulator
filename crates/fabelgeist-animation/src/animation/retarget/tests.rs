@@ -1036,11 +1036,6 @@ fn a_reference_pose_round_trips_through_serialization() {
     let restored: RigProfile = serde_json::from_str(&json).expect("it deserializes");
     assert_eq!(restored.reference, ReferencePose::TPose);
     assert_eq!(profile, restored);
-
-    // An absent reference reads as the bind pose, so old profiles keep working.
-    let legacy: RigProfile =
-        serde_json::from_str(r#"{"name":"old","joints":{}}"#).expect("a profile without one");
-    assert_eq!(legacy.reference, ReferencePose::Bind);
 }
 
 #[test]

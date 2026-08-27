@@ -67,6 +67,10 @@ pub(crate) struct TreeLodRenderOverride {
     pub(crate) projected_scale: Option<f32>,
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy queries encode the exact tree representation markers controlled by projected LOD"
+)]
 pub(in crate::presentation) fn update_tree_projected_lod_ranges(
     cameras: Query<(&Camera, &Projection), With<Camera3d>>,
     lod_override: Res<TreeLodRenderOverride>,
@@ -170,9 +174,11 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
             || (isolation.hide_canopy_cards && canopy_card)
             || (isolation.hide_buds && buds)
             || (isolation.hide_branches && (detailed_wood || aggregate_wood));
-        let next_visibility = isolated
-            .then_some(Visibility::Hidden)
-            .unwrap_or(next_visibility);
+        let next_visibility = if isolated {
+            Visibility::Hidden
+        } else {
+            next_visibility
+        };
         if *range != next_range {
             *range = next_range;
         }
@@ -196,10 +202,11 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
                 Visibility::Inherited,
             )
         };
-        let next_visibility = isolation
-            .hide_trunks
-            .then_some(Visibility::Hidden)
-            .unwrap_or(next_visibility);
+        let next_visibility = if isolation.hide_trunks {
+            Visibility::Hidden
+        } else {
+            next_visibility
+        };
         if *range != next_range {
             *range = next_range;
         }

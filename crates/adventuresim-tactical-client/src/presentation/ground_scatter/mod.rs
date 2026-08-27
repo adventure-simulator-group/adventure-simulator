@@ -13,19 +13,19 @@ use bevy::{
     },
     shader::ShaderRef,
 };
+use fabelgeist_determinism::splitmix64;
 
 use super::obstacles::tree::{
-    BLACKTHORN_BARK, BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_BARK, COMMON_HAWTHORN_PARAMETERS,
-    COMMON_HAZEL_BARK, COMMON_HAZEL_PARAMETERS, TacticalTreeBarkMaterial,
-    TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial, TreeLeafRepresentation,
-    blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
+    BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_PARAMETERS,
+    TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
+    TreeLeafRepresentation, blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
     procedural_woody_branch_mesh, procedural_woody_cambered_leaf_mesh,
     procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
     procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
 use super::{
     PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
-    splitmix64, stable_text_seed, unit_hash,
+    stable_text_seed, unit_hash,
 };
 
 // Ground-scatter orchestration and shared presentation contracts.
@@ -213,6 +213,10 @@ pub(super) fn update_celestial_material_lighting(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the foliage construction boundary keeps distinct Bevy asset stores, caches, and scene inputs explicit"
+)]
 pub(super) fn spawn_ground_foliage(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -501,6 +505,10 @@ fn foliage_transform(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects independently borrowed scene, asset, cache, and procedural-resource state"
+)]
 pub(super) fn present_ground_scatter(
     scenes: Query<
         (
@@ -568,7 +576,6 @@ fn ensure_understory_presentations(
             &mut cache.hazel,
             0x00c0_a15a_2e11_u64,
             COMMON_HAZEL_PARAMETERS,
-            COMMON_HAZEL_BARK,
             Color::srgb_u8(118, 104, 78),
             hazel_leaf_material(procedural_assets),
         ),
@@ -576,7 +583,6 @@ fn ensure_understory_presentations(
             &mut cache.blackthorn,
             0x00b1_ac7a_0e31_u64,
             BLACKTHORN_PARAMETERS,
-            BLACKTHORN_BARK,
             Color::srgb_u8(61, 52, 44),
             blackthorn_leaf_material(procedural_assets),
         ),
@@ -584,15 +590,14 @@ fn ensure_understory_presentations(
             &mut cache.hawthorn,
             0x00a7_a74a_0e51_u64,
             COMMON_HAWTHORN_PARAMETERS,
-            COMMON_HAWTHORN_BARK,
             Color::srgb_u8(91, 76, 60),
             hawthorn_leaf_material(procedural_assets),
         ),
     ];
-    for (cache, seed, parameters, bark, bark_color, leaf_material) in species {
+    for (cache, seed, parameters, bark_color, leaf_material) in species {
         let branches = procedural_woody_plant_skeleton(seed, 0.0, parameters);
         let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, parameters);
-        cache.branches = Some(meshes.add(procedural_woody_branch_mesh(&branches, 3, bark)));
+        cache.branches = Some(meshes.add(procedural_woody_branch_mesh(&branches, 3)));
         cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
         cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
         cache.sparse_leaf_cards = Some(meshes.add(procedural_woody_sparse_leaf_card_mesh(&leaves)));

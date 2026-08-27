@@ -1,6 +1,11 @@
 (() => {
+  const {
+    minutesPerDay: DAY_MINUTES,
+    daysPerYear: DAYS_PER_YEAR,
+  } = window.strategicCalendar;
+
   const format = (minutes) => {
-    const day = Math.floor(minutes / 1440) % 365 + 1;
+    const day = Math.floor(minutes / DAY_MINUTES) % DAYS_PER_YEAR + 1;
     const hour = Math.floor(minutes / 60) % 24;
     const minute = minutes % 60;
     return `Day ${day} · ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
@@ -9,7 +14,7 @@
   const mix = (a, b, amount) => a.map((value, index) => Math.round(value + (b[index] - value) * amount));
   const rgb = (value) => `rgb(${value.join(" ")})`;
   const lighting = (minutes) => {
-    const hour = (minutes % 1440) / 60;
+    const hour = (minutes % DAY_MINUTES) / 60;
     const stops = [
       [0, [3, 6, 16], [8, 13, 29], 0.98, 22, 0],
       [5, [15, 18, 35], [28, 31, 48], 0.78, 26, 0.08],

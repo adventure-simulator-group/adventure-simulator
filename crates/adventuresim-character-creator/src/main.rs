@@ -193,7 +193,10 @@ fn setup(
     ));
 }
 
-#[allow(deprecated)] // egui 0.34's replacement requires a parent Ui; this is a top-level panel.
+#[expect(
+    deprecated,
+    reason = "egui's replacement requires a parent Ui, but this is the top-level panel"
+)]
 fn studio_ui(mut contexts: EguiContexts, model: Res<BodyModel>, mut studio: ResMut<Studio>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::SidePanel::left("creator")
@@ -477,8 +480,14 @@ fn generate_character(model: &BodyModel, recipe: &CharacterRecipe) -> Result<Gen
         .into_data()
         .into_vec::<f32>()
         .map_err(|error| anyhow::anyhow!("GPU vertex readback failed: {error:?}"))?;
-    let positions: Vec<[f32; 3]> = vertex_values
-        .chunks_exact(3)
+    let (vertex_chunks, vertex_remainder) = vertex_values.as_chunks::<3>();
+    if !vertex_remainder.is_empty() {
+        return Err(anyhow::anyhow!(
+            "GPU vertex readback did not contain complete three-axis positions"
+        ));
+    }
+    let positions: Vec<[f32; 3]> = vertex_chunks
+        .iter()
         .map(|v| [v[0] / 100.0, v[1] / 100.0, v[2] / 100.0])
         .collect();
 
@@ -487,20 +496,29 @@ fn generate_character(model: &BodyModel, recipe: &CharacterRecipe) -> Result<Gen
         .into_data()
         .into_vec::<f32>()
         .map_err(|error| anyhow::anyhow!("GPU normal readback failed: {error:?}"))?;
-    let normals: Vec<[f32; 3]> = normal_values
-        .chunks_exact(3)
-        .map(|n| [n[0], n[1], n[2]])
-        .collect();
+    let (normal_chunks, normal_remainder) = normal_values.as_chunks::<3>();
+    if !normal_remainder.is_empty() {
+        return Err(anyhow::anyhow!(
+            "GPU normal readback did not contain complete three-axis normals"
+        ));
+    }
+    let normals: Vec<[f32; 3]> = normal_chunks.iter().map(|n| [n[0], n[1], n[2]]).collect();
 
     let skeleton_values = output
         .skeleton_state
         .into_data()
         .into_vec::<f32>()
         .map_err(|error| anyhow::anyhow!("GPU skeleton readback failed: {error:?}"))?;
-    let global_joint_states = skeleton_values
-        .chunks_exact(8)
+    let (skeleton_chunks, skeleton_remainder) = skeleton_values.as_chunks::<8>();
+    if !skeleton_remainder.is_empty() {
+        return Err(anyhow::anyhow!(
+            "GPU skeleton readback did not contain complete joint states"
+        ));
+    }
+    let global_joint_states = skeleton_chunks
+        .iter()
         .map(|joint| {
-            let mut state: [f32; 8] = joint.try_into().expect("chunks_exact yields eight values");
+            let mut state = *joint;
             state[0] /= 100.0;
             state[1] /= 100.0;
             state[2] /= 100.0;

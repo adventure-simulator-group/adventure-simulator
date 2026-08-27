@@ -159,9 +159,6 @@ pub mod backend_tincture_status_type;
 pub mod backend_tincture_statuses_table;
 pub mod backend_weapon_holder_instances_table;
 pub mod backend_weapon_instances_table;
-pub mod backfill_character_deaths_and_leadership_reducer;
-pub mod backfill_equipment_condition_and_smiths_reducer;
-pub mod backfill_solo_parties_reducer;
 pub mod battle_loot_item_table;
 pub mod battle_loot_item_type;
 pub mod battle_participant_table;
@@ -171,9 +168,9 @@ pub mod battle_result_type;
 pub mod begin_formal_courtship_reducer;
 pub mod begin_informal_courtship_reducer;
 pub mod begin_world_data_import_reducer;
-pub mod belief_axis_type;
 pub mod bestiary_hours_type;
 pub mod blood_exposure_checkpoint_type;
+pub mod body_region_type;
 pub mod bootstrap_development_world_reducer;
 pub mod browser_character_grant_origin_type;
 pub mod browser_character_grant_type;
@@ -182,7 +179,6 @@ pub mod built_settlement_cover_type;
 pub mod burn_corpse_reducer;
 pub mod bury_corpse_reducer;
 pub mod buy_residence_reducer;
-pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
 pub mod cancel_wedding_reducer;
@@ -194,9 +190,9 @@ pub mod case_finale_execution_type;
 pub mod case_outcome_fact_type;
 pub mod case_outcome_type;
 pub mod case_reputation_participant_type;
-pub mod case_resolution_status_type;
 pub mod case_site_authority_type;
 pub mod case_site_id_type;
+pub mod case_status_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
@@ -268,6 +264,7 @@ pub mod construction_industry_type;
 pub mod contact_context_character_reducer;
 pub mod container_liquid_table;
 pub mod container_liquid_type;
+pub mod container_water_contribution_type;
 pub mod contextual_contact_receipt_type;
 pub mod contextual_decision_state_type;
 pub mod continue_camp_travel_reducer;
@@ -317,6 +314,7 @@ pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
 pub mod designate_residence_reducer;
+pub mod destination_knowledge_stage_type;
 pub mod development_scenario_browser_access_type;
 pub mod development_scenario_subject_type;
 pub mod development_scenario_type;
@@ -335,6 +333,7 @@ pub mod direct_historical_vegetation_cover_type;
 pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
 pub mod disband_party_reducer;
+pub mod discard_container_water_reducer;
 pub mod discard_inventory_items_reducer;
 pub mod discover_investigation_lead_reducer;
 pub mod discovered_offense_type;
@@ -352,12 +351,12 @@ pub mod eat_food_reducer;
 pub mod edge_endpoint_type;
 pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
+pub mod encounter_archetype_type;
 pub mod end_marriage_reducer;
 pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_at_placement_reducer;
-pub mod equip_item_reducer;
 pub mod equipment_anchor_kind_type;
 pub mod equipment_attachment_point_type;
 pub mod equipment_attachment_target_selection_type;
@@ -397,6 +396,7 @@ pub mod finalize_party_offer_reducer;
 pub mod finalize_storefront_trade_reducer;
 pub mod finish_world_data_import_reducer;
 pub mod fireplace_dish_type;
+pub mod fireplace_inventory_location_type;
 pub mod fireplace_station_type;
 pub mod fish_commodity_type;
 pub mod fishing_industry_type;
@@ -439,6 +439,7 @@ pub mod hostile_surrender_receipt_type;
 pub mod household_member_type;
 pub mod household_role_type;
 pub mod household_type;
+pub mod housing_tier_type;
 pub mod hygiene_type;
 pub mod igneous_rock_type;
 pub mod immediate_activity_type;
@@ -447,6 +448,7 @@ pub mod import_settlement_descriptions_reducer;
 pub mod import_settlements_reducer;
 pub mod import_travel_edges_reducer;
 pub mod import_world_nodes_reducer;
+pub mod incapacitation_status_type;
 pub mod incident_id_type;
 pub mod incident_kind_type;
 pub mod incident_source_id_type;
@@ -463,12 +465,14 @@ pub mod ingredient_preparation_receipt_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
 pub mod inspect_physical_evidence_reducer;
+pub mod intervention_route_type;
 pub mod inventory_containment_table;
 pub mod inventory_containment_type;
 pub mod inventory_item_amount_table;
 pub mod inventory_item_amount_type;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
+pub mod inventory_location_type;
 pub mod inventory_object_table;
 pub mod inventory_object_type;
 pub mod inventory_quantity_target_table;
@@ -493,6 +497,7 @@ pub mod investigation_journal_notice_type;
 pub mod investigation_lead_type;
 pub mod investigation_observation_type;
 pub mod investigation_pattern_target_authority_type;
+pub mod investigation_provenance_kind_type;
 pub mod investigation_received_testimony_type;
 pub mod investigation_recollection_type;
 pub mod investigation_safe_claim_receipt_type;
@@ -503,7 +508,6 @@ pub mod investigation_witness_referral_type;
 pub mod item_condition_table;
 pub mod item_condition_type;
 pub mod item_kind_type;
-pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
 pub mod join_dialogue_session_reducer;
@@ -531,7 +535,6 @@ pub mod lifecycle_event_failure_type;
 pub mod lifecycle_event_kind_type;
 pub mod limb_injury_table;
 pub mod limb_injury_type;
-pub mod limb_region_type;
 pub mod lineage_control_claim_type;
 pub mod liquidate_party_inventory_reducer;
 pub mod local_chat_message_type;
@@ -552,6 +555,7 @@ pub mod marriage_participant_type;
 pub mod marriage_status_type;
 pub mod marriage_type;
 pub mod medicinal_component_type;
+pub mod melee_attack_style_type;
 pub mod metamorphic_rock_type;
 pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
@@ -568,6 +572,7 @@ pub mod modeled_tree_species_type;
 pub mod morale_band_type;
 pub mod morale_event_table;
 pub mod morale_event_type;
+pub mod mutable_personality_axis_type;
 pub mod narrative_combat_followup_authority_type;
 pub mod narrative_combat_followup_receipt_type;
 pub mod narrative_encounter_information_type;
@@ -609,6 +614,7 @@ pub mod party_case_site_tracking_type;
 pub mod party_context_contact_authority_type;
 pub mod party_inventory_item_table;
 pub mod party_inventory_item_type;
+pub mod party_inventory_location_type;
 pub mod party_inventory_state_table;
 pub mod party_inventory_state_type;
 pub mod party_item_amount_table;
@@ -618,8 +624,6 @@ pub mod party_item_condition_type;
 pub mod party_join_request_table;
 pub mod party_join_request_type;
 pub mod party_journey_encounter_authority_type;
-pub mod party_journey_itinerary_table;
-pub mod party_journey_itinerary_type;
 pub mod party_journey_route_table;
 pub mod party_journey_route_type;
 pub mod party_journey_table;
@@ -653,6 +657,7 @@ pub mod persisted_world_event_payload_ref_type;
 pub mod persisted_world_event_place_type;
 pub mod persisted_world_event_source_type;
 pub mod persisted_world_event_subject_type;
+pub mod personal_inventory_location_type;
 pub mod personality_axis_type;
 pub mod personality_development_event_type;
 pub mod physical_evidence_inspection_action_receipt_type;
@@ -667,8 +672,6 @@ pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
 pub mod pour_tincture_spirit_into_container_reducer;
-pub mod pour_water_into_container_reducer;
-pub mod pour_water_out_of_container_reducer;
 pub mod pregnancy_status_type;
 pub mod pregnancy_type;
 pub mod prepare_development_courtship_reducer;
@@ -711,6 +714,7 @@ pub mod remove_inventory_item_from_container_reducer;
 pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
 pub mod rent_residence_reducer;
+pub mod repair_inventory_location_type;
 pub mod repair_order_table;
 pub mod repair_order_type;
 pub mod replace_item_at_placement_reducer;
@@ -727,7 +731,6 @@ pub mod residence_holding_status_type;
 pub mod residence_holding_type;
 pub mod residence_occupant_type;
 pub mod residence_tenure_type;
-pub mod residence_tier_type;
 pub mod residence_transition_kind_type;
 pub mod residence_transition_type;
 pub mod resolve_errantry_road_challenge_reducer;
@@ -737,7 +740,6 @@ pub mod resolved_party_action_type;
 pub mod rest_at_camp_reducer;
 pub mod rest_at_residence_hours_reducer;
 pub mod rest_at_settlement_hours_reducer;
-pub mod rest_at_settlement_reducer;
 pub mod retained_projectile_table;
 pub mod retained_projectile_type;
 pub mod retrieve_fireplace_container_reducer;
@@ -787,10 +789,10 @@ pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
 pub mod set_automatic_social_chat_reducer;
 pub mod set_character_religion_reducer;
-pub mod set_fireplace_instrument_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
 pub mod set_party_travel_itinerary_reducer;
+pub mod settlement_action_service_type;
 pub mod settlement_alias_batch_row_type;
 pub mod settlement_alias_table;
 pub mod settlement_alias_type;
@@ -829,6 +831,7 @@ pub mod simulation_quest_fixture_table;
 pub mod simulation_quest_fixture_type;
 pub mod simulation_run_table;
 pub mod simulation_run_type;
+pub mod slot_type;
 pub mod sociability_type;
 pub mod social_action_cooldown_type;
 pub mod social_address_type;
@@ -858,7 +861,7 @@ pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod start_fireplace_container_cooking_reducer;
 pub mod start_poppy_tincture_reducer;
-pub mod starting_age_tier_coordinate_type;
+pub mod starting_age_tier_type;
 pub mod starting_character_claim_type;
 pub mod stock_category_type;
 pub mod stone_content_percent_type;
@@ -868,6 +871,7 @@ pub mod strahler_order_type;
 pub mod strategic_corpse_type;
 pub mod strategic_encounter_loss_type;
 pub mod strategic_encounter_resolution_receipt_type;
+pub mod strategic_encounter_status_type;
 pub mod strategic_encounter_table;
 pub mod strategic_encounter_type;
 pub mod strategic_gateway_authority_table;
@@ -918,15 +922,14 @@ pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
 pub mod trigger_development_scenario_incident_reducer;
 pub mod unconsolidated_deposit_type;
+pub mod unequip_item_reducer;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
 pub mod update_recruitment_role_reducer;
 pub mod update_training_schedule_reducer;
-pub mod upgrade_manual_surgery_reducer;
 pub mod vote_for_party_leader_reducer;
 pub mod water_collection_receipt_type;
 pub mod water_distance_meters_type;
-pub mod water_holding_contribution_type;
 pub mod water_material_lot_type;
 pub mod water_output_lot_type;
 pub mod weapon_holder_instance_type;
@@ -1100,9 +1103,6 @@ pub use backend_tincture_status_type::BackendTinctureStatus;
 pub use backend_tincture_statuses_table::*;
 pub use backend_weapon_holder_instances_table::*;
 pub use backend_weapon_instances_table::*;
-pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
-pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
-pub use backfill_solo_parties_reducer::backfill_solo_parties;
 pub use battle_loot_item_table::*;
 pub use battle_loot_item_type::BattleLootItem;
 pub use battle_participant_table::*;
@@ -1112,9 +1112,9 @@ pub use battle_result_type::BattleResult;
 pub use begin_formal_courtship_reducer::begin_formal_courtship;
 pub use begin_informal_courtship_reducer::begin_informal_courtship;
 pub use begin_world_data_import_reducer::begin_world_data_import;
-pub use belief_axis_type::BeliefAxis;
 pub use bestiary_hours_type::BestiaryHours;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
+pub use body_region_type::BodyRegion;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use browser_character_grant_origin_type::BrowserCharacterGrantOrigin;
 pub use browser_character_grant_type::BrowserCharacterGrant;
@@ -1123,7 +1123,6 @@ pub use built_settlement_cover_type::BuiltSettlementCover;
 pub use burn_corpse_reducer::burn_corpse;
 pub use bury_corpse_reducer::bury_corpse;
 pub use buy_residence_reducer::buy_residence;
-pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
 pub use cancel_wedding_reducer::cancel_wedding;
@@ -1135,9 +1134,9 @@ pub use case_finale_execution_type::CaseFinaleExecution;
 pub use case_outcome_fact_type::CaseOutcomeFact;
 pub use case_outcome_type::CaseOutcome;
 pub use case_reputation_participant_type::CaseReputationParticipant;
-pub use case_resolution_status_type::CaseResolutionStatus;
 pub use case_site_authority_type::CaseSiteAuthority;
 pub use case_site_id_type::CaseSiteId;
+pub use case_status_type::CaseStatus;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
@@ -1209,6 +1208,7 @@ pub use construction_industry_type::ConstructionIndustry;
 pub use contact_context_character_reducer::contact_context_character;
 pub use container_liquid_table::*;
 pub use container_liquid_type::ContainerLiquid;
+pub use container_water_contribution_type::ContainerWaterContribution;
 pub use contextual_contact_receipt_type::ContextualContactReceipt;
 pub use contextual_decision_state_type::ContextualDecisionState;
 pub use continue_camp_travel_reducer::continue_camp_travel;
@@ -1258,6 +1258,7 @@ pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMe
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
 pub use designate_residence_reducer::designate_residence;
+pub use destination_knowledge_stage_type::DestinationKnowledgeStage;
 pub use development_scenario_browser_access_type::DevelopmentScenarioBrowserAccess;
 pub use development_scenario_subject_type::DevelopmentScenarioSubject;
 pub use development_scenario_type::DevelopmentScenario;
@@ -1276,6 +1277,7 @@ pub use direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover
 pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use disband_party_reducer::disband_party;
+pub use discard_container_water_reducer::discard_container_water;
 pub use discard_inventory_items_reducer::discard_inventory_items;
 pub use discover_investigation_lead_reducer::discover_investigation_lead;
 pub use discovered_offense_type::DiscoveredOffense;
@@ -1293,12 +1295,12 @@ pub use eat_food_reducer::eat_food;
 pub use edge_endpoint_type::EdgeEndpoint;
 pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
+pub use encounter_archetype_type::EncounterArchetype;
 pub use end_marriage_reducer::end_marriage;
 pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
 pub use equip_item_at_placement_reducer::equip_item_at_placement;
-pub use equip_item_reducer::equip_item;
 pub use equipment_anchor_kind_type::EquipmentAnchorKind;
 pub use equipment_attachment_point_type::EquipmentAttachmentPoint;
 pub use equipment_attachment_target_selection_type::EquipmentAttachmentTargetSelection;
@@ -1338,6 +1340,7 @@ pub use finalize_party_offer_reducer::finalize_party_offer;
 pub use finalize_storefront_trade_reducer::finalize_storefront_trade;
 pub use finish_world_data_import_reducer::finish_world_data_import;
 pub use fireplace_dish_type::FireplaceDish;
+pub use fireplace_inventory_location_type::FireplaceInventoryLocation;
 pub use fireplace_station_type::FireplaceStation;
 pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
@@ -1380,6 +1383,7 @@ pub use hostile_surrender_receipt_type::HostileSurrenderReceipt;
 pub use household_member_type::HouseholdMember;
 pub use household_role_type::HouseholdRole;
 pub use household_type::Household;
+pub use housing_tier_type::HousingTier;
 pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
 pub use immediate_activity_type::ImmediateActivity;
@@ -1388,6 +1392,7 @@ pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
 pub use import_settlements_reducer::import_settlements;
 pub use import_travel_edges_reducer::import_travel_edges;
 pub use import_world_nodes_reducer::import_world_nodes;
+pub use incapacitation_status_type::IncapacitationStatus;
 pub use incident_id_type::IncidentId;
 pub use incident_kind_type::IncidentKind;
 pub use incident_source_id_type::IncidentSourceId;
@@ -1404,12 +1409,14 @@ pub use ingredient_preparation_receipt_type::IngredientPreparationReceipt;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
 pub use inspect_physical_evidence_reducer::inspect_physical_evidence;
+pub use intervention_route_type::InterventionRoute;
 pub use inventory_containment_table::*;
 pub use inventory_containment_type::InventoryContainment;
 pub use inventory_item_amount_table::*;
 pub use inventory_item_amount_type::InventoryItemAmount;
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
+pub use inventory_location_type::InventoryLocation;
 pub use inventory_object_table::*;
 pub use inventory_object_type::InventoryObject;
 pub use inventory_quantity_target_table::*;
@@ -1434,6 +1441,7 @@ pub use investigation_journal_notice_type::InvestigationJournalNotice;
 pub use investigation_lead_type::InvestigationLead;
 pub use investigation_observation_type::InvestigationObservation;
 pub use investigation_pattern_target_authority_type::InvestigationPatternTargetAuthority;
+pub use investigation_provenance_kind_type::InvestigationProvenanceKind;
 pub use investigation_received_testimony_type::InvestigationReceivedTestimony;
 pub use investigation_recollection_type::InvestigationRecollection;
 pub use investigation_safe_claim_receipt_type::InvestigationSafeClaimReceipt;
@@ -1444,7 +1452,6 @@ pub use investigation_witness_referral_type::InvestigationWitnessReferral;
 pub use item_condition_table::*;
 pub use item_condition_type::ItemCondition;
 pub use item_kind_type::ItemKind;
-pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
 pub use join_dialogue_session_reducer::join_dialogue_session;
@@ -1472,7 +1479,6 @@ pub use lifecycle_event_failure_type::LifecycleEventFailure;
 pub use lifecycle_event_kind_type::LifecycleEventKind;
 pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
-pub use limb_region_type::LimbRegion;
 pub use lineage_control_claim_type::LineageControlClaim;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use local_chat_message_type::LocalChatMessage;
@@ -1493,6 +1499,7 @@ pub use marriage_participant_type::MarriageParticipant;
 pub use marriage_status_type::MarriageStatus;
 pub use marriage_type::Marriage;
 pub use medicinal_component_type::MedicinalComponent;
+pub use melee_attack_style_type::MeleeAttackStyle;
 pub use metamorphic_rock_type::MetamorphicRock;
 pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
@@ -1509,6 +1516,7 @@ pub use modeled_tree_species_type::ModeledTreeSpecies;
 pub use morale_band_type::MoraleBand;
 pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
+pub use mutable_personality_axis_type::MutablePersonalityAxis;
 pub use narrative_combat_followup_authority_type::NarrativeCombatFollowupAuthority;
 pub use narrative_combat_followup_receipt_type::NarrativeCombatFollowupReceipt;
 pub use narrative_encounter_information_type::NarrativeEncounterInformation;
@@ -1550,6 +1558,7 @@ pub use party_case_site_tracking_type::PartyCaseSiteTracking;
 pub use party_context_contact_authority_type::PartyContextContactAuthority;
 pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
+pub use party_inventory_location_type::PartyInventoryLocation;
 pub use party_inventory_state_table::*;
 pub use party_inventory_state_type::PartyInventoryState;
 pub use party_item_amount_table::*;
@@ -1559,8 +1568,6 @@ pub use party_item_condition_type::PartyItemCondition;
 pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
 pub use party_journey_encounter_authority_type::PartyJourneyEncounterAuthority;
-pub use party_journey_itinerary_table::*;
-pub use party_journey_itinerary_type::PartyJourneyItinerary;
 pub use party_journey_route_table::*;
 pub use party_journey_route_type::PartyJourneyRoute;
 pub use party_journey_table::*;
@@ -1594,6 +1601,7 @@ pub use persisted_world_event_payload_ref_type::PersistedWorldEventPayloadRef;
 pub use persisted_world_event_place_type::PersistedWorldEventPlace;
 pub use persisted_world_event_source_type::PersistedWorldEventSource;
 pub use persisted_world_event_subject_type::PersistedWorldEventSubject;
+pub use personal_inventory_location_type::PersonalInventoryLocation;
 pub use personality_axis_type::PersonalityAxis;
 pub use personality_development_event_type::PersonalityDevelopmentEvent;
 pub use physical_evidence_inspection_action_receipt_type::PhysicalEvidenceInspectionActionReceipt;
@@ -1608,8 +1616,6 @@ pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
 pub use pour_tincture_spirit_into_container_reducer::pour_tincture_spirit_into_container;
-pub use pour_water_into_container_reducer::pour_water_into_container;
-pub use pour_water_out_of_container_reducer::pour_water_out_of_container;
 pub use pregnancy_status_type::PregnancyStatus;
 pub use pregnancy_type::Pregnancy;
 pub use prepare_development_courtship_reducer::prepare_development_courtship;
@@ -1652,6 +1658,7 @@ pub use remove_inventory_item_from_container_reducer::remove_inventory_item_from
 pub use remove_party_member_reducer::remove_party_member;
 pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
 pub use rent_residence_reducer::rent_residence;
+pub use repair_inventory_location_type::RepairInventoryLocation;
 pub use repair_order_table::*;
 pub use repair_order_type::RepairOrder;
 pub use replace_item_at_placement_reducer::replace_item_at_placement;
@@ -1668,7 +1675,6 @@ pub use residence_holding_status_type::ResidenceHoldingStatus;
 pub use residence_holding_type::ResidenceHolding;
 pub use residence_occupant_type::ResidenceOccupant;
 pub use residence_tenure_type::ResidenceTenure;
-pub use residence_tier_type::ResidenceTier;
 pub use residence_transition_kind_type::ResidenceTransitionKind;
 pub use residence_transition_type::ResidenceTransition;
 pub use resolve_errantry_road_challenge_reducer::resolve_errantry_road_challenge;
@@ -1678,7 +1684,6 @@ pub use resolved_party_action_type::ResolvedPartyAction;
 pub use rest_at_camp_reducer::rest_at_camp;
 pub use rest_at_residence_hours_reducer::rest_at_residence_hours;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
-pub use rest_at_settlement_reducer::rest_at_settlement;
 pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
 pub use retrieve_fireplace_container_reducer::retrieve_fireplace_container;
@@ -1728,10 +1733,10 @@ pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_automatic_social_chat_reducer::set_automatic_social_chat;
 pub use set_character_religion_reducer::set_character_religion;
-pub use set_fireplace_instrument_reducer::set_fireplace_instrument;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
+pub use settlement_action_service_type::SettlementActionService;
 pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
 pub use settlement_alias_table::*;
 pub use settlement_alias_type::SettlementAlias;
@@ -1770,6 +1775,7 @@ pub use simulation_quest_fixture_table::*;
 pub use simulation_quest_fixture_type::SimulationQuestFixture;
 pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
+pub use slot_type::Slot;
 pub use sociability_type::Sociability;
 pub use social_action_cooldown_type::SocialActionCooldown;
 pub use social_address_type::SocialAddress;
@@ -1799,7 +1805,7 @@ pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use start_fireplace_container_cooking_reducer::start_fireplace_container_cooking;
 pub use start_poppy_tincture_reducer::start_poppy_tincture;
-pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
+pub use starting_age_tier_type::StartingAgeTier;
 pub use starting_character_claim_type::StartingCharacterClaim;
 pub use stock_category_type::StockCategory;
 pub use stone_content_percent_type::StoneContentPercent;
@@ -1809,6 +1815,7 @@ pub use strahler_order_type::StrahlerOrder;
 pub use strategic_corpse_type::StrategicCorpse;
 pub use strategic_encounter_loss_type::StrategicEncounterLoss;
 pub use strategic_encounter_resolution_receipt_type::StrategicEncounterResolutionReceipt;
+pub use strategic_encounter_status_type::StrategicEncounterStatus;
 pub use strategic_encounter_table::*;
 pub use strategic_encounter_type::StrategicEncounter;
 pub use strategic_gateway_authority_table::*;
@@ -1859,15 +1866,14 @@ pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use trigger_development_scenario_incident_reducer::trigger_development_scenario_incident;
 pub use unconsolidated_deposit_type::UnconsolidatedDeposit;
+pub use unequip_item_reducer::unequip_item;
 pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
 pub use update_recruitment_role_reducer::update_recruitment_role;
 pub use update_training_schedule_reducer::update_training_schedule;
-pub use upgrade_manual_surgery_reducer::upgrade_manual_surgery;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
 pub use water_collection_receipt_type::WaterCollectionReceipt;
 pub use water_distance_meters_type::WaterDistanceMeters;
-pub use water_holding_contribution_type::WaterHoldingContribution;
 pub use water_material_lot_type::WaterMaterialLot;
 pub use water_output_lot_type::WaterOutputLot;
 pub use weapon_holder_instance_type::WeaponHolderInstance;
@@ -1918,22 +1924,22 @@ pub enum Reducer {
         fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
+        fractions_micros: Vec<u32>,
     },
     AdministerPreparation {
         actor_id: u64,
         patient_id: u64,
         inventory_item_id: u64,
         profile_version: u16,
-        route: String,
-        amount_milliunits: u32,
-        region: Option<String>,
+        route: InterventionRoute,
+        dose_milliunits: u32,
+        region: Option<BodyRegion>,
     },
     AdministerTinctureFromContainer {
         actor_id: u64,
         patient_id: u64,
         object_id: u64,
-        amount_milliunits: u32,
+        dose_milliunits: u32,
     },
     AdmitHouseholdOccupant {
         owner_character_id: u64,
@@ -1995,9 +2001,6 @@ pub enum Reducer {
         character_id: u64,
         mission_id: String,
     },
-    BackfillCharacterDeathsAndLeadership,
-    BackfillEquipmentConditionAndSmiths,
-    BackfillSoloParties,
     BeginFormalCourtship {
         suitor_id: u64,
         partner_id: u64,
@@ -2031,7 +2034,7 @@ pub enum Reducer {
     BuyResidence {
         character_id: u64,
         settlement_id: String,
-        tier: ResidenceTier,
+        tier: HousingTier,
     },
     CancelMissionRequest {
         character_id: u64,
@@ -2117,14 +2120,13 @@ pub enum Reducer {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
         save_role: bool,
     },
     CreateStartingCharacter {
         owner_key: String,
         generator_version: u16,
         seed: String,
-        age_tier: StartingAgeTierCoordinate,
+        age_tier: StartingAgeTier,
         slot: u8,
     },
     CreateTacticalServerForRequest {
@@ -2165,6 +2167,11 @@ pub enum Reducer {
         leader_id: u64,
         party_id: String,
     },
+    DiscardContainerWater {
+        character_id: u64,
+        container_object_id: u64,
+        requested_ml: u64,
+    },
     DiscardInventoryItems {
         character_id: u64,
         inventory_item_ids: Vec<u64>,
@@ -2197,11 +2204,6 @@ pub enum Reducer {
     EnterMission {
         character_id: u64,
         server: __sdk::Identity,
-    },
-    EquipItem {
-        character_id: u64,
-        inventory_item_id: u64,
-        destination: ItemSlot,
     },
     EquipItemAtPlacement {
         character_id: u64,
@@ -2369,17 +2371,6 @@ pub enum Reducer {
         spirit_id: u64,
         object_id: u64,
     },
-    PourWaterIntoContainer {
-        character_id: u64,
-        parent_scope: String,
-        parent_row_id: u64,
-        requested_ml: u64,
-    },
-    PourWaterOutOfContainer {
-        character_id: u64,
-        container_object_id: u64,
-        requested_ml: u64,
-    },
     PrepareDevelopmentCourtship {
         suitor_id: u64,
         partner_id: u64,
@@ -2485,7 +2476,7 @@ pub enum Reducer {
     RentResidence {
         character_id: u64,
         settlement_id: String,
-        tier: ResidenceTier,
+        tier: HousingTier,
     },
     ReplaceItemAtPlacement {
         character_id: u64,
@@ -2547,15 +2538,10 @@ pub enum Reducer {
         character_id: u64,
         requested_minutes: u64,
     },
-    RestAtSettlement {
-        character_id: u64,
-        requested_days: u16,
-        at_inn: bool,
-    },
     RestAtSettlementHours {
         character_id: u64,
         requested_minutes: u64,
-        at_inn: bool,
+        service: SettlementActionService,
     },
     RetrieveFireplaceContainer {
         character_id: u64,
@@ -2565,7 +2551,7 @@ pub enum Reducer {
     RetrieveFireplaceDish {
         character_id: u64,
         fireplace_fixture_id: String,
-        inventory_scope: String,
+        container_object_id: Option<u64>,
     },
     RetrieveRepairedItem {
         character_id: u64,
@@ -2585,7 +2571,6 @@ pub enum Reducer {
         owner_id: u64,
         name: String,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
     },
     ScheduleWedding {
         first_character_id: u64,
@@ -2642,12 +2627,6 @@ pub enum Reducer {
         character_id: u64,
         religion_id: String,
     },
-    SetFireplaceInstrument {
-        character_id: u64,
-        fireplace_fixture_id: String,
-        inventory_scope: String,
-        inventory_item_id: Option<u64>,
-    },
     SetInventoryQuantityTarget {
         character_id: u64,
         party_scope: bool,
@@ -2662,8 +2641,6 @@ pub enum Reducer {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
     },
     ShareInvestigationBelief {
         sender_id: u64,
@@ -2706,7 +2683,7 @@ pub enum Reducer {
         summary: String,
         safe_source_label: String,
         confidence_bps: u16,
-        destination_stage: String,
+        destination_stage: DestinationKnowledgeStage,
         directions: String,
         exact_location_id: String,
         latitude_e_7: i32,
@@ -2816,6 +2793,10 @@ pub enum Reducer {
         problem_id: String,
         request_id: String,
     },
+    UnequipItem {
+        character_id: u64,
+        inventory_item_id: u64,
+    },
     UpdateCharacter {
         id: u64,
         name: String,
@@ -2832,13 +2813,11 @@ pub enum Reducer {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
     },
     UpdateTrainingSchedule {
         character_id: u64,
         downtime: ScheduleAllocation,
     },
-    UpgradeManualSurgery,
     VoteForPartyLeader {
         voter_id: u64,
         candidate_id: u64,
@@ -2877,13 +2856,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::AttachItemAtPlacement { .. } => "attach_item_at_placement",
             Reducer::AuthorizeTacticalServerClaim { .. } => "authorize_tactical_server_claim",
             Reducer::AutoresolveMission { .. } => "autoresolve_mission",
-            Reducer::BackfillCharacterDeathsAndLeadership => {
-                "backfill_character_deaths_and_leadership"
-            }
-            Reducer::BackfillEquipmentConditionAndSmiths => {
-                "backfill_equipment_condition_and_smiths"
-            }
-            Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginFormalCourtship { .. } => "begin_formal_courtship",
             Reducer::BeginInformalCourtship { .. } => "begin_informal_courtship",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
@@ -2919,6 +2891,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DesignateResidence { .. } => "designate_residence",
             Reducer::DisbandParty { .. } => "disband_party",
+            Reducer::DiscardContainerWater { .. } => "discard_container_water",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
             Reducer::DiscoverInvestigationLead { .. } => "discover_investigation_lead",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
@@ -2927,7 +2900,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
-            Reducer::EquipItem { .. } => "equip_item",
             Reducer::EquipItemAtPlacement { .. } => "equip_item_at_placement",
             Reducer::ExamineCorpse { .. } => "examine_corpse",
             Reducer::ExhumeCorpse { .. } => "exhume_corpse",
@@ -2960,8 +2932,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::PourTinctureSpiritIntoContainer { .. } => {
                 "pour_tincture_spirit_into_container"
             }
-            Reducer::PourWaterIntoContainer { .. } => "pour_water_into_container",
-            Reducer::PourWaterOutOfContainer { .. } => "pour_water_out_of_container",
             Reducer::PrepareDevelopmentCourtship { .. } => "prepare_development_courtship",
             Reducer::PrepareIngredientLot { .. } => "prepare_ingredient_lot",
             Reducer::PresentOrganization { .. } => "present_organization",
@@ -2999,7 +2969,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::ResolveStrategicEncounter { .. } => "resolve_strategic_encounter",
             Reducer::RestAtCamp { .. } => "rest_at_camp",
             Reducer::RestAtResidenceHours { .. } => "rest_at_residence_hours",
-            Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
             Reducer::RetrieveFireplaceContainer { .. } => "retrieve_fireplace_container",
             Reducer::RetrieveFireplaceDish { .. } => "retrieve_fireplace_dish",
@@ -3018,7 +2987,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
             Reducer::SetAutomaticSocialChat { .. } => "set_automatic_social_chat",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
-            Reducer::SetFireplaceInstrument { .. } => "set_fireplace_instrument",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
@@ -3057,11 +3025,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::TriggerDevelopmentScenarioIncident { .. } => {
                 "trigger_development_scenario_incident"
             }
+            Reducer::UnequipItem { .. } => "unequip_item",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateRecruitmentRole { .. } => "update_recruitment_role",
             Reducer::UpdateTrainingSchedule { .. } => "update_training_schedule",
-            Reducer::UpgradeManualSurgery => "upgrade_manual_surgery",
             Reducer::VoteForPartyLeader { .. } => "vote_for_party_leader",
             Reducer::WithdrawPartyInventoryItem { .. } => "withdraw_party_inventory_item",
             _ => unreachable!(),
@@ -3105,13 +3073,13 @@ impl __sdk::Reducer for Reducer {
                 fireplace_fixture_id,
                 inventory_scope,
                 inventory_item_ids,
-                amounts_milliunits,
+                fractions_micros,
 }             => __sats::bsatn::to_vec(&add_fireplace_ingredients_reducer::AddFireplaceIngredientsArgs {
                 character_id: character_id.clone(),
                 fireplace_fixture_id: fireplace_fixture_id.clone(),
                 inventory_scope: inventory_scope.clone(),
                 inventory_item_ids: inventory_item_ids.clone(),
-                amounts_milliunits: amounts_milliunits.clone(),
+                fractions_micros: fractions_micros.clone(),
 }),
             Reducer::AdministerPreparation{
                 actor_id,
@@ -3119,7 +3087,7 @@ impl __sdk::Reducer for Reducer {
                 inventory_item_id,
                 profile_version,
                 route,
-                amount_milliunits,
+                dose_milliunits,
                 region,
 }             => __sats::bsatn::to_vec(&administer_preparation_reducer::AdministerPreparationArgs {
                 actor_id: actor_id.clone(),
@@ -3127,19 +3095,19 @@ impl __sdk::Reducer for Reducer {
                 inventory_item_id: inventory_item_id.clone(),
                 profile_version: profile_version.clone(),
                 route: route.clone(),
-                amount_milliunits: amount_milliunits.clone(),
+                dose_milliunits: dose_milliunits.clone(),
                 region: region.clone(),
 }),
             Reducer::AdministerTinctureFromContainer{
                 actor_id,
                 patient_id,
                 object_id,
-                amount_milliunits,
+                dose_milliunits,
 }             => __sats::bsatn::to_vec(&administer_tincture_from_container_reducer::AdministerTinctureFromContainerArgs {
                 actor_id: actor_id.clone(),
                 patient_id: patient_id.clone(),
                 object_id: object_id.clone(),
-                amount_milliunits: amount_milliunits.clone(),
+                dose_milliunits: dose_milliunits.clone(),
 }),
             Reducer::AdmitHouseholdOccupant{
                 owner_character_id,
@@ -3250,13 +3218,7 @@ impl __sdk::Reducer for Reducer {
                 character_id: character_id.clone(),
                 mission_id: mission_id.clone(),
 }),
-            Reducer::BackfillCharacterDeathsAndLeadership => __sats::bsatn::to_vec(&backfill_character_deaths_and_leadership_reducer::BackfillCharacterDeathsAndLeadershipArgs {
-                }),
-Reducer::BackfillEquipmentConditionAndSmiths => __sats::bsatn::to_vec(&backfill_equipment_condition_and_smiths_reducer::BackfillEquipmentConditionAndSmithsArgs {
-                }),
-Reducer::BackfillSoloParties => __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {
-                }),
-Reducer::BeginFormalCourtship{
+            Reducer::BeginFormalCourtship{
                 suitor_id,
                 partner_id,
 }             => __sats::bsatn::to_vec(&begin_formal_courtship_reducer::BeginFormalCourtshipArgs {
@@ -3466,14 +3428,12 @@ Reducer::BeginFormalCourtship{
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
                 save_role,
 }             => __sats::bsatn::to_vec(&create_recruitment_role_reducer::CreateRecruitmentRoleArgs {
                 leader_id: leader_id.clone(),
                 name: name.clone(),
                 quantity: quantity.clone(),
                 requirements: requirements.clone(),
-                weapon_precision: weapon_precision.clone(),
                 save_role: save_role.clone(),
 }),
             Reducer::CreateStartingCharacter{
@@ -3557,6 +3517,15 @@ Reducer::BeginFormalCourtship{
                 leader_id: leader_id.clone(),
                 party_id: party_id.clone(),
 }),
+            Reducer::DiscardContainerWater{
+                character_id,
+                container_object_id,
+                requested_ml,
+}             => __sats::bsatn::to_vec(&discard_container_water_reducer::DiscardContainerWaterArgs {
+                character_id: character_id.clone(),
+                container_object_id: container_object_id.clone(),
+                requested_ml: requested_ml.clone(),
+}),
             Reducer::DiscardInventoryItems{
                 character_id,
                 inventory_item_ids,
@@ -3614,15 +3583,6 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&enter_mission_reducer::EnterMissionArgs {
                 character_id: character_id.clone(),
                 server: server.clone(),
-}),
-            Reducer::EquipItem{
-                character_id,
-                inventory_item_id,
-                destination,
-}             => __sats::bsatn::to_vec(&equip_item_reducer::EquipItemArgs {
-                character_id: character_id.clone(),
-                inventory_item_id: inventory_item_id.clone(),
-                destination: destination.clone(),
 }),
             Reducer::EquipItemAtPlacement{
                 character_id,
@@ -3926,26 +3886,6 @@ Reducer::BeginFormalCourtship{
                 spirit_id: spirit_id.clone(),
                 object_id: object_id.clone(),
 }),
-            Reducer::PourWaterIntoContainer{
-                character_id,
-                parent_scope,
-                parent_row_id,
-                requested_ml,
-}             => __sats::bsatn::to_vec(&pour_water_into_container_reducer::PourWaterIntoContainerArgs {
-                character_id: character_id.clone(),
-                parent_scope: parent_scope.clone(),
-                parent_row_id: parent_row_id.clone(),
-                requested_ml: requested_ml.clone(),
-}),
-            Reducer::PourWaterOutOfContainer{
-                character_id,
-                container_object_id,
-                requested_ml,
-}             => __sats::bsatn::to_vec(&pour_water_out_of_container_reducer::PourWaterOutOfContainerArgs {
-                character_id: character_id.clone(),
-                container_object_id: container_object_id.clone(),
-                requested_ml: requested_ml.clone(),
-}),
             Reducer::PrepareDevelopmentCourtship{
                 suitor_id,
                 partner_id,
@@ -4247,23 +4187,14 @@ Reducer::BeginFormalCourtship{
                 character_id: character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
 }),
-            Reducer::RestAtSettlement{
-                character_id,
-                requested_days,
-                at_inn,
-}             => __sats::bsatn::to_vec(&rest_at_settlement_reducer::RestAtSettlementArgs {
-                character_id: character_id.clone(),
-                requested_days: requested_days.clone(),
-                at_inn: at_inn.clone(),
-}),
             Reducer::RestAtSettlementHours{
                 character_id,
                 requested_minutes,
-                at_inn,
+                service,
 }             => __sats::bsatn::to_vec(&rest_at_settlement_hours_reducer::RestAtSettlementHoursArgs {
                 character_id: character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
-                at_inn: at_inn.clone(),
+                service: service.clone(),
 }),
             Reducer::RetrieveFireplaceContainer{
                 character_id,
@@ -4277,11 +4208,11 @@ Reducer::BeginFormalCourtship{
             Reducer::RetrieveFireplaceDish{
                 character_id,
                 fireplace_fixture_id,
-                inventory_scope,
+                container_object_id,
 }             => __sats::bsatn::to_vec(&retrieve_fireplace_dish_reducer::RetrieveFireplaceDishArgs {
                 character_id: character_id.clone(),
                 fireplace_fixture_id: fireplace_fixture_id.clone(),
-                inventory_scope: inventory_scope.clone(),
+                container_object_id: container_object_id.clone(),
 }),
             Reducer::RetrieveRepairedItem{
                 character_id,
@@ -4312,12 +4243,10 @@ Reducer::BeginFormalCourtship{
                 owner_id,
                 name,
                 requirements,
-                weapon_precision,
 }             => __sats::bsatn::to_vec(&save_recruitment_role_reducer::SaveRecruitmentRoleArgs {
                 owner_id: owner_id.clone(),
                 name: name.clone(),
                 requirements: requirements.clone(),
-                weapon_precision: weapon_precision.clone(),
 }),
             Reducer::ScheduleWedding{
                 first_character_id,
@@ -4418,17 +4347,6 @@ Reducer::BeginFormalCourtship{
                 character_id: character_id.clone(),
                 religion_id: religion_id.clone(),
 }),
-            Reducer::SetFireplaceInstrument{
-                character_id,
-                fireplace_fixture_id,
-                inventory_scope,
-                inventory_item_id,
-}             => __sats::bsatn::to_vec(&set_fireplace_instrument_reducer::SetFireplaceInstrumentArgs {
-                character_id: character_id.clone(),
-                fireplace_fixture_id: fireplace_fixture_id.clone(),
-                inventory_scope: inventory_scope.clone(),
-                inventory_item_id: inventory_item_id.clone(),
-}),
             Reducer::SetInventoryQuantityTarget{
                 character_id,
                 party_scope,
@@ -4451,14 +4369,10 @@ Reducer::BeginFormalCourtship{
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
-                automatic_camp_duration,
-                fixed_camp_minutes,
 }             => __sats::bsatn::to_vec(&set_party_travel_itinerary_reducer::SetPartyTravelItineraryArgs {
                 character_id: character_id.clone(),
                 walking_minutes_per_day: walking_minutes_per_day.clone(),
                 travel_at_night: travel_at_night.clone(),
-                automatic_camp_duration: automatic_camp_duration.clone(),
-                fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),
             Reducer::ShareInvestigationBelief{
                 sender_id,
@@ -4735,6 +4649,13 @@ Reducer::BeginFormalCourtship{
                 problem_id: problem_id.clone(),
                 request_id: request_id.clone(),
 }),
+            Reducer::UnequipItem{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&unequip_item_reducer::UnequipItemArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+}),
             Reducer::UpdateCharacter{
                 id,
                 name,
@@ -4759,14 +4680,12 @@ Reducer::BeginFormalCourtship{
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
 }             => __sats::bsatn::to_vec(&update_recruitment_role_reducer::UpdateRecruitmentRoleArgs {
                 leader_id: leader_id.clone(),
                 role_id: role_id.clone(),
                 name: name.clone(),
                 quantity: quantity.clone(),
                 requirements: requirements.clone(),
-                weapon_precision: weapon_precision.clone(),
 }),
             Reducer::UpdateTrainingSchedule{
                 character_id,
@@ -4775,9 +4694,7 @@ Reducer::BeginFormalCourtship{
                 character_id: character_id.clone(),
                 downtime: downtime.clone(),
 }),
-            Reducer::UpgradeManualSurgery => __sats::bsatn::to_vec(&upgrade_manual_surgery_reducer::UpgradeManualSurgeryArgs {
-                }),
-Reducer::VoteForPartyLeader{
+            Reducer::VoteForPartyLeader{
                 voter_id,
                 candidate_id,
 }             => __sats::bsatn::to_vec(&vote_for_party_leader_reducer::VoteForPartyLeaderArgs {
@@ -4906,7 +4823,6 @@ pub struct DbUpdate {
     party_item_condition: __sdk::TableUpdate<PartyItemCondition>,
     party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
     party_journey: __sdk::TableUpdate<PartyJourney>,
-    party_journey_itinerary: __sdk::TableUpdate<PartyJourneyItinerary>,
     party_journey_route: __sdk::TableUpdate<PartyJourneyRoute>,
     party_leader_vote: __sdk::TableUpdate<PartyLeaderVote>,
     party_member: __sdk::TableUpdate<PartyMember>,
@@ -5318,9 +5234,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "party_journey" => db_update
                     .party_journey
                     .append(party_journey_table::parse_table_update(table_update)?),
-                "party_journey_itinerary" => db_update.party_journey_itinerary.append(
-                    party_journey_itinerary_table::parse_table_update(table_update)?,
-                ),
                 "party_journey_route" => db_update
                     .party_journey_route
                     .append(party_journey_route_table::parse_table_update(table_update)?),
@@ -5560,12 +5473,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_join_request = cache
             .apply_diff_to_table::<PartyJoinRequest>("party_join_request", &self.party_join_request)
             .with_updates_by_pk(|row| &row.id);
-        diff.party_journey_itinerary = cache
-            .apply_diff_to_table::<PartyJourneyItinerary>(
-                "party_journey_itinerary",
-                &self.party_journey_itinerary,
-            )
-            .with_updates_by_pk(|row| &row.party_id);
         diff.party_leader_vote = cache
             .apply_diff_to_table::<PartyLeaderVote>("party_leader_vote", &self.party_leader_vote)
             .with_updates_by_pk(|row| &row.id);
@@ -6308,9 +6215,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "party_journey" => db_update
                     .party_journey
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_journey_itinerary" => db_update
-                    .party_journey_itinerary
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_journey_route" => db_update
                     .party_journey_route
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -6717,9 +6621,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "party_journey" => db_update
                     .party_journey
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_journey_itinerary" => db_update
-                    .party_journey_itinerary
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_journey_route" => db_update
                     .party_journey_route
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6932,7 +6833,6 @@ pub struct AppliedDiff<'r> {
     party_item_condition: __sdk::TableAppliedDiff<'r, PartyItemCondition>,
     party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
     party_journey: __sdk::TableAppliedDiff<'r, PartyJourney>,
-    party_journey_itinerary: __sdk::TableAppliedDiff<'r, PartyJourneyItinerary>,
     party_journey_route: __sdk::TableAppliedDiff<'r, PartyJourneyRoute>,
     party_leader_vote: __sdk::TableAppliedDiff<'r, PartyLeaderVote>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMember>,
@@ -7471,11 +7371,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PartyJourney>(
             "party_journey",
             &self.party_journey,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyJourneyItinerary>(
-            "party_journey_itinerary",
-            &self.party_journey_itinerary,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PartyJourneyRoute>(
@@ -8361,7 +8256,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_item_condition_table::register_table(client_cache);
         party_join_request_table::register_table(client_cache);
         party_journey_table::register_table(client_cache);
-        party_journey_itinerary_table::register_table(client_cache);
         party_journey_route_table::register_table(client_cache);
         party_leader_vote_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
@@ -8495,7 +8389,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "party_item_condition",
         "party_join_request",
         "party_journey",
-        "party_journey_itinerary",
         "party_journey_route",
         "party_leader_vote",
         "party_member",

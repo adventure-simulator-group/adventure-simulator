@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::residence_tier_type::ResidenceTier;
+use super::housing_tier_type::HousingTier;
 use super::settlement_residence_offer_type::SettlementResidenceOffer;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

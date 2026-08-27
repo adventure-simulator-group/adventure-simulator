@@ -1,5 +1,6 @@
 use core::f32;
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use avian3d::prelude::*;
 use bevy::platform::hash::RandomState;
 use bevy::prelude::*;
@@ -134,9 +135,9 @@ impl SceneGround {
             || !scale.is_finite()
             || scale <= 0.0
             || samples.len() != grid_width.checked_mul(grid_depth)?
-            || samples
-                .iter()
-                .any(|sample| sample.cover_density_bps > 10_000 || sample.cover_height_cm > 1_000)
+            || samples.iter().any(|sample| {
+                sample.cover_density_bps > BASIS_POINTS_PER_WHOLE || sample.cover_height_cm > 1_000
+            })
         {
             return None;
         }

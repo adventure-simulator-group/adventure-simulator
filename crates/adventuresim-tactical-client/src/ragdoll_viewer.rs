@@ -202,6 +202,7 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         Name::new("Ragdoll viewer terrain"),
         SceneId("hills".to_owned()),
+        SceneEnvironmentFixture::TemperateHills.snapshot("hills"),
         terrain,
         RigidBody::Static,
         terrain_collider,

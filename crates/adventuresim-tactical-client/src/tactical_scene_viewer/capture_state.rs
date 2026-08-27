@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn canopy_metric_requires_upper_centre_render_content() {
-        let mut image = vec![100_u8, 140, 180, 255].repeat(16);
+        let mut image = [100_u8, 140, 180, 255].repeat(16);
         assert_eq!(tree_canopy_pixel_bps(Some(&image), 4, 4), 0);
         let pixel = 4;
         image[pixel..pixel + 4].copy_from_slice(&[20, 60, 25, 255]);

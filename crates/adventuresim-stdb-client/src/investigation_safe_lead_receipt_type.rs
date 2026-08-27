@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::destination_knowledge_stage_type::DestinationKnowledgeStage;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct InvestigationSafeLeadReceipt {
@@ -13,7 +15,7 @@ pub struct InvestigationSafeLeadReceipt {
     pub summary: String,
     pub safe_source_label: String,
     pub confidence_bps: u16,
-    pub destination_stage: String,
+    pub destination_stage: DestinationKnowledgeStage,
     pub directions: String,
     pub exact_location_id: String,
     pub latitude_e_7: i32,
@@ -37,7 +39,8 @@ pub struct InvestigationSafeLeadReceiptCols {
     pub summary: __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, String>,
     pub safe_source_label: __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, String>,
     pub confidence_bps: __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, u16>,
-    pub destination_stage: __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, String>,
+    pub destination_stage:
+        __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, DestinationKnowledgeStage>,
     pub directions: __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, String>,
     pub exact_location_id: __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, String>,
     pub latitude_e_7: __sdk::__query_builder::Col<InvestigationSafeLeadReceipt, i32>,

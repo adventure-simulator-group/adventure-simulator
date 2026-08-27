@@ -5,8 +5,9 @@
 use super::equipment_attachment_point_type::EquipmentAttachmentPoint;
 use super::equipment_placement_type::EquipmentPlacement;
 use super::item_kind_type::ItemKind;
-use super::item_slot_type::ItemSlot;
 use super::item_type::Item;
+use super::melee_attack_style_type::MeleeAttackStyle;
+use super::slot_type::Slot;
 use super::weapon_skill_distribution_type::WeaponSkillDistribution;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

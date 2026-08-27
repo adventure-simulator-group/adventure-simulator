@@ -6,7 +6,7 @@ use wgpu::util::DeviceExt;
 pub struct ComputePass;
 
 impl ComputePass {
-    pub fn new(
+    pub fn execute(
         context: &WgpuContext,
         pipeline_def: ComputePipeline,
         parameters: PassParameters,

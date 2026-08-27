@@ -12,8 +12,9 @@ use bevy::{
         Transform, Vec2, Vec3, Vec4,
     },
 };
+use fabelgeist_determinism::splitmix64;
 
-use crate::presentation::{bps, splitmix64, unit_hash};
+use crate::presentation::{bps, unit_hash};
 
 use super::{GroundScatterLayer, TacticalFoliageMaterial, foliage_material};
 
@@ -304,25 +305,18 @@ pub(super) fn spawn(
             let hash = splitmix64(base_seed ^ cell);
             let jitter_x = unit_hash(splitmix64(hash ^ 0x39bd_7f21)) - 0.5;
             let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
-            let eligibility_world_x = (x as f32 + jitter_x * 0.24) * GRASS_PATCH_SPACING;
-            let eligibility_world_z = (z as f32 + jitter_z * 0.24) * GRASS_PATCH_SPACING;
             let world_x = (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
             let world_z = (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
-            let Some(transform) = grass_patch_placement(
-                terrain,
-                ground,
-                Vec2::new(eligibility_world_x, eligibility_world_z),
-                Vec2::new(world_x, world_z),
-            ) else {
+            let centre = Vec2::new(world_x, world_z);
+            let Some(transform) = grass_patch_placement(terrain, ground, centre) else {
                 continue;
             };
-            let Some(topology) = grass_patch_topology(ground, Vec2::new(world_x, world_z)) else {
+            let Some(topology) = grass_patch_topology(ground, centre) else {
                 continue;
             };
-            let mask_mode =
-                grass_ground_mask_mode(ground, Vec2::new(world_x, world_z), GrassMeshLod::Near);
-            let meshes = &assets.community_meshes
-                [grass_community_at(Vec2::new(world_x, world_z), base_seed, profile).index()];
+            let mask_mode = grass_ground_mask_mode(ground, centre, GrassMeshLod::Near);
+            let meshes =
+                &assets.community_meshes[grass_community_at(centre, base_seed, profile).index()];
             commands.spawn((
                 Name::new("Tactical grass near ribbons"),
                 GroundScatterLayer::Grass,
@@ -362,7 +356,7 @@ pub(super) fn spawn(
                 (x as f32 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
                 (z as f32 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * VISTA_GRASS_PATCH_SPACING,
             );
-            let Some(transform) = grass_patch_placement(terrain, ground, centre, centre) else {
+            let Some(transform) = grass_patch_placement(terrain, ground, centre) else {
                 continue;
             };
             let Some(topology) = grass_patch_topology(ground, centre) else {
@@ -543,16 +537,9 @@ fn grass_patch_transform(terrain: &SceneTerrain, world_x: f32, world_z: f32) -> 
 fn grass_patch_placement(
     terrain: &SceneTerrain,
     ground: &SceneGround,
-    legacy_predicate_centre: Vec2,
     render_centre: Vec2,
 ) -> Option<Transform> {
-    // The legacy centre remains a one-way count-invariance guard: a formerly
-    // rejected patch stays rejected. The actual rendered centre must also be
-    // legal, so reducing jitter cannot move grass into leaf litter or outside
-    // a usable terrain anchor.
-    if !ground_allows_grass_patch(ground, legacy_predicate_centre)
-        || !ground_allows_grass_patch(ground, render_centre)
-    {
+    if !ground_allows_grass_patch(ground, render_centre) {
         return None;
     }
     grass_patch_transform(terrain, render_centre.x, render_centre.y)
@@ -1066,7 +1053,10 @@ fn grass_ribbon_patch_mesh(
     mesh
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn append_attached_quad(
     positions: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
@@ -1101,7 +1091,10 @@ fn append_attached_quad(
     indices.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn append_crossed_spikelet(
     positions: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
@@ -1427,9 +1420,16 @@ mod tests {
         assert!(colors.iter().all(|color| (0.0..1.0).contains(&color[3])));
         assert!(colors.iter().any(|color| color[3] < 0.25));
         assert!(colors.iter().any(|color| color[3] > 0.75));
-        for (far_root, far_color) in far_roots.chunks_exact(7).zip(far_colors.chunks_exact(7)) {
+        for (far_root, far_color) in far_roots
+            .as_chunks::<7>()
+            .0
+            .iter()
+            .zip(far_colors.as_chunks::<7>().0)
+        {
             let matching_near_blade = near_blade_roots
-                .chunks_exact(11)
+                .as_chunks::<11>()
+                .0
+                .iter()
                 .position(|near_root| near_root[0] == far_root[0])
                 .expect("every far blade must retain its exact near-LOD root");
             assert_eq!(
@@ -1450,7 +1450,9 @@ mod tests {
         }
 
         let blade_heights = near_blade_positions
-            .chunks_exact(11)
+            .as_chunks::<11>()
+            .0
+            .iter()
             .map(|blade| {
                 blade
                     .iter()
@@ -1474,7 +1476,9 @@ mod tests {
         assert!(maximum_height - minimum_height > 0.45);
 
         let blade_widths = near_blade_positions
-            .chunks_exact(11)
+            .as_chunks::<11>()
+            .0
+            .iter()
             .map(|blade| Vec3::from_array(blade[0]).distance(Vec3::from_array(blade[1])))
             .collect::<Vec<_>>();
         let minimum_width = blade_widths.iter().copied().fold(f32::INFINITY, f32::min);
@@ -1634,30 +1638,25 @@ mod tests {
         let width = 81;
         let depth = 41;
         let mut samples = vec![GroundSurface::default(); width * depth];
-        // x=1.9 m: outside the legacy footprint centred at -0.32 m, but
-        // inside the actual footprint centred at 0.0 m.
+        // x=1.9 m lies inside the actual footprint centred at 0.0 m.
         let leaf_x = 59;
         let leaf_z = 20;
         samples[leaf_z * width + leaf_x].cover = GroundCover::LeafLitter;
         let ground = SceneGround::from_samples(width, depth, 0.1, samples).unwrap();
         let terrain = SceneTerrain::from_heightmap(9, 9, 1.0, vec![0.0; 81]).unwrap();
-        let legacy = Vec2::new(-0.32, 0.0);
         let rendered = Vec2::ZERO;
-        assert!(ground_allows_grass_patch(&ground, legacy));
         assert!(ground_allows_grass_patch(&ground, rendered));
-        assert!(grass_patch_placement(&terrain, &ground, legacy, rendered).is_some());
+        assert!(grass_patch_placement(&terrain, &ground, rendered).is_some());
     }
 
     #[test]
-    fn invalid_render_anchor_is_skipped_without_legacy_fallback() {
+    fn invalid_render_anchor_is_skipped() {
         let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).unwrap();
         let ground =
             SceneGround::from_samples(81, 81, 0.1, vec![GroundSurface::default(); 81 * 81])
                 .unwrap();
         assert!(grass_patch_transform(&terrain, 0.0, 0.0).is_some());
-        assert!(
-            grass_patch_placement(&terrain, &ground, Vec2::ZERO, Vec2::new(2.0, 0.0)).is_none()
-        );
+        assert!(grass_patch_placement(&terrain, &ground, Vec2::new(2.0, 0.0)).is_none());
     }
 
     #[test]

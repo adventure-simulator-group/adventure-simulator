@@ -3,7 +3,6 @@
 //!
 //! Note: These are only meant for doc tests and internal testing.
 //! In production code, you would implement the traits for your own types.
-#![allow(unused)]
 #![doc(hidden)]
 
 use crate::prelude::*;
@@ -107,7 +106,7 @@ impl PlayerEquipment for StubEquipment {
         1.0
     }
 
-    fn armor_coverage(&self, part: BodyPart) -> f32 {
+    fn armor_coverage(&self, _part: BodyPart) -> f32 {
         1.0
     }
 }

@@ -4,14 +4,18 @@
 //! `build.rs`. Deployment never reads loose data files.
 
 use adventuresim_dialogue::{Condition, FactContext, SourceRef};
-use adventuresim_world_schema::BestiaryCategory;
+use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, BestiaryCategory};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::OnceLock,
 };
 
-const MAX_BESTIARY_INTERPRETATION_BYTES: usize = 1_024;
+use crate::quest_catalog_validation::{
+    MAX_BESTIARY_INTERPRETATION_BYTES, MAX_QUEST_DIALOGUE_TEMPLATE_CHARS,
+};
+
+const MAX_QUEST_DIALOGUE_VALUE_CHARS: usize = 512;
 
 include!(concat!(env!("OUT_DIR"), "/quest_catalog.rs"));
 
@@ -66,12 +70,17 @@ impl QuestDialogueVariant {
     pub fn render(&self, values: &BTreeMap<String, String>) -> Result<String, String> {
         let mut rendered = self.template.clone();
         for (name, value) in values {
-            if value.chars().count() > 512 || value.chars().any(char::is_control) {
+            if value.chars().count() > MAX_QUEST_DIALOGUE_VALUE_CHARS
+                || value.chars().any(char::is_control)
+            {
                 return Err(format!("invalid dialogue variant value {name}"));
             }
             rendered = rendered.replace(&format!("{{{name}}}"), value);
         }
-        if rendered.contains('{') || rendered.contains('}') || rendered.chars().count() > 1024 {
+        if rendered.contains('{')
+            || rendered.contains('}')
+            || rendered.chars().count() > MAX_QUEST_DIALOGUE_TEMPLATE_CHARS
+        {
             return Err("quest dialogue variant has unresolved or oversized template".into());
         }
         Ok(rendered)
@@ -371,7 +380,9 @@ impl Catalog {
         let mut monster_ids = BTreeSet::new();
         for document in &documents {
             for (index, variant) in document.dialogue_variants.iter().enumerate() {
-                if variant.template.chars().count() > 1024 || variant.template.trim().is_empty() {
+                if variant.template.chars().count() > MAX_QUEST_DIALOGUE_TEMPLATE_CHARS
+                    || variant.template.trim().is_empty()
+                {
                     return Err(format!(
                         "quest dialogue variant {} has invalid template",
                         variant.id
@@ -472,10 +483,10 @@ impl Catalog {
                 if !consequence_ids.insert(item.id.clone())
                     || item.causes.is_empty()
                     || item.public_summary.trim().is_empty()
-                    || item.encounter_frequency_bps > 10_000
-                    || item.disease_intensity > 10_000
-                    || item.buy_bps.unsigned_abs() > 10_000
-                    || item.sell_penalty_bps.unsigned_abs() > 10_000
+                    || item.encounter_frequency_bps > BASIS_POINTS_PER_WHOLE
+                    || item.disease_intensity > BASIS_POINTS_PER_WHOLE
+                    || item.buy_bps.unsigned_abs() > u32::from(BASIS_POINTS_PER_WHOLE)
+                    || item.sell_penalty_bps.unsigned_abs() > u32::from(BASIS_POINTS_PER_WHOLE)
                 {
                     return Err(format!("invalid or duplicate consequence {}", item.id));
                 }
@@ -805,7 +816,7 @@ fn validate_evidence(evidence: &EvidenceDefinition) -> Result<(), String> {
         let mut categories = BTreeSet::new();
         for implication in &topic.bestiary {
             if !categories.insert(implication.category)
-                || implication.support_bps > 10_000
+                || implication.support_bps > BASIS_POINTS_PER_WHOLE
                 || implication.lore_difficulty_milli > 5_000
                 || implication.interpretation.trim().is_empty()
                 || implication.interpretation.len() > MAX_BESTIARY_INTERPRETATION_BYTES
@@ -903,6 +914,73 @@ mod tests {
         assert_eq!(source.file, "content/quests/investigation.yaml");
         assert!(source.line > 1);
         assert!(source.path.ends_with(".template"));
+    }
+
+    #[test]
+    fn quest_dialogue_bounds_count_characters_explicitly() {
+        let at_template_limit = QuestDialogueVariant {
+            id: "at-template-limit".into(),
+            kind: QuestDialogueVariantKind::Referral,
+            priority: 0,
+            conditions: Condition::Always,
+            template: "é".repeat(MAX_QUEST_DIALOGUE_TEMPLATE_CHARS),
+        };
+        assert!(at_template_limit.render(&BTreeMap::new()).is_ok());
+
+        let over_template_limit = QuestDialogueVariant {
+            template: "é".repeat(MAX_QUEST_DIALOGUE_TEMPLATE_CHARS + 1),
+            ..at_template_limit
+        };
+        assert!(over_template_limit.render(&BTreeMap::new()).is_err());
+
+        let value_template = QuestDialogueVariant {
+            id: "value-limit".into(),
+            kind: QuestDialogueVariantKind::Referral,
+            priority: 0,
+            conditions: Condition::Always,
+            template: "{value}".into(),
+        };
+        let at_value_limit =
+            BTreeMap::from([("value".into(), "é".repeat(MAX_QUEST_DIALOGUE_VALUE_CHARS))]);
+        assert!(value_template.render(&at_value_limit).is_ok());
+
+        let over_value_limit = BTreeMap::from([(
+            "value".into(),
+            "é".repeat(MAX_QUEST_DIALOGUE_VALUE_CHARS + 1),
+        )]);
+        assert!(value_template.render(&over_value_limit).is_err());
+    }
+
+    #[test]
+    fn authoring_validator_uses_the_same_dialogue_character_bound() {
+        let (mut documents, files) = raw_catalog();
+        {
+            let variant = documents
+                .iter_mut()
+                .find_map(|document| {
+                    document
+                        .get_mut("dialogue_variants")?
+                        .as_array_mut()?
+                        .first_mut()
+                })
+                .expect("embedded catalog has a dialogue variant");
+            variant["template"] =
+                serde_json::Value::String("é".repeat(MAX_QUEST_DIALOGUE_TEMPLATE_CHARS));
+        }
+        crate::quest_catalog_validation::validate_documents(&documents, &files).unwrap();
+
+        let variant = documents
+            .iter_mut()
+            .find_map(|document| {
+                document
+                    .get_mut("dialogue_variants")?
+                    .as_array_mut()?
+                    .first_mut()
+            })
+            .expect("embedded catalog has a dialogue variant");
+        variant["template"] =
+            serde_json::Value::String("é".repeat(MAX_QUEST_DIALOGUE_TEMPLATE_CHARS + 1));
+        assert!(crate::quest_catalog_validation::validate_documents(&documents, &files).is_err());
     }
 
     #[test]

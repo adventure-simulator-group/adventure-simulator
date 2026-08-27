@@ -4,8 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::housing_tier_type::HousingTier;
 use super::residence_tenure_type::ResidenceTenure;
-use super::residence_tier_type::ResidenceTier;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,7 +14,7 @@ pub struct BackendCharacterResidenceStatus {
     pub holding_id: String,
     pub owner_character_id: u64,
     pub settlement_id: String,
-    pub tier: ResidenceTier,
+    pub tier: HousingTier,
     pub tenure: ResidenceTenure,
     pub active: bool,
     pub primary: bool,
@@ -36,7 +36,7 @@ pub struct BackendCharacterResidenceStatusCols {
     pub holding_id: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, String>,
     pub owner_character_id: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, u64>,
     pub settlement_id: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, String>,
-    pub tier: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, ResidenceTier>,
+    pub tier: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, HousingTier>,
     pub tenure: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, ResidenceTenure>,
     pub active: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, bool>,
     pub primary: __sdk::__query_builder::Col<BackendCharacterResidenceStatus, bool>,

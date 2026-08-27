@@ -39,8 +39,6 @@ pub(super) async fn save_travel_configuration(
                 json!(character_id),
                 json!(walking_minutes),
                 json!(form.travel_at_night),
-                json!(false),
-                json!((24 * 60_u16).saturating_sub(walking_minutes)),
             ],
         )
         .await
@@ -76,12 +74,10 @@ pub(super) async fn camp(
     // camp rather than falling through to the character picker.
     let mut party = None;
     for attempt in 0..4 {
+        let query = party_by_id(party_id);
         party = state
             .db
-            .query_one::<Party>(&format!(
-                "SELECT * FROM party WHERE id = {}",
-                sql_string_literal(party_id)
-            ))
+            .query_one::<Party>(query.as_str())
             .await
             .ok()
             .flatten();
@@ -140,16 +136,6 @@ pub(super) async fn camp(
         .map(|time| time.minutes)
         .max()
         .unwrap_or(0);
-    if let Some(legacy) = journey.as_mut().filter(|journey| journey.plan_version == 0) {
-        legacy.completed_elapsed_minutes = legacy.completed_minutes;
-        legacy.departure_minute =
-            current_party_minute.saturating_sub(legacy.completed_elapsed_minutes);
-        legacy.total_elapsed_minutes = if legacy.destination.case_site_id().is_some() {
-            legacy.total_minutes.saturating_mul(2)
-        } else {
-            legacy.total_minutes
-        };
-    }
     let direct_demo_contract_prefix = format!("contract:errantry-puzzle:demo:{}:", character.id);
     let expects_direct_demo = party
         .active_contract_id
@@ -200,20 +186,10 @@ pub(super) async fn camp(
             Vec::new()
         }
     };
-    if let Some(path) =
-        direct_demo_challenge_redirect(&challenges, &road_challenges, character.id)
+    if let Some(path) = direct_demo_challenge_redirect(&challenges, &road_challenges, character.id)
     {
         return Redirect::to(&path).into_response();
     }
-    let itinerary = state
-        .db
-        .query_one::<PartyJourneyItinerary>(&format!(
-            "SELECT * FROM party_journey_itinerary WHERE party_id = {}",
-            sql_string_literal(&party.id)
-        ))
-        .await
-        .ok()
-        .flatten();
     let terrain_route = state
         .db
         .query_one::<PartyJourneyRoute>(&format!(
@@ -246,7 +222,10 @@ pub(super) async fn camp(
         }
     };
     let mut counterparties = Vec::new();
-    if let Some(encounter) = encounter.as_ref().filter(|row| row.status == "awaiting_choice") {
+    if let Some(encounter) = encounter
+        .as_ref()
+        .filter(|row| row.status == StrategicEncounterStatus::AwaitingChoice)
+    {
         let memberships: Vec<BackendContextCharacter> = state
             .db
             .query(&format!(
@@ -277,7 +256,11 @@ pub(super) async fn camp(
     let fatigue_rest_minutes = party_members
         .iter()
         .filter_map(|member| stats.iter().find(|stat| stat.character_id == member.id))
-        .map(|stat| ((stat.calories_used / STRATEGIC_TRAVEL_KCAL_PER_DAY) * 1_440.0).ceil() as u64)
+        .map(|stat| {
+            ((stat.calories_used / STRATEGIC_TRAVEL_KCAL_PER_DAY)
+                * adventuresim_core::strategic_time::MINUTES_PER_DAY as f32)
+                .ceil() as u64
+        })
         .max()
         .unwrap_or(0);
     let default_rest_minutes = minutes_until_next_walking_start(
@@ -287,12 +270,10 @@ pub(super) async fn camp(
     )
     .unwrap_or(fatigue_rest_minutes)
     .max(1);
-    let planned_wake_minute =
-        (current_party_minute.saturating_add(default_rest_minutes) % 1_440) as u16;
+    let planned_wake_minute = (current_party_minute.saturating_add(default_rest_minutes)
+        % adventuresim_core::strategic_time::MINUTES_PER_DAY) as u16;
     let continue_block_reason = camp_continue_block_reason(
-        encounter
-            .as_ref()
-            .map(|encounter| encounter.status.as_str()),
+        encounter.as_ref().map(|encounter| encounter.status),
         is_walking_time(
             current_party_minute,
             party.walking_minutes_per_day,
@@ -307,12 +288,11 @@ pub(super) async fn camp(
         });
     let remaining_rest_intervals: Vec<_> = journey
         .as_ref()
-        .zip(itinerary.as_ref())
         .into_iter()
-        .flat_map(|(journey, itinerary)| {
+        .flat_map(|journey| {
             let remaining_start = journey.completed_elapsed_minutes;
             let remaining_end = journey.total_elapsed_minutes;
-            itinerary
+            journey
                 .forecast_camp_intervals
                 .iter()
                 .filter_map(move |camp| {
@@ -395,7 +375,6 @@ pub(super) async fn camp(
         camp_page(
             &party,
             journey.as_ref(),
-            itinerary.as_ref(),
             terrain_route.as_ref(),
             &destination_name,
             Some(&character),
@@ -459,7 +438,6 @@ pub(super) async fn resolve_errantry_road_challenge(
         Ok(()) => {
             Redirect::to(&format!("/camp?road_occurrence={}", form.challenge_id)).into_response()
         }
-        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
@@ -494,10 +472,10 @@ fn is_direct_demo_challenge_id(challenge_id: &str, character_id: u64) -> bool {
 }
 
 pub(super) fn camp_continue_block_reason(
-    encounter_status: Option<&str>,
+    encounter_status: Option<StrategicEncounterStatus>,
     is_walking_time: bool,
 ) -> Option<&'static str> {
-    if encounter_status == Some("awaiting_choice") {
+    if encounter_status == Some(StrategicEncounterStatus::AwaitingChoice) {
         Some("Resolve the encounter above before continuing travel.")
     } else if !is_walking_time {
         Some("Rest until the planned walking window begins.")
@@ -509,9 +487,7 @@ pub(super) fn camp_continue_block_reason(
 #[cfg(test)]
 mod direct_demo_redirect_tests {
     use super::direct_demo_challenge_redirect;
-    use crate::spacetimedb::{
-        BackendChallenge, BackendRoadChallenge, ChallengePresenterCatalogId,
-    };
+    use crate::spacetimedb::{BackendChallenge, BackendRoadChallenge, ChallengePresenterCatalogId};
 
     fn challenge(id: &str, active: bool, open: bool, solved: bool) -> BackendChallenge {
         BackendChallenge {
@@ -564,7 +540,10 @@ mod direct_demo_redirect_tests {
         assert_eq!(direct_demo_challenge_redirect(&[solved], &[], 7), None);
 
         let another = challenge("challenge:ordered-sigils:demo:7:1", true, true, false);
-        assert_eq!(direct_demo_challenge_redirect(&[demo, another], &[], 7), None);
+        assert_eq!(
+            direct_demo_challenge_redirect(&[demo, another], &[], 7),
+            None
+        );
 
         let witnesses = challenge("challenge:truthful-witnesses:demo:7:2", true, true, false);
         assert_eq!(
@@ -738,16 +717,16 @@ pub(super) async fn camp_settlement_destinations(
     };
     let mut endpoints = Vec::new();
     if let Some(origin_id) = journey.origin.settlement_id()
-        && journey.completed_minutes > 0
+        && journey.completed_movement_minutes > 0
     {
-        endpoints.push((origin_id, journey.completed_minutes));
+        endpoints.push((origin_id, journey.completed_movement_minutes));
     }
     if let Some(destination_id) = journey.destination.settlement_id() {
         endpoints.push((
             destination_id,
             journey
-                .total_minutes
-                .saturating_sub(journey.completed_minutes),
+                .total_movement_minutes
+                .saturating_sub(journey.completed_movement_minutes),
         ));
     }
 
@@ -759,12 +738,10 @@ pub(super) async fn camp_settlement_destinations(
         {
             continue;
         }
+        let query = settlement_by_id(id);
         let settlement = state
             .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(id)
-            ))
+            .query_one::<Settlement>(query.as_str())
             .await
             .ok()
             .flatten();
@@ -794,7 +771,7 @@ pub(super) async fn rest_at_camp(
     };
     let requested_minutes = match travel_rest_minutes(&form) {
         Ok(minutes) => minutes,
-        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
+        Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     };
     let shelter = match field_shelter_argument(&form) {
         Ok(shelter) => shelter,
@@ -927,6 +904,20 @@ pub(super) async fn travel_provision_forecast_for_minutes(
         .query("SELECT * FROM food_lot")
         .await
         .map_err(|error| error.to_string())?;
+    let (objects, containment, liquids) = tokio::join!(
+        state
+            .db
+            .query::<InventoryObject>("SELECT * FROM inventory_object"),
+        state
+            .db
+            .query::<InventoryContainment>("SELECT * FROM inventory_containment"),
+        state
+            .db
+            .query::<ContainerLiquid>("SELECT * FROM container_liquid"),
+    );
+    let objects = objects.map_err(|error| error.to_string())?;
+    let containment = containment.map_err(|error| error.to_string())?;
+    let liquids = liquids.map_err(|error| error.to_string())?;
     let mut food_reserve_kcal = 0.0;
     let mut food_lot_kcal = 0.0;
     let mut water_reserve_ml = 0.0;
@@ -965,7 +956,7 @@ pub(super) async fn travel_provision_forecast_for_minutes(
                         disinfectant_focused: def.alcohol_disinfectant_focused,
                         potable: def.alcohol_potable,
                     },
-                    quantity: entry.qty,
+                    quantity: entry.quantity,
                     item_id: def.id.clone(),
                     stable_id: entry.id,
                     owner: Some(traveler.id),
@@ -1045,7 +1036,7 @@ pub(super) async fn travel_provision_forecast_for_minutes(
             inventory
                 .iter()
                 .filter(|entry| entry.item_id == item_id)
-                .map(|entry| entry.qty)
+                .map(|entry| entry.quantity)
                 .sum::<u32>()
         };
         food_reserve_kcal += needs.food_balance_kcal;
@@ -1063,7 +1054,12 @@ pub(super) async fn travel_provision_forecast_for_minutes(
         if departing_settlement {
             waterskin_count += skins;
         } else {
-            water_reserve_ml += needs.carried_water_ml.max(0.0);
+            let custody =
+                adventuresim_core::physical_object::OperationalCustody::character(traveler.id)
+                    .map_err(|error| error.to_string())?;
+            water_reserve_ml +=
+                super::contained_water_ml_for_custody(&objects, &containment, &liquids, &custody)
+                    as f32;
         }
     }
     if let Some(party) = party {
@@ -1114,7 +1110,11 @@ pub(super) async fn travel_provision_forecast_for_minutes(
         if departing_settlement {
             waterskin_count += party_skins;
         } else {
-            water_reserve_ml += party.pooled_water_ml.max(0.0);
+            let custody = adventuresim_core::physical_object::OperationalCustody::party(&party.id)
+                .map_err(|error| error.to_string())?;
+            water_reserve_ml +=
+                super::contained_water_ml_for_custody(&objects, &containment, &liquids, &custody)
+                    as f32;
         }
     }
     expected_morale_demands.sort_by_key(|(evening, character_id, _)| (*evening, *character_id));
@@ -1133,7 +1133,6 @@ pub(super) async fn travel_provision_forecast_for_minutes(
         food_reserve_kcal,
         food_lot_kcal,
         water_reserve_ml,
-        ration_count,
         waterskin_count,
         ration_kcal: ration.nutrition_kcal,
         waterskin_capacity_ml: waterskin.water_capacity_ml,

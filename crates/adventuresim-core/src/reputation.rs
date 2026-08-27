@@ -3,6 +3,7 @@
 //! Reputation uses integer centipoints. An action is the only propagation
 //! source: imported contributions are terminal and must never become events.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use std::{
     cmp::Reverse,
     collections::{BTreeMap, BinaryHeap},
@@ -55,9 +56,9 @@ pub fn effective_population(population_level: i32, population_estimate: u32) -> 
 
 pub fn local_multiplier_bps(population_level: i32, population_estimate: u32) -> i64 {
     let population = f64::from(effective_population(population_level, population_estimate));
-    (10_000.0 / (1.0 + (population / 1_000.0).ln() * 0.6))
+    (f64::from(BASIS_POINTS_PER_WHOLE) / (1.0 + (population / 1_000.0).ln() * 0.6))
         .round()
-        .clamp(2_000.0, 10_000.0) as i64
+        .clamp(2_000.0, f64::from(BASIS_POINTS_PER_WHOLE)) as i64
 }
 
 pub fn reach_meters(population_level: i32, population_estimate: u32) -> u64 {
@@ -79,7 +80,7 @@ pub fn local_delta(raw: i32, population_level: i32, population_estimate: u32) ->
     clamp_reputation(
         i64::from(raw.max(0))
             .saturating_mul(local_multiplier_bps(population_level, population_estimate))
-            / 10_000,
+            / i64::from(BASIS_POINTS_PER_WHOLE),
     )
 }
 
@@ -163,8 +164,9 @@ pub fn contributions(
         .map(|(_, distance)| ((reach + 1).saturating_sub(*distance)).max(1) as i64)
         .collect();
     let total_weight = weights.iter().sum::<i64>().max(1);
-    let fame_budget = i64::from(local_fame) * SPILL_BUDGET_BPS / 10_000;
-    let infamy_budget = i64::from(local_infamy) * SPILL_BUDGET_BPS / 10_000;
+    let fame_budget = i64::from(local_fame) * SPILL_BUDGET_BPS / i64::from(BASIS_POINTS_PER_WHOLE);
+    let infamy_budget =
+        i64::from(local_infamy) * SPILL_BUDGET_BPS / i64::from(BASIS_POINTS_PER_WHOLE);
     result.extend(destinations.into_iter().zip(weights).filter_map(
         |((settlement_id, distance_m), weight)| {
             let fame = clamp_reputation(fame_budget.saturating_mul(weight) / total_weight);
@@ -182,8 +184,12 @@ pub fn contributions(
 
 pub fn npc_reaction_modifier(fame: i32, infamy: i32, familiarity_bps: u16) -> i16 {
     let net = i64::from(fame) - i64::from(infamy);
-    let unfamiliarity = 10_000_i64.saturating_sub(i64::from(familiarity_bps.min(10_000)));
-    (net.saturating_mul(unfamiliarity) / i64::from(REPUTATION_SCALE) / 10_000).clamp(-20, 20) as i16
+    let unfamiliarity = i64::from(BASIS_POINTS_PER_WHOLE)
+        .saturating_sub(i64::from(familiarity_bps.min(BASIS_POINTS_PER_WHOLE)));
+    (net.saturating_mul(unfamiliarity)
+        / i64::from(REPUTATION_SCALE)
+        / i64::from(BASIS_POINTS_PER_WHOLE))
+    .clamp(-20, 20) as i16
 }
 
 /// Fine only snapshotted, still-unsettled offenses. Empty charge sets cannot

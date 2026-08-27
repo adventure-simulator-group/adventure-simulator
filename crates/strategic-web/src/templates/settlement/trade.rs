@@ -1,7 +1,11 @@
 use adventuresim_core::{
     equipment::{EncumbranceSummary, INPUT_ADDRESS_MAPPINGS, InputAddressMapping},
-    item_catalog_schema::EquipmentLocation as CoreEquipmentLocation,
+    food::CookingMethod,
+    item_catalog_schema::{
+        EquipmentChannel as CoreEquipmentChannel, EquipmentLocation as CoreEquipmentLocation,
+    },
 };
+use adventuresim_stdb_client::EquipmentChannel;
 use maud::{Markup, html};
 
 use super::{
@@ -19,10 +23,9 @@ use super::{
 };
 use crate::spacetimedb::{
     BackendFireplaceDish, BackendFireplaceStation, BackendIngredientPreparationPlan, Character,
-    CharacterCondition, CharacterEquipmentGraph, CharacterLimbs, CharacterStats, CookingMethod,
-    EquipmentBodyPart, EquipmentChannel, EquipmentLocation, FoodLot, IngredientPreparationAction,
-    InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition,
-    PartyInventoryItem, PartyItemAmount, Settlement,
+    CharacterCondition, CharacterEquipmentGraph, CharacterLimbs, CharacterStats, EquipmentBodyPart,
+    EquipmentLocation, FoodLot, IngredientPreparationAction, InventoryItem, InventoryItemAmount,
+    InventoryQuantityTarget, ItemDefinition, PartyInventoryItem, PartyItemAmount, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -187,6 +190,10 @@ pub fn merchants_page(
 }
 
 /// Church interface.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the religion page boundary composes independent settlement, party, and service projections"
+)]
 pub fn religion_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
@@ -227,6 +234,10 @@ pub fn religion_page(
 }
 
 /// Party inventory comparison.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the inventory page boundary composes independent custody and encumbrance projections"
+)]
 pub fn party_inventory_page(
     location: &LocationView,
     selected: &Character,
@@ -266,6 +277,10 @@ pub fn party_inventory_page(
 }
 
 /// The active character's inventory with a staged discard list.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the discard page boundary composes independent custody, selection, and encumbrance projections"
+)]
 pub fn party_discard_page(
     location: &LocationView,
     active_character: &Character,
@@ -305,7 +320,10 @@ pub fn party_discard_page(
     location.render_layout("Inventory", content, Some(&active_character.name))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub fn fireplace_page(
     title: &str,
     back_href: &str,
@@ -395,12 +413,6 @@ pub fn fireplace_page(
                         time { (elapsed) "/" (row.target_minutes) "m" }
                     }
                     form action=(format!("{action_base}/retrieve")) method="post" {
-                        label { "Retrieve to "
-                            select name="inventory_scope" {
-                                option value="personal" selected[inventory_scope == "personal"] { "Personal inventory" }
-                                option value="party" selected[inventory_scope == "party"] { "Party inventory" }
-                            }
-                        }
                         button class="btn btn-primary btn-block" type="submit" { "Retrieve dish" }
                     }
                 } @else {
@@ -424,7 +436,7 @@ pub fn fireplace_page(
                                     (decorative_game_icon("flame")) span { (cooking.display_name.as_str()) }
                                 }
                                 form action=(format!("{action_base}/retrieve")) method="post" {
-                                    input type="hidden" name="inventory_scope" value=(format!("container:{object_id}"));
+                                    input type="hidden" name="container_object_id" value=(object_id);
                                     button class="btn btn-primary btn-small" type="submit" { "Retrieve into vessel" }
                                 }
                             } @else {
@@ -479,7 +491,7 @@ pub fn fireplace_page(
                     form id="cooking-submit-form" method="post" action=(format!("{action_base}/ingredients")) {
                         input type="hidden" name="inventory_scope" value=(inventory_scope);
                         input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
-                        input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
+                        input type="hidden" name="fractions_micros" value="" data-cooking-amounts;
                         p class="strategic-warning" { "Loose food selected here is immediately consolidated into one spit-roasted meal. Each placed vessel cooks its contained food into a separate meal." }
                         p class="small-copy text-muted cooking-preview" data-cooking-preview { "Stage at least one measured food portion." }
                         button type="submit" class="btn btn-primary" disabled data-cook-submit { "Start spit roast" }
@@ -499,12 +511,12 @@ pub fn fireplace_page(
                     div data-inventory-browser="cooking-inventory-right" {
                         table class="trade-inventory-table" { tbody {
                             @if inventory_scope == "personal" {
-                                @for item in personal_inventory.iter().filter(|row| row.qty > 0) {
-                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.qty, personal_amounts.iter().find(|a| a.inventory_item_id == item.id).map(|a| a.remaining_milliunits), food_lots.iter().find(|l| l.inventory_item_id == Some(item.id)), definitions, instrument))
+                                @for item in personal_inventory.iter().filter(|row| row.quantity > 0) {
+                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.quantity, personal_amounts.iter().find(|a| a.inventory_item_id == item.id).map(|a| a.remaining_fraction_micros), food_lots.iter().find(|l| l.inventory_item_id == Some(item.id)), definitions, instrument))
                                 }
                             } @else {
                                 @for item in party_inventory.iter().filter(|row| row.quantity > 0) {
-                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.quantity, party_amounts.iter().find(|a| a.party_inventory_item_id == item.id).map(|a| a.remaining_milliunits), food_lots.iter().find(|l| l.party_inventory_item_id == Some(item.id)), definitions, instrument))
+                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.quantity, party_amounts.iter().find(|a| a.party_inventory_item_id == item.id).map(|a| a.remaining_fraction_micros), food_lots.iter().find(|l| l.party_inventory_item_id == Some(item.id)), definitions, instrument))
                                 }
                             }
                         } }
@@ -517,13 +529,17 @@ pub fn fireplace_page(
     layout(content)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the fireplace row mirrors independent custody and installation form fields"
+)]
 fn fireplace_inventory_row(
     action_base: &str,
     scope: &str,
     id: u64,
     item_id: &str,
     quantity: u32,
-    measured: Option<u32>,
+    measured_fraction_micros: Option<u32>,
     lot: Option<&FoodLot>,
     definitions: &[ItemDefinition],
     _installed: Option<&str>,
@@ -531,14 +547,27 @@ fn fireplace_inventory_row(
     let definition = definitions.iter().find(|d| d.id == item_id);
     let is_tool = matches!(item_id, "cooking_pan" | "cooking_pot" | "portable_oven");
     let display = lot.map_or_else(|| item_display_name(item_id), |l| l.display_name.clone());
-    let amount = measured.unwrap_or(quantity.saturating_mul(1_000_000));
+    let measured_fraction = measured_fraction_micros.map(|value| {
+        adventuresim_core::inventory_measurement::ConsumableFractionMicros::try_new(value)
+            .expect("public consumable fraction must not exceed one whole")
+    });
+    let amount_micros = measured_fraction.map_or_else(
+        || {
+            quantity.saturating_mul(
+                adventuresim_core::inventory_measurement::ConsumableFractionMicros::MICROS_PER_WHOLE,
+            )
+        },
+        adventuresim_core::inventory_measurement::ConsumableFractionMicros::get,
+    );
+    let display_units =
+        measured_fraction.map_or(quantity as f32, |fraction| fraction.as_unit_f32());
     html! { tr class="trade-inventory-row trade-row-player" data-cooking-source=[lot.map(|_| id)] data-personal-inventory-id=[(scope == "personal").then_some(id)] data-party-inventory-id=[(scope == "party").then_some(id)] {
         td class="inventory-item-type" { (item_type_icon(item_id)) }
         td class="inventory-item-name" { (item_name_with_display(item_id, &display, definition))
             span class="inventory-row-actions" {
                 @if lot.is_some() && adventuresim_core::food::is_cookable_ingredient(item_id) {
                     button type="button" class="trade-transfer trade-transfer-left"
-                        data-cooking-stage=(id) data-cooking-name=(&display) data-count=(amount)
+                        data-cooking-stage=(id) data-cooking-name=(&display) data-count=(amount_micros)
                         data-mass=(format!("{:.4}", lot.map_or(0.0, |l| l.mass_kg))) data-safety=(adventuresim_core::food::definition(item_id).map_or(5, |f| f.cooking_minutes))
                         data-culinary-fat=(adventuresim_core::food::definition(item_id).is_some_and(|f| f.culinary_fat))
                         data-salty=(lot.map_or(0.0, |l| l.salty_kg)) data-spicy=(lot.map_or(0.0, |l| l.spicy_kg))
@@ -555,7 +584,7 @@ fn fireplace_inventory_row(
                 }
             }
         }
-        td class="inventory-count" { (format!("{:.2}", amount as f32 / 1_000_000.0)) }
+        td class="inventory-count" { (format!("{display_units:.2}")) }
         td class="inventory-weight" { (definition.map_or(0.0, |d| d.weight)) }
     } }
 }
@@ -656,6 +685,10 @@ pub(super) fn religious_demand_rail(
 }
 
 /// Selected party member stats and biography.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the service page boundary composes independent settlement, inventory, and recovery projections"
+)]
 pub(super) fn service_page(
     settlement: &Settlement,
     service_id: &str,
@@ -768,6 +801,10 @@ pub(super) fn service_page(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the trade rail combines independent custody, selection, and encumbrance projections"
+)]
 fn party_trade_inventory_rail(
     character: &Character,
     inventory: &[InventoryItem],
@@ -803,11 +840,11 @@ fn party_trade_inventory_rail(
                                             @if is_equipped {
                                                 (disabled_transfer_button(direction, "Equipped items cannot be transferred"))
                                             } @else {
-                                                button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {item_name}")) data-label-target=(format!("Transfer {item_name} to target")) data-label-all=(format!("Transfer all {item_name}")) aria-label=(format!("Transfer one {item_name}")) title=(format!("Transfer one {item_name}")) { (transfer_glyph(1)) }
+                                                button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.quantity) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {item_name}")) data-label-target=(format!("Transfer {item_name} to target")) data-label-all=(format!("Transfer all {item_name}")) aria-label=(format!("Transfer one {item_name}")) title=(format!("Transfer one {item_name}")) { (transfer_glyph(1)) }
                                             }
                                         }
                                     }
-                                    td class="inventory-count" { (item.qty) }
+                                    td class="inventory-count" { (item.quantity) }
                                     td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, medication_is_self, equip)) }
                                     td class="inventory-weight" { (item_weight(definition)) }
                                     td class="inventory-gold" { (item_value(definition)) }
@@ -820,6 +857,10 @@ fn party_trade_inventory_rail(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the discard rail combines independent custody, selection, and encumbrance projections"
+)]
 fn discard_inventory_rail(
     character: &Character,
     inventory: &[InventoryItem],
@@ -864,7 +905,7 @@ fn discard_inventory_rail(
                                             (disabled_transfer_button("left", "Equipped items cannot be discarded"))
                                         } @else {
                                             button type="button" class="trade-transfer trade-transfer-left"
-                                            data-discard-item=(item.id) data-count=(item.qty)
+                                            data-discard-item=(item.id) data-count=(item.quantity)
                                             data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
                                             data-label-one=(format!("Discard one {item_name}"))
                                             data-label-target=(format!("Discard {item_name} down to target"))
@@ -874,7 +915,7 @@ fn discard_inventory_rail(
                                         }
                                     }
                                 }
-                                td class="inventory-count" { (item.qty) }
+                                td class="inventory-count" { (item.quantity) }
                                 td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, true, equip)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
@@ -922,6 +963,10 @@ fn ingredient_preparation_submission_form(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the merchant page boundary composes independently loaded stock, custody, and service projections"
+)]
 pub fn live_merchant_shop_page(
     settlement: &Settlement,
     character: &Character,
@@ -1062,16 +1107,16 @@ pub fn live_merchant_shop_page(
                         @let is_equipped = equip.is_some_and(|equip| equip.contains(item.id));
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
                         @let target = target_quantity(personal_targets, &item.item_id);
-                        @let measured = personal_amounts.iter().find(|amount| amount.inventory_item_id == item.id).map(|amount| amount.remaining_milliunits);
-                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-personal-inventory-id=(item.id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
+                        @let measured_fraction = personal_amounts.iter().find(|amount| amount.inventory_item_id == item.id).map(|amount| adventuresim_core::inventory_measurement::ConsumableFractionMicros::try_new(amount.remaining_fraction_micros).expect("public consumable fraction must not exceed one whole"));
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-personal-inventory-id=(item.id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.quantity) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
                         @let repair_skill = smith_skill;
                         @let durable_item = definition.is_some_and(|definition| definition.repairable);
                         @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::ItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                        td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist | MerchantShop::Weapons) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
-                        td class="inventory-count" { @if matches!(shop, MerchantShop::Weapons) { (format!("{:.3} kg", measured.unwrap_or(0) as f32 / 1_000_000.0 * definition.map_or(0.0, |definition| definition.weight))) } @else { (quantity_target_control(item.qty, target, &item.item_id, false)) } } td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, true, equip)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
+                        td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist | MerchantShop::Weapons) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.quantity, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
+                        td class="inventory-count" { @if matches!(shop, MerchantShop::Weapons) { (format!("{:.3} kg", measured_fraction.map_or(0.0, adventuresim_core::inventory_measurement::ConsumableFractionMicros::as_unit_f32) * definition.map_or(0.0, |definition| definition.weight))) } @else { (quantity_target_control(item.quantity, target, &item.item_id, false)) } } td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, true, equip)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
@@ -1117,10 +1162,10 @@ pub fn live_merchant_shop_page(
                     // same collapsed Coin row in this scope.
                     @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency)) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
-                        tr class="trade-inventory-row trade-row-player party-personal-currency" data-merchant-item=(&item.item_id) data-inventory-quantity=(item.qty) data-target="0" title="Personal coin available for party purchases" {
+                        tr class="trade-inventory-row trade-row-player party-personal-currency" data-merchant-item=(&item.item_id) data-inventory-quantity=(item.quantity) data-target="0" title="Personal coin available for party purchases" {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                             td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) }
-                            td class="inventory-count" { (item.qty) }
+                            td class="inventory-count" { (item.quantity) }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
                         }
@@ -1156,6 +1201,10 @@ pub fn live_merchant_shop_page(
 }
 
 /// Two-sided transfer view for the equally owned party chest.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the party pool page boundary composes independent personal and shared custody projections"
+)]
 pub fn party_pool_page(
     location: &LocationView,
     character: &Character,
@@ -1192,7 +1241,7 @@ pub fn party_pool_page(
                             @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                             @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
                             @let target = target_quantity(personal_targets, &item.item_id);
-                            @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
+                            @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.quantity);
                             @let item_name = item_display_name(&item.item_id);
                             @let cut_plan = preparation_plans.iter().find(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "party" && plan.inventory_item_id == item.id && plan.action == IngredientPreparationAction::Cut);
                             @let grind_plan = preparation_plans.iter().find(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "party" && plan.inventory_item_id == item.id && plan.action == IngredientPreparationAction::Grind);
@@ -1243,11 +1292,11 @@ pub fn party_pool_page(
                                         @if equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be deposited"))
                                         } @else {
-                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {item_name}")) data-label-target=(format!("Deposit {item_name} to target")) data-label-all=(format!("Deposit all {item_name}")) aria-label=(format!("Deposit one {item_name} at its objective coin value")) data-strategic-tooltip=(format!("Deposit one {item_name} at its objective coin value")) { (transfer_glyph(1)) }
+                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {item_name}")) data-label-target=(format!("Deposit {item_name} to target")) data-label-all=(format!("Deposit all {item_name}")) aria-label=(format!("Deposit one {item_name} at its objective coin value")) data-strategic-tooltip=(format!("Deposit one {item_name} at its objective coin value")) { (transfer_glyph(1)) }
                                         }
                                     }
                                 }
-                                td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
+                                td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
                                 td class="inventory-equipped" { (equipment_control(item, definition, equipped, true, equip)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
@@ -1467,17 +1516,35 @@ fn equipment_body_part_display(part: EquipmentBodyPart) -> &'static str {
     }
 }
 
-fn equipment_channel_rank(channel: EquipmentChannel) -> u64 {
+fn core_equipment_channel(channel: EquipmentChannel) -> CoreEquipmentChannel {
     match channel {
-        EquipmentChannel::Held => 0,
-        EquipmentChannel::BaseClothing => 10,
-        EquipmentChannel::Padding => 20,
-        EquipmentChannel::FlexibleArmor => 30,
-        EquipmentChannel::RigidArmor => 40,
-        EquipmentChannel::Outerwear => 50,
-        EquipmentChannel::Accessory => 60,
-        EquipmentChannel::Mount => 70,
-        EquipmentChannel::Containment => 80,
+        EquipmentChannel::Held => CoreEquipmentChannel::Held,
+        EquipmentChannel::BaseClothing => CoreEquipmentChannel::BaseClothing,
+        EquipmentChannel::Padding => CoreEquipmentChannel::Padding,
+        EquipmentChannel::FlexibleArmor => CoreEquipmentChannel::FlexibleArmor,
+        EquipmentChannel::RigidArmor => CoreEquipmentChannel::RigidArmor,
+        EquipmentChannel::Outerwear => CoreEquipmentChannel::Outerwear,
+        EquipmentChannel::Accessory => CoreEquipmentChannel::Accessory,
+        EquipmentChannel::Mount => CoreEquipmentChannel::Mount,
+        EquipmentChannel::Containment => CoreEquipmentChannel::Containment,
+    }
+}
+
+fn equipment_channel_rank(channel: EquipmentChannel) -> u64 {
+    u64::from(core_equipment_channel(channel).order())
+}
+
+fn equipment_channel_label(channel: EquipmentChannel) -> &'static str {
+    match core_equipment_channel(channel) {
+        CoreEquipmentChannel::Held => "Held",
+        CoreEquipmentChannel::BaseClothing => "Base clothing",
+        CoreEquipmentChannel::Padding => "Padding",
+        CoreEquipmentChannel::FlexibleArmor => "Flexible armor",
+        CoreEquipmentChannel::RigidArmor => "Rigid armor",
+        CoreEquipmentChannel::Outerwear => "Outerwear",
+        CoreEquipmentChannel::Accessory => "Accessory",
+        CoreEquipmentChannel::Mount => "Mount",
+        CoreEquipmentChannel::Containment => "Contents",
     }
 }
 
@@ -1660,7 +1727,7 @@ fn equipment_control(
                             format!(
                                 "{:?} · {} · depth {}",
                                 requirement.location,
-                                requirement.channel.label(),
+                                equipment_channel_label(requirement.channel),
                                 requirement.order
                             )
                         })
@@ -1672,7 +1739,7 @@ fn equipment_control(
                         .map(|parent| {
                             format!(
                                 "attached via {} · depth {}",
-                                parent.channel.label(),
+                                equipment_channel_label(parent.channel),
                                 parent.order
                             )
                         })
@@ -1731,9 +1798,9 @@ fn equipment_control(
                 .iter()
                 .flat_map(|placement| placement.occupancy.iter())
                 .map(|requirement| requirement.channel)
-                .max()
+                .max_by_key(|channel| equipment_channel_rank(*channel))
         })
-        .map(|channel| channel.label())
+        .map(equipment_channel_label)
         .unwrap_or("Attachment");
     let placement_options = definition
         .map(|definition| {
@@ -1804,7 +1871,7 @@ fn equipment_control(
                                 .collect::<Vec<_>>();
                             serde_json::json!({
                                 "requirementIndex": requirement_index,
-                                "channel": requirement.channel.label(),
+                                "channel": equipment_channel_label(requirement.channel),
                                 "targets": targets
                             })
                         })
@@ -2796,7 +2863,6 @@ mod tests {
             name: "Trader".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: Some("viabundus-1".into()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -2886,7 +2952,6 @@ mod tests {
             name: "Traveller".into(),
             xp: 0,
             level: 1,
-            gold: 20,
             current_settlement_id: Some(town.id.clone()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -3082,7 +3147,7 @@ mod tests {
         let definition = crate::spacetimedb::ItemDefinition {
             id: "commissioned_sword".into(),
             weight: 1.0,
-            slot: ItemSlot::AnyHolding,
+            slot: Slot::AnyHolding,
             kind: crate::spacetimedb::ItemKind::Weapon,
             base_value: None,
             nutrition_kcal: 0.0,
@@ -3174,12 +3239,12 @@ mod tests {
             id: 7,
             character_id: 9,
             item_id: "sword".into(),
-            qty: 1,
+            quantity: 1,
         };
         let mut definition = crate::spacetimedb::ItemDefinition {
             id: "sword".into(),
             weight: 1.0,
-            slot: ItemSlot::AnyHolding,
+            slot: Slot::AnyHolding,
             kind: crate::spacetimedb::ItemKind::Weapon,
             base_value: None,
             nutrition_kcal: 0.0,
@@ -3239,13 +3304,13 @@ mod tests {
             id: 7,
             character_id: 9,
             item_id: "cloak".into(),
-            qty: 1,
+            quantity: 1,
         };
         let inner = InventoryItem {
             id: 8,
             character_id: 9,
             item_id: "tunic".into(),
-            qty: 1,
+            quantity: 1,
         };
         let placement = |id: &str, channel| EquipmentPlacement {
             id: id.into(),
@@ -3349,13 +3414,13 @@ mod tests {
             id: 7,
             character_id: 9,
             item_id: "belt".into(),
-            qty: 1,
+            quantity: 1,
         };
         let child = InventoryItem {
             id: 8,
             character_id: 9,
             item_id: "pouch".into(),
-            qty: 1,
+            quantity: 1,
         };
         let definition = crate::spacetimedb::ItemDefinition {
             id: child.item_id.clone(),
@@ -3434,11 +3499,11 @@ mod tests {
             id: 7,
             character_id: 9,
             item_id: "oral_rehydration_draught".into(),
-            qty: 1,
+            quantity: 1,
         };
         let definition = crate::spacetimedb::ItemDefinition {
             id: inventory.item_id.clone(),
-            slot: ItemSlot::None,
+            slot: Slot::None,
             kind: crate::spacetimedb::ItemKind::Medication,
             ..Default::default()
         };
@@ -3458,11 +3523,11 @@ mod tests {
             id: 7,
             character_id: 10,
             item_id: "oral_rehydration_draught".into(),
-            qty: 1,
+            quantity: 1,
         };
         let definition = crate::spacetimedb::ItemDefinition {
             id: inventory.item_id.clone(),
-            slot: ItemSlot::None,
+            slot: Slot::None,
             kind: crate::spacetimedb::ItemKind::Medication,
             ..Default::default()
         };
@@ -3562,7 +3627,7 @@ mod tests {
             crate::spacetimedb::ItemDefinition {
                 id: "sword".into(),
                 weight: 1.0,
-                slot: ItemSlot::AnyHolding,
+                slot: Slot::AnyHolding,
                 kind: crate::spacetimedb::ItemKind::Weapon,
                 base_value: None,
                 nutrition_kcal: 0.0,
@@ -3579,7 +3644,7 @@ mod tests {
             crate::spacetimedb::ItemDefinition {
                 id: "cuirass".into(),
                 weight: 1.0,
-                slot: ItemSlot::Chest,
+                slot: Slot::Chest,
                 kind: crate::spacetimedb::ItemKind::Armor,
                 base_value: None,
                 nutrition_kcal: 0.0,
@@ -3692,7 +3757,6 @@ mod tests {
             name: "Cook".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: Some("test".into()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -3706,7 +3770,7 @@ mod tests {
             id: 11,
             character_id: character.id,
             item_id: "poppy".into(),
-            qty: 1,
+            quantity: 1,
         }];
         let plan = BackendIngredientPreparationPlan {
             actor_character_id: character.id,

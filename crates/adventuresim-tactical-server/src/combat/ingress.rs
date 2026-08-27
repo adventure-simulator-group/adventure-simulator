@@ -126,7 +126,10 @@ fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::items_after_test_module)]
+#[expect(
+    clippy::items_after_test_module,
+    reason = "roll behavior tests stay next to the roll policy they specify"
+)]
 mod roll_tests {
     use super::*;
 

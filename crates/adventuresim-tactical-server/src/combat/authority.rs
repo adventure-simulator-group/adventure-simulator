@@ -290,7 +290,10 @@ impl RangedAttackAuthority {
 }
 
 #[cfg(test)]
-#[allow(clippy::items_after_test_module)]
+#[expect(
+    clippy::items_after_test_module,
+    reason = "authority boundary tests stay next to the state machines they specify"
+)]
 mod tests {
     use super::*;
 
