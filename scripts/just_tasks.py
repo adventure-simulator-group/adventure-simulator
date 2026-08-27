@@ -284,6 +284,81 @@ def run_spawner(spacetime_url: str, database: str, base_port: str) -> int:
     ])
 
 
+def run_tactical(
+    mission_id: str,
+    scene_key: str,
+    bots: str,
+    port: str,
+    url: str,
+    module: str,
+    enemy_combat_scale_bps: str,
+    scene_input: str,
+    brp_port: str | None = None,
+    world_dump: str | None = None,
+) -> int:
+    if not world_dump:
+        reseed_code = run([
+            sys.executable,
+            str(ROOT / "scripts" / "dev_stack.py"),
+            "reseed-tactical-mission",
+            "--if-live",
+            "--scene-key",
+            scene_key,
+            "--enemy-count",
+            str(bots),
+            "tactical-dev",
+            "23200",
+        ])
+        if reseed_code:
+            return reseed_code
+
+    environment = os.environ.copy()
+    tactical_env = ROOT / ".env.tactical"
+    if not world_dump and tactical_env.is_file():
+        env_values = read_env_file(tactical_env)
+        fresh_mission = env_values.get("TACTICAL_MISSION_ID")
+        if fresh_mission:
+            mission_id = fresh_mission
+        fresh_claim = env_values.get("ADVENTURESIM_TACTICAL_CLAIM")
+        if fresh_claim:
+            environment["ADVENTURESIM_TACTICAL_CLAIM"] = fresh_claim
+
+    command = [
+        executable("cargo"),
+        "run",
+        "--package",
+        "adventuresim-tactical-server",
+        "--features",
+        "debug",
+        "--",
+        "--addr",
+        f"0.0.0.0:{port}",
+        "--mission-id",
+        mission_id,
+        "--scene-key",
+        scene_key,
+        "--scene-input",
+        scene_input,
+        "--spacetimedb-url",
+        url,
+        "--spacetimedb-module",
+        module,
+        "--expected-party-members",
+        "1",
+        "--required-enemy-kills",
+        str(bots),
+        "--enemy-combat-scale-bps",
+        str(enemy_combat_scale_bps),
+        "--no-timeout",
+    ]
+    if brp_port:
+        command.extend(["--brp-port", str(brp_port)])
+    if world_dump:
+        command.extend(["--world-dump", str(world_dump)])
+
+    return run(command, cwd=ROOT, env=environment)
+
+
 def refuse(message: str) -> int:
     print(message, file=sys.stderr)
     return 2
@@ -705,6 +780,17 @@ def parser() -> argparse.ArgumentParser:
     simulation.add_argument("--module-dir", default=str(MODULE_DIR))
     simulation.add_argument("--world-input")
     simulation.add_argument("--require-quest-coverage", action="store_true")
+    tactical = commands.add_parser("tactical")
+    tactical.add_argument("--mission-id", default="test-mission")
+    tactical.add_argument("--scene-key", default="woodland")
+    tactical.add_argument("--bots", default="3")
+    tactical.add_argument("--port", default="6000")
+    tactical.add_argument("--url", default=SPACETIME_URL)
+    tactical.add_argument("--module", default=SPACETIME_DATABASE)
+    tactical.add_argument("--enemy-combat-scale-bps", default="10000")
+    tactical.add_argument("--scene-input", default="assets/tactical-scenes/dense-woodland.json")
+    tactical.add_argument("--brp-port")
+    tactical.add_argument("--world-dump")
     commands.add_parser("win-dev")
     return result
 
@@ -732,6 +818,19 @@ def main(argv: list[str] | None = None) -> int:
             return generate_bindings(Path(args.module_dir))
         if args.command == "spawner":
             return run_spawner(args.spacetime_url, args.database, args.base_port)
+        if args.command == "tactical":
+            return run_tactical(
+                mission_id=args.mission_id,
+                scene_key=args.scene_key,
+                bots=args.bots,
+                port=args.port,
+                url=args.url,
+                module=args.module,
+                enemy_combat_scale_bps=args.enemy_combat_scale_bps,
+                scene_input=args.scene_input,
+                brp_port=args.brp_port,
+                world_dump=args.world_dump,
+            )
         if args.command == "recreate-world-database":
             return recreate_world_database(
                 args.server, args.database, Path(args.module_dir)

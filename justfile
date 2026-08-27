@@ -325,8 +325,8 @@ _spawner-stop:
 # works unmodified against a non-isolated/canonical database. Because that
 # reseed rewrites .env.tactical *during* this recipe, `just` (which resolves
 # {{mission_id}} from the file's content before the recipe runs, and won't
-# see the rewrite) can't be relied on for the resulting value, so the second
-# line re-reads the file directly instead of trusting {{mission_id}}. This
+# see the rewrite) can't be relied on for the resulting value, so the recipe
+# re-reads the file directly instead of trusting {{mission_id}}. This
 # means an explicitly-passed `mission_id=...` is only honored when no live
 # instance is found; get in touch if that trips you up.
 # Set brp_port to expose the Bevy Remote Protocol endpoint for CLI-driven
@@ -336,8 +336,7 @@ _spawner-stop:
 # startup rather than generating fresh procedural terrain, and never
 # connects to SpacetimeDB at all (no `tactical-isolated` needed first).
 tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "woodland") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") brp_port=env_var_or_default("TACTICAL_BRP_PORT", "") world_dump=env_var_or_default("TACTICAL_WORLD_DUMP", "") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", "assets/tactical-scenes/dense-woodland.json"):
-    @if [ {{ quote(world_dump) }} = "" ]; then {{ python_bin }} scripts/dev_stack.py reseed-tactical-mission --if-live --scene-key {{ quote(scene_key) }} --enemy-count {{ quote(bots) }} tactical-dev 23200; fi
-    @MISSION_ID={{ quote(mission_id) }}; if [ -f .env.tactical ] && [ {{ quote(world_dump) }} = "" ]; then FRESH=$(grep '^TACTICAL_MISSION_ID=' .env.tactical | cut -d= -f2-); [ -n "$FRESH" ] && MISSION_ID="$FRESH"; FRESH_CLAIM=$(grep '^ADVENTURESIM_TACTICAL_CLAIM=' .env.tactical | cut -d= -f2-); [ -n "$FRESH_CLAIM" ] && export ADVENTURESIM_TACTICAL_CLAIM="$FRESH_CLAIM"; fi; cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id "$MISSION_ID" --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }} {{ if world_dump != "" { "--world-dump " + quote(world_dump) } else { "" } }}
+    @{{ python_bin }} scripts/just_tasks.py tactical --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --bots {{ quote(bots) }} --port {{ quote(port) }} --url {{ quote(url) }} --module {{ quote(module) }} --enemy-combat-scale-bps {{ quote(enemy_combat_scale_bps) }} --scene-input {{ quote(scene_input) }} {{ if brp_port != "" { "--brp-port " + quote(brp_port) } else { "" } }} {{ if world_dump != "" { "--world-dump " + quote(world_dump) } else { "" } }}
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above. Set brp_port
