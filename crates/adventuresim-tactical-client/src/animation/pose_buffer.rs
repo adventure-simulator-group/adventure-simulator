@@ -2,15 +2,19 @@
 //!
 //! This is deliberately downstream of semantic animation-pack resolution:
 //! the semantic router produces an `AnimationPlayback` plan from the shared
-//! `PresentedSkeleton`. This backend bakes clip curves onto a 30 Hz grid,
-//! samples into per-character buffers, and writes the resulting local
-//! transforms before the shared procedural passes.
+//! `PresentedSkeleton`. This backend samples sparse locomotion anchors with
+//! Bevy-side interpolation; other motions use clip curves baked onto a 30 Hz
+//! grid. Both paths write per-character local-pose buffers before the shared
+//! procedural passes.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use bevy::{
     animation::{AnimationTargetId, animated_field},
-    asset::AssetId,
+    asset::{AssetEvent, AssetId},
     camera::primitives::{Frustum, Sphere},
 };
 
@@ -23,6 +27,9 @@ const INERTIAL_HALFLIFE_SECONDS: f32 = 0.10;
 const CULL_DISTANCE_METRES: f32 = 100.0;
 const CULL_RADIUS_METRES: f32 = 2.0;
 const AUTHORED_CONTACT_PLANT_LIMIT_METRES: f32 = 0.14;
+const AUTHORED_CONTACT_HEIGHT_FRACTION: f32 = 0.12;
+const AUTHORED_CONTACT_MINIMUM_HEIGHT_WINDOW_METRES: f32 = 0.015;
+const AUTHORED_CONTACT_MAXIMUM_HEIGHT_WINDOW_METRES: f32 = 0.05;
 
 #[derive(Resource, Default, Debug, Clone, Copy, serde::Serialize)]
 pub(crate) struct PoseBufferMetrics {
@@ -487,33 +494,20 @@ pub(super) fn update_pose_buffers(
             for (joint, target_pose) in target.iter().copied().enumerate() {
                 let buffered_displayed = rig.displayed_pose(joint);
                 let displayed = if capture_displayed {
-                    // Final procedural passes run after the pose buffer and can
-                    // move a joint away from its cached input. A transition
-                    // must begin from the transform that was actually rendered
-                    // on the preceding frame, otherwise authored locomotion can
-                    // snap back to the hidden pre-IK stance before inertializing.
-                    rig.entities[joint]
-                        .and_then(|entity| transforms.get(entity).ok())
-                        .map(|transform| LocalPose::from_transform(*transform))
-                        .unwrap_or(buffered_displayed)
+                    // Animation evaluation may already have written the new
+                    // plan into live transforms this frame. The pose buffer is
+                    // the authoritative previous authored output; procedural
+                    // lean, secondary motion, and IK retain their own state and
+                    // are reapplied after this pass.
+                    buffered_displayed
                 } else {
                     target_pose
                 };
-                let captured_final_modifier = capture_displayed
-                    && (displayed
-                        .translation
-                        .distance(buffered_displayed.translation)
-                        > 0.0001
-                        || displayed
-                            .rotation
-                            .angle_between(buffered_displayed.rotation)
-                            > 0.001);
-                let (linear_velocity, angular_velocity) =
-                    if capture_displayed && !captured_final_modifier {
-                        rig.displayed_velocity(joint)
-                    } else {
-                        (Vec3::ZERO, Vec3::ZERO)
-                    };
+                let (linear_velocity, angular_velocity) = if capture_displayed {
+                    rig.displayed_velocity(joint)
+                } else {
+                    (Vec3::ZERO, Vec3::ZERO)
+                };
                 rig.offsets[joint].capture(
                     displayed,
                     linear_velocity,
@@ -603,7 +597,7 @@ fn sample_plan(
             bank,
             metrics,
         )?;
-        baked.push((weighted, clip));
+        baked.push((weighted, clip, clips.get(&weighted.clip.handle)?));
     }
     let mut baked_spans = Vec::with_capacity(playback.extrapolated_spans.len());
     for span in &playback.extrapolated_spans {
@@ -629,7 +623,7 @@ fn sample_plan(
     for (joint_index, joint) in definition.joints.iter().enumerate() {
         let mut blended = joint.bind;
         let mut accumulated = 0.0_f32;
-        for (weighted, clip) in &baked {
+        for (weighted, clip, source) in &baked {
             let included = match weighted.clip.layer {
                 ClipLayer::Whole => true,
                 ClipLayer::Upper => !joint.lower_body,
@@ -639,7 +633,13 @@ fn sample_plan(
             if !included || weighted.weight <= f32::EPSILON || !weighted.weight.is_finite() {
                 continue;
             }
-            let sample = sanitize_pose(clip.sample(joint_index, weighted.time_seconds), joint.bind);
+            let sample = if weighted.locomotion_phase.is_some() {
+                let authored_phase = weighted.time_seconds / source.duration().max(f32::EPSILON);
+                sample_two_pose_locomotion_clip(source, joint, authored_phase)
+            } else {
+                clip.sample(joint_index, weighted.time_seconds)
+            };
+            let sample = sanitize_pose(sample, joint.bind);
             let next_total = accumulated + weighted.weight;
             let alpha = if next_total > f32::EPSILON {
                 weighted.weight / next_total
@@ -693,7 +693,7 @@ fn sample_plan(
         if is_hand_animation_joint(definition, joint_index) {
             let mut hand_pose = joint.bind;
             let mut hand_weight = 0.0_f32;
-            for (weighted, clip) in &baked {
+            for (weighted, clip, _) in &baked {
                 if weighted.clip.layer != ClipLayer::Hands
                     || !clip.tracks[joint_index].animated
                     || weighted.weight <= f32::EPSILON
@@ -719,6 +719,46 @@ fn sample_plan(
     }
     metrics.sampled_pose_count = metrics.sampled_pose_count.saturating_add(1);
     Some(pose)
+}
+
+fn sample_source_clip(clip: &AnimationClip, joint: &RigJoint, time_seconds: f32) -> LocalPose {
+    let translation_field = animated_field!(Transform::translation);
+    let rotation_field = animated_field!(Transform::rotation);
+    let scale_field = animated_field!(Transform::scale);
+    LocalPose {
+        translation: clip
+            .sample_clamped(translation_field, joint.target, time_seconds)
+            .unwrap_or(joint.bind.translation),
+        rotation: clip
+            .sample_clamped(rotation_field, joint.target, time_seconds)
+            .unwrap_or(joint.bind.rotation),
+        scale: clip
+            .sample_clamped(scale_field, joint.target, time_seconds)
+            .unwrap_or(joint.bind.scale),
+    }
+}
+
+fn sample_two_pose_locomotion_clip(
+    clip: &AnimationClip,
+    joint: &RigJoint,
+    authored_phase: f32,
+) -> LocalPose {
+    // The source owns two unique poses: contact and passing/flight. Their
+    // mirrored counterparts occupy the other half-cycle. Sample only those
+    // four semantic anchors, then own every in-between here instead of asking
+    // the glTF sampler (or the 30 Hz baked cache) for intermediate frames.
+    let (start_index, end_index, amount) = sparse_locomotion_segment(authored_phase);
+    const ANCHOR_COUNT: f32 = 4.0;
+    let sample_anchor =
+        |index: u32| sample_source_clip(clip, joint, clip.duration() * index as f32 / ANCHOR_COUNT);
+    sample_anchor(start_index).interpolate(sample_anchor(end_index), amount)
+}
+
+fn sparse_locomotion_segment(authored_phase: f32) -> (u32, u32, f32) {
+    let coordinate = authored_phase.rem_euclid(1.0) * 4.0;
+    let start = coordinate.floor() as u32;
+    let t = coordinate - start as f32;
+    (start, (start + 1) % 4, t * t * (3.0 - 2.0 * t))
 }
 
 fn is_hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> bool {
@@ -1042,8 +1082,36 @@ pub(super) fn calibrate_authored_locomotion_strides(
     definitions: Res<RigDefinitions>,
     runtime: Res<AnimationRuntime>,
     clips: Res<Assets<AnimationClip>>,
+    mut clip_events: MessageReader<AssetEvent<AnimationClip>>,
+    mut bank: ResMut<BakedClipBank>,
     mut strides: ResMut<AuthoredLocomotionStrides>,
 ) {
+    let changed = clip_events
+        .read()
+        .map(|event| match event {
+            AssetEvent::Added { id }
+            | AssetEvent::Modified { id }
+            | AssetEvent::Removed { id }
+            | AssetEvent::Unused { id }
+            | AssetEvent::LoadedWithDependencies { id } => *id,
+        })
+        .collect::<HashSet<_>>();
+    if !changed.is_empty() {
+        let invalidated_motions = strides
+            .measured_clips
+            .iter()
+            .filter(|(_, measured)| changed.contains(measured))
+            .map(|(motion, _)| motion.clone())
+            .collect::<Vec<_>>();
+        for motion in invalidated_motions {
+            strides.clear_motion(&motion);
+        }
+        strides
+            .measured_clips
+            .retain(|_, measured| !changed.contains(measured));
+        bank.0
+            .retain(|(_, measured), _| !changed.contains(measured));
+    }
     let Some(definition) = definitions.0.get("humanoid") else {
         return;
     };
@@ -1058,34 +1126,59 @@ pub(super) fn calibrate_authored_locomotion_strides(
         if strides.measured_clips.get(motion) == Some(&id) {
             continue;
         }
+        strides.clear_motion(motion);
         let Some(clip) = clips.get(&loaded.handle) else {
             continue;
         };
         let baked = bake_clip(clip, definition);
-        let stride = match motion {
-            "walk" => measure_authored_contact_step_distance(
-                definition,
-                &baked,
-                axis,
-                WALK_LOCOMOTION_PROFILE.support_phase_radius,
-            ),
-            "run" => measure_authored_contact_step_distance(
-                definition,
-                &baked,
-                axis,
-                RUN_LOCOMOTION_PROFILE.support_phase_radius,
-            ),
+        let calibration = match motion {
+            // Walk and run use a measured distance-domain phase curve while
+            // the live sampler interpolates only their sparse semantic poses.
+            "walk" | "run" => {
+                measure_authored_contact_step_distance(definition, &baked, axis, -1.0)
+            }
             // Combat cycles currently expose alternating contact poses but no
             // typed support interval. Retain their geometric calibration until
             // that contact timing is part of the authored motion contract.
-            "strafe" | "skip" => measure_authored_foot_range(definition, &baked, axis),
+            "strafe" | "skip" => {
+                measure_authored_foot_range(definition, &baked, axis).map(|step_distance| {
+                    AuthoredLocomotionCalibration {
+                        stride: AuthoredStrideMeasurement {
+                            step_distance,
+                            maximum_stance_slip: 0.0,
+                        },
+                        phase_curve: None,
+                    }
+                })
+            }
             _ => unreachable!("fixed authored locomotion calibration table"),
         };
-        let Some(stride) = stride else {
+        let Some(calibration) = calibration else {
             warn!(motion, "Could not infer authored locomotion stride");
             strides.measured_clips.insert(motion.to_owned(), id);
             continue;
         };
+        let AuthoredLocomotionCalibration {
+            stride,
+            phase_curve,
+        } = calibration;
+        if let Some(phase_curve) = phase_curve {
+            strides.phase_curves.insert(motion.to_owned(), phase_curve);
+        }
+        info!(
+            motion,
+            stride_metres = stride.step_distance,
+            maximum_stance_slip_metres = stride.maximum_stance_slip,
+            "Measured authored locomotion stride"
+        );
+        if stride.maximum_stance_slip > presentation::MAX_AUTHORED_STANCE_SLIP_METRES {
+            warn!(
+                motion,
+                stride_metres = stride.step_distance,
+                maximum_stance_slip_metres = stride.maximum_stance_slip,
+                "Authored locomotion contact fit exceeds the stance-slip budget"
+            );
+        }
         match motion {
             "walk" => strides.walk = Some(stride),
             "run" => strides.run = Some(stride),
@@ -1094,56 +1187,231 @@ pub(super) fn calibrate_authored_locomotion_strides(
             _ => unreachable!("fixed authored locomotion calibration table"),
         }
         strides.measured_clips.insert(motion.to_owned(), id);
-        info!(
-            motion,
-            stride_metres = stride,
-            "Measured authored locomotion stride"
-        );
     }
 }
 
-/// Infer travel by fitting the virtual root motion that makes each stance foot
-/// stationary between initial contact and support release. Normalized phase
-/// retains the authored flight time, so the fitted travel can exceed the
-/// contact-pose separation without consulting unconstrained swing-foot motion.
+/// Infer travel from the low portion of each authored foot trajectory. This
+/// discovers contact timing from clip geometry, then fits the single virtual
+/// root velocity that best holds every stance segment still. The residual is
+/// retained because some clips cannot represent a requested speed with a
+/// constant playback rate alone.
+#[derive(Debug, Clone)]
+struct AuthoredLocomotionCalibration {
+    stride: AuthoredStrideMeasurement,
+    phase_curve: Option<AuthoredPhaseCurve>,
+}
+
 fn measure_authored_contact_step_distance(
     definition: &RigDefinition,
     clip: &BakedClip,
     travel_axis: usize,
-    support_phase: f32,
-) -> Option<f32> {
-    if clip.duration <= f32::EPSILON || support_phase <= f32::EPSILON {
+    expected_stance_direction: f32,
+) -> Option<AuthoredLocomotionCalibration> {
+    if clip.duration <= f32::EPSILON
+        || clip.frames < 4
+        || expected_stance_direction.abs() <= f32::EPSILON
+    {
         return None;
     }
-    let feet = [("l_foot", 0.0_f32), ("r_foot", 0.5_f32)];
-    let mut covariance = 0.0;
-    let mut phase_variance = 0.0;
-    for (name, contact_phase) in feet {
+    let feet = ["l_foot", "r_foot"];
+    let sample_count = clip.frames.saturating_sub(1);
+    let mut segments = Vec::new();
+    for name in feet {
+        let mut foot_segments = Vec::new();
         let foot = definition
             .joints
             .iter()
             .position(|joint| joint.name.as_deref() == Some(name))?;
-        let samples = (0..clip.frames)
-            .filter_map(|frame| {
-                let time = (frame as f32 * clip.frame_dt).min(clip.duration);
-                let phase = time / clip.duration;
-                let stance_phase = phase - contact_phase;
-                if !(0.0..=support_phase).contains(&stance_phase) {
-                    return None;
-                }
+        let samples = (0..sample_count)
+            .map(|frame| {
+                let time = frame as f32 * clip.frame_dt;
                 let mut globals = vec![None; definition.joints.len()];
                 let position = sampled_global_transform(definition, clip, foot, time, &mut globals)
-                    .translation[travel_axis];
-                position.is_finite().then_some((stance_phase, position))
+                    .translation;
+                (time / clip.duration, position)
             })
             .collect::<Vec<_>>();
-        if samples.len() < 3 {
+        let minimum_height = samples
+            .iter()
+            .map(|(_, position)| position.y)
+            .reduce(f32::min)?;
+        let maximum_height = samples
+            .iter()
+            .map(|(_, position)| position.y)
+            .reduce(f32::max)?;
+        let height_window = ((maximum_height - minimum_height) * AUTHORED_CONTACT_HEIGHT_FRACTION)
+            .clamp(
+                AUTHORED_CONTACT_MINIMUM_HEIGHT_WINDOW_METRES,
+                AUTHORED_CONTACT_MAXIMUM_HEIGHT_WINDOW_METRES,
+            );
+        let supported = samples
+            .iter()
+            .map(|(_, position)| position.y <= minimum_height + height_window)
+            .collect::<Vec<_>>();
+        if supported.iter().all(|supported| *supported) {
             return None;
         }
+
+        // Start immediately after a non-contact sample so a stance crossing
+        // the loop seam becomes one monotonically unwrapped segment.
+        let start = supported.iter().position(|supported| !*supported)?;
+        let mut current = Vec::new();
+        for offset in 1..=sample_count {
+            let index = (start + offset) % sample_count;
+            if supported[index] {
+                let wraps = (start + offset) / sample_count;
+                current.push((
+                    samples[index].0 + wraps as f32,
+                    samples[index].1[travel_axis],
+                ));
+            } else if !current.is_empty() {
+                if current.len() >= 3 {
+                    foot_segments.push(std::mem::take(&mut current));
+                } else {
+                    current.clear();
+                }
+            }
+        }
+        if current.len() >= 3 {
+            foot_segments.push(current);
+        }
+        // A low swing-through can briefly enter the height band. The actual
+        // stance is the longest circular low-height interval for each foot.
+        segments.push(foot_segments.into_iter().max_by_key(Vec::len)?);
+    }
+    if segments.len() < 2 {
+        return None;
+    }
+
+    // Some source tools export cyclic locomotion with the phase direction
+    // opposite to the runtime's forward gait convention. Choose one playback
+    // orientation for the entire clip from the signed stance displacement;
+    // reversing clip time is safe for a cycle and does not reverse physical
+    // gait phase or contact ownership.
+    let signed_stance_displacement = segments
+        .iter()
+        .map(|samples| {
+            (samples.last().unwrap().1 - samples.first().unwrap().1)
+                * expected_stance_direction.signum()
+        })
+        .sum::<f32>();
+    if signed_stance_displacement.abs() <= 0.02 {
+        return None;
+    }
+    let reverse_playback = signed_stance_displacement < 0.0;
+    let semantic_contact_centers = [0.0_f32, 0.5_f32];
+    let mut offsets =
+        segments
+            .iter()
+            .zip(semantic_contact_centers)
+            .map(|(samples, semantic_center)| {
+                let authored_center =
+                    (samples.first().unwrap().0 + samples.last().unwrap().0) * 0.5;
+                if reverse_playback {
+                    authored_center + semantic_center
+                } else {
+                    authored_center - semantic_center
+                }
+            });
+    let first_offset = offsets.next()?.rem_euclid(1.0);
+    let (offset_sum, offset_count) = offsets.fold((first_offset, 1_u32), |(sum, count), offset| {
+        let aligned = first_offset + (offset - first_offset + 0.5).rem_euclid(1.0) - 0.5;
+        (sum + aligned, count + 1)
+    });
+    let phase_offset = (offset_sum / offset_count as f32).rem_euclid(1.0);
+    let oriented_segments = segments
+        .iter()
+        .map(|samples| {
+            if reverse_playback {
+                samples
+                    .iter()
+                    .rev()
+                    .map(|&(authored_phase, position)| {
+                        (phase_offset - authored_phase, authored_phase, position)
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                samples
+                    .iter()
+                    .map(|&(authored_phase, position)| {
+                        (authored_phase - phase_offset, authored_phase, position)
+                    })
+                    .collect::<Vec<_>>()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Reparameterize each low-foot interval by its positive travel-axis
+    // displacement. This is the inverse of the articulated foot projection:
+    // physical phase advances linearly in distance while authored sample phase
+    // accelerates and decelerates through the corresponding joint rotation.
+    // A tiny derivative floor keeps the result strictly monotone if a sampled
+    // curve contains a short plateau or wrong-way interval.
+    let mut phase_spans = Vec::<Vec<(f32, f32)>>::new();
+    let mut warped_segments = Vec::<Vec<(f32, f32)>>::new();
+    for samples in &oriented_segments {
+        let phase_span = samples.last()?.0 - samples.first()?.0;
+        if phase_span <= f32::EPSILON {
+            return None;
+        }
+        let positive_deltas = samples
+            .windows(2)
+            .map(|pair| ((pair[1].2 - pair[0].2) * expected_stance_direction.signum()).max(0.0))
+            .collect::<Vec<_>>();
+        let positive_total = positive_deltas.iter().sum::<f32>();
+        if positive_total <= 0.01 {
+            return None;
+        }
+        // Blend the exact distance inverse with a uniform phase derivative.
+        // Pure inversion approaches infinite playback speed where the foot's
+        // projected velocity approaches zero; this floor bounds that speed
+        // without baking a hand-authored timing curve into the clip.
+        let derivative_floor = positive_total * 0.5 / positive_deltas.len() as f32;
+        let weighted_total = positive_total + derivative_floor * positive_deltas.len() as f32;
+        let mut physical_phase = samples.first()?.0;
+        let mut span = vec![(physical_phase, samples.first()?.1)];
+        let mut warped = vec![(physical_phase, samples.first()?.2)];
+        for (index, delta) in positive_deltas.into_iter().enumerate() {
+            physical_phase += phase_span * (delta + derivative_floor) / weighted_total;
+            span.push((physical_phase, samples[index + 1].1));
+            warped.push((physical_phase, samples[index + 1].2));
+        }
+        // Preserve exact interval boundaries so adjacent unwarped swing
+        // sampling remains continuous.
+        if let Some(last) = span.last_mut() {
+            last.0 = samples.last()?.0;
+        }
+        if let Some(last) = warped.last_mut() {
+            last.0 = samples.last()?.0;
+        }
+        phase_spans.push(span);
+        warped_segments.push(warped);
+    }
+
+    let mut authored_phases = (0..=256)
+        .map(|index| {
+            let physical_phase = index as f32 / 256.0;
+            sample_authored_phase_spans(
+                &phase_spans,
+                physical_phase,
+                reverse_playback,
+                phase_offset,
+            )
+        })
+        .collect::<Vec<_>>();
+    smooth_periodic_phase_curve(&mut authored_phases, reverse_playback, phase_offset);
+    let phase_curve = AuthoredPhaseCurve { authored_phases };
+
+    // Each stance gets its own intercept; only the common virtual-root slope
+    // is shared between feet and contact lobes. Measure the residual after the
+    // phase warp, because that is the curve actually sampled at runtime.
+    let mut covariance = 0.0;
+    let mut phase_variance = 0.0;
+    for samples in &warped_segments {
         let count = samples.len() as f32;
         let mean_phase = samples.iter().map(|sample| sample.0).sum::<f32>() / count;
         let mean_position = samples.iter().map(|sample| sample.1).sum::<f32>() / count;
-        for (phase, position) in samples {
+        for &(phase, position) in samples {
             let centered_phase = phase - mean_phase;
             covariance += centered_phase * (position - mean_position);
             phase_variance += centered_phase * centered_phase;
@@ -1152,9 +1420,115 @@ fn measure_authored_contact_step_distance(
     if phase_variance <= f32::EPSILON {
         return None;
     }
-    let cycle_distance = (covariance / phase_variance).abs();
+    let fitted_slope = covariance / phase_variance;
+    let cycle_distance = fitted_slope * expected_stance_direction.signum();
     let step_distance = cycle_distance * 0.5;
-    (step_distance.is_finite() && (0.05..=3.0).contains(&step_distance)).then_some(step_distance)
+    let maximum_stance_slip = warped_segments
+        .iter()
+        .map(|samples| {
+            let residuals = samples
+                .iter()
+                .map(|(phase, position)| position - fitted_slope * phase);
+            let (minimum, maximum) = residuals.fold(
+                (f32::INFINITY, f32::NEG_INFINITY),
+                |(minimum, maximum), residual| (minimum.min(residual), maximum.max(residual)),
+            );
+            maximum - minimum
+        })
+        .fold(0.0_f32, f32::max);
+    (step_distance.is_finite()
+        && maximum_stance_slip.is_finite()
+        && cycle_distance > 0.0
+        && (0.05..=3.0).contains(&step_distance))
+    .then_some(AuthoredLocomotionCalibration {
+        stride: AuthoredStrideMeasurement {
+            step_distance,
+            maximum_stance_slip,
+        },
+        phase_curve: Some(phase_curve),
+    })
+}
+
+fn sample_authored_phase_spans(
+    spans: &[Vec<(f32, f32)>],
+    physical_phase: f32,
+    reverse_playback: bool,
+    phase_offset: f32,
+) -> f32 {
+    for span in spans {
+        for cycle_offset in [-1.0, 0.0, 1.0] {
+            let authored_offset = if reverse_playback {
+                -cycle_offset
+            } else {
+                cycle_offset
+            };
+            let start = span[0].0 + cycle_offset;
+            let end = span[span.len() - 1].0 + cycle_offset;
+            if physical_phase + 0.000_001 < start || physical_phase - 0.000_001 > end {
+                continue;
+            }
+            let upper = span.partition_point(|(phase, _)| *phase + cycle_offset < physical_phase);
+            if upper == 0 {
+                return span[0].1 + authored_offset;
+            }
+            if upper >= span.len() {
+                return span[span.len() - 1].1 + authored_offset;
+            }
+            let (lower_phase, lower_authored) = span[upper - 1];
+            let (upper_phase, upper_authored) = span[upper];
+            let amount = ((physical_phase - (lower_phase + cycle_offset))
+                / (upper_phase - lower_phase))
+                .clamp(0.0, 1.0);
+            return (lower_authored + authored_offset)
+                .lerp(upper_authored + authored_offset, amount);
+        }
+    }
+    if reverse_playback {
+        phase_offset - physical_phase
+    } else {
+        physical_phase + phase_offset
+    }
+}
+
+fn smooth_periodic_phase_curve(values: &mut [f32], reverse: bool, phase_offset: f32) {
+    let sample_count = values.len().saturating_sub(1);
+    if sample_count < 3 {
+        return;
+    }
+    let deviations = (0..sample_count)
+        .map(|index| {
+            let phase = index as f32 / sample_count as f32;
+            let base = if reverse {
+                phase_offset - phase
+            } else {
+                phase_offset + phase
+            };
+            values[index] - base
+        })
+        .collect::<Vec<_>>();
+    const RADIUS: isize = 6;
+    for (index, value) in values.iter_mut().take(sample_count).enumerate() {
+        let mut weighted_sum = 0.0;
+        let mut total_weight = 0.0;
+        for offset in -RADIUS..=RADIUS {
+            let wrapped = (index as isize + offset).rem_euclid(sample_count as isize) as usize;
+            let weight = (RADIUS + 1 - offset.abs()) as f32;
+            weighted_sum += deviations[wrapped] * weight;
+            total_weight += weight;
+        }
+        let phase = index as f32 / sample_count as f32;
+        let base = if reverse {
+            phase_offset - phase
+        } else {
+            phase_offset + phase
+        };
+        *value = base + weighted_sum / total_weight;
+    }
+    values[sample_count] = if reverse {
+        values[0] - 1.0
+    } else {
+        values[0] + 1.0
+    };
 }
 
 fn measure_authored_foot_range(
@@ -1441,6 +1815,17 @@ mod tests {
     }
 
     #[test]
+    fn sparse_locomotion_sampling_uses_only_semantic_quarter_cycle_anchors() {
+        assert_eq!(sparse_locomotion_segment(0.0), (0, 1, 0.0));
+        assert_eq!(sparse_locomotion_segment(0.25), (1, 2, 0.0));
+        assert_eq!(sparse_locomotion_segment(0.5), (2, 3, 0.0));
+        assert_eq!(sparse_locomotion_segment(0.75), (3, 0, 0.0));
+        assert_eq!(sparse_locomotion_segment(1.0), (0, 1, 0.0));
+        let (_, _, midpoint) = sparse_locomotion_segment(0.125);
+        assert!((midpoint - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
     fn authored_contact_fit_ignores_airborne_foot_excursions() {
         let joint = |name: &str, parent: Option<usize>| RigJoint {
             target: AnimationTargetId::from_name(&Name::new(name.to_owned())),
@@ -1465,14 +1850,14 @@ mod tests {
                 .map(|frame| {
                     let phase = frame as f32 / (frames - 1) as f32;
                     let stance_phase = phase - contact_phase;
-                    let position = if (0.0..=0.2).contains(&stance_phase) {
-                        // A two-metre virtual root displacement per cycle
-                        // exactly cancels this planted-foot trajectory.
-                        -2.0 * stance_phase
+                    let (position, height) = if (0.0..=0.2).contains(&stance_phase) {
+                        // A two-metre virtual root displacement toward -Z per
+                        // cycle exactly cancels this +Z foot retraction.
+                        (2.0 * stance_phase, 0.0)
                     } else {
-                        airborne_offset + phase * phase * 10.0
+                        (airborne_offset + phase * phase * 10.0, 0.5)
                     };
-                    Vec3::Z * position
+                    Vec3::new(0.0, height, position)
                 })
                 .collect(),
             rotations: vec![Quat::IDENTITY; frames],
@@ -1490,14 +1875,76 @@ mod tests {
                     scales: vec![Vec3::ONE; frames],
                     animated: true,
                 },
-                foot_track(0.0, 50.0),
-                foot_track(0.5, -80.0),
+                foot_track(0.1, 50.0),
+                foot_track(0.6, -80.0),
             ],
         };
 
-        let step = measure_authored_contact_step_distance(&definition, &clip, 2, 0.2)
+        let measurement = measure_authored_contact_step_distance(&definition, &clip, 2, 1.0)
             .expect("the two stance windows should determine travel");
-        assert!((step - 1.0).abs() < 0.0001);
+        assert!((measurement.stride.step_distance - 1.0).abs() < 0.0001);
+        assert!(measurement.stride.maximum_stance_slip < 0.0001);
+        assert!(measurement.phase_curve.is_some());
+
+        let mut projected_rotation = clip.clone();
+        for (track_index, contact_phase) in [(1, 0.1_f32), (2, 0.6_f32)] {
+            let track = &mut projected_rotation.tracks[track_index];
+            for (frame, translation) in track.translations.iter_mut().enumerate() {
+                let phase = frame as f32 / (frames - 1) as f32;
+                let stance_phase = phase - contact_phase;
+                if (-0.0001..=0.2001).contains(&stance_phase) {
+                    // A quadratic projection stands in for the sine-like
+                    // horizontal motion produced by a rotating leg.
+                    translation.y = 0.0;
+                    translation.z = 10.0 * stance_phase * stance_phase;
+                }
+            }
+        }
+        let projected =
+            measure_authored_contact_step_distance(&definition, &projected_rotation, 2, 1.0)
+                .expect("a monotone articulated projection should be phase-warpable");
+        assert!((projected.stride.step_distance - 1.0).abs() < 0.02);
+        assert!(projected.stride.maximum_stance_slip < 0.08);
+        let curve = projected
+            .phase_curve
+            .expect("ordinary gait derives a curve");
+        assert!(
+            curve.sample(0.2) > 0.22,
+            "distance inversion must be nonlinear"
+        );
+
+        let mut low_wrong_way_approach = clip.clone();
+        for (track_index, indices) in [(1, [0, 1]), (2, [10, 11])] {
+            let track = &mut low_wrong_way_approach.tracks[track_index];
+            for (offset, index) in indices.into_iter().enumerate() {
+                track.translations[index] = Vec3::new(0.0, 0.005, 0.2 - offset as f32 * 0.1);
+            }
+        }
+        let misleading =
+            measure_authored_contact_step_distance(&definition, &low_wrong_way_approach, 2, 1.0);
+        assert!(
+            misleading.is_none_or(|measurement| {
+                measurement.stride.maximum_stance_slip
+                    > presentation::MAX_AUTHORED_STANCE_SLIP_METRES
+            }),
+            "a visibly low wrong-way approach must make the fit unrepresentable"
+        );
+
+        let mut wrong_way = clip.clone();
+        for track in &mut wrong_way.tracks[1..] {
+            for translation in &mut track.translations {
+                translation.z = -translation.z;
+            }
+        }
+        let reversed = measure_authored_contact_step_distance(&definition, &wrong_way, 2, 1.0)
+            .expect("a cyclic clip authored backward should be sampled in reverse");
+        assert!((reversed.stride.step_distance - 1.0).abs() < 0.0001);
+        let curve = reversed.phase_curve.unwrap();
+        let authored_delta = (curve.sample(0.25) - curve.sample(0.2) + 0.5).rem_euclid(1.0) - 0.5;
+        assert!(
+            authored_delta < 0.0,
+            "reverse playback must decrease authored phase while physical phase advances"
+        );
     }
 
     #[test]

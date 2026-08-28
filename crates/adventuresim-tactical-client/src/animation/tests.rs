@@ -140,7 +140,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn prone_presentation_predicts_the_authoritative_crawl_cadence() {
+    fn prone_presentation_does_not_predict_locomotion_from_residual_velocity() {
         let velocity = Vec3::NEG_Z * 2.0;
         let mut authoritative = SkeletonState::default()
             .with_body_state(BodyState::Prone)
@@ -800,6 +800,13 @@ mod legacy_tests {
             SemanticPose::QuickstepRightTakeoff,
             SemanticPose::QuickstepRightContact,
         ]);
+        let strides = AuthoredLocomotionStrides::default();
+        let sample_resolver = PoseSampleResolver {
+            runtime: &runtime,
+            catalog: &catalog,
+            pack: HUMANOID_UNARMED_PACK,
+            locomotion_strides: &strides,
+        };
         for (sample, expected_layer) in [
             (
                 PoseSample {
@@ -822,18 +829,70 @@ mod legacy_tests {
         ] {
             let mut weighted = Vec::new();
             let mut spans = Vec::new();
-            append_resolved_sample_layer(
-                &mut weighted,
-                &mut spans,
-                &runtime,
-                &catalog,
-                HUMANOID_UNARMED_PACK,
-                sample,
-                expected_layer,
-            );
+            sample_resolver.append_layer(&mut weighted, &mut spans, sample, expected_layer);
             assert_eq!(weighted.len(), 1);
             assert_eq!(weighted[0].clip.layer, expected_layer);
         }
+    }
+
+    #[test]
+    fn locomotion_phase_curve_changes_only_authored_cycle_sampling() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime =
+            runtime_with_available([SemanticPose::WalkContact, SemanticPose::StrafeCycle]);
+        let mut strides = AuthoredLocomotionStrides::default();
+        strides.phase_curves.insert(
+            "walk".to_owned(),
+            AuthoredPhaseCurve {
+                authored_phases: vec![0.0, 0.75, 1.0],
+            },
+        );
+        let physical_phase = 0.5;
+        let mut weighted = Vec::new();
+        let mut spans = Vec::new();
+        let sample_resolver = PoseSampleResolver {
+            runtime: &runtime,
+            catalog: &catalog,
+            pack: HUMANOID_UNARMED_PACK,
+            locomotion_strides: &strides,
+        };
+        sample_resolver.append_layer(
+            &mut weighted,
+            &mut spans,
+            PoseSample {
+                pose: SemanticPose::WalkContact,
+                sampling: PoseSampling::Cycle {
+                    phase: physical_phase,
+                },
+                weight: 1.0,
+                mirror_lower_body: false,
+            },
+            ClipLayer::Lower,
+        );
+        let walk_duration =
+            runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "walk".to_owned())].duration_seconds;
+        assert!((weighted[0].time_seconds - walk_duration * 0.75).abs() < 0.0001);
+        assert_eq!(weighted[0].locomotion_phase, Some(physical_phase));
+
+        weighted.clear();
+        sample_resolver.append_layer(
+            &mut weighted,
+            &mut spans,
+            PoseSample {
+                pose: SemanticPose::StrafeCycle,
+                sampling: PoseSampling::Cycle {
+                    phase: physical_phase,
+                },
+                weight: 1.0,
+                mirror_lower_body: false,
+            },
+            ClipLayer::Lower,
+        );
+        let strafe_duration = runtime.clips
+            [&(HUMANOID_UNARMED_PACK.to_owned(), "strafe".to_owned())]
+            .duration_seconds;
+        assert!((weighted[0].time_seconds - strafe_duration * physical_phase).abs() < 0.0001);
+        assert_eq!(weighted[0].locomotion_phase, None);
     }
 
     #[test]

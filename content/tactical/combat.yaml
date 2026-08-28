@@ -19,7 +19,7 @@ realtime_authority:
 
 movement:
   speeds_metres_per_second:
-    { walk: 1.4, run: 5.5, raised_guard: 2.0, prone_walk: 0.45, prone: 2.0, roll: 1.3, dive: 7.0, quickstep: 3.5 }
+    { walk: 1.7, run: 5.5, raised_guard: 2.0, prone_walk: 0.45, prone: 2.0, roll: 1.3, dive: 7.0, quickstep: 3.5 }
   jump_heights_metres: { ordinary: 0.30, dive: 0.20 }
   prone_lateral_speed_scale: 0.375
   prone_effort_scale: 3.0

@@ -76,20 +76,85 @@ pub(crate) mod catalog;
 pub use catalog::AnimationPackCatalog;
 use catalog::*;
 
-/// Per-step travel measured from the loaded authored foot curves. Until a
-/// motion and rig are both available, presentation retains the shared
-/// simulation profile instead of guessing from clip duration.
+/// Per-step travel and irreducible stance slip measured from the loaded
+/// authored foot curves. Until a motion and rig are both available,
+/// presentation retains the shared simulation profile instead of guessing
+/// from clip duration.
+#[derive(Debug, Clone, Copy)]
+struct AuthoredStrideMeasurement {
+    step_distance: f32,
+    maximum_stance_slip: f32,
+}
+
+/// Periodic authored sample phase indexed by a uniformly advancing physical
+/// gait phase. Values are deliberately left unwrapped so interpolation remains
+/// continuous across the cycle seam; callers wrap only the final result.
+#[derive(Debug, Clone)]
+struct AuthoredPhaseCurve {
+    authored_phases: Vec<f32>,
+}
+
+impl AuthoredPhaseCurve {
+    fn sample(&self, physical_phase: f32) -> f32 {
+        if self.authored_phases.len() < 2 {
+            return physical_phase.rem_euclid(1.0);
+        }
+        let phase = physical_phase.rem_euclid(1.0);
+        let coordinate = phase * (self.authored_phases.len() - 1) as f32;
+        let lower = coordinate.floor() as usize;
+        let upper = (lower + 1).min(self.authored_phases.len() - 1);
+        self.authored_phases[lower]
+            .lerp(self.authored_phases[upper], coordinate - lower as f32)
+            .rem_euclid(1.0)
+    }
+}
+
+impl AuthoredStrideMeasurement {
+    fn lerp(self, other: Self, amount: f32) -> Self {
+        Self {
+            step_distance: self.step_distance.lerp(other.step_distance, amount),
+            maximum_stance_slip: self
+                .maximum_stance_slip
+                .lerp(other.maximum_stance_slip, amount),
+        }
+    }
+}
+
 #[derive(Resource, Debug, Clone, Default)]
 pub(super) struct AuthoredLocomotionStrides {
-    walk: Option<f32>,
-    run: Option<f32>,
-    strafe: Option<f32>,
-    skip: Option<f32>,
+    walk: Option<AuthoredStrideMeasurement>,
+    run: Option<AuthoredStrideMeasurement>,
+    strafe: Option<AuthoredStrideMeasurement>,
+    skip: Option<AuthoredStrideMeasurement>,
+    phase_curves: BTreeMap<String, AuthoredPhaseCurve>,
     measured_clips: BTreeMap<String, AssetId<AnimationClip>>,
 }
 
 impl AuthoredLocomotionStrides {
-    fn ordinary(&self, speed: f32) -> Option<f32> {
+    fn clear_motion(&mut self, motion: &str) {
+        self.phase_curves.remove(motion);
+        match motion {
+            "walk" => self.walk = None,
+            "run" => self.run = None,
+            "strafe" => self.strafe = None,
+            "skip" => self.skip = None,
+            _ => {}
+        }
+    }
+
+    fn sample_phase(&self, pose: SemanticPose, physical_phase: f32) -> f32 {
+        let motion = match pose {
+            SemanticPose::WalkContact => "walk",
+            SemanticPose::RunContact => "run",
+            _ => return physical_phase.rem_euclid(1.0),
+        };
+        self.phase_curves.get(motion).map_or_else(
+            || physical_phase.rem_euclid(1.0),
+            |curve| curve.sample(physical_phase),
+        )
+    }
+
+    fn ordinary(&self, speed: f32) -> Option<AuthoredStrideMeasurement> {
         let walk = self.walk?;
         let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
             / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
@@ -101,21 +166,30 @@ impl AuthoredLocomotionStrides {
         }
     }
 
-    fn combat(&self, direction: Vec2) -> Option<f32> {
+    fn combat(&self, direction: Vec2) -> Option<AuthoredStrideMeasurement> {
         let strafe_weight = direction.x.abs();
         let skip_weight = direction.y.abs();
         let total = strafe_weight + skip_weight;
         if total <= f32::EPSILON {
             return None;
         }
-        let mut stride = 0.0;
+        let mut stride = AuthoredStrideMeasurement {
+            step_distance: 0.0,
+            maximum_stance_slip: 0.0,
+        };
         if strafe_weight > f32::EPSILON {
-            stride += self.strafe? * strafe_weight;
+            let strafe = self.strafe?;
+            stride.step_distance += strafe.step_distance * strafe_weight;
+            stride.maximum_stance_slip += strafe.maximum_stance_slip * strafe_weight;
         }
         if skip_weight > f32::EPSILON {
-            stride += self.skip? * skip_weight;
+            let skip = self.skip?;
+            stride.step_distance += skip.step_distance * skip_weight;
+            stride.maximum_stance_slip += skip.maximum_stance_slip * skip_weight;
         }
-        Some(stride / total)
+        stride.step_distance /= total;
+        stride.maximum_stance_slip /= total;
+        Some(stride)
     }
 }
 
@@ -232,6 +306,10 @@ struct WeightedClip {
     weight: f32,
     time_seconds: f32,
     mirrored_weight: f32,
+    /// Unwarped physical phase for ordinary sparse-pose locomotion. Its
+    /// presence selects the Bevy-side semantic-anchor sampler while
+    /// `time_seconds` retains the measured authored phase coordinate.
+    locomotion_phase: Option<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -291,6 +369,7 @@ fn evaluate_skeletons(
     mut commands: Commands,
     catalog: Res<AnimationPackCatalog>,
     runtime: Res<AnimationRuntime>,
+    locomotion_strides: Res<AuthoredLocomotionStrides>,
     players: Query<
         (
             Entity,
@@ -319,24 +398,24 @@ fn evaluate_skeletons(
         } else {
             ClipLayer::Whole
         };
+        let sample_resolver = PoseSampleResolver {
+            runtime: &runtime,
+            catalog: &catalog,
+            pack: &skeleton.animation_pack,
+            locomotion_strides: &locomotion_strides,
+        };
         for sample in samples {
-            append_resolved_sample_layer(
+            sample_resolver.append_layer(
                 &mut weighted,
                 &mut extrapolated_spans,
-                &runtime,
-                &catalog,
-                &skeleton.animation_pack,
                 *sample,
                 base_layer,
             );
         }
         for sample in &evaluation.lower_body {
-            append_resolved_sample_layer(
+            sample_resolver.append_layer(
                 &mut weighted,
                 &mut extrapolated_spans,
-                &runtime,
-                &catalog,
-                &skeleton.animation_pack,
                 *sample,
                 ClipLayer::Lower,
             );
@@ -371,6 +450,7 @@ fn evaluate_skeletons(
                 false,
                 0.0,
                 1.0,
+                None,
             );
         }
         let target = PlaybackPose {
@@ -698,6 +778,7 @@ fn append_weighted_anchor(
         resolved.mirrored,
         frame_seconds(frame),
         weight,
+        None,
     );
 }
 
@@ -707,6 +788,7 @@ fn append_weighted_clip(
     mirrored: bool,
     time_seconds: f32,
     weight: f32,
+    locomotion_phase: Option<f32>,
 ) {
     if weight <= f32::EPSILON {
         return;
@@ -715,6 +797,7 @@ fn append_weighted_clip(
         existing.clip.handle.id() == clip.handle.id()
             && existing.clip.layer == clip.layer
             && (existing.time_seconds - time_seconds).abs() < 0.0001
+            && existing.locomotion_phase == locomotion_phase
     }) {
         existing.weight += weight;
         if mirrored {
@@ -726,6 +809,7 @@ fn append_weighted_clip(
             weight,
             time_seconds,
             mirrored_weight: if mirrored { weight } else { 0.0 },
+            locomotion_phase,
         });
     }
 }
@@ -738,160 +822,192 @@ fn append_resolved_sample(
     sample: PoseSample,
 ) {
     let mut extrapolated_spans = Vec::new();
-    append_resolved_sample_layer(
-        weighted,
-        &mut extrapolated_spans,
+    let locomotion_strides = AuthoredLocomotionStrides::default();
+    PoseSampleResolver {
         runtime,
         catalog,
         pack,
-        sample,
-        ClipLayer::Whole,
-    );
+        locomotion_strides: &locomotion_strides,
+    }
+    .append_layer(weighted, &mut extrapolated_spans, sample, ClipLayer::Whole);
 }
 
-fn append_resolved_sample_layer(
-    weighted: &mut Vec<WeightedClip>,
-    extrapolated_spans: &mut Vec<ExtrapolatedSpan>,
-    runtime: &AnimationRuntime,
-    catalog: &AnimationPackCatalog,
-    pack: &str,
-    sample: PoseSample,
-    layer: ClipLayer,
-) {
-    let start = resolve_anchor(runtime, catalog, pack, sample.pose);
-    let Some(start) = start.and_then(|resolved| {
-        select_gait_endpoint_parity(runtime, resolved, sample.mirror_lower_body)
-    }) else {
-        return;
-    };
-    match sample.sampling {
-        PoseSampling::Anchor => {
-            append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer)
-        }
-        PoseSampling::Cycle { phase } => {
-            let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
-            append_weighted_clip(
-                weighted,
-                &clip,
-                start.mirrored,
-                start.clip.duration_seconds * phase.rem_euclid(1.0),
-                sample.weight,
-            );
-        }
-        PoseSampling::Timeline { progress } => {
-            let progress = progress.clamp(0.0, 1.0);
-            let timeline = if start.timeline_reversed {
-                1.0 - progress
-            } else {
-                progress
-            };
-            let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
-            append_weighted_clip(
-                weighted,
-                &clip,
-                start.mirrored,
-                start.clip.duration_seconds * timeline,
-                sample.weight,
-            );
-        }
-        PoseSampling::Span { end, progress } => {
-            let end_pose = end;
-            let progress = progress.clamp(0.0, 1.0);
-            let end = resolve_anchor(runtime, catalog, pack, end_pose);
-            let Some(end) = end else {
-                append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer);
-                return;
-            };
-            if start.pack_id == end.pack_id && start.anchor.motion == end.anchor.motion {
-                append_weighted_anchor(
+#[derive(Clone, Copy)]
+struct PoseSampleResolver<'a> {
+    runtime: &'a AnimationRuntime,
+    catalog: &'a AnimationPackCatalog,
+    pack: &'a str,
+    locomotion_strides: &'a AuthoredLocomotionStrides,
+}
+
+impl PoseSampleResolver<'_> {
+    fn append_layer(
+        &self,
+        weighted: &mut Vec<WeightedClip>,
+        extrapolated_spans: &mut Vec<ExtrapolatedSpan>,
+        sample: PoseSample,
+        layer: ClipLayer,
+    ) {
+        let Self {
+            runtime,
+            catalog,
+            pack,
+            locomotion_strides,
+        } = *self;
+        let start = resolve_anchor(runtime, catalog, pack, sample.pose);
+        let Some(start) = start.and_then(|resolved| {
+            select_gait_endpoint_parity(runtime, resolved, sample.mirror_lower_body)
+        }) else {
+            return;
+        };
+        match sample.sampling {
+            PoseSampling::Anchor => {
+                append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer)
+            }
+            PoseSampling::Cycle { phase } => {
+                let sample_phase = locomotion_strides.sample_phase(sample.pose, phase);
+                let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
+                append_weighted_clip(
                     weighted,
-                    &start,
-                    start.anchor.frame,
-                    sample.weight * (1.0 - progress),
-                    layer,
-                );
-                append_weighted_anchor(
-                    weighted,
-                    &end,
-                    end.anchor.frame,
-                    sample.weight * progress,
-                    layer,
-                );
-            } else if let Some(reference) = catalog.packs[end.pack_id]
-                .references
-                .get(&end.anchor.motion)
-                .and_then(|references| {
-                    references
-                        .iter()
-                        .filter(|reference| reference.pose == sample.pose)
-                        .min_by_key(|reference| reference.frame.abs_diff(end.anchor.frame))
-                })
-            {
-                append_weighted_anchor(
-                    weighted,
-                    &end,
-                    reference.frame,
-                    sample.weight * (1.0 - progress),
-                    layer,
-                );
-                append_weighted_anchor(
-                    weighted,
-                    &end,
-                    end.anchor.frame,
-                    sample.weight * progress,
-                    layer,
-                );
-            } else if let Some(reference) = catalog.packs[start.pack_id]
-                .references
-                .get(&start.anchor.motion)
-                .and_then(|references| {
-                    references
-                        .iter()
-                        .filter(|reference| reference.pose == end_pose)
-                        .min_by_key(|reference| reference.frame.abs_diff(start.anchor.frame))
-                })
-            {
-                append_weighted_anchor(
-                    weighted,
-                    &start,
-                    start.anchor.frame,
-                    sample.weight * (1.0 - progress),
-                    layer,
-                );
-                append_weighted_anchor(
-                    weighted,
-                    &start,
-                    reference.frame,
-                    sample.weight * progress,
-                    layer,
-                );
-            } else {
-                append_weighted_anchor(
-                    weighted,
-                    &start,
-                    start.anchor.frame,
-                    sample.weight * (1.0 - progress),
-                    layer,
-                );
-                append_weighted_anchor(
-                    weighted,
-                    &end,
-                    end.anchor.frame,
-                    sample.weight * progress,
-                    layer,
+                    &clip,
+                    start.mirrored,
+                    start.clip.duration_seconds * sample_phase,
+                    sample.weight,
+                    matches!(
+                        sample.pose,
+                        SemanticPose::WalkContact | SemanticPose::RunContact
+                    )
+                    .then_some(phase.rem_euclid(1.0)),
                 );
             }
-        }
-        PoseSampling::CurveSpan { end, coordinate } => {
-            let end_pose = end;
-            let coordinate =
-                coordinate.clamp(-AttackCurve::MAX_DRAWBACK, 1.0 + AttackCurve::MAX_OVERSHOOT);
-            let Some(end) = resolve_anchor(runtime, catalog, pack, end_pose) else {
-                append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer);
-                return;
-            };
-            let (span_start, start_frame, span_end, end_frame) =
+            PoseSampling::Timeline { progress } => {
+                let progress = progress.clamp(0.0, 1.0);
+                let timeline = if start.timeline_reversed {
+                    1.0 - progress
+                } else {
+                    progress
+                };
+                let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
+                append_weighted_clip(
+                    weighted,
+                    &clip,
+                    start.mirrored,
+                    start.clip.duration_seconds * timeline,
+                    sample.weight,
+                    None,
+                );
+            }
+            PoseSampling::Span { end, progress } => {
+                let end_pose = end;
+                let progress = progress.clamp(0.0, 1.0);
+                let end = resolve_anchor(runtime, catalog, pack, end_pose);
+                let Some(end) = end else {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
                 if start.pack_id == end.pack_id && start.anchor.motion == end.anchor.motion {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight * (1.0 - progress),
+                        layer,
+                    );
+                    append_weighted_anchor(
+                        weighted,
+                        &end,
+                        end.anchor.frame,
+                        sample.weight * progress,
+                        layer,
+                    );
+                } else if let Some(reference) = catalog.packs[end.pack_id]
+                    .references
+                    .get(&end.anchor.motion)
+                    .and_then(|references| {
+                        references
+                            .iter()
+                            .filter(|reference| reference.pose == sample.pose)
+                            .min_by_key(|reference| reference.frame.abs_diff(end.anchor.frame))
+                    })
+                {
+                    append_weighted_anchor(
+                        weighted,
+                        &end,
+                        reference.frame,
+                        sample.weight * (1.0 - progress),
+                        layer,
+                    );
+                    append_weighted_anchor(
+                        weighted,
+                        &end,
+                        end.anchor.frame,
+                        sample.weight * progress,
+                        layer,
+                    );
+                } else if let Some(reference) = catalog.packs[start.pack_id]
+                    .references
+                    .get(&start.anchor.motion)
+                    .and_then(|references| {
+                        references
+                            .iter()
+                            .filter(|reference| reference.pose == end_pose)
+                            .min_by_key(|reference| reference.frame.abs_diff(start.anchor.frame))
+                    })
+                {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight * (1.0 - progress),
+                        layer,
+                    );
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        reference.frame,
+                        sample.weight * progress,
+                        layer,
+                    );
+                } else {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight * (1.0 - progress),
+                        layer,
+                    );
+                    append_weighted_anchor(
+                        weighted,
+                        &end,
+                        end.anchor.frame,
+                        sample.weight * progress,
+                        layer,
+                    );
+                }
+            }
+            PoseSampling::CurveSpan { end, coordinate } => {
+                let end_pose = end;
+                let coordinate =
+                    coordinate.clamp(-AttackCurve::MAX_DRAWBACK, 1.0 + AttackCurve::MAX_OVERSHOOT);
+                let Some(end) = resolve_anchor(runtime, catalog, pack, end_pose) else {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
+                let (span_start, start_frame, span_end, end_frame) = if start.pack_id == end.pack_id
+                    && start.anchor.motion == end.anchor.motion
+                {
                     (
                         start.clone(),
                         start.anchor.frame,
@@ -933,19 +1049,20 @@ fn append_resolved_sample_layer(
                         end.anchor.frame,
                     )
                 };
-            extrapolated_spans.push(ExtrapolatedSpan {
-                start: span_start.clip.at_anchor_layer(start_frame, layer),
-                start_time_seconds: frame_seconds(start_frame),
-                end: span_end.clip.at_anchor_layer(end_frame, layer),
-                end_time_seconds: frame_seconds(end_frame),
-                coordinate,
-                weight: sample.weight,
-                mirrored_weight: if span_start.mirrored {
-                    sample.weight
-                } else {
-                    0.0
-                },
-            });
+                extrapolated_spans.push(ExtrapolatedSpan {
+                    start: span_start.clip.at_anchor_layer(start_frame, layer),
+                    start_time_seconds: frame_seconds(start_frame),
+                    end: span_end.clip.at_anchor_layer(end_frame, layer),
+                    end_time_seconds: frame_seconds(end_frame),
+                    coordinate,
+                    weight: sample.weight,
+                    mirrored_weight: if span_start.mirrored {
+                        sample.weight
+                    } else {
+                        0.0
+                    },
+                });
+            }
         }
     }
 }

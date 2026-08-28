@@ -364,20 +364,31 @@ mod contract_tests {
     }
 
     #[test]
-    fn prone_cadence_follows_its_authoritative_posture_speed() {
-        let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
-        project_skeleton_locomotion(
-            &mut state,
-            SkeletonLocomotionInput {
-                orientation: Quat::IDENTITY,
-                linear_velocity: Vec3::NEG_Z * 2.0,
-                grounded: true,
-                delta_seconds: 0.25,
-                tick: 1,
-            },
-        );
-        let expected = gait_cycle_phase_delta(PRONE_LOCOMOTION_PROFILE, 2.0, 0.25);
-        assert!((state.gait_phase - expected).abs() < 0.000_01);
+    fn prone_and_supine_residual_velocity_slide_without_locomotion() {
+        for body in [BodyState::Prone, BodyState::Supine] {
+            let mut state = SkeletonState::default().with_body_state(body);
+            project_skeleton_locomotion(
+                &mut state,
+                SkeletonLocomotionInput {
+                    orientation: Quat::IDENTITY,
+                    linear_velocity: Vec3::NEG_Z * 2.0,
+                    grounded: true,
+                    delta_seconds: 0.25,
+                    tick: 1,
+                },
+            );
+            assert_eq!(state.gait_phase, 0.0);
+            let evaluation = AnimationEvaluation::from_skeleton(&state);
+            assert_eq!(evaluation.base.len(), 1);
+            assert_eq!(
+                evaluation.base[0].pose,
+                if body == BodyState::Prone {
+                    SemanticPose::ProneIdle
+                } else {
+                    SemanticPose::SupineIdle
+                }
+            );
+        }
     }
 
     #[test]
@@ -491,11 +502,12 @@ mod contract_tests {
     }
 
     #[test]
-    fn prone_crawl_blends_directly_between_mirrored_contacts() {
-        let state = SkeletonState::default()
+    fn deliberate_downed_turn_blends_directly_between_mirrored_contacts() {
+        let mut state = SkeletonState::default()
             .with_body_state(BodyState::Prone)
             .with_local_velocity(Vec3::NEG_Z)
             .with_gait_phase(0.25);
+        state.set_downed_turning(true);
         let evaluation = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(evaluation.base.len(), 2);
         assert!(evaluation.base.iter().all(|sample| {

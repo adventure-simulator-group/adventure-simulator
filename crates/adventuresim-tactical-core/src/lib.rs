@@ -37,7 +37,8 @@ pub mod prelude {
         guard_maximum_foot_separation, guard_maximum_lateral_foot_separation,
         guard_movement_front_foot, guard_open_foot_separation, guard_rear_contact_separation,
         guard_step_length, locomotion_profile, ordinary_step_distance, project_skeleton_locomotion,
-        project_skeleton_locomotion_with_intent, set_weapon_guard, supine_get_up_counter_yaw_delta,
+        project_skeleton_locomotion_with_body_rotation, project_skeleton_locomotion_with_intent,
+        set_weapon_guard, supine_get_up_counter_yaw_delta,
     };
     pub use crate::combat::{
         Attack, Dodge, MELEE_LUNGE_QUICKSTEP_THRESHOLD_METRES, MELEE_LUNGE_RANGE_WINDOW_METRES,

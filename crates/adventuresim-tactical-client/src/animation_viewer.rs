@@ -50,6 +50,9 @@ const QUICKSTEP_FIXTURE_BIOLOGICAL_MASS_KG: f32 = 70.0;
 const QUICKSTEP_FIXTURE_TOTAL_MASS_KG: f32 = 93.9;
 const QUICKSTEP_FIXTURE_LEG_STRENGTH: f32 = 4.0;
 const QUICKSTEP_FIXTURE_LEG_AGILITY: f32 = 4.0;
+// The canonical default inventory currently projects 24.9 kg into tactical
+// play: one catalog unit weight for each durable inventory row.
+const JOHN_CURRENT_TOTAL_BURDEN_KG: f32 = 94.9;
 const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
 const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
@@ -138,6 +141,12 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
             repeatable: false,
             // This scenario deliberately spends time with the solver off. Its
             // contract is bounded transition continuity, not steady plants.
+            procedural_solver: false,
+        }
+    } else if matches!(name, "flat-grid-walk-no-ik" | "flat-grid-sprint-no-ik") {
+        ScenarioMetadata {
+            kind: ScenarioKind::Ordinary,
+            repeatable: true,
             procedural_solver: false,
         }
     } else if name == "cross-slope-walk"
@@ -351,6 +360,10 @@ impl CaptureSequence {
         let plan = match scenario {
             Some("flat-grid-walk-2.0") => steady_scenario("flat-grid-walk-2.0", 2.0, 3.0),
             Some("flat-grid-run-5.5") => steady_scenario("flat-grid-run-5.5", 5.5, 3.0),
+            Some("flat-grid-walk-no-ik") => steady_scenario("flat-grid-walk-no-ik", 2.0, 3.0),
+            Some("flat-grid-sprint-no-ik") => {
+                steady_scenario("flat-grid-sprint-no-ik", canonical_john_sprint_speed(), 3.0)
+            }
             Some("flat-grid-walk-stop") => flat_grid_walk_stop_scenario(),
             Some("full-ragdoll") => full_ragdoll_scenario(),
             _ => capture_plan()
@@ -392,6 +405,16 @@ impl CaptureSequence {
             .iter()
             .all(|frame| frame.scenario.starts_with("flat-grid-"))
     }
+}
+
+fn canonical_john_sprint_speed() -> f32 {
+    tactical_sprint_speed(
+        QUICKSTEP_FIXTURE_LEG_STRENGTH,
+        QUICKSTEP_FIXTURE_LEG_STRENGTH,
+        1.0,
+        1.0,
+        JOHN_CURRENT_TOTAL_BURDEN_KG,
+    )
 }
 
 fn next_capture_simulation_tick(current: u64, absolute_first_sample: bool) -> u64 {
@@ -2267,7 +2290,7 @@ fn drive_sequence(
         sequence.scenario_distance += frame.speed * delta_seconds;
         let jump_charging =
             frame.scenario == "jump-charge-anticipation" && (4..48).contains(&frame.scenario_frame);
-        project_skeleton_locomotion(
+        project_skeleton_locomotion_with_body_rotation(
             &mut skeleton,
             SkeletonLocomotionInput {
                 orientation,
@@ -2276,6 +2299,8 @@ fn drive_sequence(
                 delta_seconds,
                 tick: sequence.simulation_tick,
             },
+            transform.rotation,
+            None,
         );
         skeleton.set_jump_anticipation(jump_charging);
         if sequence.warmup_frames == 0 && transition_for_scenario(frame.scenario).is_some() {
@@ -3399,7 +3424,7 @@ fn finish_capture(
         });
     let body_response_valid = (!has_scenario("speed-ramp-up-down")
         || ((-2.5..=0.0).contains(&ramp_pitch_minimum)
-            && (22.0..=30.1).contains(&ramp_pitch_maximum)))
+            && (15.5..=18.5).contains(&ramp_pitch_maximum)))
         && (!has_scenario("hard-stop") || (-0.1..=0.1).contains(&hard_stop_pitch_minimum))
         && (!has_scenario("flat-grid-walk-stop")
             || ((-2.5..=0.0).contains(&walk_stop_pitch_minimum)
@@ -5841,7 +5866,7 @@ mod tests {
     }
 
     #[test]
-    fn flat_grid_scenarios_are_opt_in_complete_cycles_with_terrain_ik() {
+    fn flat_grid_scenarios_are_opt_in_complete_cycles_with_explicit_ik_ownership() {
         for (scenario, speed) in [("flat-grid-walk-2.0", 2.0), ("flat-grid-run-5.5", 5.5)] {
             let sequence = CaptureSequence::new(PathBuf::new(), 1, Some(scenario));
             assert!(sequence.uses_flat_grid());
@@ -5852,6 +5877,25 @@ mod tests {
                     && terrain_ik_enabled_for_frame(frame)
             }));
         }
+
+        let sprint = CaptureSequence::new(PathBuf::new(), 1, Some("flat-grid-sprint-no-ik"));
+        assert!(sprint.uses_flat_grid());
+        assert!(sprint.plan.len() > 64);
+        assert!(sprint.plan.iter().all(|frame| {
+            frame.scenario == "flat-grid-sprint-no-ik"
+                && (frame.speed - canonical_john_sprint_speed()).abs() < f32::EPSILON
+                && !terrain_ik_enabled_for_frame(frame)
+        }));
+        assert!((canonical_john_sprint_speed() - 8.957_856).abs() < 0.000_01);
+
+        let walk = CaptureSequence::new(PathBuf::new(), 1, Some("flat-grid-walk-no-ik"));
+        assert!(walk.uses_flat_grid());
+        assert!(walk.plan.len() > 64);
+        assert!(walk.plan.iter().all(|frame| {
+            frame.scenario == "flat-grid-walk-no-ik"
+                && (frame.speed - 2.0).abs() < f32::EPSILON
+                && !terrain_ik_enabled_for_frame(frame)
+        }));
 
         let ordinary = CaptureSequence::new(PathBuf::new(), 1, Some("steady-walk-2.0"));
         assert!(!ordinary.uses_flat_grid());

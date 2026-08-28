@@ -57,13 +57,13 @@ impl AnimationEvaluation {
             SkeletonAction::Dodge => raised_guard_locomotion_samples(state),
             _ => match state.posture() {
                 Posture::Prone => gait_or_idle(
-                    speed,
+                    downed_animation_speed(state),
                     gait_phase,
                     SemanticPose::ProneIdle,
                     SemanticPose::ProneCrawlContact,
                 ),
                 Posture::Supine => gait_or_idle(
-                    speed,
+                    downed_animation_speed(state),
                     gait_phase,
                     SemanticPose::SupineIdle,
                     SemanticPose::SupineScamperContact,
@@ -73,7 +73,7 @@ impl AnimationEvaluation {
                 Posture::Upright if state.weapon_guard() == WeaponGuardState::Raised => {
                     raised_guard_locomotion_samples(state)
                 }
-                Posture::Upright => locomotion_samples(speed, gait_phase),
+                Posture::Upright => upright_locomotion_samples(state),
             },
         };
         let lower_body = if let Some(transition) = state.posture_transition()
@@ -481,6 +481,54 @@ fn locomotion_samples(speed: f32, phase: f32) -> Vec<PoseSample> {
     );
     samples.retain(|sample| sample.weight > f32::EPSILON);
     samples
+}
+
+/// Ordinary upright locomotion blends the forward gait against the authored
+/// strafe cycle in the hips' frame. As the root turns toward world velocity,
+/// the lateral contribution naturally falls to zero.
+fn upright_locomotion_samples(state: &SkeletonState) -> Vec<PoseSample> {
+    let speed = state.animation_speed();
+    let phase = state.gait_phase.rem_euclid(1.0);
+    let direction = state.animation_local_velocity().xz().normalize_or_zero();
+    let lateral = direction.x.abs();
+    let longitudinal = direction.y.abs();
+    let total = lateral + longitudinal;
+    if lateral <= f32::EPSILON || total <= f32::EPSILON {
+        return locomotion_samples(speed, phase);
+    }
+
+    const LOCOMOTION_BLEND_SPEED: f32 = 0.75;
+    let locomotion = smoothstep01(speed / LOCOMOTION_BLEND_SPEED);
+    let longitudinal_weight = longitudinal / total;
+    let lateral_weight = lateral / total;
+    let mut samples = locomotion_samples(speed, phase);
+    for sample in &mut samples {
+        if sample.pose == SemanticPose::IdleRelaxed {
+            continue;
+        }
+        sample.weight *= longitudinal_weight;
+    }
+    let strafe_phase = combat_cycle_phase(phase);
+    let mut strafe = cycle_sample(
+        SemanticPose::StrafeCycle,
+        if direction.x < 0.0 {
+            reverse_cycle_phase(strafe_phase)
+        } else {
+            strafe_phase
+        },
+    );
+    strafe.weight = locomotion * lateral_weight;
+    samples.push(strafe);
+    samples.retain(|sample| sample.weight > f32::EPSILON);
+    samples
+}
+
+fn downed_animation_speed(state: &SkeletonState) -> f32 {
+    if state.downed_turning() {
+        state.animation_speed()
+    } else {
+        0.0
+    }
 }
 
 fn cycle_sample(pose: SemanticPose, phase: f32) -> PoseSample {
